@@ -30,3 +30,8 @@ def get_worksheet(sheet_name: str):
 def get_all_records(sheet_name: str):
     worksheet = get_worksheet(sheet_name)
     return worksheet.get_all_records()
+
+
+def append_row(sheet_name: str, row_values: list):
+    worksheet = get_worksheet(sheet_name)
+    worksheet.append_row(row_values, value_input_option="USER_ENTERED")

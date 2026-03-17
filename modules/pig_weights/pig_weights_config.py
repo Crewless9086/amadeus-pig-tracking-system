@@ -10,6 +10,7 @@ PIG_WEIGHTS_CONFIG = {
         "on_farm": "On_Farm",
         "current_weight": "Current_Weight_Kg",
         "last_weight_date": "Last_Weight_Date",
+        "weight_log_id": "Weight_Log_ID",
         "weight_date": "Weight_Date",
         "weight_kg": "Weight_Kg",
         "condition_notes": "Condition_Notes",
