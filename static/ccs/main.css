@@ -1,32 +1,54 @@
+:root {
+  --bg: #f5f3ee;
+  --card: #fcfbf8;
+  --border: #d8d2c7;
+  --text: #2f3a2f;
+  --muted: #6b7568;
+  --primary: #6e8b74;
+  --primary-dark: #58705d;
+  --accent: #b9c8b3;
+  --success-bg: #e8f3e8;
+  --success-text: #36543a;
+  --error-bg: #f8e8e4;
+  --error-text: #8a4d43;
+  --good: #4f7a57;
+  --bad: #9a5b4c;
+  --neutral: #7b7468;
+}
+
 body {
   margin: 0;
   font-family: Arial, sans-serif;
-  background: #f4f6f8;
-  color: #1f2933;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .page-container {
-  max-width: 700px;
+  max-width: 760px;
   margin: 40px auto;
   padding: 20px;
 }
 
 .card {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 10px 30px rgba(60, 70, 60, 0.08);
 }
 
 h1 {
   margin-top: 0;
   margin-bottom: 8px;
+  font-size: 34px;
+  line-height: 1.15;
 }
 
 .subtitle {
   margin-top: 0;
   margin-bottom: 24px;
-  color: #52606d;
+  color: var(--muted);
+  font-size: 16px;
 }
 
 .form-group {
@@ -36,7 +58,7 @@ h1 {
 label {
   display: block;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 select,
@@ -51,40 +73,67 @@ button {
 select,
 input,
 textarea {
-  padding: 10px 12px;
-  border: 1px solid #cbd2d9;
-  border-radius: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: #fff;
+  color: var(--text);
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(110, 139, 116, 0.15);
 }
 
 textarea {
   resize: vertical;
+  min-height: 100px;
 }
 
-.info-row {
+.info-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .info-box {
-  background: #f8fafc;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  padding: 12px;
+  background: #f7f6f2;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.info-box.full-width {
+  grid-column: 1 / -1;
 }
 
 .info-label {
   display: block;
   font-size: 13px;
-  color: #52606d;
-  margin-bottom: 4px;
+  color: var(--muted);
+  margin-bottom: 6px;
 }
 
 .info-value {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
+  color: var(--text);
+}
+
+.good-text {
+  color: var(--good);
+}
+
+.bad-text {
+  color: var(--bad);
+}
+
+.neutral-text {
+  color: var(--neutral);
 }
 
 .form-actions {
@@ -92,39 +141,69 @@ textarea {
 }
 
 button {
-  padding: 12px 16px;
+  padding: 14px 18px;
   border: none;
-  border-radius: 8px;
-  background: #2563eb;
+  border-radius: 12px;
+  background: var(--primary);
   color: #fff;
   cursor: pointer;
   font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+button:hover {
+  background: var(--primary-dark);
 }
 
 button:disabled {
-  background: #9aa5b1;
+  background: #a8b3a9;
   cursor: not-allowed;
 }
 
 .message-box {
   margin-top: 16px;
-  padding: 12px 14px;
-  border-radius: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
   font-size: 14px;
+  line-height: 1.4;
 }
 
 .message-success {
-  background: #ecfdf3;
-  color: #027a48;
-  border: 1px solid #a6f4c5;
+  background: var(--success-bg);
+  color: var(--success-text);
+  border: 1px solid #bfd7bf;
 }
 
 .message-error {
-  background: #fef3f2;
-  color: #b42318;
-  border: 1px solid #fecdca;
+  background: var(--error-bg);
+  color: var(--error-text);
+  border: 1px solid #e3c1b8;
 }
 
 .hidden {
   display: none;
+}
+
+@media (max-width: 640px) {
+  .page-container {
+    margin: 20px auto;
+    padding: 14px;
+  }
+
+  .card {
+    padding: 20px;
+    border-radius: 14px;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  .info-value {
+    font-size: 18px;
+  }
 }
