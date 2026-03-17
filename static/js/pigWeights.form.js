@@ -53,6 +53,8 @@ function resetPreview() {
   growthRateEl.textContent = "—";
   growthStatusEl.textContent = "—";
 
+  clearGrowthClasses(previousWeightEl);
+  clearGrowthClasses(previousWeightDateEl);
   clearGrowthClasses(weightDifferenceEl);
   clearGrowthClasses(growthRateEl);
   clearGrowthClasses(growthStatusEl);

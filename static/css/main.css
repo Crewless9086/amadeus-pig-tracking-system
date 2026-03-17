@@ -1,0 +1,253 @@
+:root {
+  --bg-main: #f4f0e8;
+  --bg-card: #fcfaf6;
+  --bg-soft: #f1ece3;
+  --border: #d8d0c2;
+
+  --text-main: #314234;
+  --text-soft: #677565;
+
+  --green-main: #7d9b7d;
+  --green-dark: #617a61;
+  --green-soft: #dce8dc;
+
+  --success-bg: #e7f3e7;
+  --success-border: #b7d3b7;
+  --success-text: #355a35;
+
+  --error-bg: #f7e8e5;
+  --error-border: #e2c0b9;
+  --error-text: #8d4f43;
+
+  --good: #4c7a57;
+  --bad: #9d5f4e;
+  --neutral: #7e7668;
+
+  --shadow: 0 12px 28px rgba(70, 80, 70, 0.10);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: linear-gradient(180deg, #f7f3ec 0%, #f0ece3 100%);
+  color: var(--text-main);
+}
+
+.page-shell {
+  min-height: 100vh;
+  padding: 32px 18px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.page-card {
+  width: 100%;
+  max-width: 860px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 30px;
+  box-shadow: var(--shadow);
+}
+
+.page-header {
+  margin-bottom: 28px;
+}
+
+.page-header h1 {
+  margin: 0 0 10px 0;
+  font-size: 36px;
+  line-height: 1.1;
+  color: var(--text-main);
+}
+
+.page-header p {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-soft);
+}
+
+.weight-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+select,
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text-main);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 16px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--green-main);
+  box-shadow: 0 0 0 4px rgba(125, 155, 125, 0.18);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 110px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.info-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-card-wide {
+  grid-column: 1 / -1;
+}
+
+.info-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.info-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.good-text {
+  color: var(--good);
+}
+
+.bad-text {
+  color: var(--bad);
+}
+
+.neutral-text {
+  color: var(--neutral);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+button {
+  border: none;
+  background: var(--green-main);
+  color: white;
+  border-radius: 14px;
+  padding: 14px 22px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+button:hover {
+  background: var(--green-dark);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  background: #aeb8ae;
+  cursor: not-allowed;
+}
+
+.message-box {
+  margin-top: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.message-success {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}
+
+.message-error {
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-text);
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .page-shell {
+    padding: 18px 12px;
+  }
+
+  .page-card {
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .page-header h1 {
+    font-size: 30px;
+  }
+
+  .form-grid,
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .info-card-wide {
+    grid-column: auto;
+  }
+
+  .info-value {
+    font-size: 20px;
+  }
+}
