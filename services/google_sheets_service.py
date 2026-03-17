@@ -1,0 +1,1 @@
+# Google Sheets connection logic will go here later.
