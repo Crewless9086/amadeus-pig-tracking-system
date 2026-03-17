@@ -15,6 +15,11 @@ const messageBox = document.getElementById("message_box");
 
 let selectedPigLatest = null;
 
+function getPreselectedPigId() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("pig_id") || "";
+}
+
 function setTodayDate() {
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -134,27 +139,6 @@ function updateGrowthPreview() {
   }
 }
 
-async function loadPigs() {
-  try {
-    const response = await fetch("/api/pig-weights/pigs");
-    const data = await response.json();
-
-    pigSelect.innerHTML = '<option value="">Select a pig</option>';
-
-    data.pigs.forEach((pig) => {
-      const option = document.createElement("option");
-      option.value = pig.pig_id;
-      option.textContent = pig.tag_number
-        ? `${pig.tag_number}`
-        : `${pig.pig_id}`;
-      pigSelect.appendChild(option);
-    });
-  } catch (error) {
-    pigSelect.innerHTML = '<option value="">Failed to load pigs</option>';
-    showMessage("Could not load pigs.", "error");
-  }
-}
-
 async function loadLatestWeight(pigId) {
   if (!pigId) {
     resetPreview();
@@ -180,6 +164,37 @@ async function loadLatestWeight(pigId) {
   } catch (error) {
     resetPreview();
     showMessage("Could not load previous weight.", "error");
+  }
+}
+
+async function loadPigs() {
+  try {
+    const response = await fetch("/api/pig-weights/pigs");
+    const data = await response.json();
+    const preselectedPigId = getPreselectedPigId();
+
+    pigSelect.innerHTML = '<option value="">Select a pig</option>';
+
+    data.pigs.forEach((pig) => {
+      const option = document.createElement("option");
+      option.value = pig.pig_id;
+      option.textContent = pig.tag_number
+        ? `${pig.tag_number}`
+        : `${pig.pig_id}`;
+
+      if (preselectedPigId && pig.pig_id === preselectedPigId) {
+        option.selected = true;
+      }
+
+      pigSelect.appendChild(option);
+    });
+
+    if (preselectedPigId) {
+      await loadLatestWeight(preselectedPigId);
+    }
+  } catch (error) {
+    pigSelect.innerHTML = '<option value="">Failed to load pigs</option>';
+    showMessage("Could not load pigs.", "error");
   }
 }
 

@@ -10,6 +10,11 @@ def home():
     return render_template("index.html")
 
 
+@app.route("/pigs")
+def pigs_page():
+    return render_template("pig-list.html")
+
+
 @app.route("/pig-weights")
 def pig_weights_page():
     return render_template("pig-weights.html")

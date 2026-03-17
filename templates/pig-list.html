@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Pig List</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Amadeus Pig List</h1>
+          <p>Select a pig to go straight into the weight capture form.</p>
+        </div>
+        <a href="/pig-weights" class="secondary-link">Open Weight Form →</a>
+      </div>
+
+      <div class="list-toolbar">
+        <input
+          type="text"
+          id="pig_search"
+          class="list-search"
+          placeholder="Search by tag number or pig ID..."
+        />
+      </div>
+
+      <div id="pig_list_message" class="message-box hidden"></div>
+
+      <div id="pig_list" class="pig-list-grid"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/pigList.js') }}"></script>
+</body>
+</html>

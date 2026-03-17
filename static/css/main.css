@@ -59,6 +59,13 @@ body {
   margin-bottom: 28px;
 }
 
+.page-header-with-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
 .page-header h1 {
   margin: 0 0 10px 0;
   font-size: 36px;
@@ -70,6 +77,20 @@ body {
   margin: 0;
   font-size: 16px;
   color: var(--text-soft);
+}
+
+.secondary-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--green-dark);
+  font-weight: 700;
+  white-space: nowrap;
+  padding-top: 6px;
+}
+
+.secondary-link:hover {
+  text-decoration: underline;
 }
 
 .weight-form {
@@ -224,6 +245,87 @@ button:disabled {
   display: none;
 }
 
+.list-toolbar {
+  margin-bottom: 18px;
+}
+
+.list-search {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text-main);
+  border-radius: 14px;
+  padding: 14px 16px;
+  font-size: 16px;
+}
+
+.pig-list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.pig-list-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.pig-list-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(70, 80, 70, 0.08);
+  border-color: #c4baa7;
+}
+
+.pig-list-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.pig-list-tag {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.pig-list-action {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+.pig-list-meta {
+  font-size: 14px;
+  color: var(--text-soft);
+  margin-bottom: 4px;
+}
+
+.pig-list-submeta {
+  font-size: 14px;
+  color: var(--text-main);
+}
+
+.empty-state {
+  background: var(--bg-soft);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  padding: 28px 20px;
+  color: var(--text-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+
 @media (max-width: 700px) {
   .page-shell {
     padding: 18px 12px;
@@ -232,6 +334,11 @@ button:disabled {
   .page-card {
     padding: 22px 18px;
     border-radius: 18px;
+  }
+
+  .page-header-with-link {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .page-header h1 {
@@ -249,5 +356,10 @@ button:disabled {
 
   .info-value {
     font-size: 20px;
+  }
+
+  .pig-list-top {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
