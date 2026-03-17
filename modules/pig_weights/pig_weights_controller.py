@@ -1,5 +1,6 @@
 from modules.pig_weights.pig_weights_service import (
     get_active_pigs,
+    get_pig_detail,
     get_latest_weight_for_pig,
     save_weight_entry,
 )
@@ -19,6 +20,20 @@ def list_active_pigs():
         "count": len(pigs),
         "pigs": pigs
     }
+
+
+def get_pig_profile(pig_id: str):
+    pig = get_pig_detail(pig_id)
+    if not pig:
+        return {
+            "success": False,
+            "error": "Pig not found."
+        }, 404
+
+    return {
+        "success": True,
+        "pig": pig
+    }, 200
 
 
 def get_latest_weight(pig_id: str):

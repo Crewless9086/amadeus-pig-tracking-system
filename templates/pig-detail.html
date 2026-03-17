@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Pig Detail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="pig_detail_title">Pig Profile</h1>
+          <p id="pig_detail_subtitle">Loading pig details...</p>
+        </div>
+        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+      </div>
+
+      <div class="detail-actions">
+        <a id="record_weight_button" href="#" class="button-link">Record Weight</a>
+      </div>
+
+      <div id="pig_detail_message" class="message-box hidden"></div>
+
+      <div class="detail-grid">
+        <div class="detail-card">
+          <span class="detail-label">Tag Number</span>
+          <span id="detail_tag_number" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Pig ID</span>
+          <span id="detail_pig_id" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Status</span>
+          <span id="detail_status" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">On Farm</span>
+          <span id="detail_on_farm" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Animal Type</span>
+          <span id="detail_animal_type" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Sex</span>
+          <span id="detail_sex" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Purpose</span>
+          <span id="detail_purpose" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Date of Birth</span>
+          <span id="detail_dob" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Age (Days)</span>
+          <span id="detail_age_days" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Current Pen</span>
+          <span id="detail_pen" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Current Weight</span>
+          <span id="detail_weight" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Last Weight Date</span>
+          <span id="detail_last_weight_date" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Calculated Stage</span>
+          <span id="detail_stage" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Weight Band</span>
+          <span id="detail_weight_band" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Sale Ready</span>
+          <span id="detail_sale_ready" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Reserved Status</span>
+          <span id="detail_reserved_status" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Mother Pig ID</span>
+          <span id="detail_mother" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Father Pig ID</span>
+          <span id="detail_father" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card detail-card-wide">
+          <span class="detail-label">Litter ID</span>
+          <span id="detail_litter" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card detail-card-wide">
+          <span class="detail-label">General Notes</span>
+          <span id="detail_notes" class="detail-value">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/pigDetail.js') }}"></script>
+</body>
+</html>

@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from modules.pig_weights.pig_weights_controller import (
     get_status,
     list_active_pigs,
+    get_pig_profile,
     get_latest_weight,
     create_weight_entry,
 )
@@ -17,6 +18,12 @@ def status():
 @pig_weights_bp.route("/pigs", methods=["GET"])
 def pigs():
     return jsonify(list_active_pigs())
+
+
+@pig_weights_bp.route("/<pig_id>/detail", methods=["GET"])
+def pig_detail(pig_id):
+    result, status_code = get_pig_profile(pig_id)
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/<pig_id>/latest", methods=["GET"])

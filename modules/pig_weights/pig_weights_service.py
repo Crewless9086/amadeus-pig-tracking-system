@@ -34,6 +34,43 @@ def get_active_pigs():
     return active_pigs
 
 
+def get_pig_detail(pig_id: str):
+    pig_id = str(pig_id).strip()
+
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    rows = get_all_records(sheet_name)
+
+    for row in rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id == pig_id:
+            return {
+                "pig_id": row_pig_id,
+                "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+                "status": to_clean_string(row.get(columns["status"], "")),
+                "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
+                "animal_type": to_clean_string(row.get("Animal_Type", "")),
+                "sex": to_clean_string(row.get("Sex", "")),
+                "date_of_birth": format_date_for_json(row.get("Date_Of_Birth", "")),
+                "age_days": row.get("Age_Days", ""),
+                "litter_id": to_clean_string(row.get("Litter_ID", "")),
+                "mother_pig_id": to_clean_string(row.get("Mother_Pig_ID", "")),
+                "father_pig_id": to_clean_string(row.get("Father_Pig_ID", "")),
+                "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
+                "purpose": to_clean_string(row.get("Purpose", "")),
+                "current_weight_kg": row.get("Current_Weight_Kg", ""),
+                "last_weight_date": format_date_for_json(row.get("Last_Weight_Date", "")),
+                "calculated_stage": to_clean_string(row.get("Calculated_Stage", "")),
+                "weight_band": to_clean_string(row.get("Weight_Band", "")),
+                "is_sale_ready": to_clean_string(row.get("Is_Sale_Ready", "")),
+                "reserved_status": to_clean_string(row.get("Reserved_Status", "")),
+                "general_notes": to_clean_string(row.get("General_Notes", "")),
+            }
+
+    return None
+
+
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
 
@@ -95,15 +132,15 @@ def save_weight_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
 
     row_values = [
-        generate_weight_log_id(),                             # Weight_Log_ID
-        cleaned_data["pig_id"],                               # Pig_ID
-        format_date_for_sheet(cleaned_data["weight_date"]),   # Weight_Date
-        cleaned_data["weight_kg"],                            # Weight_Kg
-        cleaned_data["weighed_by"],                           # Weighed_By
-        "",                                                   # Scale_Used
-        cleaned_data["condition_notes"],                      # Condition_Notes
-        "",                                                   # Stage_At_Weighing
-        format_date_for_sheet(cleaned_data["weight_date"]),   # Created_At
+        generate_weight_log_id(),
+        cleaned_data["pig_id"],
+        format_date_for_sheet(cleaned_data["weight_date"]),
+        cleaned_data["weight_kg"],
+        cleaned_data["weighed_by"],
+        "",
+        cleaned_data["condition_notes"],
+        "",
+        format_date_for_sheet(cleaned_data["weight_date"]),
     ]
 
     append_row(sheet_name, row_values)

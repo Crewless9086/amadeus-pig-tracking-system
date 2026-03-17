@@ -19,7 +19,7 @@ function clearListMessage() {
 function buildPigCard(pig) {
   const card = document.createElement("a");
   card.className = "pig-list-card";
-  card.href = `/pig-weights?pig_id=${encodeURIComponent(pig.pig_id)}`;
+  card.href = `/pig/${encodeURIComponent(pig.pig_id)}`;
 
   const topRow = document.createElement("div");
   topRow.className = "pig-list-top";
@@ -30,7 +30,7 @@ function buildPigCard(pig) {
 
   const action = document.createElement("div");
   action.className = "pig-list-action";
-  action.textContent = "Record Weight →";
+  action.textContent = "Open Profile →";
 
   topRow.appendChild(tag);
   topRow.appendChild(action);

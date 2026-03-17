@@ -47,7 +47,7 @@ body {
 
 .page-card {
   width: 100%;
-  max-width: 860px;
+  max-width: 960px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 22px;
@@ -132,7 +132,8 @@ textarea {
 
 select:focus,
 input:focus,
-textarea:focus {
+textarea:focus,
+.list-search:focus {
   outline: none;
   border-color: var(--green-main);
   box-shadow: 0 0 0 4px rgba(125, 155, 125, 0.18);
@@ -143,13 +144,15 @@ textarea {
   min-height: 110px;
 }
 
-.info-grid {
+.info-grid,
+.detail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
 }
 
-.info-card {
+.info-card,
+.detail-card {
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -159,11 +162,13 @@ textarea {
   gap: 6px;
 }
 
-.info-card-wide {
+.info-card-wide,
+.detail-card-wide {
   grid-column: 1 / -1;
 }
 
-.info-title {
+.info-title,
+.detail-label {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-soft);
@@ -171,10 +176,12 @@ textarea {
   letter-spacing: 0.03em;
 }
 
-.info-value {
+.info-value,
+.detail-value {
   font-size: 22px;
   font-weight: 700;
   color: var(--text-main);
+  word-break: break-word;
 }
 
 .good-text {
@@ -189,13 +196,19 @@ textarea {
   color: var(--neutral);
 }
 
-.form-actions {
+.form-actions,
+.detail-actions {
   display: flex;
   justify-content: flex-start;
   margin-top: 8px;
+  margin-bottom: 18px;
 }
 
-button {
+button,
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: var(--green-main);
   color: white;
@@ -205,13 +218,16 @@ button {
   font-weight: 700;
   cursor: pointer;
   transition: background 0.2s ease, transform 0.1s ease;
+  text-decoration: none;
 }
 
-button:hover {
+button:hover,
+.button-link:hover {
   background: var(--green-dark);
 }
 
-button:active {
+button:active,
+.button-link:active {
   transform: translateY(1px);
 }
 
@@ -346,15 +362,18 @@ button:disabled {
   }
 
   .form-grid,
-  .info-grid {
+  .info-grid,
+  .detail-grid {
     grid-template-columns: 1fr;
   }
 
-  .info-card-wide {
+  .info-card-wide,
+  .detail-card-wide {
     grid-column: auto;
   }
 
-  .info-value {
+  .info-value,
+  .detail-value {
     font-size: 20px;
   }
 
