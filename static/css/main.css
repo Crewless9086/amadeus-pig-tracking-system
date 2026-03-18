@@ -188,6 +188,18 @@ textarea {
   word-break: break-word;
 }
 
+.detail-link {
+  color: var(--green-dark);
+  text-decoration: none;
+  font-size: 22px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.detail-link:hover {
+  text-decoration: underline;
+}
+
 .good-text {
   color: var(--good);
 }
@@ -451,7 +463,8 @@ button:disabled {
 
   .info-value,
   .detail-value,
-  .history-value {
+  .history-value,
+  .detail-link {
     font-size: 20px;
   }
 

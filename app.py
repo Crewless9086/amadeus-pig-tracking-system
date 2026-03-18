@@ -50,6 +50,11 @@ def pig_movement_history_page(pig_id):
     return render_template("pig-movement-history.html")
 
 
+@app.route("/litter/<litter_id>")
+def litter_detail_page(litter_id):
+    return render_template("litter-detail.html")
+
+
 @app.route("/pig-weights")
 def pig_weights_page():
     return render_template("pig-weights.html")

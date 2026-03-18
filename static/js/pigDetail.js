@@ -19,6 +19,17 @@ function setText(id, value, suffix = "") {
     : "—";
 }
 
+function setLinkedValue(id, label, href) {
+  const element = document.getElementById(id);
+  if (!element) return;
+
+  if (label && href) {
+    element.innerHTML = `<a href="${href}" class="detail-link">${label}</a>`;
+  } else {
+    element.textContent = "—";
+  }
+}
+
 async function loadPigDetail() {
   const pigId = getPigIdFromUrl();
 
@@ -67,9 +78,25 @@ async function loadPigDetail() {
     setText("detail_last_product_name", pig.last_product_name);
     setText("detail_withdrawal_end_date", pig.current_withdrawal_end_date);
     setText("detail_withdrawal_clear", pig.withdrawal_clear);
-    setText("detail_mother", pig.mother_pig_id);
-    setText("detail_father", pig.father_pig_id);
-    setText("detail_litter", pig.litter_id);
+
+    setLinkedValue(
+      "detail_mother",
+      pig.mother_tag_number || pig.mother_pig_id,
+      pig.mother_pig_id ? `/pig/${encodeURIComponent(pig.mother_pig_id)}` : ""
+    );
+
+    setLinkedValue(
+      "detail_father",
+      pig.father_tag_number || pig.father_pig_id,
+      pig.father_pig_id ? `/pig/${encodeURIComponent(pig.father_pig_id)}` : ""
+    );
+
+    setLinkedValue(
+      "detail_litter",
+      pig.litter_id,
+      pig.litter_id ? `/litter/${encodeURIComponent(pig.litter_id)}` : ""
+    );
+
     setText("detail_notes", pig.general_notes);
   } catch (error) {
     showMessage("Something went wrong while loading pig detail.", "error");

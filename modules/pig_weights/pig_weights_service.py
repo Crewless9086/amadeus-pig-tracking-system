@@ -78,37 +78,55 @@ def get_pig_detail(pig_id: str):
 
     rows = get_all_records(sheet_name)
 
+    # Build quick lookup for parent/tag resolution
+    pig_lookup = {}
     for row in rows:
         row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
-        if row_pig_id == pig_id:
-            return {
-                "pig_id": row_pig_id,
-                "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
-                "status": to_clean_string(row.get(columns["status"], "")),
-                "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
-                "animal_type": to_clean_string(row.get("Animal_Type", "")),
-                "sex": to_clean_string(row.get("Sex", "")),
-                "date_of_birth": format_date_for_json(row.get("Date_Of_Birth", "")),
-                "age_days": row.get("Age_Days", ""),
-                "litter_id": to_clean_string(row.get("Litter_ID", "")),
-                "mother_pig_id": to_clean_string(row.get("Mother_Pig_ID", "")),
-                "father_pig_id": to_clean_string(row.get("Father_Pig_ID", "")),
-                "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
-                "purpose": to_clean_string(row.get("Purpose", "")),
-                "current_weight_kg": row.get("Current_Weight_Kg", ""),
-                "last_weight_date": format_date_for_json(row.get("Last_Weight_Date", "")),
-                "calculated_stage": to_clean_string(row.get("Calculated_Stage", "")),
-                "weight_band": to_clean_string(row.get("Weight_Band", "")),
-                "is_sale_ready": to_clean_string(row.get("Is_Sale_Ready", "")),
-                "reserved_status": to_clean_string(row.get("Reserved_Status", "")),
-                "general_notes": to_clean_string(row.get("General_Notes", "")),
-                "last_treatment_date": format_date_for_json(row.get("Last_Treatment_Date", "")),
-                "last_product_name": to_clean_string(row.get("Last_Product_Name", "")),
-                "current_withdrawal_end_date": format_date_for_json(row.get("Current_Withdrawal_End_Date", "")),
-                "withdrawal_clear": to_clean_string(row.get("Withdrawal_Clear", "")),
-            }
+        if row_pig_id:
+            pig_lookup[row_pig_id] = row
 
-    return None
+    pig = pig_lookup.get(pig_id)
+    if not pig:
+        return None
+
+    mother_pig_id = to_clean_string(pig.get("Mother_Pig_ID", ""))
+    father_pig_id = to_clean_string(pig.get("Father_Pig_ID", ""))
+    litter_id = to_clean_string(pig.get("Litter_ID", ""))
+
+    mother_row = pig_lookup.get(mother_pig_id) if mother_pig_id else None
+    father_row = pig_lookup.get(father_pig_id) if father_pig_id else None
+
+    mother_tag_number = to_clean_string(mother_row.get(columns["tag_number"], "")) if mother_row else ""
+    father_tag_number = to_clean_string(father_row.get(columns["tag_number"], "")) if father_row else ""
+
+    return {
+        "pig_id": to_clean_string(pig.get(columns["pig_id"], "")),
+        "tag_number": to_clean_string(pig.get(columns["tag_number"], "")),
+        "status": to_clean_string(pig.get(columns["status"], "")),
+        "on_farm": to_clean_string(pig.get(columns["on_farm"], "")),
+        "animal_type": to_clean_string(pig.get("Animal_Type", "")),
+        "sex": to_clean_string(pig.get("Sex", "")),
+        "date_of_birth": format_date_for_json(pig.get("Date_Of_Birth", "")),
+        "age_days": pig.get("Age_Days", ""),
+        "litter_id": litter_id,
+        "mother_pig_id": mother_pig_id,
+        "mother_tag_number": mother_tag_number,
+        "father_pig_id": father_pig_id,
+        "father_tag_number": father_tag_number,
+        "current_pen_id": to_clean_string(pig.get("Current_Pen_ID", "")),
+        "purpose": to_clean_string(pig.get("Purpose", "")),
+        "current_weight_kg": pig.get("Current_Weight_Kg", ""),
+        "last_weight_date": format_date_for_json(pig.get("Last_Weight_Date", "")),
+        "calculated_stage": to_clean_string(pig.get("Calculated_Stage", "")),
+        "weight_band": to_clean_string(pig.get("Weight_Band", "")),
+        "is_sale_ready": to_clean_string(pig.get("Is_Sale_Ready", "")),
+        "reserved_status": to_clean_string(pig.get("Reserved_Status", "")),
+        "general_notes": to_clean_string(pig.get("General_Notes", "")),
+        "last_treatment_date": format_date_for_json(pig.get("Last_Treatment_Date", "")),
+        "last_product_name": to_clean_string(pig.get("Last_Product_Name", "")),
+        "current_withdrawal_end_date": format_date_for_json(pig.get("Current_Withdrawal_End_Date", "")),
+        "withdrawal_clear": to_clean_string(pig.get("Withdrawal_Clear", "")),
+    }
 
 
 def get_products():
