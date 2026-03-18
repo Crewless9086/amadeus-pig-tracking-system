@@ -95,3 +95,39 @@ def validate_treatment_payload(payload: dict):
             "medical_notes": medical_notes,
         }
     }
+
+
+def validate_movement_payload(payload: dict):
+    errors = []
+
+    pig_id = str(payload.get("pig_id", "")).strip()
+    move_date = payload.get("move_date", "")
+    from_pen_id = str(payload.get("from_pen_id", "")).strip()
+    to_pen_id = str(payload.get("to_pen_id", "")).strip()
+    reason_for_move = str(payload.get("reason_for_move", "")).strip()
+    moved_by = str(payload.get("moved_by", "")).strip()
+    move_notes = str(payload.get("move_notes", "")).strip()
+
+    if not pig_id:
+        errors.append("Pig_ID is required.")
+
+    parsed_move_date = parse_sheet_date(move_date)
+    if not parsed_move_date:
+        errors.append("Move_Date is required and must be a valid date.")
+
+    if not to_pen_id:
+        errors.append("To_Pen_ID is required.")
+
+    return {
+        "is_valid": len(errors) == 0,
+        "errors": errors,
+        "cleaned_data": {
+            "pig_id": pig_id,
+            "move_date": parsed_move_date,
+            "from_pen_id": from_pen_id,
+            "to_pen_id": to_pen_id,
+            "reason_for_move": reason_for_move,
+            "moved_by": moved_by,
+            "move_notes": move_notes,
+        }
+    }

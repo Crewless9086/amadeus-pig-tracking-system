@@ -76,3 +76,7 @@ def generate_weight_log_id():
 
 def generate_medical_log_id():
     return f"MED-{uuid.uuid4().hex[:8].upper()}"
+
+
+def generate_move_log_id():
+    return f"MOV-{uuid.uuid4().hex[:8].upper()}"

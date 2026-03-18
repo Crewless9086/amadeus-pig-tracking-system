@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Record Movement</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="movement_title">Record Movement</h1>
+          <p id="movement_subtitle">Loading pig and pen information...</p>
+        </div>
+        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+      </div>
+
+      <div class="detail-actions">
+        <a id="movement_profile_button" href="#" class="button-link button-link-secondary">Back to Pig Profile</a>
+        <a id="movement_history_button" href="#" class="button-link button-link-secondary">View Movement History</a>
+      </div>
+
+      <form id="pig-movement-form" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="movement_pig_display">Pig</label>
+            <input type="text" id="movement_pig_display" disabled />
+          </div>
+
+          <div class="form-group">
+            <label for="move_date">Move Date</label>
+            <input type="date" id="move_date" required />
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-card">
+            <span class="info-title">Current Pen</span>
+            <span id="current_pen_display" class="info-value">—</span>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="from_pen_id">From Pen</label>
+            <input type="text" id="from_pen_id" disabled />
+          </div>
+
+          <div class="form-group">
+            <label for="to_pen_id">To Pen</label>
+            <select id="to_pen_id" required>
+              <option value="">Loading pens...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="reason_for_move">Reason For Move</label>
+            <input type="text" id="reason_for_move" />
+          </div>
+
+          <div class="form-group">
+            <label for="moved_by">Moved By</label>
+            <input type="text" id="moved_by" value="WebApp" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="move_notes">Move Notes</label>
+          <textarea id="move_notes" rows="4" placeholder="Optional notes..."></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" id="movement_submit_button">Save Movement</button>
+        </div>
+
+        <div id="movement_message_box" class="message-box hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/pigMovement.form.js') }}"></script>
+</body>
+</html>

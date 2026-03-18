@@ -44,6 +44,8 @@ async function loadPigDetail() {
     document.getElementById("view_weight_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/weights`;
     document.getElementById("record_treatment_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/treatment`;
     document.getElementById("view_treatment_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/treatments`;
+    document.getElementById("record_movement_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/movement`;
+    document.getElementById("view_movement_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/movements`;
 
     setText("detail_tag_number", pig.tag_number);
     setText("detail_pig_id", pig.pig_id);

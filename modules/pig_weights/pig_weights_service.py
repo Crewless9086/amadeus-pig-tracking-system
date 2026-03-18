@@ -8,6 +8,7 @@ from modules.pig_weights.pig_weights_utils import (
     format_date_for_sheet,
     generate_weight_log_id,
     generate_medical_log_id,
+    generate_move_log_id,
 )
 
 
@@ -111,6 +112,39 @@ def get_product_by_id(product_id: str):
     return None
 
 
+def get_pens():
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    rows = get_all_records(sheet_name)
+
+    pens = []
+    for row in rows:
+        if str(row.get(columns["is_active"], "")).strip() != "Yes":
+            continue
+
+        pens.append({
+            "pen_id": to_clean_string(row.get(columns["pen_id"], "")),
+            "pen_name": to_clean_string(row.get(columns["pen_name"], "")),
+            "pen_type": to_clean_string(row.get(columns["pen_type"], "")),
+            "capacity": to_float(row.get(columns["capacity"], "")),
+            "pen_notes": to_clean_string(row.get(columns["pen_notes"], "")),
+        })
+
+    return sorted(pens, key=lambda x: x["pen_name"].lower())
+
+
+def get_pen_by_id(pen_id: str):
+    pen_id = str(pen_id).strip()
+    pens = get_pens()
+
+    for pen in pens:
+        if pen["pen_id"] == pen_id:
+            return pen
+
+    return None
+
+
 def get_treatment_history_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
 
@@ -169,6 +203,72 @@ def get_treatment_history_for_pig(pig_id: str):
     return {
         "pig_id": pig_id,
         "tag_number": tag_number,
+        "count": len(history),
+        "history": history,
+    }
+
+
+def get_movement_history_for_pig(pig_id: str):
+    pig_id = str(pig_id).strip()
+
+    location_history_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["location_history"]
+    overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    tag_number = ""
+    current_pen_id = ""
+
+    overview_rows = get_all_records(overview_sheet)
+    for row in overview_rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id == pig_id:
+            tag_number = to_clean_string(row.get(columns["tag_number"], ""))
+            current_pen_id = to_clean_string(row.get("Current_Pen_ID", ""))
+            break
+
+    movement_rows = get_all_records(location_history_sheet)
+    history = []
+
+    for row in movement_rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id != pig_id:
+            continue
+
+        move_date = parse_sheet_date(row.get(columns["move_date"], ""))
+        from_pen_id = to_clean_string(row.get(columns["from_pen_id"], ""))
+        to_pen_id = to_clean_string(row.get(columns["to_pen_id"], ""))
+
+        from_pen = get_pen_by_id(from_pen_id)
+        to_pen = get_pen_by_id(to_pen_id)
+
+        history.append({
+            "move_log_id": to_clean_string(row.get(columns["move_log_id"], "")),
+            "pig_id": pig_id,
+            "tag_number": tag_number,
+            "move_date": move_date,
+            "move_date_display": format_date_for_json(row.get(columns["move_date"], "")),
+            "from_pen_id": from_pen_id,
+            "to_pen_id": to_pen_id,
+            "from_pen_name": from_pen["pen_name"] if from_pen else from_pen_id,
+            "to_pen_name": to_pen["pen_name"] if to_pen else to_pen_id,
+            "reason_for_move": to_clean_string(row.get(columns["reason_for_move"], "")),
+            "moved_by": to_clean_string(row.get(columns["moved_by"], "")),
+            "move_notes": to_clean_string(row.get(columns["move_notes"], "")),
+        })
+
+    history = sorted(
+        history,
+        key=lambda x: x["move_date"] if x["move_date"] else parse_sheet_date("1900-01-01"),
+        reverse=True
+    )
+
+    for entry in history:
+        entry.pop("move_date", None)
+
+    return {
+        "pig_id": pig_id,
+        "tag_number": tag_number,
+        "current_pen_id": current_pen_id,
         "count": len(history),
         "history": history,
     }
@@ -357,24 +457,24 @@ def save_treatment_entry(cleaned_data: dict):
         )
 
     row_values = [
-        generate_medical_log_id(),                                         # Medical_Log_ID
-        cleaned_data["pig_id"],                                            # Pig_ID
-        format_date_for_sheet(cleaned_data["treatment_date"]),             # Treatment_Date
-        cleaned_data["treatment_type"],                                    # Treatment_Type
-        cleaned_data["product_id"],                                        # Product_ID
-        product_name,                                                      # Product_Name
-        cleaned_data["dose"] if cleaned_data["dose"] is not None else "",  # Dose
-        dose_unit,                                                         # Dose_Unit
-        cleaned_data["route"],                                             # Route
-        cleaned_data["reason_for_treatment"],                              # Reason_For_Treatment
-        cleaned_data["batch_lot_number"],                                  # Batch_Lot_Number
-        withdrawal_days_int,                                               # Withdrawal_Days
-        format_date_for_sheet(withdrawal_end_date),                        # Withdrawal_End_Date
-        cleaned_data["given_by"],                                          # Given_By
-        cleaned_data["follow_up_required"],                                # Follow_Up_Required
-        format_date_for_sheet(cleaned_data["follow_up_date"]),             # Follow_Up_Date
-        cleaned_data["medical_notes"],                                     # Medical_Notes
-        format_date_for_sheet(cleaned_data["treatment_date"]),             # Created_At
+        generate_medical_log_id(),
+        cleaned_data["pig_id"],
+        format_date_for_sheet(cleaned_data["treatment_date"]),
+        cleaned_data["treatment_type"],
+        cleaned_data["product_id"],
+        product_name,
+        cleaned_data["dose"] if cleaned_data["dose"] is not None else "",
+        dose_unit,
+        cleaned_data["route"],
+        cleaned_data["reason_for_treatment"],
+        cleaned_data["batch_lot_number"],
+        withdrawal_days_int,
+        format_date_for_sheet(withdrawal_end_date),
+        cleaned_data["given_by"],
+        cleaned_data["follow_up_required"],
+        format_date_for_sheet(cleaned_data["follow_up_date"]),
+        cleaned_data["medical_notes"],
+        format_date_for_sheet(cleaned_data["treatment_date"]),
     ]
 
     append_row(sheet_name, row_values)
@@ -398,5 +498,43 @@ def save_treatment_entry(cleaned_data: dict):
             "follow_up_required": cleaned_data["follow_up_required"],
             "follow_up_date": format_date_for_json(cleaned_data["follow_up_date"]),
             "medical_notes": cleaned_data["medical_notes"],
+        }
+    }
+
+
+def save_movement_entry(cleaned_data: dict):
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["location_history"]
+
+    row_values = [
+        generate_move_log_id(),                                   # Move_Log_ID
+        cleaned_data["pig_id"],                                   # Pig_ID
+        format_date_for_sheet(cleaned_data["move_date"]),         # Move_Date
+        cleaned_data["from_pen_id"],                              # From_Pen_ID
+        cleaned_data["to_pen_id"],                                # To_Pen_ID
+        cleaned_data["reason_for_move"],                          # Reason_For_Move
+        cleaned_data["moved_by"],                                 # Moved_By
+        "",                                                       # Group_Batch_ID
+        cleaned_data["move_notes"],                               # Move_Notes
+        format_date_for_sheet(cleaned_data["move_date"]),         # Created_At
+    ]
+
+    append_row(sheet_name, row_values)
+
+    from_pen = get_pen_by_id(cleaned_data["from_pen_id"])
+    to_pen = get_pen_by_id(cleaned_data["to_pen_id"])
+
+    return {
+        "success": True,
+        "message": "Movement entry saved successfully.",
+        "saved": {
+            "pig_id": cleaned_data["pig_id"],
+            "move_date": format_date_for_json(cleaned_data["move_date"]),
+            "from_pen_id": cleaned_data["from_pen_id"],
+            "from_pen_name": from_pen["pen_name"] if from_pen else cleaned_data["from_pen_id"],
+            "to_pen_id": cleaned_data["to_pen_id"],
+            "to_pen_name": to_pen["pen_name"] if to_pen else cleaned_data["to_pen_id"],
+            "reason_for_move": cleaned_data["reason_for_move"],
+            "moved_by": cleaned_data["moved_by"],
+            "move_notes": cleaned_data["move_notes"],
         }
     }

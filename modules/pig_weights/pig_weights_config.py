@@ -4,6 +4,8 @@ PIG_WEIGHTS_CONFIG = {
         "weight_log": "WEIGHT_LOG",
         "medical_log": "MEDICAL_LOG",
         "product_register": "PRODUCT_REGISTER",
+        "location_history": "LOCATION_HISTORY",
+        "pen_register": "PEN_REGISTER",
     },
     "columns": {
         "pig_id": "Pig_ID",
@@ -44,5 +46,20 @@ PIG_WEIGHTS_CONFIG = {
         "batch_tracking_required": "Batch_Tracking_Required",
         "is_active": "Is_Active",
         "product_notes": "Product_Notes",
+
+        "move_log_id": "Move_Log_ID",
+        "move_date": "Move_Date",
+        "from_pen_id": "From_Pen_ID",
+        "to_pen_id": "To_Pen_ID",
+        "reason_for_move": "Reason_For_Move",
+        "moved_by": "Moved_By",
+        "group_batch_id": "Group_Batch_ID",
+        "move_notes": "Move_Notes",
+
+        "pen_id": "Pen_ID",
+        "pen_name": "Pen_Name",
+        "pen_type": "Pen_Type",
+        "capacity": "Capacity",
+        "pen_notes": "Pen_Notes",
     }
 }
