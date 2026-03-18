@@ -1,6 +1,7 @@
 from modules.pig_weights.pig_weights_service import (
     get_active_pigs,
     get_pig_detail,
+    get_weight_history_for_pig,
     get_latest_weight_for_pig,
     save_weight_entry,
 )
@@ -33,6 +34,17 @@ def get_pig_profile(pig_id: str):
     return {
         "success": True,
         "pig": pig
+    }, 200
+
+
+def get_pig_weight_history(pig_id: str):
+    history = get_weight_history_for_pig(pig_id)
+    return {
+        "success": True,
+        "pig_id": history["pig_id"],
+        "tag_number": history["tag_number"],
+        "count": history["count"],
+        "history": history["history"],
     }, 200
 
 

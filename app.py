@@ -20,6 +20,11 @@ def pig_detail_page(pig_id):
     return render_template("pig-detail.html")
 
 
+@app.route("/pig/<pig_id>/weights")
+def pig_weight_history_page(pig_id):
+    return render_template("pig-weight-history.html")
+
+
 @app.route("/pig-weights")
 def pig_weights_page():
     return render_template("pig-weights.html")

@@ -71,6 +71,86 @@ def get_pig_detail(pig_id: str):
     return None
 
 
+def get_weight_history_for_pig(pig_id: str):
+    pig_id = str(pig_id).strip()
+
+    weight_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
+    overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    tag_number = ""
+    overview_rows = get_all_records(overview_sheet)
+    for row in overview_rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id == pig_id:
+            tag_number = to_clean_string(row.get(columns["tag_number"], ""))
+            break
+
+    weight_rows = get_all_records(weight_log_sheet)
+
+    history = []
+    for row in weight_rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id != pig_id:
+            continue
+
+        weight_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+        weight_kg = to_float(row.get(columns["weight_kg"], ""))
+
+        history.append({
+            "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+            "pig_id": pig_id,
+            "tag_number": tag_number,
+            "weight_date": weight_date,
+            "weight_date_display": format_date_for_json(row.get(columns["weight_date"], "")),
+            "weight_kg": weight_kg,
+            "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
+            "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
+        })
+
+    history = sorted(
+        history,
+        key=lambda x: x["weight_date"] if x["weight_date"] else parse_sheet_date("1900-01-01"),
+        reverse=True
+    )
+
+    for index, entry in enumerate(history):
+        previous_entry = history[index + 1] if index + 1 < len(history) else None
+
+        if previous_entry and entry["weight_kg"] is not None and previous_entry["weight_kg"] is not None:
+            entry["difference_kg"] = round(entry["weight_kg"] - previous_entry["weight_kg"], 2)
+        else:
+            entry["difference_kg"] = None
+
+        if (
+            previous_entry
+            and entry["weight_date"]
+            and previous_entry["weight_date"]
+        ):
+            entry["days_since_previous"] = (entry["weight_date"] - previous_entry["weight_date"]).days
+        else:
+            entry["days_since_previous"] = None
+
+        if (
+            entry["difference_kg"] is not None
+            and entry["days_since_previous"] is not None
+            and entry["days_since_previous"] > 0
+        ):
+            entry["growth_rate_kg_day"] = round(entry["difference_kg"] / entry["days_since_previous"], 3)
+        else:
+            entry["growth_rate_kg_day"] = None
+
+        # remove raw date object from JSON payload
+        entry.pop("weight_date", None)
+
+    return {
+        "pig_id": pig_id,
+        "tag_number": tag_number,
+        "count": len(history),
+        "history": history,
+    }
+
+
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
 

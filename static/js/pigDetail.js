@@ -41,6 +41,7 @@ async function loadPigDetail() {
     document.getElementById("pig_detail_title").textContent = pig.tag_number || pig.pig_id;
     document.getElementById("pig_detail_subtitle").textContent = `Pig Profile • ${pig.pig_id}`;
     document.getElementById("record_weight_button").href = `/pig-weights?pig_id=${encodeURIComponent(pig.pig_id)}`;
+    document.getElementById("view_weight_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/weights`;
 
     setText("detail_tag_number", pig.tag_number);
     setText("detail_pig_id", pig.pig_id);

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Weight History</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="history_title">Weight History</h1>
+          <p id="history_subtitle">Loading weight history...</p>
+        </div>
+        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+      </div>
+
+      <div class="detail-actions">
+        <a id="history_profile_button" href="#" class="button-link button-link-secondary">Back to Pig Profile</a>
+        <a id="history_record_weight_button" href="#" class="button-link">Record Weight</a>
+      </div>
+
+      <div id="history_message" class="message-box hidden"></div>
+
+      <div id="history_summary" class="history-summary-grid"></div>
+
+      <div id="history_list" class="history-list"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/pigWeightHistory.js') }}"></script>
+</body>
+</html>
