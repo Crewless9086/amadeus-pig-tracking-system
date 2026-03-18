@@ -12,16 +12,66 @@
       <div class="page-header page-header-with-link">
         <div>
           <h1 id="litter_title">Litter Detail</h1>
-          <p id="litter_subtitle">This page is reserved for the next breeding step.</p>
+          <p id="litter_subtitle">Loading litter information...</p>
         </div>
         <a href="/pigs" class="secondary-link">← Back to Pig List</a>
       </div>
 
-      <div class="detail-card">
-        <span class="detail-label">Status</span>
-        <span class="detail-value">Litter view placeholder ready for Step 18.2</span>
+      <div id="litter_message" class="message-box hidden"></div>
+
+      <div class="detail-grid">
+        <div class="detail-card">
+          <span class="detail-label">Litter ID</span>
+          <span id="litter_id_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Total Piglets</span>
+          <span id="litter_count_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Male Count</span>
+          <span id="litter_male_count_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Female Count</span>
+          <span id="litter_female_count_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Active Piglets</span>
+          <span id="litter_active_count_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Average Weight</span>
+          <span id="litter_average_weight_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Mother</span>
+          <span id="litter_mother_value" class="detail-value">—</span>
+        </div>
+
+        <div class="detail-card">
+          <span class="detail-label">Father</span>
+          <span id="litter_father_value" class="detail-value">—</span>
+        </div>
       </div>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Piglets in this Litter</h2>
+          <p style="margin: 0; color: var(--text-soft);">Click a piglet to open its full profile.</p>
+        </div>
+      </div>
+
+      <div id="litter_piglets_list" class="pig-list-grid"></div>
     </div>
   </div>
+
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}"></script>
 </body>
 </html>

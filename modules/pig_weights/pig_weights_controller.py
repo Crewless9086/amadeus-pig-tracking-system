@@ -1,6 +1,7 @@
 from modules.pig_weights.pig_weights_service import (
     get_active_pigs,
     get_sales_availability,
+    get_litter_detail,
     get_pig_detail,
     get_products,
     get_pens,
@@ -40,6 +41,21 @@ def list_sales_availability():
         "count": len(pigs),
         "pigs": pigs
     }
+
+
+def get_litter_profile(litter_id: str):
+    litter = get_litter_detail(litter_id)
+
+    if not litter:
+        return {
+            "success": False,
+            "error": "Litter not found."
+        }, 404
+
+    return {
+        "success": True,
+        "litter": litter
+    }, 200
 
 
 def list_products():

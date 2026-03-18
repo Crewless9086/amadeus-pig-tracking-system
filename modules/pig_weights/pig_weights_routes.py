@@ -3,6 +3,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_status,
     list_active_pigs,
     list_sales_availability,
+    get_litter_profile,
     list_products,
     list_pens,
     get_pig_profile,
@@ -31,6 +32,12 @@ def pigs():
 @pig_weights_bp.route("/sales-availability", methods=["GET"])
 def sales_availability():
     return jsonify(list_sales_availability())
+
+
+@pig_weights_bp.route("/litter/<litter_id>/detail", methods=["GET"])
+def litter_detail(litter_id):
+    result, status_code = get_litter_profile(litter_id)
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/products", methods=["GET"])

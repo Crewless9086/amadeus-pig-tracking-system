@@ -70,6 +70,100 @@ def get_sales_availability():
     return sales_rows
 
 
+def get_litter_detail(litter_id: str):
+    litter_id = str(litter_id).strip()
+
+    if not litter_id:
+        return None
+
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    rows = get_all_records(sheet_name)
+
+    pig_lookup = {}
+    litter_rows = []
+
+    for row in rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id:
+            pig_lookup[row_pig_id] = row
+
+        row_litter_id = to_clean_string(row.get("Litter_ID", ""))
+        if row_litter_id == litter_id:
+            litter_rows.append(row)
+
+    if not litter_rows:
+        return None
+
+    first_row = litter_rows[0]
+
+    mother_pig_id = to_clean_string(first_row.get("Mother_Pig_ID", ""))
+    father_pig_id = to_clean_string(first_row.get("Father_Pig_ID", ""))
+
+    mother_row = pig_lookup.get(mother_pig_id) if mother_pig_id else None
+    father_row = pig_lookup.get(father_pig_id) if father_pig_id else None
+
+    mother_tag_number = to_clean_string(mother_row.get(columns["tag_number"], "")) if mother_row else ""
+    father_tag_number = to_clean_string(father_row.get(columns["tag_number"], "")) if father_row else ""
+
+    piglets = []
+    male_count = 0
+    female_count = 0
+    active_count = 0
+    weight_values = []
+
+    for row in litter_rows:
+        sex = to_clean_string(row.get("Sex", ""))
+        status = to_clean_string(row.get(columns["status"], ""))
+        current_weight = to_float(row.get(columns["current_weight"], ""))
+
+        if sex == "Male":
+            male_count += 1
+        elif sex == "Female":
+            female_count += 1
+
+        if status == "Active":
+            active_count += 1
+
+        if current_weight is not None:
+            weight_values.append(current_weight)
+
+        piglets.append({
+            "pig_id": to_clean_string(row.get(columns["pig_id"], "")),
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "sex": sex,
+            "status": status,
+            "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
+            "date_of_birth": format_date_for_json(row.get("Date_Of_Birth", "")),
+            "age_days": row.get("Age_Days", ""),
+            "current_weight_kg": current_weight,
+            "calculated_stage": to_clean_string(row.get("Calculated_Stage", "")),
+            "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
+        })
+
+    piglets = sorted(
+        piglets,
+        key=lambda x: (x["tag_number"] or x["pig_id"]).lower()
+    )
+
+    average_weight = round(sum(weight_values) / len(weight_values), 2) if weight_values else None
+
+    return {
+        "litter_id": litter_id,
+        "mother_pig_id": mother_pig_id,
+        "mother_tag_number": mother_tag_number,
+        "father_pig_id": father_pig_id,
+        "father_tag_number": father_tag_number,
+        "count": len(piglets),
+        "male_count": male_count,
+        "female_count": female_count,
+        "active_count": active_count,
+        "average_weight_kg": average_weight,
+        "piglets": piglets,
+    }
+
+
 def get_pig_detail(pig_id: str):
     pig_id = str(pig_id).strip()
 
@@ -78,7 +172,6 @@ def get_pig_detail(pig_id: str):
 
     rows = get_all_records(sheet_name)
 
-    # Build quick lookup for parent/tag resolution
     pig_lookup = {}
     for row in rows:
         row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
