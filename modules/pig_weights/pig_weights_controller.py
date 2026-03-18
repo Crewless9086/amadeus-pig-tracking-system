@@ -1,5 +1,6 @@
 from modules.pig_weights.pig_weights_service import (
     get_active_pigs,
+    get_sales_availability,
     get_pig_detail,
     get_products,
     get_pens,
@@ -27,6 +28,14 @@ def get_status():
 
 def list_active_pigs():
     pigs = get_active_pigs()
+    return {
+        "count": len(pigs),
+        "pigs": pigs
+    }
+
+
+def list_sales_availability():
+    pigs = get_sales_availability()
     return {
         "count": len(pigs),
         "pigs": pigs

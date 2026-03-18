@@ -6,6 +6,7 @@ PIG_WEIGHTS_CONFIG = {
         "product_register": "PRODUCT_REGISTER",
         "location_history": "LOCATION_HISTORY",
         "pen_register": "PEN_REGISTER",
+        "sales_availability": "SALES_AVAILABILITY",
     },
     "columns": {
         "pig_id": "Pig_ID",
@@ -61,5 +62,19 @@ PIG_WEIGHTS_CONFIG = {
         "pen_type": "Pen_Type",
         "capacity": "Capacity",
         "pen_notes": "Pen_Notes",
+
+        "age_days": "Age_Days",
+        "sex": "Sex",
+        "average_daily_gain": "Average_Daily_Gain_Kg",
+        "calculated_stage": "Calculated_Stage",
+        "weight_band": "Weight_Band",
+        "current_pen_id": "Current_Pen_ID",
+        "withdrawal_clear": "Withdrawal_Clear",
+        "reserved_status": "Reserved_Status",
+        "reserved_for_order_id": "Reserved_For_Order_ID",
+        "available_for_sale": "Available_For_Sale",
+        "sale_category": "Sale_Category",
+        "suggested_price_category": "Suggested_Price_Category",
+        "sales_notes": "Sales_Notes",
     }
 }

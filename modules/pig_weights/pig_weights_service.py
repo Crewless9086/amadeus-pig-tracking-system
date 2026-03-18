@@ -36,6 +36,40 @@ def get_active_pigs():
     return active_pigs
 
 
+def get_sales_availability():
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    rows = get_all_records(sheet_name)
+    sales_rows = []
+
+    for row in rows:
+        sales_rows.append({
+            "pig_id": to_clean_string(row.get(columns["pig_id"], "")),
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "sex": to_clean_string(row.get(columns["sex"], "")),
+            "date_of_birth": format_date_for_json(row.get("Date_Of_Birth", "")),
+            "age_days": row.get(columns["age_days"], ""),
+            "current_weight_kg": to_float(row.get(columns["current_weight"], "")),
+            "last_weight_date": format_date_for_json(row.get(columns["last_weight_date"], "")),
+            "average_daily_gain_kg": to_float(row.get(columns["average_daily_gain"], "")),
+            "calculated_stage": to_clean_string(row.get(columns["calculated_stage"], "")),
+            "weight_band": to_clean_string(row.get(columns["weight_band"], "")),
+            "current_pen_id": to_clean_string(row.get(columns["current_pen_id"], "")),
+            "status": to_clean_string(row.get(columns["status"], "")),
+            "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
+            "withdrawal_clear": to_clean_string(row.get(columns["withdrawal_clear"], "")),
+            "reserved_status": to_clean_string(row.get(columns["reserved_status"], "")),
+            "reserved_for_order_id": to_clean_string(row.get(columns["reserved_for_order_id"], "")),
+            "available_for_sale": to_clean_string(row.get(columns["available_for_sale"], "")),
+            "sale_category": to_clean_string(row.get(columns["sale_category"], "")),
+            "suggested_price_category": to_clean_string(row.get(columns["suggested_price_category"], "")),
+            "sales_notes": to_clean_string(row.get(columns["sales_notes"], "")),
+        })
+
+    return sales_rows
+
+
 def get_pig_detail(pig_id: str):
     pig_id = str(pig_id).strip()
 
@@ -506,16 +540,16 @@ def save_movement_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["location_history"]
 
     row_values = [
-        generate_move_log_id(),                                   # Move_Log_ID
-        cleaned_data["pig_id"],                                   # Pig_ID
-        format_date_for_sheet(cleaned_data["move_date"]),         # Move_Date
-        cleaned_data["from_pen_id"],                              # From_Pen_ID
-        cleaned_data["to_pen_id"],                                # To_Pen_ID
-        cleaned_data["reason_for_move"],                          # Reason_For_Move
-        cleaned_data["moved_by"],                                 # Moved_By
-        "",                                                       # Group_Batch_ID
-        cleaned_data["move_notes"],                               # Move_Notes
-        format_date_for_sheet(cleaned_data["move_date"]),         # Created_At
+        generate_move_log_id(),
+        cleaned_data["pig_id"],
+        format_date_for_sheet(cleaned_data["move_date"]),
+        cleaned_data["from_pen_id"],
+        cleaned_data["to_pen_id"],
+        cleaned_data["reason_for_move"],
+        cleaned_data["moved_by"],
+        "",
+        cleaned_data["move_notes"],
+        format_date_for_sheet(cleaned_data["move_date"]),
     ]
 
     append_row(sheet_name, row_values)

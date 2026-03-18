@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Sales Availability</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Sales Availability</h1>
+          <p>View commercial stock, filter available pigs, and prepare for future orders.</p>
+        </div>
+        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+      </div>
+
+      <div id="sales_summary" class="history-summary-grid"></div>
+
+      <div class="sales-filters-grid">
+        <div class="form-group">
+          <label for="sales_search">Search</label>
+          <input type="text" id="sales_search" placeholder="Search by tag or pig ID..." />
+        </div>
+
+        <div class="form-group">
+          <label for="sales_stage_filter">Stage</label>
+          <select id="sales_stage_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales_weight_band_filter">Weight Band</label>
+          <select id="sales_weight_band_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales_category_filter">Sale Category</label>
+          <select id="sales_category_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales_available_filter">Available For Sale</label>
+          <select id="sales_available_filter">
+            <option value="">All</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales_reserved_filter">Reserved Status</label>
+          <select id="sales_reserved_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales_withdrawal_filter">Withdrawal Clear</label>
+          <select id="sales_withdrawal_filter">
+            <option value="">All</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="detail-actions compact-actions">
+        <button type="button" id="clear_sales_filters_button" class="button-link button-link-secondary">
+          Clear Filters
+        </button>
+      </div>
+
+      <div id="sales_message" class="message-box hidden"></div>
+      <div id="sales_list" class="pig-list-grid"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/salesAvailability.js') }}"></script>
+</body>
+</html>

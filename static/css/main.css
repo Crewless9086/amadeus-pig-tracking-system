@@ -105,7 +105,8 @@ body {
   gap: 8px;
 }
 
-.form-grid {
+.form-grid,
+.sales-filters-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
@@ -207,6 +208,10 @@ textarea {
   margin-top: 8px;
   margin-bottom: 18px;
   flex-wrap: wrap;
+}
+
+.compact-actions {
+  margin: 0;
 }
 
 button,
@@ -343,6 +348,13 @@ button:disabled {
   color: var(--text-main);
 }
 
+.sales-meta-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .history-list {
   display: flex;
   flex-direction: column;
@@ -423,10 +435,12 @@ button:disabled {
   }
 
   .form-grid,
+  .sales-filters-grid,
   .info-grid,
   .detail-grid,
   .history-summary-grid,
-  .history-item-grid {
+  .history-item-grid,
+  .sales-meta-grid {
     grid-template-columns: 1fr;
   }
 
