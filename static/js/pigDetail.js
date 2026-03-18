@@ -42,6 +42,8 @@ async function loadPigDetail() {
     document.getElementById("pig_detail_subtitle").textContent = `Pig Profile • ${pig.pig_id}`;
     document.getElementById("record_weight_button").href = `/pig-weights?pig_id=${encodeURIComponent(pig.pig_id)}`;
     document.getElementById("view_weight_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/weights`;
+    document.getElementById("record_treatment_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/treatment`;
+    document.getElementById("view_treatment_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/treatments`;
 
     setText("detail_tag_number", pig.tag_number);
     setText("detail_pig_id", pig.pig_id);
@@ -59,6 +61,10 @@ async function loadPigDetail() {
     setText("detail_weight_band", pig.weight_band);
     setText("detail_sale_ready", pig.is_sale_ready);
     setText("detail_reserved_status", pig.reserved_status);
+    setText("detail_last_treatment_date", pig.last_treatment_date);
+    setText("detail_last_product_name", pig.last_product_name);
+    setText("detail_withdrawal_end_date", pig.current_withdrawal_end_date);
+    setText("detail_withdrawal_clear", pig.withdrawal_clear);
     setText("detail_mother", pig.mother_pig_id);
     setText("detail_father", pig.father_pig_id);
     setText("detail_litter", pig.litter_id);

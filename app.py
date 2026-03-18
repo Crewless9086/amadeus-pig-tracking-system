@@ -25,6 +25,16 @@ def pig_weight_history_page(pig_id):
     return render_template("pig-weight-history.html")
 
 
+@app.route("/pig/<pig_id>/treatment")
+def pig_treatment_page(pig_id):
+    return render_template("pig-treatment.html")
+
+
+@app.route("/pig/<pig_id>/treatments")
+def pig_treatment_history_page(pig_id):
+    return render_template("pig-treatment-history.html")
+
+
 @app.route("/pig-weights")
 def pig_weights_page():
     return render_template("pig-weights.html")

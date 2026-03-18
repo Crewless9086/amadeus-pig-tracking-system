@@ -1,11 +1,17 @@
 from modules.pig_weights.pig_weights_service import (
     get_active_pigs,
     get_pig_detail,
+    get_products,
+    get_treatment_history_for_pig,
     get_weight_history_for_pig,
     get_latest_weight_for_pig,
     save_weight_entry,
+    save_treatment_entry,
 )
-from modules.pig_weights.pig_weights_validation import validate_weight_payload
+from modules.pig_weights.pig_weights_validation import (
+    validate_weight_payload,
+    validate_treatment_payload,
+)
 
 
 def get_status():
@@ -23,6 +29,14 @@ def list_active_pigs():
     }
 
 
+def list_products():
+    products = get_products()
+    return {
+        "count": len(products),
+        "products": products
+    }
+
+
 def get_pig_profile(pig_id: str):
     pig = get_pig_detail(pig_id)
     if not pig:
@@ -34,6 +48,17 @@ def get_pig_profile(pig_id: str):
     return {
         "success": True,
         "pig": pig
+    }, 200
+
+
+def get_pig_treatment_history(pig_id: str):
+    history = get_treatment_history_for_pig(pig_id)
+    return {
+        "success": True,
+        "pig_id": history["pig_id"],
+        "tag_number": history["tag_number"],
+        "count": history["count"],
+        "history": history["history"],
     }, 200
 
 
@@ -62,4 +87,17 @@ def create_weight_entry(payload: dict):
         }, 400
 
     result = save_weight_entry(validation["cleaned_data"])
+    return result, 201
+
+
+def create_treatment_entry(payload: dict):
+    validation = validate_treatment_payload(payload)
+
+    if not validation["is_valid"]:
+        return {
+            "success": False,
+            "errors": validation["errors"]
+        }, 400
+
+    result = save_treatment_entry(validation["cleaned_data"])
     return result, 201

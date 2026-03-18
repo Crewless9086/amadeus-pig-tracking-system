@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Record Treatment</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="treatment_title">Record Treatment</h1>
+          <p id="treatment_subtitle">Loading pig and product information...</p>
+        </div>
+        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+      </div>
+
+      <div class="detail-actions">
+        <a id="treatment_profile_button" href="#" class="button-link button-link-secondary">Back to Pig Profile</a>
+        <a id="treatment_history_button" href="#" class="button-link button-link-secondary">View Treatment History</a>
+      </div>
+
+      <form id="pig-treatment-form" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="pig_display">Pig</label>
+            <input type="text" id="pig_display" disabled />
+          </div>
+
+          <div class="form-group">
+            <label for="treatment_date">Treatment Date</label>
+            <input type="date" id="treatment_date" name="treatment_date" required />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="treatment_type">Treatment Type</label>
+            <select id="treatment_type" required>
+              <option value="">Select treatment type</option>
+              <option value="Vaccination">Vaccination</option>
+              <option value="Deworming">Deworming</option>
+              <option value="Antibiotic">Antibiotic</option>
+              <option value="Iron">Iron</option>
+              <option value="Vitamin">Vitamin</option>
+              <option value="Injury_Treatment">Injury Treatment</option>
+              <option value="Supportive_Care">Supportive Care</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="product_id">Product</label>
+            <select id="product_id" required>
+              <option value="">Loading products...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-card">
+            <span class="info-title">Default Dose</span>
+            <span id="product_default_dose" class="info-value">—</span>
+          </div>
+
+          <div class="info-card">
+            <span class="info-title">Dose Unit</span>
+            <span id="product_dose_unit" class="info-value">—</span>
+          </div>
+
+          <div class="info-card">
+            <span class="info-title">Withdrawal Days</span>
+            <span id="product_withdrawal_days" class="info-value">—</span>
+          </div>
+
+          <div class="info-card">
+            <span class="info-title">Supplier</span>
+            <span id="product_supplier" class="info-value">—</span>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="dose">Dose</label>
+            <input type="number" step="0.01" id="dose" />
+          </div>
+
+          <div class="form-group">
+            <label for="dose_unit">Dose Unit</label>
+            <input type="text" id="dose_unit" />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="route">Route</label>
+            <select id="route">
+              <option value="">Select route</option>
+              <option value="Oral">Oral</option>
+              <option value="IM">IM</option>
+              <option value="SC">SC</option>
+              <option value="Topical">Topical</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="given_by">Given By</label>
+            <input type="text" id="given_by" value="WebApp" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="reason_for_treatment">Reason For Treatment</label>
+          <input type="text" id="reason_for_treatment" />
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="batch_lot_number">Batch / Lot Number</label>
+            <input type="text" id="batch_lot_number" />
+          </div>
+
+          <div class="form-group">
+            <label for="follow_up_required">Follow-Up Required</label>
+            <select id="follow_up_required">
+              <option value="">Select option</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="follow_up_date">Follow-Up Date</label>
+          <input type="date" id="follow_up_date" />
+        </div>
+
+        <div class="form-group">
+          <label for="medical_notes">Medical Notes</label>
+          <textarea id="medical_notes" rows="4" placeholder="Optional notes..."></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" id="treatment_submit_button">Save Treatment</button>
+        </div>
+
+        <div id="treatment_message_box" class="message-box hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/pigTreatment.form.js') }}"></script>
+</body>
+</html>

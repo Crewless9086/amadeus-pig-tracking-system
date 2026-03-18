@@ -2,6 +2,8 @@ PIG_WEIGHTS_CONFIG = {
     "sheet_names": {
         "pig_overview": "PIG_OVERVIEW",
         "weight_log": "WEIGHT_LOG",
+        "medical_log": "MEDICAL_LOG",
+        "product_register": "PRODUCT_REGISTER",
     },
     "columns": {
         "pig_id": "Pig_ID",
@@ -10,10 +12,37 @@ PIG_WEIGHTS_CONFIG = {
         "on_farm": "On_Farm",
         "current_weight": "Current_Weight_Kg",
         "last_weight_date": "Last_Weight_Date",
+
         "weight_log_id": "Weight_Log_ID",
         "weight_date": "Weight_Date",
         "weight_kg": "Weight_Kg",
         "condition_notes": "Condition_Notes",
         "weighed_by": "Weighed_By",
+
+        "medical_log_id": "Medical_Log_ID",
+        "treatment_date": "Treatment_Date",
+        "treatment_type": "Treatment_Type",
+        "product_id": "Product_ID",
+        "product_name": "Product_Name",
+        "dose": "Dose",
+        "dose_unit": "Dose_Unit",
+        "route": "Route",
+        "reason_for_treatment": "Reason_For_Treatment",
+        "batch_lot_number": "Batch_Lot_Number",
+        "withdrawal_days": "Withdrawal_Days",
+        "withdrawal_end_date": "Withdrawal_End_Date",
+        "given_by": "Given_By",
+        "follow_up_required": "Follow_Up_Required",
+        "follow_up_date": "Follow_Up_Date",
+        "medical_notes": "Medical_Notes",
+        "created_at": "Created_At",
+
+        "product_category": "Product_Category",
+        "default_dose": "Default_Dose",
+        "default_withdrawal_days": "Default_Withdrawal_Days",
+        "supplier": "Supplier",
+        "batch_tracking_required": "Batch_Tracking_Required",
+        "is_active": "Is_Active",
+        "product_notes": "Product_Notes",
     }
 }

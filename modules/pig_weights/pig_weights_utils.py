@@ -1,4 +1,5 @@
 from datetime import datetime, date
+import uuid
 
 
 def to_clean_string(value):
@@ -57,8 +58,6 @@ def format_date_for_json(value):
         return ""
     return parsed.isoformat()
 
-import uuid
-
 
 def format_date_for_sheet(value):
     if not value:
@@ -73,3 +72,7 @@ def format_date_for_sheet(value):
 
 def generate_weight_log_id():
     return f"WGT-{uuid.uuid4().hex[:8].upper()}"
+
+
+def generate_medical_log_id():
+    return f"MED-{uuid.uuid4().hex[:8].upper()}"
