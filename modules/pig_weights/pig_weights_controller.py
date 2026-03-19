@@ -1,6 +1,7 @@
 from modules.pig_weights.pig_weights_service import (
     get_active_pigs,
     get_sales_availability,
+    get_family_tree,
     get_litter_detail,
     get_pig_detail,
     get_products,
@@ -41,6 +42,21 @@ def list_sales_availability():
         "count": len(pigs),
         "pigs": pigs
     }
+
+
+def get_family_tree_profile(pig_id: str):
+    tree = get_family_tree(pig_id)
+
+    if not tree:
+        return {
+            "success": False,
+            "error": "Family tree not found."
+        }, 404
+
+    return {
+        "success": True,
+        "tree": tree
+    }, 200
 
 
 def get_litter_profile(litter_id: str):

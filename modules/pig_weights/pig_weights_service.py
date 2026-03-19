@@ -12,6 +12,31 @@ from modules.pig_weights.pig_weights_utils import (
 )
 
 
+def _build_pig_lookup(rows, columns):
+    pig_lookup = {}
+    for row in rows:
+        row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if row_pig_id:
+            pig_lookup[row_pig_id] = row
+    return pig_lookup
+
+
+def _pig_summary_card(row, columns):
+    return {
+        "pig_id": to_clean_string(row.get(columns["pig_id"], "")),
+        "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+        "sex": to_clean_string(row.get("Sex", "")),
+        "status": to_clean_string(row.get(columns["status"], "")),
+        "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
+        "date_of_birth": format_date_for_json(row.get("Date_Of_Birth", "")),
+        "age_days": row.get("Age_Days", ""),
+        "current_weight_kg": to_float(row.get(columns["current_weight"], "")),
+        "calculated_stage": to_clean_string(row.get("Calculated_Stage", "")),
+        "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
+        "litter_id": to_clean_string(row.get("Litter_ID", "")),
+    }
+
+
 def get_active_pigs():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -68,6 +93,55 @@ def get_sales_availability():
         })
 
     return sales_rows
+
+
+def get_family_tree(pig_id: str):
+    pig_id = str(pig_id).strip()
+
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    rows = get_all_records(sheet_name)
+
+    pig_lookup = _build_pig_lookup(rows, columns)
+    current_row = pig_lookup.get(pig_id)
+
+    if not current_row:
+        return None
+
+    current_pig = _pig_summary_card(current_row, columns)
+
+    mother_pig_id = to_clean_string(current_row.get("Mother_Pig_ID", ""))
+    father_pig_id = to_clean_string(current_row.get("Father_Pig_ID", ""))
+    litter_id = to_clean_string(current_row.get("Litter_ID", ""))
+
+    mother_row = pig_lookup.get(mother_pig_id) if mother_pig_id else None
+    father_row = pig_lookup.get(father_pig_id) if father_pig_id else None
+
+    mother = _pig_summary_card(mother_row, columns) if mother_row else None
+    father = _pig_summary_card(father_row, columns) if father_row else None
+
+    siblings = []
+    if litter_id:
+        for row in rows:
+            row_litter_id = to_clean_string(row.get("Litter_ID", ""))
+            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+            if row_litter_id == litter_id and row_pig_id != pig_id:
+                siblings.append(_pig_summary_card(row, columns))
+
+    siblings = sorted(
+        siblings,
+        key=lambda x: (x["tag_number"] or x["pig_id"]).lower()
+    )
+
+    return {
+        "pig_id": pig_id,
+        "current_pig": current_pig,
+        "mother": mother,
+        "father": father,
+        "siblings": siblings,
+        "litter_id": litter_id,
+        "sibling_count": len(siblings),
+    }
 
 
 def get_litter_detail(litter_id: str):

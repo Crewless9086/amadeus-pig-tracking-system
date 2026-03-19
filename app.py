@@ -25,6 +25,11 @@ def pig_detail_page(pig_id):
     return render_template("pig-detail.html")
 
 
+@app.route("/pig/<pig_id>/family-tree")
+def family_tree_page(pig_id):
+    return render_template("family-tree.html")
+
+
 @app.route("/pig/<pig_id>/weights")
 def pig_weight_history_page(pig_id):
     return render_template("pig-weight-history.html")

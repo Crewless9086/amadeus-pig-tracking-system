@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Family Tree</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="family_tree_title">Family Tree</h1>
+          <p id="family_tree_subtitle">Loading family structure...</p>
+        </div>
+        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+      </div>
+
+      <div class="detail-actions">
+        <a id="family_tree_profile_button" href="#" class="button-link button-link-secondary">Back to Pig Profile</a>
+      </div>
+
+      <div id="family_tree_message" class="message-box hidden"></div>
+
+      <div class="family-tree-section">
+        <div class="family-tree-row family-tree-parents">
+          <div id="family_tree_mother"></div>
+          <div id="family_tree_father"></div>
+        </div>
+
+        <div class="family-tree-connector">↓</div>
+
+        <div class="family-tree-row family-tree-current">
+          <div id="family_tree_current"></div>
+        </div>
+      </div>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Siblings</h2>
+          <p id="family_tree_sibling_count" style="margin: 0; color: var(--text-soft);">Loading siblings...</p>
+        </div>
+      </div>
+
+      <div id="family_tree_siblings" class="pig-list-grid"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/familyTree.js') }}"></script>
+</body>
+</html>
