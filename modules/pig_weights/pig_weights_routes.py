@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from modules.pig_weights.pig_weights_controller import (
     get_status,
+    get_dashboard_data,
     list_active_pigs,
     list_sales_availability,
     get_family_tree_profile,
@@ -23,6 +24,11 @@ pig_weights_bp = Blueprint("pig_weights", __name__)
 @pig_weights_bp.route("/status", methods=["GET"])
 def status():
     return jsonify(get_status())
+
+
+@pig_weights_bp.route("/dashboard", methods=["GET"])
+def dashboard():
+    return jsonify(get_dashboard_data())
 
 
 @pig_weights_bp.route("/pigs", methods=["GET"])

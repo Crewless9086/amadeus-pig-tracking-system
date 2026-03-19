@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Farm Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header">
+        <h1>Amadeus Farm Dashboard</h1>
+        <p>Main control page for pig records, breeding, sales, and operational actions.</p>
+      </div>
+
+      <div id="dashboard_message" class="message-box hidden"></div>
+
+      <div id="dashboard_summary" class="history-summary-grid"></div>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Quick Actions</h2>
+          <p style="margin: 0; color: var(--text-soft);">Use these shortcuts to jump straight into the main workflows.</p>
+        </div>
+      </div>
+
+      <div class="dashboard-actions-grid">
+        <a href="/pigs" class="dashboard-action-card">
+          <span class="detail-label">View</span>
+          <span class="detail-value">Pig List</span>
+        </a>
+
+        <a href="/sales-availability" class="dashboard-action-card">
+          <span class="detail-label">View</span>
+          <span class="detail-value">Sales Availability</span>
+        </a>
+
+        <a href="/pig-weights" class="dashboard-action-card">
+          <span class="detail-label">Action</span>
+          <span class="detail-value">Record Weight</span>
+        </a>
+
+        <a href="/pigs" class="dashboard-action-card">
+          <span class="detail-label">Action</span>
+          <span class="detail-value">Open Pig Profiles</span>
+        </a>
+
+        <a href="/pigs" class="dashboard-action-card">
+          <span class="detail-label">Breeding</span>
+          <span class="detail-value">Family & Litters</span>
+        </a>
+
+        <a href="/sales-availability" class="dashboard-action-card">
+          <span class="detail-label">Commercial</span>
+          <span class="detail-value">Stock Readiness</span>
+        </a>
+      </div>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Navigation</h2>
+          <p style="margin: 0; color: var(--text-soft);">Core routes inside the app.</p>
+        </div>
+      </div>
+
+      <div class="dashboard-nav-links">
+        <a href="/" class="secondary-link">Dashboard</a>
+        <a href="/pigs" class="secondary-link">Pig List</a>
+        <a href="/sales-availability" class="secondary-link">Sales Availability</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

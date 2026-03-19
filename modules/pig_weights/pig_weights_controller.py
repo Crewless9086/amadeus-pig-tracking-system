@@ -1,4 +1,5 @@
 from modules.pig_weights.pig_weights_service import (
+    get_dashboard_summary,
     get_active_pigs,
     get_sales_availability,
     get_family_tree,
@@ -25,6 +26,13 @@ def get_status():
     return {
         "module": "pig_weights",
         "status": "running"
+    }
+
+
+def get_dashboard_data():
+    return {
+        "success": True,
+        "summary": get_dashboard_summary()
     }
 
 

@@ -7,7 +7,7 @@ app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return render_template("dashboard.html")
 
 
 @app.route("/pigs")

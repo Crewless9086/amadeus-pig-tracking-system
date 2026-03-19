@@ -37,6 +37,56 @@ def _pig_summary_card(row, columns):
     }
 
 
+def get_dashboard_summary():
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
+
+    active_pigs = 0
+    on_farm_pigs = 0
+
+    for row in pig_rows:
+        status = to_clean_string(row.get(columns["status"], ""))
+        on_farm = to_clean_string(row.get(columns["on_farm"], ""))
+
+        if status == "Active":
+            active_pigs += 1
+        if on_farm == "Yes":
+            on_farm_pigs += 1
+
+    sale_ready_count = 0
+    available_for_sale_count = 0
+    reserved_count = 0
+    withdrawal_hold_count = 0
+
+    for row in sales_rows:
+        available_for_sale = to_clean_string(row.get(columns["available_for_sale"], ""))
+        reserved_status = to_clean_string(row.get(columns["reserved_status"], ""))
+        withdrawal_clear = to_clean_string(row.get(columns["withdrawal_clear"], ""))
+
+        if available_for_sale == "Yes":
+            available_for_sale_count += 1
+
+        if reserved_status == "Reserved":
+            reserved_count += 1
+
+        if withdrawal_clear == "No":
+            withdrawal_hold_count += 1
+
+        if available_for_sale == "Yes" and withdrawal_clear == "Yes":
+            sale_ready_count += 1
+
+    return {
+        "active_pigs": active_pigs,
+        "on_farm_pigs": on_farm_pigs,
+        "sale_ready_pigs": sale_ready_count,
+        "available_for_sale_pigs": available_for_sale_count,
+        "reserved_pigs": reserved_count,
+        "withdrawal_hold_pigs": withdrawal_hold_count,
+    }
+
+
 def get_active_pigs():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
