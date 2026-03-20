@@ -1,3 +1,4 @@
+import os
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -6,16 +7,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Use your local service account file
-GOOGLE_SERVICE_ACCOUNT_JSON = "service_account.json"
-
-# Use your exact Google Sheet name here
-GOOGLE_SHEETS_SPREADSHEET_NAME = "AMADEUS PIG TRACKING SYSTEM"
+# Render / production env vars already in use
+GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "service_account.json").strip()
+GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "AMADEUS PIG TRACKING SYSTEM").strip()
 
 
 def _get_client():
     creds = Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_JSON,
+        GOOGLE_SERVICE_ACCOUNT_FILE,
         scopes=SCOPES
     )
     return gspread.authorize(creds)
@@ -23,7 +22,7 @@ def _get_client():
 
 def _get_spreadsheet():
     client = _get_client()
-    return client.open(GOOGLE_SHEETS_SPREADSHEET_NAME)
+    return client.open(GOOGLE_SHEET_NAME)
 
 
 def get_worksheet(sheet_name: str):
