@@ -1,5 +1,6 @@
 from modules.pig_weights.pig_weights_service import (
     get_dashboard_summary,
+    get_parent_options,
     get_active_pigs,
     get_sales_availability,
     get_family_tree,
@@ -11,6 +12,10 @@ from modules.pig_weights.pig_weights_service import (
     get_movement_history_for_pig,
     get_weight_history_for_pig,
     get_latest_weight_for_pig,
+    save_new_pig,
+    save_new_product,
+    save_new_pen,
+    save_new_litter,
     save_weight_entry,
     save_treatment_entry,
     save_movement_entry,
@@ -19,6 +24,10 @@ from modules.pig_weights.pig_weights_validation import (
     validate_weight_payload,
     validate_treatment_payload,
     validate_movement_payload,
+    validate_new_pig_payload,
+    validate_new_product_payload,
+    validate_new_pen_payload,
+    validate_new_litter_payload,
 )
 
 
@@ -33,6 +42,13 @@ def get_dashboard_data():
     return {
         "success": True,
         "summary": get_dashboard_summary()
+    }
+
+
+def list_parent_options():
+    return {
+        "success": True,
+        "options": get_parent_options()
     }
 
 
@@ -148,6 +164,38 @@ def get_pig_weight_history(pig_id: str):
 
 def get_latest_weight(pig_id: str):
     return get_latest_weight_for_pig(pig_id)
+
+
+def create_new_pig(payload: dict):
+    validation = validate_new_pig_payload(payload)
+    if not validation["is_valid"]:
+        return {"success": False, "errors": validation["errors"]}, 400
+    result = save_new_pig(validation["cleaned_data"])
+    return result, 201
+
+
+def create_new_product(payload: dict):
+    validation = validate_new_product_payload(payload)
+    if not validation["is_valid"]:
+        return {"success": False, "errors": validation["errors"]}, 400
+    result = save_new_product(validation["cleaned_data"])
+    return result, 201
+
+
+def create_new_pen(payload: dict):
+    validation = validate_new_pen_payload(payload)
+    if not validation["is_valid"]:
+        return {"success": False, "errors": validation["errors"]}, 400
+    result = save_new_pen(validation["cleaned_data"])
+    return result, 201
+
+
+def create_new_litter(payload: dict):
+    validation = validate_new_litter_payload(payload)
+    if not validation["is_valid"]:
+        return {"success": False, "errors": validation["errors"]}, 400
+    result = save_new_litter(validation["cleaned_data"])
+    return result, 201
 
 
 def create_weight_entry(payload: dict):

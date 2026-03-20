@@ -80,3 +80,19 @@ def generate_medical_log_id():
 
 def generate_move_log_id():
     return f"MOV-{uuid.uuid4().hex[:8].upper()}"
+
+
+def generate_pig_id():
+    return f"PIG-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}"
+
+
+def generate_product_id():
+    return f"PRD-{uuid.uuid4().hex[:6].upper()}"
+
+
+def generate_pen_id():
+    return f"PEN-{uuid.uuid4().hex[:6].upper()}"
+
+
+def generate_litter_id():
+    return f"LIT-{datetime.now().year}-{uuid.uuid4().hex[:4].upper()}"

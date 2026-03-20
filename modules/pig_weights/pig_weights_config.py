@@ -1,12 +1,14 @@
 PIG_WEIGHTS_CONFIG = {
     "sheet_names": {
         "pig_overview": "PIG_OVERVIEW",
+        "pig_master": "PIG_MASTER",
         "weight_log": "WEIGHT_LOG",
         "medical_log": "MEDICAL_LOG",
         "product_register": "PRODUCT_REGISTER",
         "location_history": "LOCATION_HISTORY",
         "pen_register": "PEN_REGISTER",
         "sales_availability": "SALES_AVAILABILITY",
+        "litter_register": "LITTERS",
     },
     "columns": {
         "pig_id": "Pig_ID",

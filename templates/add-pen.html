@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Add Pen</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Add Pen</h1>
+          <p>Create a new pen in PEN_REGISTER.</p>
+        </div>
+        <a href="/" class="secondary-link">← Dashboard</a>
+      </div>
+
+      <form id="addPenForm" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="pen_name">Pen Name</label>
+            <input id="pen_name" name="pen_name" type="text" required />
+          </div>
+
+          <div class="form-group">
+            <label for="pen_type">Pen Type</label>
+            <select id="pen_type" name="pen_type" required>
+              <option value="">Select</option>
+              <option value="Farrowing">Farrowing</option>
+              <option value="Nursery">Nursery</option>
+              <option value="Weaner">Weaner</option>
+              <option value="Grower">Grower</option>
+              <option value="Finisher">Finisher</option>
+              <option value="Gilt">Gilt</option>
+              <option value="Sow">Sow</option>
+              <option value="Boar">Boar</option>
+              <option value="Isolation">Isolation</option>
+              <option value="Holding">Holding</option>
+              <option value="Mixed">Mixed</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="capacity">Capacity</label>
+            <input id="capacity" name="capacity" type="number" step="1" />
+          </div>
+
+          <div class="form-group">
+            <label>Is Active</label>
+            <div class="radio-pill-group">
+              <label class="radio-pill">
+                <input type="radio" name="is_active" value="Yes" checked>
+                <span>Yes</span>
+              </label>
+              <label class="radio-pill">
+                <input type="radio" name="is_active" value="No">
+                <span>No</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="pen_notes">Pen Notes</label>
+          <textarea id="pen_notes" name="pen_notes"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit">Save Pen</button>
+        </div>
+
+        <div id="add_pen_message" class="message-box hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/addPen.js') }}"></script>
+</body>
+</html>

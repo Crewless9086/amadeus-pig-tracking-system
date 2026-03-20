@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from modules.pig_weights.pig_weights_controller import (
     get_status,
     get_dashboard_data,
+    list_parent_options,
     list_active_pigs,
     list_sales_availability,
     get_family_tree_profile,
@@ -13,6 +14,10 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_movement_history,
     get_pig_weight_history,
     get_latest_weight,
+    create_new_pig,
+    create_new_product,
+    create_new_pen,
+    create_new_litter,
     create_weight_entry,
     create_treatment_entry,
     create_movement_entry,
@@ -29,6 +34,11 @@ def status():
 @pig_weights_bp.route("/dashboard", methods=["GET"])
 def dashboard():
     return jsonify(get_dashboard_data())
+
+
+@pig_weights_bp.route("/parent-options", methods=["GET"])
+def parent_options():
+    return jsonify(list_parent_options())
 
 
 @pig_weights_bp.route("/pigs", methods=["GET"])
@@ -90,6 +100,34 @@ def pig_movements(pig_id):
 @pig_weights_bp.route("/<pig_id>/latest", methods=["GET"])
 def latest_weight(pig_id):
     return jsonify(get_latest_weight(pig_id))
+
+
+@pig_weights_bp.route("/master/pigs", methods=["POST"])
+def create_pig_master():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_new_pig(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/master/products", methods=["POST"])
+def create_product_master():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_new_product(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/master/pens", methods=["POST"])
+def create_pen_master():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_new_pen(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/master/litters", methods=["POST"])
+def create_litter_master():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_new_litter(payload)
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("", methods=["POST"])

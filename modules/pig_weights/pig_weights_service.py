@@ -1,3 +1,6 @@
+from datetime import datetime
+import uuid
+
 from services.google_sheets_service import get_all_records, append_row
 from modules.pig_weights.pig_weights_config import PIG_WEIGHTS_CONFIG
 from modules.pig_weights.pig_weights_utils import (
@@ -9,7 +12,12 @@ from modules.pig_weights.pig_weights_utils import (
     generate_weight_log_id,
     generate_medical_log_id,
     generate_move_log_id,
+    generate_pig_id,
+    generate_product_id,
+    generate_pen_id,
+    generate_litter_id,
 )
+from modules.pig_weights.mating_service import link_litter_to_mating
 
 
 def _build_pig_lookup(rows, columns):
@@ -35,8 +43,6 @@ def _pig_summary_card(row, columns):
         "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
         "litter_id": to_clean_string(row.get("Litter_ID", "")),
     }
-
-
 def get_dashboard_summary():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -85,7 +91,54 @@ def get_dashboard_summary():
         "reserved_pigs": reserved_count,
         "withdrawal_hold_pigs": withdrawal_hold_count,
     }
+def get_parent_options():
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    rows = get_all_records(sheet_name)
 
+    mother_options = [{
+        "pig_id": "Unknown",
+        "tag_number": "Unknown",
+        "sex": "Female",
+        "status": "Active",
+        "purpose": "Breeding",
+    }]
+    father_options = [{
+        "pig_id": "Unknown",
+        "tag_number": "Unknown",
+        "sex": "Male",
+        "status": "Active",
+        "purpose": "Breeding",
+    }]
+
+    for row in rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        tag_number = to_clean_string(row.get(columns["tag_number"], ""))
+        sex = to_clean_string(row.get("Sex", ""))
+        status = to_clean_string(row.get(columns["status"], ""))
+        purpose = to_clean_string(row.get("Purpose", ""))
+
+        if not pig_id:
+            continue
+
+        option = {
+            "pig_id": pig_id,
+            "tag_number": tag_number or pig_id,
+            "sex": sex,
+            "status": status,
+            "purpose": purpose,
+        }
+
+        if sex == "Female" and status == "Active" and purpose == "Breeding":
+            mother_options.append(option)
+
+        if sex in ("Male", "Castrated_Male") and status == "Active" and purpose == "Breeding":
+            father_options.append(option)
+
+    return {
+        "mothers": mother_options,
+        "fathers": father_options,
+    }
 
 def get_active_pigs():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
@@ -109,7 +162,6 @@ def get_active_pigs():
             })
 
     return active_pigs
-
 
 def get_sales_availability():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"]
@@ -143,7 +195,6 @@ def get_sales_availability():
         })
 
     return sales_rows
-
 
 def get_family_tree(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -193,7 +244,6 @@ def get_family_tree(pig_id: str):
         "sibling_count": len(siblings),
     }
 
-
 def get_litter_detail(litter_id: str):
     litter_id = str(litter_id).strip()
 
@@ -218,6 +268,22 @@ def get_litter_detail(litter_id: str):
             litter_rows.append(row)
 
     if not litter_rows:
+        litter_rows_sheet = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"])
+        for row in litter_rows_sheet:
+            if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+                return {
+                    "litter_id": litter_id,
+                    "mother_pig_id": to_clean_string(row.get("Sow_Pig_ID", "")),
+                    "mother_tag_number": to_clean_string(row.get("Sow_Tag_Number", "")),
+                    "father_pig_id": to_clean_string(row.get("Boar_Pig_ID", "")),
+                    "father_tag_number": to_clean_string(row.get("Boar_Tag_Number", "")),
+                    "count": 0,
+                    "male_count": row.get("Male_Count", ""),
+                    "female_count": row.get("Female_Count", ""),
+                    "active_count": 0,
+                    "average_weight_kg": None,
+                    "piglets": [],
+                }
         return None
 
     first_row = litter_rows[0]
@@ -286,7 +352,6 @@ def get_litter_detail(litter_id: str):
         "average_weight_kg": average_weight,
         "piglets": piglets,
     }
-
 
 def get_pig_detail(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -412,7 +477,6 @@ def get_pen_by_id(pen_id: str):
             return pen
 
     return None
-
 
 def get_treatment_history_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -616,8 +680,7 @@ def get_weight_history_for_pig(pig_id: str):
         "count": len(history),
         "history": history,
     }
-
-
+    
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
 
@@ -675,6 +738,168 @@ def get_latest_weight_for_pig(pig_id: str):
     }
 
 
+def save_new_pig(cleaned_data: dict):
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+
+    mother_pig_id = "" if cleaned_data["mother_pig_id"] == "Unknown" else cleaned_data["mother_pig_id"]
+    father_pig_id = "" if cleaned_data["father_pig_id"] == "Unknown" else cleaned_data["father_pig_id"]
+    litter_id = "" if cleaned_data["litter_id"] == "Unknown" else cleaned_data["litter_id"]
+
+    parent_options = get_parent_options()
+    mother_lookup = {row["pig_id"]: row["tag_number"] for row in parent_options["mothers"]}
+    father_lookup = {row["pig_id"]: row["tag_number"] for row in parent_options["fathers"]}
+
+    mother_tag_number = mother_lookup.get(cleaned_data["mother_pig_id"], "") if mother_pig_id else ""
+    father_tag_number = father_lookup.get(cleaned_data["father_pig_id"], "") if father_pig_id else ""
+
+    birth_month = cleaned_data["date_of_birth"].strftime("%m") if cleaned_data["date_of_birth"] else ""
+    birth_year = cleaned_data["date_of_birth"].strftime("%Y") if cleaned_data["date_of_birth"] else ""
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    row_values = [
+        generate_pig_id(),
+        cleaned_data["tag_number"],
+        cleaned_data["pig_name"],
+        cleaned_data["status"],
+        cleaned_data["on_farm"],
+        cleaned_data["animal_type"],
+        cleaned_data["sex"],
+        format_date_for_sheet(cleaned_data["date_of_birth"]),
+        birth_month,
+        birth_year,
+        cleaned_data["breed_type"],
+        cleaned_data["colour_markings"],
+        litter_id,
+        cleaned_data["litter_size_born"] if cleaned_data["litter_size_born"] is not None else "",
+        cleaned_data["litter_size_weaned"] if cleaned_data["litter_size_weaned"] is not None else "",
+        mother_pig_id,
+        father_pig_id,
+        mother_tag_number,
+        father_tag_number,
+        "",
+        "",
+        cleaned_data["purpose"],
+        "",
+        cleaned_data["current_pen_id"],
+        cleaned_data["source"],
+        format_date_for_sheet(cleaned_data["acquisition_date"]),
+        cleaned_data["birth_weight_kg"] if cleaned_data["birth_weight_kg"] is not None else "",
+        format_date_for_sheet(cleaned_data["wean_date"]),
+        cleaned_data["wean_weight_kg"] if cleaned_data["wean_weight_kg"] is not None else "",
+        format_date_for_sheet(cleaned_data["exit_date"]),
+        cleaned_data["exit_reason"],
+        cleaned_data["exit_order_id"],
+        cleaned_data["carcass_weight_kg"] if cleaned_data["carcass_weight_kg"] is not None else "",
+        cleaned_data["general_notes"],
+        today_str,
+        today_str,
+    ]
+
+    append_row(sheet_name, row_values)
+
+    return {
+        "success": True,
+        "message": "Pig created successfully."
+    }
+
+
+def save_new_product(cleaned_data: dict):
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["product_register"]
+
+    row_values = [
+        generate_product_id(),
+        cleaned_data["product_name"],
+        cleaned_data["product_category"],
+        cleaned_data["default_dose"] if cleaned_data["default_dose"] is not None else "",
+        cleaned_data["dose_unit"],
+        cleaned_data["default_withdrawal_days"] if cleaned_data["default_withdrawal_days"] is not None else "",
+        cleaned_data["supplier"],
+        cleaned_data["batch_tracking_required"],
+        cleaned_data["is_active"],
+        cleaned_data["product_notes"],
+    ]
+
+    append_row(sheet_name, row_values)
+
+    return {
+        "success": True,
+        "message": "Product created successfully."
+    }
+
+def save_new_pen(cleaned_data: dict):
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"]
+
+    row_values = [
+        generate_pen_id(),
+        cleaned_data["pen_name"],
+        cleaned_data["pen_type"],
+        cleaned_data["capacity"] if cleaned_data["capacity"] is not None else "",
+        cleaned_data["is_active"],
+        cleaned_data["pen_notes"],
+    ]
+
+    append_row(sheet_name, row_values)
+
+    return {
+        "success": True,
+        "message": "Pen created successfully."
+    }
+
+
+def save_new_litter(cleaned_data: dict):
+    pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_lookup = _build_pig_lookup(pig_rows, columns)
+
+    mother_row = pig_lookup.get(cleaned_data["mother_pig_id"])
+    father_row = pig_lookup.get(cleaned_data["father_pig_id"]) if cleaned_data["father_pig_id"] else None
+
+    mother_tag = to_clean_string(mother_row.get(columns["tag_number"], "")) if mother_row else ""
+    father_tag = to_clean_string(father_row.get(columns["tag_number"], "")) if father_row else ""
+
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"]
+    litter_id = generate_litter_id()
+
+    row_values = [
+        litter_id,
+        format_date_for_sheet(cleaned_data["farrowing_date"]),
+        cleaned_data["mother_pig_id"],
+        cleaned_data["father_pig_id"],
+        mother_tag,
+        father_tag,
+        cleaned_data["total_born"] if cleaned_data["total_born"] is not None else "",
+        cleaned_data["born_alive"] if cleaned_data["born_alive"] is not None else "",
+        cleaned_data["stillborn_count"] if cleaned_data["stillborn_count"] is not None else "",
+        cleaned_data["mummified_count"] if cleaned_data["mummified_count"] is not None else "",
+        cleaned_data["male_count"] if cleaned_data["male_count"] is not None else "",
+        cleaned_data["female_count"] if cleaned_data["female_count"] is not None else "",
+        cleaned_data["fostered_in_count"] if cleaned_data["fostered_in_count"] is not None else "",
+        cleaned_data["fostered_out_count"] if cleaned_data["fostered_out_count"] is not None else "",
+        cleaned_data["weaned_count"] if cleaned_data["weaned_count"] is not None else "",
+        format_date_for_sheet(cleaned_data["wean_date"]),
+        cleaned_data["average_wean_weight_kg"] if cleaned_data["average_wean_weight_kg"] is not None else "",
+        cleaned_data["notes"],
+        datetime.now().strftime("%d %b %Y"),
+    ]
+
+    append_row(sheet_name, row_values)
+
+    mating_id = str(cleaned_data.get("mating_id", "")).strip()
+    if mating_id:
+        link_litter_to_mating(
+            mating_id=mating_id,
+            litter_id=litter_id,
+            actual_farrowing_date=cleaned_data["farrowing_date"]
+        )
+
+    return {
+        "success": True,
+        "message": "Litter created successfully.",
+        "litter_id": litter_id
+    }
+
+
 def save_weight_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
 
@@ -706,7 +931,6 @@ def save_weight_entry(cleaned_data: dict):
         },
         "latest": latest_info
     }
-
 
 def save_treatment_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
@@ -806,4 +1030,4 @@ def save_movement_entry(cleaned_data: dict):
             "moved_by": cleaned_data["moved_by"],
             "move_notes": cleaned_data["move_notes"],
         }
-    }
+    }                

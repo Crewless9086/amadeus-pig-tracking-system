@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Add Mating</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Add Mating</h1>
+          <p>Create a new mating record in MATING_LOG and read results from MATING_OVERVIEW.</p>
+        </div>
+        <a href="/" class="secondary-link">← Dashboard</a>
+      </div>
+
+      <form id="addMatingForm" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="sow_pig_id">Sow</label>
+            <select id="sow_pig_id" name="sow_pig_id" required>
+              <option value="">Select sow</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="boar_pig_id">Boar</label>
+            <select id="boar_pig_id" name="boar_pig_id">
+              <option value="">Unknown</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="mating_date">Mating Date</label>
+            <input id="mating_date" name="mating_date" type="date" required />
+          </div>
+
+          <div class="form-group">
+            <label for="mating_method">Mating Method</label>
+            <select id="mating_method" name="mating_method" required>
+              <option value="">Select</option>
+              <option value="Natural">Natural</option>
+              <option value="Hand_Mating">Hand_Mating</option>
+              <option value="AI">AI</option>
+              <option value="Unknown">Unknown</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="exposure_group">Exposure Group</label>
+            <input id="exposure_group" name="exposure_group" type="text" />
+          </div>
+
+          <div class="form-group">
+            <label for="service_notes">Service Notes</label>
+            <input id="service_notes" name="service_notes" type="text" />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit">Save Mating</button>
+        </div>
+
+        <div id="add_mating_message" class="message-box hidden"></div>
+      </form>
+
+      <div class="page-header" style="margin-top: 32px; margin-bottom: 18px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Recent Mating Records</h2>
+          <p style="margin: 0; color: var(--text-soft);">This section reads from MATING_OVERVIEW.</p>
+        </div>
+      </div>
+
+      <div id="mating_list" class="history-list"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/addMating.js') }}"></script>
+</body>
+</html>
