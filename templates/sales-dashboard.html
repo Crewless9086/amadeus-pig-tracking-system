@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sales Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Sales Dashboard</h1>
+          <p>Grouped sales stock view for humans now and Sam later.</p>
+        </div>
+        <a href="/" class="secondary-link">← Dashboard</a>
+      </div>
+
+      <div id="sales_dashboard_message" class="message-box hidden"></div>
+
+      <div class="page-header" style="margin-bottom: 14px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Category Totals</h2>
+          <p style="margin: 0; color: var(--text-soft);">Top-level totals by sales category.</p>
+        </div>
+      </div>
+
+      <div id="sales_totals_grid" class="dashboard-actions-grid"></div>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 14px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Weight Band Summary</h2>
+          <p style="margin: 0; color: var(--text-soft);">Detailed grouped stock by category and weight band.</p>
+        </div>
+      </div>
+
+      <div id="sales_summary_list" class="history-list"></div>
+
+      <div class="form-actions" style="margin-top: 24px;">
+        <a href="/sales-availability" class="button-link button-link-secondary">Open Pig-Level Sales Availability</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/salesDashboard.js') }}"></script>
+</body>
+</html>

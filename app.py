@@ -22,6 +22,11 @@ def sales_availability_page():
     return render_template("sales-availability.html")
 
 
+@app.route("/sales-dashboard")
+def sales_dashboard_page():
+    return render_template("sales-dashboard.html")
+
+
 @app.route("/master/add-pig")
 def add_pig_page():
     return render_template("add-pig.html")

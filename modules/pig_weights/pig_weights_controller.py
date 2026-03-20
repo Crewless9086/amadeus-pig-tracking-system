@@ -1,5 +1,7 @@
 from modules.pig_weights.pig_weights_service import (
     get_dashboard_summary,
+    get_sales_stock_summary,
+    get_sales_stock_totals,
     get_parent_options,
     get_active_pigs,
     get_sales_availability,
@@ -42,6 +44,14 @@ def get_dashboard_data():
     return {
         "success": True,
         "summary": get_dashboard_summary()
+    }
+
+
+def get_sales_dashboard_data():
+    return {
+        "success": True,
+        "totals": get_sales_stock_totals(),
+        "summary": get_sales_stock_summary(),
     }
 
 

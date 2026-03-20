@@ -1,5 +1,4 @@
 from datetime import datetime
-import uuid
 
 from services.google_sheets_service import get_all_records, append_row
 from modules.pig_weights.pig_weights_config import PIG_WEIGHTS_CONFIG
@@ -43,6 +42,8 @@ def _pig_summary_card(row, columns):
         "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
         "litter_id": to_clean_string(row.get("Litter_ID", "")),
     }
+
+
 def get_dashboard_summary():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -91,6 +92,61 @@ def get_dashboard_summary():
         "reserved_pigs": reserved_count,
         "withdrawal_hold_pigs": withdrawal_hold_count,
     }
+
+
+def get_sales_stock_summary():
+    rows = get_all_records("SALES_STOCK_SUMMARY")
+    records = []
+
+    for row in rows:
+        sale_category = to_clean_string(row.get("Sale_Category", ""))
+        weight_band = to_clean_string(row.get("Weight_Band", ""))
+
+        if not sale_category or not weight_band:
+            continue
+
+        records.append({
+            "sale_category": sale_category,
+            "category_code": to_clean_string(row.get("Category_Code", "")),
+            "age_range": to_clean_string(row.get("Age_Range", "")),
+            "weight_band": weight_band,
+            "qty_available": to_float(row.get("Qty_Available", "")) or 0,
+            "male_qty": to_float(row.get("Male_Qty", "")) or 0,
+            "female_qty": to_float(row.get("Female_Qty", "")) or 0,
+            "castrated_male_qty": to_float(row.get("Castrated_Male_Qty", "")) or 0,
+            "price_range": to_clean_string(row.get("Price_Range", "")),
+            "status": to_clean_string(row.get("Status", "")),
+        })
+
+    return records
+
+
+def get_sales_stock_totals():
+    rows = get_all_records("SALES_STOCK_TOTALS")
+    records = []
+
+    for row in rows:
+        sale_category = to_clean_string(row.get("Sale_Category", ""))
+
+        if not sale_category:
+            continue
+
+        records.append({
+            "sale_category": sale_category,
+            "category_code": to_clean_string(row.get("Category_Code", "")),
+            "age_range": to_clean_string(row.get("Age_Range", "")),
+            "weight_range": to_clean_string(row.get("Weight_Range", "")),
+            "qty_available": to_float(row.get("Qty_Available", "")) or 0,
+            "male_qty": to_float(row.get("Male_Qty", "")) or 0,
+            "female_qty": to_float(row.get("Female_Qty", "")) or 0,
+            "castrated_male_qty": to_float(row.get("Castrated_Male_Qty", "")) or 0,
+            "price_range": to_clean_string(row.get("Price_Range", "")),
+            "status": to_clean_string(row.get("Status", "")),
+        })
+
+    return records
+
+
 def get_parent_options():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -140,6 +196,7 @@ def get_parent_options():
         "fathers": father_options,
     }
 
+
 def get_active_pigs():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -162,6 +219,7 @@ def get_active_pigs():
             })
 
     return active_pigs
+
 
 def get_sales_availability():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"]
@@ -195,6 +253,7 @@ def get_sales_availability():
         })
 
     return sales_rows
+
 
 def get_family_tree(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -243,6 +302,7 @@ def get_family_tree(pig_id: str):
         "litter_id": litter_id,
         "sibling_count": len(siblings),
     }
+
 
 def get_litter_detail(litter_id: str):
     litter_id = str(litter_id).strip()
@@ -352,6 +412,7 @@ def get_litter_detail(litter_id: str):
         "average_weight_kg": average_weight,
         "piglets": piglets,
     }
+
 
 def get_pig_detail(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -477,6 +538,7 @@ def get_pen_by_id(pen_id: str):
             return pen
 
     return None
+
 
 def get_treatment_history_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -680,7 +742,8 @@ def get_weight_history_for_pig(pig_id: str):
         "count": len(history),
         "history": history,
     }
-    
+
+
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
 
@@ -827,6 +890,7 @@ def save_new_product(cleaned_data: dict):
         "message": "Product created successfully."
     }
 
+
 def save_new_pen(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"]
 
@@ -932,6 +996,7 @@ def save_weight_entry(cleaned_data: dict):
         "latest": latest_info
     }
 
+
 def save_treatment_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
     product = get_product_by_id(cleaned_data["product_id"])
@@ -1030,4 +1095,4 @@ def save_movement_entry(cleaned_data: dict):
             "moved_by": cleaned_data["moved_by"],
             "move_notes": cleaned_data["move_notes"],
         }
-    }                
+    }
