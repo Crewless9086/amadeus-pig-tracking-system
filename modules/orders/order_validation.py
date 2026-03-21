@@ -91,3 +91,23 @@ def validate_new_order_line_payload(payload: dict):
             "notes": notes,
         }
     }
+
+
+def validate_update_order_line_payload(payload: dict):
+    errors = []
+
+    unit_price = payload.get("unit_price", "")
+    notes = str(payload.get("notes", "")).strip()
+
+    parsed_unit_price = to_float(unit_price)
+    if parsed_unit_price is not None and parsed_unit_price < 0:
+        errors.append("Unit_Price cannot be negative.")
+
+    return {
+        "is_valid": len(errors) == 0,
+        "errors": errors,
+        "cleaned_data": {
+            "unit_price": parsed_unit_price,
+            "notes": notes,
+        }
+    }

@@ -6,6 +6,8 @@ from modules.orders.order_service import (
     get_available_pigs_for_orders,
     create_order,
     create_order_line,
+    update_order_line,
+    delete_order_line,
     reserve_order_lines,
     release_order_lines,
     send_order_for_approval,
@@ -15,6 +17,7 @@ from modules.orders.order_service import (
 from modules.orders.order_validation import (
     validate_new_order_payload,
     validate_new_order_line_payload,
+    validate_update_order_line_payload,
 )
 
 orders_bp = Blueprint("orders", __name__)
@@ -155,6 +158,39 @@ def new_order_line():
     try:
         result = create_order_line(validation["cleaned_data"])
         return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/master/order-lines/<order_line_id>", methods=["PATCH"])
+def edit_order_line(order_line_id):
+    payload = request.get_json(silent=True) or {}
+    validation = validate_update_order_line_payload(payload)
+
+    if not validation["is_valid"]:
+        return jsonify({
+            "success": False,
+            "errors": validation["errors"]
+        }), 400
+
+    try:
+        result = update_order_line(order_line_id, validation["cleaned_data"])
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/master/order-lines/<order_line_id>", methods=["DELETE"])
+def remove_order_line(order_line_id):
+    try:
+        result = delete_order_line(order_line_id)
+        return jsonify(result), 200
     except ValueError as exc:
         return jsonify({
             "success": False,

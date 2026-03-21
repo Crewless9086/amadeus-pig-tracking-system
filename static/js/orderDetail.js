@@ -69,6 +69,10 @@ async function loadOrderDetail(orderId) {
       }
 
       linesContainer.innerHTML = lines.map(line => {
+          const canDelete = line.line_status === "Draft" && line.reserved_status !== "Reserved";
+          const editPrice = line.unit_price || "";
+          const editNotes = line.notes || "";
+
           return `
               <div class="history-item">
                 <div class="history-item-top">
@@ -97,13 +101,25 @@ async function loadOrderDetail(orderId) {
                     <div class="history-value">${line.current_weight_kg || "-"}</div>
                   </div>
                   <div>
-                    <div class="history-label">Unit Price</div>
-                    <div class="history-value">${line.unit_price || 0}</div>
-                  </div>
-                  <div>
                     <div class="history-label">Reserved Status</div>
                     <div class="history-value">${line.reserved_status || "-"}</div>
                   </div>
+                </div>
+
+                <div class="form-grid" style="margin-top: 14px;">
+                  <div class="form-group">
+                    <label>Unit Price</label>
+                    <input type="number" step="0.01" id="unit_price_${line.order_line_id}" value="${editPrice}">
+                  </div>
+                  <div class="form-group">
+                    <label>Notes</label>
+                    <input type="text" id="notes_${line.order_line_id}" value="${escapeHtml(editNotes)}">
+                  </div>
+                </div>
+
+                <div class="form-actions compact-actions" style="margin-top: 12px;">
+                  <button type="button" onclick="updateOrderLine('${line.order_line_id}')">Edit</button>
+                  <button type="button" ${canDelete ? "" : "disabled"} onclick="deleteOrderLine('${line.order_line_id}')">Delete</button>
                 </div>
               </div>
           `;
@@ -268,4 +284,84 @@ async function runOrderAction(url, messageBox, orderId, successText) {
       messageBox.classList.add("message-error");
       messageBox.textContent = "Order action failed.";
   }
+}
+
+async function updateOrderLine(orderLineId) {
+  const orderId = window.location.pathname.split("/").pop();
+  const messageBox = document.getElementById("order_action_message");
+
+  const unitPrice = document.getElementById(`unit_price_${orderLineId}`)?.value || "";
+  const notes = document.getElementById(`notes_${orderLineId}`)?.value || "";
+
+  try {
+      const response = await fetch(`/api/master/order-lines/${orderLineId}`, {
+          method: "PATCH",
+          headers: {
+              "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+              unit_price: unitPrice,
+              notes: notes
+          })
+      });
+
+      const result = await response.json();
+
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+
+      if (response.ok && result.success) {
+          messageBox.classList.add("message-success");
+          messageBox.textContent = "Order line updated successfully.";
+          await loadOrderDetail(orderId);
+      } else {
+          messageBox.classList.add("message-error");
+          messageBox.textContent = (result.errors || ["Failed to update order line."]).join(" ");
+      }
+  } catch (error) {
+      console.error("Update order line error:", error);
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+      messageBox.classList.add("message-error");
+      messageBox.textContent = "Failed to update order line.";
+  }
+}
+
+async function deleteOrderLine(orderLineId) {
+  const orderId = window.location.pathname.split("/").pop();
+  const messageBox = document.getElementById("order_action_message");
+
+  const confirmed = window.confirm("Are you sure you want to remove this draft line?");
+  if (!confirmed) return;
+
+  try {
+      const response = await fetch(`/api/master/order-lines/${orderLineId}`, {
+          method: "DELETE"
+      });
+
+      const result = await response.json();
+
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+
+      if (response.ok && result.success) {
+          messageBox.classList.add("message-success");
+          messageBox.textContent = "Order line removed successfully.";
+          await loadOrderDetail(orderId);
+          await loadAvailablePigs();
+      } else {
+          messageBox.classList.add("message-error");
+          messageBox.textContent = (result.errors || ["Failed to remove order line."]).join(" ");
+      }
+  } catch (error) {
+      console.error("Delete order line error:", error);
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+      messageBox.classList.add("message-error");
+      messageBox.textContent = "Failed to remove order line.";
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
 }

@@ -84,19 +84,27 @@ def _get_order_master_row(order_id: str):
     return None
 
 
+def _get_order_line_row(order_line_id: str):
+    rows = get_all_records(ORDER_LINES_SHEET)
+    for row in rows:
+        if to_clean_string(row.get("Order_Line_ID", "")) == str(order_line_id).strip():
+            return row
+    return None
+
+
 def _write_order_status_log(order_id: str, old_status: str, new_status: str, changed_by: str, change_source: str, notes: str):
     today_str = datetime.now().strftime("%d %b %Y")
 
     row_values = [
-        generate_order_status_log_id(),  # Order_Status_Log_ID
-        order_id,                        # Order_ID
-        today_str,                       # Status_Date
-        old_status,                      # Old_Status
-        new_status,                      # New_Status
-        changed_by,                      # Changed_By
-        change_source,                   # Change_Source
-        notes,                           # Notes
-        today_str,                       # Created_At
+        generate_order_status_log_id(),
+        order_id,
+        today_str,
+        old_status,
+        new_status,
+        changed_by,
+        change_source,
+        notes,
+        today_str,
     ]
 
     append_row(ORDER_STATUS_LOG_SHEET, row_values)
@@ -356,6 +364,71 @@ def create_order_line(cleaned_data: dict):
     return {
         "success": True,
         "message": "Order line added successfully."
+    }
+
+
+def update_order_line(order_line_id: str, cleaned_data: dict):
+    order_line_id = str(order_line_id).strip()
+    row = _get_order_line_row(order_line_id)
+
+    if not row:
+        raise ValueError("Order line not found.")
+
+    line_status = to_clean_string(row.get("Line_Status", ""))
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    if line_status in ("Collected", "Cancelled"):
+        raise ValueError("This order line can no longer be edited.")
+
+    _update_sheet_row_by_id(
+        ORDER_LINES_SHEET,
+        order_line_id,
+        {
+            "Unit_Price": cleaned_data["unit_price"] if cleaned_data["unit_price"] is not None else "",
+            "Notes": cleaned_data["notes"],
+            "Updated_At": today_str,
+        }
+    )
+
+    return {
+        "success": True,
+        "message": "Order line updated successfully.",
+        "order_line_id": order_line_id,
+    }
+
+
+def delete_order_line(order_line_id: str):
+    order_line_id = str(order_line_id).strip()
+    row = _get_order_line_row(order_line_id)
+
+    if not row:
+        raise ValueError("Order line not found.")
+
+    line_status = to_clean_string(row.get("Line_Status", ""))
+    reserved_status = to_clean_string(row.get("Reserved_Status", ""))
+
+    if reserved_status == "Reserved" or line_status == "Reserved":
+        raise ValueError("Release this line before deleting it.")
+
+    if line_status in ("Collected", "Cancelled"):
+        raise ValueError("This order line can no longer be deleted.")
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    _update_sheet_row_by_id(
+        ORDER_LINES_SHEET,
+        order_line_id,
+        {
+            "Line_Status": "Cancelled",
+            "Reserved_Status": "Not_Reserved",
+            "Updated_At": today_str,
+        }
+    )
+
+    return {
+        "success": True,
+        "message": "Order line removed successfully.",
+        "order_line_id": order_line_id,
     }
 
 
