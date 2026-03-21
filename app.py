@@ -1,10 +1,12 @@
 from flask import Flask, render_template
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
+from modules.orders.order_routes import orders_bp
 
 app = Flask(__name__)
 app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
 app.register_blueprint(mating_bp, url_prefix="/api/pig-weights")
+app.register_blueprint(orders_bp, url_prefix="/api")
 
 
 @app.route("/")
@@ -25,6 +27,21 @@ def sales_availability_page():
 @app.route("/sales-dashboard")
 def sales_dashboard_page():
     return render_template("sales-dashboard.html")
+
+
+@app.route("/orders")
+def orders_page():
+    return render_template("orders.html")
+
+
+@app.route("/orders/new")
+def add_order_page():
+    return render_template("add-order.html")
+
+
+@app.route("/orders/<order_id>")
+def order_detail_page(order_id):
+    return render_template("order-detail.html")
 
 
 @app.route("/master/add-pig")

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Detail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Order Detail</h1>
+          <p>View order summary and add draft order lines.</p>
+        </div>
+        <a href="/orders" class="secondary-link">← Orders</a>
+      </div>
+
+      <div id="order_detail_message" class="message-box hidden"></div>
+
+      <div id="order_summary" class="detail-grid"></div>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Add Order Line</h2>
+          <p style="margin: 0; color: var(--text-soft);">Select an available pig and add it to this order as a draft line.</p>
+        </div>
+      </div>
+
+      <form id="addOrderLineForm" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="pig_id">Available Pig</label>
+            <select id="pig_id" name="pig_id" required>
+              <option value="">Select pig</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="unit_price">Unit Price</label>
+            <input id="unit_price" name="unit_price" type="number" step="0.01" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="line_notes">Line Notes</label>
+          <input id="line_notes" name="line_notes" type="text" />
+        </div>
+
+        <div class="form-actions">
+          <button type="submit">Add Draft Line</button>
+        </div>
+
+        <div id="add_order_line_message" class="message-box hidden"></div>
+      </form>
+
+      <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
+        <div>
+          <h2 style="margin: 0 0 8px 0;">Order Lines</h2>
+          <p style="margin: 0; color: var(--text-soft);">These are the current line items on the order.</p>
+        </div>
+      </div>
+
+      <div id="order_lines_list" class="history-list"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/orderDetail.js') }}"></script>
+</body>
+</html>

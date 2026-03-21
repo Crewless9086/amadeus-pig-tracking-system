@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orders</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Orders</h1>
+          <p>Draft and operational orders from ORDER_OVERVIEW.</p>
+        </div>
+        <a href="/" class="secondary-link">← Dashboard</a>
+      </div>
+
+      <div class="form-actions compact-actions" style="margin-bottom: 18px;">
+        <a href="/orders/new" class="button-link">Create New Order</a>
+      </div>
+
+      <div id="orders_message" class="message-box hidden"></div>
+
+      <div id="orders_list" class="history-list"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/orders.js') }}"></script>
+</body>
+</html>

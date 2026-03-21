@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Order</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Create Order</h1>
+          <p>Create a draft order in ORDER_MASTER.</p>
+        </div>
+        <a href="/orders" class="secondary-link">← Orders</a>
+      </div>
+
+      <form id="addOrderForm" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="order_date">Order Date</label>
+            <input id="order_date" name="order_date" type="date" required />
+          </div>
+
+          <div class="form-group">
+            <label for="customer_name">Customer Name</label>
+            <input id="customer_name" name="customer_name" type="text" required />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="customer_phone">Customer Phone</label>
+            <input id="customer_phone" name="customer_phone" type="text" />
+          </div>
+
+          <div class="form-group">
+            <label for="customer_channel">Customer Channel</label>
+            <select id="customer_channel" name="customer_channel" required>
+              <option value="">Select</option>
+              <option value="WhatsApp">WhatsApp</option>
+              <option value="Telegram">Telegram</option>
+              <option value="Instagram">Instagram</option>
+              <option value="Messenger">Messenger</option>
+              <option value="Web Chat">Web Chat</option>
+              <option value="Manual">Manual</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="customer_language">Customer Language</label>
+            <select id="customer_language" name="customer_language" required>
+              <option value="">Select</option>
+              <option value="English">English</option>
+              <option value="Afrikaans">Afrikaans</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="order_source">Order Source</label>
+            <select id="order_source" name="order_source" required>
+              <option value="">Select</option>
+              <option value="App">App</option>
+              <option value="Sam">Sam</option>
+              <option value="Human">Human</option>
+              <option value="Manual">Manual</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="requested_category">Requested Category</label>
+            <input id="requested_category" name="requested_category" type="text" />
+          </div>
+
+          <div class="form-group">
+            <label for="requested_weight_range">Requested Weight Range</label>
+            <input id="requested_weight_range" name="requested_weight_range" type="text" />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="requested_sex">Requested Sex</label>
+            <select id="requested_sex" name="requested_sex">
+              <option value="">Any</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Castrated_Male">Castrated_Male</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="requested_quantity">Requested Quantity</label>
+            <input id="requested_quantity" name="requested_quantity" type="number" step="1" />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="quoted_total">Quoted Total</label>
+            <input id="quoted_total" name="quoted_total" type="number" step="0.01" />
+          </div>
+
+          <div class="form-group">
+            <label for="created_by">Created By</label>
+            <input id="created_by" name="created_by" type="text" value="App" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="notes">Notes</label>
+          <textarea id="notes" name="notes"></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit">Create Draft Order</button>
+        </div>
+
+        <div id="add_order_message" class="message-box hidden"></div>
+      </form>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/addOrder.js') }}"></script>
+</body>
+</html>
