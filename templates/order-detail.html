@@ -12,7 +12,7 @@
       <div class="page-header page-header-with-link">
         <div>
           <h1>Order Detail</h1>
-          <p>View order summary and add draft order lines.</p>
+          <p>View order summary, add lines, reserve, and manage approval flow.</p>
         </div>
         <a href="/orders" class="secondary-link">← Orders</a>
       </div>
@@ -20,6 +20,16 @@
       <div id="order_detail_message" class="message-box hidden"></div>
 
       <div id="order_summary" class="detail-grid"></div>
+
+      <div class="form-actions" style="margin-top: 18px;">
+        <button id="reserve_order_btn" type="button">Reserve Order Lines</button>
+        <button id="release_order_btn" type="button">Release Reserved Lines</button>
+        <button id="send_for_approval_btn" type="button">Send for Approval</button>
+        <button id="approve_order_btn" type="button">Approve Order</button>
+        <button id="reject_order_btn" type="button">Reject Order</button>
+      </div>
+
+      <div id="order_action_message" class="message-box hidden"></div>
 
       <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
         <div>

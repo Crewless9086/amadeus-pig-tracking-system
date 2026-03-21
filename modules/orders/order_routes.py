@@ -6,6 +6,11 @@ from modules.orders.order_service import (
     get_available_pigs_for_orders,
     create_order,
     create_order_line,
+    reserve_order_lines,
+    release_order_lines,
+    send_order_for_approval,
+    approve_order,
+    reject_order,
 )
 from modules.orders.order_validation import (
     validate_new_order_payload,
@@ -50,6 +55,75 @@ def available_pigs():
         "count": len(pigs),
         "pigs": pigs,
     })
+
+
+@orders_bp.route("/orders/<order_id>/reserve", methods=["POST"])
+def reserve_order(order_id):
+    try:
+        result = reserve_order_lines(order_id)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/release", methods=["POST"])
+def release_order(order_id):
+    try:
+        result = release_order_lines(order_id)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/send-for-approval", methods=["POST"])
+def send_for_approval(order_id):
+    payload = request.get_json(silent=True) or {}
+    changed_by = str(payload.get("changed_by", "App")).strip() or "App"
+
+    try:
+        result = send_order_for_approval(order_id, changed_by=changed_by)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/approve", methods=["POST"])
+def approve(order_id):
+    payload = request.get_json(silent=True) or {}
+    changed_by = str(payload.get("changed_by", "App")).strip() or "App"
+
+    try:
+        result = approve_order(order_id, changed_by=changed_by)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/reject", methods=["POST"])
+def reject(order_id):
+    payload = request.get_json(silent=True) or {}
+    changed_by = str(payload.get("changed_by", "App")).strip() or "App"
+
+    try:
+        result = reject_order(order_id, changed_by=changed_by)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
 
 
 @orders_bp.route("/master/orders", methods=["POST"])
