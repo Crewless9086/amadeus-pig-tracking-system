@@ -39,7 +39,7 @@ async function loadPigDetail() {
   }
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(pigId)}/detail`);
+    const response = await fetch(`/api/pig-weights/${encodeURIComponent(pigId)}`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
