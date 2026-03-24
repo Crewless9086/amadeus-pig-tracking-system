@@ -95,7 +95,7 @@ async function loadWeightHistory() {
   document.getElementById("history_record_weight_button").href = `/pig-weights?pig_id=${encodeURIComponent(pigId)}`;
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(pigId)}/history`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/weights`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {

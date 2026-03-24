@@ -146,7 +146,7 @@ async function loadLatestWeight(pigId) {
   }
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(pigId)}/latest`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/latest-weight`);
     const data = await response.json();
 
     selectedPigLatest = data;
@@ -178,9 +178,7 @@ async function loadPigs() {
     data.pigs.forEach((pig) => {
       const option = document.createElement("option");
       option.value = pig.pig_id;
-      option.textContent = pig.tag_number
-        ? `${pig.tag_number}`
-        : `${pig.pig_id}`;
+      option.textContent = pig.tag_number ? `${pig.tag_number}` : `${pig.pig_id}`;
 
       if (preselectedPigId && pig.pig_id === preselectedPigId) {
         option.selected = true;
@@ -222,7 +220,7 @@ form.addEventListener("submit", async (event) => {
   submitButton.textContent = "Saving...";
 
   try {
-    const response = await fetch("/api/pig-weights", {
+    const response = await fetch("/api/pig-weights/weights", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
