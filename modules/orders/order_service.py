@@ -1,5 +1,9 @@
+import json
+import os
 from datetime import datetime
 import uuid
+from urllib import request as urllib_request
+from urllib import error as urllib_error
 
 from services.google_sheets_service import (
     get_all_records,
@@ -20,6 +24,11 @@ ORDER_LINES_SHEET = "ORDER_LINES"
 ORDER_STATUS_LOG_SHEET = "ORDER_STATUS_LOG"
 ORDER_OVERVIEW_SHEET = "ORDER_OVERVIEW"
 SALES_AVAILABILITY_SHEET = "SALES_AVAILABILITY"
+
+ORDER_APPROVAL_WEBHOOK_URL = os.getenv(
+    "ORDER_APPROVAL_WEBHOOK_URL",
+    "https://charln.app.n8n.cloud/webhook/46935f6b-2921-4d51-a477-1db5ac1024f7",
+)
 
 
 def generate_order_id():
@@ -121,6 +130,49 @@ def _count_reserved_lines(order_id: str):
             count += 1
 
     return count
+
+
+def _notify_n8n_order_approval_request(order_id: str, changed_by: str):
+    payload = {
+        "action": "request_order_approval",
+        "order_id": str(order_id).strip(),
+        "changed_by": str(changed_by).strip() or "App",
+        "trigger_source": "Flask App",
+        "notes": "Order sent for approval from app",
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    req = urllib_request.Request(
+        ORDER_APPROVAL_WEBHOOK_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=8) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            return {
+                "sent": True,
+                "status_code": getattr(response, "status", 200),
+                "body": body,
+            }
+    except urllib_error.HTTPError as exc:
+        return {
+            "sent": False,
+            "error": f"HTTPError {exc.code}: {exc.reason}",
+        }
+    except urllib_error.URLError as exc:
+        return {
+            "sent": False,
+            "error": f"URLError: {exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "sent": False,
+            "error": str(exc),
+        }
 
 
 def list_orders():
@@ -593,6 +645,12 @@ def send_order_for_approval(order_id: str, changed_by: str = "App"):
     if old_status == "Cancelled":
         raise ValueError("Cancelled orders cannot be sent for approval.")
 
+    if old_status == "Pending_Approval":
+        raise ValueError("Order is already pending approval.")
+
+    if old_status == "Approved":
+        raise ValueError("Approved orders cannot be sent for approval again.")
+
     today_str = datetime.now().strftime("%d %b %Y")
 
     _update_sheet_row_by_id(
@@ -614,11 +672,20 @@ def send_order_for_approval(order_id: str, changed_by: str = "App"):
         notes="Order sent for approval",
     )
 
-    return {
+    webhook_result = _notify_n8n_order_approval_request(order_id, changed_by)
+
+    result = {
         "success": True,
         "message": "Order sent for approval.",
         "order_id": order_id,
+        "n8n_notified": webhook_result.get("sent", False),
     }
+
+    if not webhook_result.get("sent", False):
+        result["warning"] = "Order status updated, but approval notification could not be sent to n8n."
+        result["n8n_error"] = webhook_result.get("error", "Unknown error")
+
+    return result
 
 
 def approve_order(order_id: str, changed_by: str = "App"):
