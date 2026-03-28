@@ -371,6 +371,63 @@ def create_order(cleaned_data: dict):
     }
 
 
+def update_order(order_id: str, cleaned_data: dict):
+    order_id = str(order_id).strip()
+    row = _get_order_master_row(order_id)
+
+    if not row:
+        raise ValueError("Order not found.")
+
+    order_status = to_clean_string(row.get("Order_Status", ""))
+
+    if order_status in ("Cancelled", "Completed"):
+        raise ValueError("This order can no longer be edited.")
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    update_map = {}
+    updated_fields = []
+
+    if "requested_quantity" in cleaned_data:
+        update_map["Requested_Quantity"] = cleaned_data["requested_quantity"]
+        updated_fields.append("requested_quantity")
+
+    if "requested_category" in cleaned_data:
+        update_map["Requested_Category"] = cleaned_data["requested_category"]
+        updated_fields.append("requested_category")
+
+    if "requested_weight_range" in cleaned_data:
+        update_map["Requested_Weight_Range"] = cleaned_data["requested_weight_range"]
+        updated_fields.append("requested_weight_range")
+
+    if "requested_sex" in cleaned_data:
+        update_map["Requested_Sex"] = cleaned_data["requested_sex"]
+        updated_fields.append("requested_sex")
+
+    if "notes" in cleaned_data:
+        update_map["Notes"] = cleaned_data["notes"]
+        updated_fields.append("notes")
+
+    if not updated_fields:
+        raise ValueError("No valid order fields were provided for update.")
+
+    update_map["Updated_At"] = today_str
+
+    _update_sheet_row_by_id(
+        ORDER_MASTER_SHEET,
+        order_id,
+        update_map,
+    )
+
+    return {
+        "success": True,
+        "message": "Order updated successfully.",
+        "order_id": order_id,
+        "updated_fields": updated_fields,
+        "changed_by": cleaned_data.get("changed_by", "App"),
+    }
+
+
 def create_order_line(cleaned_data: dict):
     available_pigs = get_available_pigs_for_orders()
 
@@ -526,9 +583,6 @@ def reserve_order_lines(order_id: str):
         line_id = str(padded_row[idx["Order_Line_ID"]]).strip()
         line_status = str(padded_row[idx["Line_Status"]]).strip()
         reserved_status = str(padded_row[idx["Reserved_Status"]]).strip()
-
-        if line_status == "Cancelled":
-            continue
 
         updates = {}
         if reserved_status != "Reserved":
