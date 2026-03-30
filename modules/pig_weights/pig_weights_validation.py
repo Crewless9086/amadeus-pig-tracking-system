@@ -281,6 +281,7 @@ def validate_new_litter_payload(payload: dict):
 
     mother_pig_id = str(payload.get("mother_pig_id", "")).strip()
     father_pig_id = str(payload.get("father_pig_id", "")).strip()
+    current_pen_id = str(payload.get("current_pen_id", "")).strip()
     farrowing_date = payload.get("farrowing_date", "")
 
     if not mother_pig_id:
@@ -304,6 +305,7 @@ def validate_new_litter_payload(payload: dict):
             "mating_id": str(payload.get("mating_id", "")).strip(),
             "mother_pig_id": mother_pig_id,
             "father_pig_id": father_pig_id,
+            "current_pen_id": current_pen_id,
             "farrowing_date": parsed_farrowing_date,
             "total_born": to_float(payload.get("total_born", "")),
             "born_alive": to_float(payload.get("born_alive", "")),

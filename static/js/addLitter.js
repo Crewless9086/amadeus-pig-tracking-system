@@ -1,5 +1,6 @@
 document.addEventListener("DOMContentLoaded", function () {
     loadLitterFormOptions();
+    loadPenOptions();
     loadMatingOptions();
     setupLitterFormSubmit();
 });
@@ -45,7 +46,11 @@ function handleMatingSelect(e) {
     const fatherSelect = document.getElementById("father_pig_id");
     const farrowingDate = document.getElementById("farrowing_date");
 
-    if (motherSelect) motherSelect.value = selected.dataset.sow || "";
+    if (motherSelect) {
+        motherSelect.value = selected.dataset.sow || "";
+        handleMotherPenSuggestion();
+    }
+
     if (fatherSelect) fatherSelect.value = selected.dataset.boar || "";
     if (farrowingDate) farrowingDate.value = selected.dataset.farrow || "";
 }
@@ -69,6 +74,7 @@ async function loadLitterFormOptions() {
             const option = document.createElement("option");
             option.value = item.pig_id;
             option.textContent = `${item.tag_number} (${item.pig_id})`;
+            option.dataset.currentPenId = item.current_pen_id || "";
             motherSelect.appendChild(option);
         });
 
@@ -80,9 +86,49 @@ async function loadLitterFormOptions() {
             option.textContent = `${item.tag_number} (${item.pig_id})`;
             fatherSelect.appendChild(option);
         });
+
+        motherSelect.addEventListener("change", handleMotherPenSuggestion);
     } catch (error) {
         console.error("Error loading litter form options:", error);
     }
+}
+
+async function loadPenOptions() {
+    try {
+        const response = await fetch("/api/pig-weights/pens");
+        const data = await response.json();
+
+        const penSelect = document.getElementById("current_pen_id");
+        if (!penSelect) return;
+
+        penSelect.innerHTML = `<option value="">Select pen</option>`;
+
+        (data.pens || []).forEach(item => {
+            const option = document.createElement("option");
+            option.value = item.pen_id || "";
+            option.textContent = item.pen_name
+                ? `${item.pen_name} (${item.pen_id})`
+                : (item.pen_id || "");
+            penSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error("Error loading pen options:", error);
+    }
+}
+
+function handleMotherPenSuggestion() {
+    const motherSelect = document.getElementById("mother_pig_id");
+    const penSelect = document.getElementById("current_pen_id");
+
+    if (!motherSelect || !penSelect) return;
+
+    const selected = motherSelect.selectedOptions[0];
+    if (!selected) return;
+
+    const suggestedPenId = selected.dataset.currentPenId || "";
+    if (!suggestedPenId) return;
+
+    penSelect.value = suggestedPenId;
 }
 
 function setupLitterFormSubmit() {
@@ -112,7 +158,8 @@ function setupLitterFormSubmit() {
             weaned_count: formData.get("weaned_count") || "",
             wean_date: formData.get("wean_date") || "",
             average_wean_weight_kg: formData.get("average_wean_weight_kg") || "",
-            notes: formData.get("notes") || ""
+            notes: formData.get("notes") || "",
+            current_pen_id: formData.get("current_pen_id") || ""
         };
 
         try {
@@ -130,12 +177,23 @@ function setupLitterFormSubmit() {
 
             if (response.ok && result.success) {
                 messageBox.classList.add("message-success");
-                messageBox.textContent = "Litter saved successfully.";
+
+                const pigRowsCreated = Number(result.pig_rows_created || 0);
+                if (pigRowsCreated > 0) {
+                    messageBox.textContent = `Litter saved successfully. ${pigRowsCreated} pig rows created in PIG_MASTER.`;
+                } else {
+                    messageBox.textContent = "Litter saved successfully.";
+                }
 
                 form.reset();
 
-                document.getElementById("mating_id").value = "";
-                document.getElementById("father_pig_id").value = "";
+                const matingField = document.getElementById("mating_id");
+                const fatherField = document.getElementById("father_pig_id");
+                const penField = document.getElementById("current_pen_id");
+
+                if (matingField) matingField.value = "";
+                if (fatherField) fatherField.value = "";
+                if (penField) penField.value = "";
             } else {
                 messageBox.classList.add("message-error");
                 messageBox.textContent = (result.errors || ["Failed to save litter."]).join(" ");

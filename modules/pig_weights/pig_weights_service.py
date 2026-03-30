@@ -158,6 +158,7 @@ def get_parent_options():
         "sex": "Female",
         "status": "Active",
         "purpose": "Breeding",
+        "current_pen_id": "",
     }]
     father_options = [{
         "pig_id": "Unknown",
@@ -165,6 +166,7 @@ def get_parent_options():
         "sex": "Male",
         "status": "Active",
         "purpose": "Breeding",
+        "current_pen_id": "",
     }]
 
     for row in rows:
@@ -173,6 +175,7 @@ def get_parent_options():
         sex = to_clean_string(row.get("Sex", ""))
         status = to_clean_string(row.get(columns["status"], ""))
         purpose = to_clean_string(row.get("Purpose", ""))
+        current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
 
         if not pig_id:
             continue
@@ -183,6 +186,7 @@ def get_parent_options():
             "sex": sex,
             "status": status,
             "purpose": purpose,
+            "current_pen_id": current_pen_id,
         }
 
         if sex == "Female" and status == "Active" and purpose == "Breeding":
@@ -910,6 +914,88 @@ def save_new_pen(cleaned_data: dict):
         "message": "Pen created successfully."
     }
 
+def _create_pig_rows_for_litter(
+    litter_id: str,
+    mother_pig_id: str,
+    father_pig_id: str,
+    mother_tag: str,
+    father_tag: str,
+    farrowing_date,
+    total_born,
+    current_pen_id: str,
+):
+    if not litter_id or not mother_pig_id or not farrowing_date or total_born in (None, "", 0):
+        return 0
+
+    try:
+        total_born_int = int(total_born)
+    except (TypeError, ValueError):
+        return 0
+
+    if total_born_int <= 0:
+        return 0
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    existing_rows = get_all_records(pig_master_sheet)
+
+    existing_for_litter = 0
+    for row in existing_rows:
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+            existing_for_litter += 1
+
+    if existing_for_litter > 0:
+        return 0
+
+    today_str = datetime.now().strftime("%d %b %Y")
+    birth_month = farrowing_date.strftime("%m") if farrowing_date else ""
+    birth_year = farrowing_date.strftime("%Y") if farrowing_date else ""
+
+    created_count = 0
+
+    for _ in range(total_born_int):
+        row_values = [
+            generate_pig_id(),                                 # Pig_ID
+            "",                                                # Tag_Number
+            "",                                                # Pig_Name
+            "Active",                                          # Status
+            "Yes",                                             # On_Farm
+            "Piglet",                                          # Animal_Type
+            "",                                                # Sex
+            format_date_for_sheet(farrowing_date),             # Date_Of_Birth
+            birth_month,                                       # Birth_Month
+            birth_year,                                        # Birth_Year
+            "",                                                # Breed_Type
+            "",                                                # Colour_Markings
+            litter_id,                                         # Litter_ID
+            total_born_int,                                    # Litter_Size_Born
+            "",                                                # Litter_Size_Weaned
+            mother_pig_id,                                     # Mother_Pig_ID
+            father_pig_id,                                     # Father_Pig_ID
+            mother_tag,                                        # Mother_Tag_Number
+            father_tag,                                        # Father_Tag_Number
+            "",                                                # Maternal_Line
+            "",                                                # Paternal_Line
+            "",                                                # Purpose
+            "",                                                # Current_Stage
+            current_pen_id,                                    # Current_Pen_ID
+            "Born_on_Farm",                                    # Source
+            "",                                                # Acquisition_Date
+            "",                                                # Birth_Weight_Kg
+            "",                                                # Wean_Date
+            "",                                                # Wean_Weight_Kg
+            "",                                                # Exit_Date
+            "",                                                # Exit_Reason
+            "",                                                # Exit_Order_ID
+            "",                                                # Carcass_Weight_Kg
+            "",                                                # General_Notes
+            today_str,                                         # Created_At
+            today_str,                                         # Updated_At
+        ]
+
+        append_row(pig_master_sheet, row_values)
+        created_count += 1
+
+    return created_count
 
 def save_new_litter(cleaned_data: dict):
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
@@ -945,9 +1031,21 @@ def save_new_litter(cleaned_data: dict):
         cleaned_data["average_wean_weight_kg"] if cleaned_data["average_wean_weight_kg"] is not None else "",
         cleaned_data["notes"],
         datetime.now().strftime("%d %b %Y"),
+        cleaned_data["current_pen_id"],
     ]
 
     append_row(sheet_name, row_values)
+
+    pig_rows_created = _create_pig_rows_for_litter(
+        litter_id=litter_id,
+        mother_pig_id=cleaned_data["mother_pig_id"],
+        father_pig_id=cleaned_data["father_pig_id"],
+        mother_tag=mother_tag,
+        father_tag=father_tag,
+        farrowing_date=cleaned_data["farrowing_date"],
+        total_born=cleaned_data["total_born"],
+        current_pen_id=cleaned_data["current_pen_id"],
+    )
 
     mating_id = str(cleaned_data.get("mating_id", "")).strip()
     if mating_id:
@@ -960,7 +1058,8 @@ def save_new_litter(cleaned_data: dict):
     return {
         "success": True,
         "message": "Litter created successfully.",
-        "litter_id": litter_id
+        "litter_id": litter_id,
+        "pig_rows_created": pig_rows_created,
     }
 
 
