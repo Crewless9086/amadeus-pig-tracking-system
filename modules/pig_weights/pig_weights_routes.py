@@ -15,12 +15,14 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_treatment_history,
     get_pig_movement_history,
     get_pig_weight_history,
+    get_weights_by_date,
     get_latest_weight,
     create_new_pig,
     create_new_product,
     create_new_pen,
     create_new_litter,
     create_weight_entry,
+    create_weight_entry_with_optional_move,
     create_treatment_entry,
     create_movement_entry,
 )
@@ -86,6 +88,13 @@ def pig_weights(pig_id):
     return jsonify(result), status_code
 
 
+@pig_weights_bp.route("/weights-by-date", methods=["GET"])
+def weights_by_date():
+    weight_date = request.args.get("weight_date", "")
+    result, status_code = get_weights_by_date(weight_date)
+    return jsonify(result), status_code
+
+
 @pig_weights_bp.route("/pig/<pig_id>/treatments", methods=["GET"])
 def pig_treatments(pig_id):
     result, status_code = get_pig_treatment_history(pig_id)
@@ -141,6 +150,13 @@ def new_litter():
 def add_weight():
     payload = request.get_json(silent=True) or {}
     result, status_code = create_weight_entry(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/weights-with-optional-move", methods=["POST"])
+def add_weight_with_optional_move():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_weight_entry_with_optional_move(payload)
     return jsonify(result), status_code
 
 

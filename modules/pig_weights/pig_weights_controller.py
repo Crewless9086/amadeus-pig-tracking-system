@@ -13,17 +13,20 @@ from modules.pig_weights.pig_weights_service import (
     get_treatment_history_for_pig,
     get_movement_history_for_pig,
     get_weight_history_for_pig,
+    get_weight_entries_by_date,
     get_latest_weight_for_pig,
     save_new_pig,
     save_new_product,
     save_new_pen,
     save_new_litter,
     save_weight_entry,
+    save_weight_entry_with_optional_move,
     save_treatment_entry,
     save_movement_entry,
 )
 from modules.pig_weights.pig_weights_validation import (
     validate_weight_payload,
+    validate_weight_with_optional_move_payload,
     validate_treatment_payload,
     validate_movement_payload,
     validate_new_pig_payload,
@@ -172,6 +175,16 @@ def get_pig_weight_history(pig_id: str):
     }, 200
 
 
+def get_weights_by_date(weight_date: str):
+    history = get_weight_entries_by_date(weight_date)
+    return {
+        "success": True,
+        "weight_date": history["weight_date"],
+        "count": history["count"],
+        "history": history["history"],
+    }, 200
+
+
 def get_latest_weight(pig_id: str):
     return get_latest_weight_for_pig(pig_id)
 
@@ -218,6 +231,19 @@ def create_weight_entry(payload: dict):
         }, 400
 
     result = save_weight_entry(validation["cleaned_data"])
+    return result, 201
+
+
+def create_weight_entry_with_optional_move(payload: dict):
+    validation = validate_weight_with_optional_move_payload(payload)
+
+    if not validation["is_valid"]:
+        return {
+            "success": False,
+            "errors": validation["errors"]
+        }, 400
+
+    result = save_weight_entry_with_optional_move(validation["cleaned_data"])
     return result, 201
 
 

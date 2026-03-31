@@ -5,6 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Amadeus Pig Weights</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <style>
+    .simple-table-wrap {
+      margin-top: 2rem;
+      overflow-x: auto;
+      border: 1px solid #d8d2c8;
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .simple-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+
+    .simple-table thead {
+      background: #f3efe8;
+    }
+
+    .simple-table th,
+    .simple-table td {
+      padding: 0.8rem 0.9rem;
+      border-bottom: 1px solid #e7e0d5;
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    .simple-table tbody tr:hover {
+      background: #faf7f2;
+    }
+
+    .section-subtitle {
+      margin-top: 1.75rem;
+      margin-bottom: 0.75rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #4f6657;
+    }
+
+    .table-empty {
+      padding: 1rem;
+      color: #666;
+      font-size: 0.95rem;
+    }
+  </style>
 </head>
 <body>
   <div class="page-shell">
@@ -18,11 +64,20 @@
       </div>
 
       <form id="pig-weight-form" class="weight-form">
-        <div class="form-group">
-          <label for="pig_id">Pig</label>
-          <select id="pig_id" name="pig_id" required>
-            <option value="">Loading pigs...</option>
-          </select>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="pen_filter">Filter by Pen (Optional)</label>
+            <select id="pen_filter" name="pen_filter">
+              <option value="">All active pigs</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="pig_id">Pig</label>
+            <select id="pig_id" name="pig_id" required>
+              <option value="">Loading pigs...</option>
+            </select>
+          </div>
         </div>
 
         <div class="info-grid">
@@ -64,6 +119,17 @@
           </div>
         </div>
 
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="moved_to_pen_id">Moved To Pen (Optional)</label>
+            <select id="moved_to_pen_id" name="moved_to_pen_id">
+              <option value="">No pen change</option>
+            </select>
+          </div>
+
+          <div class="form-group"></div>
+        </div>
+
         <div class="form-group">
           <label for="condition_notes">Condition Notes</label>
           <textarea
@@ -80,6 +146,28 @@
 
         <div id="message_box" class="message-box hidden"></div>
       </form>
+
+      <div class="section-subtitle">Weight Reference Table</div>
+      <div class="simple-table-wrap">
+        <table class="simple-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Pig</th>
+              <th>Pen</th>
+              <th>Weight (kg)</th>
+              <th>Weighed By</th>
+              <th>Condition Notes</th>
+            </tr>
+          </thead>
+          <tbody id="weights_reference_body">
+            <tr>
+              <td colspan="6" class="table-empty">Select a pig or date to view weight records.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
     </div>
   </div>
 

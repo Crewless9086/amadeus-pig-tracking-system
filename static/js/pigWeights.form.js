@@ -1,4 +1,7 @@
+const penFilterSelect = document.getElementById("pen_filter");
 const pigSelect = document.getElementById("pig_id");
+const movedToPenSelect = document.getElementById("moved_to_pen_id");
+
 const weightDateInput = document.getElementById("weight_date");
 const weightKgInput = document.getElementById("weight_kg");
 const conditionNotesInput = document.getElementById("condition_notes");
@@ -12,8 +15,10 @@ const growthStatusEl = document.getElementById("growth_status");
 const form = document.getElementById("pig-weight-form");
 const submitButton = document.getElementById("submit_button");
 const messageBox = document.getElementById("message_box");
+const weightsReferenceBody = document.getElementById("weights_reference_body");
 
 let selectedPigLatest = null;
+let allPigs = [];
 
 function getPreselectedPigId() {
   const params = new URLSearchParams(window.location.search);
@@ -139,6 +144,32 @@ function updateGrowthPreview() {
   }
 }
 
+function renderEmptyTable(message) {
+  weightsReferenceBody.innerHTML = `
+    <tr>
+      <td colspan="6" class="table-empty">${message}</td>
+    </tr>
+  `;
+}
+
+function renderTableRows(rows) {
+  if (!rows || !rows.length) {
+    renderEmptyTable("No weight records found.");
+    return;
+  }
+
+  weightsReferenceBody.innerHTML = rows.map((item) => `
+    <tr>
+      <td>${item.weight_date_display || "—"}</td>
+      <td>${item.tag_number || item.pig_id || "—"}</td>
+      <td>${item.current_pen_id || "—"}</td>
+      <td>${item.weight_kg !== null && item.weight_kg !== "" ? formatNumber(item.weight_kg, 2) : "—"}</td>
+      <td>${item.weighed_by || "—"}</td>
+      <td>${item.condition_notes || "—"}</td>
+    </tr>
+  `).join("");
+}
+
 async function loadLatestWeight(pigId) {
   if (!pigId) {
     resetPreview();
@@ -167,28 +198,90 @@ async function loadLatestWeight(pigId) {
   }
 }
 
+async function loadPens() {
+  try {
+    const response = await fetch("/api/pig-weights/pens");
+    const data = await response.json();
+
+    penFilterSelect.innerHTML = `<option value="">All active pigs</option>`;
+    movedToPenSelect.innerHTML = `<option value="">No pen change</option>`;
+
+    (data.pens || []).forEach((pen) => {
+      const label = pen.pen_name ? `${pen.pen_name} (${pen.pen_id})` : (pen.pen_id || "");
+
+      const filterOption = document.createElement("option");
+      filterOption.value = pen.pen_id;
+      filterOption.textContent = label;
+      penFilterSelect.appendChild(filterOption);
+
+      const moveOption = document.createElement("option");
+      moveOption.value = pen.pen_id;
+      moveOption.textContent = label;
+      movedToPenSelect.appendChild(moveOption);
+    });
+  } catch (error) {
+    console.error("Could not load pens.", error);
+  }
+}
+
+function buildPigLabel(pig) {
+  const tag = pig.tag_number || pig.pig_id;
+  const pen = pig.current_pen_id ? ` • ${pig.current_pen_id}` : "";
+  return `${tag}${pen}`;
+}
+
+function populatePigSelect() {
+  const preselectedPigId = getPreselectedPigId();
+  const selectedPen = penFilterSelect.value || "";
+  const currentPigSelection = pigSelect.value || preselectedPigId || "";
+
+  pigSelect.innerHTML = '<option value="">Select a pig</option>';
+
+  let filteredPigs = [...allPigs];
+
+  if (selectedPen) {
+    filteredPigs = filteredPigs.filter((pig) => (pig.current_pen_id || "") === selectedPen);
+  }
+
+  filteredPigs.sort((a, b) => {
+    const left = (a.tag_number || a.pig_id || "").toLowerCase();
+    const right = (b.tag_number || b.pig_id || "").toLowerCase();
+    return left.localeCompare(right);
+  });
+
+  filteredPigs.forEach((pig) => {
+    const option = document.createElement("option");
+    option.value = pig.pig_id;
+    option.textContent = buildPigLabel(pig);
+
+    if (currentPigSelection && pig.pig_id === currentPigSelection) {
+      option.selected = true;
+    }
+
+    pigSelect.appendChild(option);
+  });
+
+  const selectedStillExists = filteredPigs.some((pig) => pig.pig_id === currentPigSelection);
+  if (!selectedStillExists) {
+    pigSelect.value = "";
+    resetPreview();
+  }
+}
+
 async function loadPigs() {
   try {
     const response = await fetch("/api/pig-weights/pigs");
     const data = await response.json();
+
+    allPigs = data.pigs || [];
+    populatePigSelect();
+
     const preselectedPigId = getPreselectedPigId();
-
-    pigSelect.innerHTML = '<option value="">Select a pig</option>';
-
-    data.pigs.forEach((pig) => {
-      const option = document.createElement("option");
-      option.value = pig.pig_id;
-      option.textContent = pig.tag_number ? `${pig.tag_number}` : `${pig.pig_id}`;
-
-      if (preselectedPigId && pig.pig_id === preselectedPigId) {
-        option.selected = true;
-      }
-
-      pigSelect.appendChild(option);
-    });
-
     if (preselectedPigId) {
       await loadLatestWeight(preselectedPigId);
+      await refreshReferenceTable();
+    } else {
+      renderEmptyTable("Select a pig or date to view weight records.");
     }
   } catch (error) {
     pigSelect.innerHTML = '<option value="">Failed to load pigs</option>';
@@ -196,13 +289,64 @@ async function loadPigs() {
   }
 }
 
+async function loadPigWeightHistoryForTable(pigId) {
+  const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/weights`);
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    renderEmptyTable("Could not load pig weight history.");
+    return;
+  }
+
+  renderTableRows(data.history || []);
+}
+
+async function loadWeightsByDateForTable(weightDate) {
+  const response = await fetch(`/api/pig-weights/weights-by-date?weight_date=${encodeURIComponent(weightDate)}`);
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    renderEmptyTable("Could not load daily weights.");
+    return;
+  }
+
+  renderTableRows(data.history || []);
+}
+
+async function refreshReferenceTable() {
+  const selectedPigId = pigSelect.value || "";
+  const selectedDate = weightDateInput.value || "";
+
+  if (selectedPigId) {
+    await loadPigWeightHistoryForTable(selectedPigId);
+    return;
+  }
+
+  if (selectedDate) {
+    await loadWeightsByDateForTable(selectedDate);
+    return;
+  }
+
+  renderEmptyTable("Select a pig or date to view weight records.");
+}
+
 pigSelect.addEventListener("change", async (event) => {
   clearMessage();
   await loadLatestWeight(event.target.value);
+  await refreshReferenceTable();
+});
+
+penFilterSelect.addEventListener("change", async () => {
+  populatePigSelect();
+  await refreshReferenceTable();
 });
 
 weightKgInput.addEventListener("input", updateGrowthPreview);
-weightDateInput.addEventListener("change", updateGrowthPreview);
+
+weightDateInput.addEventListener("change", async () => {
+  updateGrowthPreview();
+  await refreshReferenceTable();
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -213,14 +357,15 @@ form.addEventListener("submit", async (event) => {
     weight_date: weightDateInput.value,
     weight_kg: parseFloat(weightKgInput.value),
     condition_notes: conditionNotesInput.value.trim(),
-    weighed_by: "WebApp"
+    weighed_by: "WebApp",
+    moved_to_pen_id: movedToPenSelect.value || ""
   };
 
   submitButton.disabled = true;
   submitButton.textContent = "Saving...";
 
   try {
-    const response = await fetch("/api/pig-weights/weights", {
+    const response = await fetch("/api/pig-weights/weights-with-optional-move", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -236,9 +381,17 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
-    showMessage("Weight saved successfully.", "success");
+    if (data.movement_logged) {
+      showMessage("Weight and pen movement saved successfully.", "success");
+    } else {
+      showMessage("Weight saved successfully.", "success");
+    }
+
     conditionNotesInput.value = "";
+    movedToPenSelect.value = "";
+    await loadPigs();
     await loadLatestWeight(pigSelect.value);
+    await refreshReferenceTable();
   } catch (error) {
     showMessage("Something went wrong while saving.", "error");
   } finally {
@@ -248,4 +401,4 @@ form.addEventListener("submit", async (event) => {
 });
 
 setTodayDate();
-loadPigs();
+loadPens().then(loadPigs);

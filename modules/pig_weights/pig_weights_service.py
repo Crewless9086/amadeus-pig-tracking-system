@@ -220,6 +220,7 @@ def get_active_pigs():
                 "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
                 "current_weight_kg": row.get(columns["current_weight"], ""),
                 "last_weight_date": format_date_for_json(row.get(columns["last_weight_date"], "")),
+                "current_pen_id": to_clean_string(row.get(columns["current_pen_id"], "")),
             })
 
     return active_pigs
@@ -747,6 +748,65 @@ def get_weight_history_for_pig(pig_id: str):
         "history": history,
     }
 
+def get_weight_entries_by_date(weight_date: str):
+    parsed_target_date = parse_sheet_date(weight_date)
+
+    if not parsed_target_date:
+        return {
+            "weight_date": "",
+            "count": 0,
+            "history": [],
+        }
+
+    weight_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
+    overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    overview_rows = get_all_records(overview_sheet)
+    pig_lookup = {}
+
+    for row in overview_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+
+        pig_lookup[pig_id] = {
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "current_pen_id": to_clean_string(row.get(columns["current_pen_id"], "")),
+        }
+
+    weight_rows = get_all_records(weight_log_sheet)
+
+    history = []
+    for row in weight_rows:
+        row_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+        if row_date != parsed_target_date:
+            continue
+
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        pig_meta = pig_lookup.get(pig_id, {})
+
+        history.append({
+            "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+            "pig_id": pig_id,
+            "tag_number": pig_meta.get("tag_number", ""),
+            "current_pen_id": pig_meta.get("current_pen_id", ""),
+            "weight_date_display": format_date_for_json(row.get(columns["weight_date"], "")),
+            "weight_kg": to_float(row.get(columns["weight_kg"], "")),
+            "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
+            "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
+        })
+
+    history = sorted(
+        history,
+        key=lambda x: ((x["tag_number"] or x["pig_id"]).lower(), x["pig_id"].lower())
+    )
+
+    return {
+        "weight_date": parsed_target_date.isoformat(),
+        "count": len(history),
+        "history": history,
+    }
 
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
@@ -1095,6 +1155,51 @@ def save_weight_entry(cleaned_data: dict):
         "latest": latest_info
     }
 
+def save_weight_entry_with_optional_move(cleaned_data: dict):
+    weight_result = save_weight_entry({
+        "pig_id": cleaned_data["pig_id"],
+        "weight_date": cleaned_data["weight_date"],
+        "weight_kg": cleaned_data["weight_kg"],
+        "condition_notes": cleaned_data["condition_notes"],
+        "weighed_by": cleaned_data["weighed_by"],
+    })
+
+    moved_to_pen_id = to_clean_string(cleaned_data.get("moved_to_pen_id", ""))
+    movement_logged = False
+    movement_result = None
+
+    if moved_to_pen_id:
+        overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+        columns = PIG_WEIGHTS_CONFIG["columns"]
+        overview_rows = get_all_records(overview_sheet)
+
+        current_pen_id = ""
+        for row in overview_rows:
+            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+            if row_pig_id == cleaned_data["pig_id"]:
+                current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+                break
+
+        if moved_to_pen_id != current_pen_id:
+            movement_result = save_movement_entry({
+                "pig_id": cleaned_data["pig_id"],
+                "move_date": cleaned_data["weight_date"],
+                "from_pen_id": current_pen_id,
+                "to_pen_id": moved_to_pen_id,
+                "reason_for_move": "Moved during weight capture",
+                "moved_by": "WebApp",
+                "move_notes": "",
+            })
+            movement_logged = True
+
+    return {
+        "success": True,
+        "message": "Weight entry saved successfully.",
+        "saved": weight_result.get("saved", {}),
+        "latest": weight_result.get("latest", {}),
+        "movement_logged": movement_logged,
+        "movement": movement_result.get("saved", {}) if movement_result else None,
+    }
 
 def save_treatment_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
