@@ -19,6 +19,7 @@ const weightsReferenceBody = document.getElementById("weights_reference_body");
 
 let selectedPigLatest = null;
 let allPigs = [];
+let allPens = [];
 
 function getPreselectedPigId() {
   const params = new URLSearchParams(window.location.search);
@@ -203,22 +204,20 @@ async function loadPens() {
     const response = await fetch("/api/pig-weights/pens");
     const data = await response.json();
 
-    penFilterSelect.innerHTML = `<option value="">All active pigs</option>`;
+    allPens = data.pens || [];
+
     movedToPenSelect.innerHTML = `<option value="">No pen change</option>`;
 
-    (data.pens || []).forEach((pen) => {
+    allPens.forEach((pen) => {
       const label = pen.pen_name ? `${pen.pen_name} (${pen.pen_id})` : (pen.pen_id || "");
-
-      const filterOption = document.createElement("option");
-      filterOption.value = pen.pen_id;
-      filterOption.textContent = label;
-      penFilterSelect.appendChild(filterOption);
 
       const moveOption = document.createElement("option");
       moveOption.value = pen.pen_id;
       moveOption.textContent = label;
       movedToPenSelect.appendChild(moveOption);
     });
+
+    penFilterSelect.innerHTML = `<option value="">All active pigs</option>`;
   } catch (error) {
     console.error("Could not load pens.", error);
   }
@@ -228,6 +227,28 @@ function buildPigLabel(pig) {
   const tag = pig.tag_number || pig.pig_id;
   const pen = pig.current_pen_id ? ` • ${pig.current_pen_id}` : "";
   return `${tag}${pen}`;
+}
+
+function populatePenFilterFromActivePigs() {
+  penFilterSelect.innerHTML = `<option value="">All active pigs</option>`;
+
+  const activePenIds = [...new Set(
+    allPigs
+      .map((pig) => pig.current_pen_id || "")
+      .filter((penId) => penId !== "")
+  )].sort();
+
+  activePenIds.forEach((penId) => {
+    const matchingPen = allPens.find((pen) => pen.pen_id === penId);
+    const label = matchingPen && matchingPen.pen_name
+      ? `${matchingPen.pen_name} (${penId})`
+      : penId;
+
+    const option = document.createElement("option");
+    option.value = penId;
+    option.textContent = label;
+    penFilterSelect.appendChild(option);
+  });
 }
 
 function populatePigSelect() {
@@ -274,6 +295,8 @@ async function loadPigs() {
     const data = await response.json();
 
     allPigs = data.pigs || [];
+
+    populatePenFilterFromActivePigs();
     populatePigSelect();
 
     const preselectedPigId = getPreselectedPigId();
@@ -284,6 +307,7 @@ async function loadPigs() {
       renderEmptyTable("Select a pig or date to view weight records.");
     }
   } catch (error) {
+    console.error("loadPigs error:", error);
     pigSelect.innerHTML = '<option value="">Failed to load pigs</option>';
     showMessage("Could not load pigs.", "error");
   }
@@ -393,6 +417,7 @@ form.addEventListener("submit", async (event) => {
     await loadLatestWeight(pigSelect.value);
     await refreshReferenceTable();
   } catch (error) {
+    console.error("save weight error:", error);
     showMessage("Something went wrong while saving.", "error");
   } finally {
     submitButton.disabled = false;
@@ -401,4 +426,8 @@ form.addEventListener("submit", async (event) => {
 });
 
 setTodayDate();
-loadPens().then(loadPigs);
+
+(async function initPage() {
+  await loadPens();
+  await loadPigs();
+})();
