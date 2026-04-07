@@ -92,7 +92,7 @@ async function loadTreatmentHistory() {
   document.getElementById("treatment_history_record_button").href = `/pig/${encodeURIComponent(pigId)}/treatment`;
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(pigId)}/treatments`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/treatments`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
@@ -101,6 +101,7 @@ async function loadTreatmentHistory() {
     }
 
     const titleTag = data.tag_number || data.pig_id;
+
     document.getElementById("treatment_history_title").textContent = `Treatment History • ${titleTag}`;
     document.getElementById("treatment_history_subtitle").textContent = `Pig ID: ${data.pig_id} • ${data.count} record(s)`;
 
@@ -125,6 +126,7 @@ async function loadTreatmentHistory() {
 
     treatmentHistoryList.innerHTML = data.history.map(renderTreatmentRow).join("");
   } catch (error) {
+    console.error("loadTreatmentHistory error:", error);
     showTreatmentHistoryMessage("Something went wrong while loading treatment history.", "error");
   }
 }

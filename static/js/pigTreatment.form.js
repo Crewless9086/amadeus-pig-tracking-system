@@ -82,7 +82,7 @@ async function loadPig() {
   }
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(currentPigId)}/detail`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(currentPigId)}`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
@@ -170,6 +170,7 @@ treatmentForm.addEventListener("submit", async (event) => {
     }
 
     showMessage("Treatment saved successfully.", "success");
+
     medicalNotesInput.value = "";
     batchInput.value = "";
     reasonInput.value = "";

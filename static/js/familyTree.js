@@ -100,7 +100,7 @@ async function loadFamilyTree() {
   document.getElementById("family_tree_profile_button").href = `/pig/${encodeURIComponent(pigId)}`;
 
   try {
-    const response = await fetch(`/api/pig-weights/family-tree/${encodeURIComponent(pigId)}`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/family-tree`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
@@ -135,6 +135,7 @@ async function loadFamilyTree() {
       familyTreeSiblings.appendChild(buildSiblingCard(pig));
     });
   } catch (error) {
+    console.error("loadFamilyTree error:", error);
     showFamilyTreeMessage("Something went wrong while loading family tree.", "error");
   }
 }

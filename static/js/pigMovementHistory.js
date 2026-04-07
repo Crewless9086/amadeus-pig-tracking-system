@@ -72,7 +72,7 @@ async function loadMovementHistory() {
   document.getElementById("movement_history_record_button").href = `/pig/${encodeURIComponent(pigId)}/movement`;
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(pigId)}/movements`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/movements`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
@@ -81,6 +81,7 @@ async function loadMovementHistory() {
     }
 
     const titleTag = data.tag_number || data.pig_id;
+
     document.getElementById("movement_history_title").textContent = `Movement History • ${titleTag}`;
     document.getElementById("movement_history_subtitle").textContent = `Pig ID: ${data.pig_id} • ${data.count} record(s)`;
 
@@ -105,6 +106,7 @@ async function loadMovementHistory() {
 
     movementHistoryList.innerHTML = data.history.map(renderMovementRow).join("");
   } catch (error) {
+    console.error("loadMovementHistory error:", error);
     showMovementHistoryMessage("Something went wrong while loading movement history.", "error");
   }
 }

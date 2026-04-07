@@ -50,7 +50,7 @@ async function loadMovementPig() {
   }
 
   try {
-    const response = await fetch(`/api/pig-weights/${encodeURIComponent(currentMovementPigId)}/detail`);
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(currentMovementPigId)}`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
@@ -72,6 +72,7 @@ async function loadMovementPig() {
     document.getElementById("movement_profile_button").href = `/pig/${encodeURIComponent(pig.pig_id)}`;
     document.getElementById("movement_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/movements`;
   } catch (error) {
+    console.error("loadMovementPig error:", error);
     showMovementMessage("Something went wrong while loading pig detail.", "error");
   }
 }
@@ -91,6 +92,7 @@ async function loadPens() {
       toPenIdInput.appendChild(option);
     });
   } catch (error) {
+    console.error("loadPens error:", error);
     toPenIdInput.innerHTML = '<option value="">Failed to load pens</option>';
     showMovementMessage("Could not load pens.", "error");
   }
@@ -134,6 +136,7 @@ movementForm.addEventListener("submit", async (event) => {
     reasonForMoveInput.value = "";
     moveNotesInput.value = "";
   } catch (error) {
+    console.error("save movement error:", error);
     showMovementMessage("Something went wrong while saving movement.", "error");
   } finally {
     movementSubmitButton.disabled = false;
