@@ -122,6 +122,40 @@ def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
 
     raise ValueError(f"Row with ID '{row_id}' not found in '{sheet_name}'.")
 
+def _get_active_order_lines_by_request_item_from_rows(order_lines_rows, order_id: str, request_item_key: str):
+    active_lines = []
+
+    for row in order_lines_rows:
+        if to_clean_string(row.get("Order_ID", "")) != str(order_id).strip():
+            continue
+        if to_clean_string(row.get("Request_Item_Key", "")) != str(request_item_key).strip():
+            continue
+        if not _row_is_active_order_line(row):
+            continue
+
+        active_lines.append(row)
+
+    return active_lines
+
+
+def _get_active_pig_ids_on_order_from_rows(order_lines_rows, order_id: str, exclude_request_item_key: str = ""):
+    pig_ids = set()
+
+    for row in order_lines_rows:
+        if to_clean_string(row.get("Order_ID", "")) != str(order_id).strip():
+            continue
+        if not _row_is_active_order_line(row):
+            continue
+
+        row_request_item_key = to_clean_string(row.get("Request_Item_Key", ""))
+        if exclude_request_item_key and row_request_item_key == exclude_request_item_key:
+            continue
+
+        pig_id = to_clean_string(row.get("Pig_ID", ""))
+        if pig_id:
+            pig_ids.add(pig_id)
+
+    return pig_ids
 
 def _get_order_master_row(order_id: str):
     rows = get_all_records(ORDER_MASTER_SHEET)
@@ -322,14 +356,11 @@ def _lookup_unit_price(pricing_lookup: dict, sale_category: str, weight_band: st
     return pricing_lookup[key]
 
 
-def _get_matching_available_pigs(order_id: str, request_item_key: str, category: str, weight_range: str, sex: str):
-    rows = get_all_records(SALES_AVAILABILITY_SHEET)
+def _get_matching_available_pigs(sales_rows, blocked_pig_ids, category: str, weight_range: str, sex: str):
     target_categories = _sales_categories_for_request(category)
-    blocked_pig_ids = _get_active_pig_ids_on_order(order_id, exclude_request_item_key=request_item_key)
-
     matches = []
 
-    for row in rows:
+    for row in sales_rows:
         if to_clean_string(row.get("Available_For_Sale", "")) != "Yes":
             continue
 
@@ -365,14 +396,11 @@ def _get_matching_available_pigs(order_id: str, request_item_key: str, category:
     return sorted(matches, key=lambda x: ((x["tag_number"] or "").lower(), (x["pig_id"] or "").lower()))
 
 
-def _build_same_category_alternatives(order_id: str, request_item_key: str, category: str, requested_weight_range: str, sex: str):
-    rows = get_all_records(SALES_AVAILABILITY_SHEET)
+def _build_same_category_alternatives(sales_rows, blocked_pig_ids, category: str, requested_weight_range: str, sex: str):
     target_categories = _sales_categories_for_request(category)
-    blocked_pig_ids = _get_active_pig_ids_on_order(order_id, exclude_request_item_key=request_item_key)
-
     grouped = {}
 
-    for row in rows:
+    for row in sales_rows:
         if to_clean_string(row.get("Available_For_Sale", "")) != "Yes":
             continue
 
@@ -828,6 +856,8 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         raise ValueError("Only draft orders can sync order lines.")
 
     pricing_lookup = _build_sales_pricing_lookup()
+    sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
+    order_lines_rows = get_all_records(ORDER_LINES_SHEET)
 
     results = []
 
@@ -839,16 +869,26 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         quantity = item.get("quantity", 0)
         notes = to_clean_string(item.get("notes", ""))
 
-        existing_active_lines = _get_active_order_lines_by_request_item(order_id, request_item_key)
+        existing_active_lines = _get_active_order_lines_by_request_item_from_rows(
+            order_lines_rows,
+            order_id,
+            request_item_key,
+        )
         existing_active_line_ids = [
             to_clean_string(row.get("Order_Line_ID", ""))
             for row in existing_active_lines
             if to_clean_string(row.get("Order_Line_ID", ""))
         ]
 
+        blocked_pig_ids = _get_active_pig_ids_on_order_from_rows(
+            order_lines_rows,
+            order_id,
+            exclude_request_item_key=request_item_key,
+        )
+
         matches = _get_matching_available_pigs(
-            order_id=order_id,
-            request_item_key=request_item_key,
+            sales_rows=sales_rows,
+            blocked_pig_ids=blocked_pig_ids,
             category=category,
             weight_range=weight_range,
             sex=sex,
@@ -857,8 +897,8 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         requested_quantity = int(quantity)
         matched_quantity = len(matches)
         alternatives = _build_same_category_alternatives(
-            order_id=order_id,
-            request_item_key=request_item_key,
+            sales_rows=sales_rows,
+            blocked_pig_ids=blocked_pig_ids,
             category=category,
             requested_weight_range=weight_range,
             sex=sex,
