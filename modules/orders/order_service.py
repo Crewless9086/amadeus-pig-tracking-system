@@ -292,24 +292,34 @@ def _cancel_order_lines(order_line_ids):
 
     return cancelled_count
 
-
-def _lookup_unit_price(sale_category: str, weight_band: str):
+def _build_sales_pricing_lookup():
     rows = get_all_records(SALES_PRICING_SHEET)
+    pricing_lookup = {}
 
     for row in rows:
-        row_category = to_clean_string(row.get("Sale_Category", ""))
-        row_weight_band = to_clean_string(row.get("Weight_Band", ""))
-        if row_category == to_clean_string(sale_category) and row_weight_band == to_clean_string(weight_band):
-            price_value = to_float(row.get("Price_Range", ""))
-            if price_value is None:
-                raise ValueError(
-                    f"Price_Range is blank or invalid in SALES_PRICING for {sale_category} / {weight_band}."
-                )
-            return price_value
+        sale_category = to_clean_string(row.get("Sale_Category", ""))
+        weight_band = to_clean_string(row.get("Weight_Band", ""))
+        price_value = to_float(row.get("Price_Range", ""))
 
-    raise ValueError(
-        f"No pricing found in SALES_PRICING for {sale_category} / {weight_band}."
-    )
+        if not sale_category or not weight_band:
+            continue
+
+        if price_value is None:
+            continue
+
+        pricing_lookup[(sale_category, weight_band)] = price_value
+
+    return pricing_lookup
+
+def _lookup_unit_price(pricing_lookup: dict, sale_category: str, weight_band: str):
+    key = (to_clean_string(sale_category), to_clean_string(weight_band))
+
+    if key not in pricing_lookup:
+        raise ValueError(
+            f"No pricing found in SALES_PRICING for {sale_category} / {weight_band}."
+        )
+
+    return pricing_lookup[key]
 
 
 def _get_matching_available_pigs(order_id: str, request_item_key: str, category: str, weight_range: str, sex: str):
@@ -403,8 +413,8 @@ def _build_same_category_alternatives(order_id: str, request_item_key: str, cate
     )
 
 
-def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dict, notes: str):
-    unit_price = _lookup_unit_price(pig["sale_category"], pig["weight_band"])
+def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dict, notes: str, pricing_lookup: dict):
+    unit_price = _lookup_unit_price(pricing_lookup, pig["sale_category"], pig["weight_band"])
     today_str = datetime.now().strftime("%d %b %Y")
 
     row_values = [
@@ -817,6 +827,8 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     if order_status not in ("Draft", ""):
         raise ValueError("Only draft orders can sync order lines.")
 
+    pricing_lookup = _build_sales_pricing_lookup()
+
     results = []
 
     for item in requested_items:
@@ -867,6 +879,7 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
                         request_item_key=request_item_key,
                         pig=pig,
                         notes=notes,
+                        pricing_lookup=pricing_lookup,
                     )
                 )
 
