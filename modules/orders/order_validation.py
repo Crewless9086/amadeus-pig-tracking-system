@@ -1,12 +1,24 @@
 from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_float
 
-
 ALLOWED_REQUESTED_CATEGORIES = {
     "Piglet",
     "Weaner",
     "Grower",
     "Finisher",
     "Slaughter",
+}
+
+ALLOWED_SYNC_ITEM_CATEGORIES = {
+    "Piglet",
+    "Weaner",
+    "Grower",
+    "Finisher",
+    "Slaughter",
+    "Young Piglets",
+    "Weaner Piglets",
+    "Grower Pigs",
+    "Finisher Pigs",
+    "Ready for Slaughter",
 }
 
 ALLOWED_REQUESTED_WEIGHT_RANGES = {
@@ -108,6 +120,7 @@ def validate_new_order_line_payload(payload: dict):
     pig_id = str(payload.get("pig_id", "")).strip()
     unit_price = payload.get("unit_price", "")
     notes = str(payload.get("notes", "")).strip()
+    request_item_key = str(payload.get("request_item_key", "")).strip()
 
     if not order_id:
         errors.append("Order_ID is required.")
@@ -127,6 +140,7 @@ def validate_new_order_line_payload(payload: dict):
             "pig_id": pig_id,
             "unit_price": parsed_unit_price,
             "notes": notes,
+            "request_item_key": request_item_key,
         }
     }
 
@@ -235,4 +249,90 @@ def validate_update_order_payload(payload: dict):
         "is_valid": len(errors) == 0,
         "errors": errors,
         "cleaned_data": cleaned_data,
+    }
+
+
+def validate_sync_order_lines_payload(payload: dict):
+    errors = []
+
+    requested_items = payload.get("requested_items", [])
+    changed_by = str(payload.get("changed_by", "App")).strip() or "App"
+
+    if not isinstance(requested_items, list) or len(requested_items) == 0:
+        errors.append("requested_items is required and must be a non-empty list.")
+        return {
+            "is_valid": False,
+            "errors": errors,
+            "cleaned_data": {
+                "changed_by": changed_by,
+                "requested_items": [],
+            }
+        }
+
+    cleaned_items = []
+
+    for index, item in enumerate(requested_items):
+        if not isinstance(item, dict):
+            errors.append(f"requested_items[{index}] must be an object.")
+            continue
+
+        request_item_key = str(item.get("request_item_key", "")).strip()
+        category = str(item.get("category", "")).strip()
+        weight_range = str(item.get("weight_range", "")).strip()
+        sex = str(item.get("sex", "")).strip()
+        quantity_raw = item.get("quantity", "")
+        intent_type = str(item.get("intent_type", "")).strip()
+        status = str(item.get("status", "active")).strip() or "active"
+        notes = str(item.get("notes", "")).strip()
+
+        if not request_item_key:
+            errors.append(f"requested_items[{index}].request_item_key is required.")
+
+        if not category:
+            errors.append(f"requested_items[{index}].category is required.")
+        elif category not in ALLOWED_SYNC_ITEM_CATEGORIES:
+            errors.append(
+                f"requested_items[{index}].category must be one of the approved category values."
+            )
+
+        if not weight_range:
+            errors.append(f"requested_items[{index}].weight_range is required.")
+        elif weight_range not in ALLOWED_REQUESTED_WEIGHT_RANGES:
+            errors.append(
+                f"requested_items[{index}].weight_range must be one of the approved stored values."
+            )
+
+        if sex and sex not in ALLOWED_REQUESTED_SEX:
+            errors.append(
+                f"requested_items[{index}].sex must be one of: "
+                + ", ".join(sorted(ALLOWED_REQUESTED_SEX))
+                + "."
+            )
+
+        parsed_quantity = to_float(quantity_raw)
+        if parsed_quantity is None:
+            errors.append(f"requested_items[{index}].quantity is required and must be a number.")
+        elif parsed_quantity <= 0:
+            errors.append(f"requested_items[{index}].quantity must be greater than 0.")
+        elif int(parsed_quantity) != parsed_quantity:
+            errors.append(f"requested_items[{index}].quantity must be a whole number.")
+
+        cleaned_items.append({
+            "request_item_key": request_item_key,
+            "category": category,
+            "weight_range": weight_range,
+            "sex": sex,
+            "quantity": int(parsed_quantity) if parsed_quantity is not None and parsed_quantity > 0 and int(parsed_quantity) == parsed_quantity else None,
+            "intent_type": intent_type,
+            "status": status,
+            "notes": notes,
+        })
+
+    return {
+        "is_valid": len(errors) == 0,
+        "errors": errors,
+        "cleaned_data": {
+            "changed_by": changed_by,
+            "requested_items": cleaned_items,
+        }
     }

@@ -14,12 +14,14 @@ from modules.orders.order_service import (
     send_order_for_approval,
     approve_order,
     reject_order,
+    sync_order_lines_from_request,
 )
 from modules.orders.order_validation import (
     validate_new_order_payload,
     validate_update_order_payload,
     validate_new_order_line_payload,
     validate_update_order_line_payload,
+    validate_sync_order_lines_payload,
 )
 
 orders_bp = Blueprint("orders", __name__)
@@ -159,6 +161,27 @@ def edit_order(order_id):
 
     try:
         result = update_order(order_id, validation["cleaned_data"])
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/master/orders/<order_id>/sync-lines", methods=["POST"])
+def sync_order_lines(order_id):
+    payload = request.get_json(silent=True) or {}
+    validation = validate_sync_order_lines_payload(payload)
+
+    if not validation["is_valid"]:
+        return jsonify({
+            "success": False,
+            "errors": validation["errors"]
+        }), 400
+
+    try:
+        result = sync_order_lines_from_request(order_id, validation["cleaned_data"])
         return jsonify(result), 200
     except ValueError as exc:
         return jsonify({

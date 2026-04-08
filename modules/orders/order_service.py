@@ -24,11 +24,49 @@ ORDER_LINES_SHEET = "ORDER_LINES"
 ORDER_STATUS_LOG_SHEET = "ORDER_STATUS_LOG"
 ORDER_OVERVIEW_SHEET = "ORDER_OVERVIEW"
 SALES_AVAILABILITY_SHEET = "SALES_AVAILABILITY"
+SALES_PRICING_SHEET = "SALES_PRICING"
 
 ORDER_APPROVAL_WEBHOOK_URL = os.getenv(
     "ORDER_APPROVAL_WEBHOOK_URL",
     "https://charln.app.n8n.cloud/webhook/46935f6b-2921-4d51-a477-1db5ac1024f7",
 )
+
+CATEGORY_REQUEST_TO_SALES = {
+    "Piglet": ["Young Piglets"],
+    "Weaner": ["Weaner Piglets"],
+    "Grower": ["Grower Pigs"],
+    "Finisher": ["Finisher Pigs"],
+    "Slaughter": ["Ready for Slaughter"],
+    "Young Piglets": ["Young Piglets"],
+    "Weaner Piglets": ["Weaner Piglets"],
+    "Grower Pigs": ["Grower Pigs"],
+    "Finisher Pigs": ["Finisher Pigs"],
+    "Ready for Slaughter": ["Ready for Slaughter"],
+}
+
+WEIGHT_BAND_ORDER = [
+    "N/A",
+    "2_to_4_Kg",
+    "5_to_6_Kg",
+    "7_to_9_Kg",
+    "10_to_14_Kg",
+    "15_to_19_Kg",
+    "20_to_24_Kg",
+    "25_to_29_Kg",
+    "30_to_34_Kg",
+    "35_to_39_Kg",
+    "40_to_44_Kg",
+    "45_to_49_Kg",
+    "50_to_54_Kg",
+    "55_to_59_Kg",
+    "60_to_64_Kg",
+    "65_to_69_Kg",
+    "70_to_74_Kg",
+    "75_to_79_Kg",
+    "80_to_84_Kg",
+    "85_to_89_Kg",
+    "90_to_94_Kg",
+]
 
 
 def generate_order_id():
@@ -175,6 +213,229 @@ def _notify_n8n_order_approval_request(order_id: str, changed_by: str):
         }
 
 
+def _weight_band_sort_key(weight_band: str):
+    try:
+        return WEIGHT_BAND_ORDER.index(to_clean_string(weight_band))
+    except ValueError:
+        return 9999
+
+
+def _sales_categories_for_request(category: str):
+    category = to_clean_string(category)
+    return CATEGORY_REQUEST_TO_SALES.get(category, [category])
+
+
+def _row_is_active_order_line(row: dict):
+    return to_clean_string(row.get("Line_Status", "")) != "Cancelled"
+
+
+def _get_active_order_lines_by_request_item(order_id: str, request_item_key: str):
+    rows = get_all_records(ORDER_LINES_SHEET)
+    active_lines = []
+
+    for row in rows:
+        if to_clean_string(row.get("Order_ID", "")) != str(order_id).strip():
+            continue
+        if to_clean_string(row.get("Request_Item_Key", "")) != str(request_item_key).strip():
+            continue
+        if not _row_is_active_order_line(row):
+            continue
+
+        active_lines.append(row)
+
+    return active_lines
+
+
+def _get_active_pig_ids_on_order(order_id: str, exclude_request_item_key: str = ""):
+    rows = get_all_records(ORDER_LINES_SHEET)
+    pig_ids = set()
+
+    for row in rows:
+        if to_clean_string(row.get("Order_ID", "")) != str(order_id).strip():
+            continue
+        if not _row_is_active_order_line(row):
+            continue
+
+        row_request_item_key = to_clean_string(row.get("Request_Item_Key", ""))
+        if exclude_request_item_key and row_request_item_key == exclude_request_item_key:
+            continue
+
+        pig_id = to_clean_string(row.get("Pig_ID", ""))
+        if pig_id:
+            pig_ids.add(pig_id)
+
+    return pig_ids
+
+
+def _cancel_order_lines(order_line_ids):
+    today_str = datetime.now().strftime("%d %b %Y")
+    cancelled_count = 0
+
+    for order_line_id in order_line_ids:
+        row = _get_order_line_row(order_line_id)
+        if not row:
+            continue
+
+        if to_clean_string(row.get("Line_Status", "")) == "Cancelled":
+            continue
+
+        _update_sheet_row_by_id(
+            ORDER_LINES_SHEET,
+            order_line_id,
+            {
+                "Line_Status": "Cancelled",
+                "Reserved_Status": "Not_Reserved",
+                "Updated_At": today_str,
+            }
+        )
+        cancelled_count += 1
+
+    return cancelled_count
+
+
+def _lookup_unit_price(sale_category: str, weight_band: str):
+    rows = get_all_records(SALES_PRICING_SHEET)
+
+    for row in rows:
+        row_category = to_clean_string(row.get("Sale_Category", ""))
+        row_weight_band = to_clean_string(row.get("Weight_Band", ""))
+        if row_category == to_clean_string(sale_category) and row_weight_band == to_clean_string(weight_band):
+            price_value = to_float(row.get("Price_Range", ""))
+            if price_value is None:
+                raise ValueError(
+                    f"Price_Range is blank or invalid in SALES_PRICING for {sale_category} / {weight_band}."
+                )
+            return price_value
+
+    raise ValueError(
+        f"No pricing found in SALES_PRICING for {sale_category} / {weight_band}."
+    )
+
+
+def _get_matching_available_pigs(order_id: str, request_item_key: str, category: str, weight_range: str, sex: str):
+    rows = get_all_records(SALES_AVAILABILITY_SHEET)
+    target_categories = _sales_categories_for_request(category)
+    blocked_pig_ids = _get_active_pig_ids_on_order(order_id, exclude_request_item_key=request_item_key)
+
+    matches = []
+
+    for row in rows:
+        if to_clean_string(row.get("Available_For_Sale", "")) != "Yes":
+            continue
+
+        if to_clean_string(row.get("Reserved_Status", "")) == "Reserved":
+            continue
+
+        row_sale_category = to_clean_string(row.get("Sale_Category", ""))
+        row_weight_band = to_clean_string(row.get("Weight_Band", ""))
+        row_sex = to_clean_string(row.get("Sex", ""))
+        row_pig_id = to_clean_string(row.get("Pig_ID", ""))
+
+        if row_sale_category not in target_categories:
+            continue
+
+        if row_weight_band != to_clean_string(weight_range):
+            continue
+
+        if sex and sex != "Any" and row_sex != sex:
+            continue
+
+        if row_pig_id in blocked_pig_ids:
+            continue
+
+        matches.append({
+            "pig_id": row_pig_id,
+            "tag_number": to_clean_string(row.get("Tag_Number", "")),
+            "sex": row_sex,
+            "current_weight_kg": to_float(row.get("Current_Weight_Kg", "")),
+            "weight_band": row_weight_band,
+            "sale_category": row_sale_category,
+        })
+
+    return sorted(matches, key=lambda x: ((x["tag_number"] or "").lower(), (x["pig_id"] or "").lower()))
+
+
+def _build_same_category_alternatives(order_id: str, request_item_key: str, category: str, requested_weight_range: str, sex: str):
+    rows = get_all_records(SALES_AVAILABILITY_SHEET)
+    target_categories = _sales_categories_for_request(category)
+    blocked_pig_ids = _get_active_pig_ids_on_order(order_id, exclude_request_item_key=request_item_key)
+
+    grouped = {}
+
+    for row in rows:
+        if to_clean_string(row.get("Available_For_Sale", "")) != "Yes":
+            continue
+
+        if to_clean_string(row.get("Reserved_Status", "")) == "Reserved":
+            continue
+
+        row_sale_category = to_clean_string(row.get("Sale_Category", ""))
+        row_weight_band = to_clean_string(row.get("Weight_Band", ""))
+        row_sex = to_clean_string(row.get("Sex", ""))
+        row_pig_id = to_clean_string(row.get("Pig_ID", ""))
+
+        if row_sale_category not in target_categories:
+            continue
+
+        if row_weight_band == to_clean_string(requested_weight_range):
+            continue
+
+        if sex and sex != "Any" and row_sex != sex:
+            continue
+
+        if row_pig_id in blocked_pig_ids:
+            continue
+
+        key = (row_sale_category, row_weight_band)
+        grouped[key] = grouped.get(key, 0) + 1
+
+    alternatives = []
+    for (sale_category, weight_band), available_count in grouped.items():
+        alternatives.append({
+            "sale_category": sale_category,
+            "weight_band": weight_band,
+            "available_count": available_count,
+        })
+
+    return sorted(
+        alternatives,
+        key=lambda x: (_weight_band_sort_key(x["weight_band"]), (x["sale_category"] or "").lower())
+    )
+
+
+def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dict, notes: str):
+    unit_price = _lookup_unit_price(pig["sale_category"], pig["weight_band"])
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    row_values = [
+        generate_order_line_id(),
+        order_id,
+        pig["pig_id"],
+        pig["tag_number"],
+        pig["sale_category"],
+        pig["weight_band"],
+        pig["sex"],
+        pig["current_weight_kg"] if pig["current_weight_kg"] is not None else "",
+        unit_price,
+        "Draft",
+        "Not_Reserved",
+        notes,
+        today_str,
+        today_str,
+        request_item_key,
+    ]
+
+    append_row(ORDER_LINES_SHEET, row_values)
+
+    return {
+        "pig_id": pig["pig_id"],
+        "tag_number": pig["tag_number"],
+        "sale_category": pig["sale_category"],
+        "weight_band": pig["weight_band"],
+        "unit_price": unit_price,
+    }
+
+
 def list_orders():
     rows = get_all_records(ORDER_OVERVIEW_SHEET)
     records = []
@@ -287,6 +548,7 @@ def get_order_detail(order_id: str):
             "line_status": to_clean_string(row.get("Line_Status", "")),
             "reserved_status": to_clean_string(row.get("Reserved_Status", "")),
             "notes": to_clean_string(row.get("Notes", "")),
+            "request_item_key": to_clean_string(row.get("Request_Item_Key", "")),
             "created_at": format_date_for_json(row.get("Created_At", "")),
             "updated_at": format_date_for_json(row.get("Updated_At", "")),
         })
@@ -466,6 +728,7 @@ def create_order_line(cleaned_data: dict):
         cleaned_data["notes"],
         today_str,
         today_str,
+        cleaned_data.get("request_item_key", ""),
     ]
 
     append_row(ORDER_LINES_SHEET, row_values)
@@ -538,6 +801,125 @@ def delete_order_line(order_line_id: str):
         "success": True,
         "message": "Order line removed successfully.",
         "order_line_id": order_line_id,
+    }
+
+
+def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
+    order_id = str(order_id).strip()
+    changed_by = str(cleaned_data.get("changed_by", "App")).strip() or "App"
+    requested_items = cleaned_data.get("requested_items", [])
+
+    order_row = _get_order_master_row(order_id)
+    if not order_row:
+        raise ValueError("Order not found.")
+
+    order_status = to_clean_string(order_row.get("Order_Status", ""))
+    if order_status not in ("Draft", ""):
+        raise ValueError("Only draft orders can sync order lines.")
+
+    results = []
+
+    for item in requested_items:
+        request_item_key = to_clean_string(item.get("request_item_key", ""))
+        category = to_clean_string(item.get("category", ""))
+        weight_range = to_clean_string(item.get("weight_range", ""))
+        sex = to_clean_string(item.get("sex", ""))
+        quantity = item.get("quantity", 0)
+        notes = to_clean_string(item.get("notes", ""))
+
+        existing_active_lines = _get_active_order_lines_by_request_item(order_id, request_item_key)
+        existing_active_line_ids = [
+            to_clean_string(row.get("Order_Line_ID", ""))
+            for row in existing_active_lines
+            if to_clean_string(row.get("Order_Line_ID", ""))
+        ]
+
+        matches = _get_matching_available_pigs(
+            order_id=order_id,
+            request_item_key=request_item_key,
+            category=category,
+            weight_range=weight_range,
+            sex=sex,
+        )
+
+        requested_quantity = int(quantity)
+        matched_quantity = len(matches)
+        alternatives = _build_same_category_alternatives(
+            order_id=order_id,
+            request_item_key=request_item_key,
+            category=category,
+            requested_weight_range=weight_range,
+            sex=sex,
+        )
+
+        if matched_quantity >= requested_quantity:
+            selected_matches = matches[:requested_quantity]
+
+            cancelled_line_count = 0
+            if existing_active_line_ids:
+                cancelled_line_count = _cancel_order_lines(existing_active_line_ids)
+
+            created_lines = []
+            for pig in selected_matches:
+                created_lines.append(
+                    _append_order_line_from_match(
+                        order_id=order_id,
+                        request_item_key=request_item_key,
+                        pig=pig,
+                        notes=notes,
+                    )
+                )
+
+            match_status = "exact_match"
+
+            if requested_quantity == 1 and matched_quantity == 1:
+                match_status = "specific_acceptance_match"
+
+            results.append({
+                "request_item_key": request_item_key,
+                "match_status": match_status,
+                "requested_quantity": requested_quantity,
+                "matched_quantity": requested_quantity,
+                "existing_active_line_count": len(existing_active_lines),
+                "cancelled_line_count": cancelled_line_count,
+                "created_line_count": len(created_lines),
+                "matched_pig_ids": [line["pig_id"] for line in created_lines],
+                "alternatives": [],
+            })
+            continue
+
+        if matched_quantity > 0:
+            results.append({
+                "request_item_key": request_item_key,
+                "match_status": "partial_match",
+                "requested_quantity": requested_quantity,
+                "matched_quantity": matched_quantity,
+                "existing_active_line_count": len(existing_active_lines),
+                "cancelled_line_count": 0,
+                "created_line_count": 0,
+                "matched_pig_ids": [pig["pig_id"] for pig in matches],
+                "alternatives": alternatives,
+            })
+            continue
+
+        results.append({
+            "request_item_key": request_item_key,
+            "match_status": "no_match",
+            "requested_quantity": requested_quantity,
+            "matched_quantity": 0,
+            "existing_active_line_count": len(existing_active_lines),
+            "cancelled_line_count": 0,
+            "created_line_count": 0,
+            "matched_pig_ids": [],
+            "alternatives": alternatives,
+        })
+
+    return {
+        "success": True,
+        "action": "sync_order_lines_from_request",
+        "order_id": order_id,
+        "changed_by": changed_by,
+        "results": results,
     }
 
 
