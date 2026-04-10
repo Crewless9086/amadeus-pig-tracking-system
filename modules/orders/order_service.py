@@ -704,6 +704,10 @@ def update_order(order_id: str, cleaned_data: dict):
         update_map["Requested_Sex"] = cleaned_data["requested_sex"]
         updated_fields.append("requested_sex")
 
+    if "collection_location" in cleaned_data:
+        update_map["Collection_Location"] = cleaned_data["collection_location"]
+        updated_fields.append("collection_location")
+
     if "notes" in cleaned_data:
         update_map["Notes"] = cleaned_data["notes"]
         updated_fields.append("notes")

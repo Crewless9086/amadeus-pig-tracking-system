@@ -1,5 +1,6 @@
 from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_float
 
+
 ALLOWED_REQUESTED_CATEGORIES = {
     "Piglet",
     "Weaner",
@@ -7,6 +8,7 @@ ALLOWED_REQUESTED_CATEGORIES = {
     "Finisher",
     "Slaughter",
 }
+
 
 ALLOWED_SYNC_ITEM_CATEGORIES = {
     "Piglet",
@@ -20,6 +22,7 @@ ALLOWED_SYNC_ITEM_CATEGORIES = {
     "Finisher Pigs",
     "Ready for Slaughter",
 }
+
 
 ALLOWED_REQUESTED_WEIGHT_RANGES = {
     "2_to_4_Kg",
@@ -44,9 +47,17 @@ ALLOWED_REQUESTED_WEIGHT_RANGES = {
     "90_to_94_Kg",
 }
 
+
 ALLOWED_REQUESTED_SEX = {
     "Male",
     "Female",
+    "Any",
+}
+
+
+ALLOWED_COLLECTION_LOCATIONS = {
+    "Riversdale",
+    "Albertinia",
     "Any",
 }
 
@@ -174,6 +185,7 @@ def validate_update_order_payload(payload: dict):
         "requested_category",
         "requested_weight_range",
         "requested_sex",
+        "collection_location",
         "notes",
         "changed_by",
     }
@@ -226,6 +238,17 @@ def validate_update_order_payload(payload: dict):
         else:
             cleaned_data["requested_sex"] = requested_sex
 
+    if "collection_location" in payload:
+        collection_location = str(payload.get("collection_location", "")).strip()
+        if collection_location and collection_location not in ALLOWED_COLLECTION_LOCATIONS:
+            errors.append(
+                "Collection_Location must be one of: "
+                + ", ".join(sorted(ALLOWED_COLLECTION_LOCATIONS))
+                + "."
+            )
+        else:
+            cleaned_data["collection_location"] = collection_location
+
     if "notes" in payload:
         cleaned_data["notes"] = str(payload.get("notes", "")).strip()
 
@@ -238,6 +261,7 @@ def validate_update_order_payload(payload: dict):
             "requested_category",
             "requested_weight_range",
             "requested_sex",
+            "collection_location",
             "notes",
         )
     )
