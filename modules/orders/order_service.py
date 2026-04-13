@@ -655,20 +655,30 @@ def create_order(cleaned_data: dict):
 
     append_row(ORDER_MASTER_SHEET, row_values)
 
-    _write_order_status_log(
-        order_id=order_id,
-        old_status="",
-        new_status="Draft",
-        changed_by=cleaned_data["created_by"],
-        change_source="App",
-        notes="Order created",
-    )
+    status_log_warning = ""
 
-    return {
+    try:
+        _write_order_status_log(
+            order_id=order_id,
+            old_status="",
+            new_status="Draft",
+            changed_by=cleaned_data["created_by"],
+            change_source="App",
+            notes="Order created",
+        )
+    except Exception as exc:
+        status_log_warning = f"Order created, but status log could not be written: {str(exc)}"
+
+    result = {
         "success": True,
         "order_id": order_id,
         "message": "Order created successfully."
     }
+
+    if status_log_warning:
+        result["warning"] = status_log_warning
+
+    return result
 
 
 def update_order(order_id: str, cleaned_data: dict):
