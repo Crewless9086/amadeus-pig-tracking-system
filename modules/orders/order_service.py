@@ -861,6 +861,9 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     changed_by = str(cleaned_data.get("changed_by", "App")).strip() or "App"
     requested_items = cleaned_data.get("requested_items", [])
 
+    if not isinstance(requested_items, list) or len(requested_items) == 0:
+        raise ValueError("requested_items must be a non-empty list.")
+
     order_row = _get_order_master_row(order_id)
     if not order_row:
         raise ValueError("Order not found.")
@@ -870,123 +873,158 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         raise ValueError("Only draft orders can sync order lines.")
 
     pricing_lookup = _build_sales_pricing_lookup()
-    sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
-    order_lines_rows = get_all_records(ORDER_LINES_SHEET)
-
     results = []
+    had_errors = False
 
     for item in requested_items:
         request_item_key = to_clean_string(item.get("request_item_key", ""))
         category = to_clean_string(item.get("category", ""))
         weight_range = to_clean_string(item.get("weight_range", ""))
         sex = to_clean_string(item.get("sex", ""))
-        quantity = item.get("quantity", 0)
         notes = to_clean_string(item.get("notes", ""))
 
-        existing_active_lines = _get_active_order_lines_by_request_item_from_rows(
-            order_lines_rows,
-            order_id,
-            request_item_key,
-        )
-        existing_active_line_ids = [
-            to_clean_string(row.get("Order_Line_ID", ""))
-            for row in existing_active_lines
-            if to_clean_string(row.get("Order_Line_ID", ""))
-        ]
+        try:
+            quantity_raw = item.get("quantity", 0)
+            requested_quantity = int(quantity_raw)
 
-        blocked_pig_ids = _get_active_pig_ids_on_order_from_rows(
-            order_lines_rows,
-            order_id,
-            exclude_request_item_key=request_item_key,
-        )
+            if not request_item_key:
+                raise ValueError("request_item_key is required.")
+            if not category:
+                raise ValueError(f"{request_item_key}: category is required.")
+            if not weight_range:
+                raise ValueError(f"{request_item_key}: weight_range is required.")
+            if requested_quantity <= 0:
+                raise ValueError(f"{request_item_key}: quantity must be greater than 0.")
 
-        matches = _get_matching_available_pigs(
-            sales_rows=sales_rows,
-            blocked_pig_ids=blocked_pig_ids,
-            category=category,
-            weight_range=weight_range,
-            sex=sex,
-        )
+            # Refresh live state on every item
+            sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
+            order_lines_rows = get_all_records(ORDER_LINES_SHEET)
 
-        requested_quantity = int(quantity)
-        matched_quantity = len(matches)
-        alternatives = _build_same_category_alternatives(
-            sales_rows=sales_rows,
-            blocked_pig_ids=blocked_pig_ids,
-            category=category,
-            requested_weight_range=weight_range,
-            sex=sex,
-        )
+            existing_active_lines = _get_active_order_lines_by_request_item_from_rows(
+                order_lines_rows,
+                order_id,
+                request_item_key,
+            )
 
-        if matched_quantity >= requested_quantity:
-            selected_matches = matches[:requested_quantity]
+            existing_active_line_ids = [
+                to_clean_string(row.get("Order_Line_ID", ""))
+                for row in existing_active_lines
+                if to_clean_string(row.get("Order_Line_ID", ""))
+            ]
 
-            cancelled_line_count = 0
-            if existing_active_line_ids:
-                cancelled_line_count = _cancel_order_lines(existing_active_line_ids)
+            blocked_pig_ids = _get_active_pig_ids_on_order_from_rows(
+                order_lines_rows,
+                order_id,
+                exclude_request_item_key=request_item_key,
+            )
 
-            created_lines = []
-            for pig in selected_matches:
-                created_lines.append(
-                    _append_order_line_from_match(
-                        order_id=order_id,
-                        request_item_key=request_item_key,
-                        pig=pig,
-                        notes=notes,
-                        pricing_lookup=pricing_lookup,
+            matches = _get_matching_available_pigs(
+                sales_rows=sales_rows,
+                blocked_pig_ids=blocked_pig_ids,
+                category=category,
+                weight_range=weight_range,
+                sex=sex,
+            )
+
+            matched_quantity = len(matches)
+            alternatives = _build_same_category_alternatives(
+                sales_rows=sales_rows,
+                blocked_pig_ids=blocked_pig_ids,
+                category=category,
+                requested_weight_range=weight_range,
+                sex=sex,
+            )
+
+            # Exact match
+            if matched_quantity >= requested_quantity:
+                selected_matches = matches[:requested_quantity]
+
+                cancelled_line_count = 0
+                if existing_active_line_ids:
+                    cancelled_line_count = _cancel_order_lines(existing_active_line_ids)
+
+                created_lines = []
+                for pig in selected_matches:
+                    created_lines.append(
+                        _append_order_line_from_match(
+                            order_id=order_id,
+                            request_item_key=request_item_key,
+                            pig=pig,
+                            notes=notes,
+                            pricing_lookup=pricing_lookup,
+                        )
                     )
-                )
 
-            match_status = "exact_match"
+                match_status = "exact_match"
+                if requested_quantity == 1 and matched_quantity == 1:
+                    match_status = "specific_acceptance_match"
 
-            if requested_quantity == 1 and matched_quantity == 1:
-                match_status = "specific_acceptance_match"
+                results.append({
+                    "request_item_key": request_item_key,
+                    "match_status": match_status,
+                    "requested_quantity": requested_quantity,
+                    "matched_quantity": requested_quantity,
+                    "existing_active_line_count": len(existing_active_lines),
+                    "cancelled_line_count": cancelled_line_count,
+                    "created_line_count": len(created_lines),
+                    "matched_pig_ids": [line["pig_id"] for line in created_lines],
+                    "alternatives": [],
+                    "error": "",
+                })
+                continue
 
+            # Partial match
+            if matched_quantity > 0:
+                results.append({
+                    "request_item_key": request_item_key,
+                    "match_status": "partial_match",
+                    "requested_quantity": requested_quantity,
+                    "matched_quantity": matched_quantity,
+                    "existing_active_line_count": len(existing_active_lines),
+                    "cancelled_line_count": 0,
+                    "created_line_count": 0,
+                    "matched_pig_ids": [pig["pig_id"] for pig in matches],
+                    "alternatives": alternatives,
+                    "error": "",
+                })
+                continue
+
+            # No match
             results.append({
                 "request_item_key": request_item_key,
-                "match_status": match_status,
+                "match_status": "no_match",
                 "requested_quantity": requested_quantity,
-                "matched_quantity": requested_quantity,
-                "existing_active_line_count": len(existing_active_lines),
-                "cancelled_line_count": cancelled_line_count,
-                "created_line_count": len(created_lines),
-                "matched_pig_ids": [line["pig_id"] for line in created_lines],
-                "alternatives": [],
-            })
-            continue
-
-        if matched_quantity > 0:
-            results.append({
-                "request_item_key": request_item_key,
-                "match_status": "partial_match",
-                "requested_quantity": requested_quantity,
-                "matched_quantity": matched_quantity,
+                "matched_quantity": 0,
                 "existing_active_line_count": len(existing_active_lines),
                 "cancelled_line_count": 0,
                 "created_line_count": 0,
-                "matched_pig_ids": [pig["pig_id"] for pig in matches],
+                "matched_pig_ids": [],
                 "alternatives": alternatives,
+                "error": "",
             })
-            continue
 
-        results.append({
-            "request_item_key": request_item_key,
-            "match_status": "no_match",
-            "requested_quantity": requested_quantity,
-            "matched_quantity": 0,
-            "existing_active_line_count": len(existing_active_lines),
-            "cancelled_line_count": 0,
-            "created_line_count": 0,
-            "matched_pig_ids": [],
-            "alternatives": alternatives,
-        })
+        except Exception as exc:
+            had_errors = True
+            results.append({
+                "request_item_key": request_item_key or "",
+                "match_status": "error",
+                "requested_quantity": item.get("quantity", ""),
+                "matched_quantity": 0,
+                "existing_active_line_count": 0,
+                "cancelled_line_count": 0,
+                "created_line_count": 0,
+                "matched_pig_ids": [],
+                "alternatives": [],
+                "error": str(exc),
+            })
 
     return {
-        "success": True,
+        "success": not had_errors,
         "action": "sync_order_lines_from_request",
         "order_id": order_id,
         "changed_by": changed_by,
         "results": results,
+        "message": "Order line sync completed." if not had_errors else "Order line sync completed with errors.",
     }
 
 
