@@ -210,6 +210,20 @@ If quantity or attributes changed:
 ❌ Never duplicate lines
 ❌ Never partially update
 
+9.6 Split-item re-sync behaviour (fixed 2026-04-23)
+When a split-sex order (e.g. primary_01 = males, primary_02 = females) is re-synced after pigs have been reserved, the previously-reserved pigs for each item must be allowed back into the candidate pool.
+
+Problem that was fixed:
+SALES_AVAILABILITY shows reserved pigs as Reserved_Status = "Reserved".
+The matching function skips Reserved pigs.
+sales_rows is fetched BEFORE existing lines for the current item are cancelled.
+Therefore, a re-sync after reserve_order_lines would see the current item's own pigs as Reserved → no candidates → no_match → second split item writes nothing.
+
+Fix implemented:
+_get_matching_available_pigs accepts own_pig_ids (set of Pig_IDs already on the current request_item_key's active lines).
+Pigs in own_pig_ids bypass the Reserved_Status filter — they are reserved for THIS item and should be re-assignable.
+This makes re-sync idempotent regardless of whether reserve_order_lines has been called.
+
 10. RESERVATION LOGIC
 
 10.1 Reserve trigger

@@ -357,7 +357,8 @@ def _lookup_unit_price(pricing_lookup: dict, sale_category: str, weight_band: st
     return pricing_lookup[key]
 
 
-def _get_matching_available_pigs(sales_rows, blocked_pig_ids, category: str, weight_range: str, sex: str):
+def _get_matching_available_pigs(sales_rows, blocked_pig_ids, category: str, weight_range: str, sex: str, own_pig_ids: set = None):
+    own_pig_ids = own_pig_ids or set()
     target_categories = _sales_categories_for_request(category)
     matches = []
 
@@ -365,13 +366,16 @@ def _get_matching_available_pigs(sales_rows, blocked_pig_ids, category: str, wei
         if to_clean_string(row.get("Available_For_Sale", "")) != "Yes":
             continue
 
+        row_pig_id = to_clean_string(row.get("Pig_ID", ""))
+
+        # Allow pigs already reserved for this item to re-enter the candidate pool
         if to_clean_string(row.get("Reserved_Status", "")) == "Reserved":
-            continue
+            if row_pig_id not in own_pig_ids:
+                continue
 
         row_sale_category = to_clean_string(row.get("Sale_Category", ""))
         row_weight_band = to_clean_string(row.get("Weight_Band", ""))
         row_sex = to_clean_string(row.get("Sex", ""))
-        row_pig_id = to_clean_string(row.get("Pig_ID", ""))
 
         if row_sale_category not in target_categories:
             continue
@@ -913,6 +917,14 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
                 if to_clean_string(row.get("Order_Line_ID", ""))
             ]
 
+            # Pigs already reserved for THIS item — allowed back into the candidate pool
+            # so that re-syncing after a reserve call doesn't break split-item orders
+            existing_active_pig_ids = {
+                to_clean_string(row.get("Pig_ID", ""))
+                for row in existing_active_lines
+                if to_clean_string(row.get("Pig_ID", ""))
+            }
+
             blocked_pig_ids = _get_active_pig_ids_on_order_from_rows(
                 order_lines_rows,
                 order_id,
@@ -925,6 +937,7 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
                 category=category,
                 weight_range=weight_range,
                 sex=sex,
+                own_pig_ids=existing_active_pig_ids,
             )
 
             matched_quantity = len(matches)

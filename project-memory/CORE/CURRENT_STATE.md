@@ -114,15 +114,14 @@ Some unnecessary CLARIFY triggers
 
 
 4.3 LINE SYNC LOGIC
-Status: ⚠️ NOT FULLY VERIFIED
+Status: ✅ FIXED (2026-04-23)
 
-Structure is correct
-Execution consistency still needs testing
+Structure is correct.
+Split-item re-sync bug fixed: secondary split items (e.g. primary_02 females) were returning no_match after a reserve call because their pigs appeared as Reserved in SALES_AVAILABILITY at the time of matching. Fixed by passing own_pig_ids to _get_matching_available_pigs so that pigs already reserved for the current request_item_key are allowed back into the candidate pool.
 
-Risk:
-
-duplicate lines
-incorrect updates
+Remaining watch points:
+Verify execution on orders with 3+ split items
+Monitor for duplicate lines if sync is called concurrently
 
 
 5. BROKEN / UNSTABLE ❌
