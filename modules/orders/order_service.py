@@ -1371,7 +1371,11 @@ def complete_order(order_id: str, changed_by: str = "App"):
 
     # Build and apply all ORDER_LINES updates in a single API call
     order_lines_updates = {
-        line["line_id"]: {"Line_Status": "Collected", "Updated_At": today_str}
+        line["line_id"]: {
+            "Line_Status":     "Collected",
+            "Reserved_Status": "Collected",
+            "Updated_At":      today_str,
+        }
         for line in active_lines
     }
     batch_update_rows_by_id(ORDER_LINES_SHEET, order_lines_updates)
