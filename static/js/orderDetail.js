@@ -83,6 +83,7 @@ async function loadOrderDetail(orderId) {
     const lines = data.lines || [];
 
     applyOrderActionVisibility(order);
+    renderDraftLinesSummary(lines);
 
     summaryContainer.innerHTML = `
       <div class="detail-card">
@@ -220,6 +221,59 @@ async function loadOrderDetail(orderId) {
     summaryContainer.innerHTML = "";
     linesContainer.innerHTML = "";
   }
+}
+
+function renderDraftLinesSummary(lines) {
+  const container = document.getElementById("draft_lines_summary");
+  if (!container) return;
+
+  const active = lines.filter(l => l.line_status !== "Cancelled");
+
+  if (active.length === 0) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const statusCounts = {};
+  active.forEach(l => {
+    const s = l.line_status || "Unknown";
+    statusCounts[s] = (statusCounts[s] || 0) + 1;
+  });
+
+  const categoryCounts = {};
+  active.forEach(l => {
+    const c = l.sale_category || "Uncategorised";
+    categoryCounts[c] = (categoryCounts[c] || 0) + 1;
+  });
+
+  const statusCards = Object.entries(statusCounts).map(([status, count]) => `
+    <div class="detail-card">
+      <div class="detail-label">${status}</div>
+      <div class="detail-value">${count}</div>
+    </div>
+  `).join("");
+
+  const categoryCards = Object.entries(categoryCounts).map(([cat, count]) => `
+    <div class="detail-card">
+      <div class="detail-label">${cat}</div>
+      <div class="detail-value">${count}</div>
+    </div>
+  `).join("");
+
+  container.innerHTML = `
+    <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
+      <div>
+        <h2 style="margin: 0 0 8px 0;">Lines Summary</h2>
+        <p style="margin: 0; color: var(--text-soft);">${active.length} line${active.length !== 1 ? "s" : ""} on this order.</p>
+      </div>
+    </div>
+    <div class="detail-grid" style="margin-bottom: 14px;">
+      ${statusCards}
+    </div>
+    <div class="detail-grid">
+      ${categoryCards}
+    </div>
+  `;
 }
 
 async function loadAvailablePigs() {
