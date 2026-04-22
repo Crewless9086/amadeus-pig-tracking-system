@@ -49,45 +49,50 @@ def get_dashboard_summary():
 
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
 
     active_pigs = 0
     on_farm_pigs = 0
+    reserved_count = 0
+    withdrawal_hold_count = 0
 
     for row in pig_rows:
         status = to_clean_string(row.get(columns["status"], ""))
         on_farm = to_clean_string(row.get(columns["on_farm"], ""))
+        reserved_status = to_clean_string(row.get(columns["reserved_status"], ""))
+        withdrawal_clear = to_clean_string(row.get(columns["withdrawal_clear"], ""))
 
         if status == "Active":
             active_pigs += 1
         if on_farm == "Yes":
             on_farm_pigs += 1
-
-    sale_ready_count = 0
-    available_for_sale_count = 0
-    reserved_count = 0
-    withdrawal_hold_count = 0
-
-    for row in sales_rows:
-        available_for_sale = to_clean_string(row.get(columns["available_for_sale"], ""))
-        reserved_status = to_clean_string(row.get(columns["reserved_status"], ""))
-        withdrawal_clear = to_clean_string(row.get(columns["withdrawal_clear"], ""))
-
-        if available_for_sale == "Yes":
-            available_for_sale_count += 1
-
         if reserved_status == "Reserved":
             reserved_count += 1
-
         if withdrawal_clear == "No":
             withdrawal_hold_count += 1
 
-        if available_for_sale == "Yes" and withdrawal_clear == "Yes":
-            sale_ready_count += 1
+    available_for_sale_count = 0
+
+    for row in sales_rows:
+        available_for_sale = to_clean_string(row.get(columns["available_for_sale"], ""))
+        if available_for_sale == "Yes":
+            available_for_sale_count += 1
+
+    now = datetime.now()
+    sold_this_month = 0
+
+    for row in pig_master_rows:
+        exit_reason = to_clean_string(row.get("Exit_Reason", ""))
+        if exit_reason != "Sold":
+            continue
+        exit_date = parse_sheet_date(row.get("Exit_Date", ""))
+        if exit_date and exit_date.year == now.year and exit_date.month == now.month:
+            sold_this_month += 1
 
     return {
         "active_pigs": active_pigs,
         "on_farm_pigs": on_farm_pigs,
-        "sale_ready_pigs": sale_ready_count,
+        "sold_this_month": sold_this_month,
         "available_for_sale_pigs": available_for_sale_count,
         "reserved_pigs": reserved_count,
         "withdrawal_hold_pigs": withdrawal_hold_count,

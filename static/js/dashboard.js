@@ -31,7 +31,7 @@ async function loadDashboard() {
     dashboardSummary.innerHTML = `
       ${renderSummaryCard("Active Pigs", summary.active_pigs)}
       ${renderSummaryCard("On Farm", summary.on_farm_pigs)}
-      ${renderSummaryCard("Sale Ready", summary.sale_ready_pigs)}
+      ${renderSummaryCard("Sold This Month", summary.sold_this_month)}
       ${renderSummaryCard("Available For Sale", summary.available_for_sale_pigs)}
       ${renderSummaryCard("Reserved", summary.reserved_pigs)}
       ${renderSummaryCard("Withdrawal Hold", summary.withdrawal_hold_pigs)}
