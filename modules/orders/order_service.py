@@ -10,6 +10,7 @@ from services.google_sheets_service import (
     get_all_values,
     append_row,
     update_row_by_first_column_match,
+    batch_update_rows_by_id,
 )
 from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
@@ -1368,21 +1369,26 @@ def complete_order(order_id: str, changed_by: str = "App"):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
-    for line in active_lines:
-        _update_sheet_row_by_id(ORDER_LINES_SHEET, line["line_id"], {
-            "Line_Status": "Collected",
-            "Updated_At": today_str,
-        })
+    # Build and apply all ORDER_LINES updates in a single API call
+    order_lines_updates = {
+        line["line_id"]: {"Line_Status": "Collected", "Updated_At": today_str}
+        for line in active_lines
+    }
+    batch_update_rows_by_id(ORDER_LINES_SHEET, order_lines_updates)
 
-    for line in active_lines:
-        _update_sheet_row_by_id(PIG_MASTER_SHEET, line["pig_id"], {
+    # Build and apply all PIG_MASTER updates in a single API call
+    pig_updates = {
+        line["pig_id"]: {
             "Status": "Sold",
             "On_Farm": "No",
             "Exit_Date": today_str,
             "Exit_Reason": "Sold",
             "Exit_Order_ID": order_id,
             "Updated_At": today_str,
-        })
+        }
+        for line in active_lines
+    }
+    batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
 
     _update_sheet_row_by_id(ORDER_MASTER_SHEET, order_id, {
         "Order_Status": "Completed",
