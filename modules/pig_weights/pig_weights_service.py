@@ -51,21 +51,40 @@ def get_dashboard_summary():
     sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
     pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
 
-    active_pigs = 0
     on_farm_pigs = 0
+    boars = 0
+    sows = 0
+    gilts = 0
+    piglets = 0
+    weaners = 0
+    growers = 0
+    finishers = 0
     reserved_count = 0
     withdrawal_hold_count = 0
 
     for row in pig_rows:
-        status = to_clean_string(row.get(columns["status"], ""))
         on_farm = to_clean_string(row.get(columns["on_farm"], ""))
+        animal_type = to_clean_string(row.get("Animal_Type", ""))
         reserved_status = to_clean_string(row.get(columns["reserved_status"], ""))
         withdrawal_clear = to_clean_string(row.get(columns["withdrawal_clear"], ""))
 
-        if status == "Active":
-            active_pigs += 1
         if on_farm == "Yes":
             on_farm_pigs += 1
+            if animal_type == "Boar":
+                boars += 1
+            elif animal_type == "Sow":
+                sows += 1
+            elif animal_type == "Gilt":
+                gilts += 1
+            elif animal_type == "Piglet":
+                piglets += 1
+            elif animal_type == "Weaner":
+                weaners += 1
+            elif animal_type == "Grower":
+                growers += 1
+            elif animal_type == "Finisher":
+                finishers += 1
+
         if reserved_status == "Reserved":
             reserved_count += 1
         if withdrawal_clear == "No":
@@ -90,8 +109,14 @@ def get_dashboard_summary():
             sold_this_month += 1
 
     return {
-        "active_pigs": active_pigs,
         "on_farm_pigs": on_farm_pigs,
+        "boars": boars,
+        "sows": sows,
+        "gilts": gilts,
+        "piglets": piglets,
+        "weaners": weaners,
+        "growers": growers,
+        "finishers": finishers,
         "sold_this_month": sold_this_month,
         "available_for_sale_pigs": available_for_sale_count,
         "reserved_pigs": reserved_count,

@@ -606,4 +606,40 @@ button:disabled {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .breakdown-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.section-heading {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 10px 0;
+}
+
+.breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 10px;
+}
+
+.breakdown-card {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.breakdown-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-main);
+  word-break: break-word;
 }
