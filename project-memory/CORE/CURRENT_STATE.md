@@ -74,6 +74,17 @@ PIG_MASTER (source of truth)
 SALES_AVAILABILITY (correct filtering)
 ORDER_MASTER / ORDER_LINES structure correct
 
+3.7 Order Lifecycle Backend (Core Endpoints)
+Status: ✅ IMPLEMENTED (2026-04-23)
+
+All order action endpoints are live:
+POST /orders/{id}/reserve
+POST /orders/{id}/release
+POST /orders/{id}/send-for-approval
+POST /orders/{id}/approve
+POST /orders/{id}/reject
+POST /orders/{id}/complete ← NEW: writes pig exit data to PIG_MASTER, marks pigs Sold
+
 
 4. PARTIALLY WORKING ⚠️
 
@@ -164,7 +175,9 @@ wrong data passed downstream
 Missing:
 
 stable API usage in all flows
-full order lifecycle control
+
+Note: Full order lifecycle control is now implemented (Draft → Approve → Complete).
+Remaining gap is connecting n8n flows to use these endpoints reliably.
 
 
 6.2 Reservation Automation

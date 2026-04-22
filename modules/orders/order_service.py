@@ -25,6 +25,7 @@ ORDER_STATUS_LOG_SHEET = "ORDER_STATUS_LOG"
 ORDER_OVERVIEW_SHEET = "ORDER_OVERVIEW"
 SALES_AVAILABILITY_SHEET = "SALES_AVAILABILITY"
 SALES_PRICING_SHEET = "SALES_PRICING"
+PIG_MASTER_SHEET = "PIG_MASTER"
 
 ORDER_APPROVAL_WEBHOOK_URL = os.getenv(
     "ORDER_APPROVAL_WEBHOOK_URL",
@@ -1305,4 +1306,88 @@ def reject_order(order_id: str, changed_by: str = "App"):
         "success": True,
         "message": "Order rejected successfully.",
         "order_id": order_id,
+    }
+
+
+def complete_order(order_id: str, changed_by: str = "App"):
+    order_id = str(order_id).strip()
+    order_row = _get_order_master_row(order_id)
+
+    if not order_row:
+        raise ValueError("Order not found.")
+
+    old_status = to_clean_string(order_row.get("Order_Status", ""))
+    old_approval = to_clean_string(order_row.get("Approval_Status", ""))
+
+    if old_status != "Approved":
+        raise ValueError(f"Only Approved orders can be completed. Current status: {old_status}.")
+
+    headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
+    if not headers:
+        raise ValueError("ORDER_LINES is empty.")
+
+    idx = _header_index(headers)
+    for field in ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Updated_At"]:
+        if field not in idx:
+            raise ValueError(f"Missing required column '{field}' in ORDER_LINES.")
+
+    active_lines = []
+    for row in rows:
+        if not row:
+            continue
+        padded_row = row + [""] * (len(headers) - len(row))
+        if str(padded_row[idx["Order_ID"]]).strip() != order_id:
+            continue
+        if str(padded_row[idx["Line_Status"]]).strip() == "Cancelled":
+            continue
+        line_id = str(padded_row[idx["Order_Line_ID"]]).strip()
+        pig_id = str(padded_row[idx["Pig_ID"]]).strip()
+        if not line_id:
+            continue
+        active_lines.append({"line_id": line_id, "pig_id": pig_id})
+
+    if not active_lines:
+        raise ValueError("Order has no active lines to complete.")
+
+    missing_pig = [l["line_id"] for l in active_lines if not l["pig_id"]]
+    if missing_pig:
+        raise ValueError(f"The following lines have no Pig_ID and cannot be completed: {', '.join(missing_pig)}")
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    for line in active_lines:
+        _update_sheet_row_by_id(ORDER_LINES_SHEET, line["line_id"], {
+            "Line_Status": "Collected",
+            "Updated_At": today_str,
+        })
+
+    for line in active_lines:
+        _update_sheet_row_by_id(PIG_MASTER_SHEET, line["pig_id"], {
+            "Status": "Sold",
+            "On_Farm": "No",
+            "Exit_Date": today_str,
+            "Exit_Reason": "Sold",
+            "Exit_Order_ID": order_id,
+            "Updated_At": today_str,
+        })
+
+    _update_sheet_row_by_id(ORDER_MASTER_SHEET, order_id, {
+        "Order_Status": "Completed",
+        "Updated_At": today_str,
+    })
+
+    _write_order_status_log(
+        order_id=order_id,
+        old_status=f"{old_status} | {old_approval}",
+        new_status="Completed | Approved",
+        changed_by=changed_by,
+        change_source="App",
+        notes=f"Order completed — {len(active_lines)} pig(s) marked as sold",
+    )
+
+    return {
+        "success": True,
+        "message": "Order completed successfully.",
+        "order_id": order_id,
+        "pigs_marked_sold": len(active_lines),
     }

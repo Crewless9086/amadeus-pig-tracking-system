@@ -25,6 +25,7 @@ function applyOrderActionVisibility(order) {
   const sendForApprovalBtn = document.getElementById("send_for_approval_btn");
   const approveBtn = document.getElementById("approve_order_btn");
   const rejectBtn = document.getElementById("reject_order_btn");
+  const completeBtn = document.getElementById("complete_order_btn");
   const addOrderLineForm = document.getElementById("addOrderLineForm");
 
   const orderStatus = (order.order_status || "").trim();
@@ -41,6 +42,7 @@ function applyOrderActionVisibility(order) {
   hideElement(sendForApprovalBtn);
   hideElement(approveBtn);
   hideElement(rejectBtn);
+  hideElement(completeBtn);
   hideElement(addOrderLineForm);
 
   if (isDraft) {
@@ -53,17 +55,14 @@ function applyOrderActionVisibility(order) {
     return;
   }
 
-  if (isPendingApproval || isApproved || isCancelled) {
+  if (isApproved) {
+    showElement(completeBtn);
     return;
   }
 
-  // Fallback: if an unexpected status appears, keep the screen safe
-  hideElement(reserveBtn);
-  hideElement(releaseBtn);
-  hideElement(sendForApprovalBtn);
-  hideElement(approveBtn);
-  hideElement(rejectBtn);
-  hideElement(addOrderLineForm);
+  if (isPendingApproval || isCancelled) {
+    return;
+  }
 }
 
 async function loadOrderDetail(orderId) {
@@ -361,6 +360,7 @@ function setupOrderActions(orderId) {
   const sendForApprovalBtn = document.getElementById("send_for_approval_btn");
   const approveBtn = document.getElementById("approve_order_btn");
   const rejectBtn = document.getElementById("reject_order_btn");
+  const completeBtn = document.getElementById("complete_order_btn");
   const actionMessage = document.getElementById("order_action_message");
 
   if (reserveBtn) {
@@ -390,6 +390,16 @@ function setupOrderActions(orderId) {
   if (rejectBtn) {
     rejectBtn.addEventListener("click", async function () {
       await runOrderAction(`/api/orders/${orderId}/reject`, actionMessage, orderId, "Order rejected successfully.");
+    });
+  }
+
+  if (completeBtn) {
+    completeBtn.addEventListener("click", async function () {
+      const confirmed = window.confirm(
+        "Complete this order?\n\nThis will mark all pigs as Sold, update their records, and cannot be undone."
+      );
+      if (!confirmed) return;
+      await runOrderAction(`/api/orders/${orderId}/complete`, actionMessage, orderId, "Order completed successfully. All pigs marked as sold.");
     });
   }
 }

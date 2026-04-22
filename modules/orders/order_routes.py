@@ -14,6 +14,7 @@ from modules.orders.order_service import (
     send_order_for_approval,
     approve_order,
     reject_order,
+    complete_order,
     sync_order_lines_from_request,
 )
 from modules.orders.order_validation import (
@@ -125,6 +126,21 @@ def reject(order_id):
 
     try:
         result = reject_order(order_id, changed_by=changed_by)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/complete", methods=["POST"])
+def complete(order_id):
+    payload = request.get_json(silent=True) or {}
+    changed_by = str(payload.get("changed_by", "App")).strip() or "App"
+
+    try:
+        result = complete_order(order_id, changed_by=changed_by)
         return jsonify(result), 200
     except ValueError as exc:
         return jsonify({

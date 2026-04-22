@@ -30,13 +30,23 @@ ORDER_STATUS_LOG → History
 
 
 4. ORDER STATES
-4.1 Allowed states
+4.1 Allowed states (ORDER_MASTER.Order_Status)
 Draft
 Pending_Approval
 Approved
-Rejected
+Completed
+Cancelled
+
+4.2 Allowed line states (ORDER_LINES.Line_Status)
+Draft
+Reserved
 Collected
 Cancelled
+
+4.3 State transition flow
+Draft → Pending_Approval → Approved → Completed
+Draft → Pending_Approval → Cancelled (via Reject)
+Draft → Cancelled
 
 
 4.2 Draft definition
@@ -300,6 +310,44 @@ Because:
 👉 AI Sales Agent already has tools
 👉 Already answered correctly
 👉 Composer degrades response
+
+13. COMPLETION LOGIC
+
+13.1 Trigger
+POST /orders/{order_id}/complete
+Only callable when Order_Status = "Approved"
+
+13.2 Validation before any write
+Order exists
+Order_Status = "Approved"
+At least one non-Cancelled line exists
+All active lines have a valid Pig_ID
+
+13.3 Write sequence (ORDER_LINES first, then PIG_MASTER, then ORDER_MASTER)
+For each active (non-Cancelled) ORDER_LINE:
+→ Line_Status = "Collected"
+→ Updated_At = today
+
+For each pig on those lines (via Pig_ID):
+→ PIG_MASTER.Status = "Sold"
+→ PIG_MASTER.On_Farm = "No"
+→ PIG_MASTER.Exit_Date = today
+→ PIG_MASTER.Exit_Reason = "Sold"
+→ PIG_MASTER.Exit_Order_ID = order_id
+→ PIG_MASTER.Updated_At = today
+
+ORDER_MASTER:
+→ Order_Status = "Completed"
+→ Updated_At = today
+
+ORDER_STATUS_LOG:
+→ full audit entry: "Approved | Approved" → "Completed | Approved"
+
+13.4 Important notes
+Carcass_Weight_Kg is left blank — not applicable for live pig sales
+This action is irreversible — there is no "un-complete" endpoint
+PIG_MASTER is the pig record of truth — once Status = "Sold" and Exit_Date is set, the pig exits the farm system
+A confirmation dialog is shown to the user on the Order Detail page before this action fires
 
 14. FAILURE MODES
 

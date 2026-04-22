@@ -452,6 +452,11 @@ This is the base pig entity table.
 Systems should write pig master truth here, not to overview sheets.
 Current_Stage is a stored field, but operational calculated stage for selling should still be treated from overview/formula logic where applicable.
 
+Exit column write policy (implemented 2026-04-23)
+Exit_Date, Exit_Reason, Exit_Order_ID, Status (→ "Sold"), and On_Farm (→ "No") are written by the backend when an order is completed via POST /orders/{order_id}/complete.
+These columns must not be written by n8n directly.
+Carcass_Weight_Kg is left blank for live pig sales and may be filled manually where applicable.
+
 
 4.7 ORDER_MASTER
 Type: Source-of-truth master sheet

@@ -205,6 +205,32 @@ Action
 Plain text
 Order_Status = Rejected
 → release pigs
+
+4.11 COMPLETE ORDER
+Endpoint
+Http
+POST /orders/{order_id}/complete
+Purpose
+Mark order as fully collected. Writes pig exit data to PIG_MASTER. This is the terminal success state of an order.
+Gate conditions
+Order_Status must be "Approved"
+All active (non-Cancelled) lines must have a valid Pig_ID
+Action
+ORDER_LINES (each active line): Line_Status = "Collected", Updated_At = today
+PIG_MASTER (each pig): Status = "Sold", On_Farm = "No", Exit_Date = today, Exit_Reason = "Sold", Exit_Order_ID = order_id, Updated_At = today
+ORDER_MASTER: Order_Status = "Completed", Updated_At = today
+ORDER_STATUS_LOG: full audit entry
+Note
+This is the first and only action that writes to PIG_MASTER. It is the definitive sale record for each pig.
+Output
+JSON
+{
+  "success": true,
+  "message": "Order completed successfully.",
+  "order_id": "ORD-2026-ABC123",
+  "pigs_marked_sold": 3
+}
+
 5. READ ENDPOINTS
 5.1 Get orders
 Http
