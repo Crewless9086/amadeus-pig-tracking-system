@@ -103,7 +103,7 @@ Current code expresses rejection as:
 - `Order_Status = Cancelled`
 - `Approval_Status = Rejected`
 
-Customer cancellation standard: `Order_Status = Cancelled`, `Approval_Status = Not_Required`, and `Payment_Status = Cancelled` or `Not_Paid`.
+Customer cancellation standard: `Order_Status = Cancelled`, `Approval_Status = Not_Required`, and `Payment_Status = Cancelled`.
 
 ## Known Model Risks
 

@@ -1347,6 +1347,79 @@ def reject_order(order_id: str, changed_by: str = "App"):
     }
 
 
+def cancel_order(order_id: str, changed_by: str = "App", reason: str = ""):
+    order_id = str(order_id).strip()
+    row = _get_order_master_row(order_id)
+
+    if not row:
+        raise ValueError("Order not found.")
+
+    old_status = to_clean_string(row.get("Order_Status", ""))
+    old_approval = to_clean_string(row.get("Approval_Status", ""))
+
+    if old_status == "Completed":
+        raise ValueError("Completed orders cannot be cancelled.")
+
+    if old_status == "Cancelled" and old_approval == "Rejected":
+        raise ValueError("Rejected orders are already cancelled and cannot be customer-cancelled.")
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    order_line_rows = get_all_records(ORDER_LINES_SHEET)
+    line_ids_to_cancel = []
+
+    for line in order_line_rows:
+        if to_clean_string(line.get("Order_ID", "")) != order_id:
+            continue
+
+        line_status = to_clean_string(line.get("Line_Status", ""))
+        if line_status in ("Cancelled", "Collected"):
+            continue
+
+        line_id = to_clean_string(line.get("Order_Line_ID", ""))
+        if line_id:
+            line_ids_to_cancel.append(line_id)
+
+    cancelled_line_count = _cancel_order_lines(line_ids_to_cancel)
+
+    _update_sheet_row_by_id(
+        ORDER_MASTER_SHEET,
+        order_id,
+        {
+            "Order_Status": "Cancelled",
+            "Approval_Status": "Not_Required",
+            "Payment_Status": "Cancelled",
+            "Reserved_Pig_Count": 0,
+            "Updated_At": today_str,
+        }
+    )
+
+    if old_status != "Cancelled" or old_approval != "Not_Required" or cancelled_line_count:
+        log_note = f"Order cancelled by customer; {cancelled_line_count} line(s) cancelled and reservations released"
+        clean_reason = str(reason or "").strip()
+        if clean_reason:
+            log_note = f"{log_note}. Reason: {clean_reason}"
+
+        _write_order_status_log(
+            order_id=order_id,
+            old_status=f"{old_status} | {old_approval}",
+            new_status="Cancelled | Not_Required",
+            changed_by=changed_by,
+            change_source="Customer",
+            notes=log_note,
+        )
+
+    return {
+        "success": True,
+        "message": "Order cancelled successfully.",
+        "order_id": order_id,
+        "cancelled_line_count": cancelled_line_count,
+        "reserved_pig_count": 0,
+        "payment_status": "Cancelled",
+        "approval_status": "Not_Required",
+    }
+
+
 def complete_order(order_id: str, changed_by: str = "App"):
     order_id = str(order_id).strip()
     order_row = _get_order_master_row(order_id)

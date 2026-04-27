@@ -14,7 +14,7 @@ Orders are the profit section. They must be reliable before the system grows.
 
 Goal: make reject, cancel, release, and reservation state safe.
 
-### 1.1 Fix Reject Behavior - Implemented, Needs Live Verification
+### 1.1 Fix Reject Behavior - Complete
 
 Required outcome:
 
@@ -26,22 +26,33 @@ Required outcome:
 
 Current status:
 
-- backend code now cancels linked non-cancelled/non-collected lines
+- backend code cancels linked non-cancelled/non-collected lines
 - backend code resets `Reserved_Pig_Count` to `0`
 - backend code blocks completed orders from rejection
-- still needs live Google Sheets verification using the operations checklist
+- live Google Sheets verification passed
+- `SALES_AVAILABILITY` recovers correctly
+- `ORDER_STATUS_LOG` entry is written
 
-### 1.2 Add Customer Cancel Action
+### 1.2 Add Customer Cancel Action - Implemented, Needs Live Verification
 
 Required outcome:
 
 - add a backend cancel action/endpoint
 - use `Order_Status = Cancelled`
 - use `Approval_Status = Not_Required`
-- use `Payment_Status = Cancelled` or `Not_Paid`
+- use `Payment_Status = Cancelled`
 - release/cancel linked lines
 - write `ORDER_STATUS_LOG`
 - expose through `1.2 - Order Steward` only after backend behavior is working
+
+Current status:
+
+- backend route `POST /api/orders/<order_id>/cancel` is implemented
+- backend code cancels linked non-cancelled/non-collected lines
+- backend code resets `Reserved_Pig_Count` to `0`
+- backend code blocks completed orders from cancellation
+- backend code keeps already rejected orders from being converted to customer-cancelled
+- needs live Google Sheets verification using the operations checklist
 
 ### 1.3 Harden Release Behavior
 
@@ -138,17 +149,17 @@ Only after order stability:
 
 Finish verification for:
 
-**Phase 1.1 - Fix Reject Behavior**
-
-Then move to:
-
 **Phase 1.2 - Add Customer Cancel Action**
 
-Before moving on, test:
+Phase 1.1 reject behavior is implemented and live-verified.
 
-- reject reserved order
-- reserved lines released/cancelled
-- `ORDER_MASTER.Reserved_Pig_Count` correct
-- formula availability recovers
+For Phase 1.2, test:
+
+- backend customer cancel endpoint/action
+- `Order_Status = Cancelled`
+- `Approval_Status = Not_Required`
+- `Payment_Status = Cancelled`
+- linked lines released/cancelled
+- `ORDER_MASTER.Reserved_Pig_Count = 0`
 - `ORDER_STATUS_LOG` entry exists
-- completed orders cannot be rejected
+- `SALES_AVAILABILITY` recovers

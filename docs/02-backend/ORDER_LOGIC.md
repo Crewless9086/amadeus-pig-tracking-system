@@ -148,12 +148,19 @@ Suggested statuses:
 
 - `Order_Status = Cancelled`
 - `Approval_Status = Not_Required`
-- `Payment_Status = Cancelled` or `Not_Paid`
+- `Payment_Status = Cancelled`
 
-Current backend gap:
+Current backend behavior:
 
-- there is no dedicated customer cancel endpoint/action yet.
-- implementation should use `Approval_Status = Not_Required` for customer-initiated cancellation, keeping `Approval_Status = Rejected` for human/admin rejection.
+- `cancel_order()` provides a dedicated customer cancellation action.
+- It blocks completed orders from being cancelled.
+- It does not convert already rejected orders into customer-cancelled orders.
+- It sets `Order_Status = Cancelled` and `Approval_Status = Not_Required`.
+- It sets `Payment_Status = Cancelled`.
+- It cancels linked non-cancelled/non-collected order lines.
+- It sets linked line `Reserved_Status` values to `Not_Reserved`.
+- It resets `ORDER_MASTER.Reserved_Pig_Count` to `0`.
+- It writes `ORDER_STATUS_LOG` when cancellation or cleanup changes state.
 
 ## Approval
 

@@ -89,6 +89,7 @@ Two categories of sheets — **never write to formula-driven sheets**:
 | `POST` | `/api/orders/{order_id}/send-for-approval` | Trigger approval flow |
 | `POST` | `/api/orders/{order_id}/approve` | Approve order |
 | `POST` | `/api/orders/{order_id}/reject` | Reject order |
+| `POST` | `/api/orders/{order_id}/cancel` | Customer-cancel order |
 | `POST` | `/api/orders/{order_id}/complete` | Complete order |
 | `GET` | `/api/orders` | List all orders |
 | `GET` | `/api/orders/{order_id}` | Order detail with lines |

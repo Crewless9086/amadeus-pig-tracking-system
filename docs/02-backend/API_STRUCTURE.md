@@ -18,6 +18,7 @@ All order API routes are registered under `/api`.
 | `POST` | `/api/orders/<order_id>/send-for-approval` | Mark order pending approval and notify approval workflow. | Web app. |
 | `POST` | `/api/orders/<order_id>/approve` | Approve order. | Web app/human action. |
 | `POST` | `/api/orders/<order_id>/reject` | Reject approval and mark order cancelled. | Web app/human action. |
+| `POST` | `/api/orders/<order_id>/cancel` | Customer-cancel order, cancel linked lines, and release reservations. | Web app, future Order Steward action. |
 | `POST` | `/api/orders/<order_id>/complete` | Complete order, collect lines, and update sold/exited pigs. | Web app/human action. |
 | `POST` | `/api/master/orders` | Create draft order. | `1.2 - Amadeus Order Steward`, web app. |
 | `PATCH` | `/api/master/orders/<order_id>` | Update allowed draft/header fields. | `1.2 - Amadeus Order Steward`, web app. |
@@ -121,9 +122,17 @@ Current reject endpoint behavior:
 - appends `ORDER_STATUS_LOG` when rejection or cleanup changes state
 - blocks completed orders from being rejected
 
-Remaining cancellation build target:
+Current customer cancel endpoint behavior:
 
-- cancellation should have its own explicit endpoint/action using `Approval_Status = Not_Required`.
+- `POST /api/orders/<order_id>/cancel` sets `Order_Status = Cancelled`.
+- It sets `Approval_Status = Not_Required`.
+- It sets `Payment_Status = Cancelled`.
+- It cancels linked non-cancelled/non-collected order lines.
+- It sets linked line `Reserved_Status` values to `Not_Reserved`.
+- It resets `ORDER_MASTER.Reserved_Pig_Count` to `0`.
+- It writes `ORDER_STATUS_LOG` when cancellation or cleanup changes state.
+- It blocks completed orders from being cancelled.
+- It does not convert already rejected orders into customer-cancelled orders.
 
 ## Order Review Direction
 

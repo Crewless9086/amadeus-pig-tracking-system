@@ -12,6 +12,8 @@ A change is not done until the affected docs are updated and the relevant checks
 
 ### Reject Order
 
+Status: Phase 1.1 live verification passed. Keep this checklist as a regression test for future changes.
+
 Test steps:
 
 1. Create or find an order with reserved lines.
@@ -29,10 +31,10 @@ Test steps:
 Test steps:
 
 1. Create or find a draft/reserved customer order.
-2. Run customer cancellation action.
+2. Run `POST /api/orders/<order_id>/cancel`.
 3. Confirm `ORDER_MASTER.Order_Status = Cancelled`.
 4. Confirm `ORDER_MASTER.Approval_Status = Not_Required`.
-5. Confirm `Payment_Status = Cancelled` or `Not_Paid`.
+5. Confirm `Payment_Status = Cancelled`.
 6. Confirm linked lines are released/cancelled.
 7. Confirm reserved pigs become available again.
 8. Confirm `ORDER_STATUS_LOG` records customer cancellation.

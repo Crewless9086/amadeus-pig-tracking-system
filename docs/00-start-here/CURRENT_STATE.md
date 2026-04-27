@@ -39,32 +39,34 @@ Reason:
 
 ### Reject Releases Reserved Lines
 
-Current backend behavior:
+Status: implemented and live-verified.
+
+Confirmed behavior:
 
 - `reject_order()` blocks completed orders from being rejected
-- it cancels linked non-cancelled/non-collected order lines
-- it sets linked line reservations back to `Not_Reserved`
-- it resets `ORDER_MASTER.Reserved_Pig_Count` to `0`
-- it sets `Order_Status = Cancelled` and `Approval_Status = Rejected`
-- it writes `ORDER_STATUS_LOG` when the rejection or cleanup changes state
+- linked order lines become `Line_Status = Cancelled`
+- linked line reservations become `Reserved_Status = Not_Reserved`
+- `ORDER_MASTER.Reserved_Pig_Count` becomes `0`
+- `SALES_AVAILABILITY` recovers and makes pigs available again through the formula chain
+- `ORDER_STATUS_LOG` records the rejection
+
+### Customer Cancellation Is Implemented, Needs Live Verification
+
+Current backend behavior:
+
+- `cancel_order()` provides a dedicated customer cancellation action
+- `POST /api/orders/<order_id>/cancel` is available
+- `Order_Status = Cancelled`
+- `Approval_Status = Not_Required`
+- `Payment_Status = Cancelled`
+- linked non-cancelled/non-collected lines are cancelled
+- linked line reservations are set to `Not_Reserved`
+- `Reserved_Pig_Count` is reset to `0`
+- `ORDER_STATUS_LOG` records customer cancellation when state changes
 
 Remaining watch point:
 
 - verify formula views recover availability correctly after real Google Sheets execution
-
-### Customer Cancellation Is Not Implemented
-
-Current state:
-
-- no dedicated customer cancel endpoint/action exists
-
-Approved target:
-
-- `Order_Status = Cancelled`
-- `Approval_Status = Not_Required`
-- `Payment_Status = Cancelled` or `Not_Paid`
-- linked lines released/cancelled
-- `ORDER_STATUS_LOG` records customer cancellation
 
 ### Split Requested Item Sync Needs Hardening
 

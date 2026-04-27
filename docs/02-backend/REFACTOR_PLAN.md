@@ -14,11 +14,11 @@ Goal: make reject, cancel, release, and status logging safe.
 
 Tasks:
 
-- Verify reject behavior against live Google Sheets after linked reserved-line cleanup was implemented.
-- Add a dedicated customer cancel endpoint/action.
+- Reject behavior is implemented and live-verified; keep regression checks in the testing checklist.
+- Customer cancel endpoint/action is implemented; verify against live Google Sheets.
 - Ensure cancel/reject appends `ORDER_STATUS_LOG`.
 - Ensure cancelled/rejected orders cannot keep pigs reserved.
-- Implement customer cancellation with `Approval_Status = Not_Required` and `Payment_Status = Cancelled` or `Not_Paid`.
+- Customer cancellation uses `Approval_Status = Not_Required` and `Payment_Status = Cancelled`; keep regression checks in the testing checklist.
 - Add guards so terminal/completed orders cannot be approved/rejected incorrectly.
 
 ## Phase 2: Fix Requested Item Sync
@@ -86,7 +86,7 @@ Minimum checks:
 ## Known Bugs / Risks To Track
 
 - `sync_order_lines_from_request` has had split-item issues where `primary_2` rows were missing or not updated correctly.
-- reject reserved-line cleanup is implemented but needs live Google Sheets verification.
-- there is no dedicated customer cancel endpoint/action.
+- reject reserved-line cleanup is implemented and live-verified.
+- customer cancel endpoint/action is implemented but needs live Google Sheets verification.
 - reserve may need stronger guards against cancelled/collected lines.
 - partial matches must not silently create incomplete orders.
