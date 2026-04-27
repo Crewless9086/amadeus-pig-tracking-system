@@ -1,0 +1,529 @@
+{
+  "name": "1.3 - SAM - Sales Agent - Media Tool",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "account_id",
+              "type": "number"
+            },
+            {
+              "name": "conversation_id",
+              "type": "number"
+            },
+            {
+              "name": "inbox_id",
+              "type": "number"
+            },
+            {
+              "name": "category_key"
+            },
+            {
+              "name": "send_mode"
+            },
+            {
+              "name": "count",
+              "type": "number"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "cada7063-39b7-439d-8e74-47b4c372f0ed",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json;\n\nconst MEDIA_CONFIG = {\n  newborns: { folder_id: \"1wSMHb1QiEiEvUkdfH7S8jyoh43_c7krI\", display: \"Newborn piglets\" },\n  weaners:   { folder_id: \"1FBLSZmd_h8VTGPIHYSFLx0UvgSMGQpsg\", display: \"Weaner piglets\" },\n  growers:   { folder_id: \"1S6HqMrLD9rnrzX6nnCWXt4On9sjseok2\", display: \"Grower pigs\" },\n  finishers: { folder_id: \"1zzW5I1iDflXyG2OUFUoiIcpWysJ8RNw3\", display: \"Finisher pigs\" },\n  slaughter: { folder_id: \"1aVzYeQlRJu0bbLcMhO2G3zAuNXQV94Wu\", display: \"Slaughter pigs\" }\n};\n\nconst category = (body.category_key || \"\").toLowerCase().trim();\nif (!MEDIA_CONFIG[category]) {\n  return [{\n    error: `Unknown category_key: ${category}`,\n    ok: false\n  }];\n}\n\nreturn [{\n  ok: true,\n  account_id: Number(body.account_id || 147387),\n  conversation_id: Number(body.conversation_id),\n  inbox_id: Number(body.inbox_id || 0),\n  category_key: category,\n  folder_id: MEDIA_CONFIG[category].folder_id,\n  category_display: MEDIA_CONFIG[category].display,\n  send_mode: (body.send_mode || \"latest\").toLowerCase(),\n  count: Number(body.count || 5)\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "88b01cb4-6ffd-4fcf-9b75-ca2af566f792",
+      "name": "Resolve Config + Defaults"
+    },
+    {
+      "parameters": {
+        "url": "=https://app.chatwoot.com/api/v1/accounts/{{$json.account_id}}/conversations/{{$json.conversation_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "F5tQGAj9v4KCrV7cio8SGhEe"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        416,
+        0
+      ],
+      "id": "ea3281d5-32e7-4c5b-a4f5-dc774c26d3f7",
+      "name": "Get Conversation"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $items(\"Resolve Config + Defaults\")[0].json;\nconst convo = $json?.data || $json; // depending on node output shape\nconst attrs = convo?.custom_attributes || convo?.conversation?.custom_attributes || {};\n\nlet offsetMap = {};\ntry {\n  offsetMap = JSON.parse(attrs.images_sent_offset_map || \"{}\");\n} catch (e) {\n  offsetMap = {};\n}\n\nconst category = cfg.category_key;\nconst currentOffset = Number(offsetMap[category] || 0);\nconst sendMode = cfg.send_mode;\nconst count = cfg.count;\n\nconst offset = (sendMode === \"next\") ? currentOffset : 0;\n\nreturn [{\n  ...cfg,\n  current_offset: currentOffset,\n  offset,\n  offset_map: offsetMap\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "9e7e1828-7b5b-4109-8854-5d37304fdd2b",
+      "name": "Read Offset + Decide Slice"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "='{{ $json.folder_id }}' in parents and trashed=false and mimeType contains 'image/'",
+        "returnAll": true,
+        "filter": {},
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        832,
+        0
+      ],
+      "id": "490fe09e-5613-40ed-8d45-2d01f7fe8dac",
+      "name": "List Files",
+      "alwaysOutputData": false,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "VYmV2PgAl8l49sQ2",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $items(\"Read Offset + Decide Slice\")[0].json;\nconst files = $json?.files || $json; // depending on node output\n\n// Normalize array\nconst arr = Array.isArray(files) ? files : (files.files || []);\n\n// Filter images only\nconst images = arr.filter(f => (f.mimeType || \"\").startsWith(\"image/\"));\n\n// Sort newest first by createdTime (fallback modifiedTime)\nimages.sort((a, b) => {\n  const ta = new Date(a.createdTime || a.modifiedTime || 0).getTime();\n  const tb = new Date(b.createdTime || b.modifiedTime || 0).getTime();\n  return tb - ta;\n});\n\nconst offset = meta.offset;\nconst count = meta.count;\nconst selected = images.slice(offset, offset + count);\n\nreturn [{\n  ...meta,\n  total_images_in_folder: images.length,\n  selected_count: selected.length,\n  selected_files: selected.map(f => ({\n    id: f.id,\n    name: f.name,\n    mimeType: f.mimeType,\n    createdTime: f.createdTime,\n    webViewLink: f.webViewLink,\n  }))\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        0
+      ],
+      "id": "b1b0fb6d-c54b-434c-ba30-7ca5ab285cab",
+      "name": "Sort + Select 5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ac12f1b8-d4ce-4427-8aa8-5c46c429c9b3",
+              "leftValue": "={{$json.selected_count}}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "147176f8-f59d-45d6-bfc5-54a2dd9e58ff",
+      "name": "Any files selected?"
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "{{$json.selected_files}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1648,
+        -144
+      ],
+      "id": "aa90ce18-514d-4935-ab37-c5d67b6db66e",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "jsCode": "const files = $json.selected_files || [];\nreturn files.map(f => ({ ...$items()[0].json, file: f }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        -144
+      ],
+      "id": "5144f700-47ed-4c9f-8f33-c6f85d0c1ffb",
+      "name": "Explode Files"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{$json.file.id}}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "data",
+          "fileName": "={{ $json.name }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1856,
+        -144
+      ],
+      "id": "aff70282-752f-46ce-b7ac-4c6258e71f8a",
+      "name": "Download file",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "VYmV2PgAl8l49sQ2",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://app.chatwoot.com/api/v1/accounts/{{$json.account_id}}/conversations/{{$json.conversation_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "F5tQGAj9v4KCrV7cio8SGhEe"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": "false"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "attachments[]",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2064,
+        -144
+      ],
+      "id": "7ba5abc9-eab7-41a9-9680-0654fbad90b2",
+      "name": "Send Attachment to Chatwoot"
+    },
+    {
+      "parameters": {
+        "jsCode": "const meta = $items(\"Sort + Select 5\")[0].json;\nconst category = meta.category_key;\n\nconst newMap = meta.offset_map || {};\nconst newOffset = meta.offset + meta.selected_count;\nnewMap[category] = newOffset;\n\nreturn [{\n  account_id: meta.account_id,\n  conversation_id: meta.conversation_id,\n  category_key: category,\n  sent_count: meta.selected_count,\n  new_offset: newOffset,\n  images_sent_offset_map: JSON.stringify(newMap),\n  now_iso: new Date().toISOString()\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        -304
+      ],
+      "id": "eb1de143-5298-4cf0-832f-4c7bca5a39f5",
+      "name": "Update Offset Map"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://app.chatwoot.com/api/v1/accounts/{{$json.account_id}}/conversations/{{$json.conversation_id}}/custom_attributes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "F5tQGAj9v4KCrV7cio8SGhEe"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"custom_attributes\": {\n    \"last_images_sent_at\": \"={{$json.now_iso}}\",\n    \"last_images_sent_category\": \"={{$json.category_key}}\",\n    \"last_images_sent_count\": \"={{$json.sent_count}}\",\n    \"images_sent_offset_map\": \"={{$json.images_sent_offset_map}}\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1648,
+        -304
+      ],
+      "id": "6bcc59e1-910e-43d6-9e31-615789ed64d3",
+      "name": "Patch Conversation Attributes"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://app.chatwoot.com/api/v1/accounts/{{$json.account_id}}/conversations/{{$json.conversation_id}}/messages",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"content\": \"Sent {{$json.sent_count}} images ({{$json.category_key}}). New offset={{$json.new_offset}}.\",\n  \"message_type\": \"outgoing\",\n  \"private\": true\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1856,
+        -304
+      ],
+      "id": "9ac941a4-05cd-4610-b447-6e170d446beb",
+      "name": "Internal Note"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        592,
+        -208
+      ],
+      "id": "dda4d371-089b-4ef2-96b1-a9b8b7956e4d",
+      "name": "When clicking ‘Execute workflow’",
+      "disabled": true
+    }
+  ],
+  "pinData": {
+    "When clicking ‘Execute workflow’": [
+      {
+        "json": {
+          "folder_id": "1wSMHb1QiEiEvUkdfH7S8jyoh43_c7krI",
+          "category_key": "newborns",
+          "send_mode": "latest",
+          "limit": 5
+        }
+      }
+    ],
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "account_id": null,
+          "conversation_id": null,
+          "inbox_id": null,
+          "category_key": null,
+          "send_mode": null,
+          "count": null
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Resolve Config + Defaults",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Config + Defaults": {
+      "main": [
+        [
+          {
+            "node": "Get Conversation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Conversation": {
+      "main": [
+        [
+          {
+            "node": "Read Offset + Decide Slice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Offset + Decide Slice": {
+      "main": [
+        [
+          {
+            "node": "List Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Files": {
+      "main": [
+        [
+          {
+            "node": "Sort + Select 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sort + Select 5": {
+      "main": [
+        [
+          {
+            "node": "Any files selected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any files selected?": {
+      "main": [
+        [
+          {
+            "node": "Explode Files",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Offset Map",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explode Files": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Send Attachment to Chatwoot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Attachment to Chatwoot": {
+      "main": [
+        []
+      ]
+    },
+    "Update Offset Map": {
+      "main": [
+        [
+          {
+            "node": "Patch Conversation Attributes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Conversation Attributes": {
+      "main": [
+        [
+          {
+            "node": "Internal Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "List Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "dfc4ffe5-89fe-490b-b162-f6faf9108e9c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a9aefee0e08910e3e0686393616be3c06b9961acc5128142c866c2d87144afa7"
+  },
+  "id": "4RTDP1ZlBWDdo6Jh",
+  "tags": []
+}

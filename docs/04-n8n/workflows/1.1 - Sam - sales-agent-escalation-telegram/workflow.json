@@ -1,0 +1,673 @@
+{
+  "name": "1.1 - SAM - Sales Agent – Escalation Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE",
+          "mode": "list",
+          "cachedResultName": "Amadeus_Sales_Agent_Handoff",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sales_HumanEscalations",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "TicketID",
+              "lookupValue": "={{ $json.TicketID }}"
+            }
+          ]
+        },
+        "options": {
+          "returnFirstMatch": true
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        304,
+        0
+      ],
+      "id": "b16fb39a-afc8-473a-8953-c0e1ef13d688",
+      "name": "Get Ticket Detail",
+      "alwaysOutputData": false,
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "DbtelWXdvwe4DuHc",
+          "name": "Google Sheets - Sales"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Here is the human-written reply to the customer:\n\n\"{{ $('Parse Human Replay').item.json.HumanReply }}\"\n\nPlease polish this reply according to the system instructions.\n\n",
+        "options": {
+          "systemMessage": "You are the Amadeus Sales Agent reply polisher.\nA human from the farm has already written a reply to a customer.\nYour ONLY job is to improve grammar, clarity, and tone while keeping:\n– all prices, numbers and discounts exactly the same\n– all promises, conditions and decisions exactly the same\nDo NOT add new information, do NOT change offers, do NOT change meaning.\nReturn ONLY the final text that should be sent to the customer"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        512,
+        0
+      ],
+      "id": "426279ad-7301-4732-94bb-2b3fbf9edc58",
+      "name": "Polish Human Reply"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        208
+      ],
+      "id": "60bf4481-1c69-4158-a75d-3d24dd1a7c31",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "Lp7Z2HFOXfBCGvVg",
+          "name": "OpenAi_Sales Agent"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE",
+          "mode": "list",
+          "cachedResultName": "Amadeus_Sales_Agent_Handoff",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sales_HumanEscalations",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "TicketID": "={{$node[\"Get Ticket Detail\"].json[\"TicketID\"]}}",
+            "Status": "ANSWERED",
+            "FinalReplySent": "TRUE",
+            "AnsweredAt": "={{$now}}"
+          },
+          "matchingColumns": [
+            "TicketID"
+          ],
+          "schema": [
+            {
+              "id": "TicketID",
+              "displayName": "TicketID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Channel",
+              "displayName": "Channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "UserID",
+              "displayName": "UserID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "UserName",
+              "displayName": "UserName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "UserMessage",
+              "displayName": "UserMessage",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "BotSummary",
+              "displayName": "BotSummary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ConversationHistory",
+              "displayName": "ConversationHistory",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CreatedAt",
+              "displayName": "CreatedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "AnsweredAt",
+              "displayName": "AnsweredAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "FinalReplySent",
+              "displayName": "FinalReplySent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1152,
+        0
+      ],
+      "id": "9eb300d8-6936-4e6c-8250-b129d2876b67",
+      "name": "Mark Ticket Answered",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "DbtelWXdvwe4DuHc",
+          "name": "Google Sheets - Sales"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE",
+          "mode": "list",
+          "cachedResultName": "Amadeus_Sales_Agent_Handoff",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 423585984,
+          "mode": "list",
+          "cachedResultName": "Form responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kVBJzN0oEkWCbtTyn3J7yAe-CVnZy_W81goCho2AKlE/edit#gid=423585984"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "TicketID": "={{$node[\"Get Ticket Detail\"].json[\"TicketID\"]}}",
+            "Processed": "TRUE"
+          },
+          "matchingColumns": [
+            "TicketID"
+          ],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "TicketID",
+              "displayName": "TicketID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "UserName",
+              "displayName": "UserName",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Channel",
+              "displayName": "Channel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "UserID",
+              "displayName": "UserID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "YourReplyText",
+              "displayName": "YourReplyText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "InternalNotes",
+              "displayName": "InternalNotes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Processed",
+              "displayName": "Processed",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1376,
+        0
+      ],
+      "id": "5638b18f-cb73-4f58-aef7-4f571e317929",
+      "name": "Mark Reply Processed",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "DbtelWXdvwe4DuHc",
+          "name": "Google Sheets - Sales"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://app.chatwoot.com/api/v1/accounts/' + $node[\"Get Ticket Detail\"].json[\"WebAccountID\"] + '/conversations/' + $node[\"Get Ticket Detail\"].json[\"WebConversationID\"] + '/messages' }}\n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "F5tQGAj9v4KCrV7cio8SGhEe"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.output }}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": "false"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        896,
+        0
+      ],
+      "id": "6c99c689-9f4d-4d8b-8d10-eb61e70aec2a",
+      "name": "Send Chatwoot Final Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the raw text from Telegram\nconst raw =\n  $json.message?.text ??\n  $json.body?.message?.text ??\n  $json.text ??\n  \"\";\n\n// Normalize newlines + trim\nconst text = String(raw).replace(/\\r\\n/g, \"\\n\").trim();\n\n// 1) Try: ticket is the FIRST non-empty line\nconst lines = text.split(\"\\n\").map(l => l.trim()).filter(Boolean);\nlet ticket = lines[0] || \"\";\n\n// 2) If the first line isn't a valid ticket, search anywhere in the message\n// Adjust the pattern if your ticket format changes.\nconst match = text.match(/AMAD-\\d{8}-\\d{6}/);\nif (!ticket.match(/AMAD-\\d{8}-\\d{6}/) && match) {\n  ticket = match[0];\n}\n\n// 3) Build the reply: remove ticket from the beginning if it’s there,\n// otherwise remove only the first occurrence found.\nlet reply = text;\n\n// If the message starts with the ticket (even with spaces), strip that line\nif (lines.length && lines[0].includes(ticket)) {\n  reply = text.split(\"\\n\").slice(1).join(\"\\n\").trim();\n} else if (ticket) {\n  reply = text.replace(ticket, \"\").trim();\n}\n\n// Final cleanup (remove leftover \"This\", etc. if it was part of the ticket line)\nreply = reply.replace(/^\\s*[-–—:]\\s*/, \"\").trim();\n\nreturn [\n  {\n    TicketID: ticket,\n    HumanReply: reply,\n    TelegramUserID: $json.message?.from?.id ?? $json.from?.id ?? $json.TelegramUserID\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        0
+      ],
+      "id": "603c7799-db17-40dd-80c9-3f629f46ca18",
+      "name": "Parse Human Replay"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "chatIds": "=5721652188"
+        }
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -112,
+        0
+      ],
+      "id": "d8908289-fb48-46d0-80cd-85224a4848a6",
+      "name": "Telegram Escalation Trigger",
+      "webhookId": "64681bd9-ca71-4f25-b82e-348839946841",
+      "credentials": {
+        "telegramApi": {
+          "id": "0mptoeTYCRWH6Nhd",
+          "name": "Telegram - Sam"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://app.chatwoot.com/api/v1/accounts/{{ $('Get Ticket Detail').item.json.WebAccountID }}/conversations/{{ $('Get Ticket Detail').item.json.WebConversationID }}/custom_attributes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "api_access_token",
+              "value": "F5tQGAj9v4KCrV7cio8SGhEe"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"custom_attributes\": {\n    \"conversation_mode\": \"AUTO\",\n    \"escalation_ticket_id\": \"\",\n    \"last_human_replay\": \"\",\n    \"last_escalated_at\": \"\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1584,
+        0
+      ],
+      "id": "c5950f4d-075c-4a11-94ec-3576d3c272f7",
+      "name": "Release Conversation to Auto"
+    },
+    {
+      "parameters": {
+        "operation": "deleteMessage",
+        "chatId": "={{ $('Telegram Escalation Trigger').item.json.message.from.id }}",
+        "messageId": "={{ $('Telegram Escalation Trigger').item.json.message.message_id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1792,
+        0
+      ],
+      "id": "43f564da-97a5-4e67-940f-06fb3f228309",
+      "name": "Delete a chat message",
+      "webhookId": "77699241-f827-459f-935f-40260559113a",
+      "credentials": {
+        "telegramApi": {
+          "id": "0mptoeTYCRWH6Nhd",
+          "name": "Telegram - Sam"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Telegram Escalation Trigger": [
+      {
+        "json": {
+          "update_id": 925267964,
+          "message": {
+            "message_id": 348,
+            "from": {
+              "id": 5721652188,
+              "is_bot": false,
+              "first_name": "Charl",
+              "last_name": "Nieuwendyk",
+              "username": "CharlNPersonal",
+              "language_code": "en"
+            },
+            "chat": {
+              "id": 5721652188,
+              "first_name": "Charl",
+              "last_name": "Nieuwendyk",
+              "username": "CharlNPersonal",
+              "type": "private"
+            },
+            "date": 1771756490,
+            "text": "AMAD-20260323-185058\nGood evening, we do not offer delivery. All pick ups are done for Riversdale, Western Cape."
+          }
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Get Ticket Detail": {
+      "main": [
+        [
+          {
+            "node": "Polish Human Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Polish Human Reply",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Polish Human Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Chatwoot Final Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Ticket Answered": {
+      "main": [
+        [
+          {
+            "node": "Mark Reply Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Chatwoot Final Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark Ticket Answered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Human Replay": {
+      "main": [
+        [
+          {
+            "node": "Get Ticket Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Escalation Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Human Replay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Reply Processed": {
+      "main": [
+        [
+          {
+            "node": "Release Conversation to Auto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Release Conversation to Auto": {
+      "main": [
+        [
+          {
+            "node": "Delete a chat message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "8b2af311-c897-4323-b98e-15128a198363",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "a9aefee0e08910e3e0686393616be3c06b9961acc5128142c866c2d87144afa7"
+  },
+  "id": "dAz5VSX9VZaXVTN8",
+  "tags": []
+}

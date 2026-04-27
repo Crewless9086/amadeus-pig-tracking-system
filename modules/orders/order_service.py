@@ -1295,7 +1295,27 @@ def reject_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
+    if old_status == "Completed":
+        raise ValueError("Completed orders cannot be rejected.")
+
     today_str = datetime.now().strftime("%d %b %Y")
+
+    order_line_rows = get_all_records(ORDER_LINES_SHEET)
+    line_ids_to_cancel = []
+
+    for line in order_line_rows:
+        if to_clean_string(line.get("Order_ID", "")) != order_id:
+            continue
+
+        line_status = to_clean_string(line.get("Line_Status", ""))
+        if line_status in ("Cancelled", "Collected"):
+            continue
+
+        line_id = to_clean_string(line.get("Order_Line_ID", ""))
+        if line_id:
+            line_ids_to_cancel.append(line_id)
+
+    cancelled_line_count = _cancel_order_lines(line_ids_to_cancel)
 
     _update_sheet_row_by_id(
         ORDER_MASTER_SHEET,
@@ -1303,23 +1323,27 @@ def reject_order(order_id: str, changed_by: str = "App"):
         {
             "Order_Status": "Cancelled",
             "Approval_Status": "Rejected",
+            "Reserved_Pig_Count": 0,
             "Updated_At": today_str,
         }
     )
 
-    _write_order_status_log(
-        order_id=order_id,
-        old_status=f"{old_status} | {old_approval}",
-        new_status="Cancelled | Rejected",
-        changed_by=changed_by,
-        change_source="App",
-        notes="Order rejected",
-    )
+    if old_status != "Cancelled" or old_approval != "Rejected" or cancelled_line_count:
+        _write_order_status_log(
+            order_id=order_id,
+            old_status=f"{old_status} | {old_approval}",
+            new_status="Cancelled | Rejected",
+            changed_by=changed_by,
+            change_source="App",
+            notes=f"Order rejected; {cancelled_line_count} line(s) cancelled and reservations released",
+        )
 
     return {
         "success": True,
         "message": "Order rejected successfully.",
         "order_id": order_id,
+        "cancelled_line_count": cancelled_line_count,
+        "reserved_pig_count": 0,
     }
 
 

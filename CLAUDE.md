@@ -78,36 +78,38 @@ Two categories of sheets — **never write to formula-driven sheets**:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/master/orders` | Create draft order |
-| `PATCH` | `/master/orders/{order_id}` | Update order header |
-| `POST` | `/master/order-lines` | Create order line |
-| `PATCH` | `/master/order-lines/{order_line_id}` | Update order line |
-| `DELETE` | `/master/order-lines/{order_line_id}` | Delete order line |
-| `POST` | `/orders/{order_id}/reserve` | Reserve pigs |
-| `POST` | `/orders/{order_id}/release` | Release pigs |
-| `POST` | `/orders/{order_id}/send-for-approval` | Trigger approval flow |
-| `POST` | `/orders/{order_id}/approve` | Approve order |
-| `POST` | `/orders/{order_id}/reject` | Reject order |
-| `GET` | `/orders` | List all orders |
-| `GET` | `/orders/{order_id}` | Order detail with lines |
-| `GET` | `/orders/available-pigs` | Available pigs from `SALES_AVAILABILITY` |
+| `POST` | `/api/master/orders` | Create draft order |
+| `PATCH` | `/api/master/orders/{order_id}` | Update order header |
+| `POST` | `/api/master/orders/{order_id}/sync-lines` | Sync requested order lines |
+| `POST` | `/api/master/order-lines` | Create order line |
+| `PATCH` | `/api/master/order-lines/{order_line_id}` | Update order line |
+| `DELETE` | `/api/master/order-lines/{order_line_id}` | Delete order line |
+| `POST` | `/api/orders/{order_id}/reserve` | Reserve pigs |
+| `POST` | `/api/orders/{order_id}/release` | Release pigs |
+| `POST` | `/api/orders/{order_id}/send-for-approval` | Trigger approval flow |
+| `POST` | `/api/orders/{order_id}/approve` | Approve order |
+| `POST` | `/api/orders/{order_id}/reject` | Reject order |
+| `POST` | `/api/orders/{order_id}/complete` | Complete order |
+| `GET` | `/api/orders` | List all orders |
+| `GET` | `/api/orders/{order_id}` | Order detail with lines |
+| `GET` | `/api/orders/available-pigs` | Available pigs from `SALES_AVAILABILITY` |
 
-## Project Memory (Critical Documentation)
+## Project Documentation (Critical Documentation)
 
-The `project-memory/` directory contains living documentation that must be consulted before making changes:
+The `docs/` directory contains living documentation that must be consulted before making changes:
 
 | File | When to Read |
 |---|---|
-| `CORE/SYSTEM_ARCHITECTURE.md` | Before touching component boundaries |
-| `CORE/CURRENT_STATE.md` | Before starting any work — shows what's broken |
-| `CORE/NEXT_STEPS.md` | Before adding features — shows prioritized roadmap |
-| `DATA/BUSINESS_RULES.md` | Before changing AI behavior or order logic |
-| `DATA/GOOGLE_SHEET_SCHEMA.md` | Before any sheet read/write operation |
-| `BACKEND/API_STRUCTURE.md` | Before modifying Flask endpoints |
-| `BACKEND/ORDER_LOGIC.md` | Before touching draft/line/reservation logic |
-| `WORKFLOW CONTROL/WORKFLOW_MAP.md` | Before touching n8n integration |
-| `WORKFLOW CONTROL/WORKFLOW_RULES.md` | Before changing escalation/decision logic |
-| `WORKFLOW CONTROL/DATA_FLOW.md` | Before changing field ownership or data mutations |
+| `docs/01-architecture/SYSTEM_ARCHITECTURE.md` | Before touching component boundaries |
+| `docs/00-start-here/CURRENT_STATE.md` | Before starting any work — shows what's broken |
+| `docs/00-start-here/NEXT_STEPS.md` | Before adding features — shows prioritized roadmap |
+| `docs/03-google-sheets/BUSINESS_RULES.md` | Before changing AI behavior or order logic |
+| `docs/03-google-sheets/SHEET_SCHEMA.md` | Before any sheet read/write operation |
+| `docs/02-backend/API_STRUCTURE.md` | Before modifying Flask endpoints |
+| `docs/02-backend/ORDER_LOGIC.md` | Before touching draft/line/reservation logic |
+| `docs/04-n8n/WORKFLOW_MAP.md` | Before touching n8n integration |
+| `docs/04-n8n/WORKFLOW_RULES.md` | Before changing escalation/decision logic |
+| `docs/04-n8n/DATA_FLOW.md` | Before changing field ownership or data mutations |
 
 ## Key Business Rules
 
@@ -122,10 +124,10 @@ The `project-memory/` directory contains living documentation that must be consu
 
 **Phase**: ACTIVE BUILD (mid-stage) | **Stability**: PARTIALLY STABLE
 
-Known instabilities (check `CORE/CURRENT_STATE.md` for latest):
+Known instabilities (check `docs/00-start-here/CURRENT_STATE.md` for latest):
 - AUTO reply integrity — Composer node can override valid AI answers
 - Reply system field confusion at merge points in n8n
 - Order routing inconsistency across workflow paths
 - Order line sync logic needs verification
 
-Stabilization is prioritized over new features — see `CORE/NEXT_STEPS.md` for the 5-phase roadmap.
+Stabilization is prioritized over new features — see `docs/00-start-here/NEXT_STEPS.md` for the 5-phase roadmap.

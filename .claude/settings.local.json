@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -n \"Call 1\\\\\\\\.1\\\\|HTTP - Create\\\\|executeWorkflow\" \"C:\\\\Users\\\\charl\\\\OneDrive\\\\1. Amadeus\\\\AGENTS\\\\amadeus-pig-tracking-system\\\\project-memory\\\\n8n_Current_Workflow.md\")"
+    ]
+  }
+}

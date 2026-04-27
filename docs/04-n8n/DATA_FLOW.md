@@ -1,0 +1,141 @@
+# Data Flow
+
+## Purpose
+
+Defines the field contracts and data movement across the n8n workflow suite.
+
+## Core Principle
+
+Every important field must have one clear owner. Fields may be copied forward, but they must not be silently reinterpreted by unrelated nodes.
+
+## `1.0` Inbound Chatwoot Contract
+
+Created or normalized by `Code - Normalize Incoming Message` and nearby Chatwoot ID nodes.
+
+| Field | Meaning | Notes |
+| --- | --- | --- |
+| `CustomerName` / `contact_name` | Customer display name. | Used by Sam and order payloads. |
+| `CustomerMessage` / `customer_message` | Customer message text. | Voice notes must be transcribed before this is trusted. |
+| `Channel` | Source channel. | Usually Chatwoot/inbox derived. |
+| `UserID` / `ContactId` | Customer/contact identifier. | Used for continuity and order context. |
+| `AccountId` / `account_id` | Chatwoot account ID. | Needed for Chatwoot API calls. |
+| `ConversationId` / `conversation_id` | Chatwoot conversation ID. | Needed for replies, attributes, history, and media. |
+| `InboxId` / `inbox_id` | Chatwoot inbox ID. | Needed by some tool calls. |
+| `ExistingOrderId` | Order ID stored on Chatwoot custom attributes. | Used when enriching/syncing existing drafts. |
+| `ExistingOrderStatus` | Order status stored on Chatwoot custom attributes. | Context only unless validated downstream. |
+| `ConversationMode` / `conversation_mode` | AUTO or HUMAN mode. | HUMAN should stop Sam from replying. |
+
+## Decision Fields
+
+| Field | Owner | Purpose |
+| --- | --- | --- |
+| `decision_mode` | Escalation classifier parse/normalization path | Authoritative branch: `AUTO`, `CLARIFY`, or `ESCALATE`. |
+| `escalation_raw_output` | Classifier normalization | Preserved classifier response. Never customer-facing. |
+| `ai_reply_output` | AI Sales Agent normalization | Preserved Sam reply, especially important for CLARIFY. |
+| `cleaned_reply` | Clean final reply node | Only field that should be sent as customer reply from `1.0`. |
+| `output` | Temporary AI/tool field | High risk. Do not treat as globally safe after merges. |
+
+## `1.0` Order State Contract
+
+`Code - Build Order State` and related route nodes build `order_state`.
+
+Important fields:
+
+- `customer_name`
+- `customer_channel`
+- `customer_language`
+- `customer_number`
+- `conversation_id`
+- `contact_id`
+- `existing_order_id`
+- `requested_category`
+- `requested_weight_range`
+- `requested_sex`
+- `requested_quantity`
+- `collection_location`
+- `notes`
+- `requested_items[]`
+
+## `1.0` To `1.2` Contract
+
+Discriminator field: `action`.
+
+Currently live actions called by `1.0`:
+
+| Action | Purpose | Required core fields |
+| --- | --- | --- |
+| `create_order` | Create a new draft order. | Customer fields, requested category/weight/sex/quantity, notes, conversation/contact IDs. |
+| `update_order` | Update/enrich an existing draft header. | `order_id`, changed fields, `changed_by`. |
+| `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. |
+
+Rule: `1.2` should call the backend API. It should not directly write order sheets.
+
+## Preferred Order Review Path
+
+Sam needs better order awareness, but the preferred implementation is not a direct `ORDER_OVERVIEW` Google Sheets tool inside `1.0`.
+
+Preferred path:
+
+```mermaid
+flowchart LR
+  sam[Sam in 1.0] --> steward["1.2 Order Steward"]
+  steward --> backend[Backend API]
+  backend --> orderOverview[ORDER_OVERVIEW or order endpoints]
+  backend --> steward
+  steward --> sam
+```
+
+Reason:
+
+- backend can validate customer identity and order ownership
+- backend can filter only relevant orders
+- backend can hide internal fields
+- one API contract is easier to test than giving the AI direct sheet access
+
+Direct read access to `ORDER_OVERVIEW` may be used for diagnostics, but should not be the first production design for customer-specific order context.
+
+## Escalation Data Flow: `1.0` To `1.1`
+
+`1.0` creates the human handoff by:
+
+- creating an escalation/ticket record in the handoff Google Sheet
+- sending a Telegram alert to the human channel
+- setting Chatwoot context so Sam does not keep responding while human help is active
+
+`1.1` completes the handoff by:
+
+- parsing the human Telegram reply and ticket ID
+- finding the matching row in the handoff sheet
+- sending the human reply to Chatwoot
+- updating the handoff row status
+- returning `conversation_mode` to `AUTO`
+- deleting Telegram messages when cleanup is implemented
+
+## Media Data Flow: `1.0` To `1.3`
+
+Current status: disabled until fixed and tested.
+
+Expected input fields when enabled:
+
+- `account_id`
+- `conversation_id`
+- `inbox_id`
+- `category_key`
+- `send_mode`
+- `count`
+
+Important output/side effect:
+
+- Chatwoot media attachment sent
+- `images_sent_offset_map` custom attribute updated
+
+## Google Sheets Read Surfaces
+
+`1.0` may read these sales sheets through tools:
+
+- `SALES_STOCK_SUMMARY`
+- `SALES_STOCK_TOTALS`
+- `SALES_STOCK_DETAIL`
+- `SALES_AVAILABILITY`
+
+These are read-only. Workflow logic must not write to sales stock or availability sheets.
