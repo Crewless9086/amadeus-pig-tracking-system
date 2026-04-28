@@ -45,12 +45,14 @@ Primary responsibilities:
 - call `1.2 - Amadeus Order Steward` for currently supported order actions
 - write escalation records and notify Telegram when human help is needed
 - send final replies back to Chatwoot
+- manage customer-cancel confirmation state through Chatwoot `pending_action`
 
 Current live order routes called from `1.0`:
 
 - `create_order`
 - `update_order`
 - `sync_order_lines_from_request`
+- `cancel_order`
 
 Current disabled capability:
 
@@ -92,8 +94,11 @@ Currently documented as live for `1.0` only:
 - `create_order`
 - `update_order`
 - `sync_order_lines_from_request`
+- `cancel_order`
 
 Other actions present in the workflow should be treated as steward capability or test/planned paths until `1.0` actively calls them.
+
+Customer cancel routing uses `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING` inside `1.0`, with the actual cancellation executed through `1.2` and the backend.
 
 Preferred future order-review direction:
 

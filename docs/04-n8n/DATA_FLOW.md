@@ -67,8 +67,11 @@ Currently live actions called by `1.0`:
 | `create_order` | Create a new draft order. | Customer fields, requested category/weight/sex/quantity, notes, conversation/contact IDs. |
 | `update_order` | Update/enrich an existing draft header. | `order_id`, changed fields, `changed_by`. |
 | `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. |
+| `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
 
 Rule: `1.2` should call the backend API. It should not directly write order sheets.
+
+Customer cancel confirmation state is stored in Chatwoot custom attributes as `pending_action = cancel_order`; it is set by `1.0`, cleared by `1.0`, and never written to Google Sheets.
 
 ## Preferred Order Review Path
 

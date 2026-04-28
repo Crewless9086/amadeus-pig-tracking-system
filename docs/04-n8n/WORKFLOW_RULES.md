@@ -57,8 +57,11 @@ For `1.0`, only these `1.2` actions are currently treated as live:
 - `create_order`
 - `update_order`
 - `sync_order_lines_from_request`
+- `cancel_order`
 
 Other actions present in `1.2` are not automatically considered live for Sam until wired, tested, and documented.
+
+Customer cancellation requires two-turn confirmation. `1.0` must set `pending_action = cancel_order` on first cancel intent, call `cancel_order` only after a clear confirmation, and clear stale pending state when the next customer message does not confirm cancellation.
 
 Sam should not directly write order sheets. Future order review should preferably go through `1.2` and backend order lookup/review endpoints rather than direct `ORDER_OVERVIEW` sheet access.
 

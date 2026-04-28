@@ -15,6 +15,29 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-27 - Phase 1.2b Customer Cancel Wired Into n8n
+
+Type: `ADD`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`, `1.2 - Amadeus Order Steward`
+
+Change:
+
+- Added `cancel_order` handling to `1.2` with `reason`, backend cancel endpoint call, and formatted cancel result.
+- Added guarded customer-cancel routing to `1.0` using `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING`.
+- Added Chatwoot `pending_action = cancel_order` confirmation state and clear paths.
+- Updated protected workflow docs and live action lists to include `cancel_order`.
+
+Reason:
+
+Customer cancellation must be handled through backend truth, not direct sheet edits or unconfirmed Sam replies.
+
+Expected outcome:
+
+Sam asks for one confirmation before cancelling, calls the backend only after confirmation, and only tells the customer the order is cancelled after backend success.
+
+Status: implemented in exports; needs live n8n import and two-turn verification
+
 ### 2026-04-27 - Four Workflow Suite Documented
 
 Type: `DOCS`

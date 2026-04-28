@@ -54,6 +54,9 @@ Defines the responsibilities and boundaries for the n8n workflow suite.
 | `Set - Draft Order Payload` | Build `create_order` payload. | Include unsupported fields. |
 | `Code - Build Enrich Existing Draft Payload` | Build safe `update_order` payload. | Update without `existing_order_id`. |
 | `Code - Build Sync Existing Draft Payload` | Build `sync_order_lines_from_request` payload. | Sync without `requested_items[]`. |
+| `HTTP - Set Pending Cancel Action` | Store explicit customer-cancel confirmation state in Chatwoot. | Cancel the order directly. |
+| `Set - Build Cancel Order Payload` / `Call 1.2 - Cancel Order` | Call `1.2` after customer confirmation. | Say cancelled before backend success. |
+| `HTTP - Clear Pending Action` | Clear stale cancel confirmation state. | Leave stale `pending_action` active. |
 | `Call 1.2 - ...` nodes | Execute Order Steward. | Directly write order sheets. |
 
 ### Escalation Nodes
@@ -92,6 +95,7 @@ Current `1.0` live actions only:
 - `create_order`
 - `update_order`
 - `sync_order_lines_from_request`
+- `cancel_order`
 
 ## `1.3 - SAM - Sales Agent - Media Tool`
 

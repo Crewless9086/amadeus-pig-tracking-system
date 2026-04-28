@@ -50,7 +50,7 @@ Confirmed behavior:
 - `SALES_AVAILABILITY` recovers and makes pigs available again through the formula chain
 - `ORDER_STATUS_LOG` records the rejection
 
-### Customer Cancellation Is Implemented, Needs Live Verification
+### Customer Cancellation Is Implemented, n8n Wiring Added, Needs Live Verification
 
 Current backend behavior:
 
@@ -63,6 +63,13 @@ Current backend behavior:
 - linked line reservations are set to `Not_Reserved`
 - `Reserved_Pig_Count` is reset to `0`
 - `ORDER_STATUS_LOG` records customer cancellation when state changes
+
+Current n8n wiring:
+
+- `1.2 - Order Steward` has a `cancel_order` branch calling `POST /api/orders/{order_id}/cancel`
+- `1.0 - Sam Sales Agent` uses `pending_action = cancel_order` for two-turn confirmation
+- `CANCEL_ORDER` is evaluated before create/update routes
+- stale cancel confirmation is cleared through `CLEAR_PENDING`
 
 Remaining watch point:
 

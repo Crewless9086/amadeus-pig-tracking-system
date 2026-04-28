@@ -26,6 +26,7 @@ Do not rename or repurpose these fields casually:
 | `order_state` | Structured order intent extracted by `1.0`. |
 | `requested_items[]` | Structured line request data for sync. |
 | `conversation_mode` | Chatwoot mode gate: `AUTO` or `HUMAN`. |
+| `pending_action` | Chatwoot confirmation state for guarded actions such as `cancel_order`. |
 | `order_id` | Backend order identifier. |
 | `order_status` | Backend/order state context. |
 | `TicketID` | Human escalation ticket key. |
@@ -47,7 +48,8 @@ Do not change without review:
 - classifier decision parse path
 - CLARIFY path protection
 - final reply cleaning/sending path
-- order route switch
+- order route switch, including `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING`
+- Chatwoot `pending_action` set/clear calls
 - `1.2` execute workflow calls
 - escalation handoff creation
 
@@ -58,7 +60,7 @@ Do not change without review:
 - `action` discriminator field
 - backend base URL and endpoint paths
 - payload normalization
-- `create_order`, `update_order`, and `sync_order_lines_from_request` contracts used by `1.0`
+- `create_order`, `update_order`, `sync_order_lines_from_request`, and `cancel_order` contracts used by `1.0`
 - backend error propagation
 
 `1.2` must not directly write order Google Sheets.

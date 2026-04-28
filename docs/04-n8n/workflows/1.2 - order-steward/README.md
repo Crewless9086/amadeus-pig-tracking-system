@@ -94,6 +94,7 @@ return [
       unit_price: clean(input.unit_price),
       collection_location: clean(input.collection_location),
       notes: clean(input.notes),
+      reason: clean(input.reason),
       changed_by: clean(input.changed_by) || "Order Steward",
       conversation_id: clean(input.conversation_id),
       contact_id: clean(input.contact_id),
@@ -112,6 +113,7 @@ Mode: Rule
 {{ $json.action }} is equal to send_for_approval
 {{ $json.action }} is equal to approve_order
 {{ $json.action }} is equal to reject_order
+{{ $json.action }} is equal to cancel_order
 {{ $json.action }} is equal to update_order
 {{ $json.action }} is equal to sync_order_lines_from_request
 
@@ -746,6 +748,45 @@ changed_by
 String
 =
 {{ $('Code - Normalize Order Payload').item.json.changed_by }}
+
+
+3.11 - Cancel Order
+
+Purpose: customer-requested cancellation through the backend only.
+
+Input fields expected from `1.0`:
+
+- `action = cancel_order`
+- `order_id`
+- `changed_by = Sam`
+- `reason` optional customer reason, passed as an empty string when absent
+
+3.11.1 Set - Build Cancel Body
+Mode: Manual Mapping
+Fields to Set:
+changed_by = {{ $json.changed_by }}
+reason = {{ $json.reason }}
+
+3.11.2 HTTP - Cancel Order
+Method: POST
+URL:
+https://amadeus-pig-tracking-system.onrender.com/api/orders/{{$node["Code - Normalize Order Payload"].json["order_id"]}}/cancel
+Body: {{$json}}
+Response Format: JSON
+
+3.11.3 Set - Format Cancel Result
+Fields to Set:
+success = {{$json.success}}
+action = cancel_order
+order_id = {{ $json.order_id }}
+message = {{ $json.message }}
+order_status = Cancelled
+approval_status = Not_Required
+payment_status = Cancelled
+changed_by = {{ $('Code - Normalize Order Payload').item.json.changed_by }}
+cancelled_line_count = {{ $json.cancelled_line_count }}
+
+Rule: this branch must not directly edit Google Sheets. The backend owns cancelling linked lines, releasing reservations, resetting `Reserved_Pig_Count`, and writing `ORDER_STATUS_LOG`.
 
 3.9 - Update Order
 3.9.1 Code - Build Update ORder Payload

@@ -39,6 +39,8 @@ Test steps:
 7. Confirm reserved pigs become available again.
 8. Confirm `ORDER_STATUS_LOG` records customer cancellation.
 9. Confirm Sam sends a polite cancellation confirmation only after backend success.
+10. Test the n8n two-turn customer cancel flow: first customer cancel intent sets `pending_action = cancel_order` and asks for confirmation; second customer `yes` calls `cancel_order`.
+11. Test a non-confirming second message clears `pending_action` and does not cancel the order.
 
 ### Release Order
 

@@ -2220,7 +2220,42 @@ This is the route split switch node that pics the path to take.
 {{$json.order_route}} = CREATE_DRAFT
 {{$json.order_route}} = UPDATE_HEADER_ONLY
 {{$json.order_route}} = UPDATE_HEADER_AND_LINES
+{{$json.order_route}} = CANCEL_ORDER
+{{$json.order_route}} = CANCEL_PENDING
+{{$json.order_route}} = CLEAR_PENDING
 {{$json.order_route}} = REPLY_ONLY
+
+
+
+Phase 1.2b Customer Cancel Wiring
+
+Customer cancellation now uses a two-turn confirmation flow instead of cancelling on the first mention.
+
+Chatwoot custom attribute:
+
+- `pending_action = cancel_order` is set when the customer first asks to cancel an active order.
+- `pending_action` is cleared when the customer does not confirm, when a new draft context is saved, or after the cancel backend call returns.
+
+Routing rules in `Code - Decide Order Route`:
+
+1. `CANCEL_ORDER` is evaluated first when `pending_action = cancel_order`, an active draft exists, and the customer gives a proceed/yes confirmation.
+2. `CANCEL_PENDING` is used when the customer asks to cancel but has not confirmed yet.
+3. `CLEAR_PENDING` is used when a previous cancel confirmation was pending and the customer sends a non-confirming message.
+4. Create/update routes are evaluated only after the cancel guards.
+
+Cancel branch nodes:
+
+- `Set - Build Cancel Order Payload`
+- `Call 1.2 - Cancel Order`
+- `HTTP - Clear Pending After Cancel`
+- `Set - Restore Cancel Result`
+
+Pending/clear branch nodes:
+
+- `HTTP - Set Pending Cancel Action`
+- `HTTP - Clear Pending Action`
+
+Sam response rule: Sam must only say an order is cancelled after `Call 1.2 - Cancel Order` returns `success = true`. If the backend returns an error, Sam must explain that the order was not changed.
 
 CREATE DRAFT
 28. Set - Draft Order Payload
@@ -2261,7 +2296,8 @@ return [
   "custom_attributes": {
     "order_id": "{{ $json.order_id }}",
     "order_status": "{{ $json.order_status }}",
-    "conversation_mode": "AUTO"
+    "conversation_mode": "AUTO",
+    "pending_action": ""
   }
 }
 Connected to:

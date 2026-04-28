@@ -33,7 +33,7 @@ Current status:
 - `SALES_AVAILABILITY` recovers correctly
 - `ORDER_STATUS_LOG` entry is written
 
-### 1.2 Add Customer Cancel Action - Implemented, Needs Live Verification
+### 1.2 Add Customer Cancel Action - Backend Implemented, n8n Wiring Added, Needs Live Verification
 
 Required outcome:
 
@@ -52,7 +52,10 @@ Current status:
 - backend code resets `Reserved_Pig_Count` to `0`
 - backend code blocks completed orders from cancellation
 - backend code keeps already rejected orders from being converted to customer-cancelled
-- needs live Google Sheets verification using the operations checklist
+- backend behavior was live-verified for line cancellation, reserved count recovery, availability recovery, and status log writing
+- `1.2 - Order Steward` now exposes `cancel_order`
+- `1.0 - Sam Sales Agent` now has guarded `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING` routes
+- needs live n8n import and two-turn Chatwoot verification
 
 ### 1.3 Harden Release Behavior
 
@@ -149,11 +152,11 @@ Only after order stability:
 
 Finish verification for:
 
-**Phase 1.2 - Add Customer Cancel Action**
+**Phase 1.2b - Wire Customer Cancel Into n8n**
 
 Phase 1.1 reject behavior is implemented and live-verified.
 
-For Phase 1.2, test:
+For Phase 1.2b, test:
 
 - backend customer cancel endpoint/action
 - `Order_Status = Cancelled`
