@@ -1586,6 +1586,13 @@
         ],
         [
           {
+            "node": "Set - Build Cancel Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Set - Build Add Order Line Body",
             "type": "main",
             "index": 0
@@ -1629,13 +1636,6 @@
         [
           {
             "node": "Set - Build Reject Body",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Set - Build Cancel Body",
             "type": "main",
             "index": 0
           }
