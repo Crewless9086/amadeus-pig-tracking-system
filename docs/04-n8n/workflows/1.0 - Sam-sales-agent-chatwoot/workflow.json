@@ -2465,7 +2465,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"custom_attributes\": {\n    \"pending_action\": \"\",\n    \"order_status\": \"Cancelled\"\n  }\n}",
+        "jsonBody": "={\n  \"custom_attributes\": {\n    \"order_id\": \"{{ $json.order_id }}\",\n    \"order_status\": \"{{ $json.order_status || 'Cancelled' }}\",\n    \"conversation_mode\": \"AUTO\",\n    \"pending_action\": \"\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -2562,7 +2562,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"custom_attributes\": {\n    \"pending_action\": \"cancel_order\"\n  }\n}",
+        "jsonBody": "={\n  \"custom_attributes\": {\n    \"order_id\": \"{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}\",\n    \"order_status\": \"{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}\",\n    \"conversation_mode\": \"AUTO\",\n    \"pending_action\": \"cancel_order\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -2593,7 +2593,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"custom_attributes\": {\n    \"pending_action\": \"\"\n  }\n}",
+        "jsonBody": "={\n  \"custom_attributes\": {\n    \"order_id\": \"{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}\",\n    \"order_status\": \"{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}\",\n    \"conversation_mode\": \"AUTO\",\n    \"pending_action\": \"\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
