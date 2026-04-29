@@ -15,28 +15,51 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
-### 2026-04-29 - Fix C Post-Create Draft Line Sync
+### 2026-04-29 - Fix C Option B1 — Create Order With Lines (Atomic)
 
 Type: `FIX`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`, `1.2 - Amadeus Order Steward`
+
+Change:
+
+- `1.0 Set - Draft Order Payload` — `action` field is now a conditional expression: sends `create_order_with_lines` when `order_state.requested_items[]` is non-empty, otherwise sends `create_order`.
+- `1.0 Set - Draft Order Payload` — new `requested_items` field forwards `order_state.requested_items` to `1.2`.
+- `1.0 Code - Store Draft Order Context` — jsCode reverted to simple pass-through (no cross-node reference). Fans out directly to `HTTP - Set Conversation Order Context` (index 0) and `Merge - Draft Result With Reply Context` (index 1).
+- `1.2 Switch - Route by Action` — new rule at index [11] matching `action === create_order_with_lines`, output key `Create Order With Lines`.
+- Five new nodes added to `1.2` forming the `create_order_with_lines` branch: `Set - Build Create With Lines Body` → `HTTP - Create With Lines Order` → `Code - Build Sync After Create Payload` → `HTTP - Sync New Draft Lines` → `Code - Format Create With Lines Result`.
+- `Code - Format Create With Lines Result` — top-level `success` requires both `create_success === true` AND `syncResp.success === true`. Sam will not confirm the order if sync fails.
+- Previous Fix C Option A nodes removed from `1.0`: `IF - Draft Has Requested Items`, `Code - Build Sync New Draft Lines Payload`, `Call 1.2 - Sync New Draft Lines`, `Code - Restore Draft Sync Result`.
+
+Reason:
+
+First-turn committed orders with `requested_items[]` were creating `ORDER_MASTER` only. `ORDER_LINES` were not created until a later update path. Fix C Option A added a post-create sync branch inside `1.0`, but this violated the `1.0`/`1.2` ownership boundary. Option B1 moves the full create+sync operation into `1.2` as a single atomic action, keeping `1.0` as a router only.
+
+Expected outcome:
+
+When Sam routes to `CREATE_DRAFT` and `requested_items` is non-empty, `1.2` creates the draft and syncs order lines atomically. `success=true` guarantees both operations completed. Sam's reply references the order ID and the lines are present in `ORDER_LINES` before Sam replies.
+
+Follow-up (separate, not part of this fix):
+
+The Sales Agent AI receives a large merged payload. A future `Code - Build Sales Reply Context` node could slim this to only what Sam needs for her reply (order_id, order_status, sync_results summary, customer context).
+
+Status: live-verified 2026-04-29. `ORD-2026-879091` created in Draft; `ORDER_LINES` has 3 rows with `exact_match` / `matched_quantity=3` / `request_item_key=primary_1`. Sam's reply referenced the order ID.
+
+### 2026-04-29 - Fix C Option A — Superseded
+
+Type: `REMOVE`
 
 Component: `1.0 - SAM - Sales Agent - Chatwoot`
 
 Change:
 
-- Added an optional post-create sync branch after `Call 1.2 - Create Draft Order`.
-- Added `IF - Draft Has Requested Items` to check `order_state.requested_items[]`.
-- Added `Code - Build Sync New Draft Lines Payload`, `Call 1.2 - Sync New Draft Lines`, and `Code - Restore Draft Sync Result`.
-- Updated `Code - Store Draft Order Context` so the created `order_id` is patched into both top-level context and `order_state`.
+Nodes `IF - Draft Has Requested Items`, `Code - Build Sync New Draft Lines Payload`, `Call 1.2 - Sync New Draft Lines`, `Code - Restore Draft Sync Result` were implemented in `1.0` as a post-create sync branch but were removed before going live.
 
 Reason:
 
-Live testing showed complete first-turn order requests created `ORDER_MASTER` only. Requested `ORDER_LINES` were not created until a later update path, which left drafts incomplete.
+Superseded by Fix C Option B1. Placing create+sync logic inside `1.0` violated the `1.0`/`1.2` ownership boundary. Option B1 moves the full operation into `1.2` as a single action.
 
-Expected outcome:
-
-When a first-turn request contains structured `requested_items[]`, `1.0` creates the draft, syncs requested order lines through `1.2`, and only then sends Sam's reply.
-
-Status: implemented in export; needs live import and verification
+Status: removed — never live-tested. See Fix C Option B1 above.
 
 ### 2026-04-29 - Chatwoot Attribute Register Added
 
