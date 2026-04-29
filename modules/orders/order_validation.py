@@ -188,6 +188,7 @@ def validate_update_order_payload(payload: dict):
         "collection_location",
         "notes",
         "changed_by",
+        "payment_method",
     }
 
     for key in payload.keys():
@@ -252,6 +253,13 @@ def validate_update_order_payload(payload: dict):
     if "notes" in payload:
         cleaned_data["notes"] = str(payload.get("notes", "")).strip()
 
+    if "payment_method" in payload:
+        pm = str(payload.get("payment_method", "")).strip()
+        if pm and pm not in ("Cash", "EFT"):
+            errors.append("payment_method must be Cash or EFT.")
+        else:
+            cleaned_data["payment_method"] = pm
+
     cleaned_data["changed_by"] = str(payload.get("changed_by", "App")).strip() or "App"
 
     updatable_fields_present = any(
@@ -263,6 +271,7 @@ def validate_update_order_payload(payload: dict):
             "requested_sex",
             "collection_location",
             "notes",
+            "payment_method",
         )
     )
 
