@@ -2138,7 +2138,10 @@
             "WebAccountID": "={{ $('Edit - Build Ticket Data').item.json.WebAccountID }}",
             "WebConversationID": "={{ $('Edit - Build Ticket Data').item.json.WebConversationID }}",
             "TelegramChatID": "={{ $('Edit - Build Ticket Data').item.json.TelegramChatID }}",
-            "EmailSubject": "={{ $json.EmailSubject }}"
+            "EmailSubject": "={{ $json.EmailSubject }}",
+            "WebOrderId": "={{ $('Edit - Build Ticket Data').item.json.WebOrderId }}",
+            "WebOrderStatus": "={{ $('Edit - Build Ticket Data').item.json.WebOrderStatus }}",
+            "WebPendingAction": "={{ $('Edit - Build Ticket Data').item.json.WebPendingAction }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -2282,8 +2285,28 @@
               "removed": false
             },
             {
-              "id": "EmailSubject",
-              "displayName": "EmailSubject",
+              "id": "WebOrderId",
+              "displayName": "WebOrderId",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "WebOrderStatus",
+              "displayName": "WebOrderStatus",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "WebPendingAction",
+              "displayName": "WebPendingAction",
               "required": false,
               "defaultMatch": false,
               "display": true,
