@@ -165,16 +165,19 @@ Conditions:
 {{   String($json.CustomerMessage || "").trim() !== "" }} is true
 
 6. (TRUE) Edit - Keep Chatwoot ID's
-This nodes helpo to keep the data in the correct fields
+This node preserves key conversation fields so they are available downstream — including to the Escalation Classifier prompt and the ESCALATE path.
 account_id = number = {{ $('Code - Normalize Incoming Message').item.json.AccountId }}
 conversation_id = number = {{ $('Code - Normalize Incoming Message').item.json.ConversationId }}
-inbox_name = number = {{ $('Code - Normalize Incoming Message').item.json.ContactId }}
+inbox_name = string = {{ $('Code - Normalize Incoming Message').item.json.InboxName }}
+contact_id = number = {{ $('Code - Normalize Incoming Message').item.json.ContactId }}
 contact_name = string = {{ $('Code - Normalize Incoming Message').item.json.CustomerName }}
 customer_message = string = {{ $json.CustomerMessage }}
-?? I think we are missing the TranscribedText field here becuase where does this go? or is it not needed here? 
+pending_action = string = {{ $('Code - Normalize Incoming Message').item.json.PendingAction }}
+existing_order_id = string = {{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}
+existing_order_status = string = {{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}
+conversation_mode = string = {{ $('Code - Normalize Incoming Message').item.json.ConversationMode }}
 Connects: this node connects to
 Code - Mode Gate
-Merge Sales Agent Contect A at input 2
 
 7. Code - Mode Gate
 This node is to help set the mode
@@ -242,12 +245,18 @@ Connects:
 Merge - Sales Agent Contect A input 1
 
 11. Ai Agent - Escalation Classifier
-This agent is used to classify the conversations and put it down the right path
-The chat mode is connected to ChatGPT
+This agent is used to classify the conversations and put it down the right path.
+The chat mode is connected to ChatGPT.
+Order context fields (existing_order_id, existing_order_status, pending_action) are now included in the prompt so the classifier has awareness of active orders. Cancel requests with an active order must route to AUTO, not ESCALATE.
+
 Prompt (User Message)
 UserName: {{ $('If - Is Human Lock Active?').item.json.contact_name }}
 Channel: {{ $('If - Is Human Lock Active?').item.json.inbox_name }}
 UserID: {{ $('If - Is Human Lock Active?').item.json.contact_id }}
+
+ExistingOrderId: {{ $('If - Is Human Lock Active?').item.json.existing_order_id || 'none' }}
+ExistingOrderStatus: {{ $('If - Is Human Lock Active?').item.json.existing_order_status || 'none' }}
+PendingAction: {{ $('If - Is Human Lock Active?').item.json.pending_action || '' }}
 
 ConversationHistory:
 {{ $('Code - Format Chat History').item.json.ConversationHistory }}
@@ -2263,14 +2272,16 @@ Sam response rule: Sam must only say an order is cancelled after `Call 1.2 - Can
 
 Chatwoot's custom attributes API performs a **full object replace**, not a merge. Any write to `custom_attributes` that omits a field will erase that field for the rest of the conversation.
 
-**Every node that writes to Chatwoot `custom_attributes` must include all four fields every time:**
+**Every node that writes to Chatwoot `custom_attributes` must include the core four order context fields every time:**
 
 | Field | Value |
 | --- | --- |
 | `order_id` | current order ID (from order context or result) |
 | `order_status` | current order status |
-| `conversation_mode` | `AUTO` (unless explicitly changing) |
+| `conversation_mode` | `AUTO` or `HUMAN` (never omit) |
 | `pending_action` | `cancel_order` or `""` (never omit) |
+
+Escalation-specific nodes may additionally include `escalation_ticket_id`, `last_escalated_at`, `last_human_replay` — but must still include the four core fields above.
 
 **Nodes that write Chatwoot attributes in this workflow and what they must include:**
 
@@ -2280,12 +2291,15 @@ Chatwoot's custom attributes API performs a **full object replace**, not a merge
 | `HTTP - Set Pending Cancel Action` | CANCEL_PENDING route | `ExistingOrderId` from normalize | `ExistingOrderStatus` from normalize |
 | `HTTP - Clear Pending Action` | CLEAR_PENDING route | `ExistingOrderId` from normalize | `ExistingOrderStatus` from normalize |
 | `HTTP - Clear Pending After Cancel` | After cancel confirmed | `$json.order_id` (1.2 result) | `$json.order_status` (1.2 result) |
+| `HTTP - Set Conversation Human Mode` | ESCALATE route | `ExistingOrderId` from normalize | `ExistingOrderStatus` from normalize |
 
-**Before adding any new Chatwoot HTTP write node, verify it sends all four fields. Before editing an existing write node, check the other three fields are not being removed.**
+**Before adding any new Chatwoot HTTP write node, verify it sends all four core fields. Before editing an existing write node, check the other three fields are not being removed.**
 
 Root cause found (2026-04-28): `HTTP - Set Pending Cancel Action` was only writing `pending_action`, which erased `order_id` and `order_status` from Chatwoot. On the next customer turn, `ExistingOrderId` came back empty, so the cancel confirmation flow could not find the order to cancel and fell through to CREATE_DRAFT.
 
-Fix applied: all four Chatwoot write nodes updated to always send full four-field snapshots.
+Root cause found (2026-04-29): `HTTP - Set Conversation Human Mode` was only writing `conversation_mode`, `escalation_ticket_id`, `last_escalated_at`, and `last_human_replay` — erasing `order_id`, `order_status`, and `pending_action`. After a customer was escalated and the human did not immediately reply, the customer's next message arrived with no order context.
+
+Fix applied: all five Chatwoot write nodes now send full snapshots including order context.
 
 ---
 
@@ -2552,4 +2566,80 @@ return [
 ];
 
 33. HTTP - Send Chatwoot Reply
+
+---
+
+## Phase 1.2c — Escalation Path Attribute Fix (2026-04-29)
+
+### Problem
+
+The escalation path in 1.0 had two attribute write gaps that could erase order context from Chatwoot:
+
+**Gap 1 — `HTTP - Set Conversation Human Mode`**
+When a conversation was escalated, this node wrote only `conversation_mode`, `escalation_ticket_id`, `last_escalated_at`, and `last_human_replay`. It did not include `order_id`, `order_status`, or `pending_action`. If the human did not reply immediately and the customer sent another message, the next turn arrived with no order context — ExistingOrderId was empty and routing broke.
+
+**Gap 2 — `Edit - Keep Chatwoot ID's` missing order fields**
+This node was not carrying `existing_order_id`, `existing_order_status`, or `conversation_mode` forward. The Escalation Classifier prompt therefore had no awareness of active orders, and could incorrectly route a cancel request to ESCALATE instead of AUTO.
+
+**Gap 3 — `Ai Agent - Escalation Classifier` blind to order context**
+The classifier prompt did not receive ExistingOrderId, ExistingOrderStatus, or PendingAction. With no order context, it had no basis to know that a "cancel order" request should route to AUTO (handled by the cancel workflow) rather than ESCALATE (hand to human).
+
+**Gap 4 — 1.1 `Release Conversation to Auto` erasing order context**
+When the human replied via Telegram and 1.1 fired, it reset Chatwoot attributes with only `conversation_mode: AUTO` and cleared escalation fields. `order_id`, `order_status`, and `pending_action` were not included, erasing them. The customer's next message after a human reply had no order context.
+
+---
+
+### Fixes Applied
+
+**1.0 — `HTTP - Set Conversation Human Mode`**
+Now writes all seven Chatwoot fields on escalation: `order_id`, `order_status`, `conversation_mode`, `pending_action`, `escalation_ticket_id`, `last_escalated_at`, `last_human_replay`. Sources `order_id`/`order_status`/`pending_action` from `Code - Normalize Incoming Message`.
+
+**1.0 — `Edit - Keep Chatwoot ID's`**
+Now carries three additional fields: `existing_order_id`, `existing_order_status`, `conversation_mode`. These flow to `If - Is Human Lock Active?` and are available to the Escalation Classifier via `$('If - Is Human Lock Active?').item.json.*`.
+
+**1.0 — `Ai Agent - Escalation Classifier` (user prompt)**
+Now includes:
+```
+ExistingOrderId: {{ $('If - Is Human Lock Active?').item.json.existing_order_id || 'none' }}
+ExistingOrderStatus: {{ $('If - Is Human Lock Active?').item.json.existing_order_status || 'none' }}
+PendingAction: {{ $('If - Is Human Lock Active?').item.json.pending_action || '' }}
+```
+
+**1.0 — `Ai Agent - Escalation Classifier` (system prompt)**
+Added cancel routing rule in the AUTO section:
+> If ExistingOrderId is present (not empty and not "none") and the customer is asking to cancel their order, treat this as AUTO. The backend cancellation workflow handles this automatically — do not escalate routine order cancellation to a human.
+
+**1.0 — `Edit - Build Ticket Data`**
+Now writes three additional fields to the `Sales_HumanEscalations` sheet: `WebOrderId`, `WebOrderStatus`, `WebPendingAction`. This allows 1.1 to read them back when the human replies.
+
+**1.1 — `Release Conversation to Auto`**
+Now reads `WebOrderId`, `WebOrderStatus`, `WebPendingAction` from `Get Ticket Detail` (sheet lookup) and includes them in the Chatwoot reset so order context is preserved after the human reply.
+
+JSON body after fix:
+```json
+{
+  "custom_attributes": {
+    "order_id": "{{ $('Get Ticket Detail').item.json.WebOrderId }}",
+    "order_status": "{{ $('Get Ticket Detail').item.json.WebOrderStatus }}",
+    "conversation_mode": "AUTO",
+    "pending_action": "{{ $('Get Ticket Detail').item.json.WebPendingAction }}",
+    "escalation_ticket_id": "",
+    "last_human_replay": "",
+    "last_escalated_at": ""
+  }
+}
+```
+
+---
+
+### Required Manual Action
+
+The `Sales_HumanEscalations` Google Sheet must have three new columns added:
+- `WebOrderId`
+- `WebOrderStatus`
+- `WebPendingAction`
+
+These must exist in the sheet header before 1.0's ticket-creation node can write to them. Existing rows without values are fine — they will be blank until a new escalation fires.
+
+Status: columns added to sheet 2026-04-29. Awaiting live import and end-to-end verification.
 

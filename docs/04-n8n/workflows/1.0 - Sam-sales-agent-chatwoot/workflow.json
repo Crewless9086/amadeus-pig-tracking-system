@@ -1613,6 +1613,24 @@
               "name": "pending_action",
               "value": "={{ $('Code - Normalize Incoming Message').item.json.PendingAction }}",
               "type": "string"
+            },
+            {
+              "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+              "name": "existing_order_id",
+              "value": "={{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}",
+              "type": "string"
+            },
+            {
+              "id": "d2e3f4a5-b6c7-4d8e-9f0a-1b2c3d4e5f6a",
+              "name": "existing_order_status",
+              "value": "={{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}",
+              "type": "string"
+            },
+            {
+              "id": "e3f4a5b6-c7d8-4e9f-0a1b-2c3d4e5f6a7b",
+              "name": "conversation_mode",
+              "value": "={{ $('Code - Normalize Incoming Message').item.json.ConversationMode }}",
+              "type": "string"
             }
           ]
         },
@@ -1874,10 +1892,10 @@
     {
       "parameters": {
         "promptType": "define",
-        "text": "=UserName: {{ $('If - Is Human Lock Active?').item.json.contact_name }}\nChannel: {{ $('If - Is Human Lock Active?').item.json.inbox_name }}\nUserID: {{ $('If - Is Human Lock Active?').item.json.contact_id }}\n\nConversationHistory:\n{{ $('Code - Format Chat History').item.json.ConversationHistory }}\n\nCurrentMessage:\n{{ $('If - Is Human Lock Active?').item.json.customer_message }}",
+        "text": "=UserName: {{ $('If - Is Human Lock Active?').item.json.contact_name }}\nChannel: {{ $('If - Is Human Lock Active?').item.json.inbox_name }}\nUserID: {{ $('If - Is Human Lock Active?').item.json.contact_id }}\n\nExistingOrderId: {{ $('If - Is Human Lock Active?').item.json.existing_order_id || 'none' }}\nExistingOrderStatus: {{ $('If - Is Human Lock Active?').item.json.existing_order_status || 'none' }}\nPendingAction: {{ $('If - Is Human Lock Active?').item.json.pending_action || '' }}\n\nConversationHistory:\n{{ $('Code - Format Chat History').item.json.ConversationHistory }}\n\nCurrentMessage:\n{{ $('If - Is Human Lock Active?').item.json.customer_message }}",
         "hasOutputParser": true,
         "options": {
-          "systemMessage": "=You are an escalation decision engine for a livestock sales assistant.\n\nYour job is to decide whether the assistant should:\n- respond directly (AUTO)\n- ask one clarifying question (CLARIFY)\n- escalate to a human (ESCALATE)\n\n## Core principle\nPrefer AUTO or CLARIFY whenever the assistant can still help safely.\nUse ESCALATE only when human judgment or human intervention is truly needed.\n\n## Decision Rules\n\n### AUTO\nChoose AUTO when:\n- the user intent is clear enough to answer directly\n- the assistant can answer using available tools or known farm policies\n- the message is about stock, pricing, availability, farm practices, collection, location wording, or general questions\n- the message is about jobs, work, study, volunteering, contributing, farming advice, business advice, or learning more\n- the user is asking harmless informational questions, even if they are not directly trying to buy yet\n- If the customer clearly provides quantity plus a usable category or weight range, treat that as sufficient buying detail for AUTO. Do not ask unnecessary clarification questions just to narrow an already usable request.\n\nIMPORTANT:\nThe following should normally stay AUTO and must not be escalated just because they are not immediate sales:\n- job requests\n- work opportunities\n- study / learning questions\n- volunteering / helping / contributing\n- general farming advice\n- general business advice\n\n### CLARIFY\nChoose CLARIFY when:\n- the message is ambiguous or incomplete\n- the user replies with short/unclear wording like “yes”, “ok”, “that one”\n- key buying details are missing\n- one specific question would likely resolve the issue\n- Do not choose CLARIFY if the customer has already given a clear quantity and a clear usable pig type or weight range, unless a real contradiction or ambiguity remains.\n\nIMPORTANT:\nPrefer CLARIFY over ESCALATE whenever a single question can solve the uncertainty.\n\n### ESCALATE\nChoose ESCALATE only when:\n- the user is upset, frustrated, or complaining\n- the user explicitly asks for a human\n- the request involves an exception, negotiation, or special deal\n- the request needs human judgment or approval\n- repeated clarification has failed\n- the situation could create business risk or trust issues\n\nAlways choose ESCALATE if the customer explicitly asks to speak to a human person.\n\n## Output Format (STRICT JSON ONLY)\n\n{\n  \"decision\": \"AUTO | CLARIFY | ESCALATE\",\n  \"reason\": \"short explanation\",\n  \"confidence\": 0.0-1.0,\n  \"summary\": \"short practical handoff summary for a human if escalation is needed\"\n}\n\n## Summary Rules\n- Keep it short but useful\n- Include:\n  - what the customer wants\n  - what has already been answered\n  - what is unclear or what caused escalation\n  - the latest customer position\n- Do not invent details"
+          "systemMessage": "=You are an escalation decision engine for a livestock sales assistant.\n\nYour job is to decide whether the assistant should:\n- respond directly (AUTO)\n- ask one clarifying question (CLARIFY)\n- escalate to a human (ESCALATE)\n\n## Core principle\nPrefer AUTO or CLARIFY whenever the assistant can still help safely.\nUse ESCALATE only when human judgment or human intervention is truly needed.\n\n## Decision Rules\n\n### AUTO\nChoose AUTO when:\n- the user intent is clear enough to answer directly\n- the assistant can answer using available tools or known farm policies\n- the message is about stock, pricing, availability, farm practices, collection, location wording, or general questions\n- the message is about jobs, work, study, volunteering, contributing, farming advice, business advice, or learning more\n- the user is asking harmless informational questions, even if they are not directly trying to buy yet\n- If the customer clearly provides quantity plus a usable category or weight range, treat that as sufficient buying detail for AUTO. Do not ask unnecessary clarification questions just to narrow an already usable request.\n\nIMPORTANT:\nThe following should normally stay AUTO and must not be escalated just because they are not immediate sales:\n- job requests\n- work opportunities\n- study / learning questions\n- volunteering / helping / contributing\n- general farming advice\n- general business advice\n\nIMPORTANT: Order cancellation routing:\nIf ExistingOrderId is present (not empty and not \"none\") and the customer is asking to cancel their order, treat this as AUTO.\nThe backend cancellation workflow handles this automatically — do not escalate routine order cancellation to a human.\n\n### CLARIFY\nChoose CLARIFY when:\n- the message is ambiguous or incomplete\n- the user replies with short/unclear wording like “yes”, “ok”, “that one”\n- key buying details are missing\n- one specific question would likely resolve the issue\n- Do not choose CLARIFY if the customer has already given a clear quantity and a clear usable pig type or weight range, unless a real contradiction or ambiguity remains.\n\nIMPORTANT:\nPrefer CLARIFY over ESCALATE whenever a single question can solve the uncertainty.\n\n### ESCALATE\nChoose ESCALATE only when:\n- the user is upset, frustrated, or complaining\n- the user explicitly asks for a human\n- the request involves an exception, negotiation, or special deal\n- the request needs human judgment or approval\n- repeated clarification has failed\n- the situation could create business risk or trust issues\n\nAlways choose ESCALATE if the customer explicitly asks to speak to a human person.\n\n## Output Format (STRICT JSON ONLY)\n\n{\n  \"decision\": \"AUTO | CLARIFY | ESCALATE\",\n  \"reason\": \"short explanation\",\n  \"confidence\": 0.0-1.0,\n  \"summary\": \"short practical handoff summary for a human if escalation is needed\"\n}\n\n## Summary Rules\n- Keep it short but useful\n- Include:\n  - what the customer wants\n  - what has already been answered\n  - what is unclear or what caused escalation\n  - the latest customer position\n- Do not invent details"
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -2053,6 +2071,24 @@
               "id": "feefe6af-84a6-485a-bf70-fd5c03a7aa02",
               "name": "content_type",
               "value": "={{ $('Code - Normalize Incoming Message').item.json.Raw.content_type }}",
+              "type": "string"
+            },
+            {
+              "id": "f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c",
+              "name": "WebOrderId",
+              "value": "={{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}",
+              "type": "string"
+            },
+            {
+              "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+              "name": "WebOrderStatus",
+              "value": "={{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}",
+              "type": "string"
+            },
+            {
+              "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+              "name": "WebPendingAction",
+              "value": "={{ $('Code - Normalize Incoming Message').item.json.PendingAction }}",
               "type": "string"
             }
           ]
@@ -2333,7 +2369,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"custom_attributes\": {\n    \"conversation_mode\": \"HUMAN\",\n    \"escalation_ticket_id\": \"{{ $('Edit - Build Ticket Data').item.json.TicketID }}\",\n    \"last_escalated_at\": \"{{ $now.toISODate() }}\",\n    \"last_human_replay\": \"\"\n  }\n}",
+        "jsonBody": "={\n  \"custom_attributes\": {\n    \"order_id\": \"{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}\",\n    \"order_status\": \"{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}\",\n    \"conversation_mode\": \"HUMAN\",\n    \"pending_action\": \"{{ $('Code - Normalize Incoming Message').item.json.PendingAction }}\",\n    \"escalation_ticket_id\": \"{{ $('Edit - Build Ticket Data').item.json.TicketID }}\",\n    \"last_escalated_at\": \"{{ $now.toISODate() }}\",\n    \"last_human_replay\": \"\"\n  }\n}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

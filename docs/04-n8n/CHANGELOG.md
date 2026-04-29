@@ -15,6 +15,54 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-29 - Phase 1.2c Escalation Path Attribute Fix
+
+Type: `FIX`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`, `1.1 - SAM - Sales Agent - Escalation Telegram`
+
+Change:
+
+- Fixed `HTTP - Set Conversation Human Mode` in `1.0` — now writes all seven Chatwoot fields including `order_id`, `order_status`, `pending_action` on escalation. Previously only wrote four escalation-specific fields, erasing order context.
+- Fixed `Edit - Keep Chatwoot ID's` in `1.0` — now carries `existing_order_id`, `existing_order_status`, `conversation_mode` forward so the Escalation Classifier has order context.
+- Updated `Ai Agent - Escalation Classifier` user prompt in `1.0` — now includes `ExistingOrderId`, `ExistingOrderStatus`, `PendingAction` so the classifier can make order-aware routing decisions.
+- Updated `Ai Agent - Escalation Classifier` system prompt in `1.0` — added cancel routing rule: if `ExistingOrderId` is present and customer asks to cancel, route to AUTO (not ESCALATE).
+- Updated `Edit - Build Ticket Data` in `1.0` — now writes `WebOrderId`, `WebOrderStatus`, `WebPendingAction` to the `Sales_HumanEscalations` sheet at escalation time.
+- Fixed `Release Conversation to Auto` in `1.1` — now reads `WebOrderId`, `WebOrderStatus`, `WebPendingAction` back from the escalation sheet and preserves them in the Chatwoot reset. Previously wrote only `conversation_mode: AUTO`, erasing all order context when the human replied.
+
+Reason:
+
+If a customer was escalated and the human did not immediately reply, the customer's next message arrived with empty order context — `ExistingOrderId` was blank, routing logic could not find the active order, and the system could incorrectly create a new draft instead of recognising the existing order. A cancel request during or after an escalation would also incorrectly route to ESCALATE rather than through the cancel confirmation flow.
+
+Expected outcome:
+
+Order context (`order_id`, `order_status`, `pending_action`) survives through escalation and human reply. The Escalation Classifier will not escalate routine cancel requests when an active order is present.
+
+Status: implemented in exports; requires `Sales_HumanEscalations` sheet to have `WebOrderId`, `WebOrderStatus`, `WebPendingAction` columns (added 2026-04-29); needs live import and end-to-end verification.
+
+### 2026-04-29 - Phase 1.2b Live Test Fixes
+
+Type: `FIX`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`, `1.2 - Amadeus Order Steward`
+
+Change:
+
+- Fixed `1.2` Switch node connection array — `cancel_order` was routed to the `add_order_line` path due to incorrect positional indexing. Re-indexed all 11 connections.
+- Fixed three cancel-path Chatwoot write nodes in `1.0` (`HTTP - Set Pending Cancel Action`, `HTTP - Clear Pending Action`, `HTTP - Clear Pending After Cancel`) to always write all four core attribute fields, preventing `order_id` erasure.
+- Added safety guard in `Code - Decide Order Route` — blocks `CREATE_DRAFT` route when `pending_action = cancel_order` but `existing_order_id` is empty, preventing accidental draft creation during a broken cancel confirm.
+- Fixed CREATE_DRAFT order_id data flow — `Code - Store Draft Order Context` now fans out directly to both `HTTP - Set Conversation Order Context` (leaf) and `Merge - Draft Result With Reply Context` (index 1). This ensures `order_id` from the 1.2 result reaches the AI agent prompt. Previously the HTTP node sat between them and replaced `$json` with the Chatwoot API response before the merge.
+
+Reason:
+
+Live test after initial Phase 1.2b wiring revealed four separate bugs: wrong Switch routing in 1.2, order_id erasure on CANCEL_PENDING, order_id absent from AI agent prompt after CREATE_DRAFT, and missing guard for cancel confirm with empty order.
+
+Expected outcome:
+
+Two-turn cancel flow works end-to-end. Sam correctly references order ID in draft creation reply. Cancel confirmation cannot accidentally trigger CREATE_DRAFT.
+
+Status: confirmed working in live test — Sam correctly referenced ORD-2026-74E7C after CREATE_DRAFT. Cancel flow pending full re-test after escalation fixes.
+
 ### 2026-04-27 - Phase 1.2b Customer Cancel Wired Into n8n
 
 Type: `ADD`
