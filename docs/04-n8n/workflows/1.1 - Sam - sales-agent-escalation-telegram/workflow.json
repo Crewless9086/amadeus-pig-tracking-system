@@ -493,7 +493,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\n  \"custom_attributes\": {\n    \"order_id\": \"{{ $('Get Ticket Detail').item.json.WebOrderId }}\",\n    \"order_status\": \"{{ $('Get Ticket Detail').item.json.WebOrderStatus }}\",\n    \"conversation_mode\": \"AUTO\",\n    \"pending_action\": \"{{ $('Get Ticket Detail').item.json.WebPendingAction }}\",\n    \"escalation_ticket_id\": \"\",\n    \"last_human_replay\": \"\",\n    \"last_escalated_at\": \"\"\n  }\n}",
+        "jsonBody": "={{ { custom_attributes: { order_id: $('Get Ticket Detail').item.json.WebOrderId || \"\", order_status: $('Get Ticket Detail').item.json.WebOrderStatus || \"\", conversation_mode: \"AUTO\", pending_action: $('Get Ticket Detail').item.json.WebPendingAction || \"\", escalation_ticket_id: \"\", last_human_replay: \"\", last_escalated_at: \"\" } } }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

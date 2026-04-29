@@ -184,18 +184,8 @@ api_access_token =
 Send Body: TRUE
 Body Content Type: JSON
 Specify Body: Using JSON
-JSON:
-{
-  "custom_attributes": {
-    "order_id": "{{ $('Get Ticket Detail').item.json.WebOrderId }}",
-    "order_status": "{{ $('Get Ticket Detail').item.json.WebOrderStatus }}",
-    "conversation_mode": "AUTO",
-    "pending_action": "{{ $('Get Ticket Detail').item.json.WebPendingAction }}",
-    "escalation_ticket_id": "",
-    "last_human_replay": "",
-    "last_escalated_at": ""
-  }
-}
+JSON (expression body — do not use static {{ }} interpolation here, expressions are not evaluated inside jsonBody strings):
+={{ { custom_attributes: { order_id: $('Get Ticket Detail').item.json.WebOrderId || "", order_status: $('Get Ticket Detail').item.json.WebOrderStatus || "", conversation_mode: "AUTO", pending_action: $('Get Ticket Detail').item.json.WebPendingAction || "", escalation_ticket_id: "", last_human_replay: "", last_escalated_at: "" } } }}
 
 IMPORTANT: Chatwoot custom_attributes is a full object replace. This node must include order_id, order_status, and pending_action so they are not erased when the conversation is returned to AUTO. These values come from WebOrderId, WebOrderStatus, WebPendingAction stored in the Sales_HumanEscalations sheet at escalation time by 1.0's Edit - Build Ticket Data node.
 
@@ -203,6 +193,8 @@ Required sheet columns (must exist in Sales_HumanEscalations):
 - WebOrderId
 - WebOrderStatus
 - WebPendingAction
+
+NOTE (2026-04-29): Template-style {{ }} expressions inside a jsonBody string are not evaluated by n8n in this context. The body must use the ={{ }} expression prefix so n8n evaluates the entire value as a JavaScript expression.
 
 9. Delete a Chat message
 This node was added to ensure the Escalation messages get deleted once done but I want include the actual Escalation messaged generated as well not just the response I send. This way the chat stays clean. 
