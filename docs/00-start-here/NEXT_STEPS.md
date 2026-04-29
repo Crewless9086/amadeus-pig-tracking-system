@@ -83,10 +83,11 @@ Follow-up, separate from Fix C:
 
 - slim the Sales Agent prompt payload with a dedicated reply-context node so Sam receives only the fields needed for customer wording
 
-### 1.3 Capture Payment Method Before Approval
+### 1.3 Capture Payment Method Before Approval — Code Complete, Pending Live Test
 
-Manual prerequisite:
-- Add `PaymentMethod` column to `ORDER_MASTER` Google Sheet before deploying backend changes. Values: `Cash` or `EFT`.
+Manual prerequisites confirmed:
+- `ORDER_MASTER` column Y = `Payment_Method` — added manually.
+- `Sales_HumanEscalations` column S = `WebPaymentMethod` — added manually.
 
 Required outcome:
 
@@ -323,11 +324,11 @@ Recently completed:
 - Phase 1.1 reject behavior
 - Phase 1.2 customer cancel through backend, `1.2`, and `1.0`
 - Phase 1.2c first-turn create-with-lines via `create_order_with_lines`
-- Roadmap extended: Phases 1.3–1.5 (payment method, send_for_approval, lifecycle guards), Phase 2 (quote/invoice), Phase 3 (daily summary) — all documented 2026-04-29
+- Phase 1.3 payment method — backend, `1.0`, `1.2`, `1.1` all updated (code complete 2026-04-29; pending live test)
 
 Recommended next:
 
-1. **Phase 1.3** — Add `PaymentMethod` column to `ORDER_MASTER` manually, then build backend PATCH + Sam capture flow
+1. **Phase 1.3 live test** — deploy backend and import all three updated workflows; verify payment method capture end-to-end
 2. **Phase 1.4** — Wire `send_for_approval` from Sam through `1.2` to backend
 3. **Phase 1.5** — Lifecycle guards, including backend PaymentMethod lock
 

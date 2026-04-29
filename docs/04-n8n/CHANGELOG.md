@@ -15,6 +15,35 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-29 - Phase 1.3 — Payment Method Capture
+
+Type: `ADD`
+
+Component: `modules/orders/order_service.py`, `1.0 - SAM - Sales Agent - Chatwoot`, `1.2 - Amadeus Order Steward`, `1.1 - SAM - Sales Agent - Escalation Telegram`
+
+Change:
+
+- `modules/orders/order_service.py update_order` — accepts `payment_method` field. Validates value must be `Cash` or `EFT`. Rejects update if `Order_Status` is not `Draft`. Maps to `Payment_Method` column in `ORDER_MASTER`.
+- `1.0 Code - Normalize Incoming Message` — reads `payment_method` from `conversation.custom_attributes` and exposes it as `PaymentMethod`.
+- `1.0 Code - Build Order State` — detects payment method keywords in the current message (`cash` → `Cash`, `eft`/`bank transfer`/`electronic transfer`/`internet banking` → `EFT`). Adds `payment_method` (from stored attribute) and `detected_payment_method` (from current message) to `order_state`. Includes `detectedPaymentMethod !== ""` in `messageHasNewUsefulInfo`.
+- `1.0 Code - Build Enrich Existing Draft Payload` — forwards `detected_payment_method` as `payment_method` in the enrich payload when it is `Cash` or `EFT`. Includes it in `sentFieldCount` and return.
+- `1.0` — All 5 Chatwoot attribute write nodes updated to include `payment_method` in every write: `HTTP - Set Conversation Order Context`, `HTTP - Clear Pending After Cancel`, `HTTP - Set Pending Cancel Action`, `HTTP - Clear Pending Action`, `HTTP - Set Conversation Human Mode`.
+- `1.0 Edit - Build Ticket Data` — adds `WebPaymentMethod` field from `Code - Normalize Incoming Message`.
+- `1.0 Google Sheet - Append row in sheet` — adds `WebPaymentMethod` to `columns.value` and schema.
+- `1.2 Code - Normalize Order Payload` — adds `payment_method: clean(input.payment_method)`.
+- `1.2 Code - Build Update Order Payload` — forwards `payment_method` to `patch_body` when it is `Cash` or `EFT`. Includes in `updatableFieldCount`.
+- `1.1 Release Conversation to Auto` — adds `payment_method: $('Get Ticket Detail').item.json.WebPaymentMethod || ""` to the Chatwoot attribute snapshot.
+
+Reason:
+
+Payment method (`Cash` or `EFT`) is required before `send_for_approval` (Phase 1.4). It must be captured from the customer conversation, stored on `ORDER_MASTER`, and mirrored to Chatwoot so it survives across escalation and multi-turn conversations. The VAT treatment on quotes and invoices depends on this field.
+
+Expected outcome:
+
+When a customer says "I'll pay cash" or "EFT", Sam detects it via `Code - Build Order State`, routes through `ENRICH_EXISTING_DRAFT`, and the backend stores `Payment_Method = Cash` (or `EFT`) on `ORDER_MASTER`. All Chatwoot attribute writes preserve the value so it is not erased by later turns. The field survives escalation via `WebPaymentMethod` in `Sales_HumanEscalations`.
+
+Status: code complete 2026-04-29. Pending live test.
+
 ### 2026-04-29 - Fix C Option B1 — Create Order With Lines (Atomic)
 
 Type: `FIX`

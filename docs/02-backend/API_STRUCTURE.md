@@ -93,7 +93,7 @@ Allowed fields in current validation:
 - `collection_location`
 - `notes`
 - `changed_by`
-- `payment_method` — **Phase 1.3: add to allowed fields. Values: `Cash` or `EFT` only.**
+- `payment_method` — Values: `Cash` or `EFT` only. Locked once `Order_Status` is beyond `Draft`.
 
 Current validation does not allow arbitrary header updates. Add new fields deliberately.
 

@@ -728,6 +728,15 @@ def update_order(order_id: str, cleaned_data: dict):
         update_map["Notes"] = cleaned_data["notes"]
         updated_fields.append("notes")
 
+    if "payment_method" in cleaned_data:
+        pm = str(cleaned_data["payment_method"]).strip()
+        if pm not in ("Cash", "EFT"):
+            raise ValueError("payment_method must be Cash or EFT.")
+        if order_status != "Draft":
+            raise ValueError("Payment method cannot be changed once the order is beyond Draft status.")
+        update_map["Payment_Method"] = pm
+        updated_fields.append("payment_method")
+
     if not updated_fields:
         raise ValueError("No valid order fields were provided for update.")
 
