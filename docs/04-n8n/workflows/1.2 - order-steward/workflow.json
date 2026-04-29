@@ -270,6 +270,31 @@
               },
               "renameOutput": true,
               "outputKey": "Sync Order Lines"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "create_order_with_lines",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Create Order With Lines"
             }
           ]
         },
@@ -1530,6 +1555,169 @@
       ],
       "id": "e6d4fc48-9165-4c21-ad13-6c6cbc39b085",
       "name": "Set - Format Sync Order Lines Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1c2d3e4-f5a6-7890-bcde-f12345678901",
+              "name": "order_date",
+              "value": "={{$now.toFormat('yyyy-MM-dd')}}",
+              "type": "string"
+            },
+            {
+              "id": "c2d3e4f5-a6b7-8901-cdef-123456789012",
+              "name": "customer_name",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.customer_name }}",
+              "type": "string"
+            },
+            {
+              "id": "d3e4f5a6-b7c8-9012-def0-234567890123",
+              "name": "customer_phone",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.customer_phone }}",
+              "type": "string"
+            },
+            {
+              "id": "e4f5a6b7-c8d9-0123-ef01-345678901234",
+              "name": "customer_channel",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.customer_channel }}",
+              "type": "string"
+            },
+            {
+              "id": "f5a6b7c8-d9e0-1234-f012-456789012345",
+              "name": "customer_language",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.customer_language }}",
+              "type": "string"
+            },
+            {
+              "id": "a6b7c8d9-e0f1-2345-0123-567890123456",
+              "name": "order_source",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.order_source }}",
+              "type": "string"
+            },
+            {
+              "id": "b7c8d9e0-f1a2-3456-1234-678901234567",
+              "name": "requested_category",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.requested_category }}",
+              "type": "string"
+            },
+            {
+              "id": "c8d9e0f1-a2b3-4567-2345-789012345678",
+              "name": "requested_weight_range",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.requested_weight_range }}",
+              "type": "string"
+            },
+            {
+              "id": "d9e0f1a2-b3c4-5678-3456-890123456789",
+              "name": "requested_sex",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.requested_sex }}",
+              "type": "string"
+            },
+            {
+              "id": "e0f1a2b3-c4d5-6789-4567-901234567890",
+              "name": "requested_quantity",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.requested_quantity }}",
+              "type": "string"
+            },
+            {
+              "id": "f1a2b3c4-d5e6-7890-5678-012345678901",
+              "name": "notes",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.notes }}",
+              "type": "string"
+            },
+            {
+              "id": "a2b3c4d5-e6f7-8901-6789-123456789012",
+              "name": "created_by",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.changed_by }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        -832
+      ],
+      "id": "b1c2d3e4-f5a6-7890-bcde-f12345678901",
+      "name": "Set - Build Create With Lines Body"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/master/orders",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1200,
+        -832
+      ],
+      "id": "c2d3e4f5-a6b7-8901-cdef-123456789012",
+      "name": "HTTP - Create With Lines Order"
+    },
+    {
+      "parameters": {
+        "jsCode": "const createResp = $json || {};\nconst normalized = $('Code - Normalize Order Payload').item.json || {};\nconst orderId = createResp.order_id || \"\";\nreturn [{\n  json: {\n    create_success: createResp.success ?? false,\n    create_message: createResp.message || \"\",\n    order_id: orderId,\n    requested_items: Array.isArray(normalized.requested_items) ? normalized.requested_items : [],\n    changed_by: normalized.changed_by || \"Sam\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        -832
+      ],
+      "id": "d3e4f5a6-b7c8-9012-def0-234567890123",
+      "name": "Code - Build Sync After Create Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://amadeus-pig-tracking-system.onrender.com/api/master/orders/{{ $json.order_id }}/sync-lines",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { requested_items: $json.requested_items, changed_by: $json.changed_by } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1616,
+        -832
+      ],
+      "id": "e4f5a6b7-c8d9-0123-ef01-345678901234",
+      "name": "HTTP - Sync New Draft Lines"
+    },
+    {
+      "parameters": {
+        "jsCode": "const syncResp = $json || {};\nconst buildPayload = $('Code - Build Sync After Create Payload').item.json || {};\nreturn [{\n  json: {\n    success: buildPayload.create_success === true,\n    action: \"create_order_with_lines\",\n    order_id: buildPayload.order_id || \"\",\n    order_status: \"Draft\",\n    status: \"Draft\",\n    message: buildPayload.create_message || \"\",\n    sync_success: syncResp.success === true,\n    sync_results: syncResp.lines_synced || syncResp.results || [],\n    sync_message: syncResp.message || \"\",\n    customer_name: $('Code - Normalize Order Payload').item.json.customer_name || \"\",\n    requested_category: $('Code - Normalize Order Payload').item.json.requested_category || \"\",\n    requested_weight_range: $('Code - Normalize Order Payload').item.json.requested_weight_range || \"\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        -832
+      ],
+      "id": "f5a6b7c8-d9e0-1234-f012-456789012345",
+      "name": "Code - Format Create With Lines Result"
     }
   ],
   "pinData": {
@@ -1650,6 +1838,13 @@
         [
           {
             "node": "Set - Build Sync Order Lines Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Build Create With Lines Body",
             "type": "main",
             "index": 0
           }
@@ -1886,6 +2081,50 @@
         [
           {
             "node": "Set - Format Sync Order Lines Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Build Create With Lines Body": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Create With Lines Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Create With Lines Order": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Sync After Create Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Sync After Create Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Sync New Draft Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Sync New Draft Lines": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Create With Lines Result",
             "type": "main",
             "index": 0
           }
