@@ -139,7 +139,7 @@ Before adding more label behavior, live-test whether the Chatwoot labels endpoin
 
 ## Current Outstanding Items
 
-- Confirm `1.1 Release Conversation to Auto` now evaluates expressions correctly after the latest fix.
+- `1.1 Release Conversation to Auto` was live-verified on 2026-04-29 and now writes evaluated values back to Chatwoot.
 - Confirm the Chatwoot label endpoint behavior before expanding labels.
 - Fix `1.3 Patch Conversation Attributes` before enabling media.
 - Decide whether contact attributes should become a real memory layer after order lifecycle stabilization.

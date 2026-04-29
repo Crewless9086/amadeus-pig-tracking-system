@@ -33,7 +33,7 @@ Current status:
 - `SALES_AVAILABILITY` recovers correctly
 - `ORDER_STATUS_LOG` entry is written
 
-### 1.2 Add Customer Cancel Action - Backend Implemented, n8n Wiring Added, Needs Live Verification
+### 1.2 Add Customer Cancel Action - Complete And Live-Verified
 
 Required outcome:
 
@@ -55,7 +55,26 @@ Current status:
 - backend behavior was live-verified for line cancellation, reserved count recovery, availability recovery, and status log writing
 - `1.2 - Order Steward` now exposes `cancel_order`
 - `1.0 - Sam Sales Agent` now has guarded `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING` routes
-- needs live n8n import and two-turn Chatwoot verification
+- two-turn Chatwoot cancellation is live-verified
+- Chatwoot attribute preservation through escalation and human reply is live-verified
+- cancellation after escalation is live-verified
+
+### 1.2c Sync Order Lines After Draft Creation - Implemented, Needs Live Verification
+
+Required outcome:
+
+- complete first-turn order requests create `ORDER_MASTER`
+- if `requested_items[]` exists, the new draft immediately calls `sync_order_lines_from_request`
+- Sam replies only after the draft and requested line sync path have completed
+- no Merge node deadlock is introduced
+- sync failure has a safe reply path and does not silently drop the customer
+
+Current status:
+
+- `1.0` export includes `IF - Draft Has Requested Items`
+- new draft line sync calls `1.2` through `Call 1.2 - Sync New Draft Lines`
+- draft reply context is restored after sync
+- needs live WhatsApp-to-Sheets verification
 
 ### 1.3 Harden Release Behavior
 

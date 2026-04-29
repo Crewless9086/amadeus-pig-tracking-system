@@ -2328,7 +2328,7 @@ The merge combines both: `order_id` comes from [1], all customer context comes f
 
 Root cause found (2026-04-29): The HTTP node was in the chain between `Code - Store Draft Order Context` and the merge, replacing `$json` with the Chatwoot API response. The order_id was never reaching the AI agent prompt (`OrderID: none`).
 
-Fix applied (2026-04-29): `Code - Store Draft Order Context` now fans out directly to both the Chatwoot HTTP node and the merge. Confirmed working — Sam correctly referenced order `ORD-2026-74E7C` in its reply to the customer.
+Fix applied (2026-04-29): `Code - Store Draft Order Context` now fans out to the Chatwoot HTTP node and to a requested-items check. If no line items exist, the draft result goes directly to the reply merge. If requested items exist, the workflow syncs order lines first and then returns to the reply merge. Confirmed working before Fix C — Sam correctly referenced order `ORD-2026-74E7C` in its reply to the customer.
 
 CREATE DRAFT
 28. Set - Draft Order Payload
@@ -2351,18 +2351,17 @@ customer_number = string = {{$json.order_state.customer_number}}
 29. Call 1.2 - Create Draft Order
 
 30. Code - Store Draft Order Context
-const orderId = $json.order_id || "";
-const status = $json.status || "Draft";
+Restores the full pre-create customer context after `Call 1.2 - Create Draft Order`, then patches the new `order_id` into the top-level item and `order_state`.
 
-return [
-  {
-    json: {
-      ...$json,
-      order_id: orderId,
-      order_status: status
-    }
-  }
-];
+Important output fields:
+
+- `order_id`
+- `order_status`
+- `order_route = CREATE_DRAFT`
+- `action = create_order`
+- `order_state.existing_order_id`
+- `order_state.existing_order_status`
+- `order_state.has_existing_draft = true`
 
 31. HTTP - Set Conversation Order Context
 Writes the new order context to Chatwoot custom_attributes so the next customer turn can read it.
@@ -2380,10 +2379,45 @@ LEAF NODE — no outgoing connection. Chatwoot write fires but its response is n
 
 NOTE: This node used to connect to the merge, which meant the Chatwoot API response replaced the order context before reaching the AI agent. Fixed 2026-04-29 — see CREATE DRAFT Data Flow Rule above.
 
-32. Merge - Draft Result With Reply Context
+32. IF - Draft Has Requested Items
+Checks whether `order_state.requested_items[]` exists after draft creation.
+
+YES branch:
+
+- `Code - Build Sync New Draft Lines Payload`
+- `Call 1.2 - Sync New Draft Lines`
+- `Code - Restore Draft Sync Result`
+- `Merge - Draft Result With Reply Context` input `[1]`
+
+NO branch:
+
+- `Merge - Draft Result With Reply Context` input `[1]`
+
+33. Code - Build Sync New Draft Lines Payload
+Builds a `sync_order_lines_from_request` payload using the newly created draft `order_id` and the existing `order_state.requested_items[]`.
+
+Required fields:
+
+- `action = sync_order_lines_from_request`
+- `order_id = created draft order_id`
+- `changed_by = Sam`
+- `requested_items = order_state.requested_items`
+
+34. Call 1.2 - Sync New Draft Lines
+Executes `1.2 - Amadeus Order Steward` to create/sync requested `ORDER_LINES` immediately after first draft creation.
+
+35. Code - Restore Draft Sync Result
+Restores the draft context for Sam's reply and adds sync result fields:
+
+- `sync_success`
+- `sync_action`
+- `sync_message`
+- `sync_results`
+
+36. Merge - Draft Result With Reply Context
 Receives two inputs via combineByPosition:
 - Input [0]: from Code - Decide Order Route fan-out → full customer context (order_state, memory, etc.)
-- Input [1]: from Code - Store Draft Order Context fan-out → 1.2 result with order_id and order_status
+- Input [1]: from either `Code - Store Draft Order Context` when there are no requested items, or `Code - Restore Draft Sync Result` after line sync
 Fields from [1] override matching fields from [0]. order_id is correctly available after the merge.
 Connected to:
 Ai Agent - Sales Agent

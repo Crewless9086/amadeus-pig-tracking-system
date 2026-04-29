@@ -64,6 +64,17 @@ Test steps:
 
 ## Requested Item Sync Tests
 
+### First-Turn Draft Creation With Lines
+
+Test steps:
+
+1. Send a complete first-turn order request with quantity, category or weight range, sex preference, timing, and collection location.
+2. Confirm `CREATE_DRAFT` creates `ORDER_MASTER`.
+3. Confirm `IF - Draft Has Requested Items` takes the YES branch.
+4. Confirm `Call 1.2 - Sync New Draft Lines` fires after draft creation.
+5. Confirm `ORDER_LINES` contains active line rows for the new `Order_ID`.
+6. Confirm Sam's reply includes the created order ID and does not claim reservation.
+
 ### Split Male/Female Request
 
 Payload shape:

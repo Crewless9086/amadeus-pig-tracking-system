@@ -50,7 +50,7 @@ Confirmed behavior:
 - `SALES_AVAILABILITY` recovers and makes pigs available again through the formula chain
 - `ORDER_STATUS_LOG` records the rejection
 
-### Customer Cancellation Is Implemented, n8n Wiring Added, Needs Live Verification
+### Customer Cancellation Is Implemented And Live-Verified
 
 Current backend behavior:
 
@@ -70,10 +70,12 @@ Current n8n wiring:
 - `1.0 - Sam Sales Agent` uses `pending_action = cancel_order` for two-turn confirmation
 - `CANCEL_ORDER` is evaluated before create/update routes
 - stale cancel confirmation is cleared through `CLEAR_PENDING`
+- Chatwoot order attributes survive escalation and human reply through the full snapshot rule
+- cancellation after escalation was live-verified against `ORD-2026-367706`
 
 Remaining watch point:
 
-- verify formula views recover availability correctly after real Google Sheets execution
+- post-create draft line sync is implemented in the `1.0` export and needs live verification
 
 ### Split Requested Item Sync Needs Hardening
 

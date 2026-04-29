@@ -15,6 +15,29 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-29 - Fix C Post-Create Draft Line Sync
+
+Type: `FIX`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`
+
+Change:
+
+- Added an optional post-create sync branch after `Call 1.2 - Create Draft Order`.
+- Added `IF - Draft Has Requested Items` to check `order_state.requested_items[]`.
+- Added `Code - Build Sync New Draft Lines Payload`, `Call 1.2 - Sync New Draft Lines`, and `Code - Restore Draft Sync Result`.
+- Updated `Code - Store Draft Order Context` so the created `order_id` is patched into both top-level context and `order_state`.
+
+Reason:
+
+Live testing showed complete first-turn order requests created `ORDER_MASTER` only. Requested `ORDER_LINES` were not created until a later update path, which left drafts incomplete.
+
+Expected outcome:
+
+When a first-turn request contains structured `requested_items[]`, `1.0` creates the draft, syncs requested order lines through `1.2`, and only then sends Sam's reply.
+
+Status: implemented in export; needs live import and verification
+
 ### 2026-04-29 - Chatwoot Attribute Register Added
 
 Type: `DOCS`
@@ -36,7 +59,7 @@ Expected outcome:
 
 Future changes can verify Chatwoot labels and custom attributes against one documented contract before import or live testing.
 
-Status: documented
+Status: documented; `1.1` expression-safe release verified 2026-04-29
 
 ### 2026-04-29 - Phase 1.2c Escalation Path Attribute Fix
 
@@ -61,7 +84,7 @@ Expected outcome:
 
 Order context (`order_id`, `order_status`, `pending_action`) survives through escalation and human reply. The Escalation Classifier will not escalate routine cancel requests when an active order is present.
 
-Status: implemented in exports; requires `Sales_HumanEscalations` sheet to have `WebOrderId`, `WebOrderStatus`, `WebPendingAction` columns (added 2026-04-29); needs live import and end-to-end verification.
+Status: live-verified 2026-04-29. `Sales_HumanEscalations` preserved `WebOrderId`, `WebOrderStatus`, and `WebPendingAction`; `1.1` restored Chatwoot attributes with real evaluated values; a follow-up customer cancellation routed through `AUTO` and `CANCEL_ORDER` successfully.
 
 ### 2026-04-29 - Phase 1.2b Live Test Fixes
 
@@ -84,7 +107,7 @@ Expected outcome:
 
 Two-turn cancel flow works end-to-end. Sam correctly references order ID in draft creation reply. Cancel confirmation cannot accidentally trigger CREATE_DRAFT.
 
-Status: confirmed working in live test — Sam correctly referenced ORD-2026-74E7C after CREATE_DRAFT. Cancel flow pending full re-test after escalation fixes.
+Status: live-verified. Sam correctly referenced order ID after CREATE_DRAFT. Cancel confirmation cannot accidentally trigger CREATE_DRAFT. Cancel flow was re-tested after escalation fixes and successfully cancelled `ORD-2026-367706`.
 
 ### 2026-04-27 - Phase 1.2b Customer Cancel Wired Into n8n
 
