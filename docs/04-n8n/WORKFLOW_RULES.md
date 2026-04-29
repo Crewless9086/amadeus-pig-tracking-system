@@ -10,6 +10,7 @@ Defines the operating rules for the n8n workflow suite.
 - `1.1 - SAM - Sales Agent - Escalation Telegram` handles human replies after escalation.
 - `1.2 - Amadeus Order Steward` handles backend order actions for `1.0`.
 - `1.3 - SAM - Sales Agent - Media Tool` is the official media workflow, but remains disabled until fixed and tested.
+- Chatwoot labels and custom attributes must follow `CHATWOOT_ATTRIBUTES.md`.
 
 ## Decision Modes In `1.0`
 
@@ -48,6 +49,7 @@ When `decision_mode = ESCALATE`:
 - protect the customer conversation from duplicate automated replies
 - use `1.1` to send the human response back to Chatwoot
 - return the conversation to `AUTO` only after the human reply is sent
+- preserve Chatwoot order context fields when setting or clearing human mode
 - Telegram cleanup after reply is desired and should be implemented/tested before marked complete
 
 ## Order Steward Rules
@@ -70,6 +72,7 @@ Sam should not directly write order sheets. Future order review should preferabl
 - `1.3` is the official media workflow number.
 - The media tool remains disabled until fixed and tested.
 - Do not enable `Send_Pictures` in `1.0` until `1.3` input/output behavior is verified.
+- Do not enable `1.3` until its `Patch Conversation Attributes` node preserves the full Chatwoot conversation attribute snapshot.
 - Media categories and Google Drive folders must be reviewed before customer use.
 
 ## Google Sheets Rules

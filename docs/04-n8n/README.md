@@ -27,6 +27,7 @@ It documents:
 | --- | --- |
 | `WORKFLOW_MAP.md` | High-level suite map and workflow-by-workflow flow. |
 | `DATA_FLOW.md` | Field contracts and cross-workflow payload movement. |
+| `CHATWOOT_ATTRIBUTES.md` | Canonical Chatwoot labels, conversation attributes, contact attributes, and snapshot rules. |
 | `NODE_RESPONSIBILITIES.md` | Node and workflow responsibilities. |
 | `WORKFLOW_RULES.md` | Rules for AUTO, CLARIFY, ESCALATE, order tools, media, and human handoff. |
 | `DO_NOT_CHANGE.md` | Protected fields, routes, node contracts, and fragile behavior. |

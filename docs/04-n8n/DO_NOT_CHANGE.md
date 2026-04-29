@@ -30,6 +30,7 @@ Do not rename or repurpose these fields casually:
 | `order_id` | Backend order identifier. |
 | `order_status` | Backend/order state context. |
 | `TicketID` | Human escalation ticket key. |
+| `WebOrderId` / `WebOrderStatus` / `WebPendingAction` | Escalation sheet fields used by `1.1` to restore Chatwoot order context. |
 | `images_sent_offset_map` | Media tool repeat-send control. |
 
 ## High-Risk Field: `output`
@@ -49,7 +50,7 @@ Do not change without review:
 - CLARIFY path protection
 - final reply cleaning/sending path
 - order route switch, including `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING`
-- Chatwoot `pending_action` set/clear calls
+- Chatwoot label and custom attribute calls documented in `CHATWOOT_ATTRIBUTES.md`
 - `1.2` execute workflow calls
 - escalation handoff creation
 
@@ -74,6 +75,7 @@ Do not change without review:
 - approved Telegram chat restriction
 - Chatwoot account/conversation ID mapping
 - returning `conversation_mode` to `AUTO` after human reply
+- preserving `WebOrderId`, `WebOrderStatus`, and `WebPendingAction` through the escalation sheet
 
 Desired improvement:
 
@@ -89,6 +91,7 @@ Do not enable without review:
 - Google Drive folder mappings
 - Chatwoot media attachment behavior
 - `images_sent_offset_map` updates
+- any media custom attribute write that does not preserve the full conversation attribute snapshot
 
 ## Protected External Systems
 

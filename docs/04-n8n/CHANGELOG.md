@@ -15,6 +15,29 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-29 - Chatwoot Attribute Register Added
+
+Type: `DOCS`
+
+Component: `docs/04-n8n`
+
+Change:
+
+- Added `CHATWOOT_ATTRIBUTES.md` as the canonical register for Chatwoot conversation attributes, contact attributes, and labels.
+- Documented the full-object replacement risk for Chatwoot conversation custom attributes.
+- Documented active attribute writes in `1.0` and `1.1`.
+- Documented outstanding risks for `1.3` media attribute writes and label endpoint behavior.
+
+Reason:
+
+Live testing showed multiple failures caused by partial Chatwoot custom attribute writes erasing order context. The workflow suite needs one source of truth before adding more order behavior.
+
+Expected outcome:
+
+Future changes can verify Chatwoot labels and custom attributes against one documented contract before import or live testing.
+
+Status: documented
+
 ### 2026-04-29 - Phase 1.2c Escalation Path Attribute Fix
 
 Type: `FIX`

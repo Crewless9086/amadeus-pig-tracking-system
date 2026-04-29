@@ -24,6 +24,9 @@ Created or normalized by `Code - Normalize Incoming Message` and nearby Chatwoot
 | `ExistingOrderId` | Order ID stored on Chatwoot custom attributes. | Used when enriching/syncing existing drafts. |
 | `ExistingOrderStatus` | Order status stored on Chatwoot custom attributes. | Context only unless validated downstream. |
 | `ConversationMode` / `conversation_mode` | AUTO or HUMAN mode. | HUMAN should stop Sam from replying. |
+| `PendingAction` / `pending_action` | Pending guarded action from Chatwoot custom attributes. | Currently used for two-turn customer cancellation. |
+
+Full Chatwoot label and custom attribute contracts are documented in `CHATWOOT_ATTRIBUTES.md`.
 
 ## Decision Fields
 
