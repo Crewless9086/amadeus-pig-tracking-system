@@ -2257,6 +2257,65 @@ Pending/clear branch nodes:
 
 Sam response rule: Sam must only say an order is cancelled after `Call 1.2 - Cancel Order` returns `success = true`. If the backend returns an error, Sam must explain that the order was not changed.
 
+---
+
+## CHATWOOT ATTRIBUTE RULE (Standing Rule — Must Not Break)
+
+Chatwoot's custom attributes API performs a **full object replace**, not a merge. Any write to `custom_attributes` that omits a field will erase that field for the rest of the conversation.
+
+**Every node that writes to Chatwoot `custom_attributes` must include all four fields every time:**
+
+| Field | Value |
+| --- | --- |
+| `order_id` | current order ID (from order context or result) |
+| `order_status` | current order status |
+| `conversation_mode` | `AUTO` (unless explicitly changing) |
+| `pending_action` | `cancel_order` or `""` (never omit) |
+
+**Nodes that write Chatwoot attributes in this workflow and what they must include:**
+
+| Node | Trigger | order_id source | order_status source |
+| --- | --- | --- | --- |
+| `HTTP - Set Conversation Order Context` | After CREATE_DRAFT | `$json.order_id` (1.2 result) | `$json.order_status` |
+| `HTTP - Set Pending Cancel Action` | CANCEL_PENDING route | `ExistingOrderId` from normalize | `ExistingOrderStatus` from normalize |
+| `HTTP - Clear Pending Action` | CLEAR_PENDING route | `ExistingOrderId` from normalize | `ExistingOrderStatus` from normalize |
+| `HTTP - Clear Pending After Cancel` | After cancel confirmed | `$json.order_id` (1.2 result) | `$json.order_status` (1.2 result) |
+
+**Before adding any new Chatwoot HTTP write node, verify it sends all four fields. Before editing an existing write node, check the other three fields are not being removed.**
+
+Root cause found (2026-04-28): `HTTP - Set Pending Cancel Action` was only writing `pending_action`, which erased `order_id` and `order_status` from Chatwoot. On the next customer turn, `ExistingOrderId` came back empty, so the cancel confirmation flow could not find the order to cancel and fell through to CREATE_DRAFT.
+
+Fix applied: all four Chatwoot write nodes updated to always send full four-field snapshots.
+
+---
+
+## CREATE DRAFT Data Flow Rule (Standing Rule)
+
+After `Call 1.2 - Create Draft Order` returns, the 1.2 result replaces `$json`. The full customer context (`order_state`, `customer_name`, etc.) is no longer in `$json` at that point.
+
+**Rule: never route the 1.2 result directly through a Chatwoot HTTP node as the sole data path to the merge or AI agent.** The Chatwoot HTTP node's output is the Chatwoot API response, not the order context.
+
+**Current approved pattern for CREATE DRAFT:**
+
+```
+Code - Store Draft Order Context
+    ├── HTTP - Set Conversation Order Context   [Chatwoot write — leaf node, no merge connection]
+    └── Merge - Draft Result With Reply Context [index 1]   [carries order_id to AI agent]
+
+Code - Decide Order Route
+    └── Merge - Draft Result With Reply Context [index 0]   [carries full customer context]
+
+Merge - Draft Result With Reply Context (combineByPosition)
+    [0] full customer context + [1] 1.2 result with order_id
+    → Ai Agent - Sales Agent
+```
+
+The merge combines both: `order_id` comes from [1], all customer context comes from [0]. The AI agent receives the correct `order_id` in its prompt.
+
+Root cause found (2026-04-29): The HTTP node was in the chain between `Code - Store Draft Order Context` and the merge, replacing `$json` with the Chatwoot API response. The order_id was never reaching the AI agent prompt (`OrderID: none`).
+
+Fix applied (2026-04-29): `Code - Store Draft Order Context` now fans out directly to both the Chatwoot HTTP node and the merge. Confirmed working — Sam correctly referenced order `ORD-2026-74E7C` in its reply to the customer.
+
 CREATE DRAFT
 28. Set - Draft Order Payload
 action = string = create_order
@@ -2292,6 +2351,8 @@ return [
 ];
 
 31. HTTP - Set Conversation Order Context
+Writes the new order context to Chatwoot custom_attributes so the next customer turn can read it.
+Must always send all four fields (see CHATWOOT ATTRIBUTE RULE above).
 {
   "custom_attributes": {
     "order_id": "{{ $json.order_id }}",
@@ -2301,9 +2362,15 @@ return [
   }
 }
 Connected to:
-Merge - Draft Results With Replay Context input 2
+LEAF NODE — no outgoing connection. Chatwoot write fires but its response is not used in the data chain.
 
-32. Merge - Draft Results With Replay Context
+NOTE: This node used to connect to the merge, which meant the Chatwoot API response replaced the order context before reaching the AI agent. Fixed 2026-04-29 — see CREATE DRAFT Data Flow Rule above.
+
+32. Merge - Draft Result With Reply Context
+Receives two inputs via combineByPosition:
+- Input [0]: from Code - Decide Order Route fan-out → full customer context (order_state, memory, etc.)
+- Input [1]: from Code - Store Draft Order Context fan-out → 1.2 result with order_id and order_status
+Fields from [1] override matching fields from [0]. order_id is correctly available after the merge.
 Connected to:
 Ai Agent - Sales Agent
 

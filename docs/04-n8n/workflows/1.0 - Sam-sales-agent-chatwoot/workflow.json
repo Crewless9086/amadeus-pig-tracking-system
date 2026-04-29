@@ -2873,6 +2873,11 @@
             "node": "HTTP - Set Conversation Order Context",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Merge - Draft Result With Reply Context",
+            "type": "main",
+            "index": 1
           }
         ]
       ]
@@ -3535,13 +3540,7 @@
     },
     "HTTP - Set Conversation Order Context": {
       "main": [
-        [
-          {
-            "node": "Merge - Draft Result With Reply Context",
-            "type": "main",
-            "index": 1
-          }
-        ]
+        []
       ]
     },
     "Set - Build Cancel Order Payload": {
