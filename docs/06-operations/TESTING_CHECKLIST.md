@@ -70,10 +70,15 @@ Test steps:
 
 1. Send a complete first-turn order request with quantity, category or weight range, sex preference, timing, and collection location.
 2. Confirm `CREATE_DRAFT` creates `ORDER_MASTER`.
-3. Confirm `IF - Draft Has Requested Items` takes the YES branch.
-4. Confirm `Call 1.2 - Sync New Draft Lines` fires after draft creation.
-5. Confirm `ORDER_LINES` contains active line rows for the new `Order_ID`.
-6. Confirm Sam's reply includes the created order ID and does not claim reservation.
+3. Confirm `Set - Draft Order Payload` sends `action = create_order_with_lines` when `requested_items[]` is non-empty.
+4. Confirm `1.2 - Order Steward` routes to the `Create Order With Lines` branch.
+5. Confirm `Code - Format Create With Lines Result` returns `success = true`, `sync_success = true`, and the new `order_id`.
+6. Confirm `ORDER_LINES` contains active line rows for the new `Order_ID`.
+7. Confirm Sam's reply includes the created order ID and does not claim reservation.
+
+Live verification reference:
+
+- 2026-04-29: `ORD-2026-879091` created in `ORDER_MASTER`; three matching `ORDER_LINES` rows created with `request_item_key = primary_1`.
 
 ### Split Male/Female Request
 

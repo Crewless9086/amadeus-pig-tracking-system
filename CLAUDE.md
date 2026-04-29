@@ -129,6 +129,7 @@ Known instabilities (check `docs/00-start-here/CURRENT_STATE.md` for latest):
 - AUTO reply integrity — Composer node can override valid AI answers
 - Reply system field confusion at merge points in n8n
 - Order routing inconsistency across workflow paths
-- Order line sync logic needs verification
+- Split requested item sync still needs hardening for multi-key requests
+- Sales Agent reply prompt receives an oversized merged payload and should be slimmed
 
-Stabilization is prioritized over new features — see `docs/00-start-here/NEXT_STEPS.md` for the 5-phase roadmap.
+Stabilization is prioritized over new features — see `docs/00-start-here/NEXT_STEPS.md` for the current roadmap.

@@ -983,9 +983,47 @@ Array
 {{$json.results}}
  
 
+3.11 - Create Order With Lines
+
+Purpose:
+
+Create a draft order and immediately sync requested `ORDER_LINES` in one `1.2` execution. This is used by `1.0` for first-turn committed customer requests where `requested_items[]` is already populated.
+
+Action:
+
+`create_order_with_lines`
+
+Route:
+
+`Switch - Route by Action` output `Create Order With Lines`.
+
+Branch chain:
+
+`Set - Build Create With Lines Body` -> `HTTP - Create With Lines Order` -> `Code - Build Sync After Create Payload` -> `HTTP - Sync New Draft Lines` -> `Code - Format Create With Lines Result`
+
+Important ownership rule:
+
+`1.0` decides whether to call `create_order` or `create_order_with_lines`. `1.2` owns the actual create + sync operation.
+
+`Code - Build Sync After Create Payload` must read `requested_items[]` from `Code - Normalize Order Payload`, not from the create-order HTTP response. At that point `$json` is the backend create response and does not contain the original requested items.
+
+Combined result fields:
+
+- `success`: true only when both create and sync succeeded
+- `action`: `create_order_with_lines`
+- `order_id`: created order ID
+- `order_status`: `Draft`
+- `sync_success`: backend sync-lines success
+- `sync_results`: created/matched line details
+- `sync_message`: sync-lines message for diagnostics
+
+Live verification:
+
+2026-04-29: `ORD-2026-879091` created from a first-turn WhatsApp request for 3 Weaners in `7_to_9_Kg`. `ORDER_LINES` received three Draft / Not_Reserved rows with `request_item_key = primary_1`.
+
 ## Important Rules
 This workflow is responsible for all action to be taken with related to orders only this workflow access and make changes not the others.
 
 ## Known Issues / Questions
-1. Updating Order lines needs to be check to see if this is working
-2. View Order should become availble for Sam so the response will always know if there is any orders open and then use this info to help answer the question. Having a having a record of the orders and also history of the orders of the specific user might just give Sam the info required to give better personal answers or feelings?
+1. Split requested item sync still needs hardening for multi-key requests such as male/female splits.
+2. View Order should become available for Sam through a safe `1.2`/backend review action so replies can use backend-confirmed order truth.

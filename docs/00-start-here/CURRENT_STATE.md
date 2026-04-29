@@ -12,7 +12,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Google Sheets docs | Good baseline | Sheet files, formulas, ownership, field standards, and business rules are documented. |
 | n8n workflow docs | Good baseline | Four workflow exports and suite-level rules are documented. |
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
-| Live order system | Needs stabilization | This is the current profit-critical area. Fix before expanding features. |
+| Live order system | Stabilizing | Reject, customer cancel, and first-turn create-with-lines are live-verified. Release/reserve robustness and lifecycle guards remain priority. |
 | Web app | Needs usability work | App should support operations, not create extra manual work. Focus after order structure is stable. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
@@ -73,9 +73,12 @@ Current n8n wiring:
 - Chatwoot order attributes survive escalation and human reply through the full snapshot rule
 - cancellation after escalation was live-verified against `ORD-2026-367706`
 
-Remaining watch point:
+First-turn draft creation with lines:
 
-- post-create draft line sync is implemented in the `1.0` export and needs live verification
+- `1.0` now routes complete first-turn requests with `requested_items[]` to `1.2` using `action = create_order_with_lines`
+- `1.2` owns the full create + sync operation: create `ORDER_MASTER`, sync `ORDER_LINES`, then return one combined result
+- top-level `success` is true only when both create and sync succeed
+- live verification passed on 2026-04-29 with `ORD-2026-879091`; three `ORDER_LINES` rows were created with `match_status = exact_match`
 
 ### Split Requested Item Sync Needs Hardening
 
@@ -105,6 +108,19 @@ Reason:
 - backend can return only safe, relevant fields
 - backend responses are easier to test than uncontrolled AI sheet reads
 
+### Sales Agent Reply Payload Needs Slimming
+
+Current risk:
+
+- `Ai Agent - Sales Agent` receives a large merged payload containing raw Chatwoot webhook data, debug fields, sync internals, and final order context
+- this did not block Fix C, but it increases prompt noise and makes reply behavior harder to reason about
+
+Preferred follow-up:
+
+- add a `Code - Build Sales Reply Context` node before Sam
+- pass only the fields needed for the reply: customer message, short conversation summary, order action, order ID/status, backend success, sync success, slim order state, and explicit reply instruction
+- keep raw/debug data available in previous nodes for diagnostics, not in Sam's prompt
+
 ## Web App Current Concern
 
 The app must become useful for daily operations. It should help with:
@@ -120,4 +136,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Move from documentation into implementation planning for **Phase 1: Order Lifecycle Stabilization**.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The strongest current candidates are reserve/release robustness, lifecycle guards, or Sales Agent reply payload slimming.

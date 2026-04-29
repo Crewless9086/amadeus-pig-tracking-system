@@ -51,13 +51,22 @@ Defines the responsibilities and boundaries for the n8n workflow suite.
 | --- | --- | --- |
 | `Code - Build Order State` | Extract structured order state from the conversation. | Write to sheets or assume backend success. |
 | `Switch - Route Order Action` | Route to current supported order actions. | Route unapproved actions from `1.0`. |
-| `Set - Draft Order Payload` | Build `create_order` payload. | Include unsupported fields. |
+| `Set - Draft Order Payload` | Build the draft payload; sends `create_order_with_lines` when `requested_items[]` is non-empty, otherwise `create_order`. | Perform the sync inside `1.0`; create+sync belongs to `1.2`. |
 | `Code - Build Enrich Existing Draft Payload` | Build safe `update_order` payload. | Update without `existing_order_id`. |
 | `Code - Build Sync Existing Draft Payload` | Build `sync_order_lines_from_request` payload. | Sync without `requested_items[]`. |
 | `HTTP - Set Pending Cancel Action` | Store explicit customer-cancel confirmation state in Chatwoot. | Cancel the order directly. |
 | `Set - Build Cancel Order Payload` / `Call 1.2 - Cancel Order` | Call `1.2` after customer confirmation. | Say cancelled before backend success. |
 | `HTTP - Clear Pending Action` | Clear stale cancel confirmation state. | Leave stale `pending_action` active. |
 | `Call 1.2 - ...` nodes | Execute Order Steward. | Directly write order sheets. |
+
+### `1.2` Create-With-Lines Branch
+
+| Node / group | Responsibility | Must not do |
+| --- | --- | --- |
+| `Set - Build Create With Lines Body` | Build the same backend create-order body as normal draft creation. | Include line sync fields in the create-order API body. |
+| `Code - Build Sync After Create Payload` | Read `requested_items[]` from `Code - Normalize Order Payload` after the backend returns the new order ID. | Read `requested_items[]` from the create response. |
+| `HTTP - Sync New Draft Lines` | Call backend sync-lines for the newly created order. | Mark success if sync fails. |
+| `Code - Format Create With Lines Result` | Return one combined result where `success` requires both create and sync success. | Hide `sync_success` or `sync_message` from diagnostics. |
 
 ### Escalation Nodes
 

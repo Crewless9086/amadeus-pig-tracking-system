@@ -58,6 +58,7 @@ flowchart TD
 
 - `1.0` is the only customer-entry workflow.
 - `1.2` is the preferred path for order review and order actions. Sam should not directly write order sheets.
+- First-turn committed orders with `requested_items[]` use `create_order_with_lines`; `1.2` owns the create + sync operation and returns a combined result.
 - Direct read access to `ORDER_OVERVIEW` may be useful later, but the safer planned direction is to expose order review through `1.2` and the backend so identity matching, filtering, and permissions stay controlled.
 - `1.3` is officially the media workflow number, but the media tool remains disabled until fixed and tested.
 - Telegram cleanup after human reply is desired but should be treated as a planned improvement unless confirmed implemented.

@@ -1,13 +1,18 @@
-This files is a short to do list where I make notes of things i noticed so we can add them to the correct structure for our planning. Once they are added to the NEXTSTEP.md files they can be removed, this way we ensure that all point highlighted and raised is logged correclty in the NEXT_STEP.md file and in order from priority without out messing things up. The project-memory files need to be updated to reflect any and all planning and works as we make updates so we always have the new docs and matching structure. 
+This file is the scratch list for things noticed during build work. Once an item is added to `docs/00-start-here/NEXT_STEPS.md`, it should be removed from the active scratch list below.
 
-TO DO LIST:
-1. Check the "Reject Order" funcion to see what this does. What I noticed is that when I "Reject Order" on the Web App, it marked the order as cancelled, but what it did not do is that it did not auto release the reserved order lines. I think this needs to happen should there be any. Then we get a confirmation that this happend. 
-2. Created a fucntion for "Cancel Order", this migth be that the client send a messaged back and says cancel order then "1.0 - SAM - Sales Agent - Chatwoot" can run and use the the tool and call "1.2 - Amadeus Order Steward" to execute this specific task. 
-3. Nice to have, could we have some sort of prompt bubble that pop up when you click on a fucntion that runs in the background. Almost like what is happening when I type to you and you prccess things, you give a liitle summary of what's happening and then at the end an updated messaged that this happend. That could be cool and this will allow the user to follow along and see what the fucntion is doing. Nothing to technical just a quick small description of what's happening and then done.
-4. Suggested folder structure, I want to go over my folders and make sure we arranged and name them correctly and split them so it's easier to fix and find problems. The naming should be the same and then then structure should be clear and easy to follow along. This will help and this means smaller chunks of code can be fixed instead of full files. 
-5. When adding a new litter and it generates the rows in the PIG_MASTER, the column purpose needs to be set to "Unknown", this way it gives us time till wean to decied their purpose. When purpose is "Unknown" then this animal is not for sale. We can also set a reminder that these animals needs a purpose to ensure we keep these up to date. It might be that they are kept to "Grow_Out", "Sale", "Breeding" the reminder only needs to be flagged once they are weaned. 
-6. The function "Reserve Order Lines" keep failing, it only does a few and then it fails. Why is this. I think we need to double check all fucntion. Test them and make sure they can handle more since there might be many items on the order? 
-7. Any dropdown in the Pig App related to pigs for instance like on the Weight Form, can we please show the Tag Nr, then the Pen NAme not the Pen ID thus it's easier to pick the pen and If we could also ensure all numbers for the Pigs tags are 3 digits as they are on the tag. 001, 010, 090, 100, 120, 190, 300 etc. This way they will follow in order and not just random as they are now. 
-8. On the weight form, can we add next to the section: Move to Pen (Optional) the current Pen so it's essier to see. But it can be like fade or blanked out just so iut's not clickable. 
-9. Weight Report generated once all weight are entered and then the user can say generate report. This report will then capture all the details we want to explaina and give more details to what happend this week. Deep dive into the results and so on. This is important to keep track on the animals and see how we are doing. Summaries, filter group totals and useful decision making things, amount in Pens and so on. 
-10. Dashboard View the section "SOLD THIS MONTH" how si this calculated becuase in April we sold 40 pigs and it's only showing 20.
+## Moved Into `NEXT_STEPS.md`
+
+- Reject order must release reserved lines: completed and live-verified under Phase 1.1.
+- Customer cancel through Sam / `1.2`: completed and live-verified under Phase 1.2.
+- First-turn draft creation must sync order lines immediately: completed and live-verified under Phase 1.2c.
+- Web app background progress/status messaging: added under Phase 4.
+- Reserve Order Lines failures on larger orders: added under Phase 1.3.
+- New litter `Purpose = Unknown` and weaning reminder: added under Phase 6.1.
+- Pig dropdown tag/pen display and three-digit tag formatting: added under Phase 6.2.
+- Weight form current pen helper text: added under Phase 6.3.
+- Weight report generation: added under Phase 6.4.
+- Dashboard `SOLD THIS MONTH` mismatch: added under Phase 6.5.
+
+## Active Scratch Notes
+
+- Review folder/code structure after order stabilization, especially where large files should be split into clearer modules. Documentation structure is currently stable; implementation structure can be reviewed as a separate refactor pass.

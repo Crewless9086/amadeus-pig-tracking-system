@@ -59,31 +59,40 @@ Current status:
 - Chatwoot attribute preservation through escalation and human reply is live-verified
 - cancellation after escalation is live-verified
 
-### 1.2c Sync Order Lines After Draft Creation - Implemented, Needs Live Verification
+### 1.2c Sync Order Lines After Draft Creation - Complete And Live-Verified
 
 Required outcome:
 
 - complete first-turn order requests create `ORDER_MASTER`
-- if `requested_items[]` exists, the new draft immediately calls `sync_order_lines_from_request`
+- if `requested_items[]` exists, the new draft immediately syncs matching `ORDER_LINES`
 - Sam replies only after the draft and requested line sync path have completed
 - no Merge node deadlock is introduced
 - sync failure has a safe reply path and does not silently drop the customer
 
 Current status:
 
-- `1.0` export includes `IF - Draft Has Requested Items`
-- new draft line sync calls `1.2` through `Call 1.2 - Sync New Draft Lines`
-- draft reply context is restored after sync
-- needs live WhatsApp-to-Sheets verification
+- `1.0 Set - Draft Order Payload` sends `action = create_order_with_lines` when `order_state.requested_items[]` is non-empty
+- `1.0` still owns routing only; it no longer contains the superseded Option A post-create sync branch
+- `1.2 - Order Steward` owns the atomic create + sync branch
+- `1.2 Code - Format Create With Lines Result` returns `success = true` only when both create and sync succeed
+- live WhatsApp-to-Sheets verification passed on 2026-04-29 with `ORD-2026-879091`
+- `ORDER_MASTER` had the new Draft order and `ORDER_LINES` had 3 matching Draft / Not_Reserved rows
+- Sam referenced the order ID in the final reply on rerun
 
-### 1.3 Harden Release Behavior
+Follow-up, separate from Fix C:
+
+- slim the Sales Agent prompt payload with a dedicated reply-context node so Sam receives only the fields needed for customer wording
+
+### 1.3 Harden Reserve And Release Behavior
 
 Required outcome:
 
+- reserve order lines should handle larger/multi-line orders without partial silent failure
 - release should be safe to call more than once
 - release should not affect unrelated orders
 - cancelled/invalid lines should not remain reserved
 - reserved count must match real reserved lines
+- backend/web app should return a clear success/failure summary for each line
 
 ### 1.4 Add Lifecycle Guards
 
@@ -92,6 +101,15 @@ Required outcome:
 - completed orders cannot be rejected/cancelled casually
 - cancelled orders cannot be approved
 - reserved/approved orders must handle state rollback safely
+
+### 1.5 Slim Sales Agent Reply Payload
+
+Required outcome:
+
+- add a dedicated reply-context shaping node before `Ai Agent - Sales Agent`
+- remove raw Chatwoot webhook data, large debug fields, and sync internals from Sam's prompt
+- keep only customer context, order action, order ID/status, backend success, sync success, slim order state, and reply instruction
+- preserve full diagnostic data in earlier workflow nodes
 
 ## Phase 2: Requested Item Sync Stabilization
 
@@ -152,6 +170,7 @@ Focus areas:
 - useful logs/history
 - clear success/failure messages
 - less manual debugging
+- short progress/status messaging for background actions such as reserve, release, reject, and cancel
 
 Rule:
 
@@ -167,21 +186,58 @@ Only after order stability:
 - improve Telegram cleanup for human escalation
 - expand monitoring and operational runbooks
 
-## Current First Build Task
+## Phase 6: Pig, Weight, And Reporting Improvements
 
-Finish verification for:
+Only after live order stability unless the operational need becomes urgent.
 
-**Phase 1.2b - Wire Customer Cancel Into n8n**
+### 6.1 New Litter Defaults And Weaning Reminder
 
-Phase 1.1 reject behavior is implemented and live-verified.
+Required outcome:
 
-For Phase 1.2b, test:
+- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown`
+- animals with `Purpose = Unknown` must not appear as for-sale stock
+- once animals are weaned, surface a reminder to assign purpose: `Grow_Out`, `Sale`, or `Breeding`
 
-- backend customer cancel endpoint/action
-- `Order_Status = Cancelled`
-- `Approval_Status = Not_Required`
-- `Payment_Status = Cancelled`
-- linked lines released/cancelled
-- `ORDER_MASTER.Reserved_Pig_Count = 0`
-- `ORDER_STATUS_LOG` entry exists
-- `SALES_AVAILABILITY` recovers
+### 6.2 Pig Dropdown Usability
+
+Required outcome:
+
+- pig-related dropdowns should show tag number and pen name, not only pen ID
+- tag numbers should display as three digits where appropriate: `001`, `010`, `090`, `100`
+
+### 6.3 Weight Form Context
+
+Required outcome:
+
+- beside `Move to Pen (Optional)`, show the current pen as read-only helper context
+
+### 6.4 Weight Report
+
+Required outcome:
+
+- after weights are entered, allow the user to generate a weekly weight report
+- include summaries, grouped totals, pen counts, and useful decision-making commentary
+
+### 6.5 Dashboard Sold This Month Audit
+
+Required outcome:
+
+- verify how `SOLD THIS MONTH` is calculated
+- reconcile the April mismatch where the dashboard showed 20 but the expected sold count was 40
+
+## Current Choice Point
+
+Recently completed:
+
+- Phase 1.1 reject behavior
+- Phase 1.2 customer cancel through backend, `1.2`, and `1.0`
+- Phase 1.2c first-turn create-with-lines through `create_order_with_lines`
+
+Recommended next candidates:
+
+1. Phase 1.3 Harden Reserve And Release Behavior
+2. Phase 1.4 Add Lifecycle Guards
+3. Phase 1.5 Slim Sales Agent Reply Payload
+4. Phase 2.1 Fix Split Item Sync
+
+Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
