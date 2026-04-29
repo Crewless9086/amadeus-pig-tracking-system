@@ -31,13 +31,30 @@ All order API routes are registered under `/api`.
 
 The n8n docs currently treat only these actions as live from Sam/`1.0`:
 
-| Steward action | Backend endpoint |
-| --- | --- |
-| `create_order` | `POST /api/master/orders` |
-| `update_order` | `PATCH /api/master/orders/<order_id>` |
-| `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` |
+| Steward action | Backend endpoint | Status |
+| --- | --- | --- |
+| `create_order` | `POST /api/master/orders` | Live |
+| `create_order_with_lines` | `POST /api/master/orders` then `POST /api/master/orders/<order_id>/sync-lines` | Live — atomic branch in `1.2` |
+| `update_order` | `PATCH /api/master/orders/<order_id>` | Live |
+| `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` | Live |
+| `cancel_order` | `POST /api/orders/<order_id>/cancel` | Live |
+| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Backend exists. Phase 1.4 — wire Sam routing. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
+
+## Send For Approval Validation Contract
+
+When `send_for_approval` is called (Phase 1.4), backend must validate all of the following before changing order status:
+
+| Field | Rule |
+| --- | --- |
+| `Order_Status` | Must be `Draft`. Reject all other statuses. |
+| `ORDER_LINES` | At least one non-cancelled line must exist for the order. |
+| `PaymentMethod` | Must be `Cash` or `EFT`. Reject if empty or missing. |
+| `customer_name` | Must be non-empty. |
+| `collection_location` | Must be non-empty. |
+
+Sam must check `order_status`, `payment_method`, and the presence of lines before routing to `send_for_approval` in `1.0`, to give the customer a clear message rather than a backend error.
 
 ## Important Payload Contracts
 
@@ -76,8 +93,11 @@ Allowed fields in current validation:
 - `collection_location`
 - `notes`
 - `changed_by`
+- `payment_method` — **Phase 1.3: add to allowed fields. Values: `Cash` or `EFT` only.**
 
 Current validation does not allow arbitrary header updates. Add new fields deliberately.
+
+PaymentMethod lock rule: backend must reject `payment_method` updates when `Order_Status` is `Pending_Approval`, `Approved`, `Completed`, or `Cancelled`. Changes are only permitted while the order is in `Draft` status.
 
 ### Sync Lines
 

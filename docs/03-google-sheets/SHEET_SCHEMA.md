@@ -92,6 +92,20 @@ flowchart TD
 
 If a master/log/register sheet and a formula sheet disagree, trace the formula sheet back to its source data. Do not manually fix a calculated output cell.
 
+## Pending Manual Column Additions
+
+These columns must be added to their sheet manually in Google Sheets before the related backend code is deployed.
+
+| Sheet | Column | Values | Added by | Required for |
+| --- | --- | --- | --- | --- |
+| `ORDER_MASTER` | `PaymentMethod` | `Cash` or `EFT` | Manual — Phase 1.3 prerequisite | Backend PATCH, send_for_approval validation, quote/invoice VAT calculation |
+
+Notes:
+- `PaymentMethod` must be present in the sheet before the Phase 1.3 backend update is deployed.
+- `Cash` = order totals use ex-VAT unit prices as listed. No VAT added.
+- `EFT` = order totals add 15% VAT on top of the ex-VAT unit price.
+- `PaymentMethod` is locked once `Order_Status` reaches `Pending_Approval` or later. Backend enforces this; manual overrides require deliberate admin tooling.
+
 ## Per-Sheet Details
 
 Use the files under `sheets/` for exact columns, formulas, hard-coded values, and sheet-specific notes.

@@ -25,6 +25,18 @@ Defines business rules that protect Google Sheets data integrity and keep backen
 - Do not create duplicate drafts for the same customer when an active draft should be updated.
 - Reserved pigs must be released when the approved cancellation/rejection logic requires it.
 
+## Pricing And VAT Rules
+
+- `SALES_PRICING` stores prices **ex-VAT**. All `ORDER_LINES.Unit_Price` values are also ex-VAT.
+- `Cash` orders: customer pays the listed ex-VAT price. No VAT is added.
+- `EFT` orders: customer pays the listed ex-VAT price **plus 15% VAT** (South African standard rate).
+- Quote and invoice documents must apply VAT based on the `PaymentMethod` stored on `ORDER_MASTER` at the time of document generation.
+- Backend is the only system that may calculate totals and VAT. Sam and n8n must never invent or calculate pricing.
+- `PaymentMethod` must be one of `Cash` or `EFT`. No other values are valid.
+- `PaymentMethod` must be captured and stored on `ORDER_MASTER` before `send_for_approval` is called. Backend rejects approval requests without a payment method.
+- `PaymentMethod` is locked once `Order_Status` reaches `Pending_Approval` or later. Backend must reject `PaymentMethod` update attempts on orders beyond `Draft`. Admin override is a separate future capability and must not be assumed.
+- Quote documents lock and store the VAT rate at the time of quote generation. Invoice documents must match the VAT rate from the corresponding quote, not recalculate it.
+
 ## AI And n8n Rules
 
 - AI may explain stock and prices only from documented sheet outputs.

@@ -25,6 +25,7 @@ Chatwoot conversation custom attributes are high risk because the Chatwoot API r
 | `escalation_ticket_id` | text | `1.0`, `1.1` | Links Chatwoot conversation to Telegram escalation ticket. | Escalation writes only |
 | `last_escalated_at` | date | `1.0`, `1.1` | Date the conversation was moved to human handling. | Escalation writes only |
 | `last_human_replay` | date | `1.0`, `1.1` | Human reply tracking field. Name is currently spelled `replay` in workflow exports. | Escalation writes only |
+| `payment_method` | text | `1.0` | Payment method mirror for conversation continuity. Values: `Cash` or `EFT`. Written after successful `update_order` with payment_method. **Phase 1.3 — not yet live.** | Yes — once Phase 1.3 is deployed |
 | `last_images_sent_at` | date | `1.3` | Media tool send tracking. Disabled workflow. | Media writes only |
 | `last_images_sent_category` | text | `1.3` | Last media category sent. Disabled workflow. | Media writes only |
 | `last_images_sent_count` | number | `1.3` | Count of images sent. Disabled workflow. | Media writes only |
@@ -40,6 +41,7 @@ These nodes must always write:
 - `order_status`
 - `conversation_mode`
 - `pending_action`
+- `payment_method` — **add when Phase 1.3 is deployed; until then omit**
 
 Nodes:
 
@@ -68,6 +70,7 @@ Nodes:
 - `order_status`
 - `conversation_mode = AUTO`
 - `pending_action`
+- `payment_method` — **add when Phase 1.3 is deployed; read from `Sales_HumanEscalations.WebPaymentMethod` once that column is added**
 - `escalation_ticket_id = ""`
 - `last_human_replay = ""`
 - `last_escalated_at = ""`
@@ -143,3 +146,7 @@ Before adding more label behavior, live-test whether the Chatwoot labels endpoin
 - Confirm the Chatwoot label endpoint behavior before expanding labels.
 - Fix `1.3 Patch Conversation Attributes` before enabling media.
 - Decide whether contact attributes should become a real memory layer after order lifecycle stabilization.
+
+### Phase 1.3 Build Requirement — payment_method Attribute Audit
+
+When `payment_method` is added to `custom_attributes` in Phase 1.3, **every existing Chatwoot attribute write node** in `1.0` and `1.1` must be updated to include it. Missing it on any write will silently erase the stored payment method. Before Phase 1.3 is imported to n8n, audit all write nodes against this register and confirm each carries the full required snapshot including `payment_method`.
