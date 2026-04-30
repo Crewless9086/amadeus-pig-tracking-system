@@ -979,7 +979,7 @@
             {
               "id": "b64b6384-4711-4423-864f-0d110edff3eb",
               "name": "order_id",
-              "value": "={{$json.order_id}}",
+              "value": "={{$json.order_id || $node[\"Code - Normalize Order Payload\"].json[\"order_id\"]}}",
               "type": "string"
             },
             {
@@ -1015,7 +1015,7 @@
             {
               "id": "b8c7d6e5-f4a3-2109-edcb-a98765432109",
               "name": "backend_error",
-              "value": "={{ ($json.errors && $json.errors.length > 0 ? $json.errors[0] : null) || ($json.error && typeof $json.error === \"object\" ? $json.error.message : $json.error) || $json.message || \"\" }}",
+              "value": "={{ (() => { if ($json.errors && Array.isArray($json.errors) && $json.errors.length > 0) return $json.errors[0]; if ($json.error && typeof $json.error === 'string') { try { const m = $json.error.match(/^\\d+\\s*-\\s*(\\{[\\s\\S]*\\})$/); if (m) { const p = JSON.parse(m[1]); if (p.errors && p.errors.length > 0) return p.errors[0]; if (p.message) return p.message; } } catch(e) {} return $json.error; } return $json.message || ''; })() }}",
               "type": "string"
             }
           ]

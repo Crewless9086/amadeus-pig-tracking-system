@@ -15,6 +15,33 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-30 - Phase 1.4 Bugfix C — Test C: Sam Still Overstating On Backend 400 Path
+
+Type: `FIX`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`, `1.2 - Amadeus Order Steward`
+
+Change:
+
+- `1.2 Set - Format Send for Approval Result` — replaced the `backend_error` expression with an IIFE that correctly parses the `continueOnFail` error format. When n8n `continueOnFail` catches an HTTP 4xx, it passes `{"error": "400 - {JSON_BODY}"}` as a concatenated string — `$json.errors` is absent. The new expression tries `$json.errors[0]` first (success-path JSON), then regex-matches and JSON-parses the `"STATUS - {JSON}"` string from `continueOnFail` to extract `errors[0]`, then falls back to the raw string. Result: `backend_error` now contains a clean customer-safe message like `"Collection location is required before sending for approval."` instead of the raw `"400 - {\"errors\":[...]}"` string.
+- `1.2 Set - Format Send for Approval Result` — fixed `order_id` null-on-failure. Added fallback: `$json.order_id || $node["Code - Normalize Order Payload"].json["order_id"]`. When the HTTP node fails, `$json` holds only `{error: "..."}` — `$json.order_id` is undefined. The fallback reads the order_id that was passed into the steward before the HTTP call.
+- `1.0 Ai Agent - Sales Agent` user prompt `text` — added five fields after `OrderID`: `BackendSuccess`, `BackendError`, `BackendMessage`, `FinalOrderStatus`, `ReplyInstruction`. Previously these fields were only in the workflow result object but not exposed to Sam in the per-turn prompt, so Sam could not read them and the system prompt rules had no effect.
+- `1.0 Ai Agent - Sales Agent` system prompt — replaced the two duplicate SEND_FOR_APPROVAL blocks (first block was weaker, second block was added in Bugfix A but created a duplicate) with a single hardened block. The new block adds: (a) a HARD RULE that explicitly forbids any form of "order was sent" wording when `BackendSuccess` is not exactly `"true"`; (b) instruction to read `BackendError` directly and explain the specific missing field to the customer; (c) instruction to follow `ReplyInstruction` if non-empty.
+- `1.0 Set - Restore Send For Approval Result` — added `reply_instruction` field. When `backend_success !== true`, it computes a deterministic instruction string: `"INSTRUCTION: Do not say the order was sent for approval. The backend returned: [backend_error]. Tell the customer what is needed. Do not mention sending for approval."` When `backend_success === true`, the field is empty. This gives Sam an unambiguous per-turn override that does not depend on nuanced rule interpretation.
+
+Root cause:
+
+Three compounding issues:
+1. `continueOnFail` wraps the HTTP error as a string `"400 - {JSON}"` — `$json.errors` is undefined, so the Bugfix B fallback chain hit `$json.error` and returned the raw string instead of the clean message.
+2. `$json.order_id` is undefined when `continueOnFail` fires — the Format node output contained `order_id: null`, which propagated to Sam and Chatwoot.
+3. `BackendSuccess` and `BackendError` existed as workflow fields but were absent from the Sales Agent user prompt `text`, so Sam received no per-turn signal and the system prompt SEND_FOR_APPROVAL rules could not be applied.
+
+Expected outcome:
+
+On a forced backend 400 (e.g., Collection_Location blank): `backend_error` = `"Collection location is required before sending for approval."`, `order_id` = correct order ID (not null), Sam's user prompt contains `BackendSuccess: false` and `BackendError: Collection location...` and `ReplyInstruction: INSTRUCTION: Do not say...`. Sam tells the customer what is missing and does not say the order was sent.
+
+Status: implemented; pending live re-verification of Test C
+
 ### 2026-04-30 - Phase 1.4 Bugfix B — Backend 400 Not Handled In 1.2
 
 Type: `FIX`
