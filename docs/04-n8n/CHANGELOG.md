@@ -15,6 +15,28 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-30 - Phase 1.4 Bugfix — SEND_FOR_APPROVAL Intent Detection And Sam Reply Guard
+
+Type: `FIX`
+
+Component: `1.0 - SAM - Sales Agent - Chatwoot`
+
+Change:
+
+- `1.0 Code - Build Order State` — replaced single-regex `sendForApprovalIntent` with a multi-pattern check that covers natural phrasings including "send it for approval", "send this for approval", "send it through", "send this through", "submit it", "submit this", "submit my order", "go ahead and submit", "ready for approval", "ready to submit", "finalise it/this/the order", "confirm the order/my order/this order". Previous regex only matched "send for approval" as a complete phrase and missed any phrasing with "it" or "this" inserted.
+- `1.0 Code - Decide Order Route` — moved SEND_FOR_APPROVAL check to before UPDATE_HEADER_AND_LINES and UPDATE_HEADER_ONLY in the route priority chain. Previously SEND_FOR_APPROVAL was the last check before REPLY_ONLY; if the message carried enrichable order data (e.g., from memory hydration), it could incorrectly route to an update instead of approval submission.
+- `1.0 Ai Agent - Sales Agent` system prompt — added explicit SEND_FOR_APPROVAL case to the ORDER ACTION CONTEXT section. Sam must: (a) on `backend_success=true` say the order has been sent for approval but NOT approved; (b) on `backend_success=false` explain what is missing using `backend_error`; (c) on `OrderAction=REPLY_ONLY` when customer asked to send for approval, not claim any submission happened — instead explain what is needed or say the details need to be confirmed first.
+
+Reason:
+
+Live test with "Yes, please send it for approval" showed `send_for_approval_intent = false` because the previous regex required the exact phrase "send for approval" without any intervening words. Sam routed to REPLY_ONLY and incorrectly told the customer "Your draft order will be sent for approval now" — a false statement since no backend action ran.
+
+Expected outcome:
+
+"Yes, please send it for approval", "send it through", "please submit my order" and similar phrasings all set `send_for_approval_intent = true`. If all prerequisites are met, the route goes to SEND_FOR_APPROVAL. Sam only confirms approval submission after backend confirms success.
+
+Status: implemented; needs live re-verification
+
 ### 2026-04-29 - Phase 1.4 — Wire Send For Approval From Sam
 
 Type: `ADD`

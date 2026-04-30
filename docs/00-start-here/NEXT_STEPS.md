@@ -349,7 +349,8 @@ Recently completed:
 - Phase 1.2 customer cancel through backend, `1.2`, and `1.0`
 - Phase 1.2c first-turn create-with-lines via `create_order_with_lines`
 - Phase 1.3 payment method capture — backend, `1.0`, `1.2`, `1.1`, Chatwoot mirror, and lock guard live-verified 2026-04-29
-- Phase 1.4 send_for_approval wired — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write (needs live verification)
+- Phase 1.4 send_for_approval wired — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write
+- Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY (needs live verification)
 
 Recommended next:
 
