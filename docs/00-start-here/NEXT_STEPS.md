@@ -153,6 +153,8 @@ Required outcome:
 - completed orders cannot be cancelled or rejected without deliberate admin action
 - cancelled orders cannot be re-approved
 - reserved/approved orders handle state rollback safely when cancel or reject is applied
+- decide and document whether approval should automatically reserve active order lines, or whether approval and reservation remain separate actions
+- define customer notification flow after human approval or rejection
 
 ### 1.6 Harden Reserve And Release Behavior
 
@@ -164,6 +166,7 @@ Required outcome:
 - cancelled/invalid lines should not remain reserved
 - reserved count must match real reserved lines
 - backend/web app should return a clear success/failure summary for each line
+- if approval auto-reserves lines, reserve behavior must be hardened before or as part of that change
 
 ### 1.7 Slim Sales Agent Reply Payload
 
