@@ -50,6 +50,7 @@ Nodes:
 - `HTTP - Set Pending Cancel Action`
 - `HTTP - Clear Pending Action`
 - `HTTP - Clear Pending After Cancel`
+- `HTTP - Set Chatwoot After Send Approval`
 
 ### `1.0` Escalation Write
 

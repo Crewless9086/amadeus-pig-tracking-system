@@ -1207,14 +1207,37 @@ def send_order_for_approval(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status == "Cancelled":
-        raise ValueError("Cancelled orders cannot be sent for approval.")
+    if old_status != "Draft":
+        raise ValueError(
+            f"Only Draft orders can be sent for approval. Current status: {old_status}."
+        )
 
-    if old_status == "Pending_Approval":
-        raise ValueError("Order is already pending approval.")
+    payment_method = to_clean_string(row.get("Payment_Method", ""))
+    if payment_method not in ("Cash", "EFT"):
+        raise ValueError(
+            "Payment method must be set to Cash or EFT before sending for approval."
+        )
 
-    if old_status == "Approved":
-        raise ValueError("Approved orders cannot be sent for approval again.")
+    customer_name = to_clean_string(row.get("Customer_Name", ""))
+    if not customer_name:
+        raise ValueError("Customer name is required before sending for approval.")
+
+    collection_location = to_clean_string(row.get("Collection_Location", ""))
+    if not collection_location:
+        raise ValueError(
+            "Collection location is required before sending for approval."
+        )
+
+    all_lines = get_all_records(ORDER_LINES_SHEET)
+    active_lines = [
+        line for line in all_lines
+        if to_clean_string(line.get("Order_ID", "")) == order_id
+        and to_clean_string(line.get("Line_Status", "")) != "Cancelled"
+    ]
+    if not active_lines:
+        raise ValueError(
+            "At least one active order line is required before sending for approval."
+        )
 
     today_str = datetime.now().strftime("%d %b %Y")
 

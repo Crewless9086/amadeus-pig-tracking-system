@@ -38,7 +38,7 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `update_order` | `PATCH /api/master/orders/<order_id>` | Live |
 | `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` | Live |
 | `cancel_order` | `POST /api/orders/<order_id>/cancel` | Live |
-| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Backend exists. Phase 1.4 — wire Sam routing. |
+| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — wired in Phase 1.4. Needs live verification. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
 

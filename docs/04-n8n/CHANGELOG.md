@@ -15,6 +15,33 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-29 - Phase 1.4 — Wire Send For Approval From Sam
+
+Type: `ADD`
+
+Component: `modules/orders/order_service.py`, `1.0 - SAM - Sales Agent - Chatwoot`, `1.2 - Amadeus Order Steward`
+
+Change:
+
+- `modules/orders/order_service.py send_order_for_approval` — replaced the three separate status-block checks with a single `old_status != "Draft"` guard. Added prerequisite validation: `Payment_Method` must be `Cash` or `EFT`; `Customer_Name` must be non-empty; `Collection_Location` must be non-empty; at least one non-cancelled `ORDER_LINE` must exist for the order.
+- `1.2 HTTP - Send for Approval` — added `neverError: true` to options so `400` backend errors are returned as data instead of throwing an exception and silencing Sam.
+- `1.2 Set - Format Send for Approval Result` — changed `order_status` from hardcoded `"Pending_Approval"` to `$json.success === true ? 'Pending_Approval' : 'Draft'`. Changed `approval_status` to conditional. Added `backend_success` (boolean) and `backend_error` (string) fields so `1.0` can pass error context to Sam.
+- `1.0 Code - Build Order State` — added `sendForApprovalIntent` detection from customer phrases (`send for approval`, `submit order`, `finalise order`, `confirm order`, `ready for approval`, `please submit`, `ready to submit`). Added `send_for_approval_intent` to `orderState`.
+- `1.0 Code - Decide Order Route` — added `existingOrderStatus`, `paymentMethod`, `paymentMethodSet`, `sendForApprovalIntent`, and `sendForApprovalReady` variables. Added `SEND_FOR_APPROVAL` route: fires when intent is detected, draft exists, order is in Draft status, and payment method is set. If payment method is missing, falls through to `REPLY_ONLY` so Sam can ask the customer for Cash/EFT. Added `debug_send_for_approval_intent`, `debug_send_for_approval_ready`, `debug_payment_method_set` debug fields.
+- `1.0 Switch - Route Order Action` — added SEND_FOR_APPROVAL rule at index 6. REPLY_ONLY shifted to index 7.
+- `1.0` — four new nodes added: `Set - Build Send For Approval Payload` → `Call 1.2 - Send For Approval` → `HTTP - Set Chatwoot After Send Approval` → `Set - Restore Send For Approval Result` → `Merge - Final Replay Context` (index 1).
+- `HTTP - Set Chatwoot After Send Approval` writes full attribute snapshot: uses `order_status` from `1.2` result (conditional: `Pending_Approval` on success, existing status on failure), clears `pending_action`, preserves `payment_method`.
+
+Reason:
+
+Phase 1.3 captured the payment method. Phase 1.4 completes the customer-initiated send-for-approval path. Sam can now route from customer message through `1.2` to the backend, which validates all prerequisites before changing the order status. Backend errors return a customer-safe path — Sam receives `backend_success: false` and `backend_error` and can explain what is missing.
+
+Expected outcome:
+
+When a customer says "please send for approval" (with payment method set, draft active, and order lines present), Sam routes to SEND_FOR_APPROVAL. The backend validates all prerequisites and moves the order to `Pending_Approval`. The Chatwoot attribute is updated to `order_status = Pending_Approval`. If the backend returns a 400 (e.g., payment method missing on the sheet), Sam receives the error message and can tell the customer what is needed. Sam never says the order is approved — only that it has been sent for approval.
+
+Status: implemented; needs live n8n import and end-to-end verification
+
 ### 2026-04-29 - Phase 1.3 — Payment Method Capture
 
 Type: `ADD`

@@ -946,7 +946,8 @@
             "response": {
               "responseFormat": "json"
             }
-          }
+          },
+          "neverError": true
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -989,19 +990,31 @@
             {
               "id": "15f9fb36-55d8-425f-bf22-5a08f5b2d712",
               "name": "order_status",
-              "value": "Pending_Approval",
+              "value": "={{$json.success === true ? 'Pending_Approval' : 'Draft'}}",
               "type": "string"
             },
             {
               "id": "124c1134-31be-4a1c-b72b-4bf19048ae3d",
               "name": "approval_status",
-              "value": "Pending",
+              "value": "={{$json.success === true ? 'Pending' : ''}}",
               "type": "string"
             },
             {
               "id": "f14bc01e-b51b-44ba-90bb-39a6fa6b85bc",
               "name": "changed_by",
               "value": "={{$node[\"Code - Normalize Order Payload\"].json[\"changed_by\"]}}",
+              "type": "string"
+            },
+            {
+              "id": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
+              "name": "backend_success",
+              "value": "={{$json.success === true}}",
+              "type": "boolean"
+            },
+            {
+              "id": "b8c7d6e5-f4a3-2109-edcb-a98765432109",
+              "name": "backend_error",
+              "value": "={{$json.error || $json.message || ''}}",
               "type": "string"
             }
           ]

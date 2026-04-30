@@ -109,7 +109,7 @@ Current status:
 - `1.1` preserves `payment_method` through human reply release using `Sales_HumanEscalations.WebPaymentMethod`
 - live verification passed on 2026-04-29 for Cash, EFT, next-turn readback, cancel-pending preservation, backend lock guard, no-draft handling, and escalation preservation
 
-### 1.4 Wire Send For Approval From Sam
+### 1.4 Wire Send For Approval From Sam — Complete
 
 Required outcome:
 
@@ -122,6 +122,19 @@ Required outcome:
 - `1.0` writes updated `order_status` to Chatwoot custom_attributes after backend confirms
 - Sam tells the customer the order has been sent for approval — Sam does NOT say it is approved
 - backend errors must return a customer-safe reply path in n8n; Sam must not go silent if a backend safety guard returns `400`
+
+Current status:
+
+- backend `send_order_for_approval` now validates: `Order_Status = Draft` (single clear check), `Payment_Method = Cash|EFT`, `Customer_Name` non-empty, `Collection_Location` non-empty, at least one non-cancelled `ORDER_LINE`
+- backend returns clear `ValueError` messages for each guard that fails; route returns `400` with the message
+- `1.2 HTTP - Send for Approval` has `neverError: true` so `400` responses are handled as data, not exceptions
+- `1.2 Set - Format Send for Approval Result` returns conditional `order_status` (`Pending_Approval` on success, `Draft` on failure), conditional `approval_status`, and `backend_success`/`backend_error` fields
+- `1.0 Code - Build Order State` detects `send_for_approval_intent` from customer phrases (send for approval, submit order, finalise order, confirm order, etc.)
+- `1.0 Code - Decide Order Route` adds SEND_FOR_APPROVAL route: fires when `send_for_approval_intent + has_existing_draft + order_status = Draft + payment_method set`; falls through to REPLY_ONLY if payment method is missing (Sam sees the intent and asks for Cash/EFT)
+- `1.0 Switch - Route Order Action` has new rule at index 6 for SEND_FOR_APPROVAL (REPLY_ONLY shifted to index 7)
+- `1.0` new nodes: `Set - Build Send For Approval Payload` → `Call 1.2 - Send For Approval` → `HTTP - Set Chatwoot After Send Approval` → `Set - Restore Send For Approval Result` → `Merge - Final Replay Context` (index 1)
+- Chatwoot write uses conditional order_status from 1.2 result — on success writes `Pending_Approval`, on failure preserves existing status
+- all 4 new 1.0 nodes wired and JSON validated (83 nodes)
 
 ### 1.5 Lifecycle Guards
 
@@ -336,10 +349,11 @@ Recently completed:
 - Phase 1.2 customer cancel through backend, `1.2`, and `1.0`
 - Phase 1.2c first-turn create-with-lines via `create_order_with_lines`
 - Phase 1.3 payment method capture — backend, `1.0`, `1.2`, `1.1`, Chatwoot mirror, and lock guard live-verified 2026-04-29
+- Phase 1.4 send_for_approval wired — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write (needs live verification)
 
 Recommended next:
 
-1. **Phase 1.4** — Wire `send_for_approval` from Sam through `1.2` to backend
+1. **Live-verify Phase 1.4** — test SEND_FOR_APPROVAL flow end-to-end with a real WhatsApp message
 2. **Phase 1.5** — Lifecycle guards and customer-safe backend error handling
 3. **Phase 1.6** — Harden reserve/release behavior
 
