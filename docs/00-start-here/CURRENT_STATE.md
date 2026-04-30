@@ -90,6 +90,14 @@ Payment method capture:
 - backend lock guard is live-verified: `payment_method` cannot be changed once the order is beyond `Draft`
 - no-draft handling is live-verified: Sam does not write payment method without an active draft
 
+Send for approval from Sam:
+
+- `1.0` detects customer send-for-approval intent and routes to `SEND_FOR_APPROVAL`
+- `1.2` calls backend `send_for_approval` with `neverError` enabled so backend guards return as data
+- backend validates draft status, payment method, customer name, collection location, and at least one non-cancelled order line
+- happy path live verification passed on 2026-04-30 with `ORD-2026-377DA3`; order moved to `Pending_Approval`, Chatwoot status updated, and Sam said the order was sent for approval, not approved
+- remaining regression checks: missing payment method, already pending approval, and backend `400` customer-safe reply
+
 ### Split Requested Item Sync Needs Hardening
 
 Known risk:
@@ -146,4 +154,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The current next build target is Phase 1.4: wire `send_for_approval` from Sam through `1.2` to backend, with customer-safe handling for backend guard errors.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The current next build target is Phase 1.4 regression coverage and then Phase 1.5 lifecycle guards/customer-safe backend error handling.

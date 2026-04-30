@@ -35,7 +35,7 @@ Expected outcome:
 
 "Yes, please send it for approval", "send it through", "please submit my order" and similar phrasings all set `send_for_approval_intent = true`. If all prerequisites are met, the route goes to SEND_FOR_APPROVAL. Sam only confirms approval submission after backend confirms success.
 
-Status: implemented; needs live re-verification
+Status: live-reverified 2026-04-30. Test phrase "Yes, please send it for approval" set `send_for_approval_intent = true`, routed to `SEND_FOR_APPROVAL`, returned `backend_success = true`, wrote Chatwoot `order_status = Pending_Approval`, and Sam replied that the order was sent for approval without saying it was approved.
 
 ### 2026-04-29 - Phase 1.4 — Wire Send For Approval From Sam
 
@@ -62,7 +62,7 @@ Expected outcome:
 
 When a customer says "please send for approval" (with payment method set, draft active, and order lines present), Sam routes to SEND_FOR_APPROVAL. The backend validates all prerequisites and moves the order to `Pending_Approval`. The Chatwoot attribute is updated to `order_status = Pending_Approval`. If the backend returns a 400 (e.g., payment method missing on the sheet), Sam receives the error message and can tell the customer what is needed. Sam never says the order is approved — only that it has been sent for approval.
 
-Status: implemented; needs live n8n import and end-to-end verification
+Status: happy path live-verified 2026-04-30 with `ORD-2026-377DA3`. Remaining regression checks: missing `Payment_Method`, already `Pending_Approval`, and backend `400` customer-safe reply path.
 
 ### 2026-04-29 - Phase 1.3 — Payment Method Capture
 

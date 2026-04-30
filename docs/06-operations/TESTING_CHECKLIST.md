@@ -62,6 +62,28 @@ Test steps:
 3. Try completing an invalid/unreserved order.
 4. Confirm backend blocks unsafe transitions or returns clear errors.
 
+### Send For Approval From Sam
+
+Status: Phase 1.4 happy path live verification passed on 2026-04-30. Keep the failure cases as required regression checks before broader lifecycle work.
+
+Happy path:
+
+1. Create or find a Draft order with at least one active `ORDER_LINE`.
+2. Confirm `Payment_Method`, `Customer_Name`, and `Collection_Location` are populated.
+3. Customer sends `Yes, please send it for approval`.
+4. Confirm `Code - Build Order State` has `send_for_approval_intent = true`.
+5. Confirm `Code - Decide Order Route` has `order_route = SEND_FOR_APPROVAL`.
+6. Confirm `Call 1.2 - Send For Approval` returns `backend_success = true`.
+7. Confirm `ORDER_MASTER.Order_Status = Pending_Approval` and `Approval_Status = Pending`.
+8. Confirm Chatwoot `custom_attributes.order_status = Pending_Approval` and `payment_method` is preserved.
+9. Confirm Sam says the order was sent for approval, not approved.
+
+Regression checks:
+
+1. Missing `Payment_Method`: Sam must ask for Cash/EFT or explain what is missing; order status must remain unchanged.
+2. Already `Pending_Approval`: Sam must not submit again and should say it is already pending approval.
+3. Backend `400` guard failure: n8n must return a customer-safe reply, not go silent.
+
 ### Payment Method Capture
 
 Status: Phase 1.3 live verification passed on 2026-04-29. Keep this checklist as a regression test for future order-finalization changes.

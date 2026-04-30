@@ -18,3 +18,4 @@ This file is the scratch list for things noticed during build work. Once an item
 
 - Review folder/code structure after order stabilization, especially where large files should be split into clearer modules. Documentation structure is currently stable; implementation structure can be reviewed as a separate refactor pass.
 - Confirm `ORDER_LINES.Unit_Price` is written at line creation time — required gate before Phase 2 quote generation can be built.
+- When I approve the order, what should happen? If there is order lines and we approve it should it not auto reserved the items on the list that are not cancelled? Or is these two seperated things for us, what does our plans and our docs sy about this? 

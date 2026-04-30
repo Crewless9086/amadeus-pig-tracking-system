@@ -109,7 +109,7 @@ Current status:
 - `1.1` preserves `payment_method` through human reply release using `Sales_HumanEscalations.WebPaymentMethod`
 - live verification passed on 2026-04-29 for Cash, EFT, next-turn readback, cancel-pending preservation, backend lock guard, no-draft handling, and escalation preservation
 
-### 1.4 Wire Send For Approval From Sam — Complete
+### 1.4 Wire Send For Approval From Sam — Complete And Live-Verified
 
 Required outcome:
 
@@ -135,6 +135,14 @@ Current status:
 - `1.0` new nodes: `Set - Build Send For Approval Payload` → `Call 1.2 - Send For Approval` → `HTTP - Set Chatwoot After Send Approval` → `Set - Restore Send For Approval Result` → `Merge - Final Replay Context` (index 1)
 - Chatwoot write uses conditional order_status from 1.2 result — on success writes `Pending_Approval`, on failure preserves existing status
 - all 4 new 1.0 nodes wired and JSON validated (83 nodes)
+- Phase 1.4 bugfix expanded `send_for_approval_intent` detection to cover natural phrasings such as `send it for approval`, `send this through`, and `submit my order`
+- live verification passed on 2026-04-30 with `ORD-2026-377DA3`: `send_for_approval_intent = true`, `order_route = SEND_FOR_APPROVAL`, `backend_success = true`, `order_status = Pending_Approval`, Chatwoot `order_status = Pending_Approval`, and Sam correctly said the order was sent for approval, not approved
+
+Remaining regression checks:
+
+- missing `Payment_Method` should produce a customer-safe reply and no backend status change
+- already `Pending_Approval` orders should not be submitted again
+- backend `400` guard failures should return a customer-safe reply rather than silence
 
 ### 1.5 Lifecycle Guards
 
@@ -349,13 +357,13 @@ Recently completed:
 - Phase 1.2 customer cancel through backend, `1.2`, and `1.0`
 - Phase 1.2c first-turn create-with-lines via `create_order_with_lines`
 - Phase 1.3 payment method capture — backend, `1.0`, `1.2`, `1.1`, Chatwoot mirror, and lock guard live-verified 2026-04-29
-- Phase 1.4 send_for_approval wired — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write
-- Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY (needs live verification)
+- Phase 1.4 send_for_approval happy path — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write live-verified 2026-04-30
+- Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY; live re-verification passed 2026-04-30
 
 Recommended next:
 
-1. **Live-verify Phase 1.4** — test SEND_FOR_APPROVAL flow end-to-end with a real WhatsApp message
-2. **Phase 1.5** — Lifecycle guards and customer-safe backend error handling
+1. **Phase 1.4 regression checks** — missing payment method, already pending approval, and backend `400` customer-safe reply
+2. **Phase 1.5** — Broader lifecycle guards and customer-safe backend error handling
 3. **Phase 1.6** — Harden reserve/release behavior
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
