@@ -27,7 +27,8 @@ Change:
 - `1.0 Code - Normalize Incoming Message` — reads `payment_method` from `conversation.custom_attributes` and exposes it as `PaymentMethod`.
 - `1.0 Code - Build Order State` — detects payment method keywords in the current message (`cash` → `Cash`, `eft`/`bank transfer`/`electronic transfer`/`internet banking` → `EFT`). Adds `payment_method` (from stored attribute) and `detected_payment_method` (from current message) to `order_state`. Includes `detectedPaymentMethod !== ""` in `messageHasNewUsefulInfo`.
 - `1.0 Code - Build Enrich Existing Draft Payload` — forwards `detected_payment_method` as `payment_method` in the enrich payload when it is `Cash` or `EFT`. Includes it in `sentFieldCount` and return.
-- `1.0` — All 5 Chatwoot attribute write nodes updated to include `payment_method` in every write: `HTTP - Set Conversation Order Context`, `HTTP - Clear Pending After Cancel`, `HTTP - Set Pending Cancel Action`, `HTTP - Clear Pending Action`, `HTTP - Set Conversation Human Mode`.
+- `1.0` — all Chatwoot attribute write nodes updated to include `payment_method` in every write: `HTTP - Set Conversation Order Context`, `HTTP - Set Conversation Context After Update`, `HTTP - Clear Pending After Cancel`, `HTTP - Set Pending Cancel Action`, `HTTP - Clear Pending Action`, `HTTP - Set Conversation Human Mode`.
+- `1.0 HTTP - Set Conversation Context After Update` — new update/enrich-path Chatwoot mirror node. It writes the full attribute snapshot after `update_order`, using the newly captured payment method before falling back to the previously stored Chatwoot value.
 - `1.0 Edit - Build Ticket Data` — adds `WebPaymentMethod` field from `Code - Normalize Incoming Message`.
 - `1.0 Google Sheet - Append row in sheet` — adds `WebPaymentMethod` to `columns.value` and schema.
 - `1.2 Code - Normalize Order Payload` — adds `payment_method: clean(input.payment_method)`.
@@ -42,7 +43,7 @@ Expected outcome:
 
 When a customer says "I'll pay cash" or "EFT", Sam detects it via `Code - Build Order State`, routes through `ENRICH_EXISTING_DRAFT`, and the backend stores `Payment_Method = Cash` (or `EFT`) on `ORDER_MASTER`. All Chatwoot attribute writes preserve the value so it is not erased by later turns. The field survives escalation via `WebPaymentMethod` in `Sales_HumanEscalations`.
 
-Status: code complete 2026-04-29. Pending live test.
+Status: live-verified 2026-04-29. Cash and EFT capture both update `ORDER_MASTER.Payment_Method` and Chatwoot `payment_method`; next-turn readback works; cancel-pending and escalation preserve the field; backend lock guard returns `400` and leaves the sheet value unchanged once the order is beyond `Draft`; no-draft handling does not write payment method without an active order.
 
 ### 2026-04-29 - Fix C Option B1 — Create Order With Lines (Atomic)
 

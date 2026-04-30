@@ -62,6 +62,28 @@ Test steps:
 3. Try completing an invalid/unreserved order.
 4. Confirm backend blocks unsafe transitions or returns clear errors.
 
+### Payment Method Capture
+
+Status: Phase 1.3 live verification passed on 2026-04-29. Keep this checklist as a regression test for future order-finalization changes.
+
+Test steps:
+
+1. On an existing Draft order, send `I'll pay cash`.
+2. Confirm `Code - Build Order State` has `detected_payment_method = Cash` and `order_state.payment_method = Cash`.
+3. Confirm `Code - Build Enrich Existing Draft Payload` sends `payment_method = Cash`.
+4. Confirm backend writes `ORDER_MASTER.Payment_Method = Cash`.
+5. Confirm `HTTP - Set Conversation Context After Update` writes Chatwoot `custom_attributes.payment_method = Cash`.
+6. Repeat with `EFT` and confirm `Payment_Method = EFT` and Chatwoot `payment_method = EFT`.
+7. Send a next-turn message such as `When can I collect?` and confirm `Code - Normalize Incoming Message.PaymentMethod` reads the stored value.
+8. Trigger cancel pending and confirm `payment_method` survives the Chatwoot full-object write.
+9. Move the order beyond `Draft` and attempt to PATCH `payment_method`; confirm backend returns `400` and the sheet value remains unchanged.
+10. In a conversation with no active draft, send `EFT`; confirm no backend update occurs and Sam moves into order discovery instead of storing payment method.
+11. Trigger escalation and human reply; confirm `Sales_HumanEscalations.WebPaymentMethod` and `1.1 Release Conversation to Auto` preserve the value.
+
+Known follow-up:
+
+- Backend guard failures must produce customer-safe replies in n8n. Sam must not go silent when a backend safety check returns `400`.
+
 ## Requested Item Sync Tests
 
 ### First-Turn Draft Creation With Lines

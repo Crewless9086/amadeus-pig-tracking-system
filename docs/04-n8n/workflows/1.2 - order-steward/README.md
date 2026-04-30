@@ -895,6 +895,10 @@ return [
   }
 ];
 
+Phase 1.3 payment method note:
+
+`update_order` now accepts `payment_method` from `1.0` and forwards it to backend `PATCH /api/master/orders/{order_id}` when the value is `Cash` or `EFT`. Backend maps this API field to `ORDER_MASTER.Payment_Method` and rejects changes once the order is beyond `Draft`.
+
 3.10 - Sync Order Lines
 3.10.1 Set - Build Sync Order Lines Payload
 Mode

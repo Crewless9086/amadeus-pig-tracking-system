@@ -2374,13 +2374,14 @@ Important output fields:
 
 31. HTTP - Set Conversation Order Context
 Writes the new order context to Chatwoot custom_attributes so the next customer turn can read it.
-Must always send all four fields (see CHATWOOT ATTRIBUTE RULE above).
+Must always send the full core snapshot (see CHATWOOT ATTRIBUTE RULE above), including `payment_method`.
 {
   "custom_attributes": {
     "order_id": "{{ $json.order_id }}",
     "order_status": "{{ $json.order_status }}",
     "conversation_mode": "AUTO",
-    "pending_action": ""
+    "pending_action": "",
+    "payment_method": "{{ $json.payment_method || $('Code - Normalize Incoming Message').item.json.PaymentMethod || '' }}"
   }
 }
 Connected to:
@@ -2446,13 +2447,18 @@ if (state.notes !== undefined && state.notes !== null && String(state.notes).tri
   enrichPayload.notes = String(state.notes).trim();
 }
 
+if (state.detected_payment_method === "Cash" || state.detected_payment_method === "EFT") {
+  enrichPayload.payment_method = state.detected_payment_method;
+}
+
 const sentFieldCount =
   (enrichPayload.requested_quantity !== undefined ? 1 : 0) +
   (enrichPayload.requested_category !== undefined ? 1 : 0) +
   (enrichPayload.requested_weight_range !== undefined ? 1 : 0) +
   (enrichPayload.requested_sex !== undefined ? 1 : 0) +
   (enrichPayload.collection_location !== undefined ? 1 : 0) +
-  (enrichPayload.notes !== undefined ? 1 : 0);
+  (enrichPayload.notes !== undefined ? 1 : 0) +
+  (enrichPayload.payment_method !== undefined ? 1 : 0);
 
 if (sentFieldCount === 0) {
   throw new Error("No enrichable non-empty fields were available to update the existing draft.");
@@ -2474,6 +2480,7 @@ return [
       timing_type: state.timing_type ?? "",
       timing_raw: state.timing_raw ?? "",
       notes: enrichPayload.notes ?? null,
+      payment_method: enrichPayload.payment_method ?? null,
       changed_by: enrichPayload.changed_by
     }
   }
@@ -2487,6 +2494,34 @@ requested_category = string = {{$json.enrich_payload.requested_category || ""}}
 requested_weight_range = string = {{$json.enrich_payload.requested_weight_range || ""}}
 requested_sex = string = {{$json.enrich_payload.requested_sex || ""}}
 notes = string = {{$json.enrich_payload.notes || ""}}
+payment_method = string = {{$json.enrich_payload.payment_method || ""}}
+
+30. HTTP - Set Conversation Context After Update
+Writes the full Chatwoot attribute snapshot after `update_order` succeeds. This is required because the update/enrich path does not use `HTTP - Set Conversation Order Context`.
+
+Important value priority:
+
+- new value from `Code - Build Enrich Existing Draft Payload.payment_method`
+- existing value from `Code - Normalize Incoming Message.PaymentMethod`
+- blank
+
+Required body shape:
+
+{
+  "custom_attributes": {
+    "order_id": "{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderId }}",
+    "order_status": "{{ $('Code - Normalize Incoming Message').item.json.ExistingOrderStatus }}",
+    "conversation_mode": "AUTO",
+    "pending_action": "{{ $('Code - Normalize Incoming Message').item.json.PendingAction }}",
+    "payment_method": "{{ $('Code - Build Enrich Existing Draft Payload').item.json.payment_method || $('Code - Normalize Incoming Message').item.json.PaymentMethod || '' }}"
+  }
+}
+
+Live verification:
+
+- `Cash` and `EFT` update `ORDER_MASTER.Payment_Method`
+- Chatwoot `custom_attributes.payment_method` updates on the same turn
+- next-turn `Code - Normalize Incoming Message.PaymentMethod` reads the stored value
 changed_by = string = {{$json.enrich_payload.changed_by}}
 
 30. Call 1.2 - Update Existing Draft

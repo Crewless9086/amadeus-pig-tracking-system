@@ -93,11 +93,11 @@ Allowed fields in current validation:
 - `collection_location`
 - `notes`
 - `changed_by`
-- `payment_method` — Values: `Cash` or `EFT` only. Locked once `Order_Status` is beyond `Draft`.
+- `payment_method` — API field. Values: `Cash` or `EFT` only. Maps to `ORDER_MASTER.Payment_Method` and is locked once `Order_Status` is beyond `Draft`.
 
 Current validation does not allow arbitrary header updates. Add new fields deliberately.
 
-PaymentMethod lock rule: backend must reject `payment_method` updates when `Order_Status` is `Pending_Approval`, `Approved`, `Completed`, or `Cancelled`. Changes are only permitted while the order is in `Draft` status.
+Payment method lock rule: backend must reject `payment_method` updates when `Order_Status` is `Pending_Approval`, `Approved`, `Completed`, or `Cancelled`. Changes are only permitted while the order is in `Draft` status.
 
 ### Sync Lines
 

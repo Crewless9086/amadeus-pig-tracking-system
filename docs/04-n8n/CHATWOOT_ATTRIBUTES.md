@@ -46,6 +46,7 @@ These nodes must always write:
 Nodes:
 
 - `HTTP - Set Conversation Order Context`
+- `HTTP - Set Conversation Context After Update`
 - `HTTP - Set Pending Cancel Action`
 - `HTTP - Clear Pending Action`
 - `HTTP - Clear Pending After Cancel`
@@ -58,6 +59,7 @@ Nodes:
 - `order_status`
 - `conversation_mode = HUMAN`
 - `pending_action`
+- `payment_method`
 - `escalation_ticket_id`
 - `last_escalated_at`
 - `last_human_replay`
@@ -80,6 +82,7 @@ The order fields come from the `Sales_HumanEscalations` row fields:
 - `WebOrderId`
 - `WebOrderStatus`
 - `WebPendingAction`
+- `WebPaymentMethod`
 
 ### `1.3` Media Write
 
@@ -143,6 +146,7 @@ Before adding more label behavior, live-test whether the Chatwoot labels endpoin
 ## Current Outstanding Items
 
 - `1.1 Release Conversation to Auto` was live-verified on 2026-04-29 and now writes evaluated values back to Chatwoot.
+- Phase 1.3 payment-method preservation was live-verified on 2026-04-29 across normal update, next-turn readback, cancel pending, and escalation release.
 - Confirm the Chatwoot label endpoint behavior before expanding labels.
 - Fix `1.3 Patch Conversation Attributes` before enabling media.
 - Decide whether contact attributes should become a real memory layer after order lifecycle stabilization.

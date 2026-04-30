@@ -16,5 +16,5 @@ This file is the scratch list for things noticed during build work. Once an item
 ## Active Scratch Notes
 
 - Review folder/code structure after order stabilization, especially where large files should be split into clearer modules. Documentation structure is currently stable; implementation structure can be reviewed as a separate refactor pass.
-- Before Phase 1.3 import: audit every Chatwoot `custom_attributes` write node in `1.0` and `1.1` and confirm all carry `payment_method` in the full-object snapshot.
 - Confirm `ORDER_LINES.Unit_Price` is written at line creation time — required gate before Phase 2 quote generation can be built.
+- Add a customer-safe n8n error reply path for backend `400` guard failures. Example: when backend rejects a Payment_Method change because the order is beyond Draft, Sam must reply with a clear explanation instead of going silent.

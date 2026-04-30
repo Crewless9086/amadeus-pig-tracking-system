@@ -12,7 +12,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Google Sheets docs | Good baseline | Sheet files, formulas, ownership, field standards, and business rules are documented. |
 | n8n workflow docs | Good baseline | Four workflow exports and suite-level rules are documented. |
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
-| Live order system | Stabilizing | Reject, customer cancel, and first-turn create-with-lines are live-verified. Release/reserve robustness and lifecycle guards remain priority. |
+| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, and payment method capture are live-verified. Send-for-approval, reserve/release robustness, and lifecycle guards remain priority. |
 | Web app | Needs usability work | App should support operations, not create extra manual work. Focus after order structure is stable. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
@@ -80,6 +80,16 @@ First-turn draft creation with lines:
 - top-level `success` is true only when both create and sync succeed
 - live verification passed on 2026-04-29 with `ORD-2026-879091`; three `ORDER_LINES` rows were created with `match_status = exact_match`
 
+Payment method capture:
+
+- `Payment_Method` is stored on `ORDER_MASTER` as the source of truth
+- Chatwoot `custom_attributes.payment_method` mirrors the order value for conversation continuity
+- `Cash` and `EFT` capture are live-verified
+- next-turn readback from Chatwoot is live-verified
+- cancel-pending and escalation paths preserve `payment_method`
+- backend lock guard is live-verified: `payment_method` cannot be changed once the order is beyond `Draft`
+- no-draft handling is live-verified: Sam does not write payment method without an active draft
+
 ### Split Requested Item Sync Needs Hardening
 
 Known risk:
@@ -136,4 +146,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The strongest current candidates are reserve/release robustness, lifecycle guards, or Sales Agent reply payload slimming.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The current next build target is Phase 1.4: wire `send_for_approval` from Sam through `1.2` to backend, with customer-safe handling for backend guard errors.

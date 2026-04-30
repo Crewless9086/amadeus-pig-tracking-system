@@ -83,7 +83,7 @@ Follow-up, separate from Fix C:
 
 - slim the Sales Agent prompt payload with a dedicated reply-context node so Sam receives only the fields needed for customer wording
 
-### 1.3 Capture Payment Method Before Approval — Code Complete, Pending Live Test
+### 1.3 Capture Payment Method Before Approval — Complete And Live-Verified
 
 Manual prerequisites confirmed:
 - `ORDER_MASTER` column Y = `Payment_Method` — added manually.
@@ -99,6 +99,16 @@ Required outcome:
 - `Code - Build Enrich Existing Draft Payload` is updated to include `payment_method` when present
 - All Chatwoot attribute write nodes in `1.0` and `1.1` must be audited and updated to include `payment_method` in their full-object snapshot before import — see `CHATWOOT_ATTRIBUTES.md`
 
+Current status:
+
+- backend `PATCH /api/master/orders/<order_id>` accepts `payment_method = Cash|EFT`
+- backend writes `ORDER_MASTER.Payment_Method`
+- backend rejects `payment_method` changes once the order is beyond `Draft`
+- `1.0` detects `Cash` and `EFT`, routes through the existing enrich/update path, and mirrors `payment_method` to Chatwoot after backend success
+- new `HTTP - Set Conversation Context After Update` writes the full Chatwoot snapshot after update/enrich paths
+- `1.1` preserves `payment_method` through human reply release using `Sales_HumanEscalations.WebPaymentMethod`
+- live verification passed on 2026-04-29 for Cash, EFT, next-turn readback, cancel-pending preservation, backend lock guard, no-draft handling, and escalation preservation
+
 ### 1.4 Wire Send For Approval From Sam
 
 Required outcome:
@@ -108,15 +118,16 @@ Required outcome:
 - `1.0` adds a `SEND_FOR_APPROVAL` branch to `Code - Decide Order Route`
 - `1.0` calls `1.2` with `action=send_for_approval`
 - `1.2 send_for_approval` branch calls backend `POST /api/orders/<order_id>/send-for-approval`
-- backend validates: `Order_Status = Draft`, at least one ORDER_LINE, `PaymentMethod` set, `customer_name` set, `collection_location` set
+- backend validates: `Order_Status = Draft`, at least one ORDER_LINE, `Payment_Method` set, `customer_name` set, `collection_location` set
 - `1.0` writes updated `order_status` to Chatwoot custom_attributes after backend confirms
 - Sam tells the customer the order has been sent for approval — Sam does NOT say it is approved
+- backend errors must return a customer-safe reply path in n8n; Sam must not go silent if a backend safety guard returns `400`
 
 ### 1.5 Lifecycle Guards
 
 Required outcome:
 
-- backend rejects `PaymentMethod` updates once `Order_Status` is `Pending_Approval` or later
+- backend rejects `Payment_Method` updates once `Order_Status` is `Pending_Approval` or later
 - Sam-side routing in `1.0` checks `order_status` before sending `send_for_approval` — does not call backend if status is already `Pending_Approval`, `Approved`, `Cancelled`, or `Completed`
 - completed orders cannot be cancelled or rejected without deliberate admin action
 - cancelled orders cannot be re-approved
@@ -162,7 +173,7 @@ Required outcome:
 Required outcome:
 
 - backend endpoint generates quote document for a given `order_id`
-- uses `ORDER_MASTER.PaymentMethod` to determine VAT treatment
+- uses `ORDER_MASTER.Payment_Method` to determine VAT treatment
 - uses stored `ORDER_LINES.Unit_Price` (ex-VAT) for line calculations
 - locks and stores the VAT rate on the quote record at generation time
 - returns document URL or file reference
@@ -324,12 +335,12 @@ Recently completed:
 - Phase 1.1 reject behavior
 - Phase 1.2 customer cancel through backend, `1.2`, and `1.0`
 - Phase 1.2c first-turn create-with-lines via `create_order_with_lines`
-- Phase 1.3 payment method — backend, `1.0`, `1.2`, `1.1` all updated (code complete 2026-04-29; pending live test)
+- Phase 1.3 payment method capture — backend, `1.0`, `1.2`, `1.1`, Chatwoot mirror, and lock guard live-verified 2026-04-29
 
 Recommended next:
 
-1. **Phase 1.3 live test** — deploy backend and import all three updated workflows; verify payment method capture end-to-end
-2. **Phase 1.4** — Wire `send_for_approval` from Sam through `1.2` to backend
-3. **Phase 1.5** — Lifecycle guards, including backend PaymentMethod lock
+1. **Phase 1.4** — Wire `send_for_approval` from Sam through `1.2` to backend
+2. **Phase 1.5** — Lifecycle guards and customer-safe backend error handling
+3. **Phase 1.6** — Harden reserve/release behavior
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
