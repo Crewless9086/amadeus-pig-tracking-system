@@ -15,6 +15,29 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-04-30 - Phase 1.4 Bugfix B — Backend 400 Not Handled In 1.2
+
+Type: `FIX`
+
+Component: `1.2 - Amadeus Order Steward`
+
+Change:
+
+- `1.2 HTTP - Send for Approval` — added `continueOnFail: true` at the node root level. `neverError: true` in options alone was not preventing n8n from surfacing the 400 as a workflow error; `continueOnFail` catches it at the execution level as a fallback.
+- `1.2 Set - Format Send for Approval Result` — fixed `backend_error` expression to read `$json.errors[0]` (backend route returns `errors: []` array on 400, not `error: ""`) with fallback chain: `$json.errors[0]` → `$json.error.message` (n8n continueOnFail object format) → `$json.error` (string) → `$json.message` → `""`. Fixed `success` expression to always return `"true"` or `"false"` rather than `"undefined"` when n8n error format omits the field.
+
+Root cause:
+
+Two separate issues combined to silence Sam on 400:
+1. `neverError: true` did not prevent the HTTP node from throwing; downstream Format node never ran.
+2. Backend route returns `{"success": false, "errors": ["..."]}` (plural array) but the Format node read `$json.error` (singular string) — always undefined even if the response was received.
+
+Expected outcome:
+
+When backend returns 400 (e.g., Collection_Location missing), the Format node runs, `backend_success = false`, `backend_error` contains the first error string from the backend, and Sam can tell the customer what is missing.
+
+Status: implemented; needs live re-verification of Test C (forced backend 400 path)
+
 ### 2026-04-30 - Phase 1.4 Bugfix — SEND_FOR_APPROVAL Intent Detection And Sam Reply Guard
 
 Type: `FIX`

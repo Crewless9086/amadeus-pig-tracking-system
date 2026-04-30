@@ -957,7 +957,8 @@
         256
       ],
       "id": "91bd70af-2356-49c6-85c0-8752baf21e2f",
-      "name": "HTTP - Send for Approval"
+      "name": "HTTP - Send for Approval",
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -966,7 +967,7 @@
             {
               "id": "cce6b344-5822-442e-88db-c3bd2838872a",
               "name": "success",
-              "value": "={{$json.success}}",
+              "value": "={{ $json.success === true ? \"true\" : \"false\" }}",
               "type": "string"
             },
             {
@@ -1008,13 +1009,13 @@
             {
               "id": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
               "name": "backend_success",
-              "value": "={{$json.success === true}}",
+              "value": "={{ $json.success === true }}",
               "type": "boolean"
             },
             {
               "id": "b8c7d6e5-f4a3-2109-edcb-a98765432109",
               "name": "backend_error",
-              "value": "={{$json.error || $json.message || ''}}",
+              "value": "={{ ($json.errors && $json.errors.length > 0 ? $json.errors[0] : null) || ($json.error && typeof $json.error === \"object\" ? $json.error.message : $json.error) || $json.message || \"\" }}",
               "type": "string"
             }
           ]
