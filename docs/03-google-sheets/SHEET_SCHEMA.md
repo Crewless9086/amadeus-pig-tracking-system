@@ -92,13 +92,14 @@ flowchart TD
 
 If a master/log/register sheet and a formula sheet disagree, trace the formula sheet back to its source data. Do not manually fix a calculated output cell.
 
-## Pending Manual Column Additions
+## Manual Column Additions
 
-These columns must be added to their sheet manually in Google Sheets before the related backend code is deployed.
+These columns were or must be added manually in Google Sheets before the related backend code is deployed.
 
-| Sheet | Column | Values | Added by | Required for |
+| Sheet | Column | Values | Status | Required for |
 | --- | --- | --- | --- | --- |
-| `ORDER_MASTER` | `Payment_Method` | `Cash` or `EFT` | Manual — Phase 1.3 prerequisite | Backend PATCH, send_for_approval validation, quote/invoice VAT calculation |
+| `ORDER_MASTER` | `Payment_Method` | `Cash` or `EFT` | Added manually — Phase 1.3 live-verified | Backend PATCH, send_for_approval validation, quote/invoice VAT calculation |
+| `Sales_HumanEscalations` | `WebPaymentMethod` | `Cash`, `EFT`, or blank | Added manually — Phase 1.3 live-verified | Preserve payment method through escalation and Telegram human reply |
 
 Notes:
 - `Payment_Method` must be present in the sheet before the Phase 1.3 backend update is deployed.

@@ -227,7 +227,7 @@ Required outcome:
 - repeated sync does not duplicate rows
 - old lines are released/cancelled before replacement
 
-### 2.2 Define Partial Match Behavior
+### 4.2 Define Partial Match Behavior
 
 Required outcome:
 
@@ -235,7 +235,7 @@ Required outcome:
 - Sam does not confirm a complete update when backend only partially matched stock
 - line totals must match requested quantity before success is treated as complete
 
-### 2.3 Validate `intent_type` And `status`
+### 4.3 Validate `intent_type` And `status`
 
 Required outcome:
 
