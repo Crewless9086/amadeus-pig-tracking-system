@@ -61,6 +61,10 @@ Test steps:
 2. Try rejecting a completed order.
 3. Try completing an invalid/unreserved order.
 4. Confirm backend blocks unsafe transitions or returns clear errors.
+5. Until approval auto-reservation is implemented, confirm approval does not silently claim pigs are reserved.
+6. After Phase 1.6 hardens reserve/release, confirm approval attempts to reserve active order lines and returns `reserve_warning` if reservation fails.
+7. Confirm rejection cancels/releases linked non-cancelled/non-collected lines and writes the status log.
+8. After outbound notifications are implemented, confirm approval and rejection trigger customer messages through the dedicated outbound workflow, not through Sam's inbound `1.0` workflow.
 
 ### Send For Approval From Sam
 
@@ -82,7 +86,7 @@ Regression checks:
 
 1. Missing `Payment_Method`: Sam must ask for Cash/EFT or explain what is missing; order status must remain unchanged.
 2. Already `Pending_Approval`: Sam must not submit again and should say it is already pending approval.
-3. Backend `400` guard failure: n8n must return a customer-safe reply, not go silent.
+3. Backend `400` guard failure: n8n must return a customer-safe reply, not go silent. Use a Draft order with `Collection_Location` cleared, then ask `send it for approval`; expected result is `backend_success = false`, `backend_error = "Collection location is required before sending for approval."`, `ORDER_MASTER.Order_Status` remains `Draft`, and Sam tells the customer what is missing.
 
 ### Payment Method Capture
 

@@ -140,9 +140,9 @@ Current status:
 
 Remaining regression checks:
 
-- missing `Payment_Method` should produce a customer-safe reply and no backend status change
-- already `Pending_Approval` orders should not be submitted again
-- backend `400` guard failures should return a customer-safe reply rather than silence
+- missing `Payment_Method` should produce a customer-safe reply and no backend status change — passed in live regression
+- already `Pending_Approval` orders should not be submitted again — passed in live regression
+- backend `400` guard failures should return a customer-safe reply rather than silence — re-test after importing the updated `1.2` workflow with `neverError: true` and `continueOnFail: true` on `HTTP - Send for Approval`
 
 ### 1.5 Lifecycle Guards
 
@@ -153,8 +153,10 @@ Required outcome:
 - completed orders cannot be cancelled or rejected without deliberate admin action
 - cancelled orders cannot be re-approved
 - reserved/approved orders handle state rollback safely when cancel or reject is applied
-- decide and document whether approval should automatically reserve active order lines, or whether approval and reservation remain separate actions
-- define customer notification flow after human approval or rejection
+- approval auto-reservation decision documented: approval should eventually auto-reserve all active order lines, but only after Phase 1.6 hardens reserve/release behavior
+- until reserve/release is hardened, approval and reservation remain separate actions and reservation stays a manual web-app action
+- post-Phase 1.6 approval behavior: `approve_order` should call reserve after approval succeeds; reserve failures should log a warning and return `reserve_warning`, but should not roll back the approval
+- customer notification flow documented: approval/rejection notifications should use a separate outbound n8n workflow triggered by backend webhook, not the inbound Sam/`1.0` workflow
 
 ### 1.6 Harden Reserve And Release Behavior
 
@@ -176,6 +178,26 @@ Required outcome:
 - remove raw Chatwoot webhook data, large debug fields, and sync internals from Sam's prompt
 - keep only customer context, order action, order ID/status, backend success, sync success, slim order state, and reply instruction
 - preserve full diagnostic data in earlier workflow nodes
+
+### 1.8 Approval Auto-Reservation
+
+Required outcome:
+
+- implement only after Phase 1.6 proves reserve/release is reliable and failure summaries are clear
+- `approve_order` should set the approval state first, then attempt to reserve active order lines
+- if reservation fails or partially fails, do not roll back the approval; write a warning to `ORDER_STATUS_LOG`, return `reserve_warning`, and let the admin web app surface the manual follow-up
+- auto-reserve should ignore cancelled/inactive lines and report per-line outcomes clearly
+
+### 1.9 Outbound Approval/Rejection Notifications
+
+Required outcome:
+
+- create a separate outbound n8n workflow, planned as `1.4 - Outbound Order Notification`, for backend-driven customer messages after human approval or rejection
+- backend should call a new `ORDER_NOTIFICATION_WEBHOOK_URL` after successful `approve_order` or `reject_order`
+- webhook delivery should be non-blocking with a short timeout; backend should log a warning if notification delivery fails, not fail the order transition
+- notification workflow should find the Chatwoot conversation from stable stored data, preferably `ConversationId` on `ORDER_MASTER`
+- before building the workflow, add/store `ConversationId` on `ORDER_MASTER` at draft creation time and define the exact approval/rejection message text
+- decide whether rejection notifications include the rejection reason from the web app or use a generic message
 
 ## Phase 2: Quote And Invoice Generation
 

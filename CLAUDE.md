@@ -131,5 +131,8 @@ Known instabilities (check `docs/00-start-here/CURRENT_STATE.md` for latest):
 - Order routing inconsistency across workflow paths
 - Split requested item sync still needs hardening for multi-key requests
 - Sales Agent reply prompt receives an oversized merged payload and should be slimmed
+- Phase 1.4 backend `400` reply path needs live re-test after latest `1.2` import
+- Approval auto-reservation is planned but must wait until reserve/release hardening is complete
+- Approval/rejection customer notifications should be a separate outbound n8n workflow, not Sam's inbound `1.0`
 
 Stabilization is prioritized over new features — see `docs/00-start-here/NEXT_STEPS.md` for the current roadmap.

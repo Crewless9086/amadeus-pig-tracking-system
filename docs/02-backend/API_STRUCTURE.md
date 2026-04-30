@@ -15,7 +15,7 @@ All order API routes are registered under `/api`.
 | `GET` | `/api/orders/available-pigs` | Return sale-available pigs from `SALES_AVAILABILITY`. | Web app/order tooling. |
 | `POST` | `/api/orders/<order_id>/reserve` | Mark order lines as reserved and update master reserved count. | Web app, future steward action. |
 | `POST` | `/api/orders/<order_id>/release` | Release reserved order lines and reset master reserved count. | Web app, future cancel/reject flow. |
-| `POST` | `/api/orders/<order_id>/send-for-approval` | Mark order pending approval and notify approval workflow. | Web app. |
+| `POST` | `/api/orders/<order_id>/send-for-approval` | Mark order pending approval and notify approval workflow. | Web app, `1.2 - Amadeus Order Steward`. |
 | `POST` | `/api/orders/<order_id>/approve` | Approve order. | Web app/human action. |
 | `POST` | `/api/orders/<order_id>/reject` | Reject approval and mark order cancelled. | Web app/human action. |
 | `POST` | `/api/orders/<order_id>/cancel` | Customer-cancel order, cancel linked lines, and release reservations. | Web app, future Order Steward action. |
@@ -38,7 +38,7 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `update_order` | `PATCH /api/master/orders/<order_id>` | Live |
 | `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` | Live |
 | `cancel_order` | `POST /api/orders/<order_id>/cancel` | Live |
-| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — wired in Phase 1.4. Needs live verification. |
+| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path verified; backend `400` regression re-test pending after latest `1.2` import. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
 
@@ -55,6 +55,28 @@ When `send_for_approval` is called (Phase 1.4), backend must validate all of the
 | `collection_location` | Must be non-empty. |
 
 Sam must check `order_status`, `payment_method`, and the presence of lines before routing to `send_for_approval` in `1.0`, to give the customer a clear message rather than a backend error.
+
+## Approve / Reject Direction
+
+Current approval behavior:
+
+- `POST /api/orders/<order_id>/approve` represents the human/admin commercial decision to accept the order.
+- Approval should not yet be treated as proof that pigs were reserved. Reservation remains a separate manual web-app action until reserve/release behavior is hardened.
+
+Planned post-Phase 1.6 approval behavior:
+
+- `approve_order` should update approval state first, then attempt to reserve active order lines.
+- If reservation fails or partially fails, the approval should not be rolled back.
+- Backend should write a warning to `ORDER_STATUS_LOG` and return a `reserve_warning` field so the admin web app can surface the follow-up.
+
+Current rejection behavior is documented below. Rejection should cancel/release linked non-cancelled/non-collected lines and should remain blocked for completed orders.
+
+Future customer notification behavior:
+
+- Approval and rejection notifications should be sent by a separate outbound n8n workflow, not by Sam's inbound `1.0` customer-message workflow.
+- Backend should call a future `ORDER_NOTIFICATION_WEBHOOK_URL` after successful approval or rejection.
+- Notification webhook delivery should be non-blocking; failures should be logged as warnings and should not fail the approval/rejection action.
+- The notification workflow needs a reliable Chatwoot lookup key, preferably `ConversationId` stored on `ORDER_MASTER` when the draft is created.
 
 ## Important Payload Contracts
 

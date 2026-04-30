@@ -93,10 +93,19 @@ Payment method capture:
 Send for approval from Sam:
 
 - `1.0` detects customer send-for-approval intent and routes to `SEND_FOR_APPROVAL`
-- `1.2` calls backend `send_for_approval` with `neverError` enabled so backend guards return as data
+- `1.2` calls backend `send_for_approval` with `neverError` and `continueOnFail` enabled so backend guards return as data
 - backend validates draft status, payment method, customer name, collection location, and at least one non-cancelled order line
 - happy path live verification passed on 2026-04-30 with `ORD-2026-377DA3`; order moved to `Pending_Approval`, Chatwoot status updated, and Sam said the order was sent for approval, not approved
-- remaining regression checks: missing payment method, already pending approval, and backend `400` customer-safe reply
+- missing payment method and already-pending regression checks passed
+- backend `400` customer-safe reply regression still needs re-test after importing the latest `1.2`; expected behavior is `backend_success = false`, `backend_error` contains the missing field, and Sam tells the customer what is missing
+
+Approve/reject lifecycle direction:
+
+- approval should eventually auto-reserve active order lines, because approval means the farm accepts and commits to the order
+- auto-reservation must wait until reserve/release behavior is hardened; until then, reservation remains a separate manual web-app action
+- once implemented, approval should not roll back if reservation fails; backend should log a warning and return `reserve_warning` for the admin web app
+- approval/rejection customer notifications should use a separate outbound n8n workflow triggered by backend webhook, not Sam's inbound `1.0` workflow
+- outbound notification planning depends on storing a reliable Chatwoot lookup key, preferably `ConversationId` on `ORDER_MASTER`
 
 ### Split Requested Item Sync Needs Hardening
 
@@ -154,4 +163,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The current next build target is Phase 1.4 regression coverage and then Phase 1.5 lifecycle guards/customer-safe backend error handling.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The immediate check is Phase 1.4 Test C after importing the updated `1.2` workflow. After that, continue with Phase 1.5 lifecycle guards, Phase 1.6 reserve/release hardening, and the planned outbound approval/rejection notification flow.
