@@ -1,8 +1,48 @@
 document.addEventListener("DOMContentLoaded", function () {
-    loadBreedingOptions();
+    setTodayDate();
+    loadPens().then(loadBreedingOptions);
     loadMatingList();
     setupMatingFormSubmit();
 });
+
+let allPens = [];
+let sowPenMap = {};
+let boarPenMap = {};
+
+function setTodayDate() {
+    const input = document.getElementById("mating_date");
+    if (!input) return;
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    input.value = `${yyyy}-${mm}-${dd}`;
+}
+
+async function loadPens() {
+    try {
+        const response = await fetch("/api/pig-weights/pens");
+        const data = await response.json();
+        allPens = data.pens || [];
+        populatePenDropdown("sow_move_to_pen_id", allPens);
+        populatePenDropdown("boar_move_to_pen_id", allPens);
+    } catch (error) {
+        console.error("Error loading pens:", error);
+    }
+}
+
+function populatePenDropdown(selectId, pens) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.innerHTML = `<option value="">No pen change</option>`;
+    pens.forEach(pen => {
+        const label = pen.pen_name ? `${pen.pen_name} (${pen.pen_id})` : pen.pen_id;
+        const option = document.createElement("option");
+        option.value = pen.pen_id;
+        option.textContent = label;
+        select.appendChild(option);
+    });
+}
 
 async function loadBreedingOptions() {
     try {
@@ -15,7 +55,14 @@ async function loadBreedingOptions() {
         sowSelect.innerHTML = `<option value="">Select sow</option>`;
         boarSelect.innerHTML = `<option value="">Unknown</option>`;
 
+        sowPenMap = {};
+        boarPenMap = {};
+
         (data.options?.sows || []).forEach(item => {
+            sowPenMap[item.pig_id] = {
+                pen_id: item.current_pen_id || "",
+                pen_name: item.current_pen_name || "",
+            };
             const option = document.createElement("option");
             option.value = item.pig_id;
             option.textContent = `${item.tag_number} (${item.pig_id})`;
@@ -23,14 +70,47 @@ async function loadBreedingOptions() {
         });
 
         (data.options?.boars || []).forEach(item => {
+            boarPenMap[item.pig_id] = {
+                pen_id: item.current_pen_id || "",
+                pen_name: item.current_pen_name || "",
+            };
             const option = document.createElement("option");
             option.value = item.pig_id;
             option.textContent = `${item.tag_number} (${item.pig_id})`;
             boarSelect.appendChild(option);
         });
+
+        sowSelect.addEventListener("change", function () {
+            updatePenInfo("sow_pen_info", "sow_move_to_pen_id", sowPenMap[this.value]);
+        });
+
+        boarSelect.addEventListener("change", function () {
+            updatePenInfo("boar_pen_info", "boar_move_to_pen_id", boarPenMap[this.value]);
+        });
+
     } catch (error) {
         console.error("Error loading breeding options:", error);
     }
+}
+
+function updatePenInfo(infoId, moveSelectId, penInfo) {
+    const infoEl = document.getElementById(infoId);
+    const moveSelect = document.getElementById(moveSelectId);
+
+    if (!infoEl) return;
+
+    if (!penInfo || !penInfo.pen_id) {
+        infoEl.textContent = "";
+        if (moveSelect) moveSelect.value = "";
+        return;
+    }
+
+    const label = penInfo.pen_name
+        ? `Current pen: ${penInfo.pen_name} (${penInfo.pen_id})`
+        : `Current pen: ${penInfo.pen_id}`;
+    infoEl.textContent = label;
+
+    if (moveSelect) moveSelect.value = "";
 }
 
 async function loadMatingList() {
@@ -151,7 +231,9 @@ function setupMatingFormSubmit() {
             mating_date: formData.get("mating_date") || "",
             mating_method: formData.get("mating_method") || "",
             exposure_group: formData.get("exposure_group") || "",
-            service_notes: formData.get("service_notes") || ""
+            service_notes: formData.get("service_notes") || "",
+            sow_move_to_pen_id: formData.get("sow_move_to_pen_id") || "",
+            boar_move_to_pen_id: formData.get("boar_move_to_pen_id") || "",
         };
 
         try {
@@ -169,10 +251,13 @@ function setupMatingFormSubmit() {
 
             if (response.ok && result.success) {
                 messageBox.classList.add("message-success");
-                messageBox.textContent = "Mating saved successfully.";
+                messageBox.textContent = result.message || "Mating saved successfully.";
 
                 form.reset();
+                setTodayDate();
                 document.getElementById("boar_pig_id").value = "";
+                document.getElementById("sow_pen_info").textContent = "";
+                document.getElementById("boar_pen_info").textContent = "";
                 await loadMatingList();
             } else {
                 messageBox.classList.add("message-error");

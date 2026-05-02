@@ -335,11 +335,44 @@ Only after order stability:
 - improve Telegram cleanup for human escalation
 - expand monitoring and operational runbooks
 
-## Phase 8: Pig, Weight, And Reporting Improvements
+## Phase 8: Breeding Board Improvements — Completed 2026-05-02
+
+### 8A Optional Pen Movement On Add Mating — Complete
+
+- `GET /api/pig-weights/breeding-options` now returns `current_pen_id` and `current_pen_name` for each sow and boar.
+- `/master/add-mating` form shows sow and boar current pen after selection, and optional `Move sow to pen` / `Move boar to pen` dropdowns populated from `GET /api/pig-weights/pens`.
+- `POST /api/pig-weights/master/matings` accepts optional `sow_move_to_pen_id` and `boar_move_to_pen_id`.
+- Backend calls `_write_movement_if_needed()` for each; skips write if target equals current pen or is empty.
+- Movement rows are written to `LOCATION_HISTORY` with `reason = "Moved during mating log"`, `moved_by = "Mating Form"`.
+
+### 8B Move To Farrowing / Assume Pregnant Action — Complete
+
+- New endpoint: `POST /api/pig-weights/master/matings/<mating_id>/assume-pregnant`
+- Updates `MATING_LOG`: `Pregnancy_Check_Date = today`, `Pregnancy_Check_Result = Pregnant`, `Mating_Status = Confirmed_Pregnant`, `Outcome = Pregnant`, `Updated_At = today`.
+- Blocked for matings with status `Farrowed`, `Cancelled`, or `Closed`.
+- Optional: if `target_pen_id` is supplied, writes sow movement row to `LOCATION_HISTORY` with `reason = "Moved to farrowing pen"`.
+- Does NOT create a litter. Litter creation remains via Add Litter.
+- `/matings` Breeding Board shows a "Move to Farrowing / Assume Pregnant" button on all eligible open mating cards (not Farrowed/Cancelled/Closed, no linked litter). Clicking opens an inline form with a pen dropdown (farrowing pens listed first). On confirm, POSTs to the endpoint and reloads the board.
+
+### 8C Needs Action Now — No Litter After 3 Weeks Trigger — Complete
+
+- In `matings.js`, when `is_overdue_farrowing = "Yes"` and no `linked_litter_id` and no `actual_farrowing_date` and `daysToFarrowing < -21`, the board classifies the record as `Needs Action Now` with action text `"No litter after 3 weeks — review"`.
+- Movement guidance text explains the situation: days past expected farrowing, check if she has farrowed or if repeat service is needed.
+
+### 8D Not Yet Built — Mark Not Pregnant / Repeat Service
+
+When a sow has been in a farrowing pen too long with no litter, the next action is to mark her as not pregnant and return to repeat service. This is not yet built. When implemented:
+
+- `POST /api/pig-weights/master/matings/<mating_id>/mark-not-pregnant`
+- Updates `MATING_LOG`: `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `Updated_At = today`.
+- Optionally moves sow back to a service pen.
+- Available only for `Confirmed_Pregnant` matings with no litter and no actual farrowing date.
+
+## Phase 9: Pig, Weight, And Reporting Improvements
 
 Only after live order stability unless the operational need becomes urgent.
 
-### 8.1 New Litter Defaults And Weaning Reminder
+### 9.1 New Litter Defaults And Weaning Reminder
 
 Required outcome:
 
@@ -347,27 +380,27 @@ Required outcome:
 - animals with `Purpose = Unknown` must not appear as for-sale stock
 - once animals are weaned, surface a reminder to assign purpose: `Grow_Out`, `Sale`, or `Breeding`
 
-### 8.2 Pig Dropdown Usability
+### 9.2 Pig Dropdown Usability
 
 Required outcome:
 
 - pig-related dropdowns should show tag number and pen name, not only pen ID
 - tag numbers should display as three digits where appropriate: `001`, `010`, `090`, `100`
 
-### 8.3 Weight Form Context
+### 9.3 Weight Form Context
 
 Required outcome:
 
 - beside `Move to Pen (Optional)`, show the current pen as read-only helper context
 
-### 8.4 Weight Report
+### 9.4 Weight Report
 
 Required outcome:
 
 - after weights are entered, allow the user to generate a weekly weight report
 - include summaries, grouped totals, pen counts, and useful decision-making commentary
 
-### 8.5 Dashboard Sold This Month Audit
+### 9.5 Dashboard Sold This Month Audit
 
 Required outcome:
 

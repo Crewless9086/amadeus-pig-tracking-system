@@ -4,8 +4,12 @@ from modules.pig_weights.mating_service import (
     get_breeding_options,
     get_mating_overview,
     save_new_mating,
+    assume_pregnant,
 )
-from modules.pig_weights.mating_validation import validate_new_mating_payload
+from modules.pig_weights.mating_validation import (
+    validate_new_mating_payload,
+    validate_assume_pregnant_payload,
+)
 
 mating_bp = Blueprint("mating", __name__)
 
@@ -41,3 +45,28 @@ def create_mating():
 
     result = save_new_mating(validation["cleaned_data"])
     return jsonify(result), 201
+
+
+@mating_bp.route("/master/matings/<mating_id>/assume-pregnant", methods=["POST"])
+def assume_pregnant_route(mating_id):
+    payload = request.get_json(silent=True) or {}
+    validation = validate_assume_pregnant_payload(payload)
+
+    if not validation["is_valid"]:
+        return jsonify({
+            "success": False,
+            "errors": validation["errors"]
+        }), 400
+
+    try:
+        result = assume_pregnant(
+            mating_id=mating_id,
+            target_pen_id=validation["cleaned_data"]["target_pen_id"],
+            moved_by=validation["cleaned_data"]["moved_by"],
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400

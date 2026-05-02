@@ -4,7 +4,9 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 let allMatingRecords = [];
+let allPens = [];
 let selectedSowId = "";
+let activeAssumePregnantId = null;
 const expandedMatingIds = new Set();
 
 const SECTION_DEFINITIONS = [
@@ -35,6 +37,16 @@ const SECTION_DEFINITIONS = [
     }
 ];
 
+async function loadAllPens() {
+    try {
+        const response = await fetch("/api/pig-weights/pens");
+        const data = await response.json();
+        allPens = data.pens || [];
+    } catch (error) {
+        console.error("Could not load pens:", error);
+    }
+}
+
 async function loadMatingBoard() {
     const messageBox = document.getElementById("matings_message");
     const board = document.getElementById("matings_board");
@@ -42,6 +54,8 @@ async function loadMatingBoard() {
     const controls = document.getElementById("mating_controls");
 
     try {
+        await loadAllPens();
+
         const response = await fetch("/api/pig-weights/matings");
         const data = await response.json();
 
@@ -80,21 +94,50 @@ function setupMatingBoardEvents() {
 
         selectedSowId = event.target.value || "";
         expandedMatingIds.clear();
+        activeAssumePregnantId = null;
         renderBoard(document.getElementById("matings_board"), getVisibleRecords());
         renderControls(document.getElementById("mating_controls"), allMatingRecords);
     });
 
-    document.addEventListener("click", function (event) {
+    document.addEventListener("click", async function (event) {
         const cardToggle = event.target.closest("[data-mating-toggle]");
         if (cardToggle) {
             const matingId = cardToggle.getAttribute("data-mating-toggle");
             if (expandedMatingIds.has(matingId)) {
                 expandedMatingIds.delete(matingId);
+                if (activeAssumePregnantId === matingId) activeAssumePregnantId = null;
             } else {
                 expandedMatingIds.add(matingId);
             }
             renderBoard(document.getElementById("matings_board"), getVisibleRecords());
             renderControls(document.getElementById("mating_controls"), allMatingRecords);
+            return;
+        }
+
+        const assumeBtn = event.target.closest("[data-assume-pregnant]");
+        if (assumeBtn) {
+            const matingId = assumeBtn.getAttribute("data-assume-pregnant");
+            if (activeAssumePregnantId === matingId) {
+                activeAssumePregnantId = null;
+            } else {
+                activeAssumePregnantId = matingId;
+                expandedMatingIds.add(matingId);
+            }
+            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
+            return;
+        }
+
+        const confirmBtn = event.target.closest("[data-assume-pregnant-confirm]");
+        if (confirmBtn) {
+            const matingId = confirmBtn.getAttribute("data-assume-pregnant-confirm");
+            await handleAssumePregnant(matingId);
+            return;
+        }
+
+        const cancelBtn = event.target.closest("[data-assume-pregnant-cancel]");
+        if (cancelBtn) {
+            activeAssumePregnantId = null;
+            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
             return;
         }
 
@@ -105,6 +148,7 @@ function setupMatingBoardEvents() {
 
         if (allVisibleExpanded) {
             visibleRecords.forEach(record => expandedMatingIds.delete(record.mating_id));
+            activeAssumePregnantId = null;
         } else {
             visibleRecords.forEach(record => expandedMatingIds.add(record.mating_id));
         }
@@ -112,6 +156,42 @@ function setupMatingBoardEvents() {
         renderBoard(document.getElementById("matings_board"), visibleRecords);
         renderControls(document.getElementById("mating_controls"), allMatingRecords);
     });
+}
+
+async function handleAssumePregnant(matingId) {
+    const penSelect = document.getElementById(`assume_pen_${matingId}`);
+    const msgDiv = document.getElementById(`assume_msg_${matingId}`);
+    const targetPenId = penSelect ? penSelect.value : "";
+
+    try {
+        const response = await fetch(`/api/pig-weights/master/matings/${encodeURIComponent(matingId)}/assume-pregnant`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target_pen_id: targetPenId, moved_by: "WebApp" })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            const msg = (data.errors || ["Failed to update mating."]).join(" ");
+            if (msgDiv) {
+                msgDiv.classList.remove("hidden", "message-success", "message-error");
+                msgDiv.classList.add("message-error");
+                msgDiv.textContent = msg;
+            }
+            return;
+        }
+
+        activeAssumePregnantId = null;
+        await loadMatingBoard();
+    } catch (error) {
+        console.error("Assume pregnant error:", error);
+        if (msgDiv) {
+            msgDiv.classList.remove("hidden", "message-success", "message-error");
+            msgDiv.classList.add("message-error");
+            msgDiv.textContent = "Something went wrong.";
+        }
+    }
 }
 
 function renderSummary(container, records) {
@@ -216,6 +296,7 @@ function renderSection(section, records) {
 
 function renderMatingCard(record) {
     const isExpanded = expandedMatingIds.has(record.mating_id);
+    const isAssumeFormOpen = activeAssumePregnantId === record.mating_id;
     const sowLabel = formatAnimalLabel(record.sow_tag_number, record.sow_pig_id, "Unknown Sow");
     const boarLabel = formatAnimalLabel(record.boar_tag_number, record.boar_pig_id, "Unknown Boar");
     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
@@ -223,6 +304,15 @@ function renderMatingCard(record) {
     const litterLink = record.linked_litter_id
         ? `<a class="detail-link" href="/litter/${encodeURIComponent(record.linked_litter_id)}">${escapeHtml(record.linked_litter_id)}</a>`
         : "-";
+
+    const showAssumeButton = isEligibleForAssumePregnant(record);
+    const assumeButtonHtml = showAssumeButton
+        ? `<button type="button" class="button-link${isAssumeFormOpen ? " button-link-secondary" : ""}" data-assume-pregnant="${escapeHtml(record.mating_id)}">
+             ${isAssumeFormOpen ? "Cancel" : "Move to Farrowing / Assume Pregnant"}
+           </button>`
+        : "";
+
+    const assumeFormHtml = isAssumeFormOpen ? renderAssumePregnantForm(record.mating_id) : "";
 
     return `
         <div class="history-item mating-card ${isExpanded ? "mating-card-expanded" : ""}">
@@ -310,6 +400,13 @@ function renderMatingCard(record) {
               <div>${escapeHtml(buildMovementGuidance(record, sowPen))}</div>
             </div>
 
+            ${showAssumeButton ? `
+              <div class="history-notes" style="margin-top: 8px;">
+                ${assumeButtonHtml}
+                ${assumeFormHtml}
+              </div>
+            ` : ""}
+
             ${record.service_notes ? `
               <div class="history-notes">
                 <div class="history-label">Notes</div>
@@ -319,6 +416,45 @@ function renderMatingCard(record) {
           </div>
         </div>
     `;
+}
+
+function renderAssumePregnantForm(matingId) {
+    const farrowingPens = allPens.filter(p => p.pen_type === "Farrowing");
+    const otherPens = allPens.filter(p => p.pen_type !== "Farrowing");
+
+    const farrowingOptions = farrowingPens.map(p =>
+        `<option value="${escapeHtml(p.pen_id)}">[Farrowing] ${escapeHtml(p.pen_name || p.pen_id)}</option>`
+    ).join("");
+    const otherOptions = otherPens.map(p =>
+        `<option value="${escapeHtml(p.pen_id)}">${escapeHtml(p.pen_name || p.pen_id)}</option>`
+    ).join("");
+
+    return `
+        <div class="assume-pregnant-form" style="margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-subtle, #f9f9f9);">
+          <div class="history-label" style="margin-bottom: 8px;">Move to Farrowing / Assume Pregnant</div>
+          <p style="margin: 0 0 10px 0; font-size: 0.9em;">This will set Pregnancy_Check_Result = Pregnant, Mating_Status = Confirmed_Pregnant. Litter creation remains a separate step.</p>
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label for="assume_pen_${escapeHtml(matingId)}">Move sow to pen (optional)</label>
+            <select id="assume_pen_${escapeHtml(matingId)}">
+              <option value="">No pen change</option>
+              ${farrowingOptions}
+              ${otherOptions}
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" data-assume-pregnant-confirm="${escapeHtml(matingId)}">Confirm</button>
+            <button type="button" class="button-link button-link-secondary" data-assume-pregnant-cancel>Cancel</button>
+          </div>
+          <div id="assume_msg_${escapeHtml(matingId)}" class="message-box hidden"></div>
+        </div>
+    `;
+}
+
+function isEligibleForAssumePregnant(record) {
+    const blocked = new Set(["Farrowed", "Cancelled", "Closed"]);
+    return record.is_open === "Yes"
+        && !blocked.has(record.mating_status)
+        && !record.linked_litter_id;
 }
 
 function classifyMating(record) {
@@ -331,6 +467,16 @@ function classifyMating(record) {
     const daysToCheck = daysBetween(today, expectedCheck);
 
     if (record.is_overdue_farrowing === "Yes") {
+        // Feature C: no litter recorded more than 21 days past expected farrowing
+        if (!record.linked_litter_id && !record.actual_farrowing_date
+                && daysToFarrowing !== null && daysToFarrowing < -21) {
+            return {
+                section: "needs_action",
+                actionText: "No litter after 3 weeks — review",
+                actionClass: "bad-text",
+                sortDate: expectedFarrowing
+            };
+        }
         return {
             section: "needs_action",
             actionText: "Overdue farrowing",
@@ -385,6 +531,9 @@ function classifyMating(record) {
 
 function buildMovementGuidance(record, sowPen) {
     if (record.is_overdue_farrowing === "Yes") {
+        if (!record.linked_litter_id && !record.actual_farrowing_date) {
+            return `Sow is ${Math.abs(daysBetween(startOfDay(new Date()), parseDate(record.expected_farrowing_date)) || 0)} days past expected farrowing with no litter recorded. Check whether she has farrowed or if repeat service is needed. Current sow pen: ${sowPen}.`;
+        }
         return `Overdue farrowing. Check sow and record the litter if she has farrowed. Current sow pen: ${sowPen}.`;
     }
 

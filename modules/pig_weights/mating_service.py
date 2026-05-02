@@ -12,12 +12,14 @@ from modules.pig_weights.pig_weights_utils import (
     format_date_for_json,
     format_date_for_sheet,
     parse_sheet_date,
+    generate_move_log_id,
 )
 
 PIG_OVERVIEW_SHEET = "PIG_OVERVIEW"
 MATING_LOG_SHEET = "MATING_LOG"
 MATING_OVERVIEW_SHEET = "MATING_OVERVIEW"
 PEN_REGISTER_SHEET = "PEN_REGISTER"
+LOCATION_HISTORY_SHEET = "LOCATION_HISTORY"
 
 
 def generate_mating_id():
@@ -64,8 +66,32 @@ def _pen_context(pig_id, pig_lookup, pen_lookup):
     }
 
 
+def _write_movement_if_needed(pig_id: str, current_pen_id: str, target_pen_id: str, move_date, reason: str) -> bool:
+    target_pen_id = to_clean_string(target_pen_id)
+    current_pen_id = to_clean_string(current_pen_id)
+
+    if not target_pen_id or target_pen_id == current_pen_id:
+        return False
+
+    row_values = [
+        generate_move_log_id(),
+        pig_id,
+        format_date_for_sheet(move_date),
+        current_pen_id,
+        target_pen_id,
+        reason,
+        "Mating Form",
+        "",
+        "",
+        format_date_for_sheet(move_date),
+    ]
+    append_row(LOCATION_HISTORY_SHEET, row_values)
+    return True
+
+
 def get_breeding_options():
     rows = get_all_records(PIG_OVERVIEW_SHEET)
+    pen_lookup = _get_pen_lookup()
 
     sows = []
     boars = []
@@ -84,9 +110,14 @@ def get_breeding_options():
         if status != "Active" or on_farm != "Yes" or purpose != "Breeding":
             continue
 
+        pen_id = to_clean_string(row.get("Current_Pen_ID", ""))
+        pen = pen_lookup.get(pen_id, {})
+
         item = {
             "pig_id": pig_id,
             "tag_number": tag_number or pig_id,
+            "current_pen_id": pen_id,
+            "current_pen_name": to_clean_string(pen.get("pen_name", "")),
         }
 
         if sex == "Female":
@@ -171,6 +202,7 @@ def save_new_mating(cleaned_data: dict):
     boar_tag_number = to_clean_string(boar_row.get("Tag_Number", ""))
 
     today_str = datetime.now().strftime("%d %b %Y")
+    mating_date = cleaned_data["mating_date"]
 
     row_values = [
         generate_mating_id(),                                 # Mating_ID
@@ -178,7 +210,7 @@ def save_new_mating(cleaned_data: dict):
         sow_tag_number,                                      # Sow_Tag_Number
         cleaned_data["boar_pig_id"],                         # Boar_Pig_ID
         boar_tag_number,                                     # Boar_Tag_Number
-        format_date_for_sheet(cleaned_data["mating_date"]),  # Mating_Date
+        format_date_for_sheet(mating_date),                  # Mating_Date
         cleaned_data["mating_method"],                       # Mating_Method
         cleaned_data["exposure_group"],                      # Exposure_Group
         "",                                                  # Expected_Pregnancy_Check_Date
@@ -197,9 +229,44 @@ def save_new_mating(cleaned_data: dict):
 
     append_row(MATING_LOG_SHEET, row_values)
 
+    sow_moved = False
+    boar_moved = False
+
+    sow_move_to = to_clean_string(cleaned_data.get("sow_move_to_pen_id", ""))
+    if sow_move_to and cleaned_data["sow_pig_id"]:
+        sow_current_pen = to_clean_string(sow_row.get("Current_Pen_ID", ""))
+        sow_moved = _write_movement_if_needed(
+            pig_id=cleaned_data["sow_pig_id"],
+            current_pen_id=sow_current_pen,
+            target_pen_id=sow_move_to,
+            move_date=mating_date,
+            reason="Moved during mating log",
+        )
+
+    boar_move_to = to_clean_string(cleaned_data.get("boar_move_to_pen_id", ""))
+    if boar_move_to and cleaned_data["boar_pig_id"]:
+        boar_current_pen = to_clean_string(boar_row.get("Current_Pen_ID", ""))
+        boar_moved = _write_movement_if_needed(
+            pig_id=cleaned_data["boar_pig_id"],
+            current_pen_id=boar_current_pen,
+            target_pen_id=boar_move_to,
+            move_date=mating_date,
+            reason="Moved during mating log",
+        )
+
+    message = "Mating record saved successfully."
+    if sow_moved and boar_moved:
+        message += " Sow and boar movements logged."
+    elif sow_moved:
+        message += " Sow movement logged."
+    elif boar_moved:
+        message += " Boar movement logged."
+
     return {
         "success": True,
-        "message": "Mating record saved successfully."
+        "message": message,
+        "sow_moved": sow_moved,
+        "boar_moved": boar_moved,
     }
 
 
@@ -249,5 +316,82 @@ def link_litter_to_mating(mating_id: str, litter_id: str, actual_farrowing_date)
 
         update_row_by_first_column_match(MATING_LOG_SHEET, mating_id, padded_row)
         return
+
+    raise ValueError(f"Mating_ID '{mating_id}' not found in MATING_LOG.")
+
+
+_ASSUME_PREGNANT_BLOCKED = {"Farrowed", "Cancelled", "Closed"}
+
+
+def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
+    mating_id = str(mating_id).strip()
+    target_pen_id = to_clean_string(target_pen_id)
+    moved_by = to_clean_string(moved_by) or "WebApp"
+
+    all_values = get_all_values(MATING_LOG_SHEET)
+    if not all_values or len(all_values) < 2:
+        raise ValueError("MATING_LOG has no data rows.")
+
+    headers = all_values[0]
+    header_index = {h: i for i, h in enumerate(headers)}
+
+    required_headers = [
+        "Mating_ID", "Sow_Pig_ID",
+        "Pregnancy_Check_Date", "Pregnancy_Check_Result",
+        "Mating_Status", "Outcome", "Updated_At",
+    ]
+    for h in required_headers:
+        if h not in header_index:
+            raise ValueError(f"Missing column '{h}' in MATING_LOG.")
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    for row in all_values[1:]:
+        if not row:
+            continue
+
+        row_id = to_clean_string(row[0])
+        if row_id != mating_id:
+            continue
+
+        padded_row = list(row) + [""] * (len(headers) - len(row))
+        current_status = to_clean_string(padded_row[header_index["Mating_Status"]])
+
+        if current_status in _ASSUME_PREGNANT_BLOCKED:
+            raise ValueError(f"Cannot update mating: status is already {current_status}.")
+
+        padded_row[header_index["Pregnancy_Check_Date"]] = today_str
+        padded_row[header_index["Pregnancy_Check_Result"]] = "Pregnant"
+        padded_row[header_index["Mating_Status"]] = "Confirmed_Pregnant"
+        padded_row[header_index["Outcome"]] = "Pregnant"
+        padded_row[header_index["Updated_At"]] = today_str
+
+        update_row_by_first_column_match(MATING_LOG_SHEET, mating_id, padded_row)
+
+        movement_logged = False
+        if target_pen_id:
+            sow_pig_id = to_clean_string(padded_row[header_index["Sow_Pig_ID"]])
+            if sow_pig_id:
+                pig_lookup = _get_pig_lookup()
+                sow_row = pig_lookup.get(sow_pig_id, {})
+                current_pen_id = to_clean_string(sow_row.get("Current_Pen_ID", ""))
+                movement_logged = _write_movement_if_needed(
+                    pig_id=sow_pig_id,
+                    current_pen_id=current_pen_id,
+                    target_pen_id=target_pen_id,
+                    move_date=datetime.now().date(),
+                    reason="Moved to farrowing pen",
+                )
+
+        message = "Mating updated to Confirmed_Pregnant."
+        if movement_logged:
+            message += " Sow movement logged."
+
+        return {
+            "success": True,
+            "message": message,
+            "mating_id": mating_id,
+            "movement_logged": movement_logged,
+        }
 
     raise ValueError(f"Mating_ID '{mating_id}' not found in MATING_LOG.")

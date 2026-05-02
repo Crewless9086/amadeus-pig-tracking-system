@@ -21,6 +21,9 @@ def validate_new_mating_payload(payload: dict):
     if not mating_method:
         errors.append("Mating_Method is required.")
 
+    sow_move_to_pen_id = str(payload.get("sow_move_to_pen_id", "")).strip()
+    boar_move_to_pen_id = str(payload.get("boar_move_to_pen_id", "")).strip()
+
     return {
         "is_valid": len(errors) == 0,
         "errors": errors,
@@ -31,5 +34,23 @@ def validate_new_mating_payload(payload: dict):
             "mating_method": mating_method,
             "exposure_group": exposure_group,
             "service_notes": service_notes,
+            "sow_move_to_pen_id": sow_move_to_pen_id,
+            "boar_move_to_pen_id": boar_move_to_pen_id,
+        }
+    }
+
+
+def validate_assume_pregnant_payload(payload: dict):
+    errors = []
+
+    target_pen_id = str(payload.get("target_pen_id", "")).strip()
+    moved_by = str(payload.get("moved_by", "")).strip() or "WebApp"
+
+    return {
+        "is_valid": len(errors) == 0,
+        "errors": errors,
+        "cleaned_data": {
+            "target_pen_id": target_pen_id,
+            "moved_by": moved_by,
         }
     }
