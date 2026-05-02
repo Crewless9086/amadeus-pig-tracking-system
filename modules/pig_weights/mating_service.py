@@ -361,6 +361,14 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
         if current_status in _ASSUME_PREGNANT_BLOCKED:
             raise ValueError(f"Cannot update mating: status is already {current_status}.")
 
+        if target_pen_id:
+            pen_lookup = _get_pen_lookup()
+            target_pen = pen_lookup.get(target_pen_id)
+            if not target_pen:
+                raise ValueError(f"Pen '{target_pen_id}' not found in PEN_REGISTER.")
+            if target_pen.get("pen_type") != "Farrowing":
+                raise ValueError("Target pen must be a Farrowing pen.")
+
         padded_row[header_index["Pregnancy_Check_Date"]] = today_str
         padded_row[header_index["Pregnancy_Check_Result"]] = "Pregnant"
         padded_row[header_index["Mating_Status"]] = "Confirmed_Pregnant"
@@ -371,13 +379,6 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
 
         movement_logged = False
         if target_pen_id:
-            pen_lookup = _get_pen_lookup()
-            target_pen = pen_lookup.get(target_pen_id)
-            if not target_pen:
-                raise ValueError(f"Pen '{target_pen_id}' not found in PEN_REGISTER.")
-            if target_pen.get("pen_type") != "Farrowing":
-                raise ValueError("Target pen must be a Farrowing pen.")
-
             sow_pig_id = to_clean_string(padded_row[header_index["Sow_Pig_ID"]])
             if sow_pig_id:
                 pig_lookup = _get_pig_lookup()
