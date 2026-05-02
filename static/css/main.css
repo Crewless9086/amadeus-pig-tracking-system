@@ -415,6 +415,44 @@ button:disabled {
   margin-top: 10px;
 }
 
+.matings-controls {
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+.mating-card-actions {
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mating-toggle-button {
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--green-dark);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mating-toggle-button:hover {
+  border-color: var(--green-main);
+  background: var(--green-soft);
+}
+
+.mating-card-compact {
+  margin-bottom: 0;
+}
+
+.mating-card-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
 .family-tree-section {
   display: flex;
   flex-direction: column;
@@ -604,6 +642,11 @@ button:disabled {
   .pig-list-top,
   .history-item-top {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .mating-card-actions {
+    width: 100%;
     align-items: flex-start;
   }
 

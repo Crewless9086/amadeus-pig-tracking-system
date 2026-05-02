@@ -1,6 +1,11 @@
 document.addEventListener("DOMContentLoaded", function () {
+    setupMatingBoardEvents();
     loadMatingBoard();
 });
+
+let allMatingRecords = [];
+let selectedSowId = "";
+const expandedMatingIds = new Set();
 
 const SECTION_DEFINITIONS = [
     {
@@ -34,6 +39,7 @@ async function loadMatingBoard() {
     const messageBox = document.getElementById("matings_message");
     const board = document.getElementById("matings_board");
     const summary = document.getElementById("mating_summary");
+    const controls = document.getElementById("mating_controls");
 
     try {
         const response = await fetch("/api/pig-weights/matings");
@@ -43,7 +49,7 @@ async function loadMatingBoard() {
             throw new Error("Failed to load mating records.");
         }
 
-        const records = (data.records || []).map(record => {
+        allMatingRecords = (data.records || []).map(record => {
             const classification = classifyMating(record);
             return {
                 ...record,
@@ -54,8 +60,9 @@ async function loadMatingBoard() {
             };
         });
 
-        renderSummary(summary, records);
-        renderBoard(board, records);
+        renderSummary(summary, allMatingRecords);
+        renderControls(controls, allMatingRecords);
+        renderBoard(board, getVisibleRecords());
     } catch (error) {
         console.error("Matings load error:", error);
         messageBox.classList.remove("hidden", "message-success", "message-error");
@@ -63,7 +70,48 @@ async function loadMatingBoard() {
         messageBox.textContent = "Something went wrong while loading the breeding board.";
         board.innerHTML = "";
         summary.innerHTML = "";
+        controls.innerHTML = "";
     }
+}
+
+function setupMatingBoardEvents() {
+    document.addEventListener("change", function (event) {
+        if (event.target.id !== "mating_sow_filter") return;
+
+        selectedSowId = event.target.value || "";
+        expandedMatingIds.clear();
+        renderBoard(document.getElementById("matings_board"), getVisibleRecords());
+        renderControls(document.getElementById("mating_controls"), allMatingRecords);
+    });
+
+    document.addEventListener("click", function (event) {
+        const cardToggle = event.target.closest("[data-mating-toggle]");
+        if (cardToggle) {
+            const matingId = cardToggle.getAttribute("data-mating-toggle");
+            if (expandedMatingIds.has(matingId)) {
+                expandedMatingIds.delete(matingId);
+            } else {
+                expandedMatingIds.add(matingId);
+            }
+            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
+            renderControls(document.getElementById("mating_controls"), allMatingRecords);
+            return;
+        }
+
+        if (event.target.id !== "toggle_all_mating_details") return;
+
+        const visibleRecords = getVisibleRecords();
+        const allVisibleExpanded = visibleRecords.length > 0 && visibleRecords.every(record => expandedMatingIds.has(record.mating_id));
+
+        if (allVisibleExpanded) {
+            visibleRecords.forEach(record => expandedMatingIds.delete(record.mating_id));
+        } else {
+            visibleRecords.forEach(record => expandedMatingIds.add(record.mating_id));
+        }
+
+        renderBoard(document.getElementById("matings_board"), visibleRecords);
+        renderControls(document.getElementById("mating_controls"), allMatingRecords);
+    });
 }
 
 function renderSummary(container, records) {
@@ -90,12 +138,46 @@ function renderSummary(container, records) {
     `;
 }
 
+function renderControls(container, records) {
+    if (records.length === 0) {
+        container.innerHTML = "";
+        return;
+    }
+
+    const visibleRecords = getVisibleRecords();
+    const allVisibleExpanded = visibleRecords.length > 0 && visibleRecords.every(record => expandedMatingIds.has(record.mating_id));
+    const sowOptions = getSowOptions(records)
+        .map(sow => `<option value="${escapeHtml(sow.sow_pig_id)}" ${sow.sow_pig_id === selectedSowId ? "selected" : ""}>${escapeHtml(sow.label)}</option>`)
+        .join("");
+
+    container.innerHTML = `
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="mating_sow_filter">Filter by sow</label>
+            <select id="mating_sow_filter" name="mating_sow_filter">
+              <option value="">All sows</option>
+              ${sowOptions}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Card details</label>
+            <button id="toggle_all_mating_details" type="button" class="button-link">
+              ${allVisibleExpanded ? "Hide all details" : "Show all details"}
+            </button>
+          </div>
+        </div>
+        <div class="pig-list-meta">
+          Showing ${visibleRecords.length} of ${records.length} mating records${selectedSowId ? " for selected sow" : ""}.
+        </div>
+    `;
+}
+
 function renderBoard(container, records) {
     if (records.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-              <div>No mating records yet.</div>
-              <div>Create the first mating record from Add Mating.</div>
+              <div>No mating records found.</div>
+              <div>${selectedSowId ? "Select All sows to return to the full list." : "Create the first mating record from Add Mating."}</div>
             </div>
         `;
         return;
@@ -133,6 +215,7 @@ function renderSection(section, records) {
 }
 
 function renderMatingCard(record) {
+    const isExpanded = expandedMatingIds.has(record.mating_id);
     const sowLabel = formatAnimalLabel(record.sow_tag_number, record.sow_pig_id, "Unknown Sow");
     const boarLabel = formatAnimalLabel(record.boar_tag_number, record.boar_pig_id, "Unknown Boar");
     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
@@ -142,41 +225,30 @@ function renderMatingCard(record) {
         : "-";
 
     return `
-        <div class="history-item">
+        <div class="history-item mating-card ${isExpanded ? "mating-card-expanded" : ""}">
           <div class="history-item-top">
             <div>
               <div class="history-item-date">${sowLabel} x ${boarLabel}</div>
               <div class="pig-list-meta">Mating ID: ${escapeHtml(record.mating_id || "-")}</div>
             </div>
-            <div class="history-item-weight ${record.action_class}">${escapeHtml(record.action_text)}</div>
+            <div class="mating-card-actions">
+              <div class="history-item-weight ${record.action_class}">${escapeHtml(record.action_text)}</div>
+              <button
+                type="button"
+                class="mating-toggle-button"
+                data-mating-toggle="${escapeHtml(record.mating_id || "")}"
+                aria-expanded="${isExpanded ? "true" : "false"}"
+              >
+                ${isExpanded ? "Hide details ▲" : "Show details ▼"}
+              </button>
+            </div>
           </div>
 
-          <div class="history-item-grid">
+          <div class="history-item-grid mating-card-compact">
             <div>
               <div class="history-label">Sow</div>
               <div class="history-value">${renderPigLink(record.sow_pig_id, record.sow_tag_number)}</div>
               <div class="pig-list-meta">Pen: ${escapeHtml(sowPen)}</div>
-            </div>
-            <div>
-              <div class="history-label">Boar</div>
-              <div class="history-value">${renderPigLink(record.boar_pig_id, record.boar_tag_number) || "-"}</div>
-              <div class="pig-list-meta">Pen: ${escapeHtml(boarPen)}</div>
-            </div>
-            <div>
-              <div class="history-label">Mating Date</div>
-              <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
-            </div>
-            <div>
-              <div class="history-label">Days Since Mating</div>
-              <div class="history-value">${escapeHtml(record.days_since_mating || "-")}</div>
-            </div>
-            <div>
-              <div class="history-label">Expected Check</div>
-              <div class="history-value ${record.is_overdue_check === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_pregnancy_check_date || "-")}</div>
-            </div>
-            <div>
-              <div class="history-label">Pregnancy Result</div>
-              <div class="history-value">${escapeHtml(record.pregnancy_check_result || "-")}</div>
             </div>
             <div>
               <div class="history-label">Expected Farrowing</div>
@@ -186,6 +258,43 @@ function renderMatingCard(record) {
               <div class="history-label">Status / Outcome</div>
               <div class="history-value">${escapeHtml(record.mating_status || "-")} / ${escapeHtml(record.outcome || "-")}</div>
             </div>
+          </div>
+
+          <div class="mating-card-details ${isExpanded ? "" : "hidden"}">
+            <div class="history-item-grid">
+              <div>
+                <div class="history-label">Boar</div>
+                <div class="history-value">${renderPigLink(record.boar_pig_id, record.boar_tag_number) || "-"}</div>
+                <div class="pig-list-meta">Pen: ${escapeHtml(boarPen)}</div>
+              </div>
+              <div>
+                <div class="history-label">Mating Date</div>
+                <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
+              </div>
+              <div>
+                <div class="history-label">Days Since Mating</div>
+                <div class="history-value">${escapeHtml(record.days_since_mating || "-")}</div>
+              </div>
+              <div>
+                <div class="history-label">Expected Check</div>
+                <div class="history-value ${record.is_overdue_check === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_pregnancy_check_date || "-")}</div>
+              </div>
+              <div>
+                <div class="history-label">Pregnancy Result</div>
+                <div class="history-value">${escapeHtml(record.pregnancy_check_result || "-")}</div>
+              </div>
+              <div>
+                <div class="history-label">Method</div>
+                <div class="history-value">${escapeHtml(record.mating_method || "-")}</div>
+              </div>
+              <div>
+                <div class="history-label">Exposure Group</div>
+                <div class="history-value">${escapeHtml(record.exposure_group || "-")}</div>
+              </div>
+              <div>
+                <div class="history-label">Actual Farrowing</div>
+                <div class="history-value">${escapeHtml(record.actual_farrowing_date || "-")}</div>
+              </div>
             <div>
               <div class="history-label">Linked Litter</div>
               <div class="history-value">${litterLink}</div>
@@ -194,19 +303,20 @@ function renderMatingCard(record) {
               <div class="history-label">Open</div>
               <div class="history-value ${record.is_open === "Yes" ? "good-text" : "neutral-text"}">${escapeHtml(record.is_open || "-")}</div>
             </div>
-          </div>
-
-          <div class="history-notes">
-            <div class="history-label">Movement Guidance</div>
-            <div>${escapeHtml(buildMovementGuidance(record, sowPen))}</div>
-          </div>
-
-          ${record.service_notes ? `
-            <div class="history-notes">
-              <div class="history-label">Notes</div>
-              <div>${escapeHtml(record.service_notes)}</div>
             </div>
-          ` : ""}
+
+            <div class="history-notes">
+              <div class="history-label">Movement Guidance</div>
+              <div>${escapeHtml(buildMovementGuidance(record, sowPen))}</div>
+            </div>
+
+            ${record.service_notes ? `
+              <div class="history-notes">
+                <div class="history-label">Notes</div>
+                <div>${escapeHtml(record.service_notes)}</div>
+              </div>
+            ` : ""}
+          </div>
         </div>
     `;
 }
@@ -302,6 +412,31 @@ function countSections(records) {
         counts[section.id] = records.filter(record => record.action_section === section.id).length;
         return counts;
     }, {});
+}
+
+function getVisibleRecords() {
+    if (!selectedSowId) return allMatingRecords;
+
+    return allMatingRecords.filter(record => record.sow_pig_id === selectedSowId);
+}
+
+function getSowOptions(records) {
+    const sowMap = new Map();
+
+    records.forEach(record => {
+        if (!record.sow_pig_id) return;
+
+        const label = record.sow_tag_number
+            ? `${record.sow_tag_number} (${record.sow_pig_id})`
+            : record.sow_pig_id;
+
+        sowMap.set(record.sow_pig_id, {
+            sow_pig_id: record.sow_pig_id,
+            label
+        });
+    });
+
+    return Array.from(sowMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function compareByActionDate(a, b) {

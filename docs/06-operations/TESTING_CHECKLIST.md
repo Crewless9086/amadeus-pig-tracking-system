@@ -209,10 +209,13 @@ Test steps:
 4. Confirm records near farrowing appear under `Move Soon / Prepare`.
 5. Confirm records near the pregnancy-check window appear under `Upcoming Pregnancy Checks`.
 6. Confirm sow and boar tags, pig IDs, current pen values, mating date, expected check date, pregnancy result, expected farrowing date, status/outcome, and linked litter values display where available.
-7. Confirm sow and boar links open the correct `/pig/<pig_id>` pages.
-8. Confirm linked litter links open `/litter/<litter_id>`.
-9. Confirm `/master/add-mating` still works unchanged.
-10. Confirm opening `/matings` does not write to Google Sheets.
+7. Confirm the sow filter under the summary filters the board to the selected sow and `All sows` restores the full list.
+8. Confirm cards are compact by default and each card's details button expands/collapses only that mating.
+9. Confirm the top detail button expands all visible cards, then collapses all visible cards when clicked again.
+10. Confirm sow and boar links open the correct `/pig/<pig_id>` pages.
+11. Confirm linked litter links open `/litter/<litter_id>`.
+12. Confirm `/master/add-mating` still works unchanged.
+13. Confirm opening `/matings` does not write to Google Sheets.
 
 ## Google Sheets Checks
 
