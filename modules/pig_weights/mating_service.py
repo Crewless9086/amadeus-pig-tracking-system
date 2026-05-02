@@ -50,6 +50,7 @@ def _get_pen_lookup():
         lookup[pen_id] = {
             "pen_id": pen_id,
             "pen_name": to_clean_string(row.get("Pen_Name", "")),
+            "pen_type": to_clean_string(row.get("Pen_Type", "")),
         }
 
     return lookup
@@ -66,7 +67,7 @@ def _pen_context(pig_id, pig_lookup, pen_lookup):
     }
 
 
-def _write_movement_if_needed(pig_id: str, current_pen_id: str, target_pen_id: str, move_date, reason: str) -> bool:
+def _write_movement_if_needed(pig_id: str, current_pen_id: str, target_pen_id: str, move_date, reason: str, moved_by: str = "Mating Form") -> bool:
     target_pen_id = to_clean_string(target_pen_id)
     current_pen_id = to_clean_string(current_pen_id)
 
@@ -80,7 +81,7 @@ def _write_movement_if_needed(pig_id: str, current_pen_id: str, target_pen_id: s
         current_pen_id,
         target_pen_id,
         reason,
-        "Mating Form",
+        moved_by,
         "",
         "",
         format_date_for_sheet(move_date),
@@ -370,6 +371,13 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
 
         movement_logged = False
         if target_pen_id:
+            pen_lookup = _get_pen_lookup()
+            target_pen = pen_lookup.get(target_pen_id)
+            if not target_pen:
+                raise ValueError(f"Pen '{target_pen_id}' not found in PEN_REGISTER.")
+            if target_pen.get("pen_type") != "Farrowing":
+                raise ValueError("Target pen must be a Farrowing pen.")
+
             sow_pig_id = to_clean_string(padded_row[header_index["Sow_Pig_ID"]])
             if sow_pig_id:
                 pig_lookup = _get_pig_lookup()
@@ -381,6 +389,7 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
                     target_pen_id=target_pen_id,
                     move_date=datetime.now().date(),
                     reason="Moved to farrowing pen",
+                    moved_by=moved_by,
                 )
 
         message = "Mating updated to Confirmed_Pregnant."
