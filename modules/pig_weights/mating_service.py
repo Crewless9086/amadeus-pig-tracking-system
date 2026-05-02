@@ -17,6 +17,7 @@ from modules.pig_weights.pig_weights_utils import (
 PIG_OVERVIEW_SHEET = "PIG_OVERVIEW"
 MATING_LOG_SHEET = "MATING_LOG"
 MATING_OVERVIEW_SHEET = "MATING_OVERVIEW"
+PEN_REGISTER_SHEET = "PEN_REGISTER"
 
 
 def generate_mating_id():
@@ -33,6 +34,34 @@ def _get_pig_lookup():
             lookup[pig_id] = row
 
     return lookup
+
+
+def _get_pen_lookup():
+    rows = get_all_records(PEN_REGISTER_SHEET)
+    lookup = {}
+
+    for row in rows:
+        pen_id = to_clean_string(row.get("Pen_ID", ""))
+        if not pen_id:
+            continue
+
+        lookup[pen_id] = {
+            "pen_id": pen_id,
+            "pen_name": to_clean_string(row.get("Pen_Name", "")),
+        }
+
+    return lookup
+
+
+def _pen_context(pig_id, pig_lookup, pen_lookup):
+    pig = pig_lookup.get(to_clean_string(pig_id), {})
+    pen_id = to_clean_string(pig.get("Current_Pen_ID", ""))
+    pen = pen_lookup.get(pen_id, {})
+
+    return {
+        "current_pen_id": pen_id,
+        "current_pen_name": to_clean_string(pen.get("pen_name", "")),
+    }
 
 
 def get_breeding_options():
@@ -77,6 +106,8 @@ def get_breeding_options():
 
 def get_mating_overview():
     rows = get_all_records(MATING_OVERVIEW_SHEET)
+    pig_lookup = _get_pig_lookup()
+    pen_lookup = _get_pen_lookup()
 
     records = []
     for row in rows:
@@ -84,12 +115,21 @@ def get_mating_overview():
         if not mating_id:
             continue
 
+        sow_pig_id = to_clean_string(row.get("Sow_Pig_ID", ""))
+        boar_pig_id = to_clean_string(row.get("Boar_Pig_ID", ""))
+        sow_pen = _pen_context(sow_pig_id, pig_lookup, pen_lookup)
+        boar_pen = _pen_context(boar_pig_id, pig_lookup, pen_lookup)
+
         record = {
             "mating_id": mating_id,
-            "sow_pig_id": to_clean_string(row.get("Sow_Pig_ID", "")),
+            "sow_pig_id": sow_pig_id,
             "sow_tag_number": to_clean_string(row.get("Sow_Tag_Number", "")),
-            "boar_pig_id": to_clean_string(row.get("Boar_Pig_ID", "")),
+            "sow_current_pen_id": sow_pen["current_pen_id"],
+            "sow_current_pen_name": sow_pen["current_pen_name"],
+            "boar_pig_id": boar_pig_id,
             "boar_tag_number": to_clean_string(row.get("Boar_Tag_Number", "")),
+            "boar_current_pen_id": boar_pen["current_pen_id"],
+            "boar_current_pen_name": boar_pen["current_pen_name"],
             "mating_date": format_date_for_json(row.get("Mating_Date", "")),
             "mating_method": to_clean_string(row.get("Mating_Method", "")),
             "exposure_group": to_clean_string(row.get("Exposure_Group", "")),

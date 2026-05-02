@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Matings / Breeding Board</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Matings / Breeding Board</h1>
+          <p>Read-only view of open matings, overdue checks, farrowing dates, and pen context.</p>
+        </div>
+        <div class="detail-actions compact-actions">
+          <a href="/" class="button-link button-link-secondary">Dashboard</a>
+          <a href="/master/add-mating" class="button-link">Add Mating</a>
+        </div>
+      </div>
+
+      <div class="info-grid" id="mating_summary"></div>
+
+      <div id="matings_message" class="message-box hidden"></div>
+
+      <div id="matings_board" class="history-list"></div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/matings.js') }}"></script>
+</body>
+</html>

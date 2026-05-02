@@ -34,6 +34,11 @@ def orders_page():
     return render_template("orders.html")
 
 
+@app.route("/matings")
+def matings_page():
+    return render_template("matings.html")
+
+
 @app.route("/orders/new")
 def add_order_page():
     return render_template("add-order.html")

@@ -1,0 +1,363 @@
+document.addEventListener("DOMContentLoaded", function () {
+    loadMatingBoard();
+});
+
+const SECTION_DEFINITIONS = [
+    {
+        id: "needs_action",
+        title: "Needs Action Now",
+        description: "Overdue pregnancy checks, overdue farrowing, or records needing a decision."
+    },
+    {
+        id: "move_soon",
+        title: "Move Soon / Prepare",
+        description: "Open or pregnant sows approaching expected farrowing."
+    },
+    {
+        id: "check_soon",
+        title: "Upcoming Pregnancy Checks",
+        description: "Open matings approaching the pregnancy check window."
+    },
+    {
+        id: "open",
+        title: "All Open Matings",
+        description: "Other active breeding records still in progress."
+    },
+    {
+        id: "closed",
+        title: "Closed / Farrowed",
+        description: "Completed, not pregnant, or linked litter records."
+    }
+];
+
+async function loadMatingBoard() {
+    const messageBox = document.getElementById("matings_message");
+    const board = document.getElementById("matings_board");
+    const summary = document.getElementById("mating_summary");
+
+    try {
+        const response = await fetch("/api/pig-weights/matings");
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error("Failed to load mating records.");
+        }
+
+        const records = (data.records || []).map(record => {
+            const classification = classifyMating(record);
+            return {
+                ...record,
+                action_section: classification.section,
+                action_text: classification.actionText,
+                action_class: classification.actionClass,
+                sort_date: classification.sortDate
+            };
+        });
+
+        renderSummary(summary, records);
+        renderBoard(board, records);
+    } catch (error) {
+        console.error("Matings load error:", error);
+        messageBox.classList.remove("hidden", "message-success", "message-error");
+        messageBox.classList.add("message-error");
+        messageBox.textContent = "Something went wrong while loading the breeding board.";
+        board.innerHTML = "";
+        summary.innerHTML = "";
+    }
+}
+
+function renderSummary(container, records) {
+    const counts = countSections(records);
+    const openCount = records.filter(record => record.is_open === "Yes").length;
+
+    container.innerHTML = `
+        <div class="info-card">
+          <div class="info-title">Needs Action</div>
+          <div class="info-value ${counts.needs_action > 0 ? "bad-text" : "good-text"}">${counts.needs_action}</div>
+        </div>
+        <div class="info-card">
+          <div class="info-title">Move Soon / Prepare</div>
+          <div class="info-value ${counts.move_soon > 0 ? "neutral-text" : "good-text"}">${counts.move_soon}</div>
+        </div>
+        <div class="info-card">
+          <div class="info-title">Upcoming Checks</div>
+          <div class="info-value">${counts.check_soon}</div>
+        </div>
+        <div class="info-card">
+          <div class="info-title">Open Matings</div>
+          <div class="info-value">${openCount}</div>
+        </div>
+    `;
+}
+
+function renderBoard(container, records) {
+    if (records.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+              <div>No mating records yet.</div>
+              <div>Create the first mating record from Add Mating.</div>
+            </div>
+        `;
+        return;
+    }
+
+    const sections = SECTION_DEFINITIONS.map(section => {
+        const sectionRecords = records
+            .filter(record => record.action_section === section.id)
+            .sort(compareByActionDate);
+
+        return renderSection(section, sectionRecords);
+    });
+
+    container.innerHTML = sections.join("");
+}
+
+function renderSection(section, records) {
+    const cards = records.length > 0
+        ? records.map(renderMatingCard).join("")
+        : `
+            <div class="empty-state">
+              <div>No records in this section.</div>
+            </div>
+        `;
+
+    return `
+        <section class="history-list">
+          <div class="page-header" style="margin: 8px 0 4px 0;">
+            <h2 style="margin: 0 0 6px 0;">${section.title} (${records.length})</h2>
+            <p>${section.description}</p>
+          </div>
+          ${cards}
+        </section>
+    `;
+}
+
+function renderMatingCard(record) {
+    const sowLabel = formatAnimalLabel(record.sow_tag_number, record.sow_pig_id, "Unknown Sow");
+    const boarLabel = formatAnimalLabel(record.boar_tag_number, record.boar_pig_id, "Unknown Boar");
+    const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
+    const boarPen = formatPen(record.boar_current_pen_name, record.boar_current_pen_id);
+    const litterLink = record.linked_litter_id
+        ? `<a class="detail-link" href="/litter/${encodeURIComponent(record.linked_litter_id)}">${escapeHtml(record.linked_litter_id)}</a>`
+        : "-";
+
+    return `
+        <div class="history-item">
+          <div class="history-item-top">
+            <div>
+              <div class="history-item-date">${sowLabel} x ${boarLabel}</div>
+              <div class="pig-list-meta">Mating ID: ${escapeHtml(record.mating_id || "-")}</div>
+            </div>
+            <div class="history-item-weight ${record.action_class}">${escapeHtml(record.action_text)}</div>
+          </div>
+
+          <div class="history-item-grid">
+            <div>
+              <div class="history-label">Sow</div>
+              <div class="history-value">${renderPigLink(record.sow_pig_id, record.sow_tag_number)}</div>
+              <div class="pig-list-meta">Pen: ${escapeHtml(sowPen)}</div>
+            </div>
+            <div>
+              <div class="history-label">Boar</div>
+              <div class="history-value">${renderPigLink(record.boar_pig_id, record.boar_tag_number) || "-"}</div>
+              <div class="pig-list-meta">Pen: ${escapeHtml(boarPen)}</div>
+            </div>
+            <div>
+              <div class="history-label">Mating Date</div>
+              <div class="history-value">${escapeHtml(record.mating_date || "-")}</div>
+            </div>
+            <div>
+              <div class="history-label">Days Since Mating</div>
+              <div class="history-value">${escapeHtml(record.days_since_mating || "-")}</div>
+            </div>
+            <div>
+              <div class="history-label">Expected Check</div>
+              <div class="history-value ${record.is_overdue_check === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_pregnancy_check_date || "-")}</div>
+            </div>
+            <div>
+              <div class="history-label">Pregnancy Result</div>
+              <div class="history-value">${escapeHtml(record.pregnancy_check_result || "-")}</div>
+            </div>
+            <div>
+              <div class="history-label">Expected Farrowing</div>
+              <div class="history-value ${record.is_overdue_farrowing === "Yes" ? "bad-text" : "neutral-text"}">${escapeHtml(record.expected_farrowing_date || "-")}</div>
+            </div>
+            <div>
+              <div class="history-label">Status / Outcome</div>
+              <div class="history-value">${escapeHtml(record.mating_status || "-")} / ${escapeHtml(record.outcome || "-")}</div>
+            </div>
+            <div>
+              <div class="history-label">Linked Litter</div>
+              <div class="history-value">${litterLink}</div>
+            </div>
+            <div>
+              <div class="history-label">Open</div>
+              <div class="history-value ${record.is_open === "Yes" ? "good-text" : "neutral-text"}">${escapeHtml(record.is_open || "-")}</div>
+            </div>
+          </div>
+
+          <div class="history-notes">
+            <div class="history-label">Movement Guidance</div>
+            <div>${escapeHtml(buildMovementGuidance(record, sowPen))}</div>
+          </div>
+
+          ${record.service_notes ? `
+            <div class="history-notes">
+              <div class="history-label">Notes</div>
+              <div>${escapeHtml(record.service_notes)}</div>
+            </div>
+          ` : ""}
+        </div>
+    `;
+}
+
+function classifyMating(record) {
+    const isClosed = record.is_open === "No" || Boolean(record.linked_litter_id);
+    const expectedFarrowing = parseDate(record.expected_farrowing_date);
+    const expectedCheck = parseDate(record.expected_pregnancy_check_date);
+    const checkResult = String(record.pregnancy_check_result || "").toLowerCase();
+    const today = startOfDay(new Date());
+    const daysToFarrowing = daysBetween(today, expectedFarrowing);
+    const daysToCheck = daysBetween(today, expectedCheck);
+
+    if (record.is_overdue_farrowing === "Yes") {
+        return {
+            section: "needs_action",
+            actionText: "Overdue farrowing",
+            actionClass: "bad-text",
+            sortDate: expectedFarrowing
+        };
+    }
+
+    if (record.is_overdue_check === "Yes") {
+        return {
+            section: "needs_action",
+            actionText: "Check pregnancy",
+            actionClass: "bad-text",
+            sortDate: expectedCheck
+        };
+    }
+
+    if (isClosed) {
+        return {
+            section: "closed",
+            actionText: record.linked_litter_id ? "Litter linked" : "Closed",
+            actionClass: "neutral-text",
+            sortDate: expectedFarrowing || parseDate(record.mating_date)
+        };
+    }
+
+    if (expectedFarrowing && daysToFarrowing !== null && daysToFarrowing >= 0 && daysToFarrowing <= 14) {
+        return {
+            section: "move_soon",
+            actionText: "Prepare farrowing pen",
+            actionClass: "neutral-text",
+            sortDate: expectedFarrowing
+        };
+    }
+
+    if (expectedCheck && daysToCheck !== null && daysToCheck >= 0 && daysToCheck <= 7 && (!checkResult || checkResult === "pending")) {
+        return {
+            section: "check_soon",
+            actionText: "Pregnancy check soon",
+            actionClass: "neutral-text",
+            sortDate: expectedCheck
+        };
+    }
+
+    return {
+        section: "open",
+        actionText: "No movement needed yet",
+        actionClass: "good-text",
+        sortDate: expectedCheck || expectedFarrowing || parseDate(record.mating_date)
+    };
+}
+
+function buildMovementGuidance(record, sowPen) {
+    if (record.is_overdue_farrowing === "Yes") {
+        return `Overdue farrowing. Check sow and record the litter if she has farrowed. Current sow pen: ${sowPen}.`;
+    }
+
+    if (record.is_overdue_check === "Yes") {
+        return `Pregnancy check is overdue. Check result before planning farrowing movement. Current sow pen: ${sowPen}.`;
+    }
+
+    if (record.action_section === "move_soon") {
+        return `Prepare farrowing pen. Expected farrowing date: ${record.expected_farrowing_date || "unknown"}. Current sow pen: ${sowPen}.`;
+    }
+
+    if (record.action_section === "check_soon") {
+        return `Pregnancy check is coming up on ${record.expected_pregnancy_check_date || "the expected check date"}.`;
+    }
+
+    if (record.linked_litter_id) {
+        return `Litter ${record.linked_litter_id} is linked. No movement action shown here.`;
+    }
+
+    return `Review only. Sow is currently in ${sowPen}.`;
+}
+
+function countSections(records) {
+    return SECTION_DEFINITIONS.reduce((counts, section) => {
+        counts[section.id] = records.filter(record => record.action_section === section.id).length;
+        return counts;
+    }, {});
+}
+
+function compareByActionDate(a, b) {
+    const aDate = a.sort_date ? a.sort_date.getTime() : Number.MAX_SAFE_INTEGER;
+    const bDate = b.sort_date ? b.sort_date.getTime() : Number.MAX_SAFE_INTEGER;
+
+    if (aDate !== bDate) return aDate - bDate;
+
+    return String(a.sow_tag_number || a.sow_pig_id || "").localeCompare(String(b.sow_tag_number || b.sow_pig_id || ""));
+}
+
+function parseDate(value) {
+    if (!value) return null;
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+
+    return startOfDay(parsed);
+}
+
+function startOfDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function daysBetween(start, end) {
+    if (!start || !end) return null;
+    return Math.round((end.getTime() - start.getTime()) / 86400000);
+}
+
+function formatAnimalLabel(tagNumber, pigId, fallback) {
+    const tag = tagNumber || "";
+    const id = pigId || "";
+
+    if (tag && id) return `${escapeHtml(tag)} (${escapeHtml(id)})`;
+    if (tag) return escapeHtml(tag);
+    if (id) return escapeHtml(id);
+    return fallback;
+}
+
+function renderPigLink(pigId, tagNumber) {
+    if (!pigId) return "";
+
+    const label = tagNumber || pigId;
+    return `<a class="detail-link" href="/pig/${encodeURIComponent(pigId)}">${escapeHtml(label)}</a>`;
+}
+
+function formatPen(penName, penId) {
+    if (penName && penId) return `${penName} (${penId})`;
+    return penName || penId || "Unknown";
+}
+
+function escapeHtml(value) {
+    return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}

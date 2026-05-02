@@ -197,6 +197,23 @@ After backend behavior is safe, test the app for usability:
 - failed actions show helpful errors
 - app reduces manual work instead of increasing it
 
+## Web App Breeding Board Tests
+
+The `/matings` page is a read-only operational view for mating and movement planning.
+
+Test steps:
+
+1. Open `/matings` and confirm the page loads without errors.
+2. Confirm it reads from `GET /api/pig-weights/matings`.
+3. Confirm overdue pregnancy checks and overdue farrowing records appear under `Needs Action Now`.
+4. Confirm records near farrowing appear under `Move Soon / Prepare`.
+5. Confirm records near the pregnancy-check window appear under `Upcoming Pregnancy Checks`.
+6. Confirm sow and boar tags, pig IDs, current pen values, mating date, expected check date, pregnancy result, expected farrowing date, status/outcome, and linked litter values display where available.
+7. Confirm sow and boar links open the correct `/pig/<pig_id>` pages.
+8. Confirm linked litter links open `/litter/<litter_id>`.
+9. Confirm `/master/add-mating` still works unchanged.
+10. Confirm opening `/matings` does not write to Google Sheets.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

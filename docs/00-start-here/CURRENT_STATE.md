@@ -153,6 +153,7 @@ Preferred follow-up:
 The app must become useful for daily operations. It should help with:
 
 - viewing orders clearly
+- viewing matings in a clear breeding board for pregnancy checks, farrowing preparation, and movement planning
 - understanding reservation status
 - approving/rejecting/cancelling orders safely
 - releasing pigs correctly
