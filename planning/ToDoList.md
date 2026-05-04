@@ -18,6 +18,7 @@ This file is the scratch list for things noticed during build work. Once an item
 - Printable weekly weight sheet / farm printouts page: added under Phase 9.6.
 - Farm operating system integration for Sam, Oom Sakkie, web app, backend, weather, solar, workflows, and sheets: added under Phase 10.
 - Phase 1.4 route/reply preflight review after send-for-approval fixes: completed and documented under Phase 1.4.
+- Web app order detail: approve/reject/reserve parity with backend/workflows: added under Phase 6.
 
 ## Active Scratch Notes
 

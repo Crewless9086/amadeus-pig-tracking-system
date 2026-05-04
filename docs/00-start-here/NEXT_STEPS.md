@@ -176,6 +176,7 @@ Current status:
 - backend `approve_order()` now only allows approval from `Pending_Approval`, preventing Draft, Approved, Cancelled, or Completed orders from being approved through the endpoint
 - backend reject and customer-cancel paths already block Completed orders and cancel/release linked non-cancelled/non-collected lines
 - approval auto-reservation remains documented future behavior and must wait for Phase 1.6
+- lifecycle approve guard live-verified 2026-05-04: Draft cannot be approved via API; `Pending_Approval` approves successfully
 
 ### 1.6 Harden Reserve And Release Behavior
 
@@ -334,6 +335,7 @@ Focus areas:
 - order detail clarity
 - visible line/reservation state
 - clear approve/reject/cancel buttons
+- order detail actions must match backend rules: show approve/reject when `Order_Status = Pending_Approval`, reserve/release when appropriate; avoid forcing ops through OOM SAKKIE workflows when parity with API is intended
 - safe release/reserve controls
 - useful logs/history
 - clear success/failure messages
@@ -478,11 +480,12 @@ Recently completed:
 - Phase 1.4 send_for_approval happy path — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write live-verified 2026-04-30
 - Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY; live re-verification passed 2026-04-30
 - Phase 1.4 approval preflight and backend `400` regressions — fixed and live re-tested 2026-05-04; missing payment method now asks Cash/EFT without backend call; backend guard failures preserve Draft status and return a customer-safe missing-field reply
+- Phase 1.5 lifecycle guards — approve endpoint restricted to `Pending_Approval`; live-verified Draft vs Pending_Approval approve paths 2026-05-04
 
 Recommended next:
 
-1. **Phase 1.5** — Broader lifecycle guards and customer-safe backend error handling
-2. **Phase 1.6** — Harden reserve/release behavior
+1. **Phase 1.6** — Harden reserve/release behavior (prerequisite before Phase 1.8 approval auto-reservation)
+2. **Phase 6** — Web app order detail parity: expose approve/reject/reserve/release per backend lifecycle so ops matches workflow capability
 3. **Phase 1.7** — Slim Sales Agent reply payload
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

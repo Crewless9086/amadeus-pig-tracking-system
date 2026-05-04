@@ -157,7 +157,7 @@ The app must become useful for daily operations. It should help with:
 - viewing orders clearly
 - viewing matings in a clear breeding board for pregnancy checks, farrowing preparation, and movement planning
 - understanding reservation status
-- approving/rejecting/cancelling orders safely
+- approving/rejecting/cancelling orders safely, with order detail actions visible when `Pending_Approval` (parity with workflows and backend rules)
 - releasing pigs correctly
 - showing logs/history
 - producing practical farm printouts, starting with a pre-weighing weekly weight sheet that has blank capture columns and can be printed from a phone or laptop
@@ -167,4 +167,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. The immediate check is Phase 1.4 Test C after importing the updated `1.2` workflow. After that, continue with Phase 1.5 lifecycle guards, Phase 1.6 reserve/release hardening, and the planned outbound approval/rejection notification flow.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. Phase 1.4 and Phase 1.5 approve-guard regressions are live-verified; next build focus is Phase 1.6 reserve/release hardening (then Phase 1.8 auto-reservation), with Phase 6 web-app order-detail parity tracked alongside usability work.
