@@ -399,6 +399,7 @@ Required outcome:
 
 - after weights are entered, allow the user to generate a weekly weight report
 - include summaries, grouped totals, pen counts, and useful decision-making commentary
+- this covers post-entry reporting only; pre-weighing handwritten capture is the separate Phase 9.6 printable sheet
 
 ### 9.5 Dashboard Sold This Month Audit
 
@@ -406,6 +407,25 @@ Required outcome:
 
 - verify how `SOLD THIS MONTH` is calculated
 - reconcile the April mismatch where the dashboard showed 20 but the expected sold count was 40
+
+### 9.6 Printable Farm Operation Sheets
+
+Required outcome:
+
+- add a web-app page for printable farm operation sheets, likely `/print-sheets`
+- first template: weekly weight sheet used before animals are weighed
+- allow the user to choose which animals appear on the sheet: all active pigs, by pen/camp, by purpose, for-sale animals, or grow-out/sale animals
+- printed sheet must be human-readable for farm workers and must hide internal IDs such as `Pig_ID`
+- include: `Tag Number`, `Vorige Gewig Datum`, `Vorige Gewig`, blank `Nuwe Gewig`, current `Kamp`, blank `Nuwe Kamp`, and blank `Notas`
+- include total count and a blank or user-selected weighing date at the top of the sheet
+- default sorting should support the real farm workflow, preferably grouped by current pen/camp and then tag number
+- support laptop and phone browser printing with print-friendly CSS, with save-to-PDF as a natural browser option
+- read from existing system truth only during print generation; do not write to Google Sheets when creating a printable sheet
+- keep this separate from Phase 9.4: printable sheets are for handwritten field capture before weights are entered, while weight reports summarize data after weights are entered
+
+Follow-up idea:
+
+- after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
 
 ## Current Choice Point
 

@@ -158,6 +158,7 @@ The app must become useful for daily operations. It should help with:
 - approving/rejecting/cancelling orders safely
 - releasing pigs correctly
 - showing logs/history
+- producing practical farm printouts, starting with a pre-weighing weekly weight sheet that has blank capture columns and can be printed from a phone or laptop
 - reducing manual debugging work
 
 Do not focus on app polish before order behavior is correct.
