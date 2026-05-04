@@ -427,6 +427,27 @@ Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
 
+## Phase 10: Farm Operating System Integration
+
+Goal: bring Sam, Oom Sakkie, the web app, backend modules, weather logging, Synsynk solar data, n8n workflows, and Google Sheets into one documented operating-system structure.
+
+Timing rule:
+
+- do not start this umbrella integration until Sam/order behavior is stable enough that expanding the system will not hide existing sales bugs
+
+Required outcome:
+
+- document every major workflow and platform under one system map
+- define ownership for each module: sales, farm operations, pig records, worker assistant, weather, solar, reporting, notifications, and admin web app
+- create a workflow register showing trigger, purpose, inputs, outputs, reads, writes, dependencies, and risk level for each n8n workflow
+- create data contracts for information passed between workflows, backend endpoints, web app pages, Google Sheets, and external systems
+- set up Oom Sakkie documentation in the same style as Sam: workflow map, data flow, node responsibilities, protected logic, and input/output contracts
+- ensure important operational writes go through backend-controlled logic where possible instead of direct workflow-to-sheet writes
+- keep AI agents responsible for interpretation and wording, not hidden data ownership or business-rule enforcement
+- document backend module boundaries for orders, pig operations, farm worker tasks, weather logging, solar data, reporting, and notifications
+- add logging and audit expectations for customer actions, worker actions, web-app actions, backend actions, weather imports, and solar imports
+- make the web app the visible control panel where possible so operators can understand system state without jumping between platforms
+
 ## Current Choice Point
 
 Recently completed:
