@@ -97,8 +97,8 @@ Send for approval from Sam:
 - backend validates draft status, payment method, customer name, collection location, and at least one non-cancelled order line
 - happy path live verification passed on 2026-04-30 with `ORD-2026-377DA3`; order moved to `Pending_Approval`, Chatwoot status updated, and Sam said the order was sent for approval, not approved
 - already-pending regression check passed
-- missing payment method regression failed in live test: `Code - Decide Order Route` correctly blocked `SEND_FOR_APPROVAL` and kept `order_route = REPLY_ONLY`, but `reply_instruction` was empty so Sam incorrectly said the order was sent — fix applied 2026-05-04: approval preflight block now sets `reply_instruction` when `send_for_approval_intent = true` but `sendForApprovalReady = false`; `REPLY_ONLY` block in Sales Agent system message updated to honour `ReplyInstruction` as a hard override; debug fields `debug_approval_preflight_blocked` and `debug_approval_missing_fields` added; re-test required after import
-- backend `400` customer-safe reply regression still needs re-test after importing the latest `1.2`; expected behavior is `backend_success = false`, `backend_error` contains the missing field, and Sam tells the customer what is missing
+- missing payment method regression failed, then was fixed and live re-tested on 2026-05-04: `Code - Decide Order Route` now sets approval preflight `reply_instruction` when `send_for_approval_intent = true` but `sendForApprovalReady = false`; Sam asks for Cash/EFT, backend is not called, and Draft status is preserved
+- backend `400` customer-safe reply regression passed live re-test on 2026-05-04: backend rejected missing `Collection_Location`, `backend_success = false` path returned a safe missing-field reply, and Sam did not say the order was sent
 
 Approve/reject lifecycle direction:
 

@@ -17,9 +17,9 @@ This file is the scratch list for things noticed during build work. Once an item
 - Customer notification flow after human approval/rejection: added under Phase 1.5 and Phase 1.9.
 - Printable weekly weight sheet / farm printouts page: added under Phase 9.6.
 - Farm operating system integration for Sam, Oom Sakkie, web app, backend, weather, solar, workflows, and sheets: added under Phase 10.
+- Phase 1.4 route/reply preflight review after send-for-approval fixes: completed and documented under Phase 1.4.
 
 ## Active Scratch Notes
 
 - Review folder/code structure after order stabilization, especially where large files should be split into clearer modules. Documentation structure is currently stable; implementation structure can be reviewed as a separate refactor pass.
 - Confirm `ORDER_LINES.Unit_Price` is written at line creation time — required gate before Phase 2 quote generation can be built.
-- Re-check `Code - Build Order State`, `Code - Align Order Logic`, and `Code - Decide Order Route` requirements after the Phase 1.4 send-for-approval fixes. Confirm route priority, approval preflight checks, reply instructions, and backend action gates do not work against each other as new routes/actions are added.

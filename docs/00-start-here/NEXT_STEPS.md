@@ -138,13 +138,13 @@ Current status:
 - Phase 1.4 bugfix expanded `send_for_approval_intent` detection to cover natural phrasings such as `send it for approval`, `send this through`, and `submit my order`
 - live verification passed on 2026-04-30 with `ORD-2026-377DA3`: `send_for_approval_intent = true`, `order_route = SEND_FOR_APPROVAL`, `backend_success = true`, `order_status = Pending_Approval`, Chatwoot `order_status = Pending_Approval`, and Sam correctly said the order was sent for approval, not approved
 
-Remaining regression checks:
+Regression checks:
 
-- missing `Payment_Method` should produce a customer-safe reply and no backend status change — **failed in live test**: routing was correct (`order_route = REPLY_ONLY`) but `reply_instruction` was empty so Sam incorrectly said the order was sent; fix applied 2026-05-04 (see fix detail below); re-test required after import
+- missing `Payment_Method` should produce a customer-safe reply and no backend status change — failed in live test, then fixed and live re-tested 2026-05-04: routing stayed `REPLY_ONLY`, `reply_instruction` forced the payment-method question, Sam asked for Cash/EFT, backend was not called, and Draft status was preserved
 - already `Pending_Approval` orders should not be submitted again — passed in live regression
-- backend `400` guard failures should return a customer-safe reply rather than silence — re-test after importing the updated `1.2` workflow with `neverError: true` and `continueOnFail: true` on `HTTP - Send for Approval`
+- backend `400` guard failures should return a customer-safe reply rather than silence — passed in live regression 2026-05-04: backend rejected missing `Collection_Location`, Sam asked for the collection location, and did not claim the order was sent
 
-Phase 1.4 fix applied 2026-05-04 — approval preflight block:
+Phase 1.4 fix applied and live re-tested 2026-05-04 — approval preflight block:
 
 - `Code - Decide Order Route` now detects `send_for_approval_intent = true` with `sendForApprovalReady = false` and sets `reply_instruction` before the item reaches the Sales Agent
 - missing-fields list is built from local checks; currently checks `payment_method`; future checks (no draft, wrong status) can be added in the same block
@@ -153,6 +153,7 @@ Phase 1.4 fix applied 2026-05-04 — approval preflight block:
 - `REPLY_ONLY` block in Sales Agent system message updated to honour `ReplyInstruction` as a hard override (mirrors the same rule already in the `SEND_FOR_APPROVAL` block)
 - debug fields added: `debug_approval_preflight_blocked`, `debug_approval_missing_fields`
 - no new Switch branches added
+- backend `400` failures on the `SEND_FOR_APPROVAL` path are handled through `backend_success = false`, `backend_error`, and `reply_instruction`, preserving `Draft` status and producing a customer-safe reply
 
 ### 1.5 Lifecycle Guards
 
@@ -468,12 +469,12 @@ Recently completed:
 - Phase 1.3 payment method capture — backend, `1.0`, `1.2`, `1.1`, Chatwoot mirror, and lock guard live-verified 2026-04-29
 - Phase 1.4 send_for_approval happy path — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write live-verified 2026-04-30
 - Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY; live re-verification passed 2026-04-30
-- Phase 1.4 approval preflight fix 2026-05-04 — missing payment method regression failed in live test; approval preflight block added to `Code - Decide Order Route`; `reply_instruction` now set when intent is blocked; `REPLY_ONLY` Sales Agent block updated to honour `ReplyInstruction`; requires re-test after import
+- Phase 1.4 approval preflight and backend `400` regressions — fixed and live re-tested 2026-05-04; missing payment method now asks Cash/EFT without backend call; backend guard failures preserve Draft status and return a customer-safe missing-field reply
 
 Recommended next:
 
-1. **Phase 1.4 re-test** — import updated `1.0` and re-run missing payment method regression; confirm Sam asks "Cash or EFT?" and does not say the order was sent; then test backend `400` customer-safe reply after importing updated `1.2`
-2. **Phase 1.5** — Broader lifecycle guards and customer-safe backend error handling
-3. **Phase 1.6** — Harden reserve/release behavior
+1. **Phase 1.5** — Broader lifecycle guards and customer-safe backend error handling
+2. **Phase 1.6** — Harden reserve/release behavior
+3. **Phase 1.7** — Slim Sales Agent reply payload
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
