@@ -6,7 +6,7 @@ This file is the scratch list for things noticed during build work. Once an item
 - Customer cancel through Sam / `1.2`: completed and live-verified under Phase 1.2.
 - First-turn draft creation must sync order lines immediately: completed and live-verified under Phase 1.2c.
 - Web app background progress/status messaging: added under Phase 6.
-- Reserve Order Lines failures on larger orders: added under Phase 1.6.
+- Reserve Order Lines failures on larger orders: **completed** — Phase 1.6 hardened + verified; order-detail success copy added.
 - New litter `Purpose = Unknown` and weaning reminder: added under Phase 9.1.
 - Pig dropdown tag/pen display and three-digit tag formatting: added under Phase 9.2.
 - Weight form current pen helper text: added under Phase 9.3.

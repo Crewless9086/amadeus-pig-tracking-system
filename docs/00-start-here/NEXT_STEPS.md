@@ -190,12 +190,13 @@ Required outcome:
 - backend/web app should return a clear success/failure summary for each line
 - if approval auto-reserves lines, reserve behavior must be hardened before or as part of that change
 
-Current status — **live-verified** (operator checklist 2026-05-05):
+Current status — **Complete and live-verified** (backend + sheets 2026-05-05; order-detail banner messaging 2026-05-06):
 
 - `reserve_order_lines` refactored: eligibility checks skip `Cancelled`/`Collected` lines, lines with no `Pig_ID`, and noop already-reserved lines; all ORDER_LINES mutations applied in one `batch_update_rows_by_id` call; response includes `line_results` (per-line action/reason), `changed_count` (rows written), and `warning` when some lines were skipped; `success = false` + HTTP 422 when nothing could be reserved
 - `release_order_lines` refactored: only clears `Reserved_Status` where `Reserved`; only reverts `Line_Status` from `Reserved` to `Draft` for active (non-Cancelled) lines; `Collected` lines are skipped; idempotent (second call returns all noops); `Reserved_Pig_Count` set from actual post-release count via `_count_reserved_lines`; response includes `line_results` and `changed_count`
 - `order_routes.py`: reserve route returns HTTP 422 when `success = false`; `errors` field present for UI consumption
 - Docs updated: `API_STRUCTURE.md`, `ORDER_LOGIC.md`
+- **Web app** (`static/js/orderDetail.js`): reserve/release success copy uses API `result.message` plus explicit `changed_count` (and `warning` when present). Operator re-check: first reserve shows row count + skip warning; second reserve shows “already reserved” + zero rows + same warning; first release shows row count; second release shows “no active reservations” + zero rows.
 
 Verification notes (six tests):
 
@@ -215,11 +216,13 @@ Manual verification checklist:
 - [x] Order with no eligible lines (all cancelled) → reserve → `success = false`; HTTP 422; `errors` present
 - [x] `SALES_AVAILABILITY` recovers reserved pigs after release
 
-Web app closure (Phase 6-style polish, done alongside 1.6 sign-off):
+Web app closure (Phase 6-style polish, shipped with 1.6 sign-off — **verified 2026-05-06**):
 
-- Order detail reserve/release successes use the API `result.message`, then append an explicit sentence for `changed_count` (`0` = no ORDER_LINES rows written; `N` = how many rows were updated).
+- Order detail reserve/release successes use the API `result.message`, then append an explicit sentence for `changed_count` (`0` = no ORDER_LINES rows written; `N` = how many rows were updated). `warning` is appended after that when the API returns it.
 
 ### 1.7 Slim Sales Agent Reply Payload
+
+Current status: **next implementation focus** (Phase 1.6 closed).
 
 Required outcome:
 
@@ -363,6 +366,7 @@ Focus areas:
 - order list clarity
 - order detail clarity
 - visible line/reservation state
+- reserve/release success feedback on order detail is done (API `message` + `changed_count` + `warning`); still need button visibility parity for approve/reject and other actions
 - clear approve/reject/cancel buttons
 - order detail actions must match backend rules: show approve/reject when `Order_Status = Pending_Approval`, reserve/release when appropriate; avoid forcing ops through OOM SAKKIE workflows when parity with API is intended
 - safe release/reserve controls
@@ -510,12 +514,12 @@ Recently completed:
 - Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY; live re-verification passed 2026-04-30
 - Phase 1.4 approval preflight and backend `400` regressions — fixed and live re-tested 2026-05-04; missing payment method now asks Cash/EFT without backend call; backend guard failures preserve Draft status and return a customer-safe missing-field reply
 - Phase 1.5 lifecycle guards — Complete And Live-Verified 2026-05-04: `approve_order` only from `Pending_Approval`; payment lock beyond Draft; reject/cancel vs `Completed`; defer auto-reservation (1.8) and outbound notifications (1.9)
-- Phase 1.6 reserve/release hardening — live-verified 2026-05-05: batch reserve/release, `line_results`, skip/warning semantics, idempotent release, ineligible-order 422 path, `SALES_AVAILABILITY` after release
+- Phase 1.6 reserve/release hardening — **complete** 2026-05-05 (backend/sheets); 2026-05-06 (order-detail success banner: API `message` + `changed_count` + idempotent copy for second reserve/release)
 
 Recommended next:
 
-1. **Phase 1.8** (when ready) — Approval auto-reservation now has a hardened reserve path; implement per `NEXT_STEPS` §1.8, or prioritize polish/ops first
-2. **Phase 6** — Web app order detail parity: expose approve/reject/reserve/release per backend lifecycle so ops matches workflow capability
-3. **Phase 1.7** — Slim Sales Agent reply payload
+1. **Phase 1.7** — Slim Sales Agent reply payload (`1.0` workflow export + slim context node before Sales Agent — see §1.7)
+2. **Phase 6** — Web app order detail parity: approve/reject visibility when `Pending_Approval`, and any remaining action alignment with backend
+3. **Phase 1.8** (when scheduled) — Approval auto-reservation; reserve path is hardened and UI surfaces row-level outcome copy
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
