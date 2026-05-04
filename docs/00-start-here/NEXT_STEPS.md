@@ -222,7 +222,7 @@ Web app closure (Phase 6-style polish, shipped with 1.6 sign-off — **verified 
 
 ### 1.7 Slim Sales Agent Reply Payload
 
-Current status: **next implementation focus** (Phase 1.6 closed).
+Current status: **implemented, pending live verification**.
 
 Required outcome:
 
@@ -230,6 +230,16 @@ Required outcome:
 - remove raw Chatwoot webhook data, large debug fields, and sync internals from Sam's prompt
 - keep only customer context, order action, order ID/status, backend success, sync success, slim order state, and reply instruction
 - preserve full diagnostic data in earlier workflow nodes
+
+Implementation (2026-05-04):
+
+- new node `Code - Slim Sales Agent User Context` added at canvas position [4336, -272] in `1.0` workflow
+- all four main input paths (CLARIFY from `Switch - Clarify or Auto`; REPLY_ONLY from `Switch - Route Order Action` output index 7; `Merge - Final Replay Context`; `Merge - Draft Result With Reply Context`) rewired through the new node before reaching `Ai Agent - Sales Agent`
+- node produces `sam_order_state_slim` (whitelisted order_state fields) and `sam_steward_result_compact` (short backend result)
+- Sales Agent `text` prompt updated: `OrderState:` replaced with `OrderStateSummary:` + `StewardCompact:`
+- Sales Agent `systemMessage` updated: OrderState paragraph replaced with OrderStateSummary paragraph; added "never treat OrderStateSummary as raw tool output" rule; CREATE_DRAFT section updated to reference OrderStateSummary
+- workflow JSON validated post-edit (ConvertFrom-Json passed)
+- docs updated: `DATA_FLOW.md` (new §1.0 Sales Agent Input Contract), `README.md` (node 31a, rewired connections)
 
 ### 1.8 Approval Auto-Reservation
 
@@ -516,10 +526,13 @@ Recently completed:
 - Phase 1.5 lifecycle guards — Complete And Live-Verified 2026-05-04: `approve_order` only from `Pending_Approval`; payment lock beyond Draft; reject/cancel vs `Completed`; defer auto-reservation (1.8) and outbound notifications (1.9)
 - Phase 1.6 reserve/release hardening — **complete** 2026-05-05 (backend/sheets); 2026-05-06 (order-detail success banner: API `message` + `changed_count` + idempotent copy for second reserve/release)
 
+Recently added to completed:
+
+- Phase 1.7 slim Sales Agent reply payload — `Code - Slim Sales Agent User Context` node added to `1.0`, all four input paths rewired, Sales Agent prompt updated, docs updated; pending live verification
+
 Recommended next:
 
-1. **Phase 1.7** — Slim Sales Agent reply payload (`1.0` workflow export + slim context node before Sales Agent — see §1.7)
-2. **Phase 6** — Web app order detail parity: approve/reject visibility when `Pending_Approval`, and any remaining action alignment with backend
-3. **Phase 1.8** (when scheduled) — Approval auto-reservation; reserve path is hardened and UI surfaces row-level outcome copy
+1. **Phase 6** — Web app order detail parity: approve/reject visibility when `Pending_Approval`, and any remaining action alignment with backend
+2. **Phase 1.8** (when scheduled) — Approval auto-reservation; reserve path is hardened and UI surfaces row-level outcome copy
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

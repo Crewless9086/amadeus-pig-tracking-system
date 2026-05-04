@@ -59,6 +59,28 @@ Important fields:
 - `notes`
 - `requested_items[]`
 
+## `1.0` Sales Agent Input Contract (Phase 1.7)
+
+`Code - Slim Sales Agent User Context` runs immediately before `Ai Agent - Sales Agent` on all four main input paths. It produces two new fields and spreads the full item so all downstream routing and tool nodes continue to receive the complete payload.
+
+| Field | Source | Purpose |
+| --- | --- | --- |
+| `sam_order_state_slim` | Whitelisted copy of `order_state` | Safe, minimal order context for Sam's prompt. See whitelist below. |
+| `sam_steward_result_compact` | Short summary from `1.2` result fields | Backend action outcome (success, order_id, order_status, message, first error). Only present when a steward action was called. |
+
+`sam_order_state_slim` whitelist:
+
+- `customer_name`, `customer_channel`, `customer_language`, `customer_number`
+- `conversation_id`, `contact_id`
+- `existing_order_id`, `existing_order_status`
+- `order_route`
+- `payment_method` — resolved from `detected_payment_method` first, then `payment_method`; must be `Cash` or `EFT`, otherwise omitted
+- `send_for_approval_intent`, `cancel_pending_action`
+- `requested_items` — each item compacted to `{ key, quantity, category, sex }` only
+- `collection_location`, `notes`
+
+The Sales Agent prompt reads `OrderStateSummary` (from `sam_order_state_slim`) and `StewardCompact` (from `sam_steward_result_compact`) instead of the raw `order_state` object. Raw Chatwoot webhook data, debug fields, and sync internals remain available in earlier nodes but are not injected into Sam's prompt.
+
 ## `1.0` To `1.2` Contract
 
 Discriminator field: `action`.

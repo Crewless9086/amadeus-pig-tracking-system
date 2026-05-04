@@ -805,7 +805,7 @@ return [
 {{$json.decision_mode}} = AUTO
 ?? I feel this node is not this can just follow the now AUTO path as this will end at the same place. This was added to help avoid the removed LLM that messed up a few things. If this stays it does skip many nodes so not sure if this is a cleaner path. But it does feel like it's now redundent becuase we have an CLARIFY path and we have a REPLAY ONLY path later and they feel the same to me now.
 Connects to
-CLARIFY -> Ai Agent -  Sales Agent
+CLARIFY -> Code - Slim Sales Agent User Context
 AUTO -> Code - Build Order State Inputs
 
 18. (AUTO) Code - Build Order State Inputs
@@ -2395,7 +2395,7 @@ Receives two inputs via combineByPosition:
 - Input [1]: from `Code - Store Draft Order Context` with the `1.2` result and created `order_id`
 Fields from [1] override matching fields from [0]. order_id is correctly available after the merge.
 Connected to:
-Ai Agent - Sales Agent
+Code - Slim Sales Agent User Context
 
 Superseded Option A note:
 
@@ -2530,7 +2530,7 @@ Merge - Final Reply Context input 2
 
 31. Merge - Final Reply Context
 Connected to
-Ai Agent - Sales Agent
+Code - Slim Sales Agent User Context
 
 UPDATED HEADERS AND LINES
 28. Code - Build Sync Existing Draft Payload
@@ -2574,6 +2574,15 @@ requested_items = array = {{$json.sync_payload.requested_items}}
 Connected to 
 Merge - Final Reply Context input 2
 
+
+31a. Code - Slim Sales Agent User Context
+Runs immediately before the Sales Agent on all four main input paths (CLARIFY, REPLY_ONLY, Merge - Final Reply Context, Merge - Draft Result With Reply Context).
+Produces two new fields:
+- sam_order_state_slim: a whitelist copy of order_state containing only the fields Sam needs for customer-facing replies: customer_name, customer_channel, customer_language, customer_number, conversation_id, contact_id, existing_order_id, existing_order_status, order_route, payment_method (resolved from detected_payment_method or payment_method), send_for_approval_intent, cancel_pending_action, requested_items (compact summary: key + quantity + category + sex), collection_location, notes.
+- sam_steward_result_compact: a short backend result summary when a steward action was called: backend_success, order_id, order_status, message, errors (first entry only).
+The full item is spread onto the output so all fields needed by downstream routing and tool nodes remain available. Raw Chatwoot webhook data, debug fields, and sync internals are not removed from the item — they are simply no longer passed into the Sam prompt.
+Connected to:
+Ai Agent - Sales Agent
 
 31. (CLARIFY) Ai Agent - Sales Agent
 This agent is used to respond to the client based off all the info provided
