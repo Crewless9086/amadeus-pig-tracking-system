@@ -365,13 +365,25 @@ function setupOrderActions(orderId) {
 
   if (reserveBtn) {
     reserveBtn.addEventListener("click", async function () {
-      await runOrderAction(`/api/orders/${orderId}/reserve`, actionMessage, orderId, "Order lines reserved successfully.");
+      await runOrderAction(
+        `/api/orders/${orderId}/reserve`,
+        actionMessage,
+        orderId,
+        "Order lines reserved successfully.",
+        "reserve",
+      );
     });
   }
 
   if (releaseBtn) {
     releaseBtn.addEventListener("click", async function () {
-      await runOrderAction(`/api/orders/${orderId}/release`, actionMessage, orderId, "Order reservations released successfully.");
+      await runOrderAction(
+        `/api/orders/${orderId}/release`,
+        actionMessage,
+        orderId,
+        "Order reservations released successfully.",
+        "release",
+      );
     });
   }
 
@@ -404,7 +416,7 @@ function setupOrderActions(orderId) {
   }
 }
 
-async function runOrderAction(url, messageBox, orderId, successText) {
+async function runOrderAction(url, messageBox, orderId, successText, reserveReleaseKind) {
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -423,7 +435,25 @@ async function runOrderAction(url, messageBox, orderId, successText) {
     if (response.ok && result.success) {
       messageBox.classList.add("message-success");
 
-      let message = successText;
+      let message =
+        reserveReleaseKind === "reserve" || reserveReleaseKind === "release"
+          ? (result.message || successText || "").trim() || successText
+          : successText;
+
+      if (reserveReleaseKind === "reserve" || reserveReleaseKind === "release") {
+        const cc = result.changed_count;
+        if (typeof cc === "number") {
+          if (cc === 0) {
+            message += /\.\s*$/.test(message)
+              ? " No ORDER_LINES rows were updated (nothing to write)."
+              : ". No ORDER_LINES rows were updated (nothing to write).";
+          } else {
+            message += /\.\s*$/.test(message)
+              ? ` ${cc} order line sheet row${cc !== 1 ? "s were" : " was"} updated.`
+              : `. ${cc} order line sheet row${cc !== 1 ? "s were" : " was"} updated.`;
+          }
+        }
+      }
 
       if (result.warning) {
         message += ` ${result.warning}`;

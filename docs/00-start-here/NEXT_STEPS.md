@@ -200,9 +200,9 @@ Current status — **live-verified** (operator checklist 2026-05-05):
 Verification notes (six tests):
 
 - Mixed lines: reserve showed combined `warning` (terminal skips + no pig); two lines reserved as expected (UI summary: Reserved 2, Draft 1).
-- Second reserve: no visible/UI delta — consistent with all eligible lines already reserved (`noop`, `changed_count = 0`).
+- Second reserve: success message now includes API text plus **explicit `changed_count`** (zero rows updated = idempotent noop is obvious in the banner).
 - Release: success message; lines returned to draft-style summary (e.g. Draft 3; grower count unchanged).
-- Second release: unchanged state — idempotent release.
+- Second release: unchanged sheet state — banner now states **zero rows updated** explicitly (idempotent release).
 - All-ineligible order: customer-safe `errors` message; order header counts remained consistent; HTTP 422 path confirmed.
 - `SALES_AVAILABILITY` correct after release.
 
@@ -214,6 +214,10 @@ Manual verification checklist:
 - [x] Call release again → all noop; `changed_count = 0`; `success = true`; no sheet corruption
 - [x] Order with no eligible lines (all cancelled) → reserve → `success = false`; HTTP 422; `errors` present
 - [x] `SALES_AVAILABILITY` recovers reserved pigs after release
+
+Web app closure (Phase 6-style polish, done alongside 1.6 sign-off):
+
+- Order detail reserve/release successes use the API `result.message`, then append an explicit sentence for `changed_count` (`0` = no ORDER_LINES rows written; `N` = how many rows were updated).
 
 ### 1.7 Slim Sales Agent Reply Payload
 
