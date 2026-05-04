@@ -231,7 +231,7 @@ Required outcome:
 - keep only customer context, order action, order ID/status, backend success, sync success, slim order state, and reply instruction
 - preserve full diagnostic data in earlier workflow nodes
 
-Implementation (2026-05-04):
+Implementation notes:
 
 - new node `Code - Slim Sales Agent User Context` added at canvas position [4336, -272] in `1.0` workflow
 - all four main input paths (CLARIFY from `Switch - Clarify or Auto`; REPLY_ONLY from `Switch - Route Order Action` output index 7; `Merge - Final Replay Context`; `Merge - Draft Result With Reply Context`) rewired through the new node before reaching `Ai Agent - Sales Agent`

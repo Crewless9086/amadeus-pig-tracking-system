@@ -2576,11 +2576,11 @@ Merge - Final Reply Context input 2
 
 
 31a. Code - Slim Sales Agent User Context
-Runs immediately before the Sales Agent on all four main input paths (CLARIFY, REPLY_ONLY, Merge - Final Reply Context, Merge - Draft Result With Reply Context).
+Runs immediately before the Sales Agent on all four main input paths (CLARIFY, Merge - Final Replay Context, Merge - Draft Result With Reply Context, REPLY_ONLY branch of `Switch - Route Order Action`).
 Produces two new fields:
-- sam_order_state_slim: a whitelist copy of order_state containing only the fields Sam needs for customer-facing replies: customer_name, customer_channel, customer_language, customer_number, conversation_id, contact_id, existing_order_id, existing_order_status, order_route, payment_method (resolved from detected_payment_method or payment_method), send_for_approval_intent, cancel_pending_action, requested_items (compact summary: key + quantity + category + sex), collection_location, notes.
-- sam_steward_result_compact: a short backend result summary when a steward action was called: backend_success, order_id, order_status, message, errors (first entry only).
-The full item is spread onto the output so all fields needed by downstream routing and tool nodes remain available. Raw Chatwoot webhook data, debug fields, and sync internals are not removed from the item — they are simply no longer passed into the Sam prompt.
+- `sam_order_state_slim`: whitelist copy of `order_state` — `customer_name`, `customer_language`, `existing_order_id`, `existing_order_status`, `conversation_mode`, `pending_action` (if set), `payment_method` (Cash/EFT only, from detected or header), request fields (`requested_quantity`, `requested_category`, `requested_weight_range`, `requested_sex`, `timing_preference`, `collection_location`), intent flags (`quote_intent`, `order_commitment_intent`, `conversation_commitment_intent`, `cancel_order_intent`, `send_for_approval_intent`, `has_existing_draft` when present), and `requested_items_compact` (max 5 × `{ qty, sex, category, weight_range }`). Order route is **not** duplicated here; Sam still receives **`OrderAction`** from top-level `order_route` in the agent user prompt.
+- `sam_steward_result_compact`: when steward-related fields exist — `success`, truncated `message`, `backend_success`, truncated `backend_error`, and optional `had_errors` + `summary` from `results[]` (sync line outcomes). Top-level `order_id` / `order_status` remain on the item for the template lines `OrderID` / `FinalOrderStatus`.
+The full item is merged onto the output (`Object.assign`) so downstream behavior is unchanged; only the Sales Agent prompt uses the slim summaries instead of `JSON.stringify(order_state)`.
 Connected to:
 Ai Agent - Sales Agent
 

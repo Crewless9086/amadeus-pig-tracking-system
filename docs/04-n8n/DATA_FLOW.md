@@ -66,20 +66,21 @@ Important fields:
 | Field | Source | Purpose |
 | --- | --- | --- |
 | `sam_order_state_slim` | Whitelisted copy of `order_state` | Safe, minimal order context for Sam's prompt. See whitelist below. |
-| `sam_steward_result_compact` | Short summary from `1.2` result fields | Backend action outcome (success, order_id, order_status, message, first error). Only present when a steward action was called. |
+| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), and—if `results[]` exists—`had_errors` plus a short `summary` built from `request_item_key` / `match_status`. Does not duplicate `order_id` / `order_status`; those stay on the top-level item and in the Sales Agent template (`OrderID`, `FinalOrderStatus`). |
 
-`sam_order_state_slim` whitelist:
+`sam_order_state_slim` whitelist (matches `Code - Slim Sales Agent User Context` in `1.0` export):
 
-- `customer_name`, `customer_channel`, `customer_language`, `customer_number`
-- `conversation_id`, `contact_id`
+- `customer_name`, `customer_language`
 - `existing_order_id`, `existing_order_status`
-- `order_route`
-- `payment_method` — resolved from `detected_payment_method` first, then `payment_method`; must be `Cash` or `EFT`, otherwise omitted
-- `send_for_approval_intent`, `cancel_pending_action`
-- `requested_items` — each item compacted to `{ key, quantity, category, sex }` only
-- `collection_location`, `notes`
+- `conversation_mode`, `pending_action` (when non-empty)
+- `payment_method` — only if `Cash` or `EFT`, resolved from `detected_payment_method` first, else `payment_method`
+- `requested_quantity`, `requested_category`, `requested_weight_range`, `requested_sex`, `timing_preference`, `collection_location`
+- Intent / draft flags when defined on `order_state`: `quote_intent`, `order_commitment_intent`, `conversation_commitment_intent`, `cancel_order_intent`, `send_for_approval_intent`, `has_existing_draft`
+- `requested_items_compact` — up to **5** entries from `requested_items`, each `{ qty, sex, category, weight_range }`
 
-The Sales Agent prompt reads `OrderStateSummary` (from `sam_order_state_slim`) and `StewardCompact` (from `sam_steward_result_compact`) instead of the raw `order_state` object. Raw Chatwoot webhook data, debug fields, and sync internals remain available in earlier nodes but are not injected into Sam's prompt.
+**Not** copied into slim (still on the full item for routing / other nodes): `customer_channel`, `conversation_id`, `contact_id`, full `requested_items`, `notes`, `order_route` (Sam still sees route as **`OrderAction`** in the user prompt from top-level `order_route`).
+
+The Sales Agent prompt reads `OrderStateSummary` (from `sam_order_state_slim`) and `StewardCompact` (from `sam_steward_result_compact`) instead of stringifying the raw `order_state` object. Raw Chatwoot webhook data, debug fields, and sync internals remain on the item upstream but are not injected into Sam's prompt as full `order_state` JSON.
 
 ## `1.0` To `1.2` Contract
 
