@@ -38,7 +38,7 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `update_order` | `PATCH /api/master/orders/<order_id>` | Live |
 | `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` | Live |
 | `cancel_order` | `POST /api/orders/<order_id>/cancel` | Live |
-| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path verified; backend `400` regression re-test pending after latest `1.2` import. |
+| `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path and backend `400` customer-safe reply verified. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
 
@@ -61,6 +61,8 @@ Sam must check `order_status`, `payment_method`, and the presence of lines befor
 Current approval behavior:
 
 - `POST /api/orders/<order_id>/approve` represents the human/admin commercial decision to accept the order.
+- Approval is allowed only when `Order_Status = Pending_Approval`.
+- Draft, Approved, Cancelled, and Completed orders cannot be approved through this endpoint.
 - Approval should not yet be treated as proof that pigs were reserved. Reservation remains a separate manual web-app action until reserve/release behavior is hardened.
 
 Planned post-Phase 1.6 approval behavior:

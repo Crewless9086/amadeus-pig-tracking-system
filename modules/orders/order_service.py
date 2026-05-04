@@ -1286,8 +1286,10 @@ def approve_order(order_id: str, changed_by: str = "App"):
     old_status = to_clean_string(row.get("Order_Status", ""))
     old_approval = to_clean_string(row.get("Approval_Status", ""))
 
-    if old_status == "Cancelled":
-        raise ValueError("Cancelled orders cannot be approved.")
+    if old_status != "Pending_Approval":
+        raise ValueError(
+            f"Only Pending_Approval orders can be approved. Current status: {old_status}."
+        )
 
     today_str = datetime.now().strftime("%d %b %Y")
 

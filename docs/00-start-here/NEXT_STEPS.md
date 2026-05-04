@@ -169,6 +169,14 @@ Required outcome:
 - post-Phase 1.6 approval behavior: `approve_order` should call reserve after approval succeeds; reserve failures should log a warning and return `reserve_warning`, but should not roll back the approval
 - customer notification flow documented: approval/rejection notifications should use a separate outbound n8n workflow triggered by backend webhook, not the inbound Sam/`1.0` workflow
 
+Current status:
+
+- backend payment method lock is already implemented: `payment_method` updates are rejected once an order is beyond `Draft`
+- Sam-side `send_for_approval` routing is already guarded by `existing_order_status = Draft`
+- backend `approve_order()` now only allows approval from `Pending_Approval`, preventing Draft, Approved, Cancelled, or Completed orders from being approved through the endpoint
+- backend reject and customer-cancel paths already block Completed orders and cancel/release linked non-cancelled/non-collected lines
+- approval auto-reservation remains documented future behavior and must wait for Phase 1.6
+
 ### 1.6 Harden Reserve And Release Behavior
 
 Required outcome:

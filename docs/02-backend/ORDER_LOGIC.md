@@ -175,6 +175,12 @@ Current backend endpoint:
 
 - `POST /api/orders/<order_id>/approve`
 
+Current backend behavior:
+
+- `approve_order()` only allows approval when `Order_Status = Pending_Approval`.
+- Draft, Approved, Cancelled, and Completed orders are rejected by the approval endpoint.
+- Approval still does not auto-reserve pigs; reservation remains a separate manual action until reserve/release behavior is hardened.
+
 ## Completion / Collection
 
 Completion should represent final collection/sale outcome.

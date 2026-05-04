@@ -103,6 +103,7 @@ Send for approval from Sam:
 Approve/reject lifecycle direction:
 
 - approval should eventually auto-reserve active order lines, because approval means the farm accepts and commits to the order
+- approval is now guarded so only `Pending_Approval` orders can be approved; Draft, Approved, Cancelled, and Completed orders are rejected by the approval endpoint
 - auto-reservation must wait until reserve/release behavior is hardened; until then, reservation remains a separate manual web-app action
 - once implemented, approval should not roll back if reservation fails; backend should log a warning and return `reserve_warning` for the admin web app
 - approval/rejection customer notifications should use a separate outbound n8n workflow triggered by backend webhook, not Sam's inbound `1.0` workflow
