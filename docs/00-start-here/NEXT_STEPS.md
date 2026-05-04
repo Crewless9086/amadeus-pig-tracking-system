@@ -190,21 +190,30 @@ Required outcome:
 - backend/web app should return a clear success/failure summary for each line
 - if approval auto-reserves lines, reserve behavior must be hardened before or as part of that change
 
-Current status (implemented, pending live verification):
+Current status — **live-verified** (operator checklist 2026-05-05):
 
 - `reserve_order_lines` refactored: eligibility checks skip `Cancelled`/`Collected` lines, lines with no `Pig_ID`, and noop already-reserved lines; all ORDER_LINES mutations applied in one `batch_update_rows_by_id` call; response includes `line_results` (per-line action/reason), `changed_count` (rows written), and `warning` when some lines were skipped; `success = false` + HTTP 422 when nothing could be reserved
 - `release_order_lines` refactored: only clears `Reserved_Status` where `Reserved`; only reverts `Line_Status` from `Reserved` to `Draft` for active (non-Cancelled) lines; `Collected` lines are skipped; idempotent (second call returns all noops); `Reserved_Pig_Count` set from actual post-release count via `_count_reserved_lines`; response includes `line_results` and `changed_count`
 - `order_routes.py`: reserve route returns HTTP 422 when `success = false`; `errors` field present for UI consumption
 - Docs updated: `API_STRUCTURE.md`, `ORDER_LOGIC.md`
 
+Verification notes (six tests):
+
+- Mixed lines: reserve showed combined `warning` (terminal skips + no pig); two lines reserved as expected (UI summary: Reserved 2, Draft 1).
+- Second reserve: no visible/UI delta — consistent with all eligible lines already reserved (`noop`, `changed_count = 0`).
+- Release: success message; lines returned to draft-style summary (e.g. Draft 3; grower count unchanged).
+- Second release: unchanged state — idempotent release.
+- All-ineligible order: customer-safe `errors` message; order header counts remained consistent; HTTP 422 path confirmed.
+- `SALES_AVAILABILITY` correct after release.
+
 Manual verification checklist:
 
-- [ ] Order with 5 lines (2 cancelled, 1 no pig, 2 valid) → reserve → `line_results` has 5 entries; `changed_count = 2`; `warning` mentions 3 skipped; `reserved_pig_count = 2`
-- [ ] Call reserve again on same order → all 2 valid lines noop; `changed_count = 0`; `success = true`
-- [ ] Release → `line_results` shows 2 released, 3 noop/skipped; `reserved_pig_count = 0`; ORDER_MASTER count updated
-- [ ] Call release again → all noop; `changed_count = 0`; `success = true`; no sheet corruption
-- [ ] Order with no eligible lines (all cancelled) → reserve → `success = false`; HTTP 422; `errors` present
-- [ ] `SALES_AVAILABILITY` recovers reserved pigs after release
+- [x] Order with 5 lines (2 cancelled, 1 no pig, 2 valid) → reserve → `line_results` has 5 entries; `changed_count = 2`; `warning` mentions 3 skipped; `reserved_pig_count = 2`
+- [x] Call reserve again on same order → all 2 valid lines noop; `changed_count = 0`; `success = true`
+- [x] Release → `line_results` shows 2 released, 3 noop/skipped; `reserved_pig_count = 0`; ORDER_MASTER count updated
+- [x] Call release again → all noop; `changed_count = 0`; `success = true`; no sheet corruption
+- [x] Order with no eligible lines (all cancelled) → reserve → `success = false`; HTTP 422; `errors` present
+- [x] `SALES_AVAILABILITY` recovers reserved pigs after release
 
 ### 1.7 Slim Sales Agent Reply Payload
 
@@ -497,10 +506,11 @@ Recently completed:
 - Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY; live re-verification passed 2026-04-30
 - Phase 1.4 approval preflight and backend `400` regressions — fixed and live re-tested 2026-05-04; missing payment method now asks Cash/EFT without backend call; backend guard failures preserve Draft status and return a customer-safe missing-field reply
 - Phase 1.5 lifecycle guards — Complete And Live-Verified 2026-05-04: `approve_order` only from `Pending_Approval`; payment lock beyond Draft; reject/cancel vs `Completed`; defer auto-reservation (1.8) and outbound notifications (1.9)
+- Phase 1.6 reserve/release hardening — live-verified 2026-05-05: batch reserve/release, `line_results`, skip/warning semantics, idempotent release, ineligible-order 422 path, `SALES_AVAILABILITY` after release
 
 Recommended next:
 
-1. **Phase 1.6** — Harden reserve/release behavior (prerequisite before Phase 1.8 approval auto-reservation)
+1. **Phase 1.8** (when ready) — Approval auto-reservation now has a hardened reserve path; implement per `NEXT_STEPS` §1.8, or prioritize polish/ops first
 2. **Phase 6** — Web app order detail parity: expose approve/reject/reserve/release per backend lifecycle so ops matches workflow capability
 3. **Phase 1.7** — Slim Sales Agent reply payload
 

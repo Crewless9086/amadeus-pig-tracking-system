@@ -12,7 +12,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Google Sheets docs | Good baseline | Sheet files, formulas, ownership, field standards, and business rules are documented. |
 | n8n workflow docs | Good baseline | Four workflow exports and suite-level rules are documented. |
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
-| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, Phase 1.5 lifecycle guards, and **Phase 1.6 reserve/release hardening** are implemented. Reserve/release now use batch writes, per-line eligibility checks, and `line_results` response. Needs live verification. |
+| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, Phase 1.5 lifecycle guards, and **Phase 1.6 reserve/release hardening** are implemented and **live-verified** (2026-05-05). Reserve/release use batch writes, per-line eligibility checks, and `line_results`; idempotent release and `SALES_AVAILABILITY` after release confirmed. |
 | Web app | Needs usability work | App should support operations, not create extra manual work. Focus after order structure is stable. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
@@ -167,4 +167,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. Phase 1.4 and Phase 1.5 approve-guard regressions are live-verified; next build focus is Phase 1.6 reserve/release hardening (then Phase 1.8 auto-reservation), with Phase 6 web-app order-detail parity tracked alongside usability work.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. Phase 1.4, 1.5, and **1.6 reserve/release** are live-verified; natural next build tracks are **Phase 1.8** (approval auto-reservation, when scheduled), **Phase 6** web-app order-detail parity, or **Phase 1.7** slim Sam payload — see `NEXT_STEPS` choice point.
