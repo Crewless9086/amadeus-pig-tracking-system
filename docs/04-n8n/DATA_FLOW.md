@@ -72,6 +72,7 @@ Currently live actions called by `1.0`:
 | `update_order` | Update/enrich an existing draft header. | `order_id`, changed fields, `changed_by`. |
 | `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. |
 | `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
+| `send_for_approval` | Submit draft to pending approval (`POST /api/orders/<order_id>/send-for-approval`). | `order_id`, `changed_by`; caller must satisfy backend guards (Draft, payment method, lines, etc.). |
 
 Rule: `1.2` should call the backend API. It should not directly write order sheets.
 

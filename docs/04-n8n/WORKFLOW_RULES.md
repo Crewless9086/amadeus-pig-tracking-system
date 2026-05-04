@@ -54,12 +54,14 @@ When `decision_mode = ESCALATE`:
 
 ## Order Steward Rules
 
-For `1.0`, only these `1.2` actions are currently treated as live:
+For `1.0`, these `1.2` actions are currently treated as live (aligned with `docs/02-backend/API_STRUCTURE.md`):
 
 - `create_order`
+- `create_order_with_lines` (atomic create + sync in `1.2`)
 - `update_order`
 - `sync_order_lines_from_request`
 - `cancel_order`
+- `send_for_approval`
 
 Other actions present in `1.2` are not automatically considered live for Sam until wired, tested, and documented.
 

@@ -157,26 +157,27 @@ Phase 1.4 fix applied and live re-tested 2026-05-04 — approval preflight block
 
 ### 1.5 Lifecycle Guards
 
-Required outcome:
+**Phase 1.5 is complete** for the guards and documentation below. Items that look like “lifecycle” but depend on reserve/release hardening or outbound workflows are **explicitly deferred** to Phase 1.6, Phase 1.8, and Phase 1.9 respectively.
 
-- backend rejects `Payment_Method` updates once `Order_Status` is `Pending_Approval` or later
+Required outcome (this phase — done):
+
+- backend rejects `Payment_Method` updates once `Order_Status` is `Pending_Approval` or later (`update_order` / `PATCH` master order)
 - Sam-side routing in `1.0` checks `order_status` before sending `send_for_approval` — does not call backend if status is already `Pending_Approval`, `Approved`, `Cancelled`, or `Completed`
-- completed orders cannot be cancelled or rejected without deliberate admin action
-- cancelled orders cannot be re-approved
-- reserved/approved orders handle state rollback safely when cancel or reject is applied
-- approval auto-reservation decision documented: approval should eventually auto-reserve all active order lines, but only after Phase 1.6 hardens reserve/release behavior
-- until reserve/release is hardened, approval and reservation remain separate actions and reservation stays a manual web-app action
-- post-Phase 1.6 approval behavior: `approve_order` should call reserve after approval succeeds; reserve failures should log a warning and return `reserve_warning`, but should not roll back the approval
-- customer notification flow documented: approval/rejection notifications should use a separate outbound n8n workflow triggered by backend webhook, not the inbound Sam/`1.0` workflow
+- completed orders cannot be cancelled or rejected without deliberate admin action (`reject_order` and `cancel_order` block `Completed`)
+- cancelled orders cannot be re-approved (`approve_order` only accepts `Pending_Approval`, so `Cancelled` / Draft / etc. are rejected)
+- reserved/approved orders handle state rollback safely when cancel or reject is applied (existing reject/cancel line cleanup and `Reserved_Pig_Count` reset)
 
-Current status:
+Documented here, implemented in later phases (not blocking closure of 1.5):
 
-- backend payment method lock is already implemented: `payment_method` updates are rejected once an order is beyond `Draft`
-- Sam-side `send_for_approval` routing is already guarded by `existing_order_status = Draft`
-- backend `approve_order()` now only allows approval from `Pending_Approval`, preventing Draft, Approved, Cancelled, or Completed orders from being approved through the endpoint
-- backend reject and customer-cancel paths already block Completed orders and cancel/release linked non-cancelled/non-collected lines
-- approval auto-reservation remains documented future behavior and must wait for Phase 1.6
-- lifecycle approve guard live-verified 2026-05-04: Draft cannot be approved via API; `Pending_Approval` approves successfully
+- approval auto-reservation — **Phase 1.8** after **Phase 1.6**
+- until then, approval and reservation remain separate; reservation stays manual (web app or workflow calling `POST /api/orders/<order_id>/reserve`)
+- post-Phase 1.6: `approve_order` may call reserve after approval; failures return `reserve_warning` without rolling back approval — **Phase 1.8**
+- customer notification after approval/rejection — **Phase 1.9** (outbound n8n + webhook), not Sam `1.0`
+
+Verification notes (2026-05-04):
+
+- `approve_order`: Draft cannot be approved; `Pending_Approval` approves successfully (API / OOM SAKKIE path)
+- payment method lock and send-for-approval routing were already in place before this checkpoint; Phase 1.4 regressions for send-for-approval customer-safe replies are live-verified separately
 
 ### 1.6 Harden Reserve And Release Behavior
 
@@ -480,7 +481,7 @@ Recently completed:
 - Phase 1.4 send_for_approval happy path — backend validations, `1.2` neverError + conditional result, `1.0` intent detection + routing + 4 new nodes + Chatwoot write live-verified 2026-04-30
 - Phase 1.4 bugfix — `sendForApprovalIntent` regex expanded to cover "send it for approval", "send this through", "submit it/this/my order", etc.; SEND_FOR_APPROVAL moved before UPDATE checks in route priority; Sales Agent prompt tightened so Sam never overstates on REPLY_ONLY; live re-verification passed 2026-04-30
 - Phase 1.4 approval preflight and backend `400` regressions — fixed and live re-tested 2026-05-04; missing payment method now asks Cash/EFT without backend call; backend guard failures preserve Draft status and return a customer-safe missing-field reply
-- Phase 1.5 lifecycle guards — approve endpoint restricted to `Pending_Approval`; live-verified Draft vs Pending_Approval approve paths 2026-05-04
+- Phase 1.5 lifecycle guards — **Phase 1.5 complete**: `approve_order` only from `Pending_Approval` (live-verified 2026-05-04); `payment_method` locked beyond Draft; reject/cancel block Completed; auto-reservation and outbound customer notifications deferred to Phase 1.8 and Phase 1.9
 
 Recommended next:
 

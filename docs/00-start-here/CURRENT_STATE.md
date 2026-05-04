@@ -12,7 +12,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Google Sheets docs | Good baseline | Sheet files, formulas, ownership, field standards, and business rules are documented. |
 | n8n workflow docs | Good baseline | Four workflow exports and suite-level rules are documented. |
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
-| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, and payment method capture are live-verified. Send-for-approval, reserve/release robustness, and lifecycle guards remain priority. |
+| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval (happy path + customer-safe backend errors), and Phase 1.5 lifecycle guards (approve only from Pending_Approval, payment lock) are live-verified. **Reserve/release robustness is next** (Phase 1.6). |
 | Web app | Needs usability work | App should support operations, not create extra manual work. Focus after order structure is stable. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
