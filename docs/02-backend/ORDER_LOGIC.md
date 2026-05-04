@@ -83,6 +83,35 @@ Rules:
 - reserved count on `ORDER_MASTER` must match reserved lines
 - Sam must not promise reservation until backend confirms
 
+**Eligible line criteria (Phase 1.6):**
+
+| Condition | Result |
+| --- | --- |
+| `Line_Status` is `Cancelled` or `Collected` | skipped — terminal state, never modified |
+| `Pig_ID` is empty | skipped — placeholder line, cannot hold inventory |
+| `Reserved_Status = Reserved` AND `Line_Status = Reserved` | noop — already correct, idempotent |
+| All other active lines with a `Pig_ID` | reserved — `Line_Status` and `Reserved_Status` both set to `Reserved` |
+
+**Line_Status values:**
+- `Draft` — default after creation
+- `Reserved` — line is reserved
+- `Collected` — terminal, line has been collected (set by `complete_order`)
+- `Cancelled` — terminal, line has been soft-cancelled
+
+**Reserved_Status values:**
+- `Not_Reserved` — default
+- `Reserved` — currently reserved
+- `Collected` — set by `complete_order` alongside `Line_Status = Collected`
+
+**Response semantics:**
+- `success = true` when at least one line is or was already reserved
+- `success = false` when nothing could be reserved (all skipped — 422 HTTP status)
+- `warning` is present when `success = true` but some lines were skipped
+- `line_results` lists every line belonging to the order with its outcome (`reserved`, `noop`, `skipped`)
+- `changed_count` = rows written to `ORDER_LINES` in the batch call
+
+All `ORDER_LINES` updates are applied in a single `batch_update_rows_by_id` call — no partial silent failure on multi-line orders.
+
 Current backend behavior:
 
 - `POST /api/orders/<order_id>/reserve` marks matching `ORDER_LINES` as reserved and updates `ORDER_MASTER.Reserved_Pig_Count`.
@@ -106,6 +135,22 @@ Release must happen when:
 Hard rule:
 
 A pig must never stay reserved if the order is no longer active or valid.
+
+**Release rules (Phase 1.6):**
+
+| Line state | Result |
+| --- | --- |
+| `Line_Status = Collected` | skipped — terminal state, never modified |
+| `Reserved_Status != Reserved` AND `Line_Status != Reserved` | noop — nothing to release |
+| `Reserved_Status = Reserved` | cleared to `Not_Reserved` |
+| `Line_Status = Reserved` (active non-cancelled line) | reverted to `Draft` |
+| `Line_Status = Cancelled` with `Reserved_Status = Reserved` | `Reserved_Status` cleared; `Line_Status` kept as `Cancelled` |
+
+**Idempotent:** calling release twice is safe. Second call returns all noops with `success = true` and `changed_count = 0`.
+
+`ORDER_MASTER.Reserved_Pig_Count` is set to the actual post-release count (not a blind `0`).
+
+All `ORDER_LINES` updates are applied in a single `batch_update_rows_by_id` call.
 
 Current backend behavior:
 

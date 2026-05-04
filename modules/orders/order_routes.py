@@ -70,7 +70,8 @@ def available_pigs():
 def reserve_order(order_id):
     try:
         result = reserve_order_lines(order_id)
-        return jsonify(result), 200
+        status_code = 200 if result.get("success") else 422
+        return jsonify(result), status_code
     except ValueError as exc:
         return jsonify({
             "success": False,

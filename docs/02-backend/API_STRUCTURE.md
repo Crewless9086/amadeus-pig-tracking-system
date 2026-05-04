@@ -154,6 +154,94 @@ Important rules:
 - Exact-match sync can cancel/recreate lines.
 - Partial/no-match behavior needs hardening before Sam treats the order as fully updated.
 
+## Reserve And Release Behavior (Phase 1.6)
+
+### `POST /api/orders/<order_id>/reserve`
+
+Marks eligible order lines as reserved and updates `ORDER_MASTER.Reserved_Pig_Count`.
+
+**Eligibility rules:**
+- Lines with `Line_Status = Cancelled` or `Collected` are skipped (terminal states).
+- Lines with no `Pig_ID` are skipped — placeholder lines cannot hold inventory.
+- Lines already at `Reserved_Status = Reserved` and `Line_Status = Reserved` are a noop (idempotent).
+- All other active lines with a `Pig_ID` are reserved in one batch write.
+
+**HTTP status codes:**
+- `200` — success (at least one line is or was already reserved)
+- `400` — order not found, empty sheet, or missing column
+- `422` — no eligible lines to reserve (all cancelled, collected, or missing pig)
+
+**Response (success):**
+```json
+{
+  "success": true,
+  "order_id": "ORD-...",
+  "reserved_pig_count": 3,
+  "changed_count": 2,
+  "message": "Order lines reserved successfully.",
+  "warning": "Some lines could not be reserved: 1 line(s) skipped (no_pig_assigned).",
+  "line_results": [
+    { "order_line_id": "OL-...", "pig_id": "PIG-001", "action": "reserved" },
+    { "order_line_id": "OL-...", "pig_id": "PIG-002", "action": "noop", "reason": "already_reserved" },
+    { "order_line_id": "OL-...", "pig_id": "", "action": "skipped", "reason": "no_pig_assigned" },
+    { "order_line_id": "OL-...", "pig_id": "PIG-003", "action": "skipped", "reason": "terminal_line_status" }
+  ]
+}
+```
+
+`warning` is present only when some lines were skipped but others were successfully reserved or already reserved.
+
+**Response (failure — 422):**
+```json
+{
+  "success": false,
+  "order_id": "ORD-...",
+  "reserved_pig_count": 0,
+  "changed_count": 0,
+  "message": "No lines could be reserved.",
+  "errors": ["No eligible lines to reserve. All lines are either cancelled, collected, or have no pig assigned."],
+  "line_results": [...]
+}
+```
+
+---
+
+### `POST /api/orders/<order_id>/release`
+
+Releases all reserved order lines and updates `ORDER_MASTER.Reserved_Pig_Count`.
+
+**Rules:**
+- `Collected` lines are terminal — never touched.
+- `Reserved_Status` is cleared to `Not_Reserved` only where it equals `Reserved`.
+- `Line_Status` is reverted from `Reserved` to `Draft` only for active lines (`Cancelled` lines keep their status).
+- Calling release twice is safe — second call returns all noops and `success: true`.
+- `Reserved_Pig_Count` is set to the actual post-release count (not a blind `0`).
+
+**HTTP status codes:**
+- `200` — always on success (idempotent)
+- `400` — order not found, empty sheet, or missing column
+
+**Response:**
+```json
+{
+  "success": true,
+  "order_id": "ORD-...",
+  "reserved_pig_count": 0,
+  "changed_count": 2,
+  "message": "Order reservations released successfully.",
+  "line_results": [
+    { "order_line_id": "OL-...", "pig_id": "PIG-001", "action": "released" },
+    { "order_line_id": "OL-...", "pig_id": "PIG-002", "action": "released" },
+    { "order_line_id": "OL-...", "pig_id": "", "action": "noop" },
+    { "order_line_id": "OL-...", "pig_id": "PIG-003", "action": "skipped", "reason": "terminal_line_status" }
+  ]
+}
+```
+
+`changed_count` reflects rows written to `ORDER_LINES`. On a second release call, `changed_count = 0` and all line results are `noop`.
+
+---
+
 ## Reject And Cancel Behavior
 
 Current reject endpoint behavior:

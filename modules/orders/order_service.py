@@ -1053,85 +1053,164 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
 
 
 def reserve_order_lines(order_id: str):
+    """
+    Reserve all eligible lines for an order.
+
+    Eligibility rules:
+    - Lines with Line_Status in (Cancelled, Collected) are skipped — terminal states.
+    - Lines with no Pig_ID are skipped — placeholder lines cannot hold inventory.
+    - Lines already Reserved on both fields are a noop — idempotent reserve.
+    - All other active lines with a Pig_ID are reserved in one batch write.
+
+    success=True when at least one line is or becomes Reserved.
+    success=False when nothing could be reserved (all skipped, none eligible).
+    A warning is returned when success=True but some lines were skipped.
+    changed_count = rows written to ORDER_LINES.
+    """
     order_id = str(order_id).strip()
 
-    detail = get_order_detail(order_id)
-    if not detail:
+    if not _get_order_master_row(order_id):
         raise ValueError("Order not found.")
-
-    if not detail["lines"]:
-        raise ValueError("Order has no lines to reserve.")
 
     headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
     if not headers:
         raise ValueError("ORDER_LINES is empty.")
 
     idx = _header_index(headers)
-    required = [
-        "Order_Line_ID",
-        "Order_ID",
-        "Line_Status",
-        "Reserved_Status",
-        "Updated_At",
-    ]
-    for field in required:
+    for field in ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]:
         if field not in idx:
             raise ValueError(f"Missing required column '{field}' in ORDER_LINES.")
 
     today_str = datetime.now().strftime("%d %b %Y")
-    changed_count = 0
 
+    order_lines_in_scope = []
     for row in rows:
         if not row:
             continue
+        padded = row + [""] * (len(headers) - len(row))
+        if str(padded[idx["Order_ID"]]).strip() == order_id:
+            order_lines_in_scope.append(padded)
 
-        padded_row = row + [""] * (len(headers) - len(row))
-        row_order_id = str(padded_row[idx["Order_ID"]]).strip()
+    if not order_lines_in_scope:
+        raise ValueError("Order has no lines to reserve.")
 
-        if row_order_id != order_id:
-            continue
+    line_results = []
+    updates_map = {}
 
+    for padded_row in order_lines_in_scope:
         line_id = str(padded_row[idx["Order_Line_ID"]]).strip()
+        pig_id = str(padded_row[idx["Pig_ID"]]).strip()
         line_status = str(padded_row[idx["Line_Status"]]).strip()
         reserved_status = str(padded_row[idx["Reserved_Status"]]).strip()
 
-        updates = {}
-        if reserved_status != "Reserved":
-            updates["Reserved_Status"] = "Reserved"
-            changed_count += 1
+        if not line_id:
+            continue
 
-        if line_status in ("", "Draft"):
-            updates["Line_Status"] = "Reserved"
+        # Terminal states — never touch
+        if line_status in ("Cancelled", "Collected"):
+            line_results.append({
+                "order_line_id": line_id,
+                "pig_id": pig_id,
+                "action": "skipped",
+                "reason": "terminal_line_status",
+            })
+            continue
 
-        if updates:
-            updates["Updated_At"] = today_str
-            _update_sheet_row_by_id(ORDER_LINES_SHEET, line_id, updates)
+        # Must have a pig assigned before holding inventory
+        if not pig_id:
+            line_results.append({
+                "order_line_id": line_id,
+                "pig_id": "",
+                "action": "skipped",
+                "reason": "no_pig_assigned",
+            })
+            continue
 
-    reserved_count = _count_reserved_lines(order_id)
+        # Already fully reserved — idempotent noop
+        if reserved_status == "Reserved" and line_status == "Reserved":
+            line_results.append({
+                "order_line_id": line_id,
+                "pig_id": pig_id,
+                "action": "noop",
+                "reason": "already_reserved",
+            })
+            continue
+
+        updates_map[line_id] = {
+            "Reserved_Status": "Reserved",
+            "Line_Status": "Reserved",
+            "Updated_At": today_str,
+        }
+        line_results.append({
+            "order_line_id": line_id,
+            "pig_id": pig_id,
+            "action": "reserved",
+        })
+
+    reserved_now = sum(1 for r in line_results if r["action"] == "reserved")
+    noop_count = sum(1 for r in line_results if r["action"] == "noop")
+    skipped_count = sum(1 for r in line_results if r["action"] == "skipped")
+
+    if updates_map:
+        batch_update_rows_by_id(ORDER_LINES_SHEET, updates_map)
+
+    reserved_pig_count = _count_reserved_lines(order_id)
 
     _update_sheet_row_by_id(
         ORDER_MASTER_SHEET,
         order_id,
         {
-            "Reserved_Pig_Count": reserved_count,
+            "Reserved_Pig_Count": reserved_pig_count,
             "Updated_At": today_str,
-        }
+        },
     )
 
-    return {
-        "success": True,
-        "message": "Order lines reserved successfully.",
+    # success=True when at least one line is now or already reserved
+    success = (reserved_now + noop_count) > 0
+
+    result = {
+        "success": success,
         "order_id": order_id,
-        "reserved_pig_count": reserved_count,
-        "changed_count": changed_count,
+        "reserved_pig_count": reserved_pig_count,
+        "changed_count": len(updates_map),
+        "line_results": line_results,
     }
+
+    if success:
+        result["message"] = "Order lines reserved successfully." if reserved_now > 0 else "All eligible lines are already reserved."
+        if skipped_count > 0:
+            skip_reasons: dict = {}
+            for r in line_results:
+                if r["action"] == "skipped":
+                    reason = r.get("reason", "unknown")
+                    skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+            parts = [f"{count} line(s) skipped ({reason})" for reason, count in skip_reasons.items()]
+            result["warning"] = f"Some lines could not be reserved: {'; '.join(parts)}."
+    else:
+        result["message"] = "No lines could be reserved."
+        result["errors"] = [
+            "No eligible lines to reserve. All lines are either cancelled, collected, or have no pig assigned."
+        ]
+
+    return result
 
 
 def release_order_lines(order_id: str):
+    """
+    Release all reservations for an order.
+
+    Rules:
+    - Collected lines are terminal — never touched.
+    - Reserved_Status is cleared to Not_Reserved only where it equals Reserved.
+    - Line_Status is reverted from Reserved to Draft only where applicable
+      (Cancelled lines keep their Cancelled status; only active Reserved lines revert).
+    - Calling release twice succeeds and reports only noops on the second call.
+    - ORDER_MASTER.Reserved_Pig_Count is set to the actual post-release count.
+    - changed_count = rows written to ORDER_LINES.
+    """
     order_id = str(order_id).strip()
 
-    detail = get_order_detail(order_id)
-    if not detail:
+    if not _get_order_master_row(order_id):
         raise ValueError("Order not found.")
 
     headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
@@ -1139,61 +1218,89 @@ def release_order_lines(order_id: str):
         raise ValueError("ORDER_LINES is empty.")
 
     idx = _header_index(headers)
-    required = [
-        "Order_Line_ID",
-        "Order_ID",
-        "Line_Status",
-        "Reserved_Status",
-        "Updated_At",
-    ]
-    for field in required:
+    for field in ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]:
         if field not in idx:
             raise ValueError(f"Missing required column '{field}' in ORDER_LINES.")
 
     today_str = datetime.now().strftime("%d %b %Y")
-    changed_count = 0
+
+    line_results = []
+    updates_map = {}
 
     for row in rows:
         if not row:
             continue
 
         padded_row = row + [""] * (len(headers) - len(row))
-        row_order_id = str(padded_row[idx["Order_ID"]]).strip()
-
-        if row_order_id != order_id:
+        if str(padded_row[idx["Order_ID"]]).strip() != order_id:
             continue
 
         line_id = str(padded_row[idx["Order_Line_ID"]]).strip()
+        pig_id = str(padded_row[idx["Pig_ID"]]).strip()
         line_status = str(padded_row[idx["Line_Status"]]).strip()
         reserved_status = str(padded_row[idx["Reserved_Status"]]).strip()
 
-        updates = {}
-        if reserved_status == "Reserved":
-            updates["Reserved_Status"] = "Not_Reserved"
-            changed_count += 1
+        if not line_id:
+            continue
 
-        if line_status == "Reserved":
-            updates["Line_Status"] = "Draft"
+        # Collected lines are terminal — do not revert
+        if line_status == "Collected":
+            line_results.append({
+                "order_line_id": line_id,
+                "pig_id": pig_id,
+                "action": "skipped",
+                "reason": "terminal_line_status",
+            })
+            continue
 
-        if updates:
-            updates["Updated_At"] = today_str
-            _update_sheet_row_by_id(ORDER_LINES_SHEET, line_id, updates)
+        needs_reserved_status_clear = reserved_status == "Reserved"
+        # Only revert Line_Status from Reserved → Draft for non-Cancelled active lines
+        needs_line_status_revert = line_status == "Reserved"
+
+        if not needs_reserved_status_clear and not needs_line_status_revert:
+            line_results.append({
+                "order_line_id": line_id,
+                "pig_id": pig_id,
+                "action": "noop",
+            })
+            continue
+
+        field_updates: dict = {"Updated_At": today_str}
+        if needs_reserved_status_clear:
+            field_updates["Reserved_Status"] = "Not_Reserved"
+        if needs_line_status_revert:
+            field_updates["Line_Status"] = "Draft"
+
+        updates_map[line_id] = field_updates
+        line_results.append({
+            "order_line_id": line_id,
+            "pig_id": pig_id,
+            "action": "released",
+        })
+
+    if updates_map:
+        batch_update_rows_by_id(ORDER_LINES_SHEET, updates_map)
+
+    reserved_pig_count = _count_reserved_lines(order_id)
 
     _update_sheet_row_by_id(
         ORDER_MASTER_SHEET,
         order_id,
         {
-            "Reserved_Pig_Count": 0,
+            "Reserved_Pig_Count": reserved_pig_count,
             "Updated_At": today_str,
-        }
+        },
     )
+
+    changed_count = len(updates_map)
 
     return {
         "success": True,
-        "message": "Order reservations released successfully.",
+        "message": "Order reservations released successfully." if changed_count > 0 else "No active reservations to release.",
         "order_id": order_id,
-        "reserved_pig_count": 0,
+        "reserved_pig_count": reserved_pig_count,
         "changed_count": changed_count,
+        "line_results": line_results,
     }
 
 

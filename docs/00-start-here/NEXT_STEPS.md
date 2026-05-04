@@ -190,6 +190,22 @@ Required outcome:
 - backend/web app should return a clear success/failure summary for each line
 - if approval auto-reserves lines, reserve behavior must be hardened before or as part of that change
 
+Current status (implemented, pending live verification):
+
+- `reserve_order_lines` refactored: eligibility checks skip `Cancelled`/`Collected` lines, lines with no `Pig_ID`, and noop already-reserved lines; all ORDER_LINES mutations applied in one `batch_update_rows_by_id` call; response includes `line_results` (per-line action/reason), `changed_count` (rows written), and `warning` when some lines were skipped; `success = false` + HTTP 422 when nothing could be reserved
+- `release_order_lines` refactored: only clears `Reserved_Status` where `Reserved`; only reverts `Line_Status` from `Reserved` to `Draft` for active (non-Cancelled) lines; `Collected` lines are skipped; idempotent (second call returns all noops); `Reserved_Pig_Count` set from actual post-release count via `_count_reserved_lines`; response includes `line_results` and `changed_count`
+- `order_routes.py`: reserve route returns HTTP 422 when `success = false`; `errors` field present for UI consumption
+- Docs updated: `API_STRUCTURE.md`, `ORDER_LOGIC.md`
+
+Manual verification checklist:
+
+- [ ] Order with 5 lines (2 cancelled, 1 no pig, 2 valid) → reserve → `line_results` has 5 entries; `changed_count = 2`; `warning` mentions 3 skipped; `reserved_pig_count = 2`
+- [ ] Call reserve again on same order → all 2 valid lines noop; `changed_count = 0`; `success = true`
+- [ ] Release → `line_results` shows 2 released, 3 noop/skipped; `reserved_pig_count = 0`; ORDER_MASTER count updated
+- [ ] Call release again → all noop; `changed_count = 0`; `success = true`; no sheet corruption
+- [ ] Order with no eligible lines (all cancelled) → reserve → `success = false`; HTTP 422; `errors` present
+- [ ] `SALES_AVAILABILITY` recovers reserved pigs after release
+
 ### 1.7 Slim Sales Agent Reply Payload
 
 Required outcome:
