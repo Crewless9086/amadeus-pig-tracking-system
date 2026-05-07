@@ -10,6 +10,10 @@ Stabilize live order behavior before expanding features or polishing the app.
 
 Orders are the profit section. They must be reliable before the system grows.
 
+### Deploy note — 2026-05-07 (repo ready; import required)
+
+The repo now includes: **partial line sync** (short stock still creates lines), **`GET /api/orders/<id>` exposes `payment_method`**, **`1.2` action `get_order_context`**, and **`1.0` prefetch** so draft header/payment can merge before `Code - Build Order State`. Re-import `docs/04-n8n/workflows/1.2 - order-steward/workflow.json` and `1.0 - Sam-sales-agent-chatwoot/workflow.json` into n8n, then deploy the Flask app so Render serves the backend changes. See `docs/04-n8n/CHANGELOG.md` (2026-05-07 entry) for the full checklist.
+
 ## Phase 1: Order Lifecycle Stabilization
 
 Goal: make reject, cancel, release, and reservation state safe.

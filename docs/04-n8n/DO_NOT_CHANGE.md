@@ -61,7 +61,7 @@ Do not change without review:
 - `action` discriminator field
 - backend base URL and endpoint paths
 - payload normalization
-- `create_order`, `update_order`, `sync_order_lines_from_request`, and `cancel_order` contracts used by `1.0`
+- `create_order`, `update_order`, `sync_order_lines_from_request`, `get_order_context`, and `cancel_order` contracts used by `1.0`
 - backend error propagation
 
 `1.2` must not directly write order Google Sheets.

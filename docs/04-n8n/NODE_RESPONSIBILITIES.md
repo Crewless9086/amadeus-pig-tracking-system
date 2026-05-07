@@ -101,10 +101,12 @@ Defines the responsibilities and boundaries for the n8n workflow suite.
 
 Current `1.0` live actions only:
 
-- `create_order`
+- `create_order` / `create_order_with_lines`
 - `update_order`
 - `sync_order_lines_from_request`
+- `get_order_context`
 - `cancel_order`
+- `send_for_approval`
 
 ## `1.3 - SAM - Sales Agent - Media Tool`
 

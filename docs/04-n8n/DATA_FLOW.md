@@ -59,6 +59,19 @@ Important fields:
 - `notes`
 - `requested_items[]`
 
+## Draft order context prefetch (`get_order_context`)
+
+Before `Switch - Clarify or Auto` on the AUTO preparation path, when `sales_agent_memory.existing_order_id` (or equivalent) is non-empty, `1.0` calls `1.2` with `action: get_order_context`. The steward performs `GET /api/orders/<order_id>` and returns:
+
+| Field | Meaning |
+| --- | --- |
+| `order_context_fetch_ok` | `true` only when the API returned `success` and a full order object. |
+| `existing_order_context` | Slim bundle: `order` (header fields including `payment_method` from `ORDER_MASTER`) and `lines` (minimal line summary). |
+
+**Merge rule in `Code - Build Order State`:** values extracted from the **current message** and Chatwoot attributes win. The fetched bundle fills **only** empty gaps for quantity, category, weight band, sex, collection location, and payment method (Cash/EFT). This avoids Sam re-asking for payment or header fields already stored on the draft when the customer says “Cash” or “send for approval” in a short follow-up.
+
+The CLARIFY branch does not wait through this fetch; only the AUTO path uses prefetch.
+
 ## `1.0` Sales Agent Input Contract (Phase 1.7)
 
 `Code - Slim Sales Agent User Context` runs immediately before `Ai Agent - Sales Agent` on all four main input paths. It produces two new fields and spreads the full item so all downstream routing and tool nodes continue to receive the complete payload.
@@ -66,7 +79,7 @@ Important fields:
 | Field | Source | Purpose |
 | --- | --- | --- |
 | `sam_order_state_slim` | Whitelisted copy of `order_state` | Safe, minimal order context for Sam's prompt. See whitelist below. |
-| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), and—if `results[]` exists—`had_errors` plus a short `summary` built from `request_item_key` / `match_status`. Does not duplicate `order_id` / `order_status`; those stay on the top-level item and in the Sales Agent template (`OrderID`, `FinalOrderStatus`). |
+| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), `partial_fulfillment` (when any sync line was a short allocation), and—if `results[]` or `sync_results[]` exists—`had_errors`, optional `had_partial`, plus a short `summary` built from `request_item_key` / `match_status`. Does not duplicate `order_id` / `order_status`; those stay on the top-level item and in the Sales Agent template (`OrderID`, `FinalOrderStatus`). |
 
 `sam_order_state_slim` whitelist (matches `Code - Slim Sales Agent User Context` in `1.0` export):
 
@@ -93,7 +106,8 @@ Currently live actions called by `1.0`:
 | `create_order` | Create a new draft order. | Customer fields, requested category/weight/sex/quantity, notes, conversation/contact IDs. |
 | `create_order_with_lines` | Create a new draft order and immediately sync requested order lines in one `1.2` execution. | Same as `create_order`, plus `requested_items[]` and `changed_by`. |
 | `update_order` | Update/enrich an existing draft header. | `order_id`, changed fields, `changed_by`. |
-| `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. |
+| `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. Response includes `partial_fulfillment` when any item was a short allocation. |
+| `get_order_context` | Read-only draft context for Sam state merge. | `order_id`, `changed_by` (optional). Returns `order_context_fetch_ok`, `existing_order_context`. |
 | `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
 | `send_for_approval` | Submit draft to pending approval (`POST /api/orders/<order_id>/send-for-approval`). | `order_id`, `changed_by`; caller must satisfy backend guards (Draft, payment method, lines, etc.). |
 

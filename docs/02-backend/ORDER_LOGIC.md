@@ -60,10 +60,29 @@ Rules:
 - `primary_1` and `primary_2` must both be preserved.
 - repeated syncs must not create duplicate active rows
 - old lines must be released/cancelled before replacement when the request changes
-- line totals must match requested quantity before Sam says the draft is correctly updated
-- partial matches must be surfaced clearly and not treated as complete success
+- line totals should reflect what stock could actually be matched — see **Partial match sync** below
 
-Known current bug/risk:
+## Partial match sync
+
+When available stock for a requested item is **greater than zero** but **less than** `requested_quantity`, the sync still creates one `ORDER_LINES` row per matched pig (up to availability). The response item includes:
+
+| Field | Meaning |
+| --- | --- |
+| `match_status` | `partial_match` |
+| `matched_quantity` | Count of pigs actually written to lines (fulfilled). |
+| `available_quantity` | Count of candidate pigs matching category/weight/sex filters before allocation. |
+| `created_line_count` | Lines created for that item. |
+| `alternatives` | Same-category alternates for messaging. |
+
+The aggregate API response also includes `partial_fulfillment: true` when any line item returned `partial_match`. n8n/Sam use this to explain short allocation without implying the full requested quantity was secured.
+
+Other rules:
+
+- `primary_1` and `primary_2` must both be preserved when used.
+- repeated syncs must not create duplicate active rows
+- old lines must be released/cancelled before replacement when the request changes
+
+Known residual risk:
 
 - split requested items have previously failed where `primary_2` rows were missing or not updated correctly.
 - the issue appears to be backend sync/write logic rather than the n8n payload.

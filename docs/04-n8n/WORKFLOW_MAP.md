@@ -53,7 +53,9 @@ Current live order routes called from `1.0`:
 - `create_order_with_lines`
 - `update_order`
 - `sync_order_lines_from_request`
+- `get_order_context` (read-only prefetch when a draft id exists, before AUTO `Code - Build Order State`)
 - `cancel_order`
+- `send_for_approval`
 
 Current disabled capability:
 
@@ -96,7 +98,9 @@ Currently documented as live for `1.0` only:
 - `create_order_with_lines`
 - `update_order`
 - `sync_order_lines_from_request`
+- `get_order_context`
 - `cancel_order`
+- `send_for_approval`
 
 Other actions present in the workflow should be treated as steward capability or test/planned paths until `1.0` actively calls them.
 
@@ -104,10 +108,9 @@ Customer cancel routing uses `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDIN
 
 First-turn committed orders with non-empty `requested_items[]` use `create_order_with_lines`. `1.0` chooses the action, while `1.2` creates the draft, syncs `ORDER_LINES`, and returns one combined success result.
 
-Preferred future order-review direction:
+Order context today: `get_order_context` in `1.2` calls `GET /api/orders/<id>` and returns slim header + line metadata to `1.0` for merge in `Code - Build Order State`.
 
-- Add/review an order lookup action through `1.2` and the backend rather than giving Sam direct operational access to `ORDER_OVERVIEW`.
-- The backend can read `ORDER_OVERVIEW` or order endpoints safely and return only the customer-relevant order context.
+Preferred direction for richer review UIs: keep using `1.2` and backend endpoints rather than giving Sam direct `ORDER_OVERVIEW` sheet tools.
 
 ## `1.3 - SAM - Sales Agent - Media Tool`
 

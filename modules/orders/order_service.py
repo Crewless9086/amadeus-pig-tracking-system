@@ -572,6 +572,11 @@ def get_order_detail(order_id: str):
     if not order_record:
         return None
 
+    master_row = _get_order_master_row(order_id)
+    order_record["payment_method"] = (
+        to_clean_string(master_row.get("Payment_Method", "")) if master_row else ""
+    )
+
     line_rows = get_all_records(ORDER_LINES_SHEET)
     lines = []
 
@@ -997,17 +1002,37 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
                 })
                 continue
 
-            # Partial match
+            # Partial match — allocate as many lines as we can (stock < requested)
             if matched_quantity > 0:
+                take = min(matched_quantity, requested_quantity)
+                selected_matches = matches[:take]
+
+                cancelled_line_count = 0
+                if existing_active_line_ids:
+                    cancelled_line_count = _cancel_order_lines(existing_active_line_ids)
+
+                created_lines = []
+                for pig in selected_matches:
+                    created_lines.append(
+                        _append_order_line_from_match(
+                            order_id=order_id,
+                            request_item_key=request_item_key,
+                            pig=pig,
+                            notes=notes,
+                            pricing_lookup=pricing_lookup,
+                        )
+                    )
+
                 results.append({
                     "request_item_key": request_item_key,
                     "match_status": "partial_match",
                     "requested_quantity": requested_quantity,
-                    "matched_quantity": matched_quantity,
+                    "matched_quantity": len(created_lines),
+                    "available_quantity": matched_quantity,
                     "existing_active_line_count": len(existing_active_lines),
-                    "cancelled_line_count": 0,
-                    "created_line_count": 0,
-                    "matched_pig_ids": [pig["pig_id"] for pig in matches],
+                    "cancelled_line_count": cancelled_line_count,
+                    "created_line_count": len(created_lines),
+                    "matched_pig_ids": [line["pig_id"] for line in created_lines],
                     "alternatives": alternatives,
                     "error": "",
                 })
@@ -1042,12 +1067,17 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
                 "error": str(exc),
             })
 
+    partial_fulfillment = any(
+        r.get("match_status") == "partial_match" for r in results
+    )
+
     return {
         "success": not had_errors,
         "action": "sync_order_lines_from_request",
         "order_id": order_id,
         "changed_by": changed_by,
         "results": results,
+        "partial_fulfillment": partial_fulfillment,
         "message": "Order line sync completed." if not had_errors else "Order line sync completed with errors.",
     }
 

@@ -11,7 +11,7 @@ All order API routes are registered under `/api`.
 | Method | Path | Current purpose | Main caller |
 | --- | --- | --- | --- |
 | `GET` | `/api/orders` | List orders from `ORDER_OVERVIEW`. | Web app, future review tooling. |
-| `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES`. | Web app, future Order Steward review. |
+| `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES`. Header includes `payment_method` merged from `ORDER_MASTER` (not formula-driven). | Web app, `1.2` `get_order_context` branch. |
 | `GET` | `/api/orders/available-pigs` | Return sale-available pigs from `SALES_AVAILABILITY`. | Web app/order tooling. |
 | `POST` | `/api/orders/<order_id>/reserve` | Mark order lines as reserved and update master reserved count. | Web app, future steward action. |
 | `POST` | `/api/orders/<order_id>/release` | Release reserved order lines and reset master reserved count. | Web app, future cancel/reject flow. |
@@ -37,6 +37,7 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `create_order_with_lines` | `POST /api/master/orders` then `POST /api/master/orders/<order_id>/sync-lines` | Live — atomic branch in `1.2` |
 | `update_order` | `PATCH /api/master/orders/<order_id>` | Live |
 | `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` | Live |
+| `get_order_context` | `GET /api/orders/<order_id>` (read-only; formatted in steward) | Live |
 | `cancel_order` | `POST /api/orders/<order_id>/cancel` | Live |
 | `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path and backend `400` customer-safe reply verified. |
 
@@ -152,7 +153,7 @@ Important rules:
 - `request_item_key` is required and must remain stable across repeated syncs.
 - Split items such as `primary_1` and `primary_2` must both be preserved.
 - Exact-match sync can cancel/recreate lines.
-- Partial/no-match behavior needs hardening before Sam treats the order as fully updated.
+- **Partial match:** when some but not enough stock is available, the backend still creates lines for the matched pigs. Each result row can have `match_status: partial_match`, `matched_quantity` (fulfilled count), `available_quantity` (candidates matching filters), and the top-level response includes `partial_fulfillment: true` when any row was partial. Sam/n8n must not treat that as full quantity satisfaction.
 
 ## Reserve And Release Behavior (Phase 1.6)
 

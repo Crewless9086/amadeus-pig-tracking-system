@@ -295,6 +295,31 @@
               },
               "renameOutput": true,
               "outputKey": "Create Order With Lines"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "f611c2d3-e4f5-4607-a819-0a1b2c3d4e5f",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "get_order_context",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Get Order Context"
             }
           ]
         },
@@ -1556,6 +1581,18 @@
               "name": "sync_results",
               "value": "={{$json.results}}",
               "type": "array"
+            },
+            {
+              "id": "c38e810d-a1b2-4c3d-8e9f-0123456789ab",
+              "name": "results",
+              "value": "={{$json.results}}",
+              "type": "array"
+            },
+            {
+              "id": "d49f921e-b2c3-4d5e-8f90-123456789abc",
+              "name": "partial_fulfillment",
+              "value": "={{$json.partial_fulfillment}}",
+              "type": "boolean"
             }
           ]
         },
@@ -1732,6 +1769,40 @@
       ],
       "id": "f5a6b7c8-d9e0-1234-f012-456789012345",
       "name": "Code - Format Create With Lines Result"
+    },
+    {
+      "parameters": {
+        "url": "=https://amadeus-pig-tracking-system.onrender.com/api/orders/{{ $json.order_id }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        992,
+        -960
+      ],
+      "id": "a01b02c3-d4e5-4678-a90b-cdef01234567",
+      "name": "HTTP - Get Order Context",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json || {};\nconst normalized = $('Code - Normalize Order Payload').first()?.json || {};\nconst fallbackOrderId = String(normalized.order_id || '').trim();\n\nconst order = raw.order;\nconst ok = raw.success === true && order && String(order.order_id || '').trim() !== '';\n\nfunction slimLine(L) {\n  if (!L || typeof L !== 'object') return {};\n  return {\n    order_line_id: L.order_line_id,\n    pig_id: L.pig_id,\n    sale_category: L.sale_category,\n    weight_band: L.weight_band,\n    sex: L.sex,\n    line_status: L.line_status\n  };\n}\n\nconst o = ok ? order : {};\nconst existing_order_context = ok\n  ? {\n      order: {\n        order_id: o.order_id,\n        order_status: o.order_status,\n        approval_status: o.approval_status,\n        payment_status: o.payment_status,\n        customer_name: o.customer_name,\n        requested_category: o.requested_category,\n        requested_weight_range: o.requested_weight_range,\n        requested_sex: o.requested_sex,\n        requested_quantity: o.requested_quantity,\n        collection_date: o.collection_date,\n        collection_location: o.collection_location,\n        line_count: o.line_count,\n        payment_method: o.payment_method || '',\n        notes: o.notes\n      },\n      lines: Array.isArray(raw.lines) ? raw.lines.map(slimLine) : []\n    }\n  : null;\n\nconst orderId = ok ? String(o.order_id || '') : fallbackOrderId;\nconst msg = ok\n  ? 'Order context retrieved.'\n  : String(raw.error || raw.message || 'Order context fetch failed.').slice(0, 500);\n\nreturn [\n  {\n    json: {\n      success: ok,\n      action: 'get_order_context',\n      order_id: orderId,\n      message: msg,\n      order_context_fetch_ok: ok,\n      existing_order_context: existing_order_context\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -960
+      ],
+      "id": "b12c34d5-e6f7-4890-abcd-ef1234567890",
+      "name": "Code - Format Get Order Context Result"
     }
   ],
   "pinData": {
@@ -1859,6 +1930,13 @@
         [
           {
             "node": "Set - Build Create With Lines Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Get Order Context",
             "type": "main",
             "index": 0
           }
@@ -2139,6 +2217,17 @@
         [
           {
             "node": "Code - Format Create With Lines Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Order Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Get Order Context Result",
             "type": "main",
             "index": 0
           }

@@ -17,7 +17,12 @@ When Executed by Another Workflow
 Input data mode: Accept all data
 
 ## Inputs
-Fields it expects.
+
+Fields it expects. Discriminator: **`action`**.
+
+**Read-only:** `get_order_context` — requires `order_id` (and optional `changed_by`). Returns slim `existing_order_context` for Sam state merge in `1.0`; uses `GET /api/orders/<order_id>`.
+
+Other actions: see `workflow.json` switch rules and `DATA_FLOW.md`.
 
 ## Outputs
 [

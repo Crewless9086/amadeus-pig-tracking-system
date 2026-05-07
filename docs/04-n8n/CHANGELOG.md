@@ -15,6 +15,31 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-07 — Partial sync lines, order context fetch, GET order `payment_method`
+
+Type: `FIX` + `ADD` + `IMPROVEMENT`
+
+**Backend**
+
+- `sync_order_lines_from_request`: `partial_match` now creates `ORDER_LINES` for available pigs (up to requested quantity), not zero lines. Per-item payload includes `available_quantity`; top-level `partial_fulfillment` when any item was short.
+- `GET /api/orders/<order_id>`: `order` object now includes `payment_method` from `ORDER_MASTER.Payment_Method` (overview alone does not carry it).
+
+**`1.2 - Amadeus Order Steward`**
+
+- New steward action `get_order_context`: `GET /api/orders/<id>` → `Code - Format Get Order Context Result` returns `order_context_fetch_ok`, `existing_order_context` (slim header + lines).
+- `Set - Format Sync Order Lines Result` also passes through top-level `results` and `partial_fulfillment` for downstream Sam merge.
+
+**`1.0 - Sam - Sales Agent - Chatwoot`**
+
+- After `Code - Build Sales Agent Memory Summary`, when a draft `order_id` exists: `If` → `Set - Get Order Context Payload` → `Call 1.2 - Get Order Context` → merge into item → `Switch - Clarify or Auto`.
+- `Code - Build Order State` merges fetched header into **empty** fields only; message + Chatwoot attributes win. Sex-only phrases (e.g. “any sex”) now set `should_enrich_existing_draft` without requiring order-intent gates on `msgSex`.
+- `Code - Slim Sales Agent User Context` reads `results` or `sync_results`; sets `had_partial` / `partial_fulfillment` in `sam_steward_result_compact`.
+- Sam system prompt: **PARTIAL STOCK SYNC** guidance when steward compact shows short allocation.
+
+**Docs:** `DATA_FLOW.md`, `API_STRUCTURE.md`, `ORDER_LOGIC.md`.
+
+Status: implemented in repo exports; **re-import both workflows to n8n** and run live tests (partial stock 6 vs 5, sex-only reply, Cash then send for approval).
+
 ### 2026-04-30 - Phase 1.4 Bugfix C — Test C: Sam Still Overstating On Backend 400 Path
 
 Type: `FIX`
