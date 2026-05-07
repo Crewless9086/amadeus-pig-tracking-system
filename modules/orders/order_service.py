@@ -602,6 +602,11 @@ def get_order_detail(order_id: str):
             "updated_at": format_date_for_json(row.get("Updated_At", "")),
         })
 
+    active_line_count = sum(
+        1 for line in lines if to_clean_string(line.get("line_status", "")) != "Cancelled"
+    )
+    order_record["active_line_count"] = active_line_count
+
     return {
         "order": order_record,
         "lines": lines,

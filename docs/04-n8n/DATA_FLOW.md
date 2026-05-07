@@ -66,7 +66,7 @@ Before `Switch - Clarify or Auto` on the AUTO preparation path, when `sales_agen
 | Field | Meaning |
 | --- | --- |
 | `order_context_fetch_ok` | `true` only when the API returned `success` and a full order object. |
-| `existing_order_context` | Slim bundle: `order` (header fields including `payment_method` from `ORDER_MASTER`) and `lines` (minimal line summary). |
+| `existing_order_context` | Slim bundle: `order` (header fields including `payment_method` from `ORDER_MASTER`) and `lines` (minimal line summary). Order includes **`line_count`** (sheet formula: all rows including **Cancelled**) and **`active_line_count`** (non-cancelled lines only — use this for “how many pigs/lines on the draft”) plus **`line_count_includes_cancelled: true`** as a hint for the model. |
 
 **Merge rule in `Code - Build Order State`:** values extracted from the **current message** and Chatwoot attributes win. The fetched bundle fills **only** empty gaps for quantity, category, weight band, sex, collection location, and payment method (Cash/EFT). This avoids Sam re-asking for payment or header fields already stored on the draft when the customer says “Cash” or “send for approval” in a short follow-up.
 

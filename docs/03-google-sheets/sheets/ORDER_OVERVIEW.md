@@ -33,6 +33,9 @@ Payment_Status	=IF($A2="","",ORDER_MASTER!S2)
 Collection_Date	=IF($A2="","",ORDER_MASTER!R2)
 Collection_Location	=IF($A2="","",ORDER_MASTER!Q2)
 Line_Count	=IF($A2="","",COUNTIF(ORDER_LINES!$B:$B,$A2))
+
+**Semantics:** this counts **every** `ORDER_LINES` row for the order, **including** rows whose `Line_Status` is `Cancelled`. It is a historical row total, not “pigs currently on the order.” For operational counts (e.g. send-for-approval, Sam messaging), use **`active_line_count`** from `GET /api/orders/<order_id>` (computed in the API from line rows where `line_status !== "Cancelled"`), or count non-cancelled lines in tooling.
+
 Reserved_Line_Count	=IF($A2="","",COUNTIFS(ORDER_LINES!$B:$B,$A2,ORDER_LINES!$J:$J,"Reserved"))
 Confirmed_Line_Count	=IF($A2="","",COUNTIFS(ORDER_LINES!$B:$B,$A2,ORDER_LINES!$J:$J,"Confirmed"))
 Collected_Line_Count	=IF($A2="","",COUNTIFS(ORDER_LINES!$B:$B,$A2,ORDER_LINES!$J:$J,"Collected"))

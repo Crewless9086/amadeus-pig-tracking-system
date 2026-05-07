@@ -11,7 +11,7 @@ All order API routes are registered under `/api`.
 | Method | Path | Current purpose | Main caller |
 | --- | --- | --- | --- |
 | `GET` | `/api/orders` | List orders from `ORDER_OVERVIEW`. | Web app, future review tooling. |
-| `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES`. Header includes `payment_method` merged from `ORDER_MASTER` (not formula-driven). | Web app, `1.2` `get_order_context` branch. |
+| `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES`. Header includes `payment_method` (from `ORDER_MASTER`), `line_count` (from overview: **all** line rows including cancelled — see `ORDER_OVERVIEW.md`), and **`active_line_count`** (non-cancelled lines only, matches send-for-approval eligibility). | Web app, `1.2` `get_order_context` branch. |
 | `GET` | `/api/orders/available-pigs` | Return sale-available pigs from `SALES_AVAILABILITY`. | Web app/order tooling. |
 | `POST` | `/api/orders/<order_id>/reserve` | Mark order lines as reserved and update master reserved count. | Web app, future steward action. |
 | `POST` | `/api/orders/<order_id>/release` | Release reserved order lines and reset master reserved count. | Web app, future cancel/reject flow. |

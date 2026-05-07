@@ -15,6 +15,15 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-07 — `Line_Count` vs active lines (documented + API)
+
+Type: `DOCS` + `IMPROVEMENT`
+
+- **Cause:** `ORDER_OVERVIEW.Line_Count` uses `COUNTIF(ORDER_LINES!$B:$B, order_id)` — it counts **all** line rows, including **`Cancelled`** (common after sync replace). Example: 3 active + 3 cancelled → sheet shows 6. **`send_for_approval`** uses only non-cancelled lines, so behaviour was already correct; the confusion risk is **human/Sam** reading `line_count` as “pigs on the order.”
+- **API:** `GET /api/orders/<order_id>` → `order.active_line_count` = count of lines where `line_status !== "Cancelled"` (same rule as approval).
+- **`1.2` `get_order_context` formatter:** passes `active_line_count` (falls back to counting slim lines if API not deployed yet) and `line_count_includes_cancelled: true`.
+- **Docs:** `ORDER_OVERVIEW.md`, `API_STRUCTURE.md`, `DATA_FLOW.md`.
+
 ### 2026-05-07 — Partial sync lines, order context fetch, GET order `payment_method`
 
 Type: `FIX` + `ADD` + `IMPROVEMENT`

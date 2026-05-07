@@ -67,6 +67,8 @@ Newborn animals may be visible for information, but they must not be treated as 
 
 Operational order changes must be made in `ORDER_MASTER` and `ORDER_LINES`, not in the overview.
 
+**`Line_Count`** counts every matching row in `ORDER_LINES` for the order, **including cancelled** historical rows — see `sheets/ORDER_OVERVIEW.md`. For “active line” counts, use API `order.active_line_count` from `GET /api/orders/<id>` or filter lines by `Line_Status != Cancelled` in tooling.
+
 ## `LITTER_OVERVIEW`
 
 `LITTER_OVERVIEW` calculates litter counts, sex assignment, active/on-farm counts, weight averages, age range, and attention flags from `LITTERS`, `PIG_MASTER`, and `PIG_OVERVIEW`.
