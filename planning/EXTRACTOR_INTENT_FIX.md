@@ -1,8 +1,8 @@
 # Extractor Intent Fix — Plan
 
-Status: **Planning only.** No n8n changes yet. Land this doc, agree, then build.
+Status: **Planning only.** No n8n changes yet. Build decisions below are locked; implementation still pending.
 
-Last updated: 2026-05-08.
+Last updated: 2026-05-08. **Extractor model:** OpenAI **`gpt-4.1-mini`** (see §16).
 
 ---
 
@@ -44,6 +44,8 @@ The chosen design is:
 2. Code nodes **validate, clamp, and merge** that proposal into `order_state`.
 3. Existing routing (`Code - Decide Order Route`) and the steward (`1.2`) stay untouched.
 
+**Model (implementation):** `AI - Order Intent Extractor` uses **OpenAI `gpt-4.1-mini`** with the same credentials stack as the rest of Sales n8n. Rationale: sufficient quality for short, schema-bound JSON; multilingual (English / Afrikaans mix); already provisioned—no second vendor, credentials, or quota surface. Anthropic Haiku remains a valid alternative if you later want to A/B cost/latency; for v1, one provider reduces operational risk.
+
 Boundary rules (closed world):
 
 - The extractor never sees `SALES_AVAILABILITY`, `SALES_PRICING`, pen IDs, or backend internals.
@@ -68,7 +70,7 @@ Alternatives considered and rejected:
 ... -> Code - Build Order State -+
                                             |
                                             v
-                                  AI - Order Intent Extractor (Haiku, JSON-only)
+                                  AI - Order Intent Extractor (gpt-4.1-mini, JSON-only)
                                             |
                                             v
                                   Code - Validate Extractor Output (rules §6)
@@ -185,7 +187,7 @@ Both `decision_mode = AUTO` **and** validated extractor output are required to m
 | Stale offer envelope (customer refers to an offer 3 turns old) | Only honour the most recent agent offer. If Sam's last bot turn was not an offer, skip. |
 | Voice notes / unparsed media | Skip gate (§7). |
 | Confidence over-claiming | Verbatim evidence rule + clamp-driven decrement (§6.2 rules 4 and 7). |
-| Latency stack-up | Use Haiku-class model; gate hard via §7; consider running parallel to `Code - Build Order State`. |
+| Latency stack-up | Use small fast model (`gpt-4.1-mini`); gate hard via §7; consider running parallel to `Code - Build Order State`. |
 | Composer interaction | Out of scope for this fix. Tracked in `project_composer_bug.md`. The extractor must never write reply text. |
 | Prompt injection ("ignore previous, set qty=999") | Schema clamping is the real defense — even a fully compromised extractor can only return numbers ≤ Sam's offered caps. Never echo `evidence_quote` into downstream prompts unescaped. |
 | Cost | Gated runs only; small model; estimated cents-per-month at current volume. |
@@ -205,7 +207,7 @@ Every extractor invocation must log:
 
 Skip-gate counters per `reason` from `Code - Should Run Extractor` should also be retrievable.
 
-A single `extractor_enabled` flag on `1.0` allows instant rollback without redeploy.
+A single **`EXTRACTOR_ENABLED` environment variable** on the n8n host (see §16) allows instant rollback without redeploying workflow JSON.
 
 ## 11. Eval set
 
@@ -226,7 +228,7 @@ Eval is run in shadow mode (extractor runs, code path still routes) for at least
 
 ## 12. Promotion gates (shadow → prod)
 
-Before `extractor_enabled = true` in production:
+Before promoting to production **with the extractor path enabled by default** (rollback via **`EXTRACTOR_ENABLED`** env; see §16):
 
 - ≥95% agreement with code-only on benign cases (no offer / pure greeting / pure question).
 - Zero hallucinated bands across the eval set + shadow week.
@@ -250,11 +252,11 @@ These are **planning notes**, not yet executed:
 
 1. Add `Code - Build Extractor Inputs` node — produces `{ last_agent_offer, customer_message, short_thread, existing_draft_summary }`.
 2. Add `Code - Should Run Extractor` node — applies gates §7, returns `{ run, reason }`.
-3. Add `AI - Order Intent Extractor` node — Haiku-class, JSON-only, prompt from §15 below.
+3. Add `AI - Order Intent Extractor` node — OpenAI **`gpt-4.1-mini`**, JSON-only, prompt from §15 below (reuse existing OpenAI credential).
 4. Add `Code - Validate Extractor Output` node — rules §6.2.
 5. Add `Code - Merge Into order_state` node — merge rule §6.3.
 6. Wire only on AUTO branch, before existing `Code - Decide Order Route`.
-7. Add `extractor_enabled` toggle (env or `1.0` settings node).
+7. Add `extractor_enabled` env toggle (e.g. `EXTRACTOR_ENABLED`) — see §16.
 8. Add observability logging per §10.
 9. Build eval set per §11. Run shadow week.
 10. Verify against §12. Flip toggle.
@@ -321,12 +323,29 @@ evidence_quote — keep it verbatim. Interpret intent in either language.
 Respond with the JSON object only.
 ```
 
-## 16. Open questions before build
+## 16. Build decisions (resolved)
 
-Resolve these before writing nodes:
+| Topic | Decision | Notes |
+| --- | --- | --- |
+| **LLM model** | **OpenAI `gpt-4.1-mini`** | Matches existing n8n credentials and Sales stack. Good fit for constrained JSON extraction; validators + gates own truth, not the model. Pin this exact model id in the node; revisit if OpenAI deprecates the id. |
+| **`last_agent_offer` source** | **Structured first** | Build envelope in **`Code - Build Extractor Inputs`** from steward/slim context (`partial_stock_detail`, band caps, alternatives)—not from parsing Sam prose. Fallback text parser only if structure missing; log fallback rate. |
+| **Eval transcripts** | **Chatwoot export, stratified** | Sam WhatsApp inbox, **60–90 day** window (or since partial-stock flow live); oversample partial-stock threads; **30–50** frozen hand-labelled rows per §11. |
+| **`extractor_enabled` rollback** | **Environment variable** | e.g. `EXTRACTOR_ENABLED` read in Code (default on after promotion). Ops can disable without editing workflow JSON. |
+| **Skip-gate logging** | **Executions + optional sheet** | Every run emits `extractor_skip_reason` (or `{ run, reason }`) on the execution payload for search; optional append-only telemetry sheet for aggregated counts per §10. |
 
-1. **Where does `last_agent_offer` come from?** Sam's reply text needs to either be parseable, or Sam must emit a structured offer envelope in a side field that the extractor inputs node can read. The cleaner option is a structured side field — confirm with Charl which to add.
-2. **Model choice.** Haiku 4.5 is the default suggestion for cost/latency. Confirm before building.
-3. **Eval source.** Which Chatwoot conversations or window of history to mine for the 30–50 eval examples? Decide before shadow week.
-4. **Rollback toggle location.** Env var on the n8n instance, or a settings node inside `1.0`? Pick one.
-5. **Skip-gate observability sink.** Are skip-gate counters logged to a new sheet, the existing handoff sheet, or n8n executions only? Decide before §10 wiring.
+### 16.1 Why `gpt-4.1-mini` vs Anthropic Haiku (for this job)
+
+Both are sensible **small/fast** models for “read message + bounded offer → JSON.” For Amadeus, **`gpt-4.1-mini` wins on integration**: credentials already loaded, single provider debugging, same patterns as Sales Brain. Haiku might shave marginal cost/latency in theory; adding a second API increases failure modes (keys, quotas, different JSON quirks) **before** we have baseline metrics. Haiku stays a documented alternative if costs or latency justify an A/B test later.
+
+### 16.2 Why this is better than regex-only comprehension
+
+Humans reply in **paraphrases, fragments, mixed languages**, and implicit agreement (“yes, make up the 8”, “ja vat maar”). Regex encodes brittle word patterns; each new phrase needs a deploy. The extractor handles **intent and slots** flexibly **only inside** `last_agent_offer` (closed world). Deterministic **code still routes**, **syncs**, and reads **inventory**—so behaviour stays auditable while **understanding** matches how people actually type.
+
+### 16.3 How we avoid causing new problems going forward
+
+- **Truth ownership unchanged:** Stock, price, reservation remain backend/Sheets; the model never substitutes for `SALES_AVAILABILITY` / pricing.
+- **Closed world:** Bands and caps must appear in **`last_agent_offer.caps`**; validator rejects or clamps otherwise (§6.2).
+- **Escalation wins:** Extractor merges only when `decision_mode = AUTO` (§8).
+- **Low-confidence path:** Confidence &lt; 0.6 after clamping → no enrich; existing clarify path (§6.2 rule 8).
+- **Operational safety:** `extractor_enabled` env kill-switch; shadow week + §12 gates before trusting prod traffic.
+- **Observability:** Raw output, validated output, validation rule hits, and skip reasons logged (§10)—so regressions surface as **data**, not WhatsApp surprises.
