@@ -11,15 +11,60 @@ function canonBand(lo, hi) {
   return `${a}_to_${b}_Kg`;
 }
 
+function normalizeDashes(rawText) {
+  return String(rawText || "")
+    .replace(/\u2013/g, "-")
+    .replace(/\u2014/g, "-")
+    .replace(/\u2212/g, "-")
+    .replace(/[\u2010\u2015\uFE58\uFE63\uFF0D]/g, "-");
+}
+
+function bandLowBoundForMix(wr) {
+  const m = String(wr || "").match(/^(\d+)_to_(\d+)/i);
+  return m ? Number(m[1]) : 9999;
+}
+
+/**
+ * Merge transcript parses with last_agent_offer.caps (from Code - Build Extractor Inputs).
+ * Drops the customer's primary band; sorts lighter bands first for stable fill order.
+ */
+function mergeAdjacentBandsWithOfferCaps(parsedBands, caps, prefWr) {
+  const pref = clean(prefWr || "");
+  const map = new Map();
+
+  const rows = Array.isArray(parsedBands) ? parsedBands : [];
+  for (const b of rows) {
+    if (!b || !b.weight_range || clean(b.weight_range) === pref) continue;
+    const wr = clean(b.weight_range);
+    const q = Number(b.quantity || 0);
+    if (!(q > 0)) continue;
+    map.set(wr, Math.max(map.get(wr) || 0, q));
+  }
+
+  const capRows = Array.isArray(caps) ? caps : [];
+  for (const c of capRows) {
+    const wr = clean(String(c.weight_range || ""));
+    if (!wr || wr === pref) continue;
+    const mq = Number(c.max_qty);
+    if (!(mq > 0)) continue;
+    map.set(wr, Math.max(map.get(wr) || 0, mq));
+  }
+
+  return [...map.entries()]
+    .map(([weight_range, quantity]) => ({ weight_range, quantity }))
+    .sort((a, b) => bandLowBoundForMix(a.weight_range) - bandLowBoundForMix(b.weight_range));
+}
+
 /**
  * Same intent as Build Order State `extractAdjacentBandOffersFromTranscript`:
- * recover band/qty offers from Sam transcript (weaners / pigs / "N in X-Y kg").
+ * recover Sam's band/qty offers ("N available in the X-Y kg", "N in the X-Y kg range").
+ * Does not use "N weaners X-Y kg" (that pattern matches the customer's primary line).
  */
 function extractAdjacentBandOffersFromTranscript(raw) {
   const rawText = clean(raw);
   if (!rawText) return [];
 
-  const normalized = rawText.replace(/\u2013/g, "-").replace(/\u2014/g, "-");
+  const normalized = normalizeDashes(rawText);
   const out = [];
 
   function pushQty(low, high, qty) {
@@ -35,9 +80,15 @@ function extractAdjacentBandOffersFromTranscript(raw) {
   }
 
   let mm;
-  const rx1 =
-    /\b(\d+)\s+(?:weaners?|piglets?|pigs)\s+(?:each\s+(?:around|about)\s*)?(?:around\s+|at\s+)?(\d+)\s*-\s*(\d+)\s*kg/gi;
-  while ((mm = rx1.exec(normalized)) !== null) {
+  const reAvail =
+    /(\d+)\s+available\s+in\s+(?:the\s+)?(\d+)\s*-\s*(\d+)\s*kg(?:\s+range)?\b/gi;
+  while ((mm = reAvail.exec(normalized)) !== null) {
+    pushQty(mm[2], mm[3], mm[1]);
+  }
+
+  const reThereAre =
+    /there\s+are\s+(\d+)\s+available\s+in\s+the\s+(\d+)\s*-\s*(\d+)\s*kg/gi;
+  while ((mm = reThereAre.exec(normalized)) !== null) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
@@ -46,13 +97,14 @@ function extractAdjacentBandOffersFromTranscript(raw) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
-  const rx3 = /\b(\d+)\s+pigs?\s+in\s+(\d+)\s*-\s*(\d+)\s*kg\b/gi;
+  const rx3 = /\b(\d+)\s+pigs?\s+in\s+(?:the\s+)?(\d+)\s*-\s*(\d+)\s*kg\b/gi;
   while ((mm = rx3.exec(normalized)) !== null) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
-  const rx4 = /\b(\d+)\s+in\s+(\d+)\s*-\s*(\d+)\s*kg\b/gi;
-  while ((mm = rx4.exec(normalized)) !== null) {
+  const rxBareInKg =
+    /\b(\d+)\s+in\s+(?:the\s+)?(\d+)\s*-\s*(\d+)\s*kg(?:\s+range)?\b/gi;
+  while ((mm = rxBareInKg.exec(normalized)) !== null) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
@@ -130,11 +182,13 @@ function enrichPartialMixItems(item, requestedItems) {
     clean(item.ai_output || "")
   ].filter(Boolean);
 
-  let adjacentBands = [];
-  for (const chunk of chunks) {
-    adjacentBands = extractAdjacentBandOffersFromTranscript(chunk);
-    if (adjacentBands.length > 0) break;
-  }
+  const mergedTranscript = chunks.join("\n");
+  const adjacentBands = mergeAdjacentBandsWithOfferCaps(
+    extractAdjacentBandOffersFromTranscript(mergedTranscript),
+    (item.last_agent_offer || {}).caps,
+    prefWr
+  );
+
   if (adjacentBands.length === 0) return base;
 
   let remainder = Math.max(0, reqQty - draftLines);

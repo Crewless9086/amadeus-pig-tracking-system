@@ -151,9 +151,9 @@ function capsFromSamText(samText, preferredWeightRange) {
     }
   }
 
-  // "…and 2 in 15–19kg" (no "available"/"pigs")
-  const reQtyInBareBand = /\b(\d+)\s+in\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/gi;
-  while ((mm = reQtyInBareBand.exec(text)) !== null) {
+  // "…and 2 in 15–19kg" / "2 in the 15–19kg range" (bare "N in … kg")
+  const reQtyInKg = /\b(\d+)\s+in\s+(?:the\s+)?(\d+)\s*[-–]\s*(\d+)\s*kg(?:\s+range)?\b/gi;
+  while ((mm = reQtyInKg.exec(text)) !== null) {
     const band = canonBand(mm[2], mm[3]);
     if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
   }
