@@ -110,9 +110,10 @@ function capsFromSamText(samText, preferredWeightRange) {
     }
   }
 
-  // Bullets or inline: "- 2 pigs in 7–9kg" / "2 pigs in 7-9 kg"
-  const rePigsInBand = /\b(\d+)\s+pigs?\s+in\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/gi;
-  while ((mm = rePigsInBand.exec(text)) !== null) {
+  // Bullets / inline: "- 2 pigs in 7–9kg" / "2 weaners in 7–9 kg" / "2 piglets in …"
+  const reAnimalsInBand =
+    /\b(\d+)\s+(?:pigs?|weaners?|piglets?)\s+in\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/gi;
+  while ((mm = reAnimalsInBand.exec(text)) !== null) {
     const band = canonBand(mm[2], mm[3]);
     if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
   }

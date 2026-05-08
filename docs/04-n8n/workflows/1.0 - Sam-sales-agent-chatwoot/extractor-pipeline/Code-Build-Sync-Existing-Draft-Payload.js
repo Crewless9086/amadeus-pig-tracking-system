@@ -91,7 +91,8 @@ function extractAdjacentBandOffersFromTranscript(raw) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
-  const rx3 = /\b(\d+)\s+pigs?\s+in\s+(?:the\s+)?(\d+)\s*-\s*(\d+)\s*kg\b/gi;
+  const rx3 =
+    /\b(\d+)\s+(?:pigs?|weaners?|piglets?)\s+in\s+(?:the\s+)?(\d+)\s*-\s*(\d+)\s*kg\b/gi;
   while ((mm = rx3.exec(normalized)) !== null) {
     pushQty(mm[2], mm[3], mm[1]);
   }
