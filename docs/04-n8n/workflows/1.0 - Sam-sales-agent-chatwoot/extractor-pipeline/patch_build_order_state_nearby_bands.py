@@ -82,12 +82,6 @@ function extractAdjacentBandOffersFromTranscript(raw) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
-  const reThereAre =
-    /there\s+are\s+(\d+)\s+available\s+in\s+the\s+(\d+)\s*-\s*(\d+)\s*kg/gi;
-  while ((mm = reThereAre.exec(normalized)) !== null) {
-    pushQty(mm[2], mm[3], mm[1]);
-  }
-
   const rx2 = /\band\s+(\d+)\s+at\s+(\d+)\s*-\s*(\d+)\s*kg/gi;
   while ((mm = rx2.exec(normalized)) !== null) {
     pushQty(mm[2], mm[3], mm[1]);

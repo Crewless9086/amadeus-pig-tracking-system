@@ -86,12 +86,6 @@ function extractAdjacentBandOffersFromTranscript(raw) {
     pushQty(mm[2], mm[3], mm[1]);
   }
 
-  const reThereAre =
-    /there\s+are\s+(\d+)\s+available\s+in\s+the\s+(\d+)\s*-\s*(\d+)\s*kg/gi;
-  while ((mm = reThereAre.exec(normalized)) !== null) {
-    pushQty(mm[2], mm[3], mm[1]);
-  }
-
   const rx2 = /\band\s+(\d+)\s+at\s+(\d+)\s*-\s*(\d+)\s*kg/gi;
   while ((mm = rx2.exec(normalized)) !== null) {
     pushQty(mm[2], mm[3], mm[1]);
@@ -128,15 +122,24 @@ function draftActiveLineCount(existingOrderContext) {
 }
 
 /**
- * Last-mile safety: if only `primary_1` was built but transcript shows other bands,
- * rebuild same nearby_band_* items as Build Order State would (shortfall + consent).
+ * Last-mile safety: rebuild nearby_band_* from transcript+caps when the draft has a
+ * line shortfall and the customer confirms a mix — even if Build Order State already
+ * appended a malformed single nearby row (e.g. double-count from overlapping regex).
  */
 function enrichPartialMixItems(item, requestedItems) {
   const base = Array.isArray(requestedItems) ? requestedItems : [];
-  if (base.length !== 1) return base;
+  const primaryRows = base.filter((row) =>
+    /^primary_\d+$/i.test(clean(row.request_item_key || ""))
+  );
+  const nearbyExisting = base.filter((row) =>
+    /^nearby_band_\d+$/i.test(clean(row.request_item_key || ""))
+  );
 
-  const primary = base[0];
-  if (clean(primary.request_item_key || "") !== "primary_1") return base;
+  if (primaryRows.length !== 1 || clean(primaryRows[0].request_item_key || "") !== "primary_1") {
+    return base;
+  }
+
+  const primary = primaryRows[0];
 
   const category = clean(primary.category || "");
   const prefWr = clean(primary.weight_range || "");
@@ -193,7 +196,7 @@ function enrichPartialMixItems(item, requestedItems) {
 
   let remainder = Math.max(0, reqQty - draftLines);
   let nearbyIndex = 0;
-  const out = [...base];
+  const rebuilt = [primary];
 
   for (const band of adjacentBands) {
     if (remainder <= 0) break;
@@ -204,7 +207,7 @@ function enrichPartialMixItems(item, requestedItems) {
     if (!(takeQty > 0)) continue;
     nearbyIndex += 1;
     remainder -= takeQty;
-    out.push({
+    rebuilt.push({
       request_item_key: `nearby_band_${nearbyIndex}`,
       category,
       weight_range: band.weight_range,
@@ -216,7 +219,42 @@ function enrichPartialMixItems(item, requestedItems) {
     });
   }
 
-  return out.length > base.length ? out : base;
+  if (rebuilt.length <= 1) return base;
+
+  const capRows = Array.isArray((item.last_agent_offer || {}).caps)
+    ? (item.last_agent_offer || {}).caps
+    : [];
+  const capByWr = new Map();
+  for (const c of capRows) {
+    const wr = clean(String(c.weight_range || ""));
+    const mq = Number(c.max_qty);
+    if (!wr || wr === prefWr || !(mq > 0)) continue;
+    capByWr.set(wr, mq);
+  }
+
+  let legacyOversized = false;
+  for (const row of nearbyExisting) {
+    const wr = clean(row.weight_range || "");
+    const q = Number(row.quantity || 0);
+    const cap = capByWr.get(wr);
+    if (cap > 0 && q > cap) legacyOversized = true;
+  }
+
+  function nearbyTierSignature(rows) {
+    return rows
+      .map((r) => `${clean(r.weight_range || "")}:${clean(String(r.quantity || ""))}`)
+      .join("|");
+  }
+
+  const rebuiltNearby = rebuilt.slice(1);
+  if (
+    legacyOversized ||
+    nearbyTierSignature(rebuiltNearby) !== nearbyTierSignature(nearbyExisting)
+  ) {
+    return rebuilt;
+  }
+
+  return base;
 }
 
 const state = item.order_state || {};
@@ -231,6 +269,7 @@ if (!Array.isArray(state.requested_items) || state.requested_items.length === 0)
 }
 
 const baseLen = state.requested_items.length;
+const requestedItemsBefore = JSON.stringify(state.requested_items);
 const requestedItemsFinal = enrichPartialMixItems(item, state.requested_items);
 
 if (!Array.isArray(requestedItemsFinal) || requestedItemsFinal.length === 0) {
@@ -249,7 +288,7 @@ return [
     json: {
       ...item,
       sync_payload_requested_items_before_enrich: baseLen,
-      sync_payload_nearby_items_enriched: requestedItemsFinal.length > baseLen,
+      sync_payload_nearby_items_enriched: JSON.stringify(requestedItemsFinal) !== requestedItemsBefore,
       order_state: {
         ...(typeof state === "object" && state !== null ? state : {}),
         requested_items: requestedItemsFinal

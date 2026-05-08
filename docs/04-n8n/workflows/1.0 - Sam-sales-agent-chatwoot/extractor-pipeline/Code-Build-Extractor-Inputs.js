@@ -90,12 +90,6 @@ function capsFromSamText(samText, preferredWeightRange) {
     if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
   }
 
-  const reThereAre = /there\s+are\s+(\d+)\s+available\s+in\s+the\s+(\d+)\s*-\s*(\d+)\s*kg/gi;
-  while ((mm = reThereAre.exec(text)) !== null) {
-    const band = canonBand(mm[2], mm[3]);
-    if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
-  }
-
   const reInBand = /(\d+)\s+in\s+the\s+(\d+)\s*-\s*(\d+)\s*kg\s+band/gi;
   while ((mm = reInBand.exec(text)) !== null) {
     const band = canonBand(mm[2], mm[3]);
