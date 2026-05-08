@@ -68,6 +68,21 @@ function capsFromSamText(samText, preferredWeightRange) {
     capsMap.set(preferredWeightRange, Math.max(capsMap.get(preferredWeightRange) || 0, Number(mExact[1])));
   }
 
+  // "...only 3 weaners available in that exact 10–14kg range..."
+  const mWeanExactKg = text.match(
+    /\bonly\s+(\d+)\s+weaners?\s+available\s+in\s+that\s+exact\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/i
+  );
+  if (mWeanExactKg) {
+    const band = canonBand(mWeanExactKg[2], mWeanExactKg[3]);
+    const wr = band || preferredWeightRange;
+    if (wr) {
+      const n = Number(mWeanExactKg[1]);
+      if (!Number.isNaN(n) && n > 0) {
+        capsMap.set(wr, Math.max(capsMap.get(wr) || 0, n));
+      }
+    }
+  }
+
   const reAvail = /(\d+)\s+available\s+in\s+(?:the\s+)?(\d+)\s*-\s*(\d+)\s*kg/gi;
   let mm;
   while ((mm = reAvail.exec(text)) !== null) {

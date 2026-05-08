@@ -52,7 +52,13 @@ async function runExtractor(ctx, item) {
   const started = Date.now();
   let credentials;
   try {
-    credentials = await ctx.getCredentials("openAiApi");
+    if (typeof ctx.getCredentials === "function") {
+      credentials = await ctx.getCredentials("openAiApi");
+    } else if (ctx.helpers && typeof ctx.helpers.getCredentials === "function") {
+      credentials = await ctx.helpers.getCredentials("openAiApi");
+    } else {
+      throw new Error("No getCredentials helper on execution context");
+    }
   } catch (err) {
     return {
       ...item,

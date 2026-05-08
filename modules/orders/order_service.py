@@ -303,12 +303,25 @@ def _get_active_pig_ids_on_order(order_id: str, exclude_request_item_key: str = 
     return pig_ids
 
 
-def _cancel_order_lines(order_line_ids):
+def _cancel_order_lines(order_line_ids, order_lines_cache=None):
+    """
+    Cancel lines by ID. When order_lines_cache is provided (mutable list of row dicts),
+    resolve rows from cache first to avoid a full ORDER_LINES read per line — needed
+    when syncing multiple requested_items in one request (Sheets read quota).
+    """
     today_str = datetime.now().strftime("%d %b %Y")
     cancelled_count = 0
 
     for order_line_id in order_line_ids:
-        row = _get_order_line_row(order_line_id)
+        oid = str(order_line_id).strip()
+        row = None
+        if order_lines_cache is not None:
+            for r in order_lines_cache:
+                if to_clean_string(r.get("Order_Line_ID", "")) == oid:
+                    row = r
+                    break
+        if row is None:
+            row = _get_order_line_row(order_line_id)
         if not row:
             continue
 
@@ -324,6 +337,9 @@ def _cancel_order_lines(order_line_ids):
                 "Updated_At": today_str,
             }
         )
+        row["Line_Status"] = "Cancelled"
+        row["Reserved_Status"] = "Not_Reserved"
+        row["Updated_At"] = today_str
         cancelled_count += 1
 
     return cancelled_count
@@ -450,16 +466,18 @@ def _build_same_category_alternatives(sales_rows, blocked_pig_ids, category: str
 def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dict, notes: str, pricing_lookup: dict):
     unit_price = _lookup_unit_price(pricing_lookup, pig["sale_category"], pig["weight_band"])
     today_str = datetime.now().strftime("%d %b %Y")
+    order_line_id = generate_order_line_id()
+    wkg = pig["current_weight_kg"] if pig["current_weight_kg"] is not None else ""
 
     row_values = [
-        generate_order_line_id(),
+        order_line_id,
         order_id,
         pig["pig_id"],
         pig["tag_number"],
         pig["sale_category"],
         pig["weight_band"],
         pig["sex"],
-        pig["current_weight_kg"] if pig["current_weight_kg"] is not None else "",
+        wkg,
         unit_price,
         "Draft",
         "Not_Reserved",
@@ -471,12 +489,32 @@ def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dic
 
     append_row(ORDER_LINES_SHEET, row_values)
 
+    cache_row = {
+        "Order_Line_ID": order_line_id,
+        "Order_ID": str(order_id).strip(),
+        "Pig_ID": to_clean_string(pig["pig_id"]),
+        "Tag_Number": to_clean_string(pig.get("tag_number", "")),
+        "Sale_Category": to_clean_string(pig["sale_category"]),
+        "Weight_Band": to_clean_string(pig["weight_band"]),
+        "Sex": to_clean_string(pig["sex"]),
+        "Current_Weight_Kg": wkg,
+        "Unit_Price": unit_price,
+        "Line_Status": "Draft",
+        "Reserved_Status": "Not_Reserved",
+        "Notes": to_clean_string(notes),
+        "Created_At": today_str,
+        "Updated_At": today_str,
+        "Request_Item_Key": str(request_item_key).strip(),
+    }
+
     return {
+        "order_line_id": order_line_id,
         "pig_id": pig["pig_id"],
         "tag_number": pig["tag_number"],
         "sale_category": pig["sale_category"],
         "weight_band": pig["weight_band"],
         "unit_price": unit_price,
+        "cache_row": cache_row,
     }
 
 
@@ -901,6 +939,12 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     results = []
     had_errors = False
 
+    # One snapshot per sync avoids Google Sheets read quota bursts when multiple
+    # requested_items each re-fetched SALES_AVAILABILITY + ORDER_LINES (and cancel
+    # used a full ORDER_LINES read per line).
+    sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
+    order_lines_rows = list(get_all_records(ORDER_LINES_SHEET))
+
     for item in requested_items:
         request_item_key = to_clean_string(item.get("request_item_key", ""))
         category = to_clean_string(item.get("category", ""))
@@ -921,9 +965,8 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
             if requested_quantity <= 0:
                 raise ValueError(f"{request_item_key}: quantity must be greater than 0.")
 
-            # Refresh live state on every item
-            sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
-            order_lines_rows = get_all_records(ORDER_LINES_SHEET)
+            # Live state within this sync: refresh from in-memory snapshots + rows
+            # appended/cancelled in earlier iterations.
 
             existing_active_lines = _get_active_order_lines_by_request_item_from_rows(
                 order_lines_rows,
@@ -975,18 +1018,22 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
 
                 cancelled_line_count = 0
                 if existing_active_line_ids:
-                    cancelled_line_count = _cancel_order_lines(existing_active_line_ids)
+                    cancelled_line_count = _cancel_order_lines(
+                        existing_active_line_ids, order_lines_rows
+                    )
 
                 created_lines = []
                 for pig in selected_matches:
+                    appended = _append_order_line_from_match(
+                        order_id=order_id,
+                        request_item_key=request_item_key,
+                        pig=pig,
+                        notes=notes,
+                        pricing_lookup=pricing_lookup,
+                    )
+                    order_lines_rows.append(appended["cache_row"])
                     created_lines.append(
-                        _append_order_line_from_match(
-                            order_id=order_id,
-                            request_item_key=request_item_key,
-                            pig=pig,
-                            notes=notes,
-                            pricing_lookup=pricing_lookup,
-                        )
+                        {k: v for k, v in appended.items() if k != "cache_row"}
                     )
 
                 match_status = "exact_match"
@@ -1014,18 +1061,22 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
 
                 cancelled_line_count = 0
                 if existing_active_line_ids:
-                    cancelled_line_count = _cancel_order_lines(existing_active_line_ids)
+                    cancelled_line_count = _cancel_order_lines(
+                        existing_active_line_ids, order_lines_rows
+                    )
 
                 created_lines = []
                 for pig in selected_matches:
+                    appended = _append_order_line_from_match(
+                        order_id=order_id,
+                        request_item_key=request_item_key,
+                        pig=pig,
+                        notes=notes,
+                        pricing_lookup=pricing_lookup,
+                    )
+                    order_lines_rows.append(appended["cache_row"])
                     created_lines.append(
-                        _append_order_line_from_match(
-                            order_id=order_id,
-                            request_item_key=request_item_key,
-                            pig=pig,
-                            notes=notes,
-                            pricing_lookup=pricing_lookup,
-                        )
+                        {k: v for k, v in appended.items() if k != "cache_row"}
                     )
 
                 results.append({
