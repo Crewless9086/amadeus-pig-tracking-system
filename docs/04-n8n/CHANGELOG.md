@@ -26,9 +26,9 @@ Change:
 - **`1.2` `Code - Format Create With Lines Result`:** pass `partial_fulfillment` (from API or inferred from `partial_match` rows), duplicate `results` next to `sync_results` for callers that read `results`.
 - **`1.0` `Code - Slim Sales Agent User Context`:** set `partial_fulfillment` when `had_partial`; add **`partial_stock_detail`** string (requested vs `added_to_draft`, band availability, same-category alternative bands from `alternatives[]`).
 - **`1.0` Sam system prompt:** hardened **PARTIAL STOCK SYNC** rules (explicit X vs Y, list alternatives, single follow-up question; applies to create-with-lines as well as sync on existing draft).
-- **`DATA_FLOW.md`:** document `partial_stock_detail`.
+- **`1.0` `Code - Build Order State` + `Code - Decide Order Route`:** when the customer answers a partial-stock offer (mix / “make it up”) and the draft still has fewer active lines than the requested total, set **enrichment** and route **`UPDATE_HEADER_AND_LINES`**; parse **`N … at X–Y kg`** snippets from **`ConversationHistory`** and append **`nearby_band_*`** `requested_items` so the steward can sync adjacent bands—not **`REPLY_ONLY`** with only a reassurance message.
+- **`1.0` `Code - Build Order State`:** quantity patterns recognise **`want total N`** / **`total of N`** (previously **`I want total 8`** did not populate **`msg_quantity`**, blocking **`should_enrich`**).
 
-### 2026-05-07 — `Line_Count` vs active lines (documented + API)
 
 Type: `DOCS` + `IMPROVEMENT`
 
