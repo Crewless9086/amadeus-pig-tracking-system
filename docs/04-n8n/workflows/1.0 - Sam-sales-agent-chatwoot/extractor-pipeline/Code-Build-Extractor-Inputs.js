@@ -123,6 +123,26 @@ function capsFromSamText(samText, preferredWeightRange) {
     }
   }
 
+  // "I could add 3 in that exact weight band" → cap on the requested range
+  const mExactWtBand =
+    preferredWeightRange && text.match(/\b(\d+)\s+in\s+that\s+exact\s+weight\s+band\b/i);
+  if (mExactWtBand) {
+    const n = Number(mExactWtBand[1]);
+    if (!Number.isNaN(n) && n > 0) {
+      capsMap.set(
+        preferredWeightRange,
+        Math.max(capsMap.get(preferredWeightRange) || 0, n)
+      );
+    }
+  }
+
+  // "…and 2 in 15–19kg" (no "available"/"pigs")
+  const reQtyInBareBand = /\b(\d+)\s+in\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/gi;
+  while ((mm = reQtyInBareBand.exec(text)) !== null) {
+    const band = canonBand(mm[2], mm[3]);
+    if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
+  }
+
   const caps = [];
   for (const [weight_range, max_qty] of capsMap.entries()) {
     caps.push({ weight_range, max_qty });
