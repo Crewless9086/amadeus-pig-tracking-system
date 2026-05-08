@@ -30,6 +30,7 @@ NODES = [
         "name": "Code - Invoke Order Intent Extractor",
         "pos": [2408, -96],
         "file": "Code-Invoke-Order-Intent-Extractor.js",
+        "credentials": {"openAiApi": {"id": "Lp7Z2HFOXfBCGvVg", "name": "OpenAi_Sales Agent"}},
     },
     {
         "name": "Code - Validate Extractor Output",
@@ -44,8 +45,8 @@ NODES = [
 ]
 
 
-def mk_node(name: str, js: str, pos: list[int]) -> dict:
-    return {
+def mk_node(name: str, js: str, pos: list[int], credentials: dict | None = None) -> dict:
+    node: dict = {
         "parameters": {"jsCode": js},
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
@@ -53,6 +54,9 @@ def mk_node(name: str, js: str, pos: list[int]) -> dict:
         "id": str(uuid.uuid4()),
         "name": name,
     }
+    if credentials:
+        node["credentials"] = credentials
+    return node
 
 
 def main() -> None:
@@ -77,7 +81,7 @@ def main() -> None:
     for spec in NODES:
         fp = HERE / spec["file"]
         js = fp.read_text(encoding="utf-8")
-        new_nodes.append(mk_node(spec["name"], js, spec["pos"]))
+        new_nodes.append(mk_node(spec["name"], js, spec["pos"], spec.get("credentials")))
 
     wf["nodes"].extend(new_nodes)
 

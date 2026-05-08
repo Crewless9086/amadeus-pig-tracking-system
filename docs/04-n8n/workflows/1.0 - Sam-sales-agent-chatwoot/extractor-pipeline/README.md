@@ -30,7 +30,10 @@ Disable the extractor without editing the workflow JSON:
 ## Live test (Charl / ops)
 
 1. **Import** the repo’s **`1.0 - Sam-sales-agent-chatwoot/workflow.json`** into n8n (replace or version the active workflow).
-2. Confirm **OpenAI credential** `openAiApi` is available to **Code** nodes (same as Transcribe / Sales stack). The invoke node uses **`this.getCredentials("openAiApi")`** and **`apiKey`**.
+2. **OpenAI API key — not a Google Sheet row.** n8n stores it in **Credentials**:
+   - In n8n: **⋮ Menu → Credentials →** open your existing **`OpenAi_Sales Agent`** credential (same one **OpenAi - Transcribe a recording** and **Sales Brain ChatGPT** use).
+   - Paste the secret into **API Key** (or whatever label that credential shows). You never type `openAiApi.apiKey` literally — that is only the **field name inside the credential object** the Code node reads in JavaScript (`getCredentials("openAiApi")` → `apiKey`).
+   - **`Code - Invoke Order Intent Extractor`** must use that credential: on import, workflow JSON attaches **`credentials.openAiApi`** pointing at **`OpenAi_Sales Agent`**. If your n8n copy uses a **different credential name/ID**, open the Invoke node → **Credential for OpenAI** → select your working OpenAI credential (same API key).
 3. Open the **latest execution** (or **pin** a test conversation) and ensure **`EXTRACTOR_ENABLED`** is **unset** or **`true`**.
 4. **WhatsApp thread** (realistic partial stock):
    - Customer: *“I want 8 weaners 10–14kg, any sex, collect Riversdale, Friday.”*
