@@ -1,6 +1,6 @@
 # Extractor Intent Fix — Plan
 
-Status: **Planning only.** No n8n changes yet. Build decisions below are locked; implementation still pending.
+Status: **Implemented in repo** (`1.0` workflow + `extractor-pipeline/`). **Re-import** `workflow.json` into n8n to activate; see `extractor-pipeline/README.md` for tests and rollback. Planning detail below remains authoritative for behaviour contracts.
 
 Last updated: 2026-05-08. **Extractor model:** OpenAI **`gpt-4.1-mini`** (see §16).
 
@@ -248,22 +248,22 @@ Explicitly **not** part of this fix:
 
 ## 14. Build steps (for the future implementation session)
 
-These are **planning notes**, not yet executed:
+These steps are **implemented in the repo** (`extractor-pipeline/*.js` merged into `workflow.json` via **`apply_extractor_patch.py`**). Activate by **re-importing `1.0 - Sam-sales-agent-chatwoot/workflow.json`** into n8n.
 
-1. Add `Code - Build Extractor Inputs` node — produces `{ last_agent_offer, customer_message, short_thread, existing_draft_summary }`.
-2. Add `Code - Should Run Extractor` node — applies gates §7, returns `{ run, reason }`.
-3. Add `AI - Order Intent Extractor` node — OpenAI **`gpt-4.1-mini`**, JSON-only, prompt from §15 below (reuse existing OpenAI credential).
-4. Add `Code - Validate Extractor Output` node — rules §6.2.
-5. Add `Code - Merge Into order_state` node — merge rule §6.3.
-6. Wire only on AUTO branch, before existing `Code - Decide Order Route`.
-7. Add `extractor_enabled` env toggle (e.g. `EXTRACTOR_ENABLED`) — see §16.
-8. Add observability logging per §10.
-9. Build eval set per §11. Run shadow week.
-10. Verify against §12. Flip toggle.
+1. ~~Add `Code - Build Extractor Inputs`~~ **Done** — produces `last_agent_offer`, `extractor_short_thread`, `existing_draft_summary` on the item.
+2. ~~Add `Code - Should Run Extractor`~~ **Done** — gates §7; outputs `extractor_should_run`, `extractor_skip_reason`.
+3. ~~Add `AI - Order Intent Extractor`~~ **Done** as **`Code - Invoke Order Intent Extractor`** — OpenAI Chat Completions **`gpt-4.1-mini`**, `response_format: json_object`, system prompt inline (same semantics as §15).
+4. ~~Add `Code - Validate Extractor Output`~~ **Done** — rules §6.2 (strict keys, clamp to offer).
+5. ~~Add `Code - Merge Into order_state`~~ **Done** as **`Code - Merge Extractor Into Order State`** — rule §6.3.
+6. ~~Wire … before `Decide`~~ **Done** — chain inserted after **`Code - Align Order Logic`**, feeding **`Code - Should Create Draft Order?`** (same position as before relative to Decide).
+7. ~~`EXTRACTOR_ENABLED`~~ **Done** — read in **`Code - Should Run Extractor`** (`process.env` + `$env`), see §16.
+8. **Partial observability** — execution JSON fields documented in **`extractor-pipeline/README.md`**; optional telemetry sheet remains future work.
+9. **Eval set + shadow week** — still outstanding (§11–§12 promotion discipline).
+10. ~~Verify / flip toggle~~ — run live Test D (**`extractor-pipeline/README.md`**) before leaving **`EXTRACTOR_ENABLED`** implicitly on.
 
 ## 15. Draft system prompt for the extractor
 
-JSON-only, no prose, no tone. Drop into the `AI - Order Intent Extractor` node when the build session begins.
+The live system prompt is embedded in **`Code - Invoke Order Intent Extractor`** (merged into `workflow.json` via **`apply_extractor_patch.py`**). The text below is the canonical reference; keep it in sync when changing the node.
 
 ```
 You are the Order Intent Extractor for Amadeus Pig Sales.

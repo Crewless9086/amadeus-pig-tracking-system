@@ -15,6 +15,25 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-08 — Order Intent Extractor (partial-stock comprehension)
+
+Type: `ADD` + `IMPROVEMENT` + `DOCS`
+
+Goal: Short customer replies after a partial-stock WhatsApp offer (e.g. “Yes, please make up the 8”) map to **`order_state.requested_items[]`** reliably without endless regex churn; **`gpt-4.1-mini`** proposes JSON; code validates/clamps against a closed-world **`last_agent_offer`** envelope.
+
+Implementation:
+
+- **New pipeline** (after **`Code - Align Order Logic`**, before **`Code - Should Create Draft Order?`):**  
+  **`Code - Build Extractor Inputs`** → **`Code - Should Run Extractor`** → **`Code - Invoke Order Intent Extractor`** (OpenAI Chat Completions, **`response_format: json_object`**, uses **`openAiApi`** credential **`getCredentials`**) → **`Code - Validate Extractor Output`** → **`Code - Merge Extractor Into Order State`**.  
+  Source files live in **`docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/`**; re-run **`apply_extractor_patch.py`** after editing them.
+- **`last_agent_offer`:** prefer Steward **`results`/`sync_results`** `partial_match` + **`alternatives[]`** caps; fallback regex parse of the **latest `Sam:`** line in **`ConversationHistory`** (see plan `planning/EXTRACTOR_INTENT_FIX.md`).
+- **Rollback:** host env **`EXTRACTOR_ENABLED`** — set to **`false`**, **`0`**, **`off`**, or **`no`** (case-insensitive) to disable the extractor (also checks **`process.env`** on self-hosted n8n).
+- **Observability on each execution item:** **`extractor_skip_reason`**, **`extractor_should_run`**, **`extractor_raw_output`**, **`extractor_latency_ms`**, **`extractor_error`**, **`extractor_validation`**, **`extractor_merge_applied`**.
+
+Re-import **`1.0 - Sam-sales-agent-chatwoot/workflow.json`** after pulling this repo.
+
+Planning reference: **`planning/EXTRACTOR_INTENT_FIX.md`**.
+
 ### 2026-05-08 — Sam partial-stock wording on `create_order_with_lines`
 
 Type: `FIX` + `DOCS`
@@ -29,6 +48,7 @@ Change:
 - **`1.0` `Code - Build Order State` + `Code - Decide Order Route`:** when the customer answers a partial-stock offer (mix / “make it up”) and the draft still has fewer active lines than the requested total, set **enrichment** and route **`UPDATE_HEADER_AND_LINES`**; parse **`N … at X–Y kg`** snippets from **`ConversationHistory`** and append **`nearby_band_*`** `requested_items` so the steward can sync adjacent bands—not **`REPLY_ONLY`** with only a reassurance message.
 - **`1.0` `Code - Build Order State`:** quantity patterns recognise **`want total N`** / **`total of N`** (previously **`I want total 8`** did not populate **`msg_quantity`**, blocking **`should_enrich`**).
 
+### 2026-05-07 — `Line_Count` vs active lines (documented + API)
 
 Type: `DOCS` + `IMPROVEMENT`
 

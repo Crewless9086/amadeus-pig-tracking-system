@@ -10,7 +10,7 @@ Stabilize live order behavior before expanding features or polishing the app.
 
 Orders are the profit section. They must be reliable before the system grows.
 
-- **Phase (order pipeline hardening — May 2026):** Live-verified: Test A sex-only enrich (`UPDATE_HEADER_AND_LINES`), Test B `get_order_context` with `active_line_count` / `line_count_includes_cancelled`. Test C (partial stock on first-turn create): steward data was correct; Sam wording fixed in repo **2026-05-08** (`partial_stock_detail`, `partial_fulfillment` on create path, prompt rules) — re-import `1.0`/`1.2` and repeat **one** partial-stock message to confirm customer-facing copy, then treat this phase as closed for pipeline work until new scope.
+- **Phase (order pipeline hardening — May 2026):** Live-verified: Test A sex-only enrich (`UPDATE_HEADER_AND_LINES`), Test B `get_order_context` with `active_line_count` / `line_count_includes_cancelled`. Test C (partial stock on first-turn create): steward data was correct; Sam wording fixed in repo **2026-05-08** (`partial_stock_detail`, `partial_fulfillment` on create path, prompt rules). **Test D (`Order Intent Extractor`):** `1.0` now includes **`extractor-pipeline/`** linked after **`Code - Align Order Logic`** — partial-stock confirmations like **“Yes, please make up the 8.”** must yield **`extractor_validation.ok`** and **`UPDATE_HEADER_AND_LINES`** where stock allows; rollback with **`EXTRACTOR_ENABLED=false`**. Re-import `1.0` from repo (and `1.2` if not current), then run one live WhatsApp thread as in **`docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/README.md`**. **`planning/EXTRACTOR_INTENT_FIX.md`** is the authoritative design note.
 
 ### Deploy note — 2026-05-07 (repo ready; import required)
 
