@@ -10,7 +10,7 @@ Stabilize live order behavior before expanding features or polishing the app.
 
 Orders are the profit section. They must be reliable before the system grows.
 
-- **Phase (order pipeline hardening — May 2026):** Live-verified: Test A sex-only enrich (`UPDATE_HEADER_AND_LINES`), Test B `get_order_context` with `active_line_count` / `line_count_includes_cancelled`. Test C (partial stock on first-turn create): steward data was correct; Sam wording fixed in repo **2026-05-08** (`partial_stock_detail`, `partial_fulfillment` on create path, prompt rules). **Test D (`Order Intent Extractor`):** `1.0` now includes **`extractor-pipeline/`** linked after **`Code - Align Order Logic`** — partial-stock confirmations like **“Yes, please make up the 8.”** must yield **`extractor_validation.ok`** and **`UPDATE_HEADER_AND_LINES`** where stock allows; rollback with **`EXTRACTOR_ENABLED=false`**. Re-import `1.0` from repo (and `1.2` if not current), then run one live WhatsApp thread as in **`docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/README.md`**. **`planning/EXTRACTOR_INTENT_FIX.md`** is the authoritative design note.
+- **Phase (order pipeline hardening — May 2026):** Live-verified: Test A sex-only enrich (`UPDATE_HEADER_AND_LINES`), Test B `get_order_context` with `active_line_count` / `line_count_includes_cancelled`. Test C (partial stock on first-turn create): steward data was correct; Sam wording fixed in repo **2026-05-08** (`partial_stock_detail`, `partial_fulfillment` on create path, prompt rules). **Test D — partial-stock multi-band (`primary_1` + `nearby_band_*`):** deterministic **`last_agent_offer.caps`** from **`sam_text_parse`** (**weaners** bullets, **`more in … kg ranges`**, no duplicate **`reThereAre`/`reAvail`**) plus **`Build Order State`** / **`Build Sync Existing Draft Payload`** enrich — **live-verified** end-to-end (WhatsApp: 3× primary band + 2× + 2× adjacent → 7 lines intent). **Order Intent Extractor (LLM)** remains optional; on n8n Cloud OpenAI-from-Code may fail — routing still works when regex caps are complete. Re-import **`1.0`** from repo; checklist **`docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/README.md`** (includes **Extractor LLM design contract**). Changelog **`docs/04-n8n/CHANGELOG.md`** (2026-05-08 multi-band entry). Rollback extractor only: **`EXTRACTOR_ENABLED=false`**.
 
 ### Deploy note — 2026-05-07 (repo ready; import required)
 
@@ -383,6 +383,7 @@ Focus areas:
 - order detail clarity
 - visible line/reservation state
 - reserve/release success feedback on order detail is done (API `message` + `changed_count` + `warning`); still need button visibility parity for approve/reject and other actions
+- **Pen / location labels:** dropdowns and pig pickers should show **pen name** (human-readable) alongside or instead of raw **pen ID** wherever the app still exposes IDs only
 - clear approve/reject/cancel buttons
 - order detail actions must match backend rules: show approve/reject when `Order_Status = Pending_Approval`, reserve/release when appropriate; avoid forcing ops through OOM SAKKIE workflows when parity with API is intended
 - safe release/reserve controls
@@ -398,6 +399,17 @@ Do not redesign the app before the backend order behavior is safe.
 ## Phase 7: Broader Workflow Improvements
 
 Only after order stability:
+
+### 7.1 Intake (from planning triage — not yet scheduled)
+
+Carry these when capacity allows; they do not block current order hardening.
+
+- **1.0 payload hygiene:** reduce duplicated / noisy fields crossing nodes; prefer one structured slim object per stage
+- **Sam + completed orders:** order history lookup (backend / `1.2` action) so Sam can reference past orders; customer asks for **old invoices** — tie to Phase 2 delivery when quotes/invoices exist
+- **Chatwoot `order_id` lifecycle:** decide whether conversation custom attributes clear on **Completed**, or keep stable links plus a separate **customer order history** view
+- **LLM vs Code:** short paraphrases may use hybrid extractor; inventory, price, and reservation stay **deterministic**. Prefer extending **`sam_text_parse`** + caps when wording drifts rather than replacing Code with LLM-only routing
+
+Improvements also in scope:
 
 - improve Sam order context
 - improve AUTO reply quality where still needed

@@ -15,6 +15,33 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-08 — Partial-stock multi-band: caps + nearby lines without duplicate regex
+
+Type: `FIX` + `IMPROVEMENT` + `DOCS`
+
+**Problem summary:** WhatsApp confirmations (“make it total 7”) sometimes produced **`requested_items`** with only **`primary_1`** or a single inflated **`nearby_band_1`** so **`sync_order_lines_from_request`** could not allocate across **7–9** and **15–19** kg.
+
+**Root causes fixed:**
+
+| Issue | Fix |
+|--------|-----|
+| **`reAvail` + `reThereAre`** both matched “there are 2 **available** in the 7–9kg…” | Dropped **`reThereAre`** from **`Code - Build Order State`** and **`Code - Build Sync Existing Draft Payload`** extractors (**`extractAdjacentBandOffersFromTranscript`**). Duplicate hits had **added** qty into one band (**4 × 7–9**), consuming full remainder **before** **15–19**. |
+| “**2 more** in **15–19kg ranges**” | **`reQtyInKg`** (**`capsFromSamText`**) and **`rxBareInKg`** (sync/build-order extract) accept optional **`more`** before **`in`** and optional plural **`ranges`**. |
+| Bullets **“- 2 weaners in 7–9kg”** (no **`pigs`**) | **`reAnimalsInBand`** / **`rx3`** now match **`pigs? \| weaners? \| piglets?`** before **`in`**. **`last_agent_offer.caps`** was missing alternate bands purely because **`pigs?`** did not fire. |
+| **`Code - Build Sync Existing Draft Payload`** skipped enrich when **`base.length !== 1`** | **`enrichPartialMixItems`** rebuilds **`nearby_band_*`** from transcript + **`last_agent_offer.caps`** whenever the nearby **tier signature** changes or qty exceeds band cap (**legacy oversize**). **`sync_payload_nearby_items_enriched`** uses serialized compare, not row-count only. |
+| Sam wording drift | **`Ai Agent - Sales Agent`** system prompt — **PARTIAL-STOCK BULLET FORMAT**: one bullet per band, literal pattern **`- Q pigs (or weaners) in LOW–HIGH kg`**. |
+
+**Maintenance scripts** (run from **`extractor-pipeline/`** after editing sources):
+
+- **`apply_extractor_inputs_patch.py`** — injects **`Code-Build-Extractor-Inputs.js`** into **`Code - Build Extractor Inputs`**.
+- **`apply_sync_existing_payload_patch.py`** — injects **`Code-Build-Sync-Existing-Draft-Payload.js`** into **`Code - Build Sync Existing Draft Payload`**.
+- **`patch_build_order_state_nearby_bands.py`** — reapplies **`Code - Build Order State`** **`extractAdjacentBandOffersFromTranscript`** + **`mergeAdjacentBandsWithOfferCaps`** + transcript merge block (**use after hand-editing** that node, or cherry-pick; backup **`workflow.json`** first).
+- **`apply_extractor_patch.py`** — reinstalls entire extractor subgraph (**new node IDs**).
+
+**Operational note:** The **OpenAI extractor** (`Code - Invoke Order Intent Extractor`) can still fail on **n8n Cloud** (**`getCredentials`** unavailable); **deterministic routing** (**Build Order State** + **`last_agent_offer`** from **`sam_text_parse`**) remains the backbone for **`nearby_band_*`** when **`sync_results`** is absent.
+
+---
+
 ### 2026-05-08 — Order Intent Extractor (partial-stock comprehension)
 
 Type: `ADD` + `IMPROVEMENT` + `DOCS`
@@ -26,13 +53,13 @@ Implementation:
 - **New pipeline** (after **`Code - Align Order Logic`**, before **`Code - Should Create Draft Order?`):**  
   **`Code - Build Extractor Inputs`** → **`Code - Should Run Extractor`** → **`Code - Invoke Order Intent Extractor`** (OpenAI Chat Completions, **`response_format: json_object`**, uses **`openAiApi`** credential **`getCredentials`**) → **`Code - Validate Extractor Output`** → **`Code - Merge Extractor Into Order State`**.  
   Source files live in **`docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/`**; re-run **`apply_extractor_patch.py`** after editing them.
-- **`last_agent_offer`:** prefer Steward **`results`/`sync_results`** `partial_match` + **`alternatives[]`** caps; fallback regex parse of the **latest `Sam:`** line in **`ConversationHistory`** (see plan `planning/EXTRACTOR_INTENT_FIX.md`).
+- **`last_agent_offer`:** prefer Steward **`results`/`sync_results`** `partial_match` + **`alternatives[]`** caps; fallback regex parse of the **latest `Sam:`** line in **`ConversationHistory`** (see **`extractor-pipeline/README.md`** — **Extractor LLM design contract** and **Sam text fallback**).
 - **Rollback:** host env **`EXTRACTOR_ENABLED`** — set to **`false`**, **`0`**, **`off`**, or **`no`** (case-insensitive) to disable the extractor (also checks **`process.env`** on self-hosted n8n).
 - **Observability on each execution item:** **`extractor_skip_reason`**, **`extractor_should_run`**, **`extractor_raw_output`**, **`extractor_latency_ms`**, **`extractor_error`**, **`extractor_validation`**, **`extractor_merge_applied`**.
 
 Re-import **`1.0 - Sam-sales-agent-chatwoot/workflow.json`** after pulling this repo.
 
-Planning reference: **`planning/EXTRACTOR_INTENT_FIX.md`**.
+Design and ops: **`docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/extractor-pipeline/README.md`**.
 
 ### 2026-05-08 — Sam partial-stock wording on `create_order_with_lines`
 
