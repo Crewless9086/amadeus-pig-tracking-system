@@ -87,6 +87,42 @@ function capsFromSamText(samText, preferredWeightRange) {
     if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
   }
 
+  // "we have 3 available in that weight range" (refers to requested band on the draft)
+  const mRangeRef = text.match(
+    /\b(?:we\s+)?have\s+(\d+)\s+available\s+in\s+(?:that|the)\s+weight\s+range\b/i
+  );
+  if (mRangeRef && preferredWeightRange) {
+    const n = Number(mRangeRef[1]);
+    if (!Number.isNaN(n) && n > 0) {
+      capsMap.set(
+        preferredWeightRange,
+        Math.max(capsMap.get(preferredWeightRange) || 0, n)
+      );
+    }
+  }
+
+  // Bullets or inline: "- 2 pigs in 7–9kg" / "2 pigs in 7-9 kg"
+  const rePigsInBand = /\b(\d+)\s+pigs?\s+in\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/gi;
+  while ((mm = rePigsInBand.exec(text)) !== null) {
+    const band = canonBand(mm[2], mm[3]);
+    if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
+  }
+
+  // "keep the 3 from 10–14kg" anchors primary-band cap when offered alongside mix
+  const mKeep = text.match(
+    /\bkeep\s+(?:the\s+)?(\d+)\s+(?:from|in)\s+(\d+)\s*[-–]\s*(\d+)\s*kg\b/i
+  );
+  if (mKeep) {
+    const band = canonBand(mKeep[2], mKeep[3]);
+    const wr = band || preferredWeightRange;
+    if (wr) {
+      const n = Number(mKeep[1]);
+      if (!Number.isNaN(n) && n > 0) {
+        capsMap.set(wr, Math.max(capsMap.get(wr) || 0, n));
+      }
+    }
+  }
+
   const caps = [];
   for (const [weight_range, max_qty] of capsMap.entries()) {
     caps.push({ weight_range, max_qty });
