@@ -9,11 +9,24 @@ const conversationMode = clean((item.order_state || {}).conversation_mode || ite
 const pendingAction = clean((item.order_state || {}).pending_action || item.pending_action || "");
 const msg = clean(item.customer_message || item.CustomerMessage || "");
 
-const fromProcess =
-  typeof process !== "undefined" && process.env ? process.env.EXTRACTOR_ENABLED : undefined;
-const fromEnvBuiltin = typeof $env !== "undefined" ? $env.EXTRACTOR_ENABLED : undefined;
+/** n8n Cloud / hardened sandboxes forbid $env/process.env entirely — touching them can throw. */
+function readExtractorToggle() {
+  try {
+    const v = $env.EXTRACTOR_ENABLED;
+    if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+  } catch (_) {
+    /* access to env vars denied */
+  }
+  try {
+    if (typeof process !== "undefined" && process.env != null) {
+      const v = process.env.EXTRACTOR_ENABLED;
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+    }
+  } catch (_) {}
+  return undefined;
+}
 
-const extractorEnabledRaw = fromProcess !== undefined ? fromProcess : fromEnvBuiltin;
+const extractorEnabledRaw = readExtractorToggle();
 
 const extractorEnabled =
   extractorEnabledRaw === undefined ||

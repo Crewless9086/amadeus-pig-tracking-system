@@ -256,7 +256,7 @@ These steps are **implemented in the repo** (`extractor-pipeline/*.js` merged in
 4. ~~Add `Code - Validate Extractor Output`~~ **Done** — rules §6.2 (strict keys, clamp to offer).
 5. ~~Add `Code - Merge Into order_state`~~ **Done** as **`Code - Merge Extractor Into Order State`** — rule §6.3.
 6. ~~Wire … before `Decide`~~ **Done** — chain inserted after **`Code - Align Order Logic`**, feeding **`Code - Should Create Draft Order?`** (same position as before relative to Decide).
-7. ~~`EXTRACTOR_ENABLED`~~ **Done** — read in **`Code - Should Run Extractor`** (`process.env` + `$env`), see §16.
+7. ~~`EXTRACTOR_ENABLED`~~ **Done** — read in **`Code - Should Run Extractor`** via try/catch (`$env` then `process.env`); **Cloud sandboxes** that deny env reads default to **enabled**.
 8. **Partial observability** — execution JSON fields documented in **`extractor-pipeline/README.md`**; optional telemetry sheet remains future work.
 9. **Eval set + shadow week** — still outstanding (§11–§12 promotion discipline).
 10. ~~Verify / flip toggle~~ — run live Test D (**`extractor-pipeline/README.md`**) before leaving **`EXTRACTOR_ENABLED`** implicitly on.
@@ -330,7 +330,7 @@ Respond with the JSON object only.
 | **LLM model** | **OpenAI `gpt-4.1-mini`** | Matches existing n8n credentials and Sales stack. Good fit for constrained JSON extraction; validators + gates own truth, not the model. Pin this exact model id in the node; revisit if OpenAI deprecates the id. |
 | **`last_agent_offer` source** | **Structured first** | Build envelope in **`Code - Build Extractor Inputs`** from steward/slim context (`partial_stock_detail`, band caps, alternatives)—not from parsing Sam prose. Fallback text parser only if structure missing; log fallback rate. |
 | **Eval transcripts** | **Chatwoot export, stratified** | Sam WhatsApp inbox, **60–90 day** window (or since partial-stock flow live); oversample partial-stock threads; **30–50** frozen hand-labelled rows per §11. |
-| **`extractor_enabled` rollback** | **Environment variable** | e.g. `EXTRACTOR_ENABLED` read in Code (default on after promotion). Ops can disable without editing workflow JSON. |
+| **`extractor_enabled` rollback** | **Environment variable** (optional) | **`EXTRACTOR_ENABLED`** read in Code when n8n allows env access; on **Cloud / sandbox denials** reads are skipped and extractor defaults **on** — see **`extractor-pipeline/README.md`**. Ops can also bypass nodes in the graph to disable.
 | **Skip-gate logging** | **Executions + optional sheet** | Every run emits `extractor_skip_reason` (or `{ run, reason }`) on the execution payload for search; optional append-only telemetry sheet for aggregated counts per §10. |
 
 ### 16.1 Why `gpt-4.1-mini` vs Anthropic Haiku (for this job)

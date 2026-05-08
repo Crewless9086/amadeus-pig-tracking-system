@@ -22,10 +22,11 @@ python apply_extractor_patch.py
 
 ## Rollback (`EXTRACTOR_ENABLED`)
 
-Disable the extractor without editing the workflow JSON:
+Disable the extractor without editing the workflow JSON (where your n8n host allows it):
 
-- Self-hosted n8n: set environment variable **`EXTRACTOR_ENABLED=false`** (or `0`, `no`, `off`) for the n8n process and restart if required.
-- When disabled, **`Code - Should Run Extractor`** sets **`extractor_skip_reason`** = `extractor_disabled_env` and the LLM is not called.
+- Self-hosted / env-enabled: set **`EXTRACTOR_ENABLED=false`** (or `0`, `no`, `off`) on the n8n **process** (`process.env`). When read successfully, **`Code - Should Run Extractor`** sets **`extractor_skip_reason`** = `extractor_disabled_env`.
+
+**n8n Cloud / hardened Code sandbox:** reading **`$env`** or **`process.env`** can throw *“access to env vars denied”*. The node now **catches** that and treats the toggle as **unset** → extractor stays **enabled**. To turn it off on Cloud, use workflow design (e.g. bypass the extractor nodes) or whatever env policy your plan allows for Code nodes.
 
 ## Live test (Charl / ops)
 
