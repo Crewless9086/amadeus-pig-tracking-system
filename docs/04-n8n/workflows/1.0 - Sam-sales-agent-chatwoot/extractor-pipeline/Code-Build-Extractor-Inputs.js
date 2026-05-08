@@ -145,8 +145,9 @@ function capsFromSamText(samText, preferredWeightRange) {
     }
   }
 
-  // "…and 2 in 15–19kg" / "2 in the 15–19kg range" (bare "N in … kg")
-  const reQtyInKg = /\b(\d+)\s+in\s+(?:the\s+)?(\d+)\s*[-–]\s*(\d+)\s*kg(?:\s+range)?\b/gi;
+  // "2 in …", "2 more in …", "2 more in … ranges" / "range"
+  const reQtyInKg =
+    /\b(\d+)\s+(?:more\s+)?in\s+(?:the\s+)?(\d+)\s*[-–]\s*(\d+)\s*kg(?:\s+range(?:s)?)?\b/gi;
   while ((mm = reQtyInKg.exec(text)) !== null) {
     const band = canonBand(mm[2], mm[3]);
     if (band) capsMap.set(band, Math.max(capsMap.get(band) || 0, Number(mm[1])));
