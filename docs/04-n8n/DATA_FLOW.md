@@ -79,7 +79,7 @@ The CLARIFY branch does not wait through this fetch; only the AUTO path uses pre
 | Field | Source | Purpose |
 | --- | --- | --- |
 | `sam_order_state_slim` | Whitelisted copy of `order_state` | Safe, minimal order context for Sam's prompt. See whitelist below. |
-| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), `partial_fulfillment` (when any sync line was a short allocation), and—if `results[]` or `sync_results[]` exists—`had_errors`, optional `had_partial`, plus a short `summary` built from `request_item_key` / `match_status`. Does not duplicate `order_id` / `order_status`; those stay on the top-level item and in the Sales Agent template (`OrderID`, `FinalOrderStatus`). |
+| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), `partial_fulfillment`, `had_partial`, optional **`partial_stock_detail`** (structured text: requested vs lined + same-category alternative bands), `summary`, `had_errors`. Does not duplicate `order_id` / `order_status` (those remain on the merged item and in the Sales Agent user template). |
 
 `sam_order_state_slim` whitelist (matches `Code - Slim Sales Agent User Context` in `1.0` export):
 

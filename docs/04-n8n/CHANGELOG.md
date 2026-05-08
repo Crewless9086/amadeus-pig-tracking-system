@@ -15,6 +15,19 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-08 — Sam partial-stock wording on `create_order_with_lines`
+
+Type: `FIX` + `DOCS`
+
+Issue: first-turn `CREATE_DRAFT` with `create_order_with_lines` returned correct `partial_match` in `sync_results`, but `1.2 Code - Format Create With Lines Result` did not set top-level `partial_fulfillment` / `results`, and `StewardCompact` only exposed a terse `summary`, so Sam defaulted to vague \"limited stock\" wording.
+
+Change:
+
+- **`1.2` `Code - Format Create With Lines Result`:** pass `partial_fulfillment` (from API or inferred from `partial_match` rows), duplicate `results` next to `sync_results` for callers that read `results`.
+- **`1.0` `Code - Slim Sales Agent User Context`:** set `partial_fulfillment` when `had_partial`; add **`partial_stock_detail`** string (requested vs `added_to_draft`, band availability, same-category alternative bands from `alternatives[]`).
+- **`1.0` Sam system prompt:** hardened **PARTIAL STOCK SYNC** rules (explicit X vs Y, list alternatives, single follow-up question; applies to create-with-lines as well as sync on existing draft).
+- **`DATA_FLOW.md`:** document `partial_stock_detail`.
+
 ### 2026-05-07 — `Line_Count` vs active lines (documented + API)
 
 Type: `DOCS` + `IMPROVEMENT`
