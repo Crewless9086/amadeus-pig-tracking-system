@@ -54,7 +54,7 @@ Google Sheets (data layer — single source of truth)
 1. Customer message arrives → Chatwoot webhook fires → n8n picks it up
 2. n8n normalizes the message and passes it to the AI Sales Agent
 3. Escalation Classifier decides: **AUTO** (process automatically) / **CLARIFY** (ask customer) / **ESCALATE** (hand to human)
-4. Backend creates/updates orders based on the decision
+4. Steward + Flask create/update orders based on routed actions and **sheet-backed** availability (**not** unmanaged LLM claims)
 5. Response sent back through Chatwoot
 
 ### Backend (Flask)
@@ -95,6 +95,27 @@ Two categories of sheets — **never write to formula-driven sheets**:
 | `GET` | `/api/orders/{order_id}` | Order detail with lines |
 | `GET` | `/api/orders/available-pigs` | Available pigs from `SALES_AVAILABILITY` |
 
+## Collaboration: Cursor conductor vs Claude Code worker
+
+Use this repo with **two complementary roles**:
+
+| Role | Tool | Responsibility |
+|---|---|---|
+| **Conductor** | Cursor chat (Composer / agent) | Triage incoming issues, propose minimal changes, sequence work against **`NEXT_STEPS.md`**, avoid scope creep |
+| **Worker** | Claude Code (`claude.ai/code`) implementing in-repo | Heavy refactors, wide file search, systematic patches with repo context from **`CLAUDE.md`** |
+
+**Yes — run substantial or cross-cutting checks past Claude Code** when a change spans many nodes, Flask + n8n + docs, or you want a second pass on correctness and duplication. Paste **`docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`** into Claude Code after filling the placeholders.
+
+### Stay on track (anti–rabbit-hole)
+
+1. **`docs/00-start-here/NEXT_STEPS.md`** is the single approved build order — start every session here and attach **one phase item** as your scope boundary.
+2. **`docs/00-start-here/CURRENT_STATE.md`** inventories known pain points; use it only to **explain** breakage, not to grow scope mid-task (log new items in **`NEXT_STEPS`** under the correct phase instead).
+3. **`planning/ToDoList.md`** is **scratch only** — do not treat it as a second roadmap; migrate bullets into **`NEXT_STEPS`** and clear the scratch file.
+
+If Cursor and Claude disagree, **`NEXT_STEPS.md`** wins unless the docs are updated explicitly.
+
+---
+
 ## Project Documentation (Critical Documentation)
 
 The `docs/` directory contains living documentation that must be consulted before making changes:
@@ -104,6 +125,7 @@ The `docs/` directory contains living documentation that must be consulted befor
 | `docs/01-architecture/SYSTEM_ARCHITECTURE.md` | Before touching component boundaries |
 | `docs/00-start-here/CURRENT_STATE.md` | Before starting any work — shows what's broken |
 | `docs/00-start-here/NEXT_STEPS.md` | Before adding features — shows prioritized roadmap |
+| `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` | Copy-paste prompt for Claude Code second-pass reviews |
 | `docs/03-google-sheets/BUSINESS_RULES.md` | Before changing AI behavior or order logic |
 | `docs/03-google-sheets/SHEET_SCHEMA.md` | Before any sheet read/write operation |
 | `docs/02-backend/API_STRUCTURE.md` | Before modifying Flask endpoints |
@@ -119,6 +141,7 @@ The `docs/` directory contains living documentation that must be consulted befor
 - **Pricing**: Must come from `SALES_PRICING` sheet — never invent prices.
 - **Collection Only**: No delivery — customers must collect. AI must not promise exceptions.
 - **No Premature Promises**: AI must not promise reservations or availability until the backend confirms.
+- **Availability wording (sex mix / counts)**: Do not tell the customer that specific animals are “available” for a split (e.g. 1 male + 2 females) unless **steward / `get_order_context` / sync results** support it — conversation memory and LLM replies are **not** inventory. Track fixes under **`NEXT_STEPS.md` Phase 4.1–4.2**.
 - **Sales Categories**: Young Piglets, Weaner Piglets, Grower Pigs, Finisher Pigs, Ready for Slaughter.
 
 ## Current System State
