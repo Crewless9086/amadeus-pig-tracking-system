@@ -60,6 +60,20 @@ If `conversation_id` is blank, the workflow must not send a customer message. Re
 4. HTTP Request node posts `message_type = outgoing`, `private = false`, and `content = message_text` to the Chatwoot conversation messages endpoint.
 5. Respond node returns success/error details.
 
+## n8n Configuration
+
+Do not use `$env` expressions for this workflow if the n8n instance blocks environment variable access.
+
+Configure `HTTP - Chatwoot Send Message` as follows:
+
+- URL: `https://app.chatwoot.com/api/v1/accounts/147387/conversations/{{$json.conversation_id}}/messages`
+- Method: `POST`
+- Header: `api_access_token` from an n8n credential or manually configured protected value
+- Header: `Content-Type = application/json`
+- Body: `{"content": $json.message_text, "message_type": "outgoing", "private": false}`
+
+The Chatwoot API token must not be committed to this repo.
+
 ## Backend Contract
 
 Backend treats this workflow as non-blocking. If the webhook fails, the order transition remains committed and backend writes a warning to `ORDER_STATUS_LOG`.

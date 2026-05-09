@@ -56,13 +56,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.CHATWOOT_BASE_URL + '/api/v1/accounts/' + $env.CHATWOOT_ACCOUNT_ID + '/conversations/' + $json.conversation_id + '/messages' }}",
+        "url": "=https://app.chatwoot.com/api/v1/accounts/147387/conversations/{{$json.conversation_id}}/messages",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "api_access_token",
-              "value": "={{ $env.CHATWOOT_API_ACCESS_TOKEN }}"
+              "value": "REPLACE_WITH_CHATWOOT_API_ACCESS_TOKEN_OR_USE_N8N_CREDENTIAL"
             },
             {
               "name": "Content-Type",
