@@ -215,15 +215,20 @@ Each test must confirm:
 
 ## Phase 1.9 Outbound Notification Tests
 
-Before closing Phase 1.9:
+Phase 1.9 live verification completed on 2026-05-09:
 
-1. Confirm live `ORDER_MASTER` has `ConversationId` after `Payment_Method`.
-2. Create or inspect a draft order made through `1.0` to confirm `conversation_id` is stored on `ORDER_MASTER.ConversationId`.
-3. Import/configure `1.4 - Outbound Order Notification` in n8n.
-4. Set backend `ORDER_NOTIFICATION_WEBHOOK_URL` to the production webhook URL.
-5. Approve one `Pending_Approval` order and confirm the customer receives the exact approval text.
-6. Reject one eligible order and confirm the customer receives the exact rejection text.
-7. Temporarily test a failed webhook path, if practical, and confirm the order transition still succeeds while `ORDER_STATUS_LOG` records the notification warning.
+1. Live `ORDER_MASTER` has `ConversationId` after `Payment_Method`.
+2. `1.4 - Outbound Order Notification` imported/configured in n8n after fixing blocked `$env` expressions and JSON body expression syntax.
+3. Direct webhook smoke test to `conversation_id = 1742` returned `success = true`, `sent = true`, `event_type = order_approved`.
+4. Approval backend test: `ORD-2026-36CDE4` moved to `Approved | Approved`, one line reserved, `Reserved_Pig_Count = 1`, and `customer_notification_sent = true`.
+5. Rejection backend test: `ORD-2026-C3CEDF` moved to `Cancelled | Rejected`, one line cancelled/released, `Reserved_Pig_Count = 0`, and `customer_notification_sent = true`.
+6. No notification warning was returned for either backend transition.
+
+Regression checks for future edits:
+
+- Confirm new orders created through `1.0`/`1.2` store `conversation_id` on `ORDER_MASTER.ConversationId`.
+- Confirm approval and rejection still send the exact agreed message texts.
+- Confirm failed notification delivery does not roll back the order transition and writes an `ORDER_STATUS_LOG` warning.
 
 ## Web App Order Tests
 

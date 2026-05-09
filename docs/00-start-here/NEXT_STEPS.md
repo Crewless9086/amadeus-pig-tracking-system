@@ -329,7 +329,7 @@ Implementation note:
 - clean all-eligible approval path passed on 2026-05-09: `ORD-2026-7C79A8` moved to `Approved`, both active lines became `Reserved`, `Reserved_Pig_Count = 2`, and no `reserve_warning` was returned
 - all-ineligible/no-reservation warning path passed on 2026-05-09: `ORD-2026-0FB697` moved to `Approved`, cancelled lines stayed cancelled/not reserved, `Reserved_Pig_Count = 0`, `reserve_warning = "No lines could be reserved."`, and `ORDER_STATUS_LOG` recorded the manual follow-up
 
-### 1.9 Outbound Approval/Rejection Notifications
+### 1.9 Outbound Approval/Rejection Notifications - Complete And Live-Verified
 
 Required outcome:
 
@@ -348,7 +348,10 @@ Implementation status:
 - backend stores `conversation_id` from new order payloads
 - backend notification helper has been added for approval/rejection and does not roll back the order transition if delivery fails
 - draft `1.4 - Outbound Order Notification` workflow docs/export have been added under `docs/04-n8n/workflows/1.4 - outbound-order-notification/`
-- still required to close Phase 1.9: import/configure the n8n workflow, set `ORDER_NOTIFICATION_WEBHOOK_URL`, and run one approval and one rejection live notification test
+- direct `1.4` webhook smoke test passed on 2026-05-09 with `conversation_id = 1742` and returned `sent = true`
+- backend approval notification path passed on 2026-05-09: `ORD-2026-36CDE4` moved from `Pending_Approval` to `Approved`, one line reserved, `Reserved_Pig_Count = 1`, and `customer_notification_sent = true`
+- backend rejection notification path passed on 2026-05-09: `ORD-2026-C3CEDF` moved from `Pending_Approval` to `Cancelled | Rejected`, one line cancelled/released, `Reserved_Pig_Count = 0`, and `customer_notification_sent = true`
+- production backend must keep `ORDER_NOTIFICATION_WEBHOOK_URL=https://charln.app.n8n.cloud/webhook/order-notification` configured so deployed app approvals/rejections continue sending notifications
 
 ## Phase 2: Quote And Invoice Generation
 
@@ -655,7 +658,7 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 1.9** — Outbound approval/rejection notifications. Backend/storage scaffolding is in place; next step is n8n import/configuration plus live approval/rejection notification tests.
+1. **Phase 2.1** — Design quote/invoice document schema and generation path.
 2. **Phase 6** (parallel polish when useful) — Web app order detail parity and action clarity after the Phase 1.8 approval/reservation behavior.
 3. Parked / not blocking Phase 1.9: litter detail route mismatch under Phase 6; backend verification and eventual `order_service.py` split under Phase 7.0.
 

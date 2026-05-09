@@ -111,8 +111,10 @@ Approve/reject lifecycle direction:
 - all-ineligible verification passed on 2026-05-09 with `ORD-2026-0FB697`: order approved, cancelled lines remained not reserved, `Reserved_Pig_Count = 0`, and `ORDER_STATUS_LOG` recorded the no-reservation warning
 - live `ORDER_MASTER`, `ORDER_LINES`, and `ORDER_STATUS_LOG` headers matched `docs/03-google-sheets/sheets/` during Phase 1.8 verification; `ORDER_MASTER.Payment_Method` is live and required, and `ORDER_MASTER.ConversationId` is live as the Phase 1.9 Chatwoot lookup key
 - approval/rejection customer notifications use a separate outbound n8n workflow triggered by backend webhook, not Sam's inbound `1.0` workflow
-- Phase 1.9 backend support is in place: new draft orders store `conversation_id`, approvals/rejections call `ORDER_NOTIFICATION_WEBHOOK_URL` when configured, and delivery failures are logged as warnings without rolling back the order transition
-- Phase 1.9 still needs n8n import/configuration and live approval/rejection notification tests before being marked complete
+- Phase 1.9 outbound approval/rejection notifications are complete and live-verified
+- new draft orders store `conversation_id`, approvals/rejections call `ORDER_NOTIFICATION_WEBHOOK_URL`, and delivery failures are logged as warnings without rolling back the order transition
+- live Phase 1.9 verification passed on 2026-05-09: direct `1.4` webhook test returned `sent = true`; `ORD-2026-36CDE4` approval sent the customer notification and reserved one line; `ORD-2026-C3CEDF` rejection sent the customer notification and cancelled/released one line
+- production backend must keep `ORDER_NOTIFICATION_WEBHOOK_URL=https://charln.app.n8n.cloud/webhook/order-notification` configured
 
 ### Split Requested Item Sync Needs Hardening
 
