@@ -49,18 +49,24 @@ function applyOrderActionVisibility(order) {
     showElement(reserveBtn);
     showElement(releaseBtn);
     showElement(sendForApprovalBtn);
-    showElement(approveBtn);
-    showElement(rejectBtn);
     showElement(addOrderLineForm);
     return;
   }
 
+  if (isPendingApproval) {
+    showElement(approveBtn);
+    showElement(rejectBtn);
+    showElement(releaseBtn);
+    return;
+  }
+
   if (isApproved) {
+    showElement(releaseBtn);
     showElement(completeBtn);
     return;
   }
 
-  if (isPendingApproval || isCancelled) {
+  if (isCancelled) {
     return;
   }
 }
@@ -395,7 +401,7 @@ function setupOrderActions(orderId) {
 
   if (approveBtn) {
     approveBtn.addEventListener("click", async function () {
-      await runOrderAction(`/api/orders/${orderId}/approve`, actionMessage, orderId, "Order approved successfully.");
+      await runOrderAction(`/api/orders/${orderId}/approve`, actionMessage, orderId, "Order approved successfully.", "approve");
     });
   }
 
@@ -457,6 +463,10 @@ async function runOrderAction(url, messageBox, orderId, successText, reserveRele
 
       if (result.warning) {
         message += ` ${result.warning}`;
+      }
+
+      if (reserveReleaseKind === "approve" && result.reserve_warning && result.reserve_warning !== result.warning) {
+        message += ` ${result.reserve_warning}`;
       }
 
       messageBox.textContent = message;

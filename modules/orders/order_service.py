@@ -1505,11 +1505,51 @@ def approve_order(order_id: str, changed_by: str = "App"):
         notes="Order approved",
     )
 
-    return {
+    result = {
         "success": True,
         "message": "Order approved successfully.",
         "order_id": order_id,
     }
+
+    reserve_result = None
+    reserve_warning = ""
+
+    try:
+        reserve_result = reserve_order_lines(order_id)
+        result["auto_reserve"] = reserve_result
+
+        if not reserve_result.get("success"):
+            reserve_warning = (
+                reserve_result.get("message")
+                or "; ".join(reserve_result.get("errors", []))
+                or "Auto-reservation did not reserve any order lines."
+            )
+        elif reserve_result.get("warning"):
+            reserve_warning = reserve_result["warning"]
+
+    except Exception as exc:
+        reserve_warning = f"Auto-reservation failed after approval: {str(exc)}"
+
+    if reserve_warning:
+        result["reserve_warning"] = reserve_warning
+        result["warning"] = reserve_warning
+
+        try:
+            _write_order_status_log(
+                order_id=order_id,
+                old_status="Approved | Approved",
+                new_status="Approved | Approved",
+                changed_by=changed_by,
+                change_source="App",
+                notes=f"Approval completed, but reservation needs manual follow-up: {reserve_warning}",
+            )
+        except Exception as exc:
+            result["status_log_warning"] = (
+                "Reservation warning could not be written to ORDER_STATUS_LOG: "
+                + str(exc)
+            )
+
+    return result
 
 
 def reject_order(order_id: str, changed_by: str = "App"):

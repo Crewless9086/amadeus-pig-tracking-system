@@ -322,6 +322,10 @@ Verification notes:
 - approve an order where reservation returns a failure or warning and confirm `reserve_warning` is returned, `ORDER_STATUS_LOG` records the manual follow-up, and the web app can show the warning
 - confirm `Reserved_Pig_Count` matches actual reserved lines after approval auto-reservation
 
+Implementation note:
+
+- backend and web-app support for reserve-on-approve has been added in repo; live Google Sheets verification is still required before marking this subsection complete
+
 ### 1.9 Outbound Approval/Rejection Notifications
 
 Required outcome:

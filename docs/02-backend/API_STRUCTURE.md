@@ -16,7 +16,7 @@ All order API routes are registered under `/api`.
 | `POST` | `/api/orders/<order_id>/reserve` | Mark order lines as reserved and update master reserved count. | Web app, future steward action. |
 | `POST` | `/api/orders/<order_id>/release` | Release reserved order lines and reset master reserved count. | Web app, future cancel/reject flow. |
 | `POST` | `/api/orders/<order_id>/send-for-approval` | Mark order pending approval and notify approval workflow. | Web app, `1.2 - Amadeus Order Steward`. |
-| `POST` | `/api/orders/<order_id>/approve` | Approve order. | Web app/human action. |
+| `POST` | `/api/orders/<order_id>/approve` | Approve order, then attempt auto-reservation of eligible active lines. | Web app/human action. |
 | `POST` | `/api/orders/<order_id>/reject` | Reject approval and mark order cancelled. | Web app/human action. |
 | `POST` | `/api/orders/<order_id>/cancel` | Customer-cancel order, cancel linked lines, and release reservations. | Web app, future Order Steward action. |
 | `POST` | `/api/orders/<order_id>/complete` | Complete order, collect lines, and update sold/exited pigs. | Web app/human action. |
@@ -64,13 +64,10 @@ Current approval behavior:
 - `POST /api/orders/<order_id>/approve` represents the human/admin commercial decision to accept the order.
 - Approval is allowed only when `Order_Status = Pending_Approval`.
 - Draft, Approved, Cancelled, and Completed orders cannot be approved through this endpoint.
-- Approval should not yet be treated as proof that pigs were reserved. Reservation remains a separate manual web-app action until reserve/release behavior is hardened.
-
-Planned post-Phase 1.6 approval behavior:
-
-- `approve_order` should update approval state first, then attempt to reserve active order lines.
-- If reservation fails or partially fails, the approval should not be rolled back.
-- Backend should write a warning to `ORDER_STATUS_LOG` and return a `reserve_warning` field so the admin web app can surface the follow-up.
+- `approve_order` updates approval state first, then attempts to reserve eligible active order lines.
+- If reservation fails or partially fails, the approval is not rolled back.
+- Backend writes a follow-up warning to `ORDER_STATUS_LOG` and returns `reserve_warning` so the admin web app can surface the manual follow-up.
+- The response includes `auto_reserve` with the same line-level summary returned by `POST /api/orders/<order_id>/reserve` when the reservation attempt runs.
 
 Current rejection behavior is documented below. Rejection should cancel/release linked non-cancelled/non-collected lines and should remain blocked for completed orders.
 

@@ -243,7 +243,9 @@ Current backend behavior:
 
 - `approve_order()` only allows approval when `Order_Status = Pending_Approval`.
 - Draft, Approved, Cancelled, and Completed orders are rejected by the approval endpoint.
-- Approval still does not auto-reserve pigs; reservation remains a separate manual action until reserve/release behavior is hardened.
+- Approval updates `ORDER_MASTER` to `Order_Status = Approved` and `Approval_Status = Approved` first.
+- After approval is written, backend attempts to reserve eligible active order lines using the same hardened reservation rules as `POST /api/orders/<order_id>/reserve`.
+- If reservation fails or partially fails, approval is not rolled back. Backend returns `reserve_warning`, keeps any `auto_reserve.line_results`, and writes an `ORDER_STATUS_LOG` follow-up warning for manual admin action.
 
 ## Completion / Collection
 
