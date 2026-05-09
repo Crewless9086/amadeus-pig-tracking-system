@@ -15,6 +15,23 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-09 — Sales agent memory: slaughter/finisher bands + Sam recap + longer history
+
+Type: `FIX` + `IMPROVEMENT`
+
+**Problem:** On long WhatsApp threads, **`Code - Should Create Draft Order?`** stayed **`should_create_draft: false`** even after the customer confirmed (**e.g.** final **“Yes”**) because **`order_state`** had empty **qty / category / weight / timing / location**. Two causes: **`Code - Format Chat History`** only kept the **last 10** messages (early **Customer** lines with full specs dropped off), and **`Code - Build Sales Agent Memory Summary`** had **no weight patterns above 45–49 kg**, did not parse colloquial quantities like **“1 would be fine”**, and did not recover facts from **Sam’s order-recap** lines (safe echo of what the customer already confirmed).
+
+**Changes (re-import `1.0` from repo):**
+
+| Area | Change |
+|------|--------|
+| **`Code - Format Chat History`** | **`msgs.slice(-10)` → `slice(-25)`** so structured extraction and memory see more of the thread. |
+| **`Code - Build Sales Agent Memory Summary`** | Weight bands **50–54 kg … 90–94 kg**; quantity phrases **`N would be fine`** / **`would work`**; **Sam recap fallback** on lines matching recap hints (**“your order is for…”**, **“request noted for…”**, **pickup + Riversdale/Albertinia**, etc.) to fill **only empty** slots; **infer Category** from band for Finisher / Slaughter when category still blank; recap-based **female/male count** → **`sex_split`** when Customer lines gave no `\d+ male/female`. |
+
+**Operational note:** Recap fallback is intentionally **narrow** (recap-shaped **Sam** lines only) so free-form inventory listings are not mistaken for customer-confirmed orders.
+
+---
+
 ### 2026-05-08 — Partial-stock multi-band: caps + nearby lines without duplicate regex
 
 Type: `FIX` + `IMPROVEMENT` + `DOCS`

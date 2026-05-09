@@ -228,7 +228,7 @@ return items.map((item) => {
   const customerMsgs = msgs.filter(m => m.senderType === "contact" || m.messageType === 0);
   const isFirstTurn = customerMsgs.length <= 1;
 
-  const lastN = msgs.slice(-10);
+  const lastN = msgs.slice(-25);
   const history = lastN.map(m => {
     const who = (m.senderType === "contact" || m.messageType === 0) ? "Customer" : "Sam";
     return `${who}: ${m.content}`;

@@ -184,7 +184,7 @@ Current status:
 - Sam `send_for_approval` guarded to `Draft` — in place with Phase 1.4 regressions live-verified
 - reject and customer-cancel paths block `Completed` and cancel/release linked lines as documented
 
-### 1.6 Harden Reserve And Release Behavior
+### 1.6 Harden Reserve And Release Behavior - Complete And Live-Verified
 
 Required outcome:
 
