@@ -106,6 +106,7 @@ Approve/reject lifecycle direction:
 - auto-reservation must wait until reserve/release behavior is hardened (Phase 1.6); until then, reservation remains a separate manual web-app or workflow action
 - approval should eventually auto-reserve active order lines, because approval means the farm accepts and commits to the order
 - once implemented, approval should not roll back if reservation fails; backend should log a warning and return `reserve_warning` for the admin web app
+- before Phase 1.8 implementation, verify the live `ORDER_MASTER`, `ORDER_LINES`, and `ORDER_STATUS_LOG` headers against `docs/03-google-sheets/sheets/`; `ORDER_MASTER.Payment_Method` is live and required, while `ConversationId` remains a future Phase 1.9 prerequisite
 - approval/rejection customer notifications should use a separate outbound n8n workflow triggered by backend webhook, not Sam's inbound `1.0` workflow
 - outbound notification planning depends on storing a reliable Chatwoot lookup key, preferably `ConversationId` on `ORDER_MASTER`
 

@@ -309,6 +309,19 @@ Required outcome:
 - if reservation fails or partially fails, do not roll back the approval; write a warning to `ORDER_STATUS_LOG`, return `reserve_warning`, and let the admin web app surface the manual follow-up
 - auto-reserve should ignore cancelled/inactive lines and report per-line outcomes clearly
 
+Documentation / schema guard before implementation:
+
+- verify the live Google Sheet headers against `docs/03-google-sheets/sheets/ORDER_MASTER.md`, `ORDER_LINES.md`, and `ORDER_STATUS_LOG.md` before writing code that depends on row position or log columns
+- `ORDER_MASTER.Payment_Method` is already a live manually added column for Phase 1.3; do not remove or reorder it when checking approval behavior
+- `ConversationId` is not part of the Phase 1.8 requirement; it remains a Phase 1.9 prerequisite for outbound customer notifications
+
+Verification notes:
+
+- approve an order with all active lines eligible and confirm the order moves to `Approved` and lines become reserved
+- approve an order with mixed active/cancelled/no-pig lines and confirm skipped lines are reported without rolling back approval
+- approve an order where reservation returns a failure or warning and confirm `reserve_warning` is returned, `ORDER_STATUS_LOG` records the manual follow-up, and the web app can show the warning
+- confirm `Reserved_Pig_Count` matches actual reserved lines after approval auto-reservation
+
 ### 1.9 Outbound Approval/Rejection Notifications
 
 Required outcome:
@@ -450,6 +463,7 @@ Focus areas:
 - visible line/reservation state
 - reserve/release success feedback on order detail is done (API `message` + `changed_count` + `warning`); still need button visibility parity for approve/reject and other actions
 - **Pen / location labels:** dropdowns and pig pickers should show **pen name** (human-readable) alongside or instead of raw **pen ID** wherever the app still exposes IDs only
+- **Known route mismatch to park:** `static/js/litterDetail.js` currently calls `/api/pig-weights/litter/<id>/detail`, while the Flask route is `/api/pig-weights/litter/<id>`; fix under web app/pig detail usability unless it blocks live order work
 - clear approve/reject/cancel buttons
 - order detail actions must match backend rules: show approve/reject when `Order_Status = Pending_Approval`, reserve/release when appropriate; avoid forcing ops through OOM SAKKIE workflows when parity with API is intended
 - safe release/reserve controls
@@ -465,6 +479,17 @@ Do not redesign the app before the backend order behavior is safe.
 ## Phase 7: Broader Workflow Improvements
 
 Only after order stability:
+
+### 7.0 Backend Verification And Service Boundary Cleanup
+
+This is a planned technical-debt checkpoint, not a reason to delay Phase 1.8.
+
+Required outcome:
+
+- add focused backend verification around order lifecycle and requested-item sync before large refactors
+- make the `order_service.py` split visible and deliberate, aligned with `docs/02-backend/REFACTOR_PLAN.md`
+- do not split `order_service.py` until Phase 1 lifecycle behavior and Phase 4/5 order-truth behavior are stable enough to protect with tests or clear manual checklists
+- keep Google Sheets append/write behavior tied to documented sheet headers, not hidden assumptions about column order
 
 ### 7.1 Intake (from planning triage — not yet scheduled)
 
@@ -615,5 +640,6 @@ Recommended next:
 
 1. **Phase 1.8** — Approval auto-reservation (`approve_order` then reserve lines; partial failure non-blocking; `ORDER_STATUS_LOG` + admin follow-up). Reserve/release semantics are hardened in 1.6.
 2. **Phase 6** (parallel polish when useful) — Web app order detail parity: approve/reject visibility when `Pending_Approval`, action alignment with backend
+3. Parked / not blocking Phase 1.8: litter detail route mismatch under Phase 6; backend verification and eventual `order_service.py` split under Phase 7.0; `ConversationId` storage under Phase 1.9.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

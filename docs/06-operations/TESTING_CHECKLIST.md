@@ -66,6 +66,27 @@ Test steps:
 7. Confirm rejection cancels/releases linked non-cancelled/non-collected lines and writes the status log.
 8. After outbound notifications are implemented, confirm approval and rejection trigger customer messages through the dedicated outbound workflow, not through Sam's inbound `1.0` workflow.
 
+### Approval Auto-Reservation
+
+Applies to `NEXT_STEPS.md` Phase 1.8.
+
+Pre-check:
+
+1. Confirm live headers match the documented order sheets: `ORDER_MASTER`, `ORDER_LINES`, and `ORDER_STATUS_LOG`.
+2. Confirm `ORDER_MASTER.Payment_Method` exists and remains available for send-for-approval/approval checks.
+
+Test steps:
+
+1. Approve a `Pending_Approval` order with all active lines eligible for reservation.
+2. Confirm `ORDER_MASTER.Order_Status = Approved` and `Approval_Status = Approved`.
+3. Confirm eligible `ORDER_LINES` are `Line_Status = Reserved` and `Reserved_Status = Reserved`.
+4. Confirm `ORDER_MASTER.Reserved_Pig_Count` matches the actual reserved line count.
+5. Approve an order with mixed eligible, cancelled, collected, or no-pig lines.
+6. Confirm terminal/no-pig lines are skipped and reported, not modified incorrectly.
+7. Force or simulate a reservation warning/failure where practical.
+8. Confirm approval is not rolled back, `reserve_warning` is returned, and `ORDER_STATUS_LOG` records the manual follow-up.
+9. Confirm the web app can show the returned warning clearly to the admin/operator.
+
 ### Send For Approval From Sam
 
 Status: Phase 1.4 happy path live verification passed on 2026-04-30. Keep the failure cases as required regression checks before broader lifecycle work.
