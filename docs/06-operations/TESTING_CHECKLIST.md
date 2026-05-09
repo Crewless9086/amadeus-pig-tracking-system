@@ -70,6 +70,13 @@ Test steps:
 
 Applies to `NEXT_STEPS.md` Phase 1.8.
 
+Status:
+
+- Complete and live-verified on 2026-05-09.
+- Mixed-line verification: `ORD-2026-102250` reserved one active line, skipped one cancelled line, did not roll back approval, and wrote a status log warning.
+- Clean all-eligible verification: `ORD-2026-7C79A8` reserved two active lines with no warning.
+- All-ineligible verification: `ORD-2026-0FB697` approved with no reserved lines, returned `reserve_warning`, and wrote a status log warning.
+
 Pre-check:
 
 1. Confirm live headers match the documented order sheets: `ORDER_MASTER`, `ORDER_LINES`, and `ORDER_STATUS_LOG`.

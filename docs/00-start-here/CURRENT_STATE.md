@@ -102,11 +102,14 @@ Send for approval from Sam:
 
 Approve/reject lifecycle direction:
 
-- Phase 1.5 lifecycle guards — **Complete And Live-Verified** (see `NEXT_STEPS.md` §1.5): approval only from `Pending_Approval`, payment lock beyond `Draft`, reject/cancel blocked for `Completed`; auto-reservation and outbound notifications stay in Phase 1.8 / 1.9
-- auto-reservation waited for reserve/release hardening in Phase 1.6; repo implementation for Phase 1.8 now attempts reservation during approval
+- Phase 1.5 lifecycle guards — **Complete And Live-Verified** (see `NEXT_STEPS.md` §1.5): approval only from `Pending_Approval`, payment lock beyond `Draft`, reject/cancel blocked for `Completed`; outbound notifications stay in Phase 1.9
+- Phase 1.8 approval auto-reservation is complete and live-verified
 - approval should auto-reserve active order lines, because approval means the farm accepts and commits to the order
 - repo implementation now approves first, then attempts auto-reservation; approval does not roll back if reservation fails or partially fails, and backend returns `reserve_warning` for the admin web app
-- before Phase 1.8 live verification, verify the live `ORDER_MASTER`, `ORDER_LINES`, and `ORDER_STATUS_LOG` headers against `docs/03-google-sheets/sheets/`; `ORDER_MASTER.Payment_Method` is live and required, while `ConversationId` remains a future Phase 1.9 prerequisite
+- live mixed-line verification passed on 2026-05-09 with `ORD-2026-102250`: approval succeeded, one active line reserved, one cancelled line skipped, `Reserved_Pig_Count = 1`, and `ORDER_STATUS_LOG` recorded the warning follow-up
+- clean all-eligible verification passed on 2026-05-09 with `ORD-2026-7C79A8`: two active lines reserved, `Reserved_Pig_Count = 2`, and no warning returned
+- all-ineligible verification passed on 2026-05-09 with `ORD-2026-0FB697`: order approved, cancelled lines remained not reserved, `Reserved_Pig_Count = 0`, and `ORDER_STATUS_LOG` recorded the no-reservation warning
+- live `ORDER_MASTER`, `ORDER_LINES`, and `ORDER_STATUS_LOG` headers matched `docs/03-google-sheets/sheets/` during Phase 1.8 verification; `ORDER_MASTER.Payment_Method` is live and required, while `ConversationId` remains a future Phase 1.9 prerequisite
 - approval/rejection customer notifications should use a separate outbound n8n workflow triggered by backend webhook, not Sam's inbound `1.0` workflow
 - outbound notification planning depends on storing a reliable Chatwoot lookup key, preferably `ConversationId` on `ORDER_MASTER`
 
@@ -159,4 +162,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. **Phase 1.7 is closed** (slim reply payload live-verified). **Primary next implementation focus: Phase 1.8** (approval auto-reservation). **Phase 6** (order-detail parity) remains parallel polish when useful — see `NEXT_STEPS` choice point.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. **Phase 1.8 is closed** (approval auto-reservation live-verified on 2026-05-09). **Primary next implementation focus: Phase 1.9** (outbound approval/rejection notifications). **Phase 6** remains parallel polish when useful — see `NEXT_STEPS` choice point.

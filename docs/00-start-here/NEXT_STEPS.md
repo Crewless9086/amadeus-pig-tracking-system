@@ -296,11 +296,11 @@ The slim node sits on **four** paths. If something in daily ops naturally hits *
 
 **Sign-off:** **§1.7** closed **2026-05-07**; working position updated in **`HOW_WE_WORK.md`** §1.
 
-### 1.8 Approval Auto-Reservation
+### 1.8 Approval Auto-Reservation - Complete And Live-Verified
 
 **Prerequisite:** Phase **1.6** is **closed** (reserve/release behaviour, per-line summaries, HTTP 422 on no-op reserve, web banner copy—all live-verified). Phase **1.7** is **closed** (slim Sales Agent input live-verified **2026-05-07**).
 
-**Current focus:** This is the next open subsection in Phase 1 — implement and verify **reserve-on-approve** per required outcome below.
+**Current status:** Complete and live-verified on 2026-05-09.
 
 Required outcome:
 
@@ -324,7 +324,10 @@ Verification notes:
 
 Implementation note:
 
-- backend and web-app support for reserve-on-approve has been added in repo; live Google Sheets verification is still required before marking this subsection complete
+- backend and web-app support for reserve-on-approve has been added in repo
+- live Google Sheets verification passed for a mixed-line order on 2026-05-09: `ORD-2026-102250` moved from `Pending_Approval` to `Approved`, one active draft line was reserved, one cancelled line was skipped as `terminal_line_status`, `Reserved_Pig_Count` became `1`, and `ORDER_STATUS_LOG` recorded both approval and the manual follow-up warning
+- clean all-eligible approval path passed on 2026-05-09: `ORD-2026-7C79A8` moved to `Approved`, both active lines became `Reserved`, `Reserved_Pig_Count = 2`, and no `reserve_warning` was returned
+- all-ineligible/no-reservation warning path passed on 2026-05-09: `ORD-2026-0FB697` moved to `Approved`, cancelled lines stayed cancelled/not reserved, `Reserved_Pig_Count = 0`, `reserve_warning = "No lines could be reserved."`, and `ORDER_STATUS_LOG` recorded the manual follow-up
 
 ### 1.9 Outbound Approval/Rejection Notifications
 
@@ -642,8 +645,8 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 1.8** — Approval auto-reservation (`approve_order` then reserve lines; partial failure non-blocking; `ORDER_STATUS_LOG` + admin follow-up). Reserve/release semantics are hardened in 1.6.
-2. **Phase 6** (parallel polish when useful) — Web app order detail parity: approve/reject visibility when `Pending_Approval`, action alignment with backend
-3. Parked / not blocking Phase 1.8: litter detail route mismatch under Phase 6; backend verification and eventual `order_service.py` split under Phase 7.0; `ConversationId` storage under Phase 1.9.
+1. **Phase 1.9** — Outbound approval/rejection notifications. This depends on deciding/storing a reliable Chatwoot lookup key, preferably `ConversationId` on `ORDER_MASTER`.
+2. **Phase 6** (parallel polish when useful) — Web app order detail parity and action clarity after the Phase 1.8 approval/reservation behavior.
+3. Parked / not blocking Phase 1.9: litter detail route mismatch under Phase 6; backend verification and eventual `order_service.py` split under Phase 7.0.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
