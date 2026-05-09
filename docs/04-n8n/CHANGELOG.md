@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-07 — Phase 1.7 slim Sales Agent: live verification closed
+
+Type: `DOCS`
+
+**Summary:** Phase **1.7** (`Code - Slim Sales Agent User Context`, `OrderStateSummary` + `StewardCompact`) signed off after WhatsApp minimal checklist (AUTO+draft path + CLARIFY path). **`NEXT_STEPS.md`** §1.7 marked **Complete And Live-Verified**; **`HOW_WE_WORK.md`** working position advanced; next open subsection **§1.8** approval auto-reservation.
+
+---
+
 ### 2026-05-09 — Sales agent memory: slaughter/finisher bands + Sam recap + longer history
 
 Type: `FIX` + `IMPROVEMENT`

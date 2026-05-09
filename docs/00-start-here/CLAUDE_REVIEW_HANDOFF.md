@@ -70,3 +70,91 @@ Typical triggers:
 ## Cursor’s conductor rule
 
 Cursor should **remind you** when a session crosses the “big enough for Claude review” bar; you still **choose** whether to paste into Claude Code. Always scope: "**`NEXT_STEPS.md` §X.Y only.**"
+
+---
+
+## Filled handoff — Phase 1.8: Approval Auto-Reservation (paste everything in the block below)
+
+*Built from `NEXT_STEPS.md` §1.8, `CLAUDE.md`, `ORDER_LOGIC.md`, and current `modules/orders/order_service.py`. Update the “Optional / after implementation” lines with your branch and diff before sending to Claude Code.*
+
+```markdown
+You are working in the **Amadeus Pig Tracking & Sales** repo. Read **`CLAUDE.md`** first, then the files listed under **Read first**.
+
+## Authority and scope
+
+- **Build order:** `docs/00-start-here/NEXT_STEPS.md`
+- **Explicit scope:** **Phase 1 — §1.8 Approval Auto-Reservation** only.
+
+**Out of scope for this review** (unless I explicitly ask): **§1.9** outbound approval/rejection notifications; **Phase 2+** quotes/invoices; **Phase 4** split-line sync; Sam **`1.0`** prompt copy — unless my diff touches them.
+
+If you find unrelated bugs, list them under **Out of scope** with one line each.
+
+## Goal (from NEXT_STEPS — Required outcome)
+
+Deliver **reserve-on-approve**:
+
+1. **`approve_order`** must set approval state **first** (order becomes **Approved** / approval flags updated as today).
+2. **Then** call into the existing **reserve** path for **active** `ORDER_LINES` (reuse **`reserve_order_lines`** semantics from Phase 1.6 — cancelled/collected skipped, no `Pig_ID` skipped, idempotent reserve).
+3. If **reservation fails entirely** or **only partially** succeeds:
+   - **Do not roll back** the approval in the database/sheets.
+   - Surface a **`reserve_warning`** (and/or equivalent structured warning) in the API response for the **web app** to show manual follow-up.
+   - Write an appropriate entry to **`ORDER_STATUS_LOG`** documenting the partial/total reserve failure after approval.
+4. Per-line outcomes must remain **clear** in the API (align with existing **`reserve_order_lines`** `line_results` / `warning` patterns where possible).
+
+## Current baseline (for you to verify in code)
+
+- **`approve_order`** in `modules/orders/order_service.py` currently: validates **`Pending_Approval`**, updates **`ORDER_MASTER`** to Approved, writes **`ORDER_STATUS_LOG`**, returns `{ success, message, order_id }` — **it does not invoke reservation today**.
+- **`reserve_order_lines(order_id)`** in the same module: batch reserve eligible lines; returns **`success`**, **`line_results`**, **`changed_count`**, **`warning`**, **`reserved_pig_count`** — hardened under **Phase 1.6**.
+- **HTTP:** `POST /api/orders/<order_id>/approve` in `modules/orders/order_routes.py` returns whatever `approve_order` returns.
+
+Your review should check that the **implementation plan or diff** chains these correctly without breaking lifecycle rules in `docs/02-backend/ORDER_LOGIC.md` and sheet rules in `docs/03-google-sheets/BUSINESS_RULES.md` / `SHEET_SCHEMA.md`.
+
+## What changed / what to review (fill in by human, or paste `git diff --stat`)
+
+**Summary:** _Describe planned or implemented §1.8 work (e.g. “After `approve_order` header update, call `reserve_order_lines`, merge warnings into response, log partial failure”)._
+
+**Branches / commits / PR:** _e.g. branch name, commit SHAs, or “planning only — no commits yet”._
+
+**Files changed (paths):**
+
+_read from `git diff --stat` or list manually, e.g._
+
+- `modules/orders/order_service.py`
+- `modules/orders/order_routes.py`
+- _Web app order detail component if API contract changes_
+- `docs/02-backend/ORDER_LOGIC.md` (if behavior documented)
+
+## Read first
+
+1. `docs/00-start-here/NEXT_STEPS.md` — **§1.8** only
+2. `docs/02-backend/ORDER_LOGIC.md` — approval, reserve, release
+3. `docs/04-n8n/DATA_FLOW.md` — only if the diff changes Steward or order API contracts
+4. `modules/orders/order_service.py` — `approve_order`, `reserve_order_lines`
+5. `modules/orders/order_routes.py` — `/approve`
+
+## Design checks (answer each)
+
+1. **Architecture:** Does the change respect Chatwoot → n8n → Steward/agent → Flask → Sheets and keep **formula-driven sheets** read-only?
+2. **Approval vs inventory:** Is **approval** still a single, atomic header transition, with **reservation** as a **second phase** that can fail without undoing approval?
+3. **Observability:** Will ops see **log + API** evidence when pigs did not all reserve (per **`ORDER_STATUS_LOG`** and response body)?
+4. **UI contract:** Does the **web app** receive enough structured fields (`reserve_warning`, `line_results`, counts) to match **Phase 1.6**–style messaging?
+5. **Regression:** Against **§1.8 Required outcome**, list anything **still missing**.
+
+## Deliverable format
+
+- **Verdict:** pass / pass-with-nits / block — one sentence **risk** + one **next concrete step**.
+- **Findings:** bullets by severity (blocking / nit / suggestion).
+- **Out of scope:** optional.
+
+**Optional — paste API response sample or execution log after a test approve:**
+
+_(paste here)_
+
+```
+```
+
+### How to use
+
+1. Copy everything from the line **`You are working in the Amadeus…`** down to **`(paste here)_`** (inclusive), i.e. the full prompt inside the fenced block above — **do not** copy the wrapper sections titled “Filled handoff” / “How to use”.
+2. Fill in **Summary**, **git ref**, and **files changed** (or write *planning only — no commits yet*).
+3. Paste into **Claude Code** with this repo open.

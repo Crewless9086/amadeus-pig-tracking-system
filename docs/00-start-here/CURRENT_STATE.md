@@ -137,18 +137,9 @@ Reason:
 - backend can return only safe, relevant fields
 - backend responses are easier to test than uncontrolled AI sheet reads
 
-### Sales Agent Reply Payload Needs Slimming
+### Sales Agent Reply Payload — closed (Phase 1.7, 2026-05-07)
 
-Current risk:
-
-- `Ai Agent - Sales Agent` receives a large merged payload containing raw Chatwoot webhook data, debug fields, sync internals, and final order context
-- this did not block Fix C, but it increases prompt noise and makes reply behavior harder to reason about
-
-Preferred follow-up:
-
-- add a `Code - Build Sales Reply Context` node before Sam
-- pass only the fields needed for the reply: customer message, short conversation summary, order action, order ID/status, backend success, sync success, slim order state, and explicit reply instruction
-- keep raw/debug data available in previous nodes for diagnostics, not in Sam's prompt
+**Resolved:** `Code - Slim Sales Agent User Context` feeds Sam **`OrderStateSummary`** + **`StewardCompact`**; see `docs/04-n8n/DATA_FLOW.md` §`1.0` Sales Agent Input Contract. Raw/debug payloads stay upstream of the slim node.
 
 ## Web App Current Concern
 
@@ -167,4 +158,4 @@ Do not focus on app polish before order behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. **Phase 1.6 is closed.** Primary next implementation focus: **Phase 1.7** (slim Sales Agent reply payload in `1.0`). Then **Phase 6** (order-detail action parity) and **Phase 1.8** (approval auto-reservation) as scheduled — see `NEXT_STEPS` choice point.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. **Phase 1.7 is closed** (slim reply payload live-verified). **Primary next implementation focus: Phase 1.8** (approval auto-reservation). **Phase 6** (order-detail parity) remains parallel polish when useful — see `NEXT_STEPS` choice point.

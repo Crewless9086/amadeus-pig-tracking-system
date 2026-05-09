@@ -241,9 +241,9 @@ Web app closure (Phase 6-style polish, shipped with 1.6 sign-off — **verified 
 
 - Order detail reserve/release successes use the API `result.message`, then append an explicit sentence for `changed_count` (`0` = no ORDER_LINES rows written; `N` = how many rows were updated). `warning` is appended after that when the API returns it.
 
-### 1.7 Slim Sales Agent Reply Payload
+### 1.7 Slim Sales Agent Reply Payload — Complete And Live-Verified
 
-Current status: **implemented, pending live verification**.
+Current status: **complete** — WhatsApp minimal checklist (AUTO+draft + CLARIFY) passed **2026-05-07**.
 
 Required outcome:
 
@@ -262,9 +262,45 @@ Implementation notes:
 - workflow JSON validated post-edit (ConvertFrom-Json passed)
 - docs updated: `DATA_FLOW.md` (new §1.0 Sales Agent Input Contract), `README.md` (node 31a, rewired connections)
 
+**Live verification checklist (WhatsApp — minimal, Phase 1.7 only)**
+
+*Goal:* Confirm Sam still behaves correctly when the Sales Agent prompt uses **`OrderStateSummary`** + **`StewardCompact`** only (no regression from the old fat `OrderState` dump). **Paraphrase every customer line** — these are ordered steps, not fixed scripts.
+
+**Before you start**
+
+- [x] **`1.0`** in n8n matches repo (import `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json` if unsure).
+- [x] Test on the real **Sam – WhatsApp** inbox you ship with.
+
+**A — AUTO + draft / steward path (required)**
+
+One thread. Walk through enough detail that the workflow reaches **draft create or draft enrich** (e.g. category, weight band, qty, collection site, timing, payment — in whatever order Sam asks; your wording can vary).
+
+- [x] Sam’s replies stay **coherent** (understands thread; no obvious “empty state” confusion).
+- [x] Where the backend creates/updates a draft, the customer-visible reply reflects it (**order id** or clear draft acknowledgement — same bar as before 1.7).
+- [x] **No duplicate** Sam messages for a **single** customer message.
+- [x] Sam does **not** re-ask for facts already established in the same thread unless the customer changes them.
+
+**B — CLARIFY path (required)**
+
+Same or **new** thread. Send something that should trigger **CLARIFY** (vague one-liner, incomplete spec, or benign off-topic — your choice of style).
+
+- [x] Sam responds appropriately (**one** main clarifying steer or polite boundary), not gibberish or stuck loops.
+
+**C — Remaining input paths (optional if A+B pass and time is short)**
+
+The slim node sits on **four** paths. If something in daily ops naturally hits **REPLY_ONLY** / replay-style routing, note it; otherwise skip — **A+B passing** is the minimal bar for sign-off.
+
+**Optional technical confirm (nice-to-have)**
+
+- [ ] In n8n **Executions**, pick a run from steps A/B: **`Code - Slim Sales Agent User Context`** executes immediately before **`Ai Agent - Sales Agent`** for that branch.
+
+**Sign-off:** **§1.7** closed **2026-05-07**; working position updated in **`HOW_WE_WORK.md`** §1.
+
 ### 1.8 Approval Auto-Reservation
 
-**Prerequisite:** Phase **1.6** is **closed** (reserve/release behaviour, per-line summaries, HTTP 422 on no-op reserve, web banner copy—all live-verified). This subsection is safe to schedule on its own timetable.
+**Prerequisite:** Phase **1.6** is **closed** (reserve/release behaviour, per-line summaries, HTTP 422 on no-op reserve, web banner copy—all live-verified). Phase **1.7** is **closed** (slim Sales Agent input live-verified **2026-05-07**).
+
+**Current focus:** This is the next open subsection in Phase 1 — implement and verify **reserve-on-approve** per required outcome below.
 
 Required outcome:
 
@@ -573,14 +609,11 @@ Recently completed:
 - Phase 1.4 approval preflight and backend `400` regressions — fixed and live re-tested 2026-05-04; missing payment method now asks Cash/EFT without backend call; backend guard failures preserve Draft status and return a customer-safe missing-field reply
 - Phase 1.5 lifecycle guards — Complete And Live-Verified 2026-05-04: `approve_order` only from `Pending_Approval`; payment lock beyond Draft; reject/cancel vs `Completed`; defer auto-reservation (1.8) and outbound notifications (1.9)
 - Phase 1.6 reserve/release hardening — **complete** 2026-05-05 (backend/sheets); 2026-05-06 (order-detail success banner: API `message` + `changed_count` + idempotent copy for second reserve/release)
-
-Recently added to completed:
-
-- Phase 1.7 slim Sales Agent reply payload — `Code - Slim Sales Agent User Context` node added to `1.0`, all four input paths rewired, Sales Agent prompt updated, docs updated; pending live verification
+- Phase 1.7 slim Sales Agent reply payload — complete and live-verified **2026-05-07**: `Code - Slim Sales Agent User Context` on all four paths into Sam; `OrderStateSummary` + `StewardCompact`; WhatsApp checklist A+B passed
 
 Recommended next:
 
-1. **Phase 6** — Web app order detail parity: approve/reject visibility when `Pending_Approval`, and any remaining action alignment with backend
-2. **Phase 1.8** (when scheduled) — Approval auto-reservation; reserve path is hardened and UI surfaces row-level outcome copy
+1. **Phase 1.8** — Approval auto-reservation (`approve_order` then reserve lines; partial failure non-blocking; `ORDER_STATUS_LOG` + admin follow-up). Reserve/release semantics are hardened in 1.6.
+2. **Phase 6** (parallel polish when useful) — Web app order detail parity: approve/reject visibility when `Pending_Approval`, action alignment with backend
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

@@ -10,9 +10,9 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today’s focus** | `NEXT_STEPS.md` § _paste subsection, e.g. Phase 4.1_ |
-| **Status** | Not started / In progress / Verified complete / Blocked |
-| **Last verified** | Date + short note (e.g. live WhatsApp pass for §…) |
+| **Today’s focus** | `NEXT_STEPS.md` § **Phase 1.8** — Approval auto-reservation |
+| **Status** | In progress (next open subsection in Phase 1) |
+| **Last verified** | **2026-05-07** — §1.7 slim Sales Agent WhatsApp checklist A+B |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
 
