@@ -71,12 +71,12 @@ Current approval behavior:
 
 Current rejection behavior is documented below. Rejection should cancel/release linked non-cancelled/non-collected lines and should remain blocked for completed orders.
 
-Future customer notification behavior:
+Current customer notification behavior:
 
 - Approval and rejection notifications should be sent by a separate outbound n8n workflow, not by Sam's inbound `1.0` customer-message workflow.
-- Backend should call a future `ORDER_NOTIFICATION_WEBHOOK_URL` after successful approval or rejection.
-- Notification webhook delivery should be non-blocking; failures should be logged as warnings and should not fail the approval/rejection action.
-- The notification workflow needs a reliable Chatwoot lookup key, preferably `ConversationId` stored on `ORDER_MASTER` when the draft is created.
+- Backend calls `ORDER_NOTIFICATION_WEBHOOK_URL` after successful approval or rejection when the environment variable is configured.
+- Notification webhook delivery is non-blocking with a short timeout; failures are returned as `notification_warning` and written to `ORDER_STATUS_LOG` for manual follow-up.
+- The notification workflow looks up the Chatwoot conversation from `ORDER_MASTER.ConversationId`, stored when the draft is created.
 
 ## Important Payload Contracts
 
@@ -99,6 +99,7 @@ Important fields:
 - `quoted_total`
 - `notes`
 - `created_by`
+- `conversation_id` - optional Chatwoot conversation ID. Stored as `ORDER_MASTER.ConversationId` for Phase 1.9 outbound notifications.
 
 Current result includes success state, generated `order_id`, and any warnings.
 

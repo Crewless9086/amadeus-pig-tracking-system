@@ -32,6 +32,16 @@ ORDER_APPROVAL_WEBHOOK_URL = os.getenv(
     "ORDER_APPROVAL_WEBHOOK_URL",
     "https://charln.app.n8n.cloud/webhook/46935f6b-2921-4d51-a477-1db5ac1024f7",
 )
+ORDER_NOTIFICATION_WEBHOOK_URL = os.getenv("ORDER_NOTIFICATION_WEBHOOK_URL", "").strip()
+
+APPROVAL_CUSTOMER_MESSAGE = (
+    "Your order has been approved. We have reserved the pigs linked to your order "
+    "and will keep you posted on the next step."
+)
+REJECTION_CUSTOMER_MESSAGE = (
+    "Your order was reviewed, but we cannot approve it at this stage. We will "
+    "follow up if there is another suitable option."
+)
 
 CATEGORY_REQUEST_TO_SALES = {
     "Piglet": ["Young Piglets"],
@@ -247,6 +257,105 @@ def _notify_n8n_order_approval_request(order_id: str, changed_by: str):
             "sent": False,
             "error": str(exc),
         }
+
+
+def _notify_order_customer_notification(
+    order_id: str,
+    event_type: str,
+    message_text: str,
+    changed_by: str,
+    order_row=None,
+    extra_payload=None,
+):
+    if not ORDER_NOTIFICATION_WEBHOOK_URL:
+        return {
+            "sent": False,
+            "skipped": True,
+            "error": "ORDER_NOTIFICATION_WEBHOOK_URL is not configured.",
+        }
+
+    order_row = order_row or {}
+    payload = {
+        "event_type": str(event_type).strip(),
+        "order_id": str(order_id).strip(),
+        "conversation_id": to_clean_string(order_row.get("ConversationId", "")),
+        "customer_name": to_clean_string(order_row.get("Customer_Name", "")),
+        "customer_phone": to_clean_string(order_row.get("Customer_Phone", "")),
+        "customer_channel": to_clean_string(order_row.get("Customer_Channel", "")),
+        "order_status": to_clean_string(order_row.get("Order_Status", "")),
+        "approval_status": to_clean_string(order_row.get("Approval_Status", "")),
+        "changed_by": str(changed_by).strip() or "App",
+        "message_text": str(message_text).strip(),
+        "trigger_source": "Flask App",
+        "extra": extra_payload or {},
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+
+    req = urllib_request.Request(
+        ORDER_NOTIFICATION_WEBHOOK_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=5) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            return {
+                "sent": True,
+                "status_code": getattr(response, "status", 200),
+                "body": body,
+            }
+    except urllib_error.HTTPError as exc:
+        return {
+            "sent": False,
+            "error": f"HTTPError {exc.code}: {exc.reason}",
+        }
+    except urllib_error.URLError as exc:
+        return {
+            "sent": False,
+            "error": f"URLError: {exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "sent": False,
+            "error": str(exc),
+        }
+
+
+def _add_notification_result_to_response(
+    result: dict,
+    order_id: str,
+    changed_by: str,
+    notification_result: dict,
+    log_note: str,
+    status_for_log: str,
+):
+    result["customer_notification_sent"] = notification_result.get("sent", False)
+
+    if notification_result.get("sent", False):
+        return
+
+    result["notification_warning"] = (
+        "Customer notification was not sent: "
+        + notification_result.get("error", "Unknown error")
+    )
+
+    try:
+        _write_order_status_log(
+            order_id=order_id,
+            old_status=status_for_log,
+            new_status=status_for_log,
+            changed_by=changed_by,
+            change_source="App",
+            notes=log_note + ": " + notification_result.get("error", "Unknown error"),
+        )
+    except Exception as exc:
+        result["notification_status_log_warning"] = (
+            "Customer notification warning could not be written to ORDER_STATUS_LOG: "
+            + str(exc)
+        )
 
 
 def _weight_band_sort_key(weight_band: str):
@@ -614,6 +723,9 @@ def get_order_detail(order_id: str):
     order_record["payment_method"] = (
         to_clean_string(master_row.get("Payment_Method", "")) if master_row else ""
     )
+    order_record["conversation_id"] = (
+        to_clean_string(master_row.get("ConversationId", "")) if master_row else ""
+    )
 
     line_rows = get_all_records(ORDER_LINES_SHEET)
     lines = []
@@ -705,6 +817,8 @@ def create_order(cleaned_data: dict):
         cleaned_data["created_by"],
         today_str,
         today_str,
+        "",
+        cleaned_data.get("conversation_id", ""),
     ]
 
     append_row(ORDER_MASTER_SHEET, row_values)
@@ -1549,6 +1663,27 @@ def approve_order(order_id: str, changed_by: str = "App"):
                 + str(exc)
             )
 
+    notification_row = _get_order_master_row(order_id) or row
+    notification_result = _notify_order_customer_notification(
+        order_id=order_id,
+        event_type="order_approved",
+        message_text=APPROVAL_CUSTOMER_MESSAGE,
+        changed_by=changed_by,
+        order_row=notification_row,
+        extra_payload={
+            "reserve_warning": reserve_warning,
+            "auto_reserve": reserve_result,
+        },
+    )
+    _add_notification_result_to_response(
+        result=result,
+        order_id=order_id,
+        changed_by=changed_by,
+        notification_result=notification_result,
+        log_note="Approval completed, but customer notification needs manual follow-up",
+        status_for_log="Approved | Approved",
+    )
+
     return result
 
 
@@ -1605,13 +1740,36 @@ def reject_order(order_id: str, changed_by: str = "App"):
             notes=f"Order rejected; {cancelled_line_count} line(s) cancelled and reservations released",
         )
 
-    return {
+    result = {
         "success": True,
         "message": "Order rejected successfully.",
         "order_id": order_id,
         "cancelled_line_count": cancelled_line_count,
         "reserved_pig_count": 0,
     }
+
+    notification_row = _get_order_master_row(order_id) or row
+    notification_result = _notify_order_customer_notification(
+        order_id=order_id,
+        event_type="order_rejected",
+        message_text=REJECTION_CUSTOMER_MESSAGE,
+        changed_by=changed_by,
+        order_row=notification_row,
+        extra_payload={
+            "cancelled_line_count": cancelled_line_count,
+            "reserved_pig_count": 0,
+        },
+    )
+    _add_notification_result_to_response(
+        result=result,
+        order_id=order_id,
+        changed_by=changed_by,
+        notification_result=notification_result,
+        log_note="Rejection completed, but customer notification needs manual follow-up",
+        status_for_log="Cancelled | Rejected",
+    )
+
+    return result
 
 
 def cancel_order(order_id: str, changed_by: str = "App", reason: str = ""):

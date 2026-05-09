@@ -99,10 +99,12 @@ These columns were or must be added manually in Google Sheets before the related
 | Sheet | Column | Values | Status | Required for |
 | --- | --- | --- | --- | --- |
 | `ORDER_MASTER` | `Payment_Method` | `Cash` or `EFT` | Added manually — Phase 1.3 live-verified | Backend PATCH, send_for_approval validation, quote/invoice VAT calculation |
+| `ORDER_MASTER` | `ConversationId` | Chatwoot conversation ID or blank | Added manually - Phase 1.9 | Outbound approval/rejection customer notifications |
 | `Sales_HumanEscalations` | `WebPaymentMethod` | `Cash`, `EFT`, or blank | Added manually — Phase 1.3 live-verified | Preserve payment method through escalation and Telegram human reply |
 
 Notes:
 - `Payment_Method` must be present in the sheet before the Phase 1.3 backend update is deployed.
+- `ConversationId` must be present in the sheet before Phase 1.9 notification delivery is used. Backend stores the incoming `conversation_id` on new draft orders.
 - `Cash` = order totals use ex-VAT unit prices as listed. No VAT added.
 - `EFT` = order totals add 15% VAT on top of the ex-VAT unit price.
 - `Payment_Method` is locked once `Order_Status` reaches `Pending_Approval` or later. Backend enforces this; manual overrides require deliberate admin tooling.

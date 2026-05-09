@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-09 - Phase 1.9 outbound order notification scaffold
+
+Type: `ADD`
+
+**Summary:** Added Phase **1.9** backend-triggered notification contract and draft `1.4 - Outbound Order Notification` workflow docs/export. `ORDER_MASTER.ConversationId` is the Chatwoot lookup key, and backend sends exact approval/rejection message text through `ORDER_NOTIFICATION_WEBHOOK_URL` after successful order transitions. Delivery failures are warnings only; they do not roll back approval or rejection.
+
+---
+
 ### 2026-05-07 — Phase 1.7 slim Sales Agent: live verification closed
 
 Type: `DOCS`

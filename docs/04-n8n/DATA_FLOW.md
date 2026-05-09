@@ -117,6 +117,25 @@ First-turn committed orders use `create_order_with_lines` when `1.0` has already
 
 Customer cancel confirmation state is stored in Chatwoot custom attributes as `pending_action = cancel_order`; it is set by `1.0`, cleared by `1.0`, and never written to Google Sheets.
 
+## Backend To `1.4` Outbound Notification Contract
+
+`approve_order()` and `reject_order()` call `ORDER_NOTIFICATION_WEBHOOK_URL` after the backend transition succeeds.
+
+Payload fields:
+
+| Field | Meaning |
+| --- | --- |
+| `event_type` | `order_approved` or `order_rejected`. |
+| `order_id` | Backend order ID. |
+| `conversation_id` | Chatwoot conversation ID stored on `ORDER_MASTER.ConversationId`. Required for sending. |
+| `message_text` | Exact customer-facing message to send. `1.4` must not rewrite it. |
+| `customer_name`, `customer_phone`, `customer_channel` | Context for logging/debugging. |
+| `order_status`, `approval_status` | Backend-confirmed state after the transition. |
+| `changed_by` | Actor that triggered the transition. |
+| `extra` | Transition-specific metadata, such as reservation warnings or cancelled line count. |
+
+Failure rule: delivery failure must return an error to backend, but the order transition remains committed and backend logs a warning for manual follow-up.
+
 ## Preferred Order Review Path
 
 Sam needs better order awareness, but the preferred implementation is not a direct `ORDER_OVERVIEW` Google Sheets tool inside `1.0`.

@@ -20,6 +20,7 @@ It documents:
 | `1.1 - SAM - Sales Agent - Escalation Telegram` | `workflows/1.1 - Sam - sales-agent-escalation-telegram/` | Active support workflow | Human reply handling from Telegram back to Chatwoot. |
 | `1.2 - Amadeus Order Steward` | `workflows/1.2 - order-steward/` | Active worker workflow | Backend order actions called by `1.0`. |
 | `1.3 - SAM - Sales Agent - Media Tool` | `workflows/1.3 - Sam-sales-agent-media-tool/` | Disabled until fixed | Sends media/images through Chatwoot when enabled. |
+| `1.4 - Outbound Order Notification` | `workflows/1.4 - outbound-order-notification/` | Planned/import pending | Receives backend approval/rejection events and sends the customer Chatwoot message. |
 
 ## Folder Map
 
@@ -52,6 +53,8 @@ flowchart TD
   workflow10 -. disabled tool .-> workflow13["1.3 Media Tool"]
   workflow13 --> googleDrive[Google Drive]
   workflow13 --> chatwoot
+  backend --> workflow14["1.4 Outbound Order Notification"]
+  workflow14 --> chatwoot
 ```
 
 ## Current Build Decisions
@@ -61,6 +64,7 @@ flowchart TD
 - First-turn committed orders with `requested_items[]` use `create_order_with_lines`; `1.2` owns the create + sync operation and returns a combined result.
 - Direct read access to `ORDER_OVERVIEW` may be useful later, but the safer planned direction is to expose order review through `1.2` and the backend so identity matching, filtering, and permissions stay controlled.
 - `1.3` is officially the media workflow number, but the media tool remains disabled until fixed and tested.
+- `1.4` is the outbound order notification workflow. It must only send backend-confirmed approval/rejection messages and must use `ConversationId` from `ORDER_MASTER`.
 - Telegram cleanup after human reply is desired but should be treated as a planned improvement unless confirmed implemented.
 - This repo is private, so workflow exports may keep full technical detail for local build planning.
 

@@ -313,7 +313,7 @@ Documentation / schema guard before implementation:
 
 - verify the live Google Sheet headers against `docs/03-google-sheets/sheets/ORDER_MASTER.md`, `ORDER_LINES.md`, and `ORDER_STATUS_LOG.md` before writing code that depends on row position or log columns
 - `ORDER_MASTER.Payment_Method` is already a live manually added column for Phase 1.3; do not remove or reorder it when checking approval behavior
-- `ConversationId` is not part of the Phase 1.8 requirement; it remains a Phase 1.9 prerequisite for outbound customer notifications
+- `ConversationId` was intentionally handled in Phase 1.9, not Phase 1.8
 
 Verification notes:
 
@@ -334,11 +334,21 @@ Implementation note:
 Required outcome:
 
 - create a separate outbound n8n workflow, planned as `1.4 - Outbound Order Notification`, for backend-driven customer messages after human approval or rejection
-- backend should call a new `ORDER_NOTIFICATION_WEBHOOK_URL` after successful `approve_order` or `reject_order`
+- backend should call `ORDER_NOTIFICATION_WEBHOOK_URL` after successful `approve_order` or `reject_order`
 - webhook delivery should be non-blocking with a short timeout; backend should log a warning if notification delivery fails, not fail the order transition
-- notification workflow should find the Chatwoot conversation from stable stored data, preferably `ConversationId` on `ORDER_MASTER`
-- before building the workflow, add/store `ConversationId` on `ORDER_MASTER` at draft creation time and define the exact approval/rejection message text
-- decide whether rejection notifications include the rejection reason from the web app or use a generic message
+- notification workflow should find the Chatwoot conversation from `ConversationId` on `ORDER_MASTER`
+- store incoming `conversation_id` on `ORDER_MASTER.ConversationId` at draft creation time
+- use the agreed generic message texts:
+  - approval: `Your order has been approved. We have reserved the pigs linked to your order and will keep you posted on the next step.`
+  - rejection: `Your order was reviewed, but we cannot approve it at this stage. We will follow up if there is another suitable option.`
+
+Implementation status:
+
+- live `ORDER_MASTER` has `ConversationId` as column 26 after `Payment_Method`
+- backend stores `conversation_id` from new order payloads
+- backend notification helper has been added for approval/rejection and does not roll back the order transition if delivery fails
+- draft `1.4 - Outbound Order Notification` workflow docs/export have been added under `docs/04-n8n/workflows/1.4 - outbound-order-notification/`
+- still required to close Phase 1.9: import/configure the n8n workflow, set `ORDER_NOTIFICATION_WEBHOOK_URL`, and run one approval and one rejection live notification test
 
 ## Phase 2: Quote And Invoice Generation
 
@@ -645,7 +655,7 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 1.9** — Outbound approval/rejection notifications. This depends on deciding/storing a reliable Chatwoot lookup key, preferably `ConversationId` on `ORDER_MASTER`.
+1. **Phase 1.9** — Outbound approval/rejection notifications. Backend/storage scaffolding is in place; next step is n8n import/configuration plus live approval/rejection notification tests.
 2. **Phase 6** (parallel polish when useful) — Web app order detail parity and action clarity after the Phase 1.8 approval/reservation behavior.
 3. Parked / not blocking Phase 1.9: litter detail route mismatch under Phase 6; backend verification and eventual `order_service.py` split under Phase 7.0.
 

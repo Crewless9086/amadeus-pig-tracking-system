@@ -213,6 +213,18 @@ Each test must confirm:
 - backend error returned clearly
 - Sam gets only backend-confirmed truth
 
+## Phase 1.9 Outbound Notification Tests
+
+Before closing Phase 1.9:
+
+1. Confirm live `ORDER_MASTER` has `ConversationId` after `Payment_Method`.
+2. Create or inspect a draft order made through `1.0` to confirm `conversation_id` is stored on `ORDER_MASTER.ConversationId`.
+3. Import/configure `1.4 - Outbound Order Notification` in n8n.
+4. Set backend `ORDER_NOTIFICATION_WEBHOOK_URL` to the production webhook URL.
+5. Approve one `Pending_Approval` order and confirm the customer receives the exact approval text.
+6. Reject one eligible order and confirm the customer receives the exact rejection text.
+7. Temporarily test a failed webhook path, if practical, and confirm the order transition still succeeds while `ORDER_STATUS_LOG` records the notification warning.
+
 ## Web App Order Tests
 
 After backend behavior is safe, test the app for usability:

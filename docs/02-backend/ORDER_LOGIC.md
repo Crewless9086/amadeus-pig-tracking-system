@@ -246,6 +246,12 @@ Current backend behavior:
 - Approval updates `ORDER_MASTER` to `Order_Status = Approved` and `Approval_Status = Approved` first.
 - After approval is written, backend attempts to reserve eligible active order lines using the same hardened reservation rules as `POST /api/orders/<order_id>/reserve`.
 - If reservation fails or partially fails, approval is not rolled back. Backend returns `reserve_warning`, keeps any `auto_reserve.line_results`, and writes an `ORDER_STATUS_LOG` follow-up warning for manual admin action.
+- After the approval and reservation attempt, backend calls `ORDER_NOTIFICATION_WEBHOOK_URL` with `event_type = order_approved`, `ConversationId`, and the agreed customer message text. Notification failure does not roll back approval.
+
+Rejection notification:
+
+- `reject_order()` cancels/release linked active lines, updates the order to `Cancelled | Rejected`, then calls `ORDER_NOTIFICATION_WEBHOOK_URL` with `event_type = order_rejected`, `ConversationId`, and the agreed rejection message text.
+- Notification failure is returned as `notification_warning` and written to `ORDER_STATUS_LOG` for manual follow-up.
 
 ## Completion / Collection
 

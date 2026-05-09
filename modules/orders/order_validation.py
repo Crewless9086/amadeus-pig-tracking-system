@@ -78,6 +78,7 @@ def validate_new_order_payload(payload: dict):
     quoted_total = payload.get("quoted_total", "")
     notes = str(payload.get("notes", "")).strip()
     created_by = str(payload.get("created_by", "")).strip()
+    conversation_id = str(payload.get("conversation_id", "")).strip()
 
     parsed_order_date = parse_sheet_date(order_date)
     if not parsed_order_date:
@@ -120,6 +121,7 @@ def validate_new_order_payload(payload: dict):
             "quoted_total": parsed_quoted_total,
             "notes": notes,
             "created_by": created_by or "App",
+            "conversation_id": conversation_id,
         }
     }
 

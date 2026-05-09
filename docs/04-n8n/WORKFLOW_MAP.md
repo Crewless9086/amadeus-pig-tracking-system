@@ -24,6 +24,8 @@ flowchart TD
   telegramAlert --> wf11["1.1 Telegram Human Reply"]
   wf11 --> chatwootReply
   wf10 -. disabled .-> wf13["1.3 Media Tool"]
+  backend --> wf14["1.4 Outbound Order Notification"]
+  wf14 --> chatwootReply
 ```
 
 ## `1.0 - SAM - Sales Agent - Chatwoot`
@@ -127,6 +129,22 @@ Primary responsibilities when enabled:
 - find eligible images
 - send images to Chatwoot
 - update `images_sent_offset_map` so repeat requests do not resend the same images unnecessarily
+
+## `1.4 - Outbound Order Notification`
+
+Role: backend-triggered customer notification workflow.
+
+Trigger: webhook called by Flask through `ORDER_NOTIFICATION_WEBHOOK_URL` after a successful approval or rejection.
+
+Primary responsibilities:
+
+- receive `event_type`, `order_id`, `conversation_id`, `message_text`, customer metadata, and extra transition context from backend
+- validate that `event_type` is one of `order_approved` or `order_rejected`
+- require `conversation_id` before sending to Chatwoot
+- send the exact backend-provided `message_text` to the Chatwoot conversation
+- return structured success/error details to backend
+
+Relationship to `1.0`: separate outbound workflow. `1.0` remains the inbound sales hub and does not own post-approval/rejection messages.
 
 ## Change Rule
 
