@@ -26,9 +26,11 @@ Type: `FIX` + `IMPROVEMENT`
 | Area | Change |
 |------|--------|
 | **`Code - Format Chat History`** | **`msgs.slice(-10)` → `slice(-25)`** so structured extraction and memory see more of the thread. |
-| **`Code - Build Sales Agent Memory Summary`** | Weight bands **50–54 kg … 90–94 kg**; quantity phrases **`N would be fine`** / **`would work`**; **Sam recap fallback** on lines matching recap hints (**“your order is for…”**, **“request noted for…”**, **pickup + Riversdale/Albertinia**, etc.) to fill **only empty** slots; **infer Category** from band for Finisher / Slaughter when category still blank; recap-based **female/male count** → **`sex_split`** when Customer lines gave no `\d+ male/female`. |
+| **`Code - Build Sales Agent Memory Summary`** | Weight bands **50–54 kg … 90–94 kg**; quantity phrases **`N would be fine`** / **`would work`**; **Sam recap fallback** only on **explicit recap hints** in **Sam** lines (**“order is for…”**, **“your order is for…”**, **“request noted for…”**, etc.) — **not** bare **pickup + location** (those matched inventory prompts); fills **only empty** slots; **infer Category** from band for Finisher / Slaughter when category still blank; recap-based **`sex_split`** uses **whitelist tokens** (**`female` / `male` / …**) because **`/male/i.test("female")`** was **true** and produced **1 male + 1 female** for a **single female** pig. |
 
-**Operational note:** Recap fallback is intentionally **narrow** (recap-shaped **Sam** lines only) so free-form inventory listings are not mistaken for customer-confirmed orders.
+**Operational note:** Recap fallback stays **narrow** so Sam’s stock lists and “how many for pickup in Riversdale?” prompts are not treated as order confirmation.
+
+**Follow-up (same day):** Fix **false split-sex** (`sex_split` **1 male, 1 female**) from substring **`male` inside `female`**; remove **pickup + location** as sole recap signal.
 
 ---
 
