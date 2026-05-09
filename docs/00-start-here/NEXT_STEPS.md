@@ -357,7 +357,7 @@ Implementation status:
 
 Goal: backend generates quote and invoice documents. n8n delivers them only.
 
-### 2.1 Design Document Schema
+### 2.1 Design Document Schema - Drafted For Review
 
 Required outcome:
 
@@ -367,6 +367,20 @@ Required outcome:
 - define output format (PDF preferred) and storage/retrieval path
 - document VAT calculation rule: `EFT` orders add 15% on top of ex-VAT line totals; `Cash` orders show ex-VAT totals as final
 - confirm `ORDER_LINES.Unit_Price` is stored at line creation time — if not, add it before quote generation is built
+
+Design draft:
+
+- see `docs/02-backend/QUOTE_INVOICE_DESIGN.md`
+- proposed direction: backend generates PDFs, uploads to Google Drive, records metadata in `ORDER_DOCUMENTS`, and n8n delivers only after backend generation succeeds
+- proposed configurable business rules: future `SYSTEM_SETTINGS` sheet, including `quote_valid_days`, `vat_rate`, bank details, business details, and Drive folder IDs
+- proposed references: full document refs (`Q-YYYY-XXXXXX`, `INV-YYYY-XXXXXX`) plus short customer payment ref (`XXXXXX`)
+
+Open before implementation:
+
+- confirm creation method for `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS`
+- confirm Google Drive folder IDs and sharing model
+- confirm whether quote versioning is part of first implementation
+- confirm whether invoice generation requires an existing quote or may generate directly from an approved order
 
 ### 2.2 Backend Quote Endpoint
 

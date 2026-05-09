@@ -12,6 +12,7 @@ The backend is responsible for safe API behavior between n8n, the web app, and G
 | --- | --- |
 | `API_STRUCTURE.md` | Current backend endpoints, inputs, outputs, and callers. |
 | `ORDER_LOGIC.md` | Business rules for drafts, lines, reservation, release, approval, rejection, cancellation, and completion. |
+| `QUOTE_INVOICE_DESIGN.md` | Phase 2 quote/invoice generation design before implementation. |
 | `DATA_MODELS.md` | Backend-facing order data models and important fields. |
 | `MODULE_STRUCTURE.md` | Current backend module layout and ownership. |
 | `REFACTOR_PLAN.md` | Planned backend cleanup and hardening work. |
