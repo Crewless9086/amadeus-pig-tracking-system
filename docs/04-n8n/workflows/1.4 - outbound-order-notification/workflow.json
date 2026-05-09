@@ -72,7 +72,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"content\": $json.message_text, \"message_type\": \"outgoing\", \"private\": false}",
+        "jsonBody": "={{ { content: $json.message_text, message_type: \"outgoing\", private: false } }}",
         "options": {}
       },
       "id": "HTTP-Chatwoot-Send-Message",

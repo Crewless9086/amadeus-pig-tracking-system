@@ -70,7 +70,7 @@ Configure `HTTP - Chatwoot Send Message` as follows:
 - Method: `POST`
 - Header: `api_access_token` from an n8n credential or manually configured protected value
 - Header: `Content-Type = application/json`
-- Body: `{"content": $json.message_text, "message_type": "outgoing", "private": false}`
+- JSON Body expression: `={{ { content: $json.message_text, message_type: "outgoing", private: false } }}`
 
 The Chatwoot API token must not be committed to this repo.
 
