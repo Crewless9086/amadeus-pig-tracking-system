@@ -1,7 +1,17 @@
-# Planning
+# Scratch (`planning/ToDoList.md`)
 
-**Tracked work lives in `docs/00-start-here/NEXT_STEPS.md` only.**
+Use this **only** for fleeting notes before they land in the real plan.
 
-Former longer scratch from this file was merged there under **Phase 6** (pen names vs IDs), **Phase 7.1** (workflow payload hygiene, Sam order history, Chatwoot `order_id` lifecycle, LLM vs Code), and **Phase 2.1** already covers **`Unit_Price`**.
+Canonical build order: **`docs/00-start-here/NEXT_STEPS.md`**.
 
-Do not grow duplicate task lists here.
+**Workflow**
+
+1. Jot bullets here while you discover work.
+2. Move each item into **`NEXT_STEPS.md`** under the right phase (or clarify that it duplicates an existing bullet).
+3. **Delete those lines from this file** once they are documented there.
+
+Keep this list empty—or nearly empty—so nothing drifts out of **`NEXT_STEPS.md`**.
+
+---
+
+Add `-` bullets below while brainstorming; **delete each bullet after it exists in `NEXT_STEPS.md`.**

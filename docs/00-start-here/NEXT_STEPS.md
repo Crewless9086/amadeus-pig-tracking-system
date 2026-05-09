@@ -249,9 +249,11 @@ Implementation notes:
 
 ### 1.8 Approval Auto-Reservation
 
+**Prerequisite:** Phase **1.6** is **closed** (reserve/release behaviour, per-line summaries, HTTP 422 on no-op reserve, web banner copy—all live-verified). This subsection is safe to schedule on its own timetable.
+
 Required outcome:
 
-- implement only after Phase 1.6 proves reserve/release is reliable and failure summaries are clear
+- implement reserve-on-approve knowing reserve/release semantics are already hardened and failure summaries are clear in the API + order detail UI
 - `approve_order` should set the approval state first, then attempt to reserve active order lines
 - if reservation fails or partially fails, do not roll back the approval; write a warning to `ORDER_STATUS_LOG`, return `reserve_warning`, and let the admin web app surface the manual follow-up
 - auto-reserve should ignore cancelled/inactive lines and report per-line outcomes clearly
