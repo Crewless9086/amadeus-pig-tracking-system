@@ -343,6 +343,15 @@ Required outcome:
 - repeated sync does not duplicate rows
 - old lines are released/cancelled before replacement
 
+**Incident — 2026-05-09 (live WhatsApp, grower + split):** After a multi-turn thread, **`ORDER_MASTER`** showed **empty `Requested_Sex` / `Collection_Location`** while **`ORDER_LINES`** were **three Female** rows instead of **1 Male + 2 Female**; Sam also re-asked for **collection location** despite an earlier **Riversdale** answer. **Overlap with fixes shipped 2026-05-09:** longer **`ConversationHistory`** (**25** msgs) and **`Code - Build Sales Agent Memory Summary`** (recap hints, **no** `male`-substring double-count on **`female`**) improve **hydration** on short turns and prevent **corrupt `sex_split` from Sam recap** — they do **not** by themselves guarantee **`update_order`** payloads and **Steward** persist every header field every time, nor correct **partial stock** allocation across sex. Treat this as **open** until the live test below passes.
+
+**Regression test (fresh thread, after repo `1.0` re-import):**
+
+1. New guest: **Grower**, **30–34 kg**, qty **3**, message **“1 male and 2 females”**, then **Riversdale**, then **timing** (e.g. next Sunday), then **Cash**.
+2. **`get_order_context`** / sheet: **`ORDER_MASTER.Requested_Sex`** and **`Collection_Location`** match conversation (if the product model stores only a **single** sex on the header, document the rule: e.g. **`Any`** + split only on **lines**, or encode split in **`Notes`** — but do not leave both blank when backend requires them for approval).
+3. **`ORDER_LINES`:** three rows with **sex** == **1 Male, 2 Female** (or steward-documented equivalent), not three of one sex.
+4. No **duplicate** outbound Sam messages; no **re-ask** for facts already in **`OrderStateSummary`** / memory for that thread.
+
 ### 4.2 Define Partial Match Behavior
 
 Required outcome:

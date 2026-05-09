@@ -32,6 +32,8 @@ Type: `FIX` + `IMPROVEMENT`
 
 **Follow-up (same day):** Fix **false split-sex** (`sex_split` **1 male, 1 female**) from substring **`male` inside `female`**; remove **pickup + location** as sole recap signal.
 
+**Related (not fully closed by the above):** A **grower** thread with **“1 male and 2 females”** + **Riversdale** still needs verification that **`ORDER_MASTER`** receives **`Requested_Sex` / `Collection_Location`** and **`ORDER_LINES`** get correct **per-line sex** (see **`NEXT_STEPS.md` §4.1** incident + regression test). That work spans **Steward `update_order`** / sync and may include **Sam prompt** parity, not memory alone.
+
 ---
 
 ### 2026-05-08 — Partial-stock multi-band: caps + nearby lines without duplicate regex
