@@ -4,6 +4,9 @@
 
 Defines the approved build order from this point forward.
 
+**Process (phases only, testing, when to involve Claude Code):**  
+`docs/00-start-here/HOW_WE_WORK.md` — includes an editable **working position** table so you can see **which subsection we are on** without skipping ahead.
+
 ## Core Rule
 
 Stabilize live order behavior before expanding features or polishing the app.
@@ -12,8 +15,10 @@ Orders are the profit section. They must be reliable before the system grows.
 
 ### Staying on track (Cursor + Claude Code)
 
-- **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it.
-- **Second opinion:** Copy **`docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`** into Claude Code for cross-checks on **`workflow.json`** + Flask + docs. Roles: Cursor = conductor (triage, minimal scope); Claude Code in-repo = worker / reviewer (see **`CLAUDE.md`**).
+- **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).
+- **Where we are:** Update the table in **`docs/00-start-here/HOW_WE_WORK.md`** §1 when you finish or repoint work.
+- **Claude Code review:** **Not** required for every change. Use **`CLAUDE_REVIEW_HANDOFF.md`** mainly for **big / cross-cutting** edits; Cursor should **remind you** when that bar is met (see **`HOW_WE_WORK.md` §3** and **`CLAUDE.md`**).
+- **Testing:** Scripted runs use **message order and required facts**, not rigid exact phrases — **`HOW_WE_WORK.md` §4**. Optional **random human smoke** when Cursor calls for it.
 - **Scratch only:** **`planning/ToDoList.md`** must not drift into a competing plan — move items here, then shorten the scratch file.
 
 Discovering overlapping problems is normal on a layered system; **prioritisation is not “more problems forever” but one phase subsection at a time.**

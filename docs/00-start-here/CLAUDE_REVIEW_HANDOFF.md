@@ -55,12 +55,18 @@ Extra context dump (payloads / logs):
 
 ---
 
-## When to run this
+## When to run this (not every change)
+
+Use the handoff for **big or cross-cutting** work. Skip it for tiny, local edits unless you want assurance. Triggers and philosophy: **`docs/00-start-here/HOW_WE_WORK.md` §3**.
+
+Typical triggers:
 
 - Large **`workflow.json`** edits (e.g. `1.0 - Sam-sales-agent-chatwoot`, `1.2 - order-steward`).
-- Anything that mixes **routing**, **prompt text**, **Steward payloads**, and **backend** in one incident.
+- Anything that mixes **routing**, **prompt text**, **Steward payloads**, and **backend** in one change set.
 - When you suspect **truth vs narration** mismatch (availability, drafts, reservations).
+
+**When not to bother:** one-file bugfix, typo, comment-only, isolated tiny Code node — unless you are unsure.
 
 ## Cursor’s conductor rule
 
-Tell Cursor explicitly: "**Scope this to `NEXT_STEPS.md` §X.Y only.**" Paste the filled handoff prompt when you spawn Claude Code.
+Cursor should **remind you** when a session crosses the “big enough for Claude review” bar; you still **choose** whether to paste into Claude Code. Always scope: "**`NEXT_STEPS.md` §X.Y only.**"

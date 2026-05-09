@@ -4,7 +4,7 @@ Use this **only** for fleeting notes before they land in the real plan.
 
 Canonical build order: **`docs/00-start-here/NEXT_STEPS.md`**.
 
-**Handoff:** Second-pass Claude Code reviews use **`docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`**; conductor/worker roles are in **`CLAUDE.md`** at the repo root.
+**Handoff:** Big / cross-cutting reviews → **`docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`** (Cursor should remind you when warranted). Roles, phase queue, flexible testing: **`docs/00-start-here/HOW_WE_WORK.md`**; **`CLAUDE.md`** at repo root.
 
 **Workflow**
 

@@ -101,10 +101,10 @@ Use this repo with **two complementary roles**:
 
 | Role | Tool | Responsibility |
 |---|---|---|
-| **Conductor** | Cursor chat (Composer / agent) | Triage incoming issues, propose minimal changes, sequence work against **`NEXT_STEPS.md`**, avoid scope creep |
+| **Conductor** | Cursor chat (Composer / agent) | Triage incoming issues, propose minimal changes, sequence work against **`NEXT_STEPS.md`**, avoid scope creep; **proactively remind** the human when a change merits a Claude Code review (see below) |
 | **Worker** | Claude Code (`claude.ai/code`) implementing in-repo | Heavy refactors, wide file search, systematic patches with repo context from **`CLAUDE.md`** |
 
-**Yes — run substantial or cross-cutting checks past Claude Code** when a change spans many nodes, Flask + n8n + docs, or you want a second pass on correctness and duplication. Paste **`docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`** into Claude Code after filling the placeholders.
+**Claude Code review is occasional, not ritual.** For **large `workflow.json` changes**, **multi-layer** (n8n + Flask + docs) edits, or **routing vs truth** (availability / drafts / reservations), the **Cursor agent should explicitly say** that the session qualifies for a second pass and point to **`docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`** with scope set to the active **`NEXT_STEPS.md`** subsection. The human pastes into Claude Code — Cursor does not run Claude Code for them. Full triggers and testing philosophy: **`docs/00-start-here/HOW_WE_WORK.md`**.
 
 ### Stay on track (anti–rabbit-hole)
 
@@ -125,7 +125,8 @@ The `docs/` directory contains living documentation that must be consulted befor
 | `docs/01-architecture/SYSTEM_ARCHITECTURE.md` | Before touching component boundaries |
 | `docs/00-start-here/CURRENT_STATE.md` | Before starting any work — shows what's broken |
 | `docs/00-start-here/NEXT_STEPS.md` | Before adding features — shows prioritized roadmap |
-| `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` | Copy-paste prompt for Claude Code second-pass reviews |
+| `docs/00-start-here/HOW_WE_WORK.md` | Phase queue, working-position table, testing rules, when to Claude-review |
+| `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` | Copy-paste prompt for Claude Code second-pass reviews (when warranted) |
 | `docs/03-google-sheets/BUSINESS_RULES.md` | Before changing AI behavior or order logic |
 | `docs/03-google-sheets/SHEET_SCHEMA.md` | Before any sheet read/write operation |
 | `docs/02-backend/API_STRUCTURE.md` | Before modifying Flask endpoints |
