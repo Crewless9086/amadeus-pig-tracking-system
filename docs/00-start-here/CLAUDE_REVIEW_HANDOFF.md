@@ -18,7 +18,7 @@ You are working in the **Amadeus Pig Tracking & Sales** repo. Read **CLAUDE.md**
 
 ## Authority and scope
 
-- **Build order**: `docs/00-start-here/NEXT_STEPS.md` — my **explicit scope for this task** is: **{{PHASE_AND_SUBSECTION}}** only.
+- **Build order**: `docs/00-start-here/NEXT_STEPS.md` — my **explicit scope for this task** is: **{{1.8 Approval Auto-Reservation}}** only.
 - Do **not** propose new phases or widen scope unless I ask — if you find unrelated issues, list them briefly under "**Out of scope**" with one-line rationale each.
 
 ## What Cursor / I changed or plan to change
