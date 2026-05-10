@@ -630,6 +630,11 @@ def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dic
 def list_orders():
     rows = get_all_records(ORDER_OVERVIEW_SHEET)
     line_rollups = _build_order_line_rollups()
+    master_rows = {
+        to_clean_string(row.get("Order_ID", "")): row
+        for row in get_all_records(ORDER_MASTER_SHEET)
+        if to_clean_string(row.get("Order_ID", ""))
+    }
     records = []
 
     for row in rows:
@@ -638,6 +643,7 @@ def list_orders():
             continue
 
         rollup = line_rollups.get(order_id, _empty_order_line_rollup())
+        master_row = master_rows.get(order_id, {})
 
         records.append({
             "order_id": order_id,
@@ -657,6 +663,8 @@ def list_orders():
             "order_status": to_clean_string(row.get("Order_Status", "")),
             "approval_status": to_clean_string(row.get("Approval_Status", "")),
             "payment_status": to_clean_string(row.get("Payment_Status", "")),
+            "payment_method": to_clean_string(master_row.get("Payment_Method", "")),
+            "conversation_id": to_clean_string(master_row.get("ConversationId", "")),
             "collection_date": format_date_for_json(row.get("Collection_Date", "")),
             "collection_location": to_clean_string(row.get("Collection_Location", "")),
             "line_count": to_float(row.get("Line_Count", "")) or 0,

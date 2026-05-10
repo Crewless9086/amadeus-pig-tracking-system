@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-10 - Phase 3.2 daily order summary workflow scaffold
+
+Type: `ADD`
+
+**Summary:** Added draft `2.0 - Daily Order Summary` workflow docs/export. The workflow has a manual test trigger and daily schedule trigger, calls `GET /api/reports/daily-summary` on the backend, formats the returned counts/attention orders, and sends the message to the approved Telegram admin chat. The workflow must not read order sheets directly.
+
+---
+
 ### 2026-05-10 - Phase 2.5 outbound document delivery scaffold
 
 Type: `ADD`

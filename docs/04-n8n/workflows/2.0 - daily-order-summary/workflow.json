@@ -1,0 +1,150 @@
+{
+  "name": "2.0 - Daily Order Summary",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "Manual-Trigger-Test-Summary",
+      "name": "Manual Trigger - Test Summary",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "Schedule-Daily-Summary",
+      "name": "Schedule - Daily Summary",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "date",
+              "value": "={{ $now.setZone('Africa/Johannesburg').toFormat('yyyy-MM-dd') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "HTTP-Get-Daily-Summary",
+      "name": "HTTP - Get Daily Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $json || {};\n\nfunction money(v) {\n  const n = Number(v || 0);\n  if (Number.isNaN(n)) return 'R0.00';\n  return 'R' + n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n}\n\nfunction clean(v) {\n  return String(v == null ? '' : v).trim();\n}\n\nif (summary.success !== true) {\n  throw new Error('Daily summary endpoint did not return success=true.');\n}\n\nconst counts = summary.counts || {};\nconst sections = summary.sections || {};\nconst attention = Array.isArray(sections.orders_needing_attention) ? sections.orders_needing_attention : [];\nconst pending = Array.isArray(sections.pending_approval) ? sections.pending_approval : [];\nconst approved = Array.isArray(sections.approved) ? sections.approved : [];\n\nconst lines = [];\nlines.push('Amadeus Daily Order Summary');\nlines.push('Date: ' + clean(summary.report_date));\nlines.push('');\nlines.push('Counts');\nlines.push('New drafts: ' + (counts.new_drafts || 0));\nlines.push('Drafts missing payment: ' + (counts.drafts_missing_payment_method || 0));\nlines.push('Pending approval: ' + (counts.pending_approval || 0));\nlines.push('Approved: ' + (counts.approved || 0));\nlines.push('Cancelled today: ' + (counts.cancelled_today || 0));\nlines.push('Completed today: ' + (counts.completed_today || 0));\nlines.push('Needs attention: ' + (counts.orders_needing_attention || 0));\n\nif (attention.length > 0) {\n  lines.push('');\n  lines.push('Needs Attention');\n  attention.slice(0, 8).forEach((order, index) => {\n    const reasons = Array.isArray(order.reasons) ? order.reasons.join(', ') : '';\n    lines.push(`${index + 1}. ${clean(order.order_id)} | ${clean(order.customer_name) || '-'} | ${clean(order.order_status) || '-'} | ${reasons || 'review'} | ${money(order.active_line_total)}`);\n  });\n  if (attention.length > 8) lines.push(`...and ${attention.length - 8} more.`);\n}\n\nif (pending.length > 0) {\n  lines.push('');\n  lines.push('Pending Approval');\n  pending.slice(0, 5).forEach((order, index) => {\n    lines.push(`${index + 1}. ${clean(order.order_id)} | ${clean(order.customer_name) || '-'} | ${money(order.active_line_total)}`);\n  });\n}\n\nif (approved.length > 0) {\n  lines.push('');\n  lines.push('Approved Orders');\n  approved.slice(0, 5).forEach((order, index) => {\n    lines.push(`${index + 1}. ${clean(order.order_id)} | ${clean(order.customer_name) || '-'} | reserved ${order.reserved_pig_count || 0}/${order.active_line_count || 0}`);\n  });\n}\n\nreturn [{\n  json: {\n    chat_id: '5721652188',\n    message_text: lines.join('\\n'),\n    report_date: clean(summary.report_date),\n    counts\n  }\n}];"
+      },
+      "id": "Code-Format-Telegram-Summary",
+      "name": "Code - Format Telegram Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.message_text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "Telegram-Send-Daily-Summary",
+      "name": "Telegram - Send Daily Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram - Sam"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger - Test Summary": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule - Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Telegram Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Telegram Summary": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Johannesburg"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "phase-3-2-draft",
+  "triggerCount": 0,
+  "tags": []
+}

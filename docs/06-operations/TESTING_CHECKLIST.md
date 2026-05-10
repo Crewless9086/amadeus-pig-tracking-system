@@ -335,6 +335,40 @@ Browser verification still required:
 5. Confirm Drive links open the PDFs.
 6. Do not click `Send` on a real customer conversation unless explicitly approved.
 
+## Phase 3.1 Daily Summary Endpoint Tests
+
+Phase 3.1 live read-only verification completed on 2026-05-10:
+
+1. `GET /api/reports/daily-summary?date=2026-05-10` returned HTTP `200`.
+2. Response returned `success = true` and `report_date = 2026-05-10`.
+3. Response contained all expected sections: `new_drafts`, `drafts_missing_payment_method`, `pending_approval`, `approved`, `cancelled_today`, `completed_today`, and `orders_needing_attention`.
+4. Counts from the live check were: approved `2`, cancelled_today `0`, completed_today `0`, drafts_missing_payment_method `16`, new_drafts `1`, orders_needing_attention `17`, pending_approval `0`.
+5. Invalid date test `?date=not-a-date` returned HTTP `400` with a clear validation error.
+6. Endpoint reads through backend services; n8n should call this endpoint in Phase 3.2 instead of reading Google Sheets directly.
+
+## Phase 3.2 Daily Summary n8n Tests
+
+Pre-check:
+
+1. Import `docs/04-n8n/workflows/2.0 - daily-order-summary/workflow.json`.
+2. Configure `Telegram - Send Daily Summary` with the approved Telegram credential.
+3. Confirm the Telegram target chat is the approved admin chat `5721652188`.
+4. Confirm `HTTP - Get Daily Summary` calls `https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary`.
+
+Manual test:
+
+1. Run `Manual Trigger - Test Summary`.
+2. Confirm the workflow returns a backend `success = true` summary.
+3. Confirm the Telegram message arrives.
+4. Confirm the message includes all count sections and a short `Needs Attention` list when applicable.
+5. Confirm n8n does not read Google Sheets directly.
+
+Schedule test:
+
+1. Activate the schedule only after the manual test message is approved.
+2. Confirm the schedule time is correct for `Africa/Johannesburg`.
+3. Confirm the next scheduled execution sends one Telegram message only.
+
 ## Web App Order Tests
 
 After backend behavior is safe, test the app for usability:

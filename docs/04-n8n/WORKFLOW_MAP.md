@@ -29,6 +29,9 @@ flowchart TD
   backend --> wf15["1.5 Outbound Document Delivery"]
   wf15 --> googleDrive["Google Drive"]
   wf15 --> chatwootReply
+  schedule["Daily Schedule"] --> wf20["2.0 Daily Order Summary"]
+  wf20 --> backend
+  wf20 --> telegramAlert
 ```
 
 ## `1.0 - SAM - Sales Agent - Chatwoot`
@@ -164,6 +167,21 @@ Primary responsibilities:
 - return structured success/error details to backend
 
 Relationship to `1.0`: separate outbound workflow. `1.0` does not calculate document totals, generate PDFs, or send quote/invoice files independently.
+
+## `2.0 - Daily Order Summary`
+
+Role: scheduled operations report.
+
+Trigger: n8n schedule trigger, with a manual trigger for testing.
+
+Primary responsibilities:
+
+- call `GET /api/reports/daily-summary`
+- format the backend response into a concise operations message
+- send the summary to the approved Telegram admin chat
+- avoid direct Google Sheets reads for order summary data
+
+Relationship to order workflows: read-only reporting path. It does not change orders, documents, reservations, or Chatwoot conversations.
 
 ## Change Rule
 

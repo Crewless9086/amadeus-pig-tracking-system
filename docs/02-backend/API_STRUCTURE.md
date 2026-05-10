@@ -12,6 +12,7 @@ All order API routes are registered under `/api`.
 | --- | --- | --- | --- |
 | `GET` | `/api/orders` | List orders from `ORDER_OVERVIEW`. | Web app, future review tooling. |
 | `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES` and generated `ORDER_DOCUMENTS` rows. Header includes `payment_method` (from `ORDER_MASTER`), `line_count` (from overview: **all** line rows including cancelled — see `ORDER_OVERVIEW.md`), **`active_line_count`**, **`cancelled_line_count`**, **`active_line_total`**, and **`all_line_total`**. | Web app, `1.2` `get_order_context` branch. |
+| `GET` | `/api/reports/daily-summary` | Return daily operational order buckets and counts for n8n/reporting. Optional `?date=YYYY-MM-DD`. | n8n scheduled summary, web app/report tooling. |
 | `GET` | `/api/orders/available-pigs` | Return sale-available pigs from `SALES_AVAILABILITY`. | Web app/order tooling. |
 | `POST` | `/api/orders/<order_id>/reserve` | Mark order lines as reserved and update master reserved count. | Web app, future steward action. |
 | `POST` | `/api/orders/<order_id>/release` | Release reserved order lines and reset master reserved count. | Web app, future cancel/reject flow. |
@@ -42,6 +43,36 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path and backend `400` customer-safe reply verified. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
+
+## Daily Summary Report (Phase 3.1)
+
+Endpoint: `GET /api/reports/daily-summary`
+
+Optional query:
+
+- `date=YYYY-MM-DD` - report date. Defaults to today's server date when omitted.
+
+Returned sections:
+
+- `new_drafts`
+- `drafts_missing_payment_method`
+- `pending_approval`
+- `approved`
+- `cancelled_today`
+- `completed_today`
+- `orders_needing_attention`
+
+Rules:
+
+- `new_drafts`: Draft orders with `Created_At` on the report date.
+- `drafts_missing_payment_method`: Draft orders where `Payment_Method` is not `Cash` or `EFT`.
+- `pending_approval`: orders currently in `Pending_Approval`.
+- `approved`: orders currently `Approved`.
+- `cancelled_today`: orders with an `ORDER_STATUS_LOG` transition to `Cancelled` on the report date.
+- `completed_today`: orders with an `ORDER_STATUS_LOG` transition to `Completed` on the report date.
+- `orders_needing_attention`: Drafts missing payment/location/active lines, pending approvals without active lines, or approved orders where reserved count is below active line count.
+
+n8n should read this endpoint for the scheduled daily summary instead of reading order sheets directly.
 
 ## Send For Approval Validation Contract
 

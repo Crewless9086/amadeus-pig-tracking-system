@@ -2,11 +2,13 @@ from flask import Flask, render_template
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
 from modules.orders.order_routes import orders_bp
+from modules.reports.report_routes import reports_bp
 
 app = Flask(__name__)
 app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
 app.register_blueprint(mating_bp, url_prefix="/api/pig-weights")
 app.register_blueprint(orders_bp, url_prefix="/api")
+app.register_blueprint(reports_bp, url_prefix="/api")
 
 
 @app.route("/")

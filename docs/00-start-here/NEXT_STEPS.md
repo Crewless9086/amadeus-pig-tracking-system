@@ -496,7 +496,7 @@ Required outcome:
 
 ### 2.6 Web App Document Controls
 
-Status: Implemented In Repo, Pending Browser/User Verification.
+Status: Complete And Browser-Verified.
 
 Required outcome:
 
@@ -529,20 +529,27 @@ Goal: scheduled operational overview of current order state.
 
 ### 3.1 Backend Report Endpoint
 
+Status: Implemented And Live Read-Only Verified 2026-05-10.
+
 Required outcome:
 
-- `GET /api/reports/daily-summary` returns counts and lists grouped by status: new drafts, drafts missing payment method, pending approval, approved, cancelled today, completed today, orders needing attention
-- endpoint is independently testable
-- n8n reads only from this endpoint, not from sheets directly
+- `GET /api/reports/daily-summary` returns counts and lists grouped by status: new drafts, drafts missing payment method, pending approval, approved, cancelled today, completed today, orders needing attention - Done
+- endpoint is independently testable - Done, supports optional `?date=YYYY-MM-DD`
+- n8n reads only from this endpoint, not from sheets directly - Ready for Phase 3.2
+- live read-only test for `2026-05-10` returned `success = true` with all expected section keys
+- invalid date test returns `400` with a clear validation error
 
 ### 3.2 n8n Scheduled Delivery
 
+Status: Draft Workflow Added, Pending n8n Import And Manual Telegram Test.
+
 Required outcome:
 
-- n8n scheduled workflow fires daily (configurable time)
-- calls backend summary endpoint
-- formats output and sends to Telegram or email
-- MVP fallback: n8n reads `ORDER_OVERVIEW` directly while backend endpoint is built — document as temporary
+- n8n scheduled workflow fires daily (configurable time) - Draft added as `2.0 - Daily Order Summary`
+- calls backend summary endpoint - Done in draft: `GET https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary`
+- formats output and sends to Telegram or email - Telegram draft added
+- MVP fallback is no longer needed because the backend report endpoint exists
+- next: import `docs/04-n8n/workflows/2.0 - daily-order-summary/workflow.json`, configure Telegram credential, run manual trigger, then activate schedule after message is checked
 
 ## Phase 4: Requested Item Sync Stabilization
 

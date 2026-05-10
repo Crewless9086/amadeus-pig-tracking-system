@@ -12,6 +12,7 @@ Defines the operating rules for the n8n workflow suite.
 - `1.3 - SAM - Sales Agent - Media Tool` is the official media workflow, but remains disabled until fixed and tested.
 - `1.4 - Outbound Order Notification` handles backend-confirmed approval/rejection customer messages.
 - `1.5 - Outbound Document Delivery` handles backend-generated quote/invoice attachment delivery.
+- `2.0 - Daily Order Summary` handles scheduled backend summary reporting to Telegram.
 - Chatwoot labels and custom attributes must follow `CHATWOOT_ATTRIBUTES.md`.
 
 ## Decision Modes In `1.0`
@@ -87,6 +88,14 @@ Sam should not directly write order sheets. Future order review should preferabl
 - `1.5` must not calculate VAT, totals, document references, or invoice eligibility.
 - `1.5` must require `conversation_id`; backend test sends must explicitly target the approved test conversation.
 - For Phase 2.5 tests, use Chatwoot `conversation_id = 1742` only.
+
+## Daily Summary Rules
+
+- `2.0` must call `GET /api/reports/daily-summary`.
+- `2.0` must not read order sheets directly.
+- `2.0` is read-only and must not call order mutation endpoints.
+- Manual trigger testing should happen before activating the schedule.
+- Telegram delivery should target only the approved admin chat until user/notification preferences are designed.
 
 ## Media Tool Rules
 
