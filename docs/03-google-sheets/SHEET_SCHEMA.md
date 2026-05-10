@@ -27,6 +27,7 @@ These sheets append or record events over time.
 | `MEDICAL_LOG` | Medical treatment and withdrawal history. |
 | `MATING_LOG` | Breeding and mating transaction records. |
 | `ORDER_STATUS_LOG` | Order status audit trail. |
+| `ORDER_DOCUMENTS` | Quote/invoice document register and delivery tracking. |
 | `LOCATION_HISTORY` | Pig pen/location movement history. |
 
 ### Register / Reference Sheets
@@ -39,6 +40,7 @@ These sheets hold controlled lookup or admin data.
 | `PRODUCT_REGISTER` | Medical/product reference data. |
 | `USERS` | User/admin records. |
 | `SALES_PRICING` | Manual pricing source for sales categories and weight bands. |
+| `SYSTEM_SETTINGS` | Backend-readable settings for document generation and configurable business rules. |
 
 ### Formula Overview Sheets
 

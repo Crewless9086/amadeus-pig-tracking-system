@@ -357,7 +357,7 @@ Implementation status:
 
 Goal: backend generates quote and invoice documents. n8n delivers them only.
 
-### 2.1 Design Document Schema - Drafted For Review
+### 2.1 Design Document Schema - Complete For Implementation Planning
 
 Required outcome:
 
@@ -374,15 +374,58 @@ Design draft:
 - proposed direction: backend generates PDFs, uploads to Google Drive, records metadata in `ORDER_DOCUMENTS`, and n8n delivers only after backend generation succeeds
 - proposed configurable business rules: future `SYSTEM_SETTINGS` sheet, including `quote_valid_days`, `vat_rate`, bank details, business details, and Drive folder IDs
 - proposed references: full document refs (`Q-YYYY-XXXXXX`, `INV-YYYY-XXXXXX`) plus short customer payment ref (`XXXXXX`)
+- proposed Drive filenames: `QUO_YYYY_MM_DD_XXXXXX_VN_(R10,580.00)_EFT.pdf` and `INV_YYYY_MM_DD_XXXXXX_VN_(R10,580.00)_EFT.pdf`
 
 Open before implementation:
 
-- confirm creation method for `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS`
-- confirm Google Drive folder IDs and sharing model
-- confirm whether quote versioning is part of first implementation
-- confirm whether invoice generation requires an existing quote or may generate directly from an approved order
+- create `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS` through an admin setup script/backend setup utility
+- use provided Google Shared Drive quote/invoice folder IDs
+- include quote versioning in the first implementation
+- require an existing generated quote before invoice generation
+- invoice generation uses the latest non-voided quote version
+- quote generation is allowed while an order is still `Draft`
+- recommended Drive strategy: keep generated PDFs restricted; n8n uses authenticated Google Drive access to download by file ID and send as Chatwoot attachment
+- n8n can be given authenticated Google Drive access to download generated PDFs by file ID
+- Draft quotes should show a visible note: `Draft quote - subject to availability and approval`
+- no remaining Phase 2.1 design questions before implementation planning
 
-### 2.2 Backend Quote Endpoint
+### 2.2 Document Infrastructure Setup - Complete And Live-Verified
+
+Required outcome:
+
+- create `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS` through an admin setup script/backend setup utility
+- document both sheets under `docs/03-google-sheets/sheets/`
+- seed required settings:
+  - `quote_valid_days`
+  - `vat_rate`
+  - business header fields
+  - bank details
+  - quote Drive folder ID
+  - invoice Drive folder ID
+- move/copy canonical logo asset to `static/document-assets/amadeus-logo.png`
+- add backend helpers for settings reads and document-register writes
+- verify live sheets exist with expected headers before building quote generation
+
+Implementation order:
+
+1. Add documented sheet schemas for `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS`. - Done
+2. Add `scripts/setup_document_infrastructure.py` to create missing sheets/headers and seed settings. - Done
+3. Run the setup utility only after explicit approval because it writes to live Google Sheets. - Done 2026-05-09; created both live sheets and seeded 18 settings
+4. Move/copy the canonical logo asset into the agreed runtime path. - Done: `static/document-assets/amadeus-logo.png`
+5. Add backend helper functions in `modules/documents/document_service.py` that read settings and append/update document records. - Done
+6. Add/verify Google Drive upload helper. - Done in `services/google_drive_service.py`; Shared Drive upload live-verified 2026-05-10
+7. Choose the PDF generation library/approach for 2.3. - Proposed: ReportLab backend PDF rendering, dependency added at 2.3 implementation time
+
+Drive upload verification:
+
+- service account has folder access after sharing, but Google Drive returns `403` because service accounts do not have storage quota in normal My Drive folders
+- resolution selected: use Google Shared Drive folders created from the Amadeus Workspace account and add the service account as content manager
+- quote Shared Drive folder ID: `1r7oqIDMwZZi5T7BxC31y7UGNzn8Ud9ys`
+- invoice Shared Drive folder ID: `1_kbfX69s6yeb-Zfdcpu5jse8H30HvLGr`
+- live `SYSTEM_SETTINGS` was updated with the Shared Drive folder IDs on 2026-05-10
+- live upload test passed on 2026-05-10: `PHASE_2_2_SHARED_DRIVE_UPLOAD_TEST.txt` uploaded to the quote folder with file ID `17HtPAumE9XJf2e8xtvQsTb0YpwCtEncI`
+
+### 2.3 Backend Quote Endpoint
 
 Required outcome:
 
@@ -391,21 +434,32 @@ Required outcome:
 - uses stored `ORDER_LINES.Unit_Price` (ex-VAT) for line calculations
 - locks and stores the VAT rate on the quote record at generation time
 - returns document URL or file reference
+- supports quote versions (`V1`, `V2`, etc.)
+- allows quote generation while an order is still `Draft`
+- adds visible draft note when generated from `Draft`: `Draft quote - subject to availability and approval`
+- uploads PDF to the configured quote Drive folder
+- records metadata in `ORDER_DOCUMENTS`
 
-### 2.3 Backend Invoice Endpoint
+### 2.4 Backend Invoice Endpoint
 
 Required outcome:
 
 - backend generates invoice after order is approved
 - uses the VAT rate locked on the corresponding quote, not recalculated
 - returns document URL or file reference
+- requires an existing non-voided generated quote
+- uses the latest non-voided quote version
+- uploads PDF to the configured invoice Drive folder
+- records metadata in `ORDER_DOCUMENTS`
 
-### 2.4 n8n Delivery
+### 2.5 n8n Delivery
 
 Required outcome:
 
 - `1.0` or a new workflow calls the quote/invoice endpoint after the relevant status event
-- delivers the document to the customer via Chatwoot
+- n8n downloads the generated PDF using authenticated Google Drive access by file ID
+- n8n delivers the PDF to the customer as a Chatwoot attachment
+- n8n does not calculate VAT, totals, references, or invoice eligibility
 
 ## Phase 3: Daily Order Summary
 

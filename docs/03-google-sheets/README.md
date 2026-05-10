@@ -43,6 +43,8 @@ The current documented Google Sheets are:
 | `PRODUCT_REGISTER` | Register/reference | `sheets/PRODUCT_REGISTER.md` |
 | `USERS` | User/admin register | `sheets/USERS.md` |
 | `SALES_PRICING` | Manual pricing table | `sheets/SALES_PRICING.md` |
+| `SYSTEM_SETTINGS` | Register/reference | `sheets/SYSTEM_SETTINGS.md` |
+| `ORDER_DOCUMENTS` | Document register | `sheets/ORDER_DOCUMENTS.md` |
 | `PIG_OVERVIEW` | Formula overview | `sheets/PIG_OVERVIEW.md` |
 | `MATING_OVERVIEW` | Formula overview | `sheets/MATING_OVERVIEW.md` |
 | `LITTER_OVERVIEW` | Formula overview | `sheets/LITTER_OVERVIEW.md` |

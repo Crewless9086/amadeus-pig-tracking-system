@@ -224,8 +224,24 @@ Backend should store the returned file ID and URL in `ORDER_DOCUMENTS`.
 
 File naming:
 
-- quote: `Q-2026-36CDE4 - ORD-2026-36CDE4.pdf`
-- invoice: `INV-2026-36CDE4 - ORD-2026-36CDE4.pdf`
+- quote: `QUO_YYYY_MM_DD_XXXXXX_VN_(R10,580.00)_EFT.pdf`
+- invoice: `INV_YYYY_MM_DD_XXXXXX_VN_(R10,580.00)_EFT.pdf`
+
+Examples:
+
+- `QUO_2026_04_15_A99273_V1_(R10,580.00)_EFT.pdf`
+- `INV_2026_04_15_A99273_V1_(R10,580.00)_EFT.pdf`
+
+Where:
+
+- `QUO` / `INV` identifies the document type.
+- `YYYY_MM_DD` is the document generation date.
+- `XXXXXX` is the short order/payment reference.
+- `VN` is the document version, for example `V1`.
+- `(R10,580.00)` is the final total shown on the document.
+- `EFT` / `Cash` is the payment method.
+
+Filename rule: the filename is for human scanning in Google Drive only. Backend must not parse accounting truth from the filename; `ORDER_DOCUMENTS` remains the source for document type, version, totals, payment method, and file IDs.
 
 ## Logo And Assets
 
@@ -259,6 +275,34 @@ Potential later endpoint:
 | --- | --- | --- |
 | `POST` | `/api/order-documents/<document_id>/send` | Ask n8n to deliver an existing generated document. |
 
+## PDF Generation Approach
+
+Recommended approach for Phase 2.3:
+
+- use ReportLab for backend PDF generation
+- build the quote/invoice layout directly in Python using the approved document schema
+- keep document data assembly separate from PDF rendering so totals can be tested without parsing PDFs
+- add the dependency only when Phase 2.3 implementation begins
+
+Reason:
+
+- no PDF library is currently installed in the project environment
+- ReportLab avoids browser/native rendering dependencies
+- deterministic table/text layout is a good fit for quote and invoice documents
+- invoices need stable totals, not marketing-style HTML rendering
+
+## Google Drive Helper
+
+Backend Drive upload/download support lives in:
+
+- `services/google_drive_service.py`
+
+The helper uses the existing service-account credentials and Drive scope already configured for Google Sheets. It supports:
+
+- upload by local file path and target folder ID
+- download by file ID for authenticated attachment workflows
+- metadata lookup by file ID
+
 ## n8n Role
 
 n8n should deliver documents only after backend generation succeeds.
@@ -276,25 +320,58 @@ Not allowed:
 - decide invoice eligibility
 - create document references independently
 
-## Open Questions Before Implementation
+## Confirmed Decisions
 
-1. Confirm whether `SYSTEM_SETTINGS` should be created manually first or created by an admin setup script. - Yes, If you think this is quicker and easier then me doing it manually. 
-2. Confirm whether `ORDER_DOCUMENTS` should be created manually first or created by an admin setup script. - Yes
-3. Confirm Google Drive folder IDs for the document root/quote/invoice folders. - I have created this files in drive
-QUOTE - https://drive.google.com/drive/folders/1gbQuDtvkRo1SnpZTeI587nhRnkZPx7cp
-INVOICE - https://drive.google.com/drive/folders/1h2uyOndhAgngzFDVQYqBhrqfxL0zw5TI
-4. Confirm whether generated PDFs should be publicly link-accessible, restricted to account users, or sent as attachments by n8n. - Send as an attachement by n8n
-5. Confirm whether quote versioning should be enabled in the first implementation or reserved for a later phase. - Can implement it now, why not.
-6. Confirm whether invoice generation should require an existing quote or allow direct invoice generation from an approved order. - I think a quote needs to be generated 1st so the client can see this and approve it once they view it.
+1. `SYSTEM_SETTINGS` should be created by an admin setup script or backend setup utility, not manually typed row by row.
+2. `ORDER_DOCUMENTS` should be created by an admin setup script or backend setup utility, not manually typed row by row.
+3. Google Drive folder IDs:
+   - quote Shared Drive folder: `1r7oqIDMwZZi5T7BxC31y7UGNzn8Ud9ys`
+   - invoice Shared Drive folder: `1_kbfX69s6yeb-Zfdcpu5jse8H30HvLGr`
+4. Customer delivery should send the generated PDF as a Chatwoot attachment through n8n, not only a public link.
+5. Quote versioning should be included in the first implementation.
+6. Invoice generation should require an existing generated quote first. The customer should see the quote before an invoice is generated.
+7. Invoice generation should use the latest non-voided quote version for the order.
+8. Quote generation is allowed while an order is still `Draft`.
+9. n8n can be given authenticated Google Drive access to download generated PDFs by file ID.
+10. Draft quotes should show a visible note: `Draft quote - subject to availability and approval`.
+
+## Google Drive Permission Strategy
+
+Recommended first implementation:
+
+- uploaded PDFs stay restricted in Google Drive
+- backend stores `Google_Drive_File_ID` and `Google_Drive_URL` in `ORDER_DOCUMENTS`
+- n8n uses authenticated Google Drive access to download the generated PDF by file ID
+- n8n sends the downloaded PDF as a Chatwoot attachment
+- do not make quote/invoice PDFs public by default
+
+Reason:
+
+- customers receive the PDF directly as an attachment
+- old quotes/invoices remain retrievable by the business
+- sensitive customer/order documents are not exposed through public links
+- `ORDER_DOCUMENTS` remains the lookup source if a customer asks for an old document
+
+Phase 2.2 live upload finding:
+
+- Sharing the quote folder with the service account fixed the folder access issue.
+- Uploading from the backend service account to a normal My Drive folder then failed with Google Drive `403`: service accounts do not have storage quota.
+- Resolution selected: use Google Shared Drive folders created from the Amadeus Workspace account, with the service account added as content manager.
+- Live Shared Drive upload test passed on 2026-05-10. Test file: `PHASE_2_2_SHARED_DRIVE_UPLOAD_TEST.txt`; file ID: `17HtPAumE9XJf2e8xtvQsTb0YpwCtEncI`.
+
+Backend Drive API calls must include Shared Drive support (`supportsAllDrives=true`) for upload, download, and metadata lookup.
+
+## Remaining Open Questions Before Implementation
+
+None for Phase 2.1 design. Implementation can proceed to sheet setup planning and backend endpoint planning.
 
 ## Proposed Rollout
 
-1. Finalize this design document.
-2. Create/document `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS` sheets.
-3. Move/copy canonical logo asset to `static/document-assets/amadeus-logo.png`.
-4. Implement backend settings/document-register helpers.
-5. Implement quote generation endpoint.
-6. Live-test quote generation on one safe order.
-7. Implement invoice generation endpoint.
-8. Live-test invoice generation on one approved safe order.
-9. Add n8n delivery only after document generation is stable.
+1. Phase 2.2: document and create `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS` through `scripts/setup_document_infrastructure.py`. - Done 2026-05-09
+2. Phase 2.2: move/copy canonical logo asset to `static/document-assets/amadeus-logo.png`. - Done
+3. Phase 2.2: implement backend settings/document-register helpers in `modules/documents/document_service.py`. - Done
+4. Phase 2.3: implement quote generation endpoint with `V1`, `V2`, etc.
+5. Phase 2.3: live-test quote generation on one safe order.
+6. Phase 2.4: implement invoice generation endpoint, requiring an existing non-voided quote.
+7. Phase 2.4: live-test invoice generation on one approved safe order.
+8. Phase 2.5: add n8n attachment delivery only after document generation is stable.

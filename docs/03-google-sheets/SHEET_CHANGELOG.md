@@ -6,6 +6,23 @@ Records approved changes to Google Sheets columns, formulas, sheet names, owners
 
 ## Current Entries
 
+### 2026-05-09 - Phase 2.2 document infrastructure sheet design
+
+Sheet: `SYSTEM_SETTINGS`, `ORDER_DOCUMENTS`
+
+Change: Added documented schemas for backend-readable document settings and quote/invoice document tracking. Live setup utility created `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS` on 2026-05-09, seeded 18 settings, and verified headers. Shared Drive folder IDs were written to `SYSTEM_SETTINGS` and backend upload was live-verified on 2026-05-10.
+
+Reason: Phase 2 quote/invoice generation needs configurable business values, Drive folder IDs, locked VAT/totals, file metadata, and delivery tracking before endpoint implementation.
+
+Backend impact: Backend should create/read `SYSTEM_SETTINGS`, write `ORDER_DOCUMENTS`, and treat `ORDER_DOCUMENTS` as the source of truth for generated document metadata.
+
+n8n impact: n8n should download generated PDFs using authenticated Google Drive access and call backend endpoints for sent-state updates instead of writing `ORDER_DOCUMENTS` directly.
+
+Formula impact: None planned.
+
+Approved by: project owner
+
+
 ### 2026-04-25 - Google Sheets Documentation Baseline
 
 Sheet: all documented sheets
