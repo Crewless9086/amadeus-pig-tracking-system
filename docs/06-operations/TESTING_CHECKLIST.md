@@ -170,6 +170,13 @@ Expected:
 - no duplicate active rows after repeated sync
 - no missing female/secondary rows
 
+Phase 4.1 parser/route checks:
+
+1. `I want 3 grower pigs 20-24kg, 1 male and 2 females, Riversdale, next Sunday, Cash` must produce `requested_weight_range = 20_to_24_Kg`, `requested_sex = Any`, two `requested_items[]` rows, and route `UPDATE_HEADER_AND_LINES`.
+2. `I want 3 grower pigs 30-34kg, 1 male and 2 females, Riversdale, next Sunday, Cash` must produce `requested_weight_range = 30_to_34_Kg`, not `2_to_4_Kg`.
+3. A short confirmation such as `yes please` may hydrate the split from memory, but must still route `UPDATE_HEADER_AND_LINES` when valid `requested_items[]` are built.
+4. Current live-stock guard from 2026-05-10: use `20-24kg` for a full exact 1 Male + 2 Female test; `30-34kg` had Female-only stock and should verify partial/no-match honesty instead.
+
 ### Repeated Sync
 
 Test steps:
@@ -357,16 +364,20 @@ Pre-check:
 
 Manual test:
 
-1. Run `Manual Trigger - Test Summary`.
-2. Confirm the workflow returns a backend `success = true` summary.
-3. Confirm the Telegram message arrives.
-4. Confirm the message includes all count sections and a short `Needs Attention` list when applicable.
-5. Confirm n8n does not read Google Sheets directly.
+1. Run `Manual Trigger - Test Summary`. - Passed 2026-05-10.
+2. Confirm the workflow returns a backend `success = true` summary. - Passed 2026-05-10.
+3. Confirm the Telegram message arrives. - Passed 2026-05-10.
+4. Confirm the message includes all count sections and a short `Needs Attention` list when applicable. - Passed 2026-05-10.
+5. Confirm n8n does not read Google Sheets directly. - Passed by workflow inspection.
+
+Fix note:
+
+- Initial Telegram test failed because Telegram entity parsing could not handle dynamic text containing underscores. The workflow now sends with `parse_mode = HTML`, escapes dynamic text, and formats reasons without underscores.
 
 Schedule test:
 
-1. Activate the schedule only after the manual test message is approved.
-2. Confirm the schedule time is correct for `Africa/Johannesburg`.
+1. Activate the schedule now that the manual test message is approved.
+2. Confirm the schedule time is `16:00 Africa/Johannesburg`.
 3. Confirm the next scheduled execution sends one Telegram message only.
 
 ## Web App Order Tests
@@ -413,6 +424,16 @@ After any order change, inspect affected sheets/views:
 - `ORDER_OVERVIEW`
 
 Formula sheets must not be manually edited to hide backend bugs.
+
+## Sales Stock Formula Checks
+
+Before testing Sam stock wording or requested-item sync:
+
+1. Confirm `PIG_OVERVIEW.Is_Sale_Ready = Yes` requires `Purpose = Sale`.
+2. Confirm `SALES_AVAILABILITY` contains only sale-ready pigs.
+3. Confirm `SALES_STOCK_DETAIL`, `SALES_STOCK_SUMMARY`, and `SALES_STOCK_TOTALS` do not mix sale-ready totals with information-only rows in a way Sam can quote as available stock.
+4. If `Newborn` rows remain visible, confirm their `Status` is `Not for Sale` and Sam treats them as informational only.
+5. Confirm `Grow_Out`, `Unknown`, `Breeding`, `Replacement`, and `House_Use` animals are not counted as available-for-sale stock.
 
 ## Documentation Checks
 

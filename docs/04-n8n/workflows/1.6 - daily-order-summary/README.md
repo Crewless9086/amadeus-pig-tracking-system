@@ -22,7 +22,7 @@ Two triggers are included:
 Default schedule in the export:
 
 ```text
-06:30 Africa/Johannesburg
+16:00 Africa/Johannesburg
 ```
 
 The schedule can be changed in n8n without changing backend code.
@@ -73,6 +73,8 @@ Expected backend response:
 
 ## Test Notes
 
-Use the manual trigger first. The manual test will send a Telegram message to the configured admin chat.
+Manual Telegram test passed on 2026-05-10.
 
-Do not activate the schedule until the manual test message has been checked.
+The first test failed because Telegram entity parsing could not handle dynamic text containing underscores. The workflow now sends with `parse_mode = HTML`, escapes dynamic text, and formats reasons without underscores.
+
+The production schedule is set to 16:00 Africa/Johannesburg. After activation, confirm the first scheduled run sends one Telegram message only.

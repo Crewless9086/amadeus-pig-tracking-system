@@ -15,11 +15,19 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-10 - Phase 4.1 split item sync stabilization
+
+Type: `FIX`
+
+**Summary:** Updated `1.0 - Sam-sales-agent-chatwoot` export for mixed-sex order requests. `Code - Build Order State` now stores mixed split headers as `Requested_Sex = Any` while preserving exact per-sex quantities in `requested_items[]`; memory-confirmed split requests now route to `UPDATE_HEADER_AND_LINES`; and weight parsing no longer misreads `20-24kg` / `30-34kg` as `2_to_4_Kg`. Local node tests passed for direct split messages and memory hydration. Backend in-memory sync test passed for `primary_1` Male + `primary_2` Female, including repeated sync replacement without duplicate active rows. Re-import `1.0` before live WhatsApp verification.
+
+---
+
 ### 2026-05-10 - Phase 3.2 daily order summary workflow scaffold
 
 Type: `ADD`
 
-**Summary:** Added draft `1.6 - Daily Order Summary` workflow docs/export. The workflow has a manual test trigger and daily schedule trigger, calls `GET /api/reports/daily-summary` on the backend, formats the returned counts/attention orders, and sends the message to the approved Telegram admin chat. The workflow must not read order sheets directly.
+**Summary:** Added and manually verified `1.6 - Daily Order Summary` workflow docs/export. The workflow has a manual test trigger and daily 16:00 Africa/Johannesburg schedule trigger, calls `GET /api/reports/daily-summary` on the backend, formats the returned counts/attention orders, and sends the message to the approved Telegram admin chat. Manual Telegram test passed on 2026-05-10 after setting `parse_mode = HTML` and escaping dynamic text so customer/order values do not break Telegram entity parsing. The workflow must not read order sheets directly.
 
 ---
 

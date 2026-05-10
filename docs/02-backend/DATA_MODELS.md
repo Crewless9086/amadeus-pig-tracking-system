@@ -21,7 +21,7 @@ Important fields:
 | `Order_Source` | Source actor/system, for example `Sam` or `App`. |
 | `Requested_Category` | Header-level requested sale category. |
 | `Requested_Weight_Range` | Header-level requested weight band/range. |
-| `Requested_Sex` | Header-level sex preference. |
+| `Requested_Sex` | Header-level sex preference. Use `Any` for mixed split requests; exact sex quantities belong on `ORDER_LINES` via `requested_items[]`. |
 | `Requested_Quantity` | Header-level requested quantity. |
 | `Quoted_Total` | Quoted amount if known. |
 | `Final_Total` | Final amount if known. |

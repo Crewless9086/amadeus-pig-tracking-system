@@ -61,6 +61,7 @@ Rules:
 - repeated syncs must not create duplicate active rows
 - old lines must be released/cancelled before replacement when the request changes
 - line totals should reflect what stock could actually be matched — see **Partial match sync** below
+- mixed-sex customer requests should store `ORDER_MASTER.Requested_Sex = Any`; the exact split belongs on `ORDER_LINES` through `requested_items[]` (`primary_1`, `primary_2`, etc.)
 
 ## Partial match sync
 

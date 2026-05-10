@@ -551,17 +551,26 @@ if (!knownCategory) {
 // Weight range
 // -----------------------------
 const weightPatterns = [
-  { pattern: /\b2\s*(?:-|to|–)\s*4\s*(?:kg)?\b/i, value: "2-4kg" },
-  { pattern: /\b5\s*(?:-|to|–)\s*6\s*(?:kg)?\b/i, value: "5-6kg" },
-  { pattern: /\b7\s*(?:-|to|–)\s*9\s*(?:kg)?\b/i, value: "7-9kg" },
-  { pattern: /\b10\s*(?:-|to|–)\s*14\s*(?:kg)?\b/i, value: "10-14kg" },
-  { pattern: /\b15\s*(?:-|to|–)\s*19\s*(?:kg)?\b/i, value: "15-19kg" },
-  { pattern: /\b20\s*(?:-|to|–)\s*24\s*(?:kg)?\b/i, value: "20-24kg" },
-  { pattern: /\b25\s*(?:-|to|–)\s*29\s*(?:kg)?\b/i, value: "25-29kg" },
-  { pattern: /\b30\s*(?:-|to|–)\s*34\s*(?:kg)?\b/i, value: "30-34kg" },
-  { pattern: /\b35\s*(?:-|to|–)\s*39\s*(?:kg)?\b/i, value: "35-39kg" },
-  { pattern: /\b40\s*(?:-|to|–)\s*44\s*(?:kg)?\b/i, value: "40-44kg" },
-  { pattern: /\b45\s*(?:-|to|–)\s*49\s*(?:kg)?\b/i, value: "45-49kg" }
+  { pattern: /\b90\s*(?:-|to|_|\u2013)?\s*94\s*kg\b|\b90_to_94_kg\b/i, value: "90_to_94_Kg" },
+  { pattern: /\b85\s*(?:-|to|_|\u2013)?\s*89\s*kg\b|\b85_to_89_kg\b/i, value: "85_to_89_Kg" },
+  { pattern: /\b80\s*(?:-|to|_|\u2013)?\s*84\s*kg\b|\b80_to_84_kg\b/i, value: "80_to_84_Kg" },
+  { pattern: /\b75\s*(?:-|to|_|\u2013)?\s*79\s*kg\b|\b75_to_79_kg\b/i, value: "75_to_79_Kg" },
+  { pattern: /\b70\s*(?:-|to|_|\u2013)?\s*74\s*kg\b|\b70_to_74_kg\b/i, value: "70_to_74_Kg" },
+  { pattern: /\b65\s*(?:-|to|_|\u2013)?\s*69\s*kg\b|\b65_to_69_kg\b/i, value: "65_to_69_Kg" },
+  { pattern: /\b60\s*(?:-|to|_|\u2013)?\s*64\s*kg\b|\b60_to_64_kg\b/i, value: "60_to_64_Kg" },
+  { pattern: /\b55\s*(?:-|to|_|\u2013)?\s*59\s*kg\b|\b55_to_59_kg\b/i, value: "55_to_59_Kg" },
+  { pattern: /\b50\s*(?:-|to|_|\u2013)?\s*54\s*kg\b|\b50_to_54_kg\b/i, value: "50_to_54_Kg" },
+  { pattern: /\b45\s*(?:-|to|_|\u2013)?\s*49\s*kg\b|\b45_to_49_kg\b/i, value: "45_to_49_Kg" },
+  { pattern: /\b40\s*(?:-|to|_|\u2013)?\s*44\s*kg\b|\b40_to_44_kg\b/i, value: "40_to_44_Kg" },
+  { pattern: /\b35\s*(?:-|to|_|\u2013)?\s*39\s*kg\b|\b35_to_39_kg\b/i, value: "35_to_39_Kg" },
+  { pattern: /\b30\s*(?:-|to|_|\u2013)?\s*34\s*kg\b|\b30_to_34_kg\b/i, value: "30_to_34_Kg" },
+  { pattern: /\b25\s*(?:-|to|_|\u2013)?\s*29\s*kg\b|\b25_to_29_kg\b/i, value: "25_to_29_Kg" },
+  { pattern: /\b20\s*(?:-|to|_|\u2013)?\s*24\s*kg\b|\b20_to_24_kg\b/i, value: "20_to_24_Kg" },
+  { pattern: /\b15\s*(?:-|to|_|\u2013)?\s*19\s*kg\b|\b15_to_19_kg\b/i, value: "15_to_19_Kg" },
+  { pattern: /\b10\s*(?:-|to|_|\u2013)?\s*14\s*kg\b|\b10_to_14_kg\b/i, value: "10_to_14_Kg" },
+  { pattern: /(?:^|[^\d-])7\s*(?:-|to|_|\u2013)?\s*9\s*kg\b|\b7_to_9_kg\b/i, value: "7_to_9_Kg" },
+  { pattern: /(?:^|[^\d-])5\s*(?:-|to|_|\u2013)?\s*6\s*kg\b|\b5_to_6_kg\b/i, value: "5_to_6_Kg" },
+  { pattern: /(?:^|[^\d-])2\s*(?:-|to|_|\u2013)?\s*4\s*kg\b|\b2_to_4_kg\b/i, value: "2_to_4_Kg" }
 ];
 
 let knownWeightRange = "";
@@ -1117,11 +1126,11 @@ for (const entry of weightPatterns) {
 
 // accept shorthand like "4k" or "2-4"
 if (!msgWeightRange) {
-  if (/\b2\s*(?:-|to|–)?\s*4\b/i.test(currentMessage)) msgWeightRange = "2_to_4_Kg";
-  else if (/\b5\s*(?:-|to|–)?\s*6\b/i.test(currentMessage)) msgWeightRange = "5_to_6_Kg";
-  else if (/\b7\s*(?:-|to|–)?\s*9\b/i.test(currentMessage)) msgWeightRange = "7_to_9_Kg";
-  else if (/\b10\s*(?:-|to|–)?\s*14\b/i.test(currentMessage)) msgWeightRange = "10_to_14_Kg";
-  else if (/\b15\s*(?:-|to|–)?\s*19\b/i.test(currentMessage)) msgWeightRange = "15_to_19_Kg";
+  if (/\b15\s*(?:-|to|\u2013)?\s*19\b/i.test(currentMessage)) msgWeightRange = "15_to_19_Kg";
+  else if (/\b10\s*(?:-|to|\u2013)?\s*14\b/i.test(currentMessage)) msgWeightRange = "10_to_14_Kg";
+  else if (/(?:^|[^\d-])7\s*(?:-|to|\u2013)?\s*9\b/i.test(currentMessage)) msgWeightRange = "7_to_9_Kg";
+  else if (/(?:^|[^\d-])5\s*(?:-|to|\u2013)?\s*6\b/i.test(currentMessage)) msgWeightRange = "5_to_6_Kg";
+  else if (/(?:^|[^\d-])2\s*(?:-|to|\u2013)?\s*4\b/i.test(currentMessage)) msgWeightRange = "2_to_4_Kg";
   else if (/\b4k\b/i.test(currentMessage)) msgWeightRange = "2_to_4_Kg";
 }
 
@@ -1342,7 +1351,7 @@ if (splitSexItems.length > 0) {
   if (total > 0) {
     requestedQuantity = String(total);
   }
-  requestedSex = "";
+  requestedSex = "Any";
 }
 
 // -----------------------------
@@ -1407,7 +1416,7 @@ if (shouldHydrateFromMemory) {
     if (requestedQuantity === "" && total > 0) {
       requestedQuantity = String(total);
     }
-    requestedSex = "";
+    requestedSex = "Any";
   }
 }
 
@@ -1498,7 +1507,7 @@ const messageHasNewUsefulInfo =
   (msgCategory !== "" && (strongIntent || orderCommitmentIntent || proceedSignal)) ||
   (msgSex !== "" && (strongIntent || orderCommitmentIntent || proceedSignal));
 
-const hasNewUsefulInfo = messageHasNewUsefulInfo;
+let hasNewUsefulInfo = messageHasNewUsefulInfo;
 
 // -----------------------------
 // Build requested_items
@@ -1535,6 +1544,10 @@ if (
       }
     ];
   }
+}
+
+if (!hasNewUsefulInfo && currentIsShortConfirmation && requestedItems.length > 0) {
+  hasNewUsefulInfo = true;
 }
 
 // -----------------------------

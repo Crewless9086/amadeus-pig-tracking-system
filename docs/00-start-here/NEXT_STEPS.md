@@ -541,21 +541,46 @@ Required outcome:
 
 ### 3.2 n8n Scheduled Delivery
 
-Status: Draft Workflow Added, Pending n8n Import And Manual Telegram Test.
+Status: Complete And Scheduled-Run Verified 2026-05-10.
 
 Required outcome:
 
-- n8n scheduled workflow fires daily (configurable time) - Draft added as `1.6 - Daily Order Summary`
-- calls backend summary endpoint - Done in draft: `GET https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary`
-- formats output and sends to Telegram or email - Telegram draft added
+- n8n scheduled workflow fires daily at 16:00 Africa/Johannesburg - Ready to activate
+- calls backend summary endpoint - Verified: `GET https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary`
+- formats output and sends to Telegram or email - Manual Telegram test verified
 - MVP fallback is no longer needed because the backend report endpoint exists
-- next: import `docs/04-n8n/workflows/1.6 - daily-order-summary/workflow.json`, configure Telegram credential, run manual trigger, then activate schedule after message is checked
+- first 16:00 scheduled run confirmed: one Telegram message received
 
 ## Phase 4: Requested Item Sync Stabilization
 
 Goal: make Sam's order-line sync reliable.
 
+### 4.0 Sales Stock Formula Gate Alignment
+
+Status: Open - live sheet inspected read-only 2026-05-10.
+
+Issue:
+
+- `SALES_AVAILABILITY` currently shows 23 sale-ready pigs.
+- `SALES_STOCK_DETAIL`, `SALES_STOCK_SUMMARY`, and `SALES_STOCK_TOTALS` currently total 31.
+- The 8-row difference is the hard-coded `Newborn` information row in the sales stock formulas. That row bypasses `SALES_AVAILABILITY` and counts `PIG_OVERVIEW` rows where `Is_Sale_Ready = No`, `Status = Active`, `Calculated_Stage = Newborn`, and `Weight_Band = N/A`.
+- Live read-only check showed `PIG_OVERVIEW.Is_Sale_Ready = Yes` rows are all `Purpose = Sale`; no `Grow_Out` pigs were included in the current 23 sale-ready rows after the owner's sheet change.
+
+Risk:
+
+- Sam reads `SALES_STOCK_SUMMARY`, `SALES_STOCK_TOTALS`, `SALES_STOCK_DETAIL`, and `SALES_AVAILABILITY`. If sales stock totals include information-only animals, Sam may quote a higher broad total than the true sale-ready count unless the workflow/prompt treats `Status = Not for Sale` rows as informational only.
+- This belongs before split-sync testing because bad availability totals can make Sam's stock wording look wrong even when backend line sync is behaving correctly.
+
+Required outcome:
+
+- Decide whether `Newborn` rows should remain visible in Sam's sales tools or move to a separate information-only tool/view.
+- Ensure all sale-ready counts used by Sam and backend order matching come from `SALES_AVAILABILITY` only.
+- Reconcile the live formulas with `docs/03-google-sheets/sheets/SALES_AVAILABILITY.md`, `SALES_STOCK_DETAIL.md`, `SALES_STOCK_SUMMARY.md`, and `SALES_STOCK_TOTALS.md`.
+- Add a sheet changelog entry when the final formula/view decision is approved.
+
 ### 4.1 Fix Split Item Sync
+
+Status: Implemented in repo 2026-05-10; pending `1.0` n8n re-import and live WhatsApp verification.
 
 **Where grower split / header-line symptoms slot in:** This subsection. **Phase 4.2** (partial-match behavior and customer-facing honesty) aligns when stock cannot satisfy **`requested_items`**; **Phase 5** covers Sam reading **backend-filtered** order truth for review prompts. Fixing “Sam said we have X” without fixing inventory alignment is incomplete — treat **prompt / reply rules** and **sync / header persistence** together for this incident class.
 
@@ -570,12 +595,21 @@ Required outcome:
 
 **Incident — 2026-05-09 (live WhatsApp, grower + split):** After a multi-turn thread, **`ORDER_MASTER`** showed **empty `Requested_Sex` / `Collection_Location`** while **`ORDER_LINES`** failed the intended **1 Male + 2 Female** allocation (often **Female-only rows**); Sam also **re-asked for collection location** in some variants despite **Riversdale**. **Overlap with fixes shipped 2026-05-09:** longer **`ConversationHistory`** (**25** msgs) and **`Code - Build Sales Agent Memory Summary`** (recap hints, **no** `male`-substring double-count on **`female`**) improve **hydration** on short turns — they **do not** replace **inventory-backed** wording, **`update_order`** header persistence rules, nor **partial-stock** UX. Treat **§4.1** as **open** until the live test below passes.
 
+**Repo fix summary 2026-05-10:**
+
+- `Code - Build Order State` now stores mixed-sex split requests as `ORDER_MASTER.Requested_Sex = Any`; exact sex quantities stay in `requested_items[]` and `ORDER_LINES`.
+- `20-24kg` / `30-34kg` parsing no longer falls through to `2_to_4_Kg` from the trailing `24kg` / `34kg` text.
+- Short confirmation from memory, such as `yes please`, now still routes to `UPDATE_HEADER_AND_LINES` when memory builds valid `requested_items[]`.
+- Backend in-memory split sync test passed: `primary_1` Male created 1 row, `primary_2` Female created 2 rows, repeated sync cancelled/recreated the same keys without duplicate active rows.
+
 **Regression test (fresh thread, after repo `1.0` re-import):**
 
-1. New guest: **Grower**, **30–34 kg**, qty **3**, message **“1 male and 2 females”**, then **Riversdale**, then **timing** (e.g. next Sunday), then **Cash**.
+1. Full exact-match test: use **Grower**, **20-24 kg**, qty **3**, message **"1 male and 2 females"**, then **Riversdale**, then **timing** (e.g. next Sunday), then **Cash**. Live stock checked 2026-05-10 had at least 1 Male + 2 Female in this band.
 2. **`get_order_context`** / sheet: **`ORDER_MASTER.Requested_Sex`** and **`Collection_Location`** match conversation (if the product model stores only a **single** sex on the header, document the rule: e.g. **`Any`** + split only on **lines**, or encode split in **`Notes`** — but do not leave both blank when backend requires them for approval).
 3. **`ORDER_LINES`:** three rows with **sex** == **1 Male, 2 Female** (or steward-documented equivalent), not three of one sex.
 4. No **duplicate** outbound Sam messages; no **re-ask** for facts already in **`OrderStateSummary`** / memory for that thread.
+
+**Partial/no-match guard test:** **Grower 30-34 kg**, qty **3**, **1 Male + 2 Female** should not be treated as a full exact sex split unless live stock changes. Live stock checked 2026-05-10 had three Female and zero Male in this band; expected result is `primary_1 = no_match` and `primary_2 = exact_match` for two Female rows, with Sam not claiming all three requested sex lines were available.
 
 ### 4.2 Define Partial Match Behavior
 

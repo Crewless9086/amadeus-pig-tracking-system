@@ -16,6 +16,8 @@ Defines business rules that protect Google Sheets data integrity and keep backen
 - `SALES_AVAILABILITY` is the main sales gate for sellable animals.
 - `SALES_PRICING` is the pricing source. AI and n8n must not invent prices.
 - Newborn or `Purpose = Unknown` animals may be visible for information but must not be treated as available for sale.
+- `Purpose = Grow_Out` animals must not be counted as available-for-sale stock.
+- Sales stock display views must not let information-only rows inflate the sale-ready count Sam uses in customer replies.
 - Collection-only policy remains active unless explicitly changed in project docs.
 
 ## Order Rules

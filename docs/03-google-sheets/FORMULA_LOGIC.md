@@ -49,6 +49,8 @@ It controls:
 - suggested price category key
 - eligibility for AI responses and backend order matching
 
+Sale-ready rows must require `Purpose = Sale` upstream in `PIG_OVERVIEW.Is_Sale_Ready`. Animals with `Purpose = Grow_Out`, `Unknown`, `Breeding`, `Replacement`, or `House_Use` must not be treated as available-for-sale stock.
+
 ## `SALES_STOCK_DETAIL`, `SALES_STOCK_SUMMARY`, And `SALES_STOCK_TOTALS`
 
 These sheets summarize stock for sales workflows and AI responses.
@@ -60,6 +62,8 @@ They use:
 - selected `PIG_OVERVIEW` rules for newborn/not-for-sale visibility
 
 Newborn animals may be visible for information, but they must not be treated as available for sale until the sale gate allows it.
+
+Open alignment note from 2026-05-10: the live stock summary/detail/totals views include a `Newborn` information row that bypasses `SALES_AVAILABILITY` and counts non-sale-ready newborns from `PIG_OVERVIEW`. This explains why the stock display total can be higher than `SALES_AVAILABILITY`. Keep this explicitly separated from sale-ready totals or move it to an information-only view/tool before relying on broad stock totals in Sam wording.
 
 ## `ORDER_OVERVIEW`
 
