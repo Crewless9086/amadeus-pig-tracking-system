@@ -11,6 +11,7 @@ Defines the operating rules for the n8n workflow suite.
 - `1.2 - Amadeus Order Steward` handles backend order actions for `1.0`.
 - `1.3 - SAM - Sales Agent - Media Tool` is the official media workflow, but remains disabled until fixed and tested.
 - `1.4 - Outbound Order Notification` handles backend-confirmed approval/rejection customer messages.
+- `1.5 - Outbound Document Delivery` handles backend-generated quote/invoice attachment delivery.
 - Chatwoot labels and custom attributes must follow `CHATWOOT_ATTRIBUTES.md`.
 
 ## Decision Modes In `1.0`
@@ -78,6 +79,14 @@ Sam should not directly write order sheets. Future order review should preferabl
 - `1.4` must use `conversation_id` from `ORDER_MASTER.ConversationId` and must fail clearly if it is missing.
 - `1.0` must not send approval/rejection outcome messages independently.
 - Backend notification failure must not roll back approval or rejection.
+
+## Document Delivery Rules
+
+- `1.5` is triggered by backend only through `DOCUMENT_DELIVERY_WEBHOOK_URL`.
+- `1.5` must send only backend-generated PDFs referenced by `ORDER_DOCUMENTS`.
+- `1.5` must not calculate VAT, totals, document references, or invoice eligibility.
+- `1.5` must require `conversation_id`; backend test sends must explicitly target the approved test conversation.
+- For Phase 2.5 tests, use Chatwoot `conversation_id = 1742` only.
 
 ## Media Tool Rules
 

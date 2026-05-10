@@ -230,6 +230,71 @@ Regression checks for future edits:
 - Confirm approval and rejection still send the exact agreed message texts.
 - Confirm failed notification delivery does not roll back the order transition and writes an `ORDER_STATUS_LOG` warning.
 
+## Phase 2.3 Quote Generation Tests
+
+Phase 2.3 first live quote generation test completed on 2026-05-10:
+
+1. `POST /api/orders/<order_id>/quote` was added.
+2. Missing-order smoke test returned `400` with `Order not found.`
+3. Live quote generated for `ORD-2026-01E18A`.
+4. Result document: `DOC-2026-49BF16`, `Q-2026-01E18A`, version `1`.
+5. Generated file: `QUO_2026_05_10_01E18A_V1_(R3,200.00)_Cash.pdf`.
+6. Drive file ID: `1FA50hJUf7q41jKGX3trRcEceaJbfSLk1`.
+7. `ORDER_DOCUMENTS` row was appended and verified.
+8. Drive metadata was verified as `application/pdf`.
+9. Draft quote note was stored: `Draft quote - subject to availability and approval`.
+
+Phase 2.3 close-out tests completed on 2026-05-10:
+
+1. Project owner visually inspected the generated PDF and confirmed it looked good.
+2. V2 quote generated for `ORD-2026-01E18A`: `DOC-2026-E706A4`, `Q-2026-01E18A-V2`, `QUO_2026_05_10_01E18A_V2_(R3,200.00)_Cash.pdf`.
+3. EFT quote generated after approved test update of `ORD-2026-01E18A` from `Cash` to `EFT`: `DOC-2026-45F259`, `Q-2026-01E18A-V3`.
+4. EFT totals verified: subtotal `R3,200.00`, VAT `R480.00`, total `R3,680.00`.
+5. EFT Drive metadata verified as `application/pdf`.
+6. `ORDER_DOCUMENTS` row verified for the EFT quote.
+7. `ORD-2026-01E18A` now has `Payment_Method = EFT` after the approved EFT test.
+
+## Phase 2.4 Invoice Generation Tests
+
+Phase 2.4 first live invoice generation test completed on 2026-05-10:
+
+1. `POST /api/orders/<order_id>/invoice` was added.
+2. Missing-order smoke test returned `400` with `Order not found.`
+3. Draft-order smoke test returned `400` with `Invoice can only be generated for Approved or Completed orders.`
+4. `ORD-2026-01E18A` was promoted from `Draft | Pending` to `Approved | Approved` for the invoice test and logged in `ORDER_STATUS_LOG`.
+5. Invoice generated from latest non-voided quote `Q-2026-01E18A-V3`.
+6. Result document: `DOC-2026-EC0265`, `INV-2026-01E18A`, version `1`.
+7. Generated file: `INV_2026_05_10_01E18A_V1_(R3,680.00)_EFT.pdf`.
+8. Drive file ID: `1w5peZn-imS-t0p7BAwTd2fIWWGPg2Dgq`.
+9. Totals verified: subtotal `R3,200.00`, VAT `R480.00`, total `R3,680.00`.
+10. `ORDER_DOCUMENTS` row was appended and verified.
+11. Drive metadata was verified as `application/pdf`.
+
+## Phase 2.5 Document Delivery Tests
+
+Phase 2.5 must use the approved test conversation only until the delivery workflow is signed off:
+
+- Chatwoot test conversation: `1742`
+- Test order: `ORD-2026-01E18A`
+- Test quote: `DOC-2026-45F259`, `Q-2026-01E18A-V3`
+- Test invoice: `DOC-2026-EC0265`, `INV-2026-01E18A`
+
+Pre-check:
+
+1. Import `docs/04-n8n/workflows/1.5 - outbound-document-delivery/workflow.json` into n8n.
+2. Configure the Google Drive credential on `Google Drive - Download PDF`.
+3. Configure the Chatwoot API token/credential on `HTTP - Chatwoot Send Attachment`.
+4. Confirm the workflow production webhook URL is configured in backend env as `DOCUMENT_DELIVERY_WEBHOOK_URL`.
+
+Test steps:
+
+1. Direct webhook smoke test sends the generated PDF to `conversation_id = 1742`.
+2. Confirm Chatwoot conversation `1742` received the correct PDF attachment and message text.
+3. Backend send endpoint test uses `POST /api/order-documents/<document_id>/send` with `conversation_id = 1742`.
+4. Confirm backend marks `ORDER_DOCUMENTS.Document_Status = Sent` only after n8n returns `success = true` and `sent = true`.
+5. Confirm `Sent_At` and `Sent_By` are populated.
+6. Confirm no real customer conversation receives the Phase 2.5 test document.
+
 ## Web App Order Tests
 
 After backend behavior is safe, test the app for usability:

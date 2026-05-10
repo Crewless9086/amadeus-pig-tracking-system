@@ -425,32 +425,58 @@ Drive upload verification:
 - live `SYSTEM_SETTINGS` was updated with the Shared Drive folder IDs on 2026-05-10
 - live upload test passed on 2026-05-10: `PHASE_2_2_SHARED_DRIVE_UPLOAD_TEST.txt` uploaded to the quote folder with file ID `17HtPAumE9XJf2e8xtvQsTb0YpwCtEncI`
 
-### 2.3 Backend Quote Endpoint
+### 2.3 Backend Quote Endpoint - Complete And Live-Verified
 
 Required outcome:
 
-- backend endpoint generates quote document for a given `order_id`
-- uses `ORDER_MASTER.Payment_Method` to determine VAT treatment
-- uses stored `ORDER_LINES.Unit_Price` (ex-VAT) for line calculations
-- locks and stores the VAT rate on the quote record at generation time
-- returns document URL or file reference
-- supports quote versions (`V1`, `V2`, etc.)
-- allows quote generation while an order is still `Draft`
-- adds visible draft note when generated from `Draft`: `Draft quote - subject to availability and approval`
-- uploads PDF to the configured quote Drive folder
-- records metadata in `ORDER_DOCUMENTS`
+- backend endpoint generates quote document for a given `order_id` - Done: `POST /api/orders/<order_id>/quote`
+- uses `ORDER_MASTER.Payment_Method` to determine VAT treatment - Done
+- uses stored `ORDER_LINES.Unit_Price` (ex-VAT) for line calculations - Done; active lines with missing/zero price are rejected
+- locks and stores the VAT rate on the quote record at generation time - Done
+- returns document URL or file reference - Done
+- supports quote versions (`V1`, `V2`, etc.) - Done
+- allows quote generation while an order is still `Draft` - Done
+- adds visible draft note when generated from `Draft`: `Draft quote - subject to availability and approval` - Done
+- uploads PDF to the configured quote Drive folder - Done
+- records metadata in `ORDER_DOCUMENTS` - Done
 
-### 2.4 Backend Invoice Endpoint
+Live test:
+
+- 2026-05-10: generated quote for `ORD-2026-01E18A`
+- result: `DOC-2026-49BF16`, `Q-2026-01E18A`, version `1`
+- file: `QUO_2026_05_10_01E18A_V1_(R3,200.00)_Cash.pdf`
+- Drive file ID: `1FA50hJUf7q41jKGX3trRcEceaJbfSLk1`
+- totals: subtotal `R3,200.00`, VAT `R0.00`, total `R3,200.00`
+- `ORDER_DOCUMENTS` row verified and Drive metadata verified as `application/pdf`
+
+Additional close-out tests:
+
+- visual PDF inspection passed by project owner on 2026-05-10
+- V2 versioning passed on 2026-05-10 for `ORD-2026-01E18A`: `DOC-2026-E706A4`, `Q-2026-01E18A-V2`, `QUO_2026_05_10_01E18A_V2_(R3,200.00)_Cash.pdf`
+- EFT/VAT quote passed on 2026-05-10 after approved test update of `ORD-2026-01E18A` payment method from `Cash` to `EFT`: `DOC-2026-45F259`, `Q-2026-01E18A-V3`, subtotal `R3,200.00`, VAT `R480.00`, total `R3,680.00`, file `QUO_2026_05_10_01E18A_V3_(R3,680.00)_EFT.pdf`
+- note: `ORD-2026-01E18A` now has `Payment_Method = EFT` after the approved EFT quote test
+
+### 2.4 Backend Invoice Endpoint - Complete And Live-Verified
 
 Required outcome:
 
-- backend generates invoice after order is approved
-- uses the VAT rate locked on the corresponding quote, not recalculated
-- returns document URL or file reference
-- requires an existing non-voided generated quote
-- uses the latest non-voided quote version
-- uploads PDF to the configured invoice Drive folder
-- records metadata in `ORDER_DOCUMENTS`
+- backend generates invoice after order is approved - Done: `POST /api/orders/<order_id>/invoice`
+- uses the VAT rate locked on the corresponding quote, not recalculated - Done
+- returns document URL or file reference - Done
+- requires an existing non-voided generated quote - Done
+- uses the latest non-voided quote version - Done
+- uploads PDF to the configured invoice Drive folder - Done
+- records metadata in `ORDER_DOCUMENTS` - Done
+
+Live test:
+
+- 2026-05-10: `ORD-2026-01E18A` was promoted from `Draft | Pending` to `Approved | Approved` for the invoice test and logged to `ORDER_STATUS_LOG`
+- invoice generated from latest non-voided quote `Q-2026-01E18A-V3`
+- result: `DOC-2026-EC0265`, `INV-2026-01E18A`, version `1`
+- file: `INV_2026_05_10_01E18A_V1_(R3,680.00)_EFT.pdf`
+- Drive file ID: `1w5peZn-imS-t0p7BAwTd2fIWWGPg2Dgq`
+- totals inherited from quote: subtotal `R3,200.00`, VAT `R480.00`, total `R3,680.00`
+- `ORDER_DOCUMENTS` row verified and Drive metadata verified as `application/pdf`
 
 ### 2.5 n8n Delivery
 
@@ -460,6 +486,23 @@ Required outcome:
 - n8n downloads the generated PDF using authenticated Google Drive access by file ID
 - n8n delivers the PDF to the customer as a Chatwoot attachment
 - n8n does not calculate VAT, totals, references, or invoice eligibility
+- backend exposes `POST /api/order-documents/<document_id>/send`
+- delivery request requires explicit `conversation_id`; there is no customer-conversation fallback
+- `1.5 - Outbound Document Delivery` workflow draft added under `docs/04-n8n/workflows/1.5 - outbound-document-delivery/`
+- Phase 2.5 tests must use Chatwoot `conversation_id = 1742` only
+
+### 2.6 Web App Document Controls
+
+Required outcome:
+
+- order detail page shows a Documents section
+- show generated document history from backend/`ORDER_DOCUMENTS`
+- buttons for `Generate Quote` and `Generate Invoice`
+- `Generate Invoice` only appears or succeeds when the backend says the order is eligible
+- later delivery buttons for `Send Quote` and `Send Invoice` after n8n delivery is implemented
+- show document type, ref, version, total, payment method, status, created date, Drive link, and sent state
+- show clear missing-data errors without requiring direct sheet access
+- operators should be able to handle quote/invoice workflows from the web app, not from Google Sheets
 
 ## Phase 3: Daily Order Summary
 

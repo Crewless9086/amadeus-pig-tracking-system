@@ -136,6 +136,27 @@ Payload fields:
 
 Failure rule: delivery failure must return an error to backend, but the order transition remains committed and backend logs a warning for manual follow-up.
 
+## Backend To `1.5` Document Delivery Contract
+
+`POST /api/order-documents/<document_id>/send` calls `DOCUMENT_DELIVERY_WEBHOOK_URL` after a generated document is selected for delivery.
+
+Payload fields:
+
+| Field | Meaning |
+| --- | --- |
+| `event_type` | Always `order_document_delivery`. |
+| `account_id` | Chatwoot account ID, normally `147387`. |
+| `conversation_id` | Required Chatwoot conversation ID. No fallback should be assumed. |
+| `document_id` | Backend document ID from `ORDER_DOCUMENTS`. |
+| `order_id` | Linked order ID. |
+| `document_type` | `Quote` or `Invoice`. |
+| `document_ref` | Backend-generated document reference. |
+| `file_name` | PDF file name stored in Drive. |
+| `google_drive_file_id` | Drive file ID to download. |
+| `message_text` | Customer-facing message text to send with the attachment. |
+
+Failure rule: backend marks the document `Sent` only when the workflow returns a successful response. For Phase 2.5 tests, the request must explicitly use `conversation_id = 1742`.
+
 ## Preferred Order Review Path
 
 Sam needs better order awareness, but the preferred implementation is not a direct `ORDER_OVERVIEW` Google Sheets tool inside `1.0`.

@@ -1,0 +1,180 @@
+{
+  "name": "1.5 - Outbound Document Delivery",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "order-document-delivery",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "Webhook-Document-Delivery",
+      "name": "Webhook - Document Delivery",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json.body || $json;\nconst errors = [];\nconst eventType = String(input.event_type || '').trim();\nconst conversationId = String(input.conversation_id || '').trim();\nconst fileId = String(input.google_drive_file_id || '').trim();\nconst fileName = String(input.file_name || '').trim();\nconst messageText = String(input.message_text || '').trim();\n\nif (eventType !== 'order_document_delivery') errors.push('event_type must be order_document_delivery');\nif (!conversationId) errors.push('conversation_id is required');\nif (!fileId) errors.push('google_drive_file_id is required');\nif (!fileName) errors.push('file_name is required');\nif (!messageText) errors.push('message_text is required');\n\nreturn [{\n  json: {\n    valid: errors.length === 0,\n    errors,\n    account_id: String(input.account_id || '147387').trim(),\n    conversation_id: conversationId,\n    document_id: String(input.document_id || '').trim(),\n    order_id: String(input.order_id || '').trim(),\n    document_type: String(input.document_type || '').trim(),\n    document_ref: String(input.document_ref || '').trim(),\n    google_drive_file_id: fileId,\n    file_name: fileName,\n    message_text: messageText,\n    source_payload: input\n  }\n}];"
+      },
+      "id": "Code-Validate-Payload",
+      "name": "Code - Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "payload-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "IF-Valid-Payload",
+      "name": "IF - Valid Payload",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{$json.google_drive_file_id}}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "data",
+          "fileName": "={{ $json.file_name }}"
+        }
+      },
+      "id": "Google-Drive-Download",
+      "name": "Google Drive - Download PDF",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [720, -100],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_WITH_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://app.chatwoot.com/api/v1/accounts/{{$json.account_id}}/conversations/{{$json.conversation_id}}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api_access_token",
+              "value": "REPLACE_WITH_CHATWOOT_API_ACCESS_TOKEN_OR_USE_N8N_CREDENTIAL"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.message_text }}"
+            },
+            {
+              "name": "message_type",
+              "value": "outgoing"
+            },
+            {
+              "name": "private",
+              "value": "false"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "attachments[]",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "HTTP-Chatwoot-Send-Attachment",
+      "name": "HTTP - Chatwoot Send Attachment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [960, -100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, sent: true, document_id: $('Code - Validate Payload').item.json.document_id, order_id: $('Code - Validate Payload').item.json.order_id, conversation_id: $('Code - Validate Payload').item.json.conversation_id, document_ref: $('Code - Validate Payload').item.json.document_ref } }}",
+        "options": {}
+      },
+      "id": "Respond-Success",
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, -100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, sent: false, errors: $json.errors, document_id: $json.document_id, conversation_id: $json.conversation_id } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "Respond-Invalid",
+      "name": "Respond - Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [720, 120]
+    }
+  ],
+  "connections": {
+    "Webhook - Document Delivery": {
+      "main": [[{"node": "Code - Validate Payload", "type": "main", "index": 0}]]
+    },
+    "Code - Validate Payload": {
+      "main": [[{"node": "IF - Valid Payload", "type": "main", "index": 0}]]
+    },
+    "IF - Valid Payload": {
+      "main": [
+        [{"node": "Google Drive - Download PDF", "type": "main", "index": 0}],
+        [{"node": "Respond - Invalid", "type": "main", "index": 0}]
+      ]
+    },
+    "Google Drive - Download PDF": {
+      "main": [[{"node": "HTTP - Chatwoot Send Attachment", "type": "main", "index": 0}]]
+    },
+    "HTTP - Chatwoot Send Attachment": {
+      "main": [[{"node": "Respond - Success", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "phase-2-5-draft",
+  "triggerCount": 0,
+  "tags": []
+}

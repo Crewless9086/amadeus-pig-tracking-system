@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-10 - Phase 2.5 outbound document delivery scaffold
+
+Type: `ADD`
+
+**Summary:** Added draft `1.5 - Outbound Document Delivery` workflow docs/export. Backend remains the source of truth for quote/invoice generation, totals, VAT, document references, Google Drive file IDs, and `ORDER_DOCUMENTS`; n8n only downloads the generated PDF and sends it as a Chatwoot attachment. Phase 2.5 live tests must target Chatwoot `conversation_id = 1742` only.
+
+---
+
 ### 2026-05-09 - Phase 1.9 outbound order notification scaffold
 
 Type: `ADD`

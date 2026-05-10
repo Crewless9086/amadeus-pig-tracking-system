@@ -18,6 +18,9 @@ from modules.orders.order_service import (
     complete_order,
     sync_order_lines_from_request,
 )
+from modules.documents.quote_service import generate_quote_for_order
+from modules.documents.invoice_service import generate_invoice_for_order
+from modules.documents.document_service import send_order_document
 from modules.orders.order_validation import (
     validate_new_order_payload,
     validate_update_order_payload,
@@ -160,6 +163,61 @@ def complete(order_id):
     try:
         result = complete_order(order_id, changed_by=changed_by)
         return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/quote", methods=["POST"])
+def generate_quote(order_id):
+    payload = request.get_json(silent=True) or {}
+    created_by = str(payload.get("created_by", payload.get("changed_by", "App"))).strip() or "App"
+
+    try:
+        result = generate_quote_for_order(order_id, created_by=created_by)
+        return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/invoice", methods=["POST"])
+def generate_invoice(order_id):
+    payload = request.get_json(silent=True) or {}
+    created_by = str(payload.get("created_by", payload.get("changed_by", "App"))).strip() or "App"
+
+    try:
+        result = generate_invoice_for_order(order_id, created_by=created_by)
+        return jsonify(result), 201
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/order-documents/<document_id>/send", methods=["POST"])
+def send_document(document_id):
+    payload = request.get_json(silent=True) or {}
+    conversation_id = str(payload.get("conversation_id", "")).strip()
+    sent_by = str(payload.get("sent_by", payload.get("changed_by", "App"))).strip() or "App"
+    account_id = str(payload.get("account_id", "147387")).strip() or "147387"
+
+    try:
+        result = send_order_document(
+            document_id,
+            conversation_id=conversation_id,
+            sent_by=sent_by,
+            account_id=account_id,
+        )
+        status_code = 200 if result.get("success") else 502
+        if result.get("skipped"):
+            status_code = 400
+        return jsonify(result), status_code
     except ValueError as exc:
         return jsonify({
             "success": False,

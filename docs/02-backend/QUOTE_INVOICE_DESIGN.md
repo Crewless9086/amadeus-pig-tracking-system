@@ -370,8 +370,8 @@ None for Phase 2.1 design. Implementation can proceed to sheet setup planning an
 1. Phase 2.2: document and create `SYSTEM_SETTINGS` and `ORDER_DOCUMENTS` through `scripts/setup_document_infrastructure.py`. - Done 2026-05-09
 2. Phase 2.2: move/copy canonical logo asset to `static/document-assets/amadeus-logo.png`. - Done
 3. Phase 2.2: implement backend settings/document-register helpers in `modules/documents/document_service.py`. - Done
-4. Phase 2.3: implement quote generation endpoint with `V1`, `V2`, etc.
-5. Phase 2.3: live-test quote generation on one safe order.
-6. Phase 2.4: implement invoice generation endpoint, requiring an existing non-voided quote.
-7. Phase 2.4: live-test invoice generation on one approved safe order.
+4. Phase 2.3: implement quote generation endpoint with `V1`, `V2`, etc. - Done
+5. Phase 2.3: live-test quote generation on one safe order. - Done; Cash, V2, and EFT/VAT paths verified
+6. Phase 2.4: implement invoice generation endpoint, requiring an existing non-voided quote. - Done
+7. Phase 2.4: live-test invoice generation on one approved safe order. - Done
 8. Phase 2.5: add n8n attachment delivery only after document generation is stable.

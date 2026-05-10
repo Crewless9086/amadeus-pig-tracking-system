@@ -153,6 +153,113 @@ Important rules:
 - Exact-match sync can cancel/recreate lines.
 - **Partial match:** when some but not enough stock is available, the backend still creates lines for the matched pigs. Each result row can have `match_status: partial_match`, `matched_quantity` (fulfilled count), `available_quantity` (candidates matching filters), and the top-level response includes `partial_fulfillment: true` when any row was partial. Sam/n8n must not treat that as full quantity satisfaction.
 
+## Quote Document Behavior (Phase 2.3)
+
+### `POST /api/orders/<order_id>/quote`
+
+Generates a quote PDF for an order, uploads it to the configured quote Shared Drive folder, and appends a metadata row to `ORDER_DOCUMENTS`.
+
+**Rules:**
+- Order must exist.
+- Order may be `Draft`, `Pending_Approval`, or `Approved`.
+- `Payment_Method` must be `Cash` or `EFT`.
+- At least one non-cancelled order line must exist.
+- Every active line must have `Unit_Price > 0`.
+- Quote versions increment per order (`V1`, `V2`, etc.).
+- Draft quotes include the visible note: `Draft quote - subject to availability and approval`.
+- `Cash` quotes show VAT amount as `0`.
+- `EFT` quotes add VAT using the locked `vat_rate` from `SYSTEM_SETTINGS`.
+
+**Response (success):**
+```json
+{
+  "success": true,
+  "message": "Quote generated successfully.",
+  "order_id": "ORD-2026-01E18A",
+  "document_id": "DOC-2026-49BF16",
+  "document_type": "Quote",
+  "document_ref": "Q-2026-01E18A",
+  "payment_ref": "01E18A",
+  "version": 1,
+  "file_name": "QUO_2026_05_10_01E18A_V1_(R3,200.00)_Cash.pdf",
+  "google_drive_file_id": "1FA50hJUf7q41jKGX3trRcEceaJbfSLk1",
+  "google_drive_url": "https://drive.google.com/file/d/...",
+  "subtotal_ex_vat": 3200.0,
+  "vat_amount": 0.0,
+  "total": 3200.0,
+  "valid_until": "2026-05-13"
+}
+```
+
+**HTTP status codes:**
+- `201` — quote generated and recorded
+- `400` — missing order, missing payment method, no active lines, missing/zero unit price, missing settings, or Drive upload failure
+
+## Invoice Document Behavior (Phase 2.4)
+
+### `POST /api/orders/<order_id>/invoice`
+
+Generates an invoice PDF for an approved/completed order, uploads it to the configured invoice Shared Drive folder, and appends a metadata row to `ORDER_DOCUMENTS`.
+
+**Rules:**
+- Order must exist.
+- Order must be `Approved` or `Completed`.
+- An existing non-voided quote is required.
+- The invoice uses the latest non-voided quote version for VAT rate, payment method, subtotal, VAT amount, and total.
+- Invoice versions increment per order (`V1`, `V2`, etc.).
+- Backend must not recalculate invoice totals independently from the selected quote.
+
+**Response (success):**
+```json
+{
+  "success": true,
+  "message": "Invoice generated successfully.",
+  "order_id": "ORD-2026-01E18A",
+  "document_id": "DOC-2026-EC0265",
+  "document_type": "Invoice",
+  "document_ref": "INV-2026-01E18A",
+  "payment_ref": "01E18A",
+  "version": 1,
+  "source_quote_document_id": "DOC-2026-45F259",
+  "source_quote_ref": "Q-2026-01E18A-V3",
+  "file_name": "INV_2026_05_10_01E18A_V1_(R3,680.00)_EFT.pdf",
+  "google_drive_file_id": "1w5peZn-imS-t0p7BAwTd2fIWWGPg2Dgq",
+  "google_drive_url": "https://drive.google.com/file/d/...",
+  "subtotal_ex_vat": 3200.0,
+  "vat_amount": 480.0,
+  "total": 3680.0
+}
+```
+
+**HTTP status codes:**
+- `201` — invoice generated and recorded
+- `400` — missing order, ineligible order status, missing non-voided quote, invalid quote totals/settings, or Drive upload failure
+
+## Document Delivery Behavior (Phase 2.5)
+
+### `POST /api/order-documents/<document_id>/send`
+
+Triggers outbound n8n delivery for an existing generated document.
+
+Payload:
+
+```json
+{
+  "conversation_id": "1742",
+  "sent_by": "Codex Phase 2.5 Test",
+  "account_id": "147387"
+}
+```
+
+Rules:
+
+- `conversation_id` is required; backend does not fall back to the order's customer conversation.
+- Voided documents cannot be sent.
+- Backend calls `DOCUMENT_DELIVERY_WEBHOOK_URL`.
+- Backend marks `ORDER_DOCUMENTS.Document_Status = Sent` only if the workflow confirms success.
+
+For Phase 2.5 live tests, use `conversation_id = 1742` only.
+
 ## Reserve And Release Behavior (Phase 1.6)
 
 ### `POST /api/orders/<order_id>/reserve`

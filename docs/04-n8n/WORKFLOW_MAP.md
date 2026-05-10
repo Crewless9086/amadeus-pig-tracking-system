@@ -26,6 +26,9 @@ flowchart TD
   wf10 -. disabled .-> wf13["1.3 Media Tool"]
   backend --> wf14["1.4 Outbound Order Notification"]
   wf14 --> chatwootReply
+  backend --> wf15["1.5 Outbound Document Delivery"]
+  wf15 --> googleDrive["Google Drive"]
+  wf15 --> chatwootReply
 ```
 
 ## `1.0 - SAM - Sales Agent - Chatwoot`
@@ -145,6 +148,22 @@ Primary responsibilities:
 - return structured success/error details to backend
 
 Relationship to `1.0`: separate outbound workflow. `1.0` remains the inbound sales hub and does not own post-approval/rejection messages.
+
+## `1.5 - Outbound Document Delivery`
+
+Role: backend-triggered quote/invoice PDF delivery workflow.
+
+Trigger: webhook called by Flask through `DOCUMENT_DELIVERY_WEBHOOK_URL` after a generated document is selected for delivery.
+
+Primary responsibilities:
+
+- receive `document_id`, `conversation_id`, `google_drive_file_id`, `file_name`, and `message_text` from backend
+- validate required delivery fields
+- download the PDF from Google Drive using authenticated Google Drive access
+- send the PDF to Chatwoot as an outgoing attachment
+- return structured success/error details to backend
+
+Relationship to `1.0`: separate outbound workflow. `1.0` does not calculate document totals, generate PDFs, or send quote/invoice files independently.
 
 ## Change Rule
 

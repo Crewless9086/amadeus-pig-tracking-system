@@ -1,5 +1,9 @@
+import json
+import os
 from datetime import date, datetime
 import uuid
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from services.google_sheets_service import (
     append_row,
@@ -9,6 +13,7 @@ from services.google_sheets_service import (
 
 SYSTEM_SETTINGS_SHEET = "SYSTEM_SETTINGS"
 ORDER_DOCUMENTS_SHEET = "ORDER_DOCUMENTS"
+DOCUMENT_DELIVERY_WEBHOOK_URL = os.getenv("DOCUMENT_DELIVERY_WEBHOOK_URL", "").strip()
 
 DOCUMENT_TYPE_QUOTE = "Quote"
 DOCUMENT_TYPE_INVOICE = "Invoice"
@@ -131,6 +136,17 @@ def get_order_documents(order_id, document_type=None):
     return documents
 
 
+def get_order_document(document_id):
+    document_id = str(document_id or "").strip()
+    rows = get_all_records(ORDER_DOCUMENTS_SHEET)
+
+    for row in rows:
+        if str(row.get("Document_ID", "")).strip() == document_id:
+            return row
+
+    return None
+
+
 def get_next_document_version(order_id, document_type):
     documents = get_order_documents(order_id, document_type=document_type)
     versions = []
@@ -195,6 +211,122 @@ def mark_document_sent(document_id, sent_by="n8n", sent_at=None):
     raise ValueError(f"Document '{document_id}' not found.")
 
 
+def send_order_document(document_id, conversation_id, sent_by="App", account_id="147387"):
+    document = get_order_document(document_id)
+    if not document:
+        raise ValueError("Document not found.")
+
+    if str(document.get("Document_Status", "")).strip() == STATUS_VOIDED:
+        raise ValueError("Voided documents cannot be sent.")
+
+    conversation_id = str(conversation_id or "").strip()
+    if not conversation_id:
+        raise ValueError("conversation_id is required for document delivery.")
+
+    webhook_result = _notify_document_delivery_workflow(
+        document=document,
+        conversation_id=conversation_id,
+        sent_by=sent_by,
+        account_id=account_id,
+    )
+
+    result = {
+        "success": webhook_result.get("sent", False),
+        "document_id": str(document.get("Document_ID", "")).strip(),
+        "order_id": str(document.get("Order_ID", "")).strip(),
+        "document_type": str(document.get("Document_Type", "")).strip(),
+        "document_ref": str(document.get("Document_Ref", "")).strip(),
+        "conversation_id": conversation_id,
+        "delivery_webhook_sent": webhook_result.get("sent", False),
+    }
+
+    if webhook_result.get("sent", False):
+        mark_document_sent(document_id, sent_by=sent_by)
+        result["message"] = "Document sent successfully."
+        result["document_status"] = STATUS_SENT
+    else:
+        result["message"] = "Document delivery workflow did not confirm send."
+        result["error"] = webhook_result.get("error", "Unknown error")
+        if webhook_result.get("skipped"):
+            result["skipped"] = True
+
+    return result
+
+
+def _notify_document_delivery_workflow(document, conversation_id, sent_by, account_id):
+    if not DOCUMENT_DELIVERY_WEBHOOK_URL:
+        return {
+            "sent": False,
+            "skipped": True,
+            "error": "DOCUMENT_DELIVERY_WEBHOOK_URL is not configured.",
+        }
+
+    document_type = str(document.get("Document_Type", "")).strip()
+    document_ref = str(document.get("Document_Ref", "")).strip()
+    content = f"Please find your {document_type.lower()} attached: {document_ref}"
+    payload = {
+        "event_type": "order_document_delivery",
+        "account_id": str(account_id or "147387").strip(),
+        "conversation_id": str(conversation_id).strip(),
+        "document_id": str(document.get("Document_ID", "")).strip(),
+        "order_id": str(document.get("Order_ID", "")).strip(),
+        "document_type": document_type,
+        "document_ref": document_ref,
+        "payment_ref": str(document.get("Payment_Ref", "")).strip(),
+        "file_name": str(document.get("File_Name", "")).strip(),
+        "google_drive_file_id": str(document.get("Google_Drive_File_ID", "")).strip(),
+        "google_drive_url": str(document.get("Google_Drive_URL", "")).strip(),
+        "total": document.get("Total", ""),
+        "payment_method": str(document.get("Payment_Method", "")).strip(),
+        "message_text": content,
+        "changed_by": str(sent_by or "").strip() or "App",
+        "trigger_source": "Flask App",
+    }
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib_request.Request(
+        DOCUMENT_DELIVERY_WEBHOOK_URL,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(req, timeout=30) as response:
+            body = response.read().decode("utf-8", errors="ignore")
+            status_code = getattr(response, "status", 200)
+            parsed_body = _parse_json_body(body)
+            sent = (
+                200 <= status_code < 300
+                and parsed_body.get("success") is True
+                and parsed_body.get("sent") is True
+            )
+            workflow_error = ""
+            if not sent:
+                workflow_error = _workflow_error_from_response(parsed_body, body, status_code)
+            return {
+                "sent": sent,
+                "status_code": status_code,
+                "body": body,
+                "error": workflow_error,
+            }
+    except urllib_error.HTTPError as exc:
+        return {
+            "sent": False,
+            "error": f"HTTPError {exc.code}: {exc.reason}",
+        }
+    except urllib_error.URLError as exc:
+        return {
+            "sent": False,
+            "error": f"URLError: {exc.reason}",
+        }
+    except Exception as exc:
+        return {
+            "sent": False,
+            "error": str(exc),
+        }
+
+
 def _year_from_order_id(order_id):
     parts = str(order_id or "").strip().split("-")
     if len(parts) >= 3 and parts[1].isdigit():
@@ -228,3 +360,25 @@ def _format_rand_amount(value):
         amount = 0.0
 
     return f"R{amount:,.2f}"
+
+
+def _parse_json_body(body):
+    try:
+        return json.loads(body or "{}")
+    except (TypeError, ValueError):
+        return {}
+
+
+def _workflow_error_from_response(parsed_body, raw_body, status_code):
+    errors = parsed_body.get("errors") if isinstance(parsed_body, dict) else None
+    if isinstance(errors, list) and errors:
+        return "; ".join(str(error) for error in errors)
+
+    error_message = parsed_body.get("error") if isinstance(parsed_body, dict) else ""
+    if error_message:
+        return str(error_message)
+
+    if raw_body:
+        return f"Workflow response did not confirm send. Status {status_code}: {raw_body}"
+
+    return f"Workflow response did not confirm send. Status {status_code}."
