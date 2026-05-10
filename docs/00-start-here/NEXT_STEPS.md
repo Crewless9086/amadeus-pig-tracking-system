@@ -480,16 +480,19 @@ Live test:
 
 ### 2.5 n8n Delivery
 
+Status: Complete And Live-Verified 2026-05-10.
+
 Required outcome:
 
-- `1.0` or a new workflow calls the quote/invoice endpoint after the relevant status event
-- n8n downloads the generated PDF using authenticated Google Drive access by file ID
-- n8n delivers the PDF to the customer as a Chatwoot attachment
-- n8n does not calculate VAT, totals, references, or invoice eligibility
-- backend exposes `POST /api/order-documents/<document_id>/send`
-- delivery request requires explicit `conversation_id`; there is no customer-conversation fallback
-- `1.5 - Outbound Document Delivery` workflow draft added under `docs/04-n8n/workflows/1.5 - outbound-document-delivery/`
-- Phase 2.5 tests must use Chatwoot `conversation_id = 1742` only
+- backend exposes `POST /api/order-documents/<document_id>/send` - Done
+- delivery request requires explicit `conversation_id`; there is no customer-conversation fallback - Done
+- `1.5 - Outbound Document Delivery` workflow added under `docs/04-n8n/workflows/1.5 - outbound-document-delivery/` - Done
+- n8n downloads the generated PDF using authenticated Google Drive access by file ID - Live-verified
+- n8n delivers the PDF to Chatwoot as an attachment - Live-verified
+- n8n does not calculate VAT, totals, references, or invoice eligibility - Done
+- Phase 2.5 tests used Chatwoot `conversation_id = 1742` only - Done
+- direct webhook smoke test sent quote `DOC-2026-45F259` and left `ORDER_DOCUMENTS.Document_Status = Generated` because it bypassed backend sent-state update - Verified
+- backend endpoint test sent invoice `DOC-2026-EC0265` and marked `ORDER_DOCUMENTS.Document_Status = Sent` with `Sent_By = Codex Phase 2.5 Backend Test` - Verified
 
 ### 2.6 Web App Document Controls
 

@@ -19,7 +19,7 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 Type: `ADD`
 
-**Summary:** Added draft `1.5 - Outbound Document Delivery` workflow docs/export. Backend remains the source of truth for quote/invoice generation, totals, VAT, document references, Google Drive file IDs, and `ORDER_DOCUMENTS`; n8n only downloads the generated PDF and sends it as a Chatwoot attachment. Phase 2.5 live tests must target Chatwoot `conversation_id = 1742` only.
+**Summary:** Added and live-verified `1.5 - Outbound Document Delivery` workflow docs/export. Backend remains the source of truth for quote/invoice generation, totals, VAT, document references, Google Drive file IDs, and `ORDER_DOCUMENTS`; n8n only downloads the generated PDF and sends it as a Chatwoot attachment. Live tests used Chatwoot `conversation_id = 1742` only: direct webhook quote send returned `success = true`, `sent = true`; backend invoice send returned `document_status = Sent` and updated `ORDER_DOCUMENTS`.
 
 ---
 

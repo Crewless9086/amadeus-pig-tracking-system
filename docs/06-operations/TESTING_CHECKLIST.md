@@ -272,6 +272,20 @@ Phase 2.4 first live invoice generation test completed on 2026-05-10:
 
 ## Phase 2.5 Document Delivery Tests
 
+Phase 2.5 live verification completed on 2026-05-10:
+
+1. `1.5 - Outbound Document Delivery` was imported/configured in n8n.
+2. Google Drive credential was configured for Shared Drive PDF download.
+3. Chatwoot API key was configured for attachment send.
+4. Production webhook URL: `https://charln.app.n8n.cloud/webhook/order-document-delivery`.
+5. Direct webhook smoke test sent quote `DOC-2026-45F259`, `Q-2026-01E18A-V3`, to Chatwoot `conversation_id = 1742` and returned `success = true`, `sent = true`.
+6. Direct webhook smoke test did not mark `ORDER_DOCUMENTS` as sent, as expected.
+7. Backend endpoint test sent invoice `DOC-2026-EC0265`, `INV-2026-01E18A`, to Chatwoot `conversation_id = 1742`.
+8. Backend endpoint returned `200`, `success = true`, `delivery_webhook_sent = true`, and `document_status = Sent`.
+9. `ORDER_DOCUMENTS` verified `DOC-2026-EC0265` as `Document_Status = Sent`, `Sent_By = Codex Phase 2.5 Backend Test`, and `Sent_At = 10 May 2026 08:06`.
+
+Regression checks for future edits:
+
 Phase 2.5 must use the approved test conversation only until the delivery workflow is signed off:
 
 - Chatwoot test conversation: `1742`

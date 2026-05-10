@@ -48,6 +48,14 @@ Expected payload:
 
 For tests, use `conversation_id = 1742` only. Do not use the order's customer conversation for `ORD-2026-01E18A`; it is being used as a test document source.
 
+## Live Verification
+
+Completed on 2026-05-10:
+
+1. Direct webhook smoke test sent quote `DOC-2026-45F259`, `Q-2026-01E18A-V3`, to Chatwoot `conversation_id = 1742` and returned `success = true`, `sent = true`.
+2. Backend endpoint test sent invoice `DOC-2026-EC0265`, `INV-2026-01E18A`, to Chatwoot `conversation_id = 1742`.
+3. Backend verified the n8n response and marked `ORDER_DOCUMENTS.Document_Status = Sent` only for the backend send.
+
 ## Backend Contract
 
 Backend endpoint:
