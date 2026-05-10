@@ -214,6 +214,10 @@ Phase 4.2 regression:
 4. Confirm `1.2 - order-steward` passes the fulfillment fields through both direct sync and `create_order_with_lines`.
 5. Confirm `1.0 - Sam-sales-agent-chatwoot` exposes `had_no_match`, `had_incomplete`, and `partial_stock_detail` in `StewardCompact`, and Sam asks one follow-up instead of saying all 3 are on the draft.
 
+Live verification reference:
+
+- 2026-05-10: `ORD-2026-011771` created through `1.0`/`1.2` using Chatwoot test conversation `1742`. Backend created two active `primary_2` Female rows only; direct live sync returned `complete_fulfillment = false`, `fulfillment_status = partial`, `requested_total = 3`, `matched_total = 2`, `unmatched_total = 1`, and `primary_1 = no_match`. Sam generated correct partial/no-match wording. The test draft was cancelled after verification and ended with `active_line_count = 0`.
+
 ## n8n Order Steward Tests
 
 For `1.2 - Amadeus Order Steward`, test only currently live `1.0` actions first:

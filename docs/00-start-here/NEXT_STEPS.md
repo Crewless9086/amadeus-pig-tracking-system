@@ -620,7 +620,7 @@ Required outcome:
 
 ### 4.2 Define Partial Match Behavior
 
-Status: Repo Fix Ready; Pending Import And Live Verification.
+Status: Complete And Live-Verified 2026-05-10.
 
 Required outcome:
 
@@ -642,11 +642,14 @@ Verification completed locally:
 - Mocked backend split sync: requested 3 Grower `30_to_34_Kg` pigs as 1 Male + 2 Female, with no Male and 2 Female available. Result: `success = true`, `complete_fulfillment = false`, `fulfillment_status = partial`, `requested_total = 3`, `matched_total = 2`, `unmatched_total = 1`, `primary_1 = no_match`, `primary_2 = exact_match`.
 - Node-level checks confirm `StewardCompact.partial_stock_detail` includes no-match rows and extractor caps include no-match alternatives.
 
-Next live check after backend deploy and workflow import:
+Live verification 2026-05-10:
 
-1. Import updated `1.0 - Sam-sales-agent-chatwoot` and `1.2 - order-steward`.
-2. Run the Phase 4.2 split no-match guard (`30-34kg`, 1 Male + 2 Female) only if live stock still has the same shortage.
-3. Confirm Sam says only the matched quantity is on the draft and asks one follow-up question using alternatives.
+- Test used Chatwoot conversation `1742` and live stock guard **Grower `30_to_34_Kg`, quantity 3, split 1 Male + 2 Female**. Live `SALES_AVAILABILITY` had **0 Male** and **3 Female** in that band.
+- `1.0` / `1.2` created draft `ORD-2026-011771` with header fields correct: `Requested_Quantity = 3`, `Requested_Sex = Any`, `Requested_Weight_Range = 30_to_34_Kg`, `Collection_Location = Riversdale`, `Payment_Method = Cash`, `ConversationId = 1742`.
+- `ORDER_LINES` showed only two active rows, both `primary_2` Female in `30_to_34_Kg`; no `primary_1` Male row was created.
+- Direct live sync response for the same order returned `success = true`, `complete_fulfillment = false`, `partial_fulfillment = true`, `fulfillment_status = partial`, `requested_total = 3`, `matched_total = 2`, `unmatched_total = 1`, `primary_1 = no_match`, `primary_2 = exact_match`, and `incomplete_items[]` for `primary_1`.
+- Sam generated correct partial/no-match wording: only 2 Female pigs were added, the requested Male was unavailable, and 2 Male alternatives existed in `20_to_24_Kg`. Chatwoot marked the outbound WhatsApp send as `failed` because of the WhatsApp/template window, but the generated content was correct.
+- `ORD-2026-011771` was cancelled after verification; `active_line_count = 0` and the matched pigs were released.
 
 ### 4.3 Validate `intent_type` And `status`
 

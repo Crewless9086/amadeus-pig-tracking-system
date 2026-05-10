@@ -19,7 +19,7 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 Type: `FIX`
 
-**Summary:** Tightened partial stock handling across backend and n8n. `sync_order_lines_from_request` now reports `complete_fulfillment`, `fulfillment_status`, aggregate requested/matched/unmatched totals, and `incomplete_items`; `no_match` rows now count as incomplete fulfillment instead of looking like a complete sync. `1.2 - order-steward` passes these fields through direct sync and `create_order_with_lines`. `1.0 - Sam-sales-agent-chatwoot` marks `had_no_match` / `had_incomplete`, expands `partial_stock_detail` for no-match rows, and uses no-match alternatives when rebuilding follow-up offer caps.
+**Summary:** Tightened partial stock handling across backend and n8n. `sync_order_lines_from_request` now reports `complete_fulfillment`, `fulfillment_status`, aggregate requested/matched/unmatched totals, and `incomplete_items`; `no_match` rows now count as incomplete fulfillment instead of looking like a complete sync. `1.2 - order-steward` passes these fields through direct sync and `create_order_with_lines`. `1.0 - Sam-sales-agent-chatwoot` marks `had_no_match` / `had_incomplete`, expands `partial_stock_detail` for no-match rows, and uses no-match alternatives when rebuilding follow-up offer caps. Live verification created `ORD-2026-011771` for Grower `30_to_34_Kg`, 1 Male + 2 Female: only two Female lines were added, the direct sync returned `complete_fulfillment = false` / `fulfillment_status = partial`, Sam generated correct partial/no-match wording, and the test draft was cancelled after verification.
 
 ---
 
