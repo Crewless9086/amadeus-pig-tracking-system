@@ -580,7 +580,7 @@ Required outcome:
 
 ### 4.1 Fix Split Item Sync
 
-Status: Implemented in repo 2026-05-10; pending `1.0` n8n re-import and live WhatsApp verification.
+Status: Complete And Live-Verified 2026-05-10.
 
 **Where grower split / header-line symptoms slot in:** This subsection. **Phase 4.2** (partial-match behavior and customer-facing honesty) aligns when stock cannot satisfy **`requested_items`**; **Phase 5** covers Sam reading **backend-filtered** order truth for review prompts. Fixing “Sam said we have X” without fixing inventory alignment is incomplete — treat **prompt / reply rules** and **sync / header persistence** together for this incident class.
 
@@ -600,7 +600,14 @@ Required outcome:
 - `Code - Build Order State` now stores mixed-sex split requests as `ORDER_MASTER.Requested_Sex = Any`; exact sex quantities stay in `requested_items[]` and `ORDER_LINES`.
 - `20-24kg` / `30-34kg` parsing no longer falls through to `2_to_4_Kg` from the trailing `24kg` / `34kg` text.
 - Short confirmation from memory, such as `yes please`, now still routes to `UPDATE_HEADER_AND_LINES` when memory builds valid `requested_items[]`.
+- First-turn `create_order_with_lines` now carries `collection_location`, `payment_method`, and `conversation_id` through `1.0`, `1.2`, and backend create.
 - Backend in-memory split sync test passed: `primary_1` Male created 1 row, `primary_2` Female created 2 rows, repeated sync cancelled/recreated the same keys without duplicate active rows.
+
+**Live verification 2026-05-10:**
+
+- First run created `ORD-2026-78FB68`: split lines were correct, but `Collection_Location`, `Payment_Method`, and `ConversationId` were blank. That exposed the create-with-lines header gap; the test draft was cancelled after the fix.
+- Retest after backend deploy and `1.0` / `1.2` re-import created `ORD-2026-25CC0D`: `Requested_Sex = Any`, `Requested_Weight_Range = 20_to_24_Kg`, `Requested_Quantity = 3`, `Collection_Location = Riversdale`, `Payment_Method = Cash`, `ConversationId = 1742`, and three active lines were correct (`primary_1` Male, `primary_2` Female x2).
+- `ORD-2026-25CC0D` was cancelled after verification so test draft lines do not block stock matching.
 
 **Regression test (fresh thread, after repo `1.0` re-import):**
 

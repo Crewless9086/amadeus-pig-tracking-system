@@ -37,7 +37,7 @@ Important fields:
 | `Created_At` | Created timestamp. |
 | `Updated_At` | Updated timestamp. |
 | `Payment_Method` | Cash/EFT value used for approval validation and VAT treatment. |
-| `ConversationId` | Chatwoot conversation ID stored from incoming `conversation_id` for outbound approval/rejection notifications. |
+| `ConversationId` | Chatwoot conversation ID stored from incoming `conversation_id` for outbound approval/rejection notifications. This is written during draft creation, including first-turn `create_order_with_lines`. |
 
 ## `ORDER_LINES`
 

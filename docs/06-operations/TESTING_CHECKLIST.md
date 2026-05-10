@@ -176,6 +176,7 @@ Phase 4.1 parser/route checks:
 2. `I want 3 grower pigs 30-34kg, 1 male and 2 females, Riversdale, next Sunday, Cash` must produce `requested_weight_range = 30_to_34_Kg`, not `2_to_4_Kg`.
 3. A short confirmation such as `yes please` may hydrate the split from memory, but must still route `UPDATE_HEADER_AND_LINES` when valid `requested_items[]` are built.
 4. Current live-stock guard from 2026-05-10: use `20-24kg` for a full exact 1 Male + 2 Female test; `30-34kg` had Female-only stock and should verify partial/no-match honesty instead.
+5. First-turn `create_order_with_lines` must persist `ORDER_MASTER.Collection_Location`, `Payment_Method`, and `ConversationId`; this was live-verified on `ORD-2026-25CC0D` and the test draft was then cancelled.
 
 ### Repeated Sync
 

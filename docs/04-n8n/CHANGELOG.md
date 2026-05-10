@@ -19,7 +19,7 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 Type: `FIX`
 
-**Summary:** Updated `1.0 - Sam-sales-agent-chatwoot` export for mixed-sex order requests. `Code - Build Order State` now stores mixed split headers as `Requested_Sex = Any` while preserving exact per-sex quantities in `requested_items[]`; memory-confirmed split requests now route to `UPDATE_HEADER_AND_LINES`; and weight parsing no longer misreads `20-24kg` / `30-34kg` as `2_to_4_Kg`. Local node tests passed for direct split messages and memory hydration. Backend in-memory sync test passed for `primary_1` Male + `primary_2` Female, including repeated sync replacement without duplicate active rows. Re-import `1.0` before live WhatsApp verification.
+**Summary:** Updated `1.0 - Sam-sales-agent-chatwoot`, `1.2 - order-steward`, and backend create handling for mixed-sex order requests. `Code - Build Order State` now stores mixed split headers as `Requested_Sex = Any` while preserving exact per-sex quantities in `requested_items[]`; memory-confirmed split requests now route to `UPDATE_HEADER_AND_LINES`; and weight parsing no longer misreads `20-24kg` / `30-34kg` as `2_to_4_Kg`. First-turn `create_order_with_lines` now carries `collection_location`, `payment_method`, and `conversation_id` through `1.0`, `1.2`, and backend create. Live retest created `ORD-2026-25CC0D` with header fields and lines correct (`primary_1` Male, `primary_2` Female x2), then cancelled the test draft.
 
 ---
 
