@@ -321,6 +321,9 @@ Phase 2.6 repo checks:
 6. `Generate Invoice` is disabled until the order is invoice-eligible and an active quote exists; backend remains the final guard.
 7. Document `Send` requires a Chatwoot conversation ID and asks for confirmation before calling `POST /api/order-documents/<document_id>/send`.
 8. Live read-only API check for `ORD-2026-01E18A` returned four documents from `ORDER_DOCUMENTS`.
+9. Order summary is compact and shows operational totals/status at a glance.
+10. Document rows are compact by default and expand for full details/actions.
+11. Order line rows are compact by default and expand for full details/edit controls.
 
 Browser verification still required:
 

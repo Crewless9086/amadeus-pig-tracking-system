@@ -138,58 +138,7 @@ async function loadOrderDetail(orderId) {
     applyDocumentActionVisibility(order, documents);
     renderDraftLinesSummary(lines);
     renderOrderDocuments(documents);
-
-    summaryContainer.innerHTML = `
-      <div class="detail-card">
-        <div class="detail-label">Order ID</div>
-        <div class="detail-value">${order.order_id || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Customer</div>
-        <div class="detail-value">${order.customer_name || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Channel</div>
-        <div class="detail-value">${order.customer_channel || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Order Status</div>
-        <div class="detail-value">${order.order_status || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Approval Status</div>
-        <div class="detail-value">${order.approval_status || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Reserved Pig Count</div>
-        <div class="detail-value">${order.reserved_pig_count || 0}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Payment Method</div>
-        <div class="detail-value">${order.payment_method || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Collection</div>
-        <div class="detail-value">${order.collection_location || "-"}</div>
-      </div>
-
-      <div class="detail-card">
-        <div class="detail-label">Final Total</div>
-        <div class="detail-value">${order.final_total || 0}</div>
-      </div>
-
-      <div class="detail-card detail-card-wide">
-        <div class="detail-label">Notes</div>
-        <div class="detail-value">${order.notes || "-"}</div>
-      </div>
-    `;
+    renderOrderSummary(order, lines, documents);
 
     if (lines.length === 0) {
       linesContainer.innerHTML = `
@@ -206,43 +155,70 @@ async function loadOrderDetail(orderId) {
       const canEdit = line.line_status === "Draft";
       const editPrice = line.unit_price || "";
       const editNotes = line.notes || "";
+      const cardId = `line_details_${escapeDomId(line.order_line_id)}`;
+      const price = formatMoney(line.unit_price);
 
       return `
-        <div class="history-item">
-          <div class="history-item-top">
-            <div class="history-item-date">${line.tag_number || line.pig_id}</div>
-            <div class="history-item-weight">${line.line_status || "-"}</div>
+        <div class="history-item compact-record">
+          <button type="button" class="corner-toggle" onclick="toggleCompactCard('${cardId}', this)">Expand</button>
+
+          <div class="compact-record-main">
+            <div>
+              <div class="history-item-date">${escapeHtml(line.tag_number || line.pig_id || "-")}</div>
+              <div class="compact-subtitle">${escapeHtml(line.sale_category || "-")} | ${escapeHtml(line.weight_band || "-")} | ${escapeHtml(line.sex || "-")}</div>
+            </div>
+            <div class="compact-record-status">
+              <span class="status-pill">${escapeHtml(line.line_status || "-")}</span>
+              <span>${price}</span>
+            </div>
           </div>
 
-          <div class="history-item-grid">
+          <div class="compact-meta-row">
+            <span>Pig ${escapeHtml(line.pig_id || "-")}</span>
+            <span>${escapeHtml(line.current_weight_kg || "-")} kg</span>
+            <span>${escapeHtml(line.reserved_status || "-")}</span>
+          </div>
+
+          <div id="${cardId}" class="compact-details hidden">
+            <div class="history-item-grid">
             <div>
               <div class="history-label">Pig ID</div>
-              <div class="history-value">${line.pig_id || "-"}</div>
+              <div class="history-value">${escapeHtml(line.pig_id || "-")}</div>
             </div>
 
             <div>
               <div class="history-label">Category</div>
-              <div class="history-value">${line.sale_category || "-"}</div>
+              <div class="history-value">${escapeHtml(line.sale_category || "-")}</div>
             </div>
 
             <div>
               <div class="history-label">Weight Band</div>
-              <div class="history-value">${line.weight_band || "-"}</div>
+              <div class="history-value">${escapeHtml(line.weight_band || "-")}</div>
             </div>
 
             <div>
               <div class="history-label">Sex</div>
-              <div class="history-value">${line.sex || "-"}</div>
+              <div class="history-value">${escapeHtml(line.sex || "-")}</div>
             </div>
 
             <div>
               <div class="history-label">Current Weight</div>
-              <div class="history-value">${line.current_weight_kg || "-"}</div>
+              <div class="history-value">${escapeHtml(line.current_weight_kg || "-")}</div>
             </div>
 
             <div>
               <div class="history-label">Reserved Status</div>
-              <div class="history-value">${line.reserved_status || "-"}</div>
+              <div class="history-value">${escapeHtml(line.reserved_status || "-")}</div>
+            </div>
+
+            <div>
+              <div class="history-label">Created</div>
+              <div class="history-value">${escapeHtml(line.created_at || "-")}</div>
+            </div>
+
+            <div>
+              <div class="history-label">Updated</div>
+              <div class="history-value">${escapeHtml(line.updated_at || "-")}</div>
             </div>
           </div>
 
@@ -270,8 +246,9 @@ async function loadOrderDetail(orderId) {
           </div>
 
           <div class="form-actions compact-actions" style="margin-top: 12px;">
-            <button type="button" ${canEdit ? "" : "disabled"} onclick="updateOrderLine('${line.order_line_id}')">Edit</button>
-            <button type="button" ${canDelete ? "" : "disabled"} onclick="deleteOrderLine('${line.order_line_id}')">Delete</button>
+            <button type="button" ${canEdit ? "" : "disabled"} onclick="updateOrderLine('${escapeJsValue(line.order_line_id)}')">Edit</button>
+            <button type="button" ${canDelete ? "" : "disabled"} onclick="deleteOrderLine('${escapeJsValue(line.order_line_id)}')">Delete</button>
+          </div>
           </div>
         </div>
       `;
@@ -356,6 +333,7 @@ function renderOrderDocuments(documents) {
 
   container.innerHTML = documents.map(doc => {
     const canSend = doc.document_status !== "Voided" && doc.google_drive_file_id;
+    const cardId = `document_details_${escapeDomId(doc.document_id)}`;
     const sentMeta = doc.sent_at
       ? `Sent ${escapeHtml(doc.sent_at)}${doc.sent_by ? ` by ${escapeHtml(doc.sent_by)}` : ""}`
       : "Not sent";
@@ -364,16 +342,26 @@ function renderOrderDocuments(documents) {
       : "";
 
     return `
-      <div class="history-item document-item">
-        <div class="history-item-top">
+      <div class="history-item document-item compact-record">
+        <button type="button" class="corner-toggle" onclick="toggleCompactCard('${cardId}', this)">Expand</button>
+
+        <div class="compact-record-main">
           <div>
             <div class="history-item-date">${escapeHtml(doc.document_ref || doc.document_id || "-")}</div>
-            <div class="history-label">${escapeHtml(doc.document_type || "-")} | ${escapeHtml(doc.file_name || "-")}</div>
+            <div class="compact-subtitle">${escapeHtml(doc.document_type || "-")} | ${formatMoney(doc.total)} | ${escapeHtml(doc.payment_method || "-")}</div>
           </div>
-          <div class="history-item-weight">${escapeHtml(doc.document_status || "-")}</div>
+          <div class="compact-record-status">
+            <span class="status-pill">${escapeHtml(doc.document_status || "-")}</span>
+            <span>${doc.sent_at ? "Sent" : "Not sent"}</span>
+          </div>
         </div>
 
-        <div class="history-item-grid">
+        <div class="compact-meta-row">
+          <span>${escapeHtml(doc.file_name || "-")}</span>
+        </div>
+
+        <div id="${cardId}" class="compact-details hidden">
+          <div class="history-item-grid">
           <div>
             <div class="history-label">Total</div>
             <div class="history-value">${formatMoney(doc.total)}</div>
@@ -390,6 +378,14 @@ function renderOrderDocuments(documents) {
             <div class="history-label">Delivery</div>
             <div class="history-value">${sentMeta}</div>
           </div>
+          <div>
+            <div class="history-label">Payment Ref</div>
+            <div class="history-value">${escapeHtml(doc.payment_ref || "-")}</div>
+          </div>
+          <div>
+            <div class="history-label">Version</div>
+            <div class="history-value">${escapeHtml(doc.version || "-")}</div>
+          </div>
         </div>
 
         ${doc.notes ? `<div class="history-notes"><div class="history-label">Notes</div><div>${escapeHtml(doc.notes)}</div></div>` : ""}
@@ -397,6 +393,7 @@ function renderOrderDocuments(documents) {
         <div class="form-actions compact-actions document-card-actions">
           ${driveLink}
           <button type="button" ${canSend ? "" : "disabled"} onclick="sendDocument('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send</button>
+        </div>
         </div>
       </div>
     `;
@@ -450,6 +447,17 @@ function setupEditOrderForm(orderId) {
       messageBox.textContent = "Failed to save order header.";
     }
   });
+}
+
+function toggleCompactCard(targetId, button) {
+  const target = document.getElementById(targetId);
+  if (!target) return;
+
+  const isHidden = target.classList.contains("hidden");
+  target.classList.toggle("hidden", !isHidden);
+  if (button) {
+    button.textContent = isHidden ? "Collapse" : "Expand";
+  }
 }
 
 async function loadAvailablePigs() {
@@ -591,6 +599,70 @@ function setupOrderActions(orderId) {
       await runOrderAction(`/api/orders/${orderId}/complete`, actionMessage, orderId, "Order completed successfully. All pigs marked as sold.");
     });
   }
+}
+
+function renderOrderSummary(order, lines, documents) {
+  const summaryContainer = document.getElementById("order_summary");
+  if (!summaryContainer) return;
+
+  const activeLines = lines.filter(line => line.line_status !== "Cancelled");
+  const reservedLines = activeLines.filter(line => line.reserved_status === "Reserved" || line.line_status === "Reserved");
+  const sentDocs = documents.filter(doc => doc.document_status === "Sent");
+  const latestQuote = documents.find(doc => doc.document_type === "Quote" && doc.document_status !== "Voided");
+  const latestInvoice = documents.find(doc => doc.document_type === "Invoice" && doc.document_status !== "Voided");
+
+  summaryContainer.className = "order-summary-panel";
+  summaryContainer.innerHTML = `
+    <div class="summary-hero">
+      <div>
+        <div class="summary-kicker">${escapeHtml(order.order_id || "-")}</div>
+        <div class="summary-title">${escapeHtml(order.customer_name || "Unknown customer")}</div>
+        <div class="summary-subtitle">${escapeHtml(order.customer_channel || "-")} | ${escapeHtml(order.customer_phone || "-")}</div>
+      </div>
+      <div class="summary-status-stack">
+        <span class="status-pill">${escapeHtml(order.order_status || "-")}</span>
+        <span class="status-pill status-pill-muted">${escapeHtml(order.approval_status || "-")}</span>
+      </div>
+    </div>
+
+    <div class="summary-metric-grid">
+      <div class="summary-metric">
+        <span>Total</span>
+        <strong>${formatMoney(order.final_total || latestInvoice?.total || latestQuote?.total || 0)}</strong>
+      </div>
+      <div class="summary-metric">
+        <span>Lines</span>
+        <strong>${activeLines.length}</strong>
+      </div>
+      <div class="summary-metric">
+        <span>Reserved</span>
+        <strong>${reservedLines.length}</strong>
+      </div>
+      <div class="summary-metric">
+        <span>Documents</span>
+        <strong>${documents.length}</strong>
+      </div>
+    </div>
+
+    <div class="summary-detail-strip">
+      <span>Payment: <strong>${escapeHtml(order.payment_method || "-")}</strong></span>
+      <span>Collection: <strong>${escapeHtml(order.collection_location || "-")}</strong></span>
+      <span>Request: <strong>${escapeHtml(formatRequestSummary(order))}</strong></span>
+      <span>Sent docs: <strong>${sentDocs.length}</strong></span>
+    </div>
+
+    ${order.notes ? `<div class="summary-notes">${escapeHtml(order.notes)}</div>` : ""}
+  `;
+}
+
+function formatRequestSummary(order) {
+  const parts = [
+    order.requested_quantity ? `${order.requested_quantity}x` : "",
+    order.requested_category || "",
+    order.requested_weight_range || "",
+    order.requested_sex || ""
+  ].filter(Boolean);
+  return parts.length ? parts.join(" ") : "-";
 }
 
 function setupDocumentActions(orderId) {
@@ -832,6 +904,10 @@ function escapeJsValue(value) {
     .replaceAll("\\", "\\\\")
     .replaceAll("'", "\\'")
     .replaceAll("\n", " ");
+}
+
+function escapeDomId(value) {
+  return String(value || "item").replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
 function formatMoney(value) {

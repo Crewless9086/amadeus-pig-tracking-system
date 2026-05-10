@@ -510,6 +510,9 @@ Required outcome:
 - show clear missing-data errors without requiring direct sheet access - Done
 - operators should be able to handle quote/invoice workflows from the web app, not from Google Sheets - First slice done
 - order detail page now also includes an editable Order Header section for requested quantity/category/weight/sex, collection location, notes, and Draft-only payment method changes
+- order summary section made cleaner and more operational: customer, status, totals, lines, reserved count, document count, payment, collection, request summary, and notes
+- document tiles are compact by default with an expand/collapse control for filename, dates, delivery state, notes, Drive link, and send action
+- order line tiles are compact by default with an expand/collapse control for full details and edit/delete controls
 
 Follow-up usability improvements to plan after browser verification:
 
