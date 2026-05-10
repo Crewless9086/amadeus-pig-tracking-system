@@ -1611,6 +1611,42 @@
               "name": "partial_fulfillment",
               "value": "={{$json.partial_fulfillment}}",
               "type": "boolean"
+            },
+            {
+              "id": "phase-4-2-complete-fulfillment",
+              "name": "complete_fulfillment",
+              "value": "={{$json.complete_fulfillment}}",
+              "type": "boolean"
+            },
+            {
+              "id": "phase-4-2-fulfillment-status",
+              "name": "fulfillment_status",
+              "value": "={{$json.fulfillment_status}}",
+              "type": "string"
+            },
+            {
+              "id": "phase-4-2-requested-total",
+              "name": "requested_total",
+              "value": "={{$json.requested_total}}",
+              "type": "number"
+            },
+            {
+              "id": "phase-4-2-matched-total",
+              "name": "matched_total",
+              "value": "={{$json.matched_total}}",
+              "type": "number"
+            },
+            {
+              "id": "phase-4-2-unmatched-total",
+              "name": "unmatched_total",
+              "value": "={{$json.unmatched_total}}",
+              "type": "number"
+            },
+            {
+              "id": "phase-4-2-incomplete-items",
+              "name": "incomplete_items",
+              "value": "={{$json.incomplete_items}}",
+              "type": "array"
             }
           ]
         },
@@ -1795,7 +1831,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const syncResp = $json || {};\nconst buildPayload = $('Code - Build Sync After Create Payload').item.json || {};\nconst results = Array.isArray(syncResp.results) ? syncResp.results : [];\nconst partialFulfillment =\n  syncResp.partial_fulfillment === true ||\n  results.some(function (r) { return r.match_status === 'partial_match'; });\n\nreturn [{\n  json: {\n    success: buildPayload.create_success === true && syncResp.success === true,\n    action: \"create_order_with_lines\",\n    order_id: buildPayload.order_id || \"\",\n    order_status: \"Draft\",\n    status: \"Draft\",\n    message: buildPayload.create_message || \"\",\n    sync_success: syncResp.success === true,\n    sync_results: syncResp.lines_synced || results,\n    results: results,\n    partial_fulfillment: partialFulfillment,\n    sync_message: syncResp.message || \"\",\n    customer_name: $('Code - Normalize Order Payload').item.json.customer_name || \"\",\n    requested_category: $('Code - Normalize Order Payload').item.json.requested_category || \"\",\n    requested_weight_range: $('Code - Normalize Order Payload').item.json.requested_weight_range || \"\"\n  }\n}];"
+        "jsCode": "const syncResp = $json || {};\nconst buildPayload = $('Code - Build Sync After Create Payload').item.json || {};\nconst results = Array.isArray(syncResp.results) ? syncResp.results : [];\n\nfunction toNum(value) {\n  const n = Number(value);\n  return Number.isNaN(n) ? 0 : n;\n}\n\nfunction isIncompleteSyncRow(r) {\n  if (!r) return false;\n  const status = r.match_status || '';\n  const requested = toNum(r.requested_quantity);\n  const matched = toNum(r.matched_quantity);\n  return ['partial_match', 'no_match', 'error'].includes(status) || matched < requested;\n}\n\nconst partialFulfillment =\n  syncResp.partial_fulfillment === true ||\n  results.some(isIncompleteSyncRow);\nconst completeFulfillment =\n  syncResp.complete_fulfillment === true ||\n  (syncResp.success === true && results.length > 0 && !results.some(isIncompleteSyncRow));\nconst fulfillmentStatus = syncResp.fulfillment_status || (completeFulfillment ? 'complete' : (partialFulfillment ? 'partial' : ''));\n\nreturn [{\n  json: {\n    success: buildPayload.create_success === true && syncResp.success === true,\n    action: \"create_order_with_lines\",\n    order_id: buildPayload.order_id || \"\",\n    order_status: \"Draft\",\n    status: \"Draft\",\n    message: buildPayload.create_message || \"\",\n    sync_success: syncResp.success === true,\n    sync_results: syncResp.lines_synced || results,\n    results: results,\n    partial_fulfillment: partialFulfillment,\n    complete_fulfillment: completeFulfillment,\n    fulfillment_status: fulfillmentStatus,\n    requested_total: syncResp.requested_total,\n    matched_total: syncResp.matched_total,\n    unmatched_total: syncResp.unmatched_total,\n    incomplete_items: Array.isArray(syncResp.incomplete_items) ? syncResp.incomplete_items : [],\n    sync_message: syncResp.message || \"\",\n    customer_name: $('Code - Normalize Order Payload').item.json.customer_name || \"\",\n    requested_category: $('Code - Normalize Order Payload').item.json.requested_category || \"\",\n    requested_weight_range: $('Code - Normalize Order Payload').item.json.requested_weight_range || \"\"\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

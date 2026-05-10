@@ -79,7 +79,7 @@ The CLARIFY branch does not wait through this fetch; only the AUTO path uses pre
 | Field | Source | Purpose |
 | --- | --- | --- |
 | `sam_order_state_slim` | Whitelisted copy of `order_state` | Safe, minimal order context for Sam's prompt. See whitelist below. |
-| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), `partial_fulfillment`, `had_partial`, optional **`partial_stock_detail`** (structured text: requested vs lined + same-category alternative bands), `summary`, `had_errors`. Does not duplicate `order_id` / `order_status` (those remain on the merged item and in the Sales Agent user template). |
+| `sam_steward_result_compact` | Short summary from steward fields on the merged item | When present: `success`, `message` (truncated), `backend_success`, `backend_error` (truncated), `complete_fulfillment`, `fulfillment_status`, `partial_fulfillment`, `had_partial`, `had_no_match`, `had_incomplete`, aggregate totals, optional **`partial_stock_detail`** (structured text: requested vs lined + same-category alternative bands), `summary`, `had_errors`. Does not duplicate `order_id` / `order_status` (those remain on the merged item and in the Sales Agent user template). |
 
 `sam_order_state_slim` whitelist (matches `Code - Slim Sales Agent User Context` in `1.0` export):
 
@@ -106,7 +106,7 @@ Currently live actions called by `1.0`:
 | `create_order` | Create a new draft order. | Customer fields, requested category/weight/sex/quantity, notes, conversation/contact IDs. |
 | `create_order_with_lines` | Create a new draft order and immediately sync requested order lines in one `1.2` execution. | Same as `create_order`, plus `requested_items[]` and `changed_by`. |
 | `update_order` | Update/enrich an existing draft header. | `order_id`, changed fields, `changed_by`. |
-| `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. Response includes `partial_fulfillment` when any item was a short allocation. |
+| `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. Response includes `complete_fulfillment`, `fulfillment_status`, quantity totals, and `partial_fulfillment`/`incomplete_items` when any requested item is short or no-match. |
 | `get_order_context` | Read-only draft context for Sam state merge. | `order_id`, `changed_by` (optional). Returns `order_context_fetch_ok`, `existing_order_context`. |
 | `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
 | `send_for_approval` | Submit draft to pending approval (`POST /api/orders/<order_id>/send-for-approval`). | `order_id`, `changed_by`; caller must satisfy backend guards (Draft, payment method, lines, etc.). |

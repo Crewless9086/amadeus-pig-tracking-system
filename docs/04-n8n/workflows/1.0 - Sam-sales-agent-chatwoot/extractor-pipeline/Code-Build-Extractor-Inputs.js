@@ -36,7 +36,7 @@ function capsFromSyncResults(syncRes, requestedWeightRange) {
   const capsMap = new Map();
   const rows = Array.isArray(syncRes) ? syncRes : [];
   for (const r of rows) {
-    if (!r || r.match_status !== "partial_match") continue;
+    if (!r || !["partial_match", "no_match"].includes(r.match_status)) continue;
     const wrReq = requestedWeightRange;
     const matched = Number(r.matched_quantity);
     if (wrReq && !Number.isNaN(matched) && matched > 0) {

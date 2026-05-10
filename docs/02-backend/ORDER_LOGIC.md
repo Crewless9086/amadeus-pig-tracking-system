@@ -63,7 +63,7 @@ Rules:
 - line totals should reflect what stock could actually be matched — see **Partial match sync** below
 - mixed-sex customer requests should store `ORDER_MASTER.Requested_Sex = Any`; the exact split belongs on `ORDER_LINES` through `requested_items[]` (`primary_1`, `primary_2`, etc.)
 
-## Partial match sync
+## Partial/no-match sync
 
 When available stock for a requested item is **greater than zero** but **less than** `requested_quantity`, the sync still creates one `ORDER_LINES` row per matched pig (up to availability). The response item includes:
 
@@ -75,7 +75,20 @@ When available stock for a requested item is **greater than zero** but **less th
 | `created_line_count` | Lines created for that item. |
 | `alternatives` | Same-category alternates for messaging. |
 
-The aggregate API response also includes `partial_fulfillment: true` when any line item returned `partial_match`. n8n/Sam use this to explain short allocation without implying the full requested quantity was secured.
+When a requested item has no matching sale-ready pigs, the response item uses `match_status: no_match`, `matched_quantity: 0`, and still returns same-category `alternatives` where available.
+
+The aggregate API response separates technical success from business completeness:
+
+| Field | Meaning |
+| --- | --- |
+| `success` | Backend sync call completed without processing errors. This can still be `true` for partial/no-match stock outcomes. |
+| `complete_fulfillment` | `true` only when total matched quantity equals total requested quantity and no item is partial/no-match/error. |
+| `partial_fulfillment` | `true` whenever the request is not completely fulfilled, including `partial_match` and `no_match`. |
+| `fulfillment_status` | `complete`, `partial`, `no_match`, or `error`. |
+| `requested_total`, `matched_total`, `unmatched_total` | Aggregate quantity counts across all requested items. |
+| `incomplete_items` | Compact list of rows where matched quantity is below requested quantity, including alternatives. |
+
+n8n/Sam must treat `complete_fulfillment`, not raw `success`, as the signal that the requested order lines are fully satisfied.
 
 Other rules:
 

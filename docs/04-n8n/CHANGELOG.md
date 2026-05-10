@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-10 - Phase 4.2 partial/no-match fulfillment contract
+
+Type: `FIX`
+
+**Summary:** Tightened partial stock handling across backend and n8n. `sync_order_lines_from_request` now reports `complete_fulfillment`, `fulfillment_status`, aggregate requested/matched/unmatched totals, and `incomplete_items`; `no_match` rows now count as incomplete fulfillment instead of looking like a complete sync. `1.2 - order-steward` passes these fields through direct sync and `create_order_with_lines`. `1.0 - Sam-sales-agent-chatwoot` marks `had_no_match` / `had_incomplete`, expands `partial_stock_detail` for no-match rows, and uses no-match alternatives when rebuilding follow-up offer caps.
+
+---
+
 ### 2026-05-10 - Phase 4.1 split item sync stabilization
 
 Type: `FIX`

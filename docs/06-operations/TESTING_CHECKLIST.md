@@ -206,6 +206,14 @@ Test steps:
 3. Confirm Sam does not claim the order is fully updated.
 4. Confirm incomplete lines do not silently look successful.
 
+Phase 4.2 regression:
+
+1. Use a split request where one `requested_items[]` row has no matching pigs and another row can match exactly, for example the live-stock guard noted on 2026-05-10: Grower `30_to_34_Kg`, quantity 3, `primary_1` Male x1 and `primary_2` Female x2 when that band has no Male stock.
+2. Confirm backend returns `success = true` for the completed sync call, but `complete_fulfillment = false`, `partial_fulfillment = true`, `fulfillment_status = partial`, `requested_total = 3`, `matched_total = 2`, and `unmatched_total = 1`.
+3. Confirm `incomplete_items[]` includes `primary_1` with `match_status = no_match`, requested 1, matched 0, plus alternatives when available.
+4. Confirm `1.2 - order-steward` passes the fulfillment fields through both direct sync and `create_order_with_lines`.
+5. Confirm `1.0 - Sam-sales-agent-chatwoot` exposes `had_no_match`, `had_incomplete`, and `partial_stock_detail` in `StewardCompact`, and Sam asks one follow-up instead of saying all 3 are on the draft.
+
 ## n8n Order Steward Tests
 
 For `1.2 - Amadeus Order Steward`, test only currently live `1.0` actions first:

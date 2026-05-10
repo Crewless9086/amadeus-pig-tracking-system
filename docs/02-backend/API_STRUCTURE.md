@@ -182,7 +182,7 @@ Important rules:
 - `request_item_key` is required and must remain stable across repeated syncs.
 - Split items such as `primary_1` and `primary_2` must both be preserved.
 - Exact-match sync can cancel/recreate lines.
-- **Partial match:** when some but not enough stock is available, the backend still creates lines for the matched pigs. Each result row can have `match_status: partial_match`, `matched_quantity` (fulfilled count), `available_quantity` (candidates matching filters), and the top-level response includes `partial_fulfillment: true` when any row was partial. Sam/n8n must not treat that as full quantity satisfaction.
+- **Partial/no-match:** when some but not enough stock is available, the backend still creates lines for the matched pigs. Each result row can have `match_status: partial_match`, `matched_quantity`, `available_quantity`, and `alternatives`. When no pigs match an item, the row uses `match_status: no_match`, `matched_quantity: 0`, and may still include alternatives. Top-level `success` means the sync call completed; Sam/n8n must use `complete_fulfillment`, `fulfillment_status`, `requested_total`, `matched_total`, `unmatched_total`, and `incomplete_items` to decide whether the customer request was fully satisfied.
 
 ## Quote Document Behavior (Phase 2.3)
 

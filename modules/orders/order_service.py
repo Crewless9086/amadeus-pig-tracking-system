@@ -1114,6 +1114,12 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     results = []
     had_errors = False
 
+    def _qty(value) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
     # One snapshot per sync avoids Google Sheets read quota bursts when multiple
     # requested_items each re-fetched SALES_AVAILABILITY + ORDER_LINES (and cancel
     # used a full ORDER_LINES read per line).
@@ -1298,9 +1304,42 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
                 "error": str(exc),
             })
 
-    partial_fulfillment = any(
-        r.get("match_status") == "partial_match" for r in results
+    requested_total = sum(max(0, _qty(r.get("requested_quantity"))) for r in results)
+    matched_total = sum(max(0, _qty(r.get("matched_quantity"))) for r in results)
+    unmatched_total = max(0, requested_total - matched_total)
+
+    incomplete_items = []
+    for r in results:
+        requested_quantity = max(0, _qty(r.get("requested_quantity")))
+        matched_quantity = max(0, _qty(r.get("matched_quantity")))
+        status = to_clean_string(r.get("match_status", ""))
+        if status in ("partial_match", "no_match", "error") or matched_quantity < requested_quantity:
+            incomplete_items.append({
+                "request_item_key": r.get("request_item_key", ""),
+                "match_status": status,
+                "requested_quantity": requested_quantity,
+                "matched_quantity": matched_quantity,
+                "unmatched_quantity": max(0, requested_quantity - matched_quantity),
+                "alternatives": r.get("alternatives", []),
+                "error": r.get("error", ""),
+            })
+
+    complete_fulfillment = (
+        not had_errors
+        and requested_total > 0
+        and unmatched_total == 0
+        and len(incomplete_items) == 0
     )
+    partial_fulfillment = not complete_fulfillment
+
+    if had_errors:
+        fulfillment_status = "error"
+    elif complete_fulfillment:
+        fulfillment_status = "complete"
+    elif matched_total > 0:
+        fulfillment_status = "partial"
+    else:
+        fulfillment_status = "no_match"
 
     return {
         "success": not had_errors,
@@ -1309,6 +1348,12 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         "changed_by": changed_by,
         "results": results,
         "partial_fulfillment": partial_fulfillment,
+        "complete_fulfillment": complete_fulfillment,
+        "fulfillment_status": fulfillment_status,
+        "requested_total": requested_total,
+        "matched_total": matched_total,
+        "unmatched_total": unmatched_total,
+        "incomplete_items": incomplete_items,
         "message": "Order line sync completed." if not had_errors else "Order line sync completed with errors.",
     }
 

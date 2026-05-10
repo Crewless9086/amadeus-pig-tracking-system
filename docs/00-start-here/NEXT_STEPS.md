@@ -620,11 +620,33 @@ Required outcome:
 
 ### 4.2 Define Partial Match Behavior
 
+Status: Repo Fix Ready; Pending Import And Live Verification.
+
 Required outcome:
 
 - partial stock matches are returned clearly
 - Sam does not confirm a complete update when backend only partially matched stock
 - line totals must match requested quantity before success is treated as complete
+
+Repo fix summary 2026-05-10:
+
+- Backend `sync_order_lines_from_request` now separates technical `success` from business completeness. It returns `complete_fulfillment`, `fulfillment_status`, `requested_total`, `matched_total`, `unmatched_total`, and `incomplete_items`.
+- `partial_fulfillment` now includes both `partial_match` and `no_match` outcomes. A split request with `primary_1 = no_match` and `primary_2 = exact_match` is no longer treated as complete just because the sync call succeeded.
+- `1.2 - order-steward` passes the fulfillment fields through direct sync and `create_order_with_lines`.
+- `1.0 - Sam-sales-agent-chatwoot` exposes `had_no_match`, `had_incomplete`, and detailed no-match/partial wording in `StewardCompact`; Sam's prompt now treats `complete_fulfillment = false` as an incomplete line sync.
+- `Code - Build Extractor Inputs` now includes alternatives from `no_match` sync rows when building `last_agent_offer.caps`, so follow-up mix confirmations can still use backend-confirmed alternatives.
+
+Verification completed locally:
+
+- Workflow JSON parses for `1.0` and `1.2`.
+- Mocked backend split sync: requested 3 Grower `30_to_34_Kg` pigs as 1 Male + 2 Female, with no Male and 2 Female available. Result: `success = true`, `complete_fulfillment = false`, `fulfillment_status = partial`, `requested_total = 3`, `matched_total = 2`, `unmatched_total = 1`, `primary_1 = no_match`, `primary_2 = exact_match`.
+- Node-level checks confirm `StewardCompact.partial_stock_detail` includes no-match rows and extractor caps include no-match alternatives.
+
+Next live check after backend deploy and workflow import:
+
+1. Import updated `1.0 - Sam-sales-agent-chatwoot` and `1.2 - order-steward`.
+2. Run the Phase 4.2 split no-match guard (`30-34kg`, 1 Male + 2 Female) only if live stock still has the same shortage.
+3. Confirm Sam says only the matched quantity is on the draft and asks one follow-up question using alternatives.
 
 ### 4.3 Validate `intent_type` And `status`
 
