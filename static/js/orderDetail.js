@@ -610,6 +610,7 @@ function renderOrderSummary(order, lines, documents) {
   const sentDocs = documents.filter(doc => doc.document_status === "Sent");
   const latestQuote = documents.find(doc => doc.document_type === "Quote" && doc.document_status !== "Voided");
   const latestInvoice = documents.find(doc => doc.document_type === "Invoice" && doc.document_status !== "Voided");
+  const payableTotal = latestInvoice?.total || latestQuote?.total || order.active_line_total || 0;
 
   summaryContainer.className = "order-summary-panel";
   summaryContainer.innerHTML = `
@@ -627,27 +628,29 @@ function renderOrderSummary(order, lines, documents) {
 
     <div class="summary-metric-grid">
       <div class="summary-metric">
-        <span>Total</span>
-        <strong>${formatMoney(order.final_total || latestInvoice?.total || latestQuote?.total || 0)}</strong>
+        <span>Payable Total</span>
+        <strong>${formatMoney(payableTotal)}</strong>
       </div>
       <div class="summary-metric">
-        <span>Lines</span>
-        <strong>${activeLines.length}</strong>
+        <span>Active Lines</span>
+        <strong>${order.active_line_count ?? activeLines.length}</strong>
       </div>
       <div class="summary-metric">
         <span>Reserved</span>
         <strong>${reservedLines.length}</strong>
       </div>
       <div class="summary-metric">
-        <span>Documents</span>
-        <strong>${documents.length}</strong>
+        <span>Active Line Total</span>
+        <strong>${formatMoney(order.active_line_total || 0)}</strong>
       </div>
     </div>
 
     <div class="summary-detail-strip">
+      <span>Documents: <strong>${documents.length}</strong></span>
       <span>Payment: <strong>${escapeHtml(order.payment_method || "-")}</strong></span>
       <span>Collection: <strong>${escapeHtml(order.collection_location || "-")}</strong></span>
       <span>Request: <strong>${escapeHtml(formatRequestSummary(order))}</strong></span>
+      <span>Cancelled lines: <strong>${order.cancelled_line_count ?? 0}</strong></span>
       <span>Sent docs: <strong>${sentDocs.length}</strong></span>
     </div>
 

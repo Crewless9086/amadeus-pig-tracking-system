@@ -37,8 +37,9 @@ async function loadOrders() {
                   <div class="pig-list-submeta">
                     Status: ${order.order_status || "-"} |
                     Approval: ${order.approval_status || "-"} |
-                    Lines: ${order.line_count || 0} |
-                    Final Total: ${order.final_total || 0}
+                    Active lines: ${order.active_line_count || 0} |
+                    Cancelled: ${order.cancelled_line_count || 0} |
+                    Active Total: ${formatMoney(order.active_line_total || 0)}
                   </div>
                 </a>
             `;
@@ -51,4 +52,13 @@ async function loadOrders() {
         messageBox.textContent = "Something went wrong while loading orders.";
         listContainer.innerHTML = "";
     }
+}
+
+function formatMoney(value) {
+    const amount = Number(value || 0);
+    if (Number.isNaN(amount)) return "R0.00";
+    return `R${amount.toLocaleString("en-ZA", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    })}`;
 }

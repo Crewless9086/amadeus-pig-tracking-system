@@ -513,6 +513,7 @@ Required outcome:
 - order summary section made cleaner and more operational: customer, status, totals, lines, reserved count, document count, payment, collection, request summary, and notes
 - document tiles are compact by default with an expand/collapse control for filename, dates, delivery state, notes, Drive link, and send action
 - order line tiles are compact by default with an expand/collapse control for full details and edit/delete controls
+- web app totals no longer rely on `ORDER_OVERVIEW.Final_Total` where cancelled lines can be included; API exposes `active_line_total` and UI uses latest document total for payable amount
 
 Follow-up usability improvements to plan after browser verification:
 

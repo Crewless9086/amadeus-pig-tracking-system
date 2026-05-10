@@ -324,6 +324,7 @@ Phase 2.6 repo checks:
 9. Order summary is compact and shows operational totals/status at a glance.
 10. Document rows are compact by default and expand for full details/actions.
 11. Order line rows are compact by default and expand for full details/edit controls.
+12. Order totals shown in the web app must not use `ORDER_OVERVIEW.Final_Total` when that formula includes cancelled lines; use latest document total for payable amount and `active_line_total` for active line value.
 
 Browser verification still required:
 

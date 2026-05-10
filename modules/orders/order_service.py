@@ -629,12 +629,15 @@ def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dic
 
 def list_orders():
     rows = get_all_records(ORDER_OVERVIEW_SHEET)
+    line_rollups = _build_order_line_rollups()
     records = []
 
     for row in rows:
         order_id = to_clean_string(row.get("Order_ID", ""))
         if not order_id:
             continue
+
+        rollup = line_rollups.get(order_id, _empty_order_line_rollup())
 
         records.append({
             "order_id": order_id,
@@ -657,6 +660,10 @@ def list_orders():
             "collection_date": format_date_for_json(row.get("Collection_Date", "")),
             "collection_location": to_clean_string(row.get("Collection_Location", "")),
             "line_count": to_float(row.get("Line_Count", "")) or 0,
+            "active_line_count": rollup["active_line_count"],
+            "cancelled_line_count": rollup["cancelled_line_count"],
+            "active_line_total": rollup["active_line_total"],
+            "all_line_total": rollup["all_line_total"],
             "reserved_line_count": to_float(row.get("Reserved_Line_Count", "")) or 0,
             "confirmed_line_count": to_float(row.get("Confirmed_Line_Count", "")) or 0,
             "collected_line_count": to_float(row.get("Collected_Line_Count", "")) or 0,
@@ -755,11 +762,57 @@ def get_order_detail(order_id: str):
     active_line_count = sum(
         1 for line in lines if to_clean_string(line.get("line_status", "")) != "Cancelled"
     )
+    active_line_total = sum(
+        float(line.get("unit_price") or 0)
+        for line in lines
+        if to_clean_string(line.get("line_status", "")) != "Cancelled"
+    )
+    all_line_total = sum(float(line.get("unit_price") or 0) for line in lines)
     order_record["active_line_count"] = active_line_count
+    order_record["cancelled_line_count"] = len(lines) - active_line_count
+    order_record["active_line_total"] = active_line_total
+    order_record["all_line_total"] = all_line_total
+    order_record["line_count_includes_cancelled"] = True
 
     return {
         "order": order_record,
         "lines": lines,
+    }
+
+
+def _build_order_line_rollups():
+    rows = get_all_records(ORDER_LINES_SHEET)
+    rollups = {}
+
+    for row in rows:
+        order_id = to_clean_string(row.get("Order_ID", ""))
+        if not order_id:
+            continue
+
+        rollup = rollups.setdefault(order_id, _empty_order_line_rollup())
+        line_status = to_clean_string(row.get("Line_Status", ""))
+        unit_price = to_float(row.get("Unit_Price", "")) or 0
+
+        rollup["all_line_count"] += 1
+        rollup["all_line_total"] += unit_price
+
+        if line_status == "Cancelled":
+            rollup["cancelled_line_count"] += 1
+            continue
+
+        rollup["active_line_count"] += 1
+        rollup["active_line_total"] += unit_price
+
+    return rollups
+
+
+def _empty_order_line_rollup():
+    return {
+        "all_line_count": 0,
+        "active_line_count": 0,
+        "cancelled_line_count": 0,
+        "active_line_total": 0,
+        "all_line_total": 0,
     }
 
 
