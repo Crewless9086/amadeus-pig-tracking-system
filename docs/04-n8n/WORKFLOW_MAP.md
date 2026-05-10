@@ -29,7 +29,7 @@ flowchart TD
   backend --> wf15["1.5 Outbound Document Delivery"]
   wf15 --> googleDrive["Google Drive"]
   wf15 --> chatwootReply
-  schedule["Daily Schedule"] --> wf20["2.0 Daily Order Summary"]
+  schedule["Daily Schedule"] --> wf20["1.6 Daily Order Summary"]
   wf20 --> backend
   wf20 --> telegramAlert
 ```
@@ -168,7 +168,7 @@ Primary responsibilities:
 
 Relationship to `1.0`: separate outbound workflow. `1.0` does not calculate document totals, generate PDFs, or send quote/invoice files independently.
 
-## `2.0 - Daily Order Summary`
+## `1.6 - Daily Order Summary`
 
 Role: scheduled operations report.
 

@@ -350,7 +350,7 @@ Phase 3.1 live read-only verification completed on 2026-05-10:
 
 Pre-check:
 
-1. Import `docs/04-n8n/workflows/2.0 - daily-order-summary/workflow.json`.
+1. Import `docs/04-n8n/workflows/1.6 - daily-order-summary/workflow.json`.
 2. Configure `Telegram - Send Daily Summary` with the approved Telegram credential.
 3. Confirm the Telegram target chat is the approved admin chat `5721652188`.
 4. Confirm `HTTP - Get Daily Summary` calls `https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary`.

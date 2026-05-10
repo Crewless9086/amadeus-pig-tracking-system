@@ -545,11 +545,11 @@ Status: Draft Workflow Added, Pending n8n Import And Manual Telegram Test.
 
 Required outcome:
 
-- n8n scheduled workflow fires daily (configurable time) - Draft added as `2.0 - Daily Order Summary`
+- n8n scheduled workflow fires daily (configurable time) - Draft added as `1.6 - Daily Order Summary`
 - calls backend summary endpoint - Done in draft: `GET https://amadeus-pig-tracking-system.onrender.com/api/reports/daily-summary`
 - formats output and sends to Telegram or email - Telegram draft added
 - MVP fallback is no longer needed because the backend report endpoint exists
-- next: import `docs/04-n8n/workflows/2.0 - daily-order-summary/workflow.json`, configure Telegram credential, run manual trigger, then activate schedule after message is checked
+- next: import `docs/04-n8n/workflows/1.6 - daily-order-summary/workflow.json`, configure Telegram credential, run manual trigger, then activate schedule after message is checked
 
 ## Phase 4: Requested Item Sync Stabilization
 

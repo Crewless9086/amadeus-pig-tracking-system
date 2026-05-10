@@ -1,4 +1,4 @@
-# 2.0 - Daily Order Summary
+# 1.6 - Daily Order Summary
 
 ## Role
 
