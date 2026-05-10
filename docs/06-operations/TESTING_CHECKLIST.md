@@ -309,6 +309,28 @@ Test steps:
 5. Confirm `Sent_At` and `Sent_By` are populated.
 6. Confirm no real customer conversation receives the Phase 2.5 test document.
 
+## Phase 2.6 Web App Document Controls Tests
+
+Phase 2.6 repo checks:
+
+1. `GET /api/orders/<order_id>` returns `documents[]` from `ORDER_DOCUMENTS`.
+2. Order detail page shows editable order header fields.
+3. Payment method is editable only while the order is `Draft`; backend remains the final lock.
+4. Order detail page shows generated documents with type, ref, status, total, payment method, created date, Drive link, and sent state.
+5. `Generate Quote` calls `POST /api/orders/<order_id>/quote` and refreshes the document list after success.
+6. `Generate Invoice` is disabled until the order is invoice-eligible and an active quote exists; backend remains the final guard.
+7. Document `Send` requires a Chatwoot conversation ID and asks for confirmation before calling `POST /api/order-documents/<document_id>/send`.
+8. Live read-only API check for `ORD-2026-01E18A` returned four documents from `ORDER_DOCUMENTS`.
+
+Browser verification still required:
+
+1. Open `/orders/ORD-2026-01E18A`.
+2. Confirm the Documents section renders all existing quote/invoice rows.
+3. Confirm the invoice row shows `Sent`.
+4. Confirm the quote rows show `Generated`.
+5. Confirm Drive links open the PDFs.
+6. Do not click `Send` on a real customer conversation unless explicitly approved.
+
 ## Web App Order Tests
 
 After backend behavior is safe, test the app for usability:

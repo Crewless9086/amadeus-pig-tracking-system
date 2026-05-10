@@ -21,6 +21,103 @@
 
       <div id="order_summary" class="detail-grid"></div>
 
+      <div class="operation-section">
+        <div class="section-title-row">
+          <div>
+            <h2>Order Header</h2>
+            <p>Update the customer request details used by Sam, approvals, quotes, and invoices.</p>
+          </div>
+        </div>
+
+        <form id="editOrderForm" class="weight-form">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="requested_quantity">Requested Quantity</label>
+              <input id="requested_quantity" name="requested_quantity" type="number" step="1" min="0" />
+            </div>
+
+            <div class="form-group">
+              <label for="payment_method">Payment Method</label>
+              <select id="payment_method" name="payment_method">
+                <option value="">Not set</option>
+                <option value="Cash">Cash</option>
+                <option value="EFT">EFT</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="requested_category">Requested Category</label>
+              <select id="requested_category" name="requested_category">
+                <option value="">Not set</option>
+                <option value="Piglet">Piglet</option>
+                <option value="Weaner">Weaner</option>
+                <option value="Grower">Grower</option>
+                <option value="Finisher">Finisher</option>
+                <option value="Slaughter">Slaughter</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="requested_weight_range">Requested Weight Range</label>
+              <select id="requested_weight_range" name="requested_weight_range">
+                <option value="">Not set</option>
+                <option value="2_to_4_Kg">2 to 4 Kg</option>
+                <option value="5_to_6_Kg">5 to 6 Kg</option>
+                <option value="7_to_9_Kg">7 to 9 Kg</option>
+                <option value="10_to_14_Kg">10 to 14 Kg</option>
+                <option value="15_to_19_Kg">15 to 19 Kg</option>
+                <option value="20_to_24_Kg">20 to 24 Kg</option>
+                <option value="25_to_29_Kg">25 to 29 Kg</option>
+                <option value="30_to_34_Kg">30 to 34 Kg</option>
+                <option value="35_to_39_Kg">35 to 39 Kg</option>
+                <option value="40_to_44_Kg">40 to 44 Kg</option>
+                <option value="45_to_49_Kg">45 to 49 Kg</option>
+                <option value="50_to_54_Kg">50 to 54 Kg</option>
+                <option value="55_to_59_Kg">55 to 59 Kg</option>
+                <option value="60_to_64_Kg">60 to 64 Kg</option>
+                <option value="65_to_69_Kg">65 to 69 Kg</option>
+                <option value="70_to_74_Kg">70 to 74 Kg</option>
+                <option value="75_to_79_Kg">75 to 79 Kg</option>
+                <option value="80_to_84_Kg">80 to 84 Kg</option>
+                <option value="85_to_89_Kg">85 to 89 Kg</option>
+                <option value="90_to_94_Kg">90 to 94 Kg</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="requested_sex">Requested Sex</label>
+              <select id="requested_sex" name="requested_sex">
+                <option value="">Not set</option>
+                <option value="Any">Any</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="collection_location">Collection Location</label>
+              <select id="collection_location" name="collection_location">
+                <option value="">Not set</option>
+                <option value="Riversdale">Riversdale</option>
+                <option value="Albertinia">Albertinia</option>
+                <option value="Any">Any</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="order_notes">Notes</label>
+            <textarea id="order_notes" name="order_notes"></textarea>
+          </div>
+
+          <div class="form-actions compact-actions">
+            <button id="save_order_btn" type="submit">Save Order Header</button>
+          </div>
+
+          <div id="edit_order_message" class="message-box hidden"></div>
+        </form>
+      </div>
+
       <div class="form-actions" style="margin-top: 18px;">
         <button id="reserve_order_btn" type="button">Reserve Order Lines</button>
         <button id="release_order_btn" type="button">Release Reserved Lines</button>
@@ -31,6 +128,30 @@
       </div>
 
       <div id="order_action_message" class="message-box hidden"></div>
+
+      <div class="operation-section">
+        <div class="section-title-row">
+          <div>
+            <h2>Documents</h2>
+            <p>Generate, view, and send quotes and invoices from the document register.</p>
+          </div>
+        </div>
+
+        <div class="document-control-row">
+          <div class="form-group document-conversation-field">
+            <label for="document_conversation_id">Chatwoot Conversation ID</label>
+            <input id="document_conversation_id" name="document_conversation_id" type="text" />
+          </div>
+
+          <div class="form-actions compact-actions document-actions">
+            <button id="generate_quote_btn" type="button">Generate Quote</button>
+            <button id="generate_invoice_btn" type="button">Generate Invoice</button>
+          </div>
+        </div>
+
+        <div id="document_action_message" class="message-box hidden"></div>
+        <div id="order_documents_list" class="history-list"></div>
+      </div>
 
       <div class="page-header" style="margin-top: 28px; margin-bottom: 16px;">
         <div>

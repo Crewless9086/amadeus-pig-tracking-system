@@ -226,6 +226,53 @@ textarea {
   margin: 0;
 }
 
+.operation-section {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.section-title-row h2 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.section-title-row p {
+  margin: 0;
+  color: var(--text-soft);
+}
+
+.document-control-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.document-actions {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+
+.document-card-actions {
+  align-items: center;
+  margin-top: 12px;
+}
+
+.document-item .history-label {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 button,
 .button-link {
   display: inline-flex;
@@ -623,8 +670,13 @@ button:disabled {
   .sales-meta-grid,
   .family-tree-parents,
   .family-tree-current,
-  .dashboard-actions-grid {
+  .dashboard-actions-grid,
+  .document-control-row {
     grid-template-columns: 1fr;
+  }
+
+  .document-actions {
+    justify-content: flex-start;
   }
 
   .info-card-wide,

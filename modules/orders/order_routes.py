@@ -20,7 +20,7 @@ from modules.orders.order_service import (
 )
 from modules.documents.quote_service import generate_quote_for_order
 from modules.documents.invoice_service import generate_invoice_for_order
-from modules.documents.document_service import send_order_document
+from modules.documents.document_service import get_order_documents, send_order_document
 from modules.orders.order_validation import (
     validate_new_order_payload,
     validate_update_order_payload,
@@ -56,6 +56,7 @@ def order_detail(order_id):
         "success": True,
         "order": detail["order"],
         "lines": detail["lines"],
+        "documents": _serialize_order_documents(get_order_documents(order_id)),
     })
 
 
@@ -334,3 +335,41 @@ def remove_order_line(order_line_id):
             "success": False,
             "errors": [str(exc)]
         }), 400
+
+
+def _serialize_order_documents(documents):
+    serialized = []
+
+    for row in documents:
+        serialized.append({
+            "document_id": str(row.get("Document_ID", "")).strip(),
+            "order_id": str(row.get("Order_ID", "")).strip(),
+            "document_type": str(row.get("Document_Type", "")).strip(),
+            "document_ref": str(row.get("Document_Ref", "")).strip(),
+            "payment_ref": str(row.get("Payment_Ref", "")).strip(),
+            "version": row.get("Version", ""),
+            "document_status": str(row.get("Document_Status", "")).strip(),
+            "payment_method": str(row.get("Payment_Method", "")).strip(),
+            "vat_rate": row.get("VAT_Rate", ""),
+            "subtotal_ex_vat": row.get("Subtotal_Ex_VAT", ""),
+            "vat_amount": row.get("VAT_Amount", ""),
+            "total": row.get("Total", ""),
+            "valid_until": str(row.get("Valid_Until", "")).strip(),
+            "google_drive_file_id": str(row.get("Google_Drive_File_ID", "")).strip(),
+            "google_drive_url": str(row.get("Google_Drive_URL", "")).strip(),
+            "file_name": str(row.get("File_Name", "")).strip(),
+            "created_at": str(row.get("Created_At", "")).strip(),
+            "created_by": str(row.get("Created_By", "")).strip(),
+            "sent_at": str(row.get("Sent_At", "")).strip(),
+            "sent_by": str(row.get("Sent_By", "")).strip(),
+            "notes": str(row.get("Notes", "")).strip(),
+        })
+
+    def sort_key(item):
+        try:
+            version = int(item.get("version") or 0)
+        except (TypeError, ValueError):
+            version = 0
+        return (item.get("document_type", ""), version, item.get("created_at", ""))
+
+    return sorted(serialized, key=sort_key, reverse=True)

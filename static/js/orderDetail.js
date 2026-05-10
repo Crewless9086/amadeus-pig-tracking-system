@@ -3,8 +3,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   loadOrderDetail(orderId);
   loadAvailablePigs();
+  setupEditOrderForm(orderId);
   setupOrderLineForm(orderId);
   setupOrderActions(orderId);
+  setupDocumentActions(orderId);
 });
 
 function showElement(element) {
@@ -71,6 +73,49 @@ function applyOrderActionVisibility(order) {
   }
 }
 
+function populateOrderHeaderForm(order) {
+  setFieldValue("requested_quantity", order.requested_quantity || "");
+  setFieldValue("requested_category", order.requested_category || "");
+  setFieldValue("requested_weight_range", order.requested_weight_range || "");
+  setFieldValue("requested_sex", order.requested_sex || "");
+  setFieldValue("collection_location", order.collection_location || "");
+  setFieldValue("payment_method", order.payment_method || "");
+  setFieldValue("order_notes", order.notes || "");
+
+  const paymentMethod = document.getElementById("payment_method");
+  if (paymentMethod) {
+    paymentMethod.disabled = (order.order_status || "").trim() !== "Draft";
+  }
+
+  const saveBtn = document.getElementById("save_order_btn");
+  if (saveBtn) {
+    const terminal = ["Cancelled", "Completed"].includes((order.order_status || "").trim());
+    saveBtn.disabled = terminal;
+  }
+}
+
+function setFieldValue(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.value = value === null || value === undefined ? "" : value;
+}
+
+function applyDocumentActionVisibility(order, documents) {
+  const quoteBtn = document.getElementById("generate_quote_btn");
+  const invoiceBtn = document.getElementById("generate_invoice_btn");
+  const conversationInput = document.getElementById("document_conversation_id");
+  const orderStatus = (order.order_status || "").trim();
+  const terminal = orderStatus === "Cancelled" || orderStatus === "Completed";
+  const hasQuote = documents.some(doc => doc.document_type === "Quote" && doc.document_status !== "Voided");
+  const invoiceEligible = orderStatus === "Approved" || orderStatus === "Completed";
+
+  if (conversationInput && !conversationInput.value) {
+    conversationInput.value = order.conversation_id || "";
+  }
+
+  if (quoteBtn) quoteBtn.disabled = terminal;
+  if (invoiceBtn) invoiceBtn.disabled = !invoiceEligible || !hasQuote;
+}
+
 async function loadOrderDetail(orderId) {
   const messageBox = document.getElementById("order_detail_message");
   const summaryContainer = document.getElementById("order_summary");
@@ -86,9 +131,13 @@ async function loadOrderDetail(orderId) {
 
     const order = data.order;
     const lines = data.lines || [];
+    const documents = data.documents || [];
 
     applyOrderActionVisibility(order);
+    populateOrderHeaderForm(order);
+    applyDocumentActionVisibility(order, documents);
     renderDraftLinesSummary(lines);
+    renderOrderDocuments(documents);
 
     summaryContainer.innerHTML = `
       <div class="detail-card">
@@ -119,6 +168,16 @@ async function loadOrderDetail(orderId) {
       <div class="detail-card">
         <div class="detail-label">Reserved Pig Count</div>
         <div class="detail-value">${order.reserved_pig_count || 0}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Payment Method</div>
+        <div class="detail-value">${order.payment_method || "-"}</div>
+      </div>
+
+      <div class="detail-card">
+        <div class="detail-label">Collection</div>
+        <div class="detail-value">${order.collection_location || "-"}</div>
       </div>
 
       <div class="detail-card">
@@ -281,6 +340,118 @@ function renderDraftLinesSummary(lines) {
   `;
 }
 
+function renderOrderDocuments(documents) {
+  const container = document.getElementById("order_documents_list");
+  if (!container) return;
+
+  if (!documents || documents.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div>No documents generated yet.</div>
+        <div>Generate a quote first, then generate an invoice after approval.</div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = documents.map(doc => {
+    const canSend = doc.document_status !== "Voided" && doc.google_drive_file_id;
+    const sentMeta = doc.sent_at
+      ? `Sent ${escapeHtml(doc.sent_at)}${doc.sent_by ? ` by ${escapeHtml(doc.sent_by)}` : ""}`
+      : "Not sent";
+    const driveLink = doc.google_drive_url
+      ? `<a class="secondary-link" href="${escapeHtml(doc.google_drive_url)}" target="_blank" rel="noopener">Open PDF</a>`
+      : "";
+
+    return `
+      <div class="history-item document-item">
+        <div class="history-item-top">
+          <div>
+            <div class="history-item-date">${escapeHtml(doc.document_ref || doc.document_id || "-")}</div>
+            <div class="history-label">${escapeHtml(doc.document_type || "-")} | ${escapeHtml(doc.file_name || "-")}</div>
+          </div>
+          <div class="history-item-weight">${escapeHtml(doc.document_status || "-")}</div>
+        </div>
+
+        <div class="history-item-grid">
+          <div>
+            <div class="history-label">Total</div>
+            <div class="history-value">${formatMoney(doc.total)}</div>
+          </div>
+          <div>
+            <div class="history-label">Payment</div>
+            <div class="history-value">${escapeHtml(doc.payment_method || "-")}</div>
+          </div>
+          <div>
+            <div class="history-label">Created</div>
+            <div class="history-value">${escapeHtml(doc.created_at || "-")}</div>
+          </div>
+          <div>
+            <div class="history-label">Delivery</div>
+            <div class="history-value">${sentMeta}</div>
+          </div>
+        </div>
+
+        ${doc.notes ? `<div class="history-notes"><div class="history-label">Notes</div><div>${escapeHtml(doc.notes)}</div></div>` : ""}
+
+        <div class="form-actions compact-actions document-card-actions">
+          ${driveLink}
+          <button type="button" ${canSend ? "" : "disabled"} onclick="sendDocument('${escapeJsValue(doc.document_id)}', '${escapeJsValue(doc.document_ref)}')">Send</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function setupEditOrderForm(orderId) {
+  const form = document.getElementById("editOrderForm");
+  const messageBox = document.getElementById("edit_order_message");
+  if (!form) return;
+
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+
+    const payload = {
+      requested_quantity: document.getElementById("requested_quantity")?.value || "",
+      requested_category: document.getElementById("requested_category")?.value || "",
+      requested_weight_range: document.getElementById("requested_weight_range")?.value || "",
+      requested_sex: document.getElementById("requested_sex")?.value || "",
+      collection_location: document.getElementById("collection_location")?.value || "",
+      notes: document.getElementById("order_notes")?.value || "",
+      changed_by: "App"
+    };
+
+    const paymentMethod = document.getElementById("payment_method");
+    if (paymentMethod && !paymentMethod.disabled) {
+      payload.payment_method = paymentMethod.value || "";
+    }
+
+    try {
+      const response = await fetch(`/api/master/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+      if (response.ok && result.success) {
+        messageBox.classList.add("message-success");
+        messageBox.textContent = "Order header saved.";
+        await loadOrderDetail(orderId);
+      } else {
+        messageBox.classList.add("message-error");
+        messageBox.textContent = (result.errors || [result.message || "Failed to save order header."]).join(" ");
+      }
+    } catch (error) {
+      console.error("Edit order error:", error);
+      messageBox.classList.remove("hidden", "message-success", "message-error");
+      messageBox.classList.add("message-error");
+      messageBox.textContent = "Failed to save order header.";
+    }
+  });
+}
+
 async function loadAvailablePigs() {
   const pigSelect = document.getElementById("pig_id");
   if (!pigSelect) return;
@@ -419,6 +590,97 @@ function setupOrderActions(orderId) {
       if (!confirmed) return;
       await runOrderAction(`/api/orders/${orderId}/complete`, actionMessage, orderId, "Order completed successfully. All pigs marked as sold.");
     });
+  }
+}
+
+function setupDocumentActions(orderId) {
+  const quoteBtn = document.getElementById("generate_quote_btn");
+  const invoiceBtn = document.getElementById("generate_invoice_btn");
+
+  if (quoteBtn) {
+    quoteBtn.addEventListener("click", async function () {
+      await runDocumentGeneration(`/api/orders/${orderId}/quote`, orderId, "Quote generated.");
+    });
+  }
+
+  if (invoiceBtn) {
+    invoiceBtn.addEventListener("click", async function () {
+      await runDocumentGeneration(`/api/orders/${orderId}/invoice`, orderId, "Invoice generated.");
+    });
+  }
+}
+
+async function runDocumentGeneration(url, orderId, successText) {
+  const messageBox = document.getElementById("document_action_message");
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ created_by: "App" })
+    });
+    const result = await response.json();
+
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    if (response.ok && result.success) {
+      messageBox.classList.add("message-success");
+      messageBox.textContent = `${successText} ${result.document_ref || ""}`.trim();
+      await loadOrderDetail(orderId);
+    } else {
+      messageBox.classList.add("message-error");
+      messageBox.textContent = (result.errors || [result.message || "Document generation failed."]).join(" ");
+    }
+  } catch (error) {
+    console.error("Document generation error:", error);
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    messageBox.classList.add("message-error");
+    messageBox.textContent = "Document generation failed.";
+  }
+}
+
+async function sendDocument(documentId, documentRef) {
+  const orderId = window.location.pathname.split("/").pop();
+  const messageBox = document.getElementById("document_action_message");
+  const conversationInput = document.getElementById("document_conversation_id");
+  const conversationId = (conversationInput?.value || "").trim();
+
+  if (!conversationId) {
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    messageBox.classList.add("message-error");
+    messageBox.textContent = "Conversation ID is required before sending a document.";
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Send ${documentRef || documentId} to Chatwoot conversation ${conversationId}?`
+  );
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(`/api/order-documents/${documentId}/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        sent_by: "App"
+      })
+    });
+    const result = await response.json();
+
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    if (response.ok && result.success) {
+      messageBox.classList.add("message-success");
+      messageBox.textContent = "Document sent successfully.";
+      await loadOrderDetail(orderId);
+    } else {
+      messageBox.classList.add("message-error");
+      messageBox.textContent = (result.errors || [result.error || result.message || "Document send failed."]).join(" ");
+    }
+  } catch (error) {
+    console.error("Document send error:", error);
+    messageBox.classList.remove("hidden", "message-success", "message-error");
+    messageBox.classList.add("message-error");
+    messageBox.textContent = "Document send failed.";
   }
 }
 
@@ -563,4 +825,20 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function escapeJsValue(value) {
+  return String(value || "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "\\'")
+    .replaceAll("\n", " ");
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0);
+  if (Number.isNaN(amount)) return "R0.00";
+  return `R${amount.toLocaleString("en-ZA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
 }

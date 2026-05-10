@@ -496,16 +496,28 @@ Required outcome:
 
 ### 2.6 Web App Document Controls
 
+Status: Implemented In Repo, Pending Browser/User Verification.
+
 Required outcome:
 
-- order detail page shows a Documents section
-- show generated document history from backend/`ORDER_DOCUMENTS`
-- buttons for `Generate Quote` and `Generate Invoice`
-- `Generate Invoice` only appears or succeeds when the backend says the order is eligible
-- later delivery buttons for `Send Quote` and `Send Invoice` after n8n delivery is implemented
-- show document type, ref, version, total, payment method, status, created date, Drive link, and sent state
-- show clear missing-data errors without requiring direct sheet access
-- operators should be able to handle quote/invoice workflows from the web app, not from Google Sheets
+- order detail page shows a Documents section - Done
+- show generated document history from backend/`ORDER_DOCUMENTS` - Done
+- buttons for `Generate Quote` and `Generate Invoice` - Done
+- `Generate Invoice` only appears or succeeds when the backend says the order is eligible - UI disables until an active quote exists and order is Approved/Completed; backend remains final guard
+- delivery buttons for generated quote/invoice documents - Done
+- delivery requires explicit Chatwoot conversation ID and confirmation - Done
+- show document type, ref, version, total, payment method, status, created date, Drive link, and sent state - Done
+- show clear missing-data errors without requiring direct sheet access - Done
+- operators should be able to handle quote/invoice workflows from the web app, not from Google Sheets - First slice done
+- order detail page now also includes an editable Order Header section for requested quantity/category/weight/sex, collection location, notes, and Draft-only payment method changes
+
+Follow-up usability improvements to plan after browser verification:
+
+- add order-list filters/search by status, customer, and document state
+- add safer admin controls for cancelling/rejecting with typed reasons
+- add line-level replacement flow so an operator can swap pigs without manually deleting and re-adding
+- add document void/supersede controls before production operators start regenerating many versions
+- add audit/history view from `ORDER_STATUS_LOG` and document sent events
 
 ## Phase 3: Daily Order Summary
 
