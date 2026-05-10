@@ -137,8 +137,11 @@ requested_weight_range = string = {{ $('Code - Normalize Order Payload').item.js
 requested_sex = string = {{ $('Code - Normalize Order Payload').item.json.requested_sex }}
 requested_quantity = string = {{ $('Code - Normalize Order Payload').item.json.requested_quantity }}
 quoted_total = string = {{ $('Code - Normalize Order Payload').item.json.quoted_total }}
+collection_location = string = {{ $('Code - Normalize Order Payload').item.json.collection_location }}
+payment_method = string = {{ $('Code - Normalize Order Payload').item.json.payment_method }}
 notes = string = {{ $('Code - Normalize Order Payload').item.json.notes }}
 created_by = string = {{ $('Code - Normalize Order Payload').item.json.changed_by }}
+conversation_id = string = {{ $('Code - Normalize Order Payload').item.json.conversation_id }}
 
 3.1.2 HTTP - Create Order
 Method: POST
@@ -1013,6 +1016,8 @@ Branch chain:
 Important ownership rule:
 
 `1.0` decides whether to call `create_order` or `create_order_with_lines`. `1.2` owns the actual create + sync operation.
+
+The create-with-lines body must carry the same header context as normal create: `collection_location`, `payment_method`, and `conversation_id` must not be dropped before the backend create call.
 
 `Code - Build Sync After Create Payload` must read `requested_items[]` from `Code - Normalize Order Payload`, not from the create-order HTTP response. At that point `$json` is the backend create response and does not contain the original requested items.
 

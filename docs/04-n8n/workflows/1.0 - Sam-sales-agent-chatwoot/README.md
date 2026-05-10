@@ -2357,6 +2357,8 @@ requested_weight_range = string = {{$json.order_state.requested_weight_range}}
 requested_sex = string = {{$json.order_state.requested_sex}}
 requested_quantity = string = {{$json.order_state.requested_quantity}}
 quoted_total = string = ""
+collection_location = string = {{$json.order_state.collection_location}}
+payment_method = string = {{$json.order_state.payment_method}}
 notes = string = {{$json.order_state.notes}}
 changed_by = string = Sam
 conversation_id = string = {{$json.order_state.conversation_id}}

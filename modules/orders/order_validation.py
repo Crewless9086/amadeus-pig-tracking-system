@@ -76,6 +76,8 @@ def validate_new_order_payload(payload: dict):
     requested_sex = str(payload.get("requested_sex", "")).strip()
     requested_quantity = payload.get("requested_quantity", "")
     quoted_total = payload.get("quoted_total", "")
+    collection_location = str(payload.get("collection_location", "")).strip()
+    payment_method = str(payload.get("payment_method", "")).strip()
     notes = str(payload.get("notes", "")).strip()
     created_by = str(payload.get("created_by", "")).strip()
     conversation_id = str(payload.get("conversation_id", "")).strip()
@@ -104,6 +106,12 @@ def validate_new_order_payload(payload: dict):
     if parsed_quoted_total is not None and parsed_quoted_total < 0:
         errors.append("Quoted_Total cannot be negative.")
 
+    if collection_location and collection_location not in ALLOWED_COLLECTION_LOCATIONS:
+        errors.append("Collection_Location must be Riversdale, Albertinia, or Any.")
+
+    if payment_method and payment_method not in ("Cash", "EFT"):
+        errors.append("Payment_Method must be Cash or EFT.")
+
     return {
         "is_valid": len(errors) == 0,
         "errors": errors,
@@ -119,6 +127,8 @@ def validate_new_order_payload(payload: dict):
             "requested_sex": requested_sex,
             "requested_quantity": parsed_requested_quantity,
             "quoted_total": parsed_quoted_total,
+            "collection_location": collection_location,
+            "payment_method": payment_method,
             "notes": notes,
             "created_by": created_by or "App",
             "conversation_id": conversation_id,

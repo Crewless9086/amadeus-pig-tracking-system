@@ -381,6 +381,18 @@
               "name": "requested_items",
               "value": "={{ $json.order_state?.requested_items || [] }}",
               "type": "array"
+            },
+            {
+              "id": "ea8267f3-69ad-41c6-b50d-06d8e82b1831",
+              "name": "collection_location",
+              "value": "={{$json.order_state.collection_location}}",
+              "type": "string"
+            },
+            {
+              "id": "3a289d4d-c6c9-4a1e-a2d9-f7bf33b43b12",
+              "name": "payment_method",
+              "value": "={{$json.order_state.payment_method}}",
+              "type": "string"
             }
           ]
         },

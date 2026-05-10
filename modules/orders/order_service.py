@@ -870,7 +870,7 @@ def create_order(cleaned_data: dict):
         "Draft",
         "Pending",
         "Collection_Only",
-        "",
+        cleaned_data.get("collection_location", ""),
         "",
         "Pending",
         0,
@@ -878,7 +878,7 @@ def create_order(cleaned_data: dict):
         cleaned_data["created_by"],
         today_str,
         today_str,
-        "",
+        cleaned_data.get("payment_method", ""),
         cleaned_data.get("conversation_id", ""),
     ]
 
