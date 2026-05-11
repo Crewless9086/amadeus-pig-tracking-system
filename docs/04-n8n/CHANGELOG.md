@@ -23,6 +23,10 @@ Type: `ADD`
 
 **Live test note:** First clean-conversation test exposed a `1.0` Chatwoot history fetch URL issue. `HTTP - Get Conversation Messages` was reading `account_id` and `conversation_id` from `conversation.messages[0]`, where those fields can be undefined. The export now builds that URL from the normalized Chatwoot IDs captured by `Code - Normalize Incoming Message`.
 
+**Follow-up correction:** The new `1.2` switch output for `get_active_customer_order_context` must use `={{ $json.action }}` like the other `Switch - Route by Action` branches. A bad `={{ .action }}` expression causes `invalid syntax` before the active lookup branch can run.
+
+**Lookup precision correction:** Conversation ID now takes priority over customer phone for active-order lookup. `1.0` sends phone only when no conversation ID is available, and the backend lookup uses exact `order_id`, then exact `conversation_id`, then phone fallback. This prevents a clean conversation from being diluted by older active orders on the same phone number.
+
 ---
 
 ### 2026-05-11 - Phase 4.3 requested item metadata validation

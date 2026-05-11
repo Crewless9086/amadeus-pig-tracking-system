@@ -264,6 +264,9 @@ Regression checks:
 9. `1.0` must not call the lookup for normal new sales messages such as "I want 2 piglets."
 10. If `ExistingOrderId` is present, `1.0` must keep using `get_order_context` instead of the fallback lookup.
 11. `HTTP - Get Conversation Messages` must build the Chatwoot URL from normalized `AccountId` and `ConversationId`; do not depend on `conversation.messages[0].account_id` or `conversation.messages[0].conversation_id`.
+12. `1.2` `Switch - Route by Action` output `Get Active Customer Order Context` must use left value `={{ $json.action }}`, matching the other action branches.
+13. When `conversation_id` is available, `1.0` should send that as the lookup key and leave `customer_phone` blank; phone is a fallback only when conversation ID is unavailable.
+14. Backend lookup priority must be exact `order_id`, then exact `conversation_id`, then phone fallback.
 
 Local verification reference:
 
@@ -271,6 +274,8 @@ Local verification reference:
 - 2026-05-11: phone lookup for `447388223114` returned `multiple_matches` for `ORD-2026-BDEFCE` and `ORD-2026-CEF70A`.
 - 2026-05-11: `1.0` local JS checks confirmed "What is on my order?" with no existing order ID sets `should_active_customer_lookup = true`; "I want 2 piglets" does not; and an existing order ID keeps fallback lookup disabled.
 - 2026-05-11: clean conversation `1774` first live run exposed the Chatwoot history URL ID-source issue. The `1.0` export was corrected to use normalized IDs before retest.
+- 2026-05-11: `1.2` switch branch syntax was corrected from `={{ .action }}` to `={{ $json.action }}` before the next retest.
+- 2026-05-11: conversation `1774` plus phone `447388223114` now returns `single_match` for `ORD-2026-8B7FC8`; phone-only still returns the expected multiple-match disambiguation.
 
 ## Phase 1.9 Outbound Notification Tests
 

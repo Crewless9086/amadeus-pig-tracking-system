@@ -3157,7 +3157,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const main = $json || {};\nconst inputs = main.active_customer_lookup_inputs || {};\n\nfunction clean(value) {\n  return String(value || '').trim();\n}\n\nreturn [{\n  json: {\n    action: 'get_active_customer_order_context',\n    conversation_id: clean(inputs.conversation_id || main.conversation_id || main.ConversationId),\n    customer_phone: clean(inputs.customer_phone || main.customer_phone || main.CustomerPhone),\n    changed_by: 'Sam'\n  }\n}];"
+        "jsCode": "const main = $json || {};\nconst inputs = main.active_customer_lookup_inputs || {};\n\nfunction clean(value) {\n  return String(value || '').trim();\n}\n\nconst conversationId = clean(inputs.conversation_id || main.conversation_id || main.ConversationId);\nconst customerPhone = conversationId\n  ? ''\n  : clean(inputs.customer_phone || main.customer_phone || main.CustomerPhone);\n\nreturn [{\n  json: {\n    action: 'get_active_customer_order_context',\n    conversation_id: conversationId,\n    customer_phone: customerPhone,\n    changed_by: 'Sam'\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

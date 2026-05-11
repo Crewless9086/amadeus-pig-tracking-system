@@ -332,7 +332,7 @@
                 "conditions": [
                   {
                     "id": "9e0ef90b-80e0-4267-b0bc-80f5a33b2b06",
-                    "leftValue": "={{ .action }}",
+                    "leftValue": "={{ $json.action }}",
                     "rightValue": "get_active_customer_order_context",
                     "operator": {
                       "type": "string",

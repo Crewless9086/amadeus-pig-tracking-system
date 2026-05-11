@@ -771,9 +771,12 @@ Sales agent export progress 2026-05-11:
 - Normal new sales messages do not trigger active-order lookup.
 - Single-match lookup injects safe order context into the existing order-state path; multiple-match lookup exposes short summaries so Sam can ask one disambiguation question.
 - Live test correction: `HTTP - Get Conversation Messages` now builds its Chatwoot API URL from normalized `AccountId` and `ConversationId`, because `conversation.messages[0].account_id` and `conversation.messages[0].conversation_id` can be undefined.
+- Live test correction: `1.2` `Switch - Route by Action` output `Get Active Customer Order Context` now uses `={{ $json.action }}` like the other branches.
+- Live test correction: conversation ID is now the preferred lookup key. Phone lookup is fallback-only so older active orders on the same phone number do not override a clean conversation-specific match.
 
 Next implementation step:
 
+- Deploy the backend lookup priority update.
 - Re-import the updated `1.0` export into n8n.
 - Rerun the clean conversation `1774` test against temporary order `ORD-2026-8B7FC8`.
 - After successful confirmation, cancel the temporary test order.

@@ -2736,7 +2736,7 @@ Flow:
 1. Existing exact-order path remains first: if `ExistingOrderId` exists, `1.0` calls `1.2` action `get_order_context`.
 2. If no exact order ID exists, `Code - Skip Order Context Fetch` now detects saved-order review/cancel/document-style wording.
 3. `If - Active Customer Lookup Needed` routes only those messages to `1.2`.
-4. `Code - Build Active Customer Lookup Payload` sends `action = get_active_customer_order_context`, plus `conversation_id` and `customer_phone` where available.
+4. `Code - Build Active Customer Lookup Payload` sends `action = get_active_customer_order_context` and prefers `conversation_id`; `customer_phone` is sent only when no conversation ID is available.
 5. `Call 1.2 - Get Active Customer Order Context` runs the steward lookup.
 6. `Code - Attach Active Customer Order Context` injects a single match into the existing order-state context shape, or passes multiple-match/no-match status to Sam as compact review context.
 

@@ -834,21 +834,34 @@ def get_active_customer_order_context(
         }
 
     records = list_orders()
+
+    active_records = [
+        record
+        for record in records
+        if _is_active_order_for_review(record)
+    ]
+
+    if conversation_id:
+        candidates = [
+            record
+            for record in active_records
+            if to_clean_string(record.get("conversation_id", "")) == conversation_id
+        ]
+        if candidates:
+            return _active_customer_order_lookup_from_candidates(candidates)
+
     candidates = []
+    if customer_phone:
+        candidates = [
+            record
+            for record in active_records
+            if _normalize_phone_for_lookup(record.get("customer_phone", "")) == customer_phone
+        ]
 
-    for record in records:
-        if not _is_active_order_for_review(record):
-            continue
+    return _active_customer_order_lookup_from_candidates(candidates)
 
-        if conversation_id and to_clean_string(record.get("conversation_id", "")) == conversation_id:
-            candidates.append(record)
-            continue
 
-        if customer_phone:
-            record_phone = _normalize_phone_for_lookup(record.get("customer_phone", ""))
-            if record_phone and record_phone == customer_phone:
-                candidates.append(record)
-
+def _active_customer_order_lookup_from_candidates(candidates):
     unique_candidates = {}
     for candidate in candidates:
         candidate_order_id = to_clean_string(candidate.get("order_id", ""))
