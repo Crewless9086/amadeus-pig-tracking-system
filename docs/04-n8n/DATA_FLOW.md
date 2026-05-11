@@ -72,6 +72,27 @@ Before `Switch - Clarify or Auto` on the AUTO preparation path, when `sales_agen
 
 The CLARIFY branch does not wait through this fetch; only the AUTO path uses prefetch.
 
+## Active customer order lookup fallback (`get_active_customer_order_context`)
+
+When there is no exact `ExistingOrderId`, `1.0` can call `1.2` with `action: get_active_customer_order_context`, but only for saved-order review/cancel/document-style messages such as:
+
+- "What is on my order?"
+- "Order status"
+- "Is my order approved?"
+- "Cancel my order"
+- "Send my quote/invoice"
+
+Normal new sales messages must not trigger this lookup. If an exact `ExistingOrderId` is present, the existing `get_order_context` path still wins.
+
+The fallback sends `conversation_id` and `customer_phone` when available. The steward calls backend `GET /api/orders/active-customer-context`.
+
+Handling rules:
+
+- `single_match`: injects the returned safe context into the existing `existing_order_context` path and exposes a compact active-order summary to Sam.
+- `multiple_matches`: exposes only short match summaries so Sam can ask one disambiguation question.
+- `no_match`: Sam should not invent an order; it should ask for the order reference or continue normal flow.
+- `terminal_order`: Sam may explain that the exact order is not active when that status is returned by the backend.
+
 ## `1.0` Sales Agent Input Contract (Phase 1.7)
 
 `Code - Slim Sales Agent User Context` runs immediately before `Ai Agent - Sales Agent` on all four main input paths. It produces two new fields and spreads the full item so all downstream routing and tool nodes continue to receive the complete payload.
@@ -108,6 +129,7 @@ Currently live actions called by `1.0`:
 | `update_order` | Update/enrich an existing draft header. | `order_id`, changed fields, `changed_by`. |
 | `sync_order_lines_from_request` | Sync order lines from structured requested items. | `order_id`, `requested_items[]`, `changed_by`. Response includes `complete_fulfillment`, `fulfillment_status`, quantity totals, and `partial_fulfillment`/`incomplete_items` when any requested item is short or no-match. |
 | `get_order_context` | Read-only draft context for Sam state merge. | `order_id`, `changed_by` (optional). Returns `order_context_fetch_ok`, `existing_order_context`. |
+| `get_active_customer_order_context` | Read-only active-order lookup for missing/stale Chatwoot order IDs. | `order_id`, `conversation_id`, or `customer_phone`. Calls backend `GET /api/orders/active-customer-context` and returns `lookup_status`, `match_count`, `active_order_context`, and `active_order_matches`. |
 | `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
 | `send_for_approval` | Submit draft to pending approval (`POST /api/orders/<order_id>/send-for-approval`). | `order_id`, `changed_by`; caller must satisfy backend guards (Draft, payment method, lines, etc.). |
 

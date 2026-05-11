@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from modules.orders.order_service import (
     list_orders,
     get_order_detail,
+    get_active_customer_order_context,
     get_available_pigs_for_orders,
     create_order,
     update_order,
@@ -40,6 +41,22 @@ def order_list():
         "count": len(records),
         "orders": records
     })
+
+
+@orders_bp.route("/orders/active-customer-context", methods=["GET"])
+def active_customer_order_context():
+    try:
+        result = get_active_customer_order_context(
+            order_id=request.args.get("order_id", ""),
+            conversation_id=request.args.get("conversation_id", ""),
+            customer_phone=request.args.get("customer_phone", ""),
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
 
 
 @orders_bp.route("/orders/<order_id>", methods=["GET"])

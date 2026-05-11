@@ -2719,3 +2719,41 @@ These must exist in the sheet header before 1.0's ticket-creation node can write
 
 Status: columns added to sheet 2026-04-29. Awaiting live import and end-to-end verification.
 
+---
+
+## Phase 5.2 Active Customer Order Lookup Fallback
+
+Added 2026-05-11.
+
+Purpose:
+
+- Recover safe active-order context when Chatwoot does not have `ExistingOrderId`.
+- Keep Sam behind backend-filtered order lookup instead of direct sheet access.
+- Avoid calling the lookup on normal new sales messages.
+
+Flow:
+
+1. Existing exact-order path remains first: if `ExistingOrderId` exists, `1.0` calls `1.2` action `get_order_context`.
+2. If no exact order ID exists, `Code - Skip Order Context Fetch` now detects saved-order review/cancel/document-style wording.
+3. `If - Active Customer Lookup Needed` routes only those messages to `1.2`.
+4. `Code - Build Active Customer Lookup Payload` sends `action = get_active_customer_order_context`, plus `conversation_id` and `customer_phone` where available.
+5. `Call 1.2 - Get Active Customer Order Context` runs the steward lookup.
+6. `Code - Attach Active Customer Order Context` injects a single match into the existing order-state context shape, or passes multiple-match/no-match status to Sam as compact review context.
+
+Trigger examples:
+
+- "What is on my order?"
+- "Order status"
+- "Is my order approved?"
+- "Cancel my order"
+- "Send my quote"
+- "Send my invoice"
+
+Non-trigger example:
+
+- "I want 2 piglets"
+
+Safety rule:
+
+If multiple active orders match, Sam must ask one disambiguation question. If no active order matches, Sam must not invent an order.
+

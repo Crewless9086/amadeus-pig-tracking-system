@@ -22,6 +22,8 @@ Fields it expects. Discriminator: **`action`**.
 
 **Read-only:** `get_order_context` — requires `order_id` (and optional `changed_by`). Returns slim `existing_order_context` for Sam state merge in `1.0`; uses `GET /api/orders/<order_id>`.
 
+**Read-only:** `get_active_customer_order_context` — requires at least one of `order_id`, `conversation_id`, or `customer_phone`. Returns backend-filtered active customer order lookup results from `GET /api/orders/active-customer-context`; it never reads `ORDER_MASTER` / `ORDER_OVERVIEW` directly inside n8n.
+
 Other actions: see `workflow.json` switch rules and `DATA_FLOW.md`.
 
 ## Outputs
@@ -121,6 +123,47 @@ Mode: Rule
 {{ $json.action }} is equal to cancel_order
 {{ $json.action }} is equal to update_order
 {{ $json.action }} is equal to sync_order_lines_from_request
+{{ $json.action }} is equal to get_active_customer_order_context
+
+### Read-only active customer order lookup
+
+Action:
+
+```json
+{
+  "action": "get_active_customer_order_context",
+  "order_id": "ORD-2026-BDEFCE",
+  "conversation_id": "1742",
+  "customer_phone": "447388223114"
+}
+```
+
+At least one identifier is required. `order_id` is preferred when known. `conversation_id` and `customer_phone` are fallback identifiers for missing/stale Chatwoot order context.
+
+Flow:
+
+1. `Switch - Route by Action`
+2. `HTTP - Get Active Customer Order Context`
+3. `Code - Format Active Customer Order Context Result`
+
+Backend endpoint:
+
+`GET /api/orders/active-customer-context`
+
+Returned fields:
+
+- `success`
+- `action = get_active_customer_order_context`
+- `lookup_status` (`single_match`, `multiple_matches`, `no_match`, `terminal_order`, or `error`)
+- `match_count`
+- `active_order_context_fetch_ok`
+- `active_order_context`
+- `active_order_matches`
+- `lookup_inputs`
+
+Safety rule:
+
+This action is for Sam/customer-facing review context only. It returns the backend-filtered shape and must not be replaced with direct reads from `ORDER_OVERVIEW` or the full `/api/orders` list.
 
 3.1 - Create Order
 3.1.1 Set - Build Create Order Body

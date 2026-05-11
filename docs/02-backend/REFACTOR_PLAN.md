@@ -38,17 +38,29 @@ Tasks:
 
 Goal: let Sam understand saved order state safely.
 
+Current state:
+
+- By-ID review is already live through `GET /api/orders/<order_id>` and `1.2` `get_order_context`.
+- The missing backend/steward capability is safe active customer order lookup when Sam does not already have the exact `order_id`.
+
 Preferred direction:
 
-- Add an Order Steward/backend review action rather than direct AI access to `ORDER_OVERVIEW`.
-- Backend should find relevant customer orders, filter fields, and return a safe summary.
+- Add an Order Steward/backend lookup action rather than direct AI access to `ORDER_OVERVIEW` or the full `/api/orders` list.
+- Backend should find relevant customer orders by safe identifiers (`conversation_id`, `customer_phone`, exact `order_id`), filter fields, and return a safe summary.
 - Sam can then answer based on backend-confirmed truth.
+- Keep `ORDER_MASTER` as the operational source for now; archive/history splitting is a future scaling decision, not part of the immediate review fix.
 
-Possible action name:
+Possible action names:
 
-- `review_order`
-- `find_customer_orders`
-- `get_active_customer_order_context`
+- `get_active_customer_order_context` - preferred for the next implementation.
+- `find_customer_orders` - useful companion for multiple matches/history.
+- `review_order` - optional wrapper name if the behavior becomes broader later.
+
+Archive/history note:
+
+- Do not create a separate `ORDER_HISTORY` sheet yet.
+- Use `ORDER_STATUS_LOG`, `ORDER_DOCUMENTS`, `ORDER_LINES`, and filtered API views for history.
+- Revisit an archive/read-model only when sheet size, formula performance, or operations clutter justifies the extra source-of-truth complexity.
 
 ## Phase 4: Split `order_service.py`
 

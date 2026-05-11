@@ -1485,7 +1485,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const main = $json || {};\nreturn [{ json: { ...main, existing_order_context: null, order_context_fetch_ok: true } }];"
+        "jsCode": "const main = $json || {};\n\nfunction clean(value) {\n  return String(value || '').trim();\n}\n\nconst raw = main.Raw || {};\nconst sender = raw.sender || {};\nconst conversation = raw.conversation || {};\nconst msg = clean(main.customer_message || main.CustomerMessage || '').toLowerCase();\nconst existingOrderId = clean(\n  main.sales_agent_memory?.existing_order_id ||\n  main.existing_order_id ||\n  main.ExistingOrderId ||\n  ''\n);\nconst conversationId = clean(main.conversation_id || main.ConversationId || conversation.id || '');\nconst customerPhone = clean(\n  main.customer_phone ||\n  main.CustomerPhone ||\n  sender.phone_number ||\n  sender.identifier ||\n  raw.contact?.phone_number ||\n  ''\n);\n\nconst asksSavedOrderReview =\n  /\\bmy\\s+order\\b/i.test(msg) ||\n  /\\border\\s+status\\b/i.test(msg) ||\n  /\\bstatus\\s+of\\s+(?:my|the)\\s+order\\b/i.test(msg) ||\n  /\\bwhat(?:'s|\\s+is)\\s+on\\s+my\\s+order\\b/i.test(msg) ||\n  /\\bwhat\\s+did\\s+i\\s+order\\b/i.test(msg) ||\n  /\\bhow\\s+many\\s+(?:pigs?|piglets?|weaners?)\\s+did\\s+i\\s+order\\b/i.test(msg) ||\n  /\\bis\\s+(?:my|the)\\s+order\\s+approved\\b/i.test(msg) ||\n  /\\bhas\\s+(?:my|the)\\s+order\\s+been\\s+approved\\b/i.test(msg) ||\n  /\\bcancel\\s+(?:my|the)\\s+order\\b/i.test(msg) ||\n  /\\b(?:send|resend|get)\\s+(?:my\\s+)?(?:quote|invoice)\\b/i.test(msg) ||\n  /\\b(?:old|previous)\\s+(?:quote|invoice|order)\\b/i.test(msg);\n\nconst hasLookupIdentifier = conversationId !== '' || customerPhone !== '';\nconst shouldLookup = existingOrderId === '' && hasLookupIdentifier && asksSavedOrderReview;\n\nreturn [{\n  json: {\n    ...main,\n    existing_order_context: null,\n    order_context_fetch_ok: true,\n    should_active_customer_lookup: shouldLookup,\n    active_customer_lookup_reason: shouldLookup ? 'saved_order_review_without_order_id' : '',\n    active_customer_lookup_inputs: {\n      conversation_id: conversationId,\n      customer_phone: customerPhone\n    }\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -2074,7 +2074,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first().json;\nconst os = item.order_state || {};\nconst slim = {};\n\nif (os.customer_name) slim.customer_name = os.customer_name;\nif (os.customer_language) slim.customer_language = os.customer_language;\nif (os.existing_order_id) slim.existing_order_id = os.existing_order_id;\nif (os.existing_order_status) slim.existing_order_status = os.existing_order_status;\nif (os.conversation_mode) slim.conversation_mode = os.conversation_mode;\nif (os.pending_action) slim.pending_action = os.pending_action;\n\nconst validPm = ['Cash', 'EFT'];\nconst pm = validPm.includes(os.detected_payment_method) ? os.detected_payment_method\n         : validPm.includes(os.payment_method) ? os.payment_method\n         : null;\nif (pm) slim.payment_method = pm;\n\nif (os.requested_quantity != null) slim.requested_quantity = os.requested_quantity;\nif (os.requested_category) slim.requested_category = os.requested_category;\nif (os.requested_weight_range) slim.requested_weight_range = os.requested_weight_range;\nif (os.requested_sex) slim.requested_sex = os.requested_sex;\nif (os.timing_preference) slim.timing_preference = os.timing_preference;\nif (os.collection_location) slim.collection_location = os.collection_location;\n\nconst intents = ['quote_intent', 'order_commitment_intent', 'conversation_commitment_intent', 'cancel_order_intent', 'send_for_approval_intent', 'has_existing_draft'];\nfor (const key of intents) {\n  if (os[key] !== undefined) slim[key] = os[key];\n}\n\nif (Array.isArray(os.requested_items) && os.requested_items.length > 0) {\n  slim.requested_items_compact = os.requested_items.slice(0, 5).map(function(i) {\n    return { qty: i.quantity, sex: i.sex, category: i.category, weight_range: i.weight_range };\n  });\n}\n\nfunction toNum(value) {\n  const n = Number(value);\n  return Number.isNaN(n) ? 0 : n;\n}\n\nfunction isIncompleteSyncRow(r) {\n  if (!r) return false;\n  const status = r.match_status || '';\n  const requested = toNum(r.requested_quantity);\n  const matched = toNum(r.matched_quantity);\n  return ['partial_match', 'no_match', 'error'].includes(status) || matched < requested;\n}\n\nconst sc = {};\nif (item.success !== undefined) {\n  sc.success = item.success;\n  if (item.message) sc.message = String(item.message).slice(0, 200);\n}\nif (item.backend_success !== undefined) sc.backend_success = item.backend_success;\nif (item.backend_error) sc.backend_error = String(item.backend_error).slice(0, 200);\nif (item.complete_fulfillment !== undefined) sc.complete_fulfillment = item.complete_fulfillment;\nif (item.fulfillment_status) sc.fulfillment_status = item.fulfillment_status;\nif (item.requested_total != null) sc.requested_total = item.requested_total;\nif (item.matched_total != null) sc.matched_total = item.matched_total;\nif (item.unmatched_total != null) sc.unmatched_total = item.unmatched_total;\n\nconst syncRes = Array.isArray(item.results) && item.results.length\n  ? item.results\n  : (Array.isArray(item.sync_results) && item.sync_results.length ? item.sync_results : []);\n\nif (item.partial_fulfillment === true) sc.partial_fulfillment = true;\n\nif (syncRes.length > 0) {\n  sc.had_errors = syncRes.some(function(r) { return r.error && r.error !== ''; });\n  sc.had_partial = syncRes.some(function(r) { return r.match_status === 'partial_match'; });\n  sc.had_no_match = syncRes.some(function(r) { return r.match_status === 'no_match'; });\n  sc.had_incomplete = syncRes.some(isIncompleteSyncRow);\n  if (sc.had_partial || sc.had_no_match || sc.had_incomplete) sc.partial_fulfillment = true;\n  if (sc.had_incomplete && sc.complete_fulfillment === undefined) sc.complete_fulfillment = false;\n\n  const raw = syncRes.map(function(r) { return (r.request_item_key || '?') + ': ' + (r.match_status || '?'); }).join(', ');\n  sc.summary = raw.length > 300 ? raw.slice(0, 297) + '...' : raw;\n\n  const partialBits = [];\n  for (let i = 0; i < syncRes.length; i++) {\n    const r = syncRes[i];\n    if (!isIncompleteSyncRow(r)) continue;\n    const key = r.request_item_key || ('item_' + (i + 1));\n    const status = r.match_status || 'unknown';\n    const req = r.requested_quantity;\n    const lined = r.matched_quantity;\n    const avail = r.available_quantity;\n    let altStr = '';\n    if (Array.isArray(r.alternatives) && r.alternatives.length > 0) {\n      altStr = r.alternatives.slice(0, 4).map(function(a) {\n        const band = a.weight_band || a.sale_category || '?';\n        const n = a.available_count != null ? a.available_count : '';\n        return n !== '' ? (band + ' x' + n) : band;\n      }).join('; ');\n    }\n    let chunk = key + ': status=' + status + ', requested=' + req + ', added_to_draft=' + lined;\n    if (avail != null && avail !== '') chunk += ', matched_in_requested_band=' + avail;\n    if (altStr) chunk += '; other_bands_same_category=' + altStr;\n    partialBits.push(chunk);\n  }\n  if (partialBits.length > 0) {\n    sc.partial_stock_detail = partialBits.join(' | ').slice(0, 550);\n  }\n}\n\nconst out = Object.assign({}, item, { sam_order_state_slim: slim });\nif (Object.keys(sc).length > 0) out.sam_steward_result_compact = sc;\n\nreturn [{ json: out }];"
+        "jsCode": "const item = $input.first().json;\nconst os = item.order_state || {};\nconst slim = {};\n\nif (os.customer_name) slim.customer_name = os.customer_name;\nif (os.customer_language) slim.customer_language = os.customer_language;\nif (os.existing_order_id) slim.existing_order_id = os.existing_order_id;\nif (os.existing_order_status) slim.existing_order_status = os.existing_order_status;\nif (os.conversation_mode) slim.conversation_mode = os.conversation_mode;\nif (os.pending_action) slim.pending_action = os.pending_action;\n\nconst validPm = ['Cash', 'EFT'];\nconst pm = validPm.includes(os.detected_payment_method) ? os.detected_payment_method\n         : validPm.includes(os.payment_method) ? os.payment_method\n         : null;\nif (pm) slim.payment_method = pm;\n\nif (os.requested_quantity != null) slim.requested_quantity = os.requested_quantity;\nif (os.requested_category) slim.requested_category = os.requested_category;\nif (os.requested_weight_range) slim.requested_weight_range = os.requested_weight_range;\nif (os.requested_sex) slim.requested_sex = os.requested_sex;\nif (os.timing_preference) slim.timing_preference = os.timing_preference;\nif (os.collection_location) slim.collection_location = os.collection_location;\n\nconst intents = ['quote_intent', 'order_commitment_intent', 'conversation_commitment_intent', 'cancel_order_intent', 'send_for_approval_intent', 'has_existing_draft'];\nfor (const key of intents) {\n  if (os[key] !== undefined) slim[key] = os[key];\n}\n\nif (Array.isArray(os.requested_items) && os.requested_items.length > 0) {\n  slim.requested_items_compact = os.requested_items.slice(0, 5).map(function(i) {\n    return { qty: i.quantity, sex: i.sex, category: i.category, weight_range: i.weight_range };\n  });\n}\n\nfunction toNum(value) {\n  const n = Number(value);\n  return Number.isNaN(n) ? 0 : n;\n}\n\nfunction isIncompleteSyncRow(r) {\n  if (!r) return false;\n  const status = r.match_status || '';\n  const requested = toNum(r.requested_quantity);\n  const matched = toNum(r.matched_quantity);\n  return ['partial_match', 'no_match', 'error'].includes(status) || matched < requested;\n}\n\nconst sc = {};\nif (item.success !== undefined) {\n  sc.success = item.success;\n  if (item.message) sc.message = String(item.message).slice(0, 200);\n}\nif (item.backend_success !== undefined) sc.backend_success = item.backend_success;\nif (item.backend_error) sc.backend_error = String(item.backend_error).slice(0, 200);\nif (item.complete_fulfillment !== undefined) sc.complete_fulfillment = item.complete_fulfillment;\nif (item.fulfillment_status) sc.fulfillment_status = item.fulfillment_status;\nif (item.requested_total != null) sc.requested_total = item.requested_total;\nif (item.matched_total != null) sc.matched_total = item.matched_total;\nif (item.unmatched_total != null) sc.unmatched_total = item.unmatched_total;\n\nconst syncRes = Array.isArray(item.results) && item.results.length\n  ? item.results\n  : (Array.isArray(item.sync_results) && item.sync_results.length ? item.sync_results : []);\n\nif (item.partial_fulfillment === true) sc.partial_fulfillment = true;\n\nif (syncRes.length > 0) {\n  sc.had_errors = syncRes.some(function(r) { return r.error && r.error !== ''; });\n  sc.had_partial = syncRes.some(function(r) { return r.match_status === 'partial_match'; });\n  sc.had_no_match = syncRes.some(function(r) { return r.match_status === 'no_match'; });\n  sc.had_incomplete = syncRes.some(isIncompleteSyncRow);\n  if (sc.had_partial || sc.had_no_match || sc.had_incomplete) sc.partial_fulfillment = true;\n  if (sc.had_incomplete && sc.complete_fulfillment === undefined) sc.complete_fulfillment = false;\n\n  const raw = syncRes.map(function(r) { return (r.request_item_key || '?') + ': ' + (r.match_status || '?'); }).join(', ');\n  sc.summary = raw.length > 300 ? raw.slice(0, 297) + '...' : raw;\n\n  const partialBits = [];\n  for (let i = 0; i < syncRes.length; i++) {\n    const r = syncRes[i];\n    if (!isIncompleteSyncRow(r)) continue;\n    const key = r.request_item_key || ('item_' + (i + 1));\n    const status = r.match_status || 'unknown';\n    const req = r.requested_quantity;\n    const lined = r.matched_quantity;\n    const avail = r.available_quantity;\n    let altStr = '';\n    if (Array.isArray(r.alternatives) && r.alternatives.length > 0) {\n      altStr = r.alternatives.slice(0, 4).map(function(a) {\n        const band = a.weight_band || a.sale_category || '?';\n        const n = a.available_count != null ? a.available_count : '';\n        return n !== '' ? (band + ' x' + n) : band;\n      }).join('; ');\n    }\n    let chunk = key + ': status=' + status + ', requested=' + req + ', added_to_draft=' + lined;\n    if (avail != null && avail !== '') chunk += ', matched_in_requested_band=' + avail;\n    if (altStr) chunk += '; other_bands_same_category=' + altStr;\n    partialBits.push(chunk);\n  }\n  if (partialBits.length > 0) {\n    sc.partial_stock_detail = partialBits.join(' | ').slice(0, 550);\n  }\n}\n\nif (item.active_order_lookup_status) {\n  sc.active_order_lookup_status = item.active_order_lookup_status;\n  sc.active_order_match_count = item.active_order_match_count || 0;\n  if (item.active_order_lookup_message) {\n    sc.active_order_lookup_message = String(item.active_order_lookup_message).slice(0, 200);\n  }\n}\n\nif (item.active_order_context && item.active_order_context.order) {\n  const ao = item.active_order_context.order;\n  sc.active_order_summary = [\n    ao.order_id,\n    ao.order_status,\n    ao.approval_status,\n    ao.requested_quantity ? ('qty ' + ao.requested_quantity) : '',\n    ao.requested_category,\n    ao.requested_weight_range,\n    ao.requested_sex,\n    ao.collection_location,\n    ao.payment_method ? ('payment ' + ao.payment_method) : '',\n    ao.active_line_count != null ? ('active lines ' + ao.active_line_count) : '',\n    ao.active_line_total != null ? ('active total ' + ao.active_line_total) : ''\n  ].filter(Boolean).join(' | ').slice(0, 400);\n\n  if (Array.isArray(item.active_order_context.line_groups) && item.active_order_context.line_groups.length > 0) {\n    sc.active_order_line_groups = item.active_order_context.line_groups.slice(0, 5).map(function(g) {\n      return [g.quantity + 'x', g.sex, g.sale_category, g.weight_band, g.line_status, g.reserved_status, g.unit_price ? ('R' + g.unit_price) : ''].filter(Boolean).join(' ');\n    }).join('; ').slice(0, 400);\n  }\n}\n\nif (Array.isArray(item.active_order_matches) && item.active_order_matches.length > 0) {\n  sc.active_order_matches = item.active_order_matches.slice(0, 5).map(function(m) {\n    return [\n      m.order_id,\n      m.order_status,\n      m.requested_quantity ? ('qty ' + m.requested_quantity) : '',\n      m.requested_category,\n      m.requested_weight_range,\n      m.active_line_count != null ? ('active lines ' + m.active_line_count) : ''\n    ].filter(Boolean).join(' | ');\n  }).join(' || ').slice(0, 500);\n}\n\nconst out = Object.assign({}, item, { sam_order_state_slim: slim });\nif (Object.keys(sc).length > 0) out.sam_steward_result_compact = sc;\n\nreturn [{ json: out }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -3121,6 +3121,93 @@
       ],
       "id": "b5acecc9-f996-48b8-ae21-a112778e2486",
       "name": "Code - Merge Extractor Into Order State"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "active-order-lookup-needed",
+              "leftValue": "={{ $json.should_active_customer_lookup === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        93408,
+        18768
+      ],
+      "id": "a7e7f5eb-fc25-405c-92c8-508fb579d93d",
+      "name": "If - Active Customer Lookup Needed"
+    },
+    {
+      "parameters": {
+        "jsCode": "const main = $json || {};\nconst inputs = main.active_customer_lookup_inputs || {};\n\nfunction clean(value) {\n  return String(value || '').trim();\n}\n\nreturn [{\n  json: {\n    action: 'get_active_customer_order_context',\n    conversation_id: clean(inputs.conversation_id || main.conversation_id || main.ConversationId),\n    customer_phone: clean(inputs.customer_phone || main.customer_phone || main.CustomerPhone),\n    changed_by: 'Sam'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        93616,
+        18688
+      ],
+      "id": "7624a350-58c4-46ef-9453-d0dd41081482",
+      "name": "Code - Build Active Customer Lookup Payload"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YDRs6fwde7MzPYn7",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/YDRs6fwde7MzPYn7",
+          "cachedResultName": "My project — 1.2 - Amadeus Order Steward"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        93824,
+        18688
+      ],
+      "id": "8fe90270-33fa-4433-a5f2-9965438d76be",
+      "name": "Call 1.2 - Get Active Customer Order Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "const main = $('Code - Skip Order Context Fetch').first().json;\nconst r = $json || {};\nconst lookupStatus = String(r.lookup_status || '').trim();\nconst activeCtx = r.active_order_context && typeof r.active_order_context === 'object'\n  ? r.active_order_context\n  : null;\nconst activeOrder = activeCtx && activeCtx.order ? activeCtx.order : null;\nconst singleMatch = r.active_order_context_fetch_ok === true && lookupStatus === 'single_match' && Boolean(activeOrder);\n\nlet existingCtx = null;\nif (singleMatch) {\n  existingCtx = {\n    order: {\n      order_id: activeOrder.order_id || '',\n      order_status: activeOrder.order_status || '',\n      approval_status: activeOrder.approval_status || '',\n      payment_status: activeOrder.payment_status || '',\n      requested_category: activeOrder.requested_category || '',\n      requested_weight_range: activeOrder.requested_weight_range || '',\n      requested_sex: activeOrder.requested_sex || '',\n      requested_quantity: activeOrder.requested_quantity,\n      collection_location: activeOrder.collection_location || '',\n      line_count: activeOrder.active_line_count,\n      active_line_count: activeOrder.active_line_count,\n      line_count_includes_cancelled: true,\n      payment_method: activeOrder.payment_method || ''\n    },\n    lines: []\n  };\n}\n\nconst orderId = singleMatch ? String(activeOrder.order_id || '').trim() : '';\nconst orderStatus = singleMatch ? String(activeOrder.order_status || '').trim() : '';\n\nreturn [{\n  json: {\n    ...main,\n    existing_order_id: orderId || main.existing_order_id || '',\n    ExistingOrderId: orderId || main.ExistingOrderId || '',\n    existing_order_status: orderStatus || main.existing_order_status || '',\n    ExistingOrderStatus: orderStatus || main.ExistingOrderStatus || '',\n    existing_order_context: existingCtx,\n    order_context_fetch_ok: singleMatch || lookupStatus !== 'single_match',\n    active_order_context_fetch_ok: r.active_order_context_fetch_ok === true,\n    active_order_lookup_status: lookupStatus || 'error',\n    active_order_match_count: Number(r.match_count || 0),\n    active_order_context: activeCtx,\n    active_order_matches: Array.isArray(r.active_order_matches) ? r.active_order_matches : [],\n    active_order_lookup_message: String(r.message || '').slice(0, 500)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        94032,
+        18688
+      ],
+      "id": "49fff03c-1fbc-4ac8-9cd2-b0a4fb2e31d9",
+      "name": "Code - Attach Active Customer Order Context"
     }
   ],
   "pinData": {
@@ -4239,7 +4326,7 @@
       "main": [
         [
           {
-            "node": "Switch - Clarify or Auto",
+            "node": "If - Active Customer Lookup Needed",
             "type": "main",
             "index": 0
           }
@@ -4295,6 +4382,57 @@
         [
           {
             "node": "Code - Should Create Draft Order?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If - Active Customer Lookup Needed": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Active Customer Lookup Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch - Clarify or Auto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Active Customer Lookup Payload": {
+      "main": [
+        [
+          {
+            "node": "Call 1.2 - Get Active Customer Order Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 1.2 - Get Active Customer Order Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Attach Active Customer Order Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Attach Active Customer Order Context": {
+      "main": [
+        [
+          {
+            "node": "Switch - Clarify or Auto",
             "type": "main",
             "index": 0
           }

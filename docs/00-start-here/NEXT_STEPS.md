@@ -20,8 +20,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 1: Order Lifecycle Stabilization | Complete And Live-Verified | Keep regression checks only. |
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
-| Phase 4: Requested Item Sync Stabilization | 4.1 and 4.2 Complete; 4.0 deferred; 4.3 repo fix ready | Deploy and live-verify 4.3 metadata validation. |
-| Phase 5: Safe Order Review For Sam | Not Started | Planned after 4.3 live verification. |
+| Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
+| Phase 5: Safe Order Review For Sam | Partly Live; 5.2 exports ready; pending deploy/test | Deploy backend, import 1.0/1.2, then run read-only lookup tests. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -566,7 +566,7 @@ Required outcome:
 - MVP fallback is no longer needed because the backend report endpoint exists
 - first 16:00 scheduled run confirmed: one Telegram message received
 
-## Phase 4: Requested Item Sync Stabilization - In Progress
+## Phase 4: Requested Item Sync Stabilization - Complete Through 4.3; 4.0 Deferred
 
 Goal: make Sam's order-line sync reliable.
 
@@ -666,7 +666,7 @@ Live verification 2026-05-10:
 - Sam generated correct partial/no-match wording: only 2 Female pigs were added, the requested Male was unavailable, and 2 Male alternatives existed in `20_to_24_Kg`. Chatwoot marked the outbound WhatsApp send as `failed` because of the WhatsApp/template window, but the generated content was correct.
 - `ORD-2026-011771` was cancelled after verification; `active_line_count = 0` and the matched pigs were released.
 
-### 4.3 Validate `intent_type` And `status` - Repo Fix Ready; Pending Live Verification
+### 4.3 Validate `intent_type` And `status` - Complete And Live-Verified
 
 Required outcome:
 
@@ -687,27 +687,139 @@ Verification completed locally:
 - Invalid `intent_type` is rejected.
 - Invalid `status = inactive` is rejected with a clear backend validation error.
 
-Next live check after backend deploy:
+Live verification 2026-05-11:
 
-1. Direct sync validation smoke test with valid `intent_type` / `status = active` should still pass.
-2. Direct sync validation smoke test with `status = inactive` should return `400` and should not alter order lines.
+- Temporary Charl N draft `ORD-2026-07F5C8` was created for Phase 4.3 testing only, with `ConversationId = 1742`.
+- Direct live sync with `intent_type = primary` and `status = active` passed validation and returned `success = true`. The requested Grower `30_to_34_Kg` Male item had no exact stock match, so no order lines were created.
+- Direct live sync with `status = inactive` returned `400` with the expected validation error and did not alter order lines.
+- Direct live sync with `intent_type = made_up` returned `400` with the expected allowed-value validation error and did not alter order lines.
+- `ORD-2026-07F5C8` was cancelled after verification; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, `active_line_count = 0`, and `reserved_pig_count = 0`.
 
-## Phase 5: Safe Order Review For Sam - Not Started
+## Phase 5: Safe Order Review For Sam - Partly Live; 5.2 Exports Ready; Pending Deploy/Test
 
 Goal: let Sam understand saved order state without uncontrolled sheet access.
 
-Preferred direction:
+Decision:
 
-- add backend/Order Steward review action
-- backend reads the relevant order data
-- backend filters the result for Sam
-- Sam answers based on backend-confirmed order truth
+- Keep `ORDER_MASTER` as the single operational order source for now.
+- Do not split completed/cancelled orders into a separate live `ORDER_HISTORY` sheet yet; that would affect formulas, document links, API reads, and status flows.
+- Add backend/Order Steward review actions that filter the data before Sam sees it.
+- Sam must answer from backend-confirmed order truth, not direct sheet access.
+- Plan an archive/history design as a later scaling step, with clear triggers.
 
-Possible actions:
+### 5.1 Safe By-ID Order Context - Complete And Live
 
-- `review_order`
-- `find_customer_orders`
+Current state:
+
+- Backend `GET /api/orders/<order_id>` returns one order, matching `ORDER_LINES`, and generated `ORDER_DOCUMENTS`.
+- `1.2 - Amadeus Order Steward` exposes read-only `get_order_context`.
+- `1.0 - Sam-sales-agent-chatwoot` prefetches this context when it already has an `existing_order_id`.
+- `1.2` formats a slim `existing_order_context` for Sam rather than exposing raw sheets.
+
+Live reference:
+
+- 2026-05-11: Read-only check on Charl N order `ORD-2026-BDEFCE` returned the draft header, 6 active lines, `active_line_total = 2100`, and `line_count_includes_cancelled = true`.
+
+### 5.2 Safe Active Customer Order Lookup - Backend And Workflow Exports Ready; Pending Deploy/Test
+
+Required outcome:
+
+- Sam can find the relevant active customer order even when Chatwoot `order_id` is missing or stale.
+- Backend/steward lookup is filtered by safe identifiers such as `conversation_id`, `customer_phone`, or exact `order_id`.
+- Response returns a safe summary only, not the full `/api/orders` list.
+- If exactly one active order is found, return it as review context.
+- If multiple active orders are found, return a short disambiguation list so Sam asks one clear question.
+- If no active order is found, Sam must not invent an order; it should ask for the order reference or continue normal order flow.
+
+Preferred action name:
+
 - `get_active_customer_order_context`
+
+Possible companion action:
+
+- `find_customer_orders`
+
+Important rule:
+
+- `/api/orders` may remain available for the web app/admin, but it must not be exposed directly as a Sam tool because it returns the full order list and customer details.
+
+Backend progress 2026-05-11:
+
+- Added read-only endpoint `GET /api/orders/active-customer-context`.
+- Lookup accepts `order_id`, `conversation_id`, or `customer_phone`.
+- Active order statuses are `Draft`, `Pending_Approval`, and `Approved`.
+- Response returns one safe `order_context`, a short `multiple_matches` list, `no_match`, or `terminal_order`.
+- Safe context groups active lines by category, weight band, sex, status, reserved status, and unit price; it does not return pig IDs, tag numbers, raw sheet rows, or the full order list.
+
+Local verification:
+
+- Missing lookup identifiers return `400`.
+- Exact Charl N order `ORD-2026-BDEFCE` returns `single_match` with 6 active draft lines grouped as 4 Female and 2 Male `2_to_4_Kg` Young Piglets.
+- Charl N phone lookup returns `multiple_matches` for `ORD-2026-BDEFCE` and `ORD-2026-CEF70A`, which is the expected disambiguation case.
+
+Steward export progress 2026-05-11:
+
+- Added `1.2 - Amadeus Order Steward` switch branch `get_active_customer_order_context`.
+- Branch calls backend `GET /api/orders/active-customer-context`.
+- Formatter returns `active_order_context_fetch_ok`, `lookup_status`, `match_count`, `active_order_context`, `active_order_matches`, and `lookup_inputs`.
+
+Sales agent export progress 2026-05-11:
+
+- Added conservative `1.0 - Sam-sales-agent-chatwoot` fallback lookup path after the existing exact-order context check.
+- If `ExistingOrderId` exists, the old `get_order_context` path still wins.
+- If no `ExistingOrderId` exists, saved-order review/cancel/document-style messages can call `get_active_customer_order_context` through `1.2`.
+- Normal new sales messages do not trigger active-order lookup.
+- Single-match lookup injects safe order context into the existing order-state path; multiple-match lookup exposes short summaries so Sam can ask one disambiguation question.
+
+Next implementation step:
+
+- Deploy backend.
+- Import updated `1.2` and `1.0` exports into n8n.
+- Run live read-only tests before enabling any follow-up order action based on recovered context.
+
+### 5.3 Sam Review Wording Tests - Planned
+
+Test prompts:
+
+- "What is on my order?"
+- "How many pigs did I order?"
+- "Is my order approved?"
+- "What is still missing?"
+- "Can you send my old quote/invoice again?"
+
+Required outcome:
+
+- Sam answers from backend/steward context.
+- Sam distinguishes Draft, Pending Approval, Approved, Cancelled, and Completed.
+- Sam does not claim reservations, approval, payment, quote, invoice, or collection unless the backend context confirms it.
+- Old quote/invoice requests route toward document history/delivery, not manual sheet lookup.
+
+### 5.4 Order Archive / History Scaling - Future Design, Not Now
+
+Current decision:
+
+- Keep completed and cancelled orders in `ORDER_MASTER` for now.
+- Treat `ORDER_STATUS_LOG`, `ORDER_DOCUMENTS`, and `ORDER_LINES` as the audit/history layer.
+- Use filtered API queries and web app views to separate active vs historical orders instead of physically moving rows.
+
+Why not split yet:
+
+- Moving terminal orders to a separate sheet would require every formula, API read, document link, order detail view, and status transition to understand two sources.
+- It increases the risk of Sam, the web app, or document generation missing old orders.
+- Current scale is small enough that filtered reads are simpler and safer.
+
+Future trigger points:
+
+- `ORDER_MASTER` becomes slow or hard to manage manually.
+- Google Sheets formula recalculation becomes unreliable.
+- Operational views become cluttered even with filters.
+- We need long-term reporting or retention controls that are cleaner in a separate archive.
+
+Preferred future approach:
+
+- Add an archive/read model only after the active-order lookup is stable.
+- If needed, create an `ORDER_HISTORY` or `ORDER_ARCHIVE` design where terminal orders are copied or mirrored with immutable references.
+- Do not move rows manually without backend support and a tested lookup strategy.
 
 ## Phase 6: Web App Order Usability - In Progress / Ongoing
 

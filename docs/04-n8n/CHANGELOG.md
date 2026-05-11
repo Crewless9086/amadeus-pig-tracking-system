@@ -15,11 +15,21 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-11 - Phase 5.2 safe active customer order lookup scaffold
+
+Type: `ADD`
+
+**Summary:** Added the read-only `1.2 - Amadeus Order Steward` branch `get_active_customer_order_context`. The branch calls backend `GET /api/orders/active-customer-context` with `order_id`, `conversation_id`, or `customer_phone`, then formats `lookup_status`, `match_count`, `active_order_context`, and `active_order_matches` for Sam review routing. `1.0 - Sam-sales-agent-chatwoot` now has a conservative fallback path: when no `ExistingOrderId` is available and the customer asks saved-order review/cancel/document-style questions such as "what is on my order?", it calls the steward lookup and injects single-match context into the existing order-state path. Normal new sales messages do not trigger the lookup, and exact `ExistingOrderId` still uses the existing `get_order_context` path.
+
+---
+
 ### 2026-05-11 - Phase 4.3 requested item metadata validation
 
 Type: `FIX`
 
 **Summary:** Clarified and enforced the `requested_items[]` metadata contract. Backend sync now validates optional `intent_type` against `primary`, `addon`, `nearby_addon`, and `extractor_slot`; `status` defaults to `active` and any non-`active` value is rejected. This makes `status` explicit instead of silently accepting inactive/cancelled requested rows that backend sync does not know how to skip.
+
+**Live verification:** Completed on 2026-05-11 using temporary Charl N draft `ORD-2026-07F5C8`. Valid direct sync with `intent_type = primary` and `status = active` passed and created no lines because the requested Grower `30_to_34_Kg` Male item had no exact stock match. Invalid direct sync with `status = inactive` returned `400`; invalid direct sync with `intent_type = made_up` returned `400`. The invalid calls did not alter order lines. The test draft was cancelled after verification with zero active lines and zero reserved pigs.
 
 ---
 

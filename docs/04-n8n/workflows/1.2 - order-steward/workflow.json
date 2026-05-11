@@ -320,6 +320,31 @@
               },
               "renameOutput": true,
               "outputKey": "Get Order Context"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "9e0ef90b-80e0-4267-b0bc-80f5a33b2b06",
+                    "leftValue": "={{ .action }}",
+                    "rightValue": "get_active_customer_order_context",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Get Active Customer Order Context"
             }
           ]
         },
@@ -1875,6 +1900,40 @@
       ],
       "id": "b12c34d5-e6f7-4890-abcd-ef1234567890",
       "name": "Code - Format Get Order Context Result"
+    },
+    {
+      "parameters": {
+        "url": "=https://amadeus-pig-tracking-system.onrender.com/api/orders/active-customer-context?{{ [\n  $json.order_id ? 'order_id=' + encodeURIComponent($json.order_id) : '',\n  $json.conversation_id ? 'conversation_id=' + encodeURIComponent($json.conversation_id) : '',\n  $json.customer_phone ? 'customer_phone=' + encodeURIComponent($json.customer_phone) : ''\n].filter(Boolean).join('&') }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        992,
+        -1184
+      ],
+      "id": "e0fab571-e56e-42d8-9a94-f64cb205e202",
+      "name": "HTTP - Get Active Customer Order Context",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json || {};\nconst normalized = $('Code - Normalize Order Payload').first()?.json || {};\n\nconst ok = raw.success === true;\nconst lookupStatus = String(raw.lookup_status || '').trim();\nconst orderContext = raw.order_context && typeof raw.order_context === 'object'\n  ? raw.order_context\n  : null;\nconst matches = Array.isArray(raw.matches) ? raw.matches : [];\nconst orderId = String(raw.order_id || normalized.order_id || '').trim();\n\nlet msg = String(raw.message || raw.error || '').trim();\nif (!msg && Array.isArray(raw.errors) && raw.errors.length > 0) {\n  msg = String(raw.errors[0] || '').trim();\n}\nif (!msg) {\n  msg = ok ? 'Active customer order lookup completed.' : 'Active customer order lookup failed.';\n}\n\nreturn [\n  {\n    json: {\n      success: ok,\n      action: 'get_active_customer_order_context',\n      order_id: orderId,\n      message: msg.slice(0, 500),\n      active_order_context_fetch_ok: ok && lookupStatus === 'single_match' && orderContext !== null,\n      lookup_status: lookupStatus || (ok ? 'unknown' : 'error'),\n      match_count: Number(raw.match_count || 0),\n      active_order_context: orderContext,\n      active_order_matches: matches,\n      lookup_inputs: {\n        order_id: normalized.order_id || '',\n        conversation_id: normalized.conversation_id || '',\n        customer_phone: normalized.customer_phone || ''\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -1184
+      ],
+      "id": "9532e4a0-c36f-46b9-880c-cdde29b7f36e",
+      "name": "Code - Format Active Customer Order Context Result"
     }
   ],
   "pinData": {
@@ -2009,6 +2068,13 @@
         [
           {
             "node": "HTTP - Get Order Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Get Active Customer Order Context",
             "type": "main",
             "index": 0
           }
@@ -2300,6 +2366,17 @@
         [
           {
             "node": "Code - Format Get Order Context Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Active Customer Order Context": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Active Customer Order Context Result",
             "type": "main",
             "index": 0
           }

@@ -228,6 +228,10 @@ Phase 4.3 regression:
 4. Direct sync with `status = inactive` should return `400` with a clear validation error and should not alter order lines.
 5. Confirm n8n `1.0` only sends active requested items; inactive/cancelled items must be omitted, not sent with a non-active status.
 
+Live verification reference:
+
+- 2026-05-11: Temporary Charl N draft `ORD-2026-07F5C8` was created with `ConversationId = 1742`. Valid direct sync with `intent_type = primary` and `status = active` passed validation and returned `success = true`; no lines were created because Grower `30_to_34_Kg` Male had no exact stock match. Invalid direct sync with `status = inactive` returned `400`; invalid direct sync with `intent_type = made_up` returned `400`. Final inspection showed no active lines or documents. The test draft was cancelled and ended with `active_line_count = 0` and `reserved_pig_count = 0`.
+
 ## n8n Order Steward Tests
 
 For `1.2 - Amadeus Order Steward`, test only currently live `1.0` actions first:
@@ -242,6 +246,29 @@ Each test must confirm:
 - backend endpoint called correctly
 - backend error returned clearly
 - Sam gets only backend-confirmed truth
+
+## Phase 5.2 Active Customer Order Lookup Tests
+
+Backend endpoint: `GET /api/orders/active-customer-context`
+
+Regression checks:
+
+1. Missing `order_id`, `conversation_id`, and `customer_phone` returns `400`.
+2. Exact active `order_id` returns `lookup_status = single_match` and a safe `order_context`.
+3. Exact terminal `order_id` returns `lookup_status = terminal_order` and no active context.
+4. Phone/conversation lookup with one active match returns `single_match`.
+5. Phone/conversation lookup with multiple active matches returns `multiple_matches` with short summaries only.
+6. No-match lookup returns `lookup_status = no_match`.
+7. Response must not include the full `/api/orders` list, raw sheet rows, pig IDs, or tag numbers.
+8. `1.0` should call the lookup only when no `ExistingOrderId` is present and the message is about an existing/saved order, cancellation, quote, or invoice.
+9. `1.0` must not call the lookup for normal new sales messages such as "I want 2 piglets."
+10. If `ExistingOrderId` is present, `1.0` must keep using `get_order_context` instead of the fallback lookup.
+
+Local verification reference:
+
+- 2026-05-11: `ORD-2026-BDEFCE` returned `single_match` with 6 active draft lines grouped as 4 Female and 2 Male Young Piglets in `2_to_4_Kg`.
+- 2026-05-11: phone lookup for `447388223114` returned `multiple_matches` for `ORD-2026-BDEFCE` and `ORD-2026-CEF70A`.
+- 2026-05-11: `1.0` local JS checks confirmed "What is on my order?" with no existing order ID sets `should_active_customer_lookup = true`; "I want 2 piglets" does not; and an existing order ID keeps fallback lookup disabled.
 
 ## Phase 1.9 Outbound Notification Tests
 

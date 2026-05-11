@@ -43,6 +43,12 @@ REJECTION_CUSTOMER_MESSAGE = (
     "follow up if there is another suitable option."
 )
 
+ACTIVE_ORDER_STATUSES_FOR_REVIEW = {
+    "Draft",
+    "Pending_Approval",
+    "Approved",
+}
+
 CATEGORY_REQUEST_TO_SALES = {
     "Piglet": ["Young Piglets"],
     "Weaner": ["Weaner Piglets"],
@@ -786,6 +792,198 @@ def get_order_detail(order_id: str):
         "order": order_record,
         "lines": lines,
     }
+
+
+def get_active_customer_order_context(
+    order_id: str = "",
+    conversation_id: str = "",
+    customer_phone: str = "",
+):
+    order_id = to_clean_string(order_id)
+    conversation_id = to_clean_string(conversation_id)
+    customer_phone = _normalize_phone_for_lookup(customer_phone)
+
+    if not any((order_id, conversation_id, customer_phone)):
+        raise ValueError("Provide order_id, conversation_id, or customer_phone for order lookup.")
+
+    if order_id:
+        detail = get_order_detail(order_id)
+        if not detail:
+            return _empty_customer_order_lookup("No order was found for that order reference.")
+
+        order = detail["order"]
+        if not _is_active_order_for_review(order):
+            return {
+                "success": True,
+                "lookup_status": "terminal_order",
+                "match_count": 0,
+                "order_id": order_id,
+                "message": "The matching order is not active.",
+                "order_context": None,
+                "matches": [_safe_order_match_summary(order)],
+            }
+
+        return {
+            "success": True,
+            "lookup_status": "single_match",
+            "match_count": 1,
+            "order_id": order_id,
+            "message": "Active order context found.",
+            "order_context": _safe_order_context_from_detail(detail),
+            "matches": [],
+        }
+
+    records = list_orders()
+    candidates = []
+
+    for record in records:
+        if not _is_active_order_for_review(record):
+            continue
+
+        if conversation_id and to_clean_string(record.get("conversation_id", "")) == conversation_id:
+            candidates.append(record)
+            continue
+
+        if customer_phone:
+            record_phone = _normalize_phone_for_lookup(record.get("customer_phone", ""))
+            if record_phone and record_phone == customer_phone:
+                candidates.append(record)
+
+    unique_candidates = {}
+    for candidate in candidates:
+        candidate_order_id = to_clean_string(candidate.get("order_id", ""))
+        if candidate_order_id:
+            unique_candidates[candidate_order_id] = candidate
+
+    candidates = list(unique_candidates.values())
+
+    if not candidates:
+        return _empty_customer_order_lookup("No active customer order was found.")
+
+    candidates = sorted(
+        candidates,
+        key=lambda item: parse_sheet_date(item.get("order_date", "")) or parse_sheet_date("1900-01-01"),
+        reverse=True,
+    )
+
+    if len(candidates) == 1:
+        matched_order_id = to_clean_string(candidates[0].get("order_id", ""))
+        detail = get_order_detail(matched_order_id)
+        if not detail:
+            return _empty_customer_order_lookup("The matching order could not be loaded.")
+
+        return {
+            "success": True,
+            "lookup_status": "single_match",
+            "match_count": 1,
+            "order_id": matched_order_id,
+            "message": "Active order context found.",
+            "order_context": _safe_order_context_from_detail(detail),
+            "matches": [],
+        }
+
+    return {
+        "success": True,
+        "lookup_status": "multiple_matches",
+        "match_count": len(candidates),
+        "order_id": "",
+        "message": "Multiple active customer orders were found.",
+        "order_context": None,
+        "matches": [_safe_order_match_summary(candidate) for candidate in candidates[:5]],
+    }
+
+
+def _empty_customer_order_lookup(message: str):
+    return {
+        "success": True,
+        "lookup_status": "no_match",
+        "match_count": 0,
+        "order_id": "",
+        "message": message,
+        "order_context": None,
+        "matches": [],
+    }
+
+
+def _is_active_order_for_review(order: dict):
+    return to_clean_string(order.get("order_status", "")) in ACTIVE_ORDER_STATUSES_FOR_REVIEW
+
+
+def _normalize_phone_for_lookup(value):
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def _safe_order_match_summary(order: dict):
+    return {
+        "order_id": to_clean_string(order.get("order_id", "")),
+        "order_date": format_date_for_json(order.get("order_date", "")),
+        "order_status": to_clean_string(order.get("order_status", "")),
+        "approval_status": to_clean_string(order.get("approval_status", "")),
+        "payment_status": to_clean_string(order.get("payment_status", "")),
+        "requested_category": to_clean_string(order.get("requested_category", "")),
+        "requested_weight_range": to_clean_string(order.get("requested_weight_range", "")),
+        "requested_sex": to_clean_string(order.get("requested_sex", "")),
+        "requested_quantity": to_float(order.get("requested_quantity", "")) or 0,
+        "active_line_count": to_float(order.get("active_line_count", "")) or 0,
+        "active_line_total": to_float(order.get("active_line_total", "")) or 0,
+        "collection_location": to_clean_string(order.get("collection_location", "")),
+        "payment_method": to_clean_string(order.get("payment_method", "")),
+    }
+
+
+def _safe_order_context_from_detail(detail: dict):
+    order = detail.get("order", {}) if isinstance(detail, dict) else {}
+    lines = detail.get("lines", []) if isinstance(detail, dict) else []
+
+    active_lines = [
+        line for line in lines
+        if to_clean_string(line.get("line_status", "")) != "Cancelled"
+    ]
+
+    return {
+        "order": _safe_order_match_summary(order),
+        "line_groups": _summarize_lines_for_review(active_lines),
+        "line_count_includes_cancelled": True,
+        "cancelled_line_count": to_float(order.get("cancelled_line_count", "")) or 0,
+    }
+
+
+def _summarize_lines_for_review(lines):
+    groups = {}
+
+    for line in lines:
+        key = (
+            to_clean_string(line.get("sale_category", "")),
+            to_clean_string(line.get("weight_band", "")),
+            to_clean_string(line.get("sex", "")),
+            to_clean_string(line.get("line_status", "")),
+            to_clean_string(line.get("reserved_status", "")),
+            to_float(line.get("unit_price", "")) or 0,
+        )
+        group = groups.setdefault(key, {
+            "sale_category": key[0],
+            "weight_band": key[1],
+            "sex": key[2],
+            "line_status": key[3],
+            "reserved_status": key[4],
+            "unit_price": key[5],
+            "quantity": 0,
+            "total": 0,
+        })
+        group["quantity"] += 1
+        group["total"] += key[5]
+
+    return sorted(
+        groups.values(),
+        key=lambda item: (
+            WEIGHT_BAND_ORDER.index(item["weight_band"])
+            if item["weight_band"] in WEIGHT_BAND_ORDER
+            else 999,
+            item["sale_category"],
+            item["sex"],
+            item["line_status"],
+        ),
+    )
 
 
 def _build_order_line_rollups():

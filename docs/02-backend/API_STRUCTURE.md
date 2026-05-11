@@ -11,6 +11,7 @@ All order API routes are registered under `/api`.
 | Method | Path | Current purpose | Main caller |
 | --- | --- | --- | --- |
 | `GET` | `/api/orders` | List orders from `ORDER_OVERVIEW`. | Web app, future review tooling. |
+| `GET` | `/api/orders/active-customer-context` | Safe active customer order lookup by `order_id`, `conversation_id`, or `customer_phone`. Returns one filtered context, a short multiple-match list, no match, or terminal-order status. | Future `1.2` / Sam review action. |
 | `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES` and generated `ORDER_DOCUMENTS` rows. Header includes `payment_method` (from `ORDER_MASTER`), `line_count` (from overview: **all** line rows including cancelled — see `ORDER_OVERVIEW.md`), **`active_line_count`**, **`cancelled_line_count`**, **`active_line_total`**, and **`all_line_total`**. | Web app, `1.2` `get_order_context` branch. |
 | `GET` | `/api/reports/daily-summary` | Return daily operational order buckets and counts for n8n/reporting. Optional `?date=YYYY-MM-DD`. | n8n scheduled summary, web app/report tooling. |
 | `GET` | `/api/orders/available-pigs` | Return sale-available pigs from `SALES_AVAILABILITY`. | Web app/order tooling. |
@@ -39,10 +40,52 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `update_order` | `PATCH /api/master/orders/<order_id>` | Live |
 | `sync_order_lines_from_request` | `POST /api/master/orders/<order_id>/sync-lines` | Live |
 | `get_order_context` | `GET /api/orders/<order_id>` (read-only; formatted in steward) | Live |
+| `get_active_customer_order_context` | `GET /api/orders/active-customer-context` (read-only; backend filtered) | Backend and `1.2` export ready; `1.0` routing planned |
 | `cancel_order` | `POST /api/orders/<order_id>/cancel` | Live |
 | `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path and backend `400` customer-safe reply verified. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
+
+## Active Customer Order Context Lookup
+
+Endpoint: `GET /api/orders/active-customer-context`
+
+Purpose:
+
+- Find a relevant active customer order without exposing the full order list to Sam.
+- Support recovery when Chatwoot `order_id` is missing or stale.
+- Keep `/api/orders` available for web app/admin only, not as a Sam-facing tool.
+
+Query parameters:
+
+- `order_id` - optional exact order reference. If supplied, this is checked first.
+- `conversation_id` - optional Chatwoot conversation ID from `ORDER_MASTER.ConversationId`.
+- `customer_phone` - optional customer phone. Non-digit characters are ignored for matching.
+
+At least one of those parameters is required.
+
+Active statuses:
+
+- `Draft`
+- `Pending_Approval`
+- `Approved`
+
+Terminal statuses such as `Cancelled` and `Completed` are not returned as active context. Exact `order_id` lookup can still return `lookup_status = terminal_order` so Sam can explain that the order is not active.
+
+Response statuses:
+
+- `single_match` - one active order was found; response includes `order_context`.
+- `multiple_matches` - more than one active order matched; response includes up to five safe summaries in `matches[]`.
+- `no_match` - no active order matched.
+- `terminal_order` - exact `order_id` was found but is not active.
+
+Safe context shape:
+
+- `order`: order ID, status fields, request fields, payment method, collection location, active line count, and active line total.
+- `line_groups`: grouped active line summary by sale category, weight band, sex, line status, reserved status, and unit price.
+- No raw full order list is returned.
+- No direct sheet rows are returned.
+- No pig IDs or tag numbers are returned in this endpoint.
 
 ## Daily Summary Report (Phase 3.1)
 
