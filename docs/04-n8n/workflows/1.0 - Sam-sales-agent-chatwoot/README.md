@@ -2761,3 +2761,28 @@ Live test note:
 
 - 2026-05-11 clean-conversation test found that `HTTP - Get Conversation Messages` must not build its Chatwoot URL from `conversation.messages[0].account_id` or `conversation.messages[0].conversation_id`, because those fields can be missing on webhook payloads.
 - The export now uses the normalized IDs from `Code - Normalize Incoming Message` / `Edit - Keep Chatwoot ID's` for the Chatwoot history URL.
+
+## Phase 5.3 Sam Order-Review Wording Guard
+
+Added 2026-05-11.
+
+Purpose:
+
+- Make current-order review replies safer and clearer.
+- Ensure Sam answers from backend/steward context before using conversation memory.
+- Prevent Sam from claiming approval, reservation, collection, document links, or document delivery unless backend context confirms it.
+
+Prompt guard:
+
+`Ai Agent - Sales Agent` system prompt now includes `ORDER REVIEW RESPONSE RULES`.
+
+Required behavior:
+
+- Single matched active order: answer about that order only.
+- Multiple active matches: ask one short disambiguation question.
+- No active match: ask for the order reference instead of inventing an order.
+- Missing-detail prompts such as "What is still missing?" trigger active-order lookup when no `ExistingOrderId` is present.
+- Draft: not approved, not reserved, not confirmed.
+- Pending Approval: submitted/pending, not approved.
+- Approved: approved only when backend confirms it.
+- Quote/invoice follow-up: do not invent links or say sent unless document context exists.

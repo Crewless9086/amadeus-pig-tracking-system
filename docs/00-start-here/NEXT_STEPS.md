@@ -720,7 +720,7 @@ Live reference:
 
 - 2026-05-11: Read-only check on Charl N order `ORD-2026-BDEFCE` returned the draft header, 6 active lines, `active_line_total = 2100`, and `line_count_includes_cancelled = true`.
 
-### 5.2 Safe Active Customer Order Lookup - Backend And Workflow Exports Ready; Pending Deploy/Test
+### 5.2 Safe Active Customer Order Lookup - Complete And Live-Verified
 
 Required outcome:
 
@@ -774,14 +774,14 @@ Sales agent export progress 2026-05-11:
 - Live test correction: `1.2` `Switch - Route by Action` output `Get Active Customer Order Context` now uses `={{ $json.action }}` like the other branches.
 - Live test correction: conversation ID is now the preferred lookup key. Phone lookup is fallback-only so older active orders on the same phone number do not override a clean conversation-specific match.
 
-Next implementation step:
+Live verification 2026-05-11:
 
-- Deploy the backend lookup priority update.
-- Re-import the updated `1.0` export into n8n.
-- Rerun the clean conversation `1774` test against temporary order `ORD-2026-8B7FC8`.
-- After successful confirmation, cancel the temporary test order.
+- Clean conversation `1774` and temporary test order `ORD-2026-8B7FC8` verified the missing/stale `order_id` fallback.
+- Sam correctly replied with one specific draft order: 1 male piglet, `5_to_6_Kg`, Riversdale collection, `R400`.
+- Sam no longer included older Charl N active draft orders when the exact conversation ID matched the temporary order.
+- Temporary test order `ORD-2026-8B7FC8` was cancelled after verification; its single line is `Cancelled`, `reserved_pig_count = 0`, and conversation `1774` active lookup now returns `no_match`.
 
-### 5.3 Sam Review Wording Tests - Planned
+### 5.3 Sam Review Wording Tests - In Progress
 
 Test prompts:
 
@@ -797,6 +797,22 @@ Required outcome:
 - Sam distinguishes Draft, Pending Approval, Approved, Cancelled, and Completed.
 - Sam does not claim reservations, approval, payment, quote, invoice, or collection unless the backend context confirms it.
 - Old quote/invoice requests route toward document history/delivery, not manual sheet lookup.
+
+Export progress 2026-05-11:
+
+- Added a dedicated `ORDER REVIEW RESPONSE RULES` guard to the `1.0 - Sam-sales-agent-chatwoot` Sales Agent system prompt.
+- The guard forces order-review replies to use `StewardCompact`, `OrderStateSummary`, `OrderID`, backend status fields, and `active_order_*` context first.
+- Added `"What is still missing?"` / missing-detail wording to the active-order lookup trigger set.
+- If one active order is matched, Sam must answer about that order only.
+- If multiple active orders match, Sam must ask one disambiguation question.
+- If no active order context is available, Sam must ask for the order reference instead of inventing an order.
+- Quote/invoice requests must not invent document links or claim delivery without document context.
+
+Next test step:
+
+- Re-import the updated `1.0` export into n8n.
+- Create or use a safe Charl N test order with `ConversationId` tied to the test Chatwoot conversation.
+- Run the five Phase 5.3 prompts and verify wording against the required outcomes.
 
 ### 5.4 Order Archive / History Scaling - Future Design, Not Now
 

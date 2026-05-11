@@ -277,6 +277,38 @@ Local verification reference:
 - 2026-05-11: `1.2` switch branch syntax was corrected from `={{ .action }}` to `={{ $json.action }}` before the next retest.
 - 2026-05-11: conversation `1774` plus phone `447388223114` now returns `single_match` for `ORD-2026-8B7FC8`; phone-only still returns the expected multiple-match disambiguation.
 
+Live verification reference:
+
+- 2026-05-11: clean Chatwoot conversation `1774` with no `order_id` resolved to temporary order `ORD-2026-8B7FC8`.
+- Sam replied with one specific draft order: 1 male piglet, `5_to_6_Kg`, Riversdale collection, `R400`.
+- The temporary order was cancelled after verification. `ORD-2026-8B7FC8` now has `Order_Status = Cancelled`, one cancelled line, and `reserved_pig_count = 0`.
+- After cleanup, `GET /api/orders/active-customer-context?conversation_id=1774` returns `lookup_status = no_match`.
+
+## Phase 5.3 Sam Order-Review Wording Tests
+
+Export readiness checks:
+
+1. `1.0 - Sam-sales-agent-chatwoot` Sales Agent system prompt includes `ORDER REVIEW RESPONSE RULES`.
+2. Current-order review replies must use backend/steward context first.
+3. A single active match must produce a reply about that order only.
+4. Multiple active matches must produce one disambiguation question, not a guessed order.
+5. No active match must ask for an order reference and must not invent an order.
+6. Draft wording must not say approved, confirmed, reserved, held, booked, or secured.
+7. Pending Approval wording must say pending/submitted, not approved.
+8. Approved wording may say approved only when backend context confirms it.
+9. "What is on my order?" and "How many pigs did I order?" must summarize active/non-cancelled line quantities only.
+10. "What is still missing?" must mention only fields inferred from context, or ask one focused follow-up if unclear.
+11. Quote/invoice follow-up must not invent document links or say a document was sent without document context.
+12. All five live prompts below must trigger active-order lookup when no `ExistingOrderId` is present and a conversation ID or phone is available.
+
+Live prompts:
+
+1. "What is on my order?"
+2. "How many pigs did I order?"
+3. "Is my order approved?"
+4. "What is still missing?"
+5. "Can you send my old quote/invoice again?"
+
 ## Phase 1.9 Outbound Notification Tests
 
 Phase 1.9 live verification completed on 2026-05-09:

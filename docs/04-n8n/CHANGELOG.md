@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-11 - Phase 5.3 Sam order-review wording guard
+
+Type: `IMPROVEMENT`
+
+**Summary:** Added a dedicated `ORDER REVIEW RESPONSE RULES` section to the `1.0 - Sam-sales-agent-chatwoot` Sales Agent system prompt. Sam must now answer current-order review, status, approval, missing-detail, and quote/invoice follow-up questions from backend/steward context first; use one matched order only; ask one disambiguation question for multiple matches; and avoid claiming approval, reservation, collection, document links, or document delivery unless backend context confirms it. The active-order lookup trigger set now includes missing-detail wording such as "What is still missing?".
+
+---
+
 ### 2026-05-11 - Phase 5.2 safe active customer order lookup scaffold
 
 Type: `ADD`
@@ -26,6 +34,8 @@ Type: `ADD`
 **Follow-up correction:** The new `1.2` switch output for `get_active_customer_order_context` must use `={{ $json.action }}` like the other `Switch - Route by Action` branches. A bad `={{ .action }}` expression causes `invalid syntax` before the active lookup branch can run.
 
 **Lookup precision correction:** Conversation ID now takes priority over customer phone for active-order lookup. `1.0` sends phone only when no conversation ID is available, and the backend lookup uses exact `order_id`, then exact `conversation_id`, then phone fallback. This prevents a clean conversation from being diluted by older active orders on the same phone number.
+
+**Live verification:** Completed on 2026-05-11 with clean Chatwoot conversation `1774` and temporary order `ORD-2026-8B7FC8`. Sam replied with the single correct draft order context: 1 male piglet, `5_to_6_Kg`, Riversdale, `R400`. The temporary order was cancelled after the successful test and active lookup for conversation `1774` returned `no_match`.
 
 ---
 
