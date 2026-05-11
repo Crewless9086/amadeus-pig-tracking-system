@@ -309,6 +309,13 @@ Live prompts:
 4. "What is still missing?"
 5. "Can you send my old quote/invoice again?"
 
+Live verification reference:
+
+- 2026-05-11: temporary Charl N order `ORD-2026-DDFEE6` was created on conversation `1774` with 1 male Young Piglet, `5_to_6_Kg`, Cash, Riversdale, `R400`.
+- All five prompts above were accepted by the live workflow and project owner confirmed the replies were good.
+- The temporary order was cancelled after verification. `ORD-2026-DDFEE6` now has `Order_Status = Cancelled`, one cancelled line, and `reserved_pig_count = 0`.
+- After cleanup, `GET /api/orders/active-customer-context?conversation_id=1774` returns `lookup_status = no_match`.
+
 ## Phase 1.9 Outbound Notification Tests
 
 Phase 1.9 live verification completed on 2026-05-09:

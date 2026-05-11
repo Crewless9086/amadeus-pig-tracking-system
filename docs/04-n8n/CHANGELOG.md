@@ -21,6 +21,8 @@ Type: `IMPROVEMENT`
 
 **Summary:** Added a dedicated `ORDER REVIEW RESPONSE RULES` section to the `1.0 - Sam-sales-agent-chatwoot` Sales Agent system prompt. Sam must now answer current-order review, status, approval, missing-detail, and quote/invoice follow-up questions from backend/steward context first; use one matched order only; ask one disambiguation question for multiple matches; and avoid claiming approval, reservation, collection, document links, or document delivery unless backend context confirms it. The active-order lookup trigger set now includes missing-detail wording such as "What is still missing?".
 
+**Live verification:** Completed on 2026-05-11 using Chatwoot conversation `1774` and temporary order `ORD-2026-DDFEE6`. All five Phase 5.3 prompts were accepted by the live workflow and the project owner confirmed Sam's replies were good. The temporary order was cancelled after verification and active lookup for conversation `1774` returned `no_match`.
+
 ---
 
 ### 2026-05-11 - Phase 5.2 safe active customer order lookup scaffold

@@ -781,7 +781,7 @@ Live verification 2026-05-11:
 - Sam no longer included older Charl N active draft orders when the exact conversation ID matched the temporary order.
 - Temporary test order `ORD-2026-8B7FC8` was cancelled after verification; its single line is `Cancelled`, `reserved_pig_count = 0`, and conversation `1774` active lookup now returns `no_match`.
 
-### 5.3 Sam Review Wording Tests - In Progress
+### 5.3 Sam Review Wording Tests - Complete And Live-Verified
 
 Test prompts:
 
@@ -808,11 +808,13 @@ Export progress 2026-05-11:
 - If no active order context is available, Sam must ask for the order reference instead of inventing an order.
 - Quote/invoice requests must not invent document links or claim delivery without document context.
 
-Next test step:
+Live verification 2026-05-11:
 
-- Re-import the updated `1.0` export into n8n.
-- Create or use a safe Charl N test order with `ConversationId` tied to the test Chatwoot conversation.
-- Run the five Phase 5.3 prompts and verify wording against the required outcomes.
+- Updated `1.0` export was imported into n8n.
+- Temporary Charl N order `ORD-2026-DDFEE6` was created on clean Chatwoot conversation `1774`.
+- Backend active lookup returned one Draft order with 1 male Young Piglet, `5_to_6_Kg`, `R400`, Cash, Riversdale.
+- All five Phase 5.3 prompts were accepted by the live workflow and project owner confirmed Sam's replies were good.
+- Temporary order `ORD-2026-DDFEE6` was cancelled after verification; its single line is `Cancelled`, `reserved_pig_count = 0`, and conversation `1774` active lookup now returns `no_match`.
 
 ### 5.4 Order Archive / History Scaling - Future Design, Not Now
 
