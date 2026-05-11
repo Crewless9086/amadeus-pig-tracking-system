@@ -113,6 +113,8 @@ Currently live actions called by `1.0`:
 
 Rule: `1.2` should call the backend API. It should not directly write order sheets.
 
+`requested_items[]` metadata rule: `intent_type` may be `primary`, `addon`, `nearby_addon`, or `extractor_slot` and is only a source label. `status` must be `active`; if `1.0` does not want an item synced, it must omit that item rather than sending `inactive` or `cancelled`.
+
 First-turn committed orders use `create_order_with_lines` when `1.0` has already built non-empty `requested_items[]`. `1.0` decides that action, but `1.2` owns the full create + sync operation and returns a combined result. Top-level `success` means both the draft creation and line sync succeeded.
 
 Customer cancel confirmation state is stored in Chatwoot custom attributes as `pending_action = cancel_order`; it is set by `1.0`, cleared by `1.0`, and never written to Google Sheets.

@@ -62,6 +62,8 @@ Rules:
 - old lines must be released/cancelled before replacement when the request changes
 - line totals should reflect what stock could actually be matched — see **Partial match sync** below
 - mixed-sex customer requests should store `ORDER_MASTER.Requested_Sex = Any`; the exact split belongs on `ORDER_LINES` through `requested_items[]` (`primary_1`, `primary_2`, etc.)
+- `intent_type` is only a validated caller/source label (`primary`, `addon`, `nearby_addon`, `extractor_slot`) and does not affect stock matching.
+- `status` is only accepted as `active`; inactive requested items are not a backend sync feature and should be omitted by the caller.
 
 ## Partial/no-match sync
 

@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-11 - Phase 4.3 requested item metadata validation
+
+Type: `FIX`
+
+**Summary:** Clarified and enforced the `requested_items[]` metadata contract. Backend sync now validates optional `intent_type` against `primary`, `addon`, `nearby_addon`, and `extractor_slot`; `status` defaults to `active` and any non-`active` value is rejected. This makes `status` explicit instead of silently accepting inactive/cancelled requested rows that backend sync does not know how to skip.
+
+---
+
 ### 2026-05-10 - Phase 4.2 partial/no-match fulfillment contract
 
 Type: `FIX`

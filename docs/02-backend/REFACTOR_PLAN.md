@@ -32,7 +32,7 @@ Tasks:
 - Cancel/release stale lines before replacing them.
 - Decide intended partial/no-match behavior.
 - Ensure `ORDER_LINES` totals match requested quantity before returning success to Sam.
-- Use or remove `intent_type` and `status` from backend sync contract.
+- Phase 4.3 resolved `intent_type` / `status`: `intent_type` is optional validated metadata; `status` defaults to `active` and non-active values are rejected.
 
 ## Phase 3: Improve Order Review For Sam
 

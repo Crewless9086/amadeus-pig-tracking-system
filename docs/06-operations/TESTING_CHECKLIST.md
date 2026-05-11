@@ -218,6 +218,16 @@ Live verification reference:
 
 - 2026-05-10: `ORD-2026-011771` created through `1.0`/`1.2` using Chatwoot test conversation `1742`. Backend created two active `primary_2` Female rows only; direct live sync returned `complete_fulfillment = false`, `fulfillment_status = partial`, `requested_total = 3`, `matched_total = 2`, `unmatched_total = 1`, and `primary_1 = no_match`. Sam generated correct partial/no-match wording. The test draft was cancelled after verification and ended with `active_line_count = 0`.
 
+### Requested Item Metadata Validation
+
+Phase 4.3 regression:
+
+1. Direct sync with a normal active requested item and either no `intent_type` or `intent_type = primary` should pass validation.
+2. Direct sync with `intent_type = nearby_addon` and `status = active` should pass validation.
+3. Direct sync with an unknown `intent_type` should return `400` with a clear validation error and should not alter order lines.
+4. Direct sync with `status = inactive` should return `400` with a clear validation error and should not alter order lines.
+5. Confirm n8n `1.0` only sends active requested items; inactive/cancelled items must be omitted, not sent with a non-active status.
+
 ## n8n Order Steward Tests
 
 For `1.2 - Amadeus Order Steward`, test only currently live `1.0` actions first:

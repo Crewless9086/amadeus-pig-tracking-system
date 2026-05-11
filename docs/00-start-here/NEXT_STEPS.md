@@ -13,6 +13,21 @@ Stabilize live order behavior before expanding features or polishing the app.
 
 Orders are the profit section. They must be reliable before the system grows.
 
+## Phase Status At A Glance
+
+| Phase | Status | Next action |
+| --- | --- | --- |
+| Phase 1: Order Lifecycle Stabilization | Complete And Live-Verified | Keep regression checks only. |
+| Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
+| Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
+| Phase 4: Requested Item Sync Stabilization | 4.1 and 4.2 Complete; 4.0 deferred; 4.3 repo fix ready | Deploy and live-verify 4.3 metadata validation. |
+| Phase 5: Safe Order Review For Sam | Not Started | Planned after 4.3 live verification. |
+| Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
+| Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
+| Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
+| Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
+| Phase 10: Farm Operating System Integration | Not Started | Future. |
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).
@@ -31,7 +46,7 @@ Discovering overlapping problems is normal on a layered system; **prioritisation
 
 The repo now includes: **partial line sync** (short stock still creates lines), **`GET /api/orders/<id>` exposes `payment_method`**, **`1.2` action `get_order_context`**, and **`1.0` prefetch** so draft header/payment can merge before `Code - Build Order State`. Re-import `docs/04-n8n/workflows/1.2 - order-steward/workflow.json` and `1.0 - Sam-sales-agent-chatwoot/workflow.json` into n8n, then deploy the Flask app so Render serves the backend changes. See `docs/04-n8n/CHANGELOG.md` (2026-05-07 entry) for the full checklist.
 
-## Phase 1: Order Lifecycle Stabilization
+## Phase 1: Order Lifecycle Stabilization - Complete And Live-Verified
 
 Goal: make reject, cancel, release, and reservation state safe.
 
@@ -353,7 +368,7 @@ Implementation status:
 - backend rejection notification path passed on 2026-05-09: `ORD-2026-C3CEDF` moved from `Pending_Approval` to `Cancelled | Rejected`, one line cancelled/released, `Reserved_Pig_Count = 0`, and `customer_notification_sent = true`
 - production backend must keep `ORDER_NOTIFICATION_WEBHOOK_URL=https://charln.app.n8n.cloud/webhook/order-notification` configured so deployed app approvals/rejections continue sending notifications
 
-## Phase 2: Quote And Invoice Generation
+## Phase 2: Quote And Invoice Generation - Complete Through 2.6
 
 Goal: backend generates quote and invoice documents. n8n delivers them only.
 
@@ -478,7 +493,7 @@ Live test:
 - totals inherited from quote: subtotal `R3,200.00`, VAT `R480.00`, total `R3,680.00`
 - `ORDER_DOCUMENTS` row verified and Drive metadata verified as `application/pdf`
 
-### 2.5 n8n Delivery
+### 2.5 n8n Delivery - Complete And Live-Verified
 
 Status: Complete And Live-Verified 2026-05-10.
 
@@ -494,7 +509,7 @@ Required outcome:
 - direct webhook smoke test sent quote `DOC-2026-45F259` and left `ORDER_DOCUMENTS.Document_Status = Generated` because it bypassed backend sent-state update - Verified
 - backend endpoint test sent invoice `DOC-2026-EC0265` and marked `ORDER_DOCUMENTS.Document_Status = Sent` with `Sent_By = Codex Phase 2.5 Backend Test` - Verified
 
-### 2.6 Web App Document Controls
+### 2.6 Web App Document Controls - Complete And Browser-Verified
 
 Status: Complete And Browser-Verified.
 
@@ -523,11 +538,11 @@ Follow-up usability improvements to plan after browser verification:
 - add document void/supersede controls before production operators start regenerating many versions
 - add audit/history view from `ORDER_STATUS_LOG` and document sent events
 
-## Phase 3: Daily Order Summary
+## Phase 3: Daily Order Summary - Complete And Scheduled-Run Verified
 
 Goal: scheduled operational overview of current order state.
 
-### 3.1 Backend Report Endpoint
+### 3.1 Backend Report Endpoint - Complete And Live Read-Only Verified
 
 Status: Implemented And Live Read-Only Verified 2026-05-10.
 
@@ -539,7 +554,7 @@ Required outcome:
 - live read-only test for `2026-05-10` returned `success = true` with all expected section keys
 - invalid date test returns `400` with a clear validation error
 
-### 3.2 n8n Scheduled Delivery
+### 3.2 n8n Scheduled Delivery - Complete And Scheduled-Run Verified
 
 Status: Complete And Scheduled-Run Verified 2026-05-10.
 
@@ -551,11 +566,11 @@ Required outcome:
 - MVP fallback is no longer needed because the backend report endpoint exists
 - first 16:00 scheduled run confirmed: one Telegram message received
 
-## Phase 4: Requested Item Sync Stabilization
+## Phase 4: Requested Item Sync Stabilization - In Progress
 
 Goal: make Sam's order-line sync reliable.
 
-### 4.0 Sales Stock Formula Gate Alignment
+### 4.0 Sales Stock Formula Gate Alignment - Deferred / Open
 
 Status: Open - live sheet inspected read-only 2026-05-10.
 
@@ -578,7 +593,7 @@ Required outcome:
 - Reconcile the live formulas with `docs/03-google-sheets/sheets/SALES_AVAILABILITY.md`, `SALES_STOCK_DETAIL.md`, `SALES_STOCK_SUMMARY.md`, and `SALES_STOCK_TOTALS.md`.
 - Add a sheet changelog entry when the final formula/view decision is approved.
 
-### 4.1 Fix Split Item Sync
+### 4.1 Fix Split Item Sync - Complete And Live-Verified
 
 Status: Complete And Live-Verified 2026-05-10.
 
@@ -618,7 +633,7 @@ Required outcome:
 
 **Partial/no-match guard test:** **Grower 30-34 kg**, qty **3**, **1 Male + 2 Female** should not be treated as a full exact sex split unless live stock changes. Live stock checked 2026-05-10 had three Female and zero Male in this band; expected result is `primary_1 = no_match` and `primary_2 = exact_match` for two Female rows, with Sam not claiming all three requested sex lines were available.
 
-### 4.2 Define Partial Match Behavior
+### 4.2 Define Partial Match Behavior - Complete And Live-Verified
 
 Status: Complete And Live-Verified 2026-05-10.
 
@@ -651,14 +666,33 @@ Live verification 2026-05-10:
 - Sam generated correct partial/no-match wording: only 2 Female pigs were added, the requested Male was unavailable, and 2 Male alternatives existed in `20_to_24_Kg`. Chatwoot marked the outbound WhatsApp send as `failed` because of the WhatsApp/template window, but the generated content was correct.
 - `ORD-2026-011771` was cancelled after verification; `active_line_count = 0` and the matched pigs were released.
 
-### 4.3 Validate `intent_type` And `status`
+### 4.3 Validate `intent_type` And `status` - Repo Fix Ready; Pending Live Verification
 
 Required outcome:
 
-- either enforce these fields in backend sync or remove them from the required contract
-- avoid fields that look important but do nothing
+- either enforce these fields in backend sync or remove them from the required contract - Done in repo
+- avoid fields that look important but do nothing - Done in repo
 
-## Phase 5: Safe Order Review For Sam
+Repo fix summary 2026-05-11:
+
+- `intent_type` is optional metadata only and is now validated when present. Allowed values: `primary`, `addon`, `nearby_addon`, `extractor_slot`.
+- `status` defaults to `active` and backend sync now rejects any non-`active` value. Inactive/cancelled requested items are not a backend sync feature; callers must omit those items instead of sending them.
+- Matching behavior still depends on `request_item_key`, `category`, `weight_range`, `sex`, and `quantity`; `intent_type` does not change allocation.
+- Docs updated in `ORDER_LOGIC.md`, `DATA_MODELS.md`, `API_STRUCTURE.md`, `DATA_FLOW.md`, and `CHANGELOG.md`.
+
+Verification completed locally:
+
+- Valid payload with missing `intent_type`/`status` defaults cleanly to `status = active`.
+- Valid payload with `intent_type = nearby_addon` and `status = active` passes.
+- Invalid `intent_type` is rejected.
+- Invalid `status = inactive` is rejected with a clear backend validation error.
+
+Next live check after backend deploy:
+
+1. Direct sync validation smoke test with valid `intent_type` / `status = active` should still pass.
+2. Direct sync validation smoke test with `status = inactive` should return `400` and should not alter order lines.
+
+## Phase 5: Safe Order Review For Sam - Not Started
 
 Goal: let Sam understand saved order state without uncontrolled sheet access.
 
@@ -675,7 +709,7 @@ Possible actions:
 - `find_customer_orders`
 - `get_active_customer_order_context`
 
-## Phase 6: Web App Order Usability
+## Phase 6: Web App Order Usability - In Progress / Ongoing
 
 Goal: make the app useful for daily order operations.
 
@@ -699,7 +733,7 @@ Rule:
 
 Do not redesign the app before the backend order behavior is safe.
 
-## Phase 7: Broader Workflow Improvements
+## Phase 7: Broader Workflow Improvements - Not Started
 
 Only after order stability:
 
@@ -764,7 +798,7 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - Optionally moves sow back to a service pen.
 - Available only for `Confirmed_Pregnant` matings with no litter and no actual farrowing date.
 
-## Phase 9: Pig, Weight, And Reporting Improvements
+## Phase 9: Pig, Weight, And Reporting Improvements - Not Started
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -823,7 +857,7 @@ Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
 
-## Phase 10: Farm Operating System Integration
+## Phase 10: Farm Operating System Integration - Not Started
 
 Goal: bring Sam, Oom Sakkie, the web app, backend modules, weather logging, Synsynk solar data, n8n workflows, and Google Sheets into one documented operating-system structure.
 

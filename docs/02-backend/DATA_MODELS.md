@@ -94,8 +94,8 @@ Fields:
 | `weight_range` | Requested `Weight_Band`. |
 | `sex` | Requested sex split. |
 | `quantity` | Quantity for that requested item. |
-| `intent_type` | n8n intent label. Currently validated but not fully enforced by backend sync. |
-| `status` | n8n item status. Currently validated but not fully enforced by backend sync. |
+| `intent_type` | Optional n8n source label. Allowed values: `primary`, `addon`, `nearby_addon`, `extractor_slot`. It is validated for payload hygiene but does not change matching behavior. |
+| `status` | Optional item status. Defaults to `active`; backend sync only accepts `active`. Inactive requested items are not supported and must be omitted by the caller. |
 | `notes` | Notes for the requested split. |
 
 ## Status Model Notes
@@ -111,4 +111,5 @@ Customer cancellation standard: `Order_Status = Cancelled`, `Approval_Status = N
 
 - `Request_Item_Key` must be stable or split-item sync can fail.
 - `Reserved_Status` and `Line_Status` can drift if reservation/release/cancel logic is not handled together.
-- `intent_type` and `status` are accepted in sync payloads but are not currently strong backend business rules.
+- `intent_type` is metadata only and must not be used as a substitute for `request_item_key`.
+- `status` is deliberately restricted to `active`; callers must omit inactive/cancelled requested items instead of sending them to backend sync.

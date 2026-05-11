@@ -62,6 +62,19 @@ ALLOWED_COLLECTION_LOCATIONS = {
 }
 
 
+ALLOWED_SYNC_ITEM_INTENT_TYPES = {
+    "primary",
+    "addon",
+    "nearby_addon",
+    "extractor_slot",
+}
+
+
+ALLOWED_SYNC_ITEM_STATUSES = {
+    "active",
+}
+
+
 def validate_new_order_payload(payload: dict):
     errors = []
 
@@ -326,8 +339,8 @@ def validate_sync_order_lines_payload(payload: dict):
         weight_range = str(item.get("weight_range", "")).strip()
         sex = str(item.get("sex", "")).strip()
         quantity_raw = item.get("quantity", "")
-        intent_type = str(item.get("intent_type", "")).strip()
-        status = str(item.get("status", "active")).strip() or "active"
+        intent_type = str(item.get("intent_type", "")).strip().lower()
+        status = str(item.get("status", "active")).strip().lower() or "active"
         notes = str(item.get("notes", "")).strip()
 
         if not request_item_key:
@@ -361,6 +374,19 @@ def validate_sync_order_lines_payload(payload: dict):
             errors.append(f"requested_items[{index}].quantity must be greater than 0.")
         elif int(parsed_quantity) != parsed_quantity:
             errors.append(f"requested_items[{index}].quantity must be a whole number.")
+
+        if intent_type and intent_type not in ALLOWED_SYNC_ITEM_INTENT_TYPES:
+            errors.append(
+                f"requested_items[{index}].intent_type must be one of: "
+                + ", ".join(sorted(ALLOWED_SYNC_ITEM_INTENT_TYPES))
+                + "."
+            )
+
+        if status not in ALLOWED_SYNC_ITEM_STATUSES:
+            errors.append(
+                f"requested_items[{index}].status must be active. "
+                "Inactive requested items are not supported by backend sync."
+            )
 
         cleaned_items.append({
             "request_item_key": request_item_key,
