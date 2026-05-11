@@ -2016,7 +2016,7 @@
     },
     {
       "parameters": {
-        "url": "=https://app.chatwoot.com/api/v1/accounts/{{ $('Webhook - Chatwoot Trigger').item.json.body.conversation.messages[0].account_id }}/conversations/{{ $('Webhook - Chatwoot Trigger').item.json.body.conversation.messages[0].conversation_id }}/messages",
+        "url": "={{ `https://app.chatwoot.com/api/v1/accounts/${$json.account_id || $('Code - Normalize Incoming Message').item.json.AccountId}/conversations/${$json.conversation_id || $('Code - Normalize Incoming Message').item.json.ConversationId}/messages` }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

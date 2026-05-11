@@ -2757,3 +2757,7 @@ Safety rule:
 
 If multiple active orders match, Sam must ask one disambiguation question. If no active order matches, Sam must not invent an order.
 
+Live test note:
+
+- 2026-05-11 clean-conversation test found that `HTTP - Get Conversation Messages` must not build its Chatwoot URL from `conversation.messages[0].account_id` or `conversation.messages[0].conversation_id`, because those fields can be missing on webhook payloads.
+- The export now uses the normalized IDs from `Code - Normalize Incoming Message` / `Edit - Keep Chatwoot ID's` for the Chatwoot history URL.

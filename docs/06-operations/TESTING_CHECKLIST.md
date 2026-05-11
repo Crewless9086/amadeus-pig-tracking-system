@@ -263,12 +263,14 @@ Regression checks:
 8. `1.0` should call the lookup only when no `ExistingOrderId` is present and the message is about an existing/saved order, cancellation, quote, or invoice.
 9. `1.0` must not call the lookup for normal new sales messages such as "I want 2 piglets."
 10. If `ExistingOrderId` is present, `1.0` must keep using `get_order_context` instead of the fallback lookup.
+11. `HTTP - Get Conversation Messages` must build the Chatwoot URL from normalized `AccountId` and `ConversationId`; do not depend on `conversation.messages[0].account_id` or `conversation.messages[0].conversation_id`.
 
 Local verification reference:
 
 - 2026-05-11: `ORD-2026-BDEFCE` returned `single_match` with 6 active draft lines grouped as 4 Female and 2 Male Young Piglets in `2_to_4_Kg`.
 - 2026-05-11: phone lookup for `447388223114` returned `multiple_matches` for `ORD-2026-BDEFCE` and `ORD-2026-CEF70A`.
 - 2026-05-11: `1.0` local JS checks confirmed "What is on my order?" with no existing order ID sets `should_active_customer_lookup = true`; "I want 2 piglets" does not; and an existing order ID keeps fallback lookup disabled.
+- 2026-05-11: clean conversation `1774` first live run exposed the Chatwoot history URL ID-source issue. The `1.0` export was corrected to use normalized IDs before retest.
 
 ## Phase 1.9 Outbound Notification Tests
 

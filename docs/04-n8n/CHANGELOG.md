@@ -21,6 +21,8 @@ Type: `ADD`
 
 **Summary:** Added the read-only `1.2 - Amadeus Order Steward` branch `get_active_customer_order_context`. The branch calls backend `GET /api/orders/active-customer-context` with `order_id`, `conversation_id`, or `customer_phone`, then formats `lookup_status`, `match_count`, `active_order_context`, and `active_order_matches` for Sam review routing. `1.0 - Sam-sales-agent-chatwoot` now has a conservative fallback path: when no `ExistingOrderId` is available and the customer asks saved-order review/cancel/document-style questions such as "what is on my order?", it calls the steward lookup and injects single-match context into the existing order-state path. Normal new sales messages do not trigger the lookup, and exact `ExistingOrderId` still uses the existing `get_order_context` path.
 
+**Live test note:** First clean-conversation test exposed a `1.0` Chatwoot history fetch URL issue. `HTTP - Get Conversation Messages` was reading `account_id` and `conversation_id` from `conversation.messages[0]`, where those fields can be undefined. The export now builds that URL from the normalized Chatwoot IDs captured by `Code - Normalize Incoming Message`.
+
 ---
 
 ### 2026-05-11 - Phase 4.3 requested item metadata validation

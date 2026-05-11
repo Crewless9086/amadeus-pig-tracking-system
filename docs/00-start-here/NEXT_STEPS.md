@@ -770,12 +770,13 @@ Sales agent export progress 2026-05-11:
 - If no `ExistingOrderId` exists, saved-order review/cancel/document-style messages can call `get_active_customer_order_context` through `1.2`.
 - Normal new sales messages do not trigger active-order lookup.
 - Single-match lookup injects safe order context into the existing order-state path; multiple-match lookup exposes short summaries so Sam can ask one disambiguation question.
+- Live test correction: `HTTP - Get Conversation Messages` now builds its Chatwoot API URL from normalized `AccountId` and `ConversationId`, because `conversation.messages[0].account_id` and `conversation.messages[0].conversation_id` can be undefined.
 
 Next implementation step:
 
-- Deploy backend.
-- Import updated `1.2` and `1.0` exports into n8n.
-- Run live read-only tests before enabling any follow-up order action based on recovered context.
+- Re-import the updated `1.0` export into n8n.
+- Rerun the clean conversation `1774` test against temporary order `ORD-2026-8B7FC8`.
+- After successful confirmation, cancel the temporary test order.
 
 ### 5.3 Sam Review Wording Tests - Planned
 
