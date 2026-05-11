@@ -1903,7 +1903,7 @@
     },
     {
       "parameters": {
-        "url": "=https://amadeus-pig-tracking-system.onrender.com/api/orders/active-customer-context?{{ [\n  $json.order_id ? 'order_id=' + encodeURIComponent($json.order_id) : '',\n  $json.conversation_id ? 'conversation_id=' + encodeURIComponent($json.conversation_id) : '',\n  $json.customer_phone ? 'customer_phone=' + encodeURIComponent($json.customer_phone) : ''\n].filter(Boolean).join('&') }}",
+        "url": "={{ `https://amadeus-pig-tracking-system.onrender.com/api/orders/active-customer-context?${[\n  $json.order_id ? 'order_id=' + encodeURIComponent($json.order_id) : '',\n  $json.conversation_id ? 'conversation_id=' + encodeURIComponent($json.conversation_id) : '',\n  $json.customer_phone ? 'customer_phone=' + encodeURIComponent($json.customer_phone) : ''\n].filter(Boolean).join('&')}` }}",
         "options": {
           "response": {
             "response": {

@@ -150,6 +150,10 @@ Backend endpoint:
 
 `GET /api/orders/active-customer-context`
 
+URL expression note:
+
+`HTTP - Get Active Customer Order Context` must use a full n8n JavaScript expression for the query string. Do not use a mixed `?{{ [...] }}` expression for this URL, because n8n can surface that as an `invalid syntax` error in the parent `1.0` execute-workflow node.
+
 Returned fields:
 
 - `success`
