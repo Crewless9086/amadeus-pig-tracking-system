@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Partly Live; 5.2 exports ready; pending deploy/test | Deploy backend, import 1.0/1.2, then run read-only lookup tests. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.7; cleanup/5.8 next | Plan cleanup of duplicated shadow/legacy routing before expanding quote automation. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -695,7 +695,7 @@ Live verification 2026-05-11:
 - Direct live sync with `intent_type = made_up` returned `400` with the expected allowed-value validation error and did not alter order lines.
 - `ORD-2026-07F5C8` was cancelled after verification; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, `active_line_count = 0`, and `reserved_pig_count = 0`.
 
-## Phase 5: Safe Order Review For Sam - Partly Live; 5.2 Exports Ready; Pending Deploy/Test
+## Phase 5: Safe Order Review For Sam - Complete Through 5.7; Cleanup/5.8 Next
 
 Goal: let Sam understand saved order state without uncontrolled sheet access.
 
@@ -904,7 +904,7 @@ Design draft 2026-05-11:
 - Owner review/sign-off completed on 2026-05-11.
 - Next step is Phase 5.5 implementation of backend-owned intake sheets and endpoints.
 
-### 5.5 Backend Intake State Sheets And Endpoints - Live Sheet Verified / Awaiting Backend Deploy
+### 5.5 Backend Intake State Sheets And Endpoints - Complete And Live-Verified
 
 Required outcome:
 
@@ -945,27 +945,61 @@ Repo implementation 2026-05-12:
   - Context read returned `lookup_status = single_match`.
   - Reset closed the intake with `Closed_Reason = phase_5_5_smoke_test_complete`.
   - Post-reset context read returned `lookup_status = no_match`, confirming no active test intake remains.
+- Deployed Render smoke test passed on 2026-05-12:
+  - Test conversation: `PHASE55-RENDER-TEST-20260512`.
+  - Created intake `INTAKE-2026-FD85E3` and item `INTAKEITEM-2026-2CAC20`.
+  - `POST /api/order-intake/update` returned `next_action = create_draft_then_quote`, `ready_for_draft = true`, `ready_for_quote = false`, and `missing_fields = ["draft_order_id"]`.
+  - `GET /api/order-intake/context` returned `lookup_status = single_match`.
+  - `POST /api/order-intake/<conversation_id>/reset` closed the intake with `Closed_Reason = phase_5_5_render_smoke_test_complete`.
+  - Post-reset context read returned `lookup_status = no_match`, confirming no active deployed-backend test intake remains.
 
-Remaining before Phase 5.5 live closure:
+Phase 5.5 is closed. Next phase is Phase 5.6 intake shadow mode in `1.0`.
 
-- Deploy backend.
-- Run the same intake update/context/reset smoke test against the deployed backend URL.
-
-### 5.6 Intake Shadow Mode In `1.0` - Planned
+### 5.6 Intake Shadow Mode In `1.0` - Complete And Live-Verified
 
 Required outcome:
 
-- `1.0 - Sam-sales-agent-chatwoot` calls intake update/read every customer turn but does not yet use it as the primary routing truth.
-- Compare backend intake state against the current `order_state`, Sam replies, and known problem transcripts.
-- Prove the intake state retains facts after long conversations and repeated follow-up questions.
-- Do not remove existing Chatwoot attributes or payload fields during shadow mode.
+- `1.0 - Sam-sales-agent-chatwoot` calls intake update/read every customer turn but does not yet use it as the primary routing truth. - Live-verified.
+- Compare backend intake state against the current `order_state`, Sam replies, and known problem transcripts. - Live-verified for the key missing-memory case.
+- Prove the intake state retains facts after long conversations and repeated follow-up questions. - Live-verified for short follow-up commitment after prior facts were captured.
+- Do not remove existing Chatwoot attributes or payload fields during shadow mode. - Preserved.
+
+Repo implementation 2026-05-12:
+
+- Added `Code - Build Intake Shadow Payload` after `Code - Format Chat History` and before `Ai Agent - Escalation Classifier`.
+- Added `HTTP - Intake Shadow Update` calling `POST /api/order-intake/update`.
+- Added `Code - Attach Intake Shadow Result` before `Ai Agent - Escalation Classifier`.
+- Existing route decision, draft creation, update, sync, cancel, approval, and reply branches remain unchanged.
+- Shadow result is attached as `intake_shadow_result`; raw backend response is attached as `intake_shadow_raw_response`.
+- `HTTP - Intake Shadow Update` uses `continueOnFail` so a shadow-mode backend issue should not stop the existing customer reply path.
+
+Local verification:
+
+- `workflow.json` parses as valid JSON.
+- Workflow now has 101 nodes.
+- All connection source/target node names resolve.
+- New common path is `Code - Format Chat History` -> `Code - Build Intake Shadow Payload` -> `HTTP - Intake Shadow Update` -> `Code - Attach Intake Shadow Result` -> `Ai Agent - Escalation Classifier`.
+- New Code-node JavaScript passed syntax checks with Node.js.
+
+Live verification 2026-05-12:
+
+- Imported updated `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/workflow.json` into n8n and ran a safe shadow-mode test against Chatwoot conversation `1774`.
+- First test message created intake `INTAKE-2026-4D7825` and item `INTAKEITEM-2026-39BF24` from: 1 Female Grower, `35_to_39_Kg`, Riversdale, Friday at 14:00, Cash.
+- Backend context returned `lookup_status = single_match`, `quote_requested = true`, `safe_reply_facts` with the captured item/location/time/payment, and only `order_commitment` missing.
+- Follow-up message `I want to proceed` updated the same intake instead of creating a disconnected state.
+- Follow-up context returned `intake_status = Ready_For_Draft`, `order_commitment = true`, `missing_fields = []`, `next_action = create_draft`, and `ready_for_draft = true`.
+- Existing live route behavior remained unchanged during shadow mode; no real draft order was created by Phase 5.6.
 
 Acceptance tests:
 
-- The transcript where the customer wants 1 female grower, `35_to_39_Kg`, Friday 14:00, Riversdale, Cash must retain those fields even after more than 25 messages.
-- "I told you what I want", "Yes", "I told you 1", and "I need a quote" must not erase known intake facts.
+- The transcript where the customer wants 1 female grower, `35_to_39_Kg`, Friday 14:00, Riversdale, Cash must retain those fields even after more than 25 messages. - Proven at backend state level for the captured facts; broader messy-human regression remains useful before replacing existing routing.
+- "I told you what I want", "Yes", "I told you 1", and "I need a quote" must not erase known intake facts. - Covered by persistent backend merge behavior; keep as regression prompts for 5.7/5.8.
 
-### 5.7 Intake-Driven Draft Creation And Line Sync - Planned
+Phase 5.6 closure:
+
+- Closed 2026-05-12. Intake state is now safe to use as the planned input for Phase 5.7, but existing routing remains the live operational path until 5.7 is implemented and verified.
+
+### 5.7 Intake-Driven Draft Creation And Line Sync - Complete And Live-Verified
 
 Required outcome:
 
@@ -973,6 +1007,70 @@ Required outcome:
 - `ORDER_MASTER` and `ORDER_LINES` are created from backend-confirmed intake state and `ORDER_INTAKE_ITEMS`.
 - Multi-category and split-sex requests sync through `requested_items[]`.
 - Existing Draft orders are updated, not duplicated, when the customer changes, adds, or removes items.
+
+Implementation plan:
+
+- Add a backend-owned action that converts a verified intake state into a Draft order action payload, using `ORDER_INTAKE_STATE` and active `ORDER_INTAKE_ITEMS` as the source of truth.
+- In `1.0`, route only the proven case first: `intake_shadow_result.ready_for_draft = true` and `next_action = create_draft`.
+- Call the existing `1.2 - Amadeus Order Steward` create-with-lines path where possible, instead of adding a second order-writing mechanism.
+- After the draft is created, link the returned `order_id` back to the intake row as `Draft_Order_ID` and move intake status away from `Ready_For_Draft`.
+- Keep the existing `order_state` route as fallback until intake-driven draft creation is live-verified.
+- Do not wire formal quote PDF generation here; that remains Phase 5.8.
+
+Repo implementation 2026-05-12:
+
+- Updated `1.0 - Sam-sales-agent-chatwoot` export to promote only the verified intake-ready create path.
+- `Code - Decide Order Route` now sets `CREATE_DRAFT` when `intake_shadow_result.ready_for_draft = true`, `next_action = create_draft`, and no draft is linked yet.
+- `Set - Draft Order Payload` now uses backend-confirmed intake facts for the create payload when `debug_intake_ready_create_draft = true`.
+- Intake-driven create uses existing `1.2` `create_order_with_lines`; no duplicate order-writing logic was added.
+- Added `Code - Build Intake Draft Link Payload` and `HTTP - Link Intake Draft Order` after draft creation so the returned `order_id` is patched back to `ORDER_INTAKE_STATE.Draft_Order_ID`.
+- The link branch returns no items unless the create came from intake readiness, so normal legacy draft creation does not call the intake endpoint.
+- Formal quote generation remains out of scope for 5.7 and stays planned for 5.8.
+- Live retest correction: first import did not create a draft because the intake result was only passed through the escalation classifier path, and the classifier output does not reliably preserve all incoming fields. The export now sends `Code - Attach Intake Shadow Result` to both `Ai Agent - Escalation Classifier` and `Merge - Sales Agent Context A`, while `Code - Format Chat History` feeds the shadow update first. This keeps `intake_shadow_result` available when `Code - Decide Order Route` runs.
+- Second live retest correction: route decision still did not create a draft, so `Code - Decide Order Route` now reads `Code - Attach Intake Shadow Result` directly as a fallback if the merged item does not contain `intake_shadow_result`. It also reattaches `intake_shadow_result`, `intake_shadow_raw_response`, and `intake_shadow_payload` to its own output so `Set - Draft Order Payload` can use the verified intake facts.
+- Third live retest correction: the later `Code - Should Create Draft Order?` node can overwrite `should_create_draft` based on older memory/missing-fact rules. The export now stamps intake-ready facts immediately in `Code - Attach Intake Shadow Result` and lets `Code - Should Create Draft Order?` treat the intake-ready signal as an approved create signal.
+
+Local verification:
+
+- `workflow.json` parses as valid JSON.
+- Workflow now has 103 nodes.
+- All connection source/target node names resolve.
+- New/changed Code-node JavaScript passed syntax checks with Node.js.
+
+Live verification 2026-05-12:
+
+- Safe test conversation: Chatwoot conversation `1774`, intake `INTAKE-2026-4D7825`.
+- Before test: intake was `Ready_For_Draft`, `next_action = create_draft`, `ready_for_draft = true`, with one active item: 1 Female Grower, `35_to_39_Kg`, Riversdale, Friday at 14:00, Cash.
+- Live webhook test message `I want to proceed` created draft order `ORD-2026-A822D3`.
+- Intake was linked back to `Draft_Order_ID = ORD-2026-A822D3`, changed to `Intake_Status = Draft_Created`, and now returns `next_action = sync_lines`.
+- Order header was correct: `Order_Status = Draft`, `ConversationId = 1774`, `Customer_Name = Charl N`, `Requested_Category = Grower`, `Requested_Weight_Range = 35_to_39_Kg`, `Requested_Sex = Female`, `Requested_Quantity = 1`, `Collection_Location = Riversdale`, `Payment_Method = Cash`, `Created_By = Sam Phase 5.7 intake`.
+- One active draft line was created: `OL-2026-95EC63`, Pig `PIG-2026-1F94`, tag `6`, Female, `35_to_39_Kg`, `Unit_Price = 1400`, `Request_Item_Key = item_1`, `Reserved_Status = Not_Reserved`.
+- This test draft should be cancelled after owner confirmation so it does not keep test stock on an active draft.
+- Follow-up broad regression found a Phase 5.7 gap before cleanup: not all natural commitment phrases are treated the same by intake and legacy routing. A test message using wording like `I would like to proceed` / `create a draft order` can leave intake below `Ready_For_Draft` while the legacy create route still fires. One regression draft, `ORD-2026-2B0D8A`, was created through the legacy path with `Created_By = Sam`, `Requested_Sex = Any`, and zero active lines. It was cancelled and conversation `1774` was reset to `no_match`.
+- Required before n8n cleanup: expand/centralize commitment detection and prevent legacy header-only draft creation when requested item facts are present but intake is not ready. Then rerun a controlled multi-case regression and cancel/reset after every case.
+- Fix prepared in repo on 2026-05-12: `Code - Build Intake Shadow Payload` now treats natural wording such as `I would like to proceed`, `create a draft order`, and `prepare the next step` as order commitment. `Code - Should Create Draft Order?` now blocks legacy header-only draft creation unless legacy state has line-ready `requested_items`; intake-ready creation remains allowed.
+- Live retest after n8n import passed for the original failed wording: `ORD-2026-1450B2` was created from intake with 3 active Female Grower `30_to_34_Kg` lines, Riversdale, Cash. The test order was cancelled and the intake was closed.
+- Wider batch should remain paused until two additional findings are fixed:
+  - `ORD-2026-86CA53` created 2 active Weaner `10_to_14_Kg` lines but header `Requested_Sex` was `Any` even though the message requested `male`.
+  - `ORD-2026-21BB6F` created a header-only Draft with zero active lines for 1 Female Weaner `15_to_19_Kg`; this confirms zero-line draft prevention still needs to apply after steward/line-sync results, not only before the legacy create route.
+- All wider-batch test orders were cancelled: `ORD-2026-4FF699`, `ORD-2026-86CA53`, and `ORD-2026-21BB6F`. Conversation `1774` was verified clean afterward through local backend reads against the live sheet data.
+- Google Sheets API quota was hit during the wider regression (`429 Read requests per minute per user`), which surfaced as Render `500` responses. Future live regression should be slower and smaller, or the backend should add retry/backoff/caching for sheet reads before high-volume testing.
+- Fix prepared in repo:
+  - `1.0 Code - Build Intake Shadow Payload` now lets the latest explicit customer sex (`Male` / `Female`) override stale `Any` values in existing `requested_items`.
+  - `1.2 Code - Build Sync After Create Payload` sends `cancel_order_if_no_matches = true` only for the create-with-lines path.
+  - Backend sync validation accepts `cancel_order_if_no_matches`.
+  - `sync_order_lines_from_request` auto-cancels the newly-created Draft when that flag is set and `matched_total = 0`, returning `cancelled_empty_order = true` and `order_status = Cancelled`.
+  - `1.2 Code - Format Create With Lines Result` treats that zero-match auto-cancel as not successful for Sam's downstream response.
+- Local verification passed: workflow JSON parses, all workflow connections resolve, all Code-node JavaScript compiles, the stale `Any` -> `Male` simulation passes, and a backend mocked no-match sync returns `cancelled_empty_order = true`.
+
+First live test scope:
+
+- Use a safe Charl N Chatwoot conversation only.
+- Start with the same verified facts: 1 Female Grower, `35_to_39_Kg`, Riversdale, Friday at 14:00, Cash.
+- Confirm the intake reaches `Ready_For_Draft`. - Done.
+- Confirm exactly one Draft order is created and `ConversationId` is stored. - Done: `ORD-2026-A822D3`, `ConversationId = 1774`.
+- Confirm active order lines match the active intake items. - Done: one Female Grower `35_to_39_Kg` line.
+- Confirm Chatwoot custom attributes are updated with the new draft order ID. - Pending manual/n8n execution confirmation; backend order and intake link are verified.
 
 Draft edit behavior:
 
@@ -998,6 +1096,17 @@ Required outcome:
 - Keep only compact, intentional objects in prompts and node transitions.
 - Chatwoot custom attributes should be reduced to routing state such as `conversation_mode`, `order_id`, and `pending_action`.
 - Do not remove legacy attributes or payload branches until intake-driven routing is live-verified.
+
+Cleanup notes captured during 5.6/5.7:
+
+- Remove the word `shadow` from runtime concepts once intake becomes the primary order-intake truth; keep a short historical note only in changelog/docs.
+- Collapse duplicated order fact extraction so `ORDER_INTAKE_STATE` / `ORDER_INTAKE_ITEMS` become the primary source for draft/quote order facts.
+- Reduce or remove legacy `order_state` create-draft logic once intake-driven create/update/quote flows are verified.
+- Route mismatch fix is prepared: intake commitment detection is broader and legacy header-only draft creation is blocked unless line-ready `requested_items` exist. Cleanup should still leave one gate for draft creation, not two competing interpretations of commitment.
+- Remove cross-node fallback reads added during 5.7 troubleshooting where they are no longer needed after the flow is simplified.
+- Keep `1.2 - Amadeus Order Steward` as the only order-writing workflow; do not duplicate order creation or line sync in `1.0`.
+- Keep Chatwoot attributes lightweight: `conversation_mode`, `order_id`, `order_status`, `pending_action`, and payment method only if still operationally useful.
+- Review Sam prompt context and remove duplicated large payloads once compact intake + steward context is sufficient.
 
 ### 5.10 Order Archive / History Scaling - Future Design, Not Now
 

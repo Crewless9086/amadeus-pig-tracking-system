@@ -59,9 +59,9 @@ Important fields:
 - `notes`
 - `requested_items[]`
 
-## Planned Persistent Order Intake State
+## Persistent Order Intake State
 
-Status: planned after Phase 5.3; do not implement until the design is agreed and sheet schemas are documented.
+Status: backend, sheets, Phase 5.6 `1.0` shadow-mode calls, and Phase 5.7 intake-driven draft creation are live-verified. Cleanup is still needed before treating the current doubled-up workflow shape as final.
 
 Current issue:
 
@@ -85,9 +85,10 @@ Target flow:
 2. `1.0` normalizes the message and calls backend intake update.
 3. Backend merges newly confirmed facts into existing intake state.
 4. Backend returns known fields, `missing_fields`, `next_action`, and safe reply facts.
-5. Sam asks the next missing field or confirms the backend action result.
-6. If intake is complete and customer requests a formal quote, n8n/backend creates or updates the draft, syncs lines, generates a quote PDF, and uses the document delivery path.
-7. If customer wants to proceed, n8n/backend creates or updates the draft and syncs lines.
+5. During Phase 5.6, `1.0` attaches this response as `intake_shadow_result` only. This is live-verified as of 2026-05-12.
+6. Phase 5.7 uses `ready_for_draft = true` / `next_action = create_draft` for the first controlled draft-creation path, with existing routing retained as fallback.
+7. Draft creation still runs through existing `1.2` `create_order_with_lines`; after success, `1.0` patches the returned `order_id` back to intake as `Draft_Order_ID`.
+8. Cleanup pass should remove duplicated shadow/legacy fields after intake-driven draft/update/quote behavior is proven.
 
 Planned cleanup rule:
 

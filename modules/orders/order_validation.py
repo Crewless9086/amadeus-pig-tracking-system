@@ -315,6 +315,7 @@ def validate_sync_order_lines_payload(payload: dict):
 
     requested_items = payload.get("requested_items", [])
     changed_by = str(payload.get("changed_by", "App")).strip() or "App"
+    cancel_order_if_no_matches = payload.get("cancel_order_if_no_matches") is True
 
     if not isinstance(requested_items, list) or len(requested_items) == 0:
         errors.append("requested_items is required and must be a non-empty list.")
@@ -323,6 +324,7 @@ def validate_sync_order_lines_payload(payload: dict):
             "errors": errors,
             "cleaned_data": {
                 "changed_by": changed_by,
+                "cancel_order_if_no_matches": cancel_order_if_no_matches,
                 "requested_items": [],
             }
         }
@@ -404,6 +406,7 @@ def validate_sync_order_lines_payload(payload: dict):
         "errors": errors,
         "cleaned_data": {
             "changed_by": changed_by,
+            "cancel_order_if_no_matches": cancel_order_if_no_matches,
             "requested_items": cleaned_items,
         }
     }

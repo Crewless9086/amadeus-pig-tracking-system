@@ -1309,6 +1309,7 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     order_id = str(order_id).strip()
     changed_by = str(cleaned_data.get("changed_by", "App")).strip() or "App"
     requested_items = cleaned_data.get("requested_items", [])
+    cancel_order_if_no_matches = cleaned_data.get("cancel_order_if_no_matches") is True
 
     if not isinstance(requested_items, list) or len(requested_items) == 0:
         raise ValueError("requested_items must be a non-empty list.")
@@ -1552,10 +1553,21 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
     else:
         fulfillment_status = "no_match"
 
+    cancelled_empty_order = False
+    cancel_result = None
+    if cancel_order_if_no_matches and matched_total == 0 and not had_errors:
+        cancel_result = cancel_order(
+            order_id,
+            changed_by=changed_by,
+            reason="Auto-cancelled because create-with-lines matched zero requested pigs.",
+        )
+        cancelled_empty_order = cancel_result.get("success") is True
+
     return {
         "success": not had_errors,
         "action": "sync_order_lines_from_request",
         "order_id": order_id,
+        "order_status": "Cancelled" if cancelled_empty_order else order_status,
         "changed_by": changed_by,
         "results": results,
         "partial_fulfillment": partial_fulfillment,
@@ -1565,6 +1577,8 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         "matched_total": matched_total,
         "unmatched_total": unmatched_total,
         "incomplete_items": incomplete_items,
+        "cancelled_empty_order": cancelled_empty_order,
+        "cancel_result": cancel_result,
         "message": "Order line sync completed." if not had_errors else "Order line sync completed with errors.",
     }
 

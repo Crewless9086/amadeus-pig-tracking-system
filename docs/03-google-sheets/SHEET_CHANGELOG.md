@@ -10,13 +10,13 @@ Records approved changes to Google Sheets columns, formulas, sheet names, owners
 
 Sheet: `ORDER_INTAKE_STATE`, `ORDER_INTAKE_ITEMS`
 
-Change: Added backend-ready setup utility and documented headers for persistent sales intake state. The setup script is `scripts/setup_order_intake_infrastructure.py`; without `--apply` it is dry-run only. Dry-run on 2026-05-12 confirmed both sheets were missing and would be created with the documented headers. Apply on 2026-05-12 created both sheets and verified headers.
+Change: Added backend-ready setup utility and documented headers for persistent sales intake state. The setup script is `scripts/setup_order_intake_infrastructure.py`; without `--apply` it is dry-run only. Dry-run on 2026-05-12 confirmed both sheets were missing and would be created with the documented headers. Apply on 2026-05-12 created both sheets and verified headers. Local and deployed backend smoke tests created/read/reset test intake rows successfully, leaving no active test intake.
 
 Reason: Sam's natural sales conversations need persistent backend-owned structured state so customer-confirmed order facts do not disappear in long conversations.
 
 Backend impact: Backend will read/write these sheets through `/api/order-intake/*` endpoints. Backend validates and merges proposed patches; n8n and Sam must not write these sheets directly.
 
-n8n impact: Phase 5.6 should call backend intake endpoints in shadow mode before any live routing depends on intake state.
+n8n impact: Phase 5.6 now calls backend intake endpoints in shadow mode and is live-verified. Phase 5.7 may promote verified intake readiness into controlled draft creation while keeping existing routing as fallback until verified.
 
 Formula impact: None planned. These are operational backend-owned sheets, not formula sheets.
 

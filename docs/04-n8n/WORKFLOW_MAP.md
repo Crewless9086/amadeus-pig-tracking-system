@@ -50,6 +50,7 @@ Primary responsibilities:
 - classify the message into `AUTO`, `CLARIFY`, or `ESCALATE`
 - run Sam as the sales agent with sales stock and farm-info tools
 - build structured order state from the conversation
+- call backend order-intake update in Phase 5.6 shadow mode, then continue existing routing unchanged until Phase 5.7 promotes a controlled draft-creation route
 - call `1.2 - Amadeus Order Steward` for currently supported order actions
 - write escalation records and notify Telegram when human help is needed
 - send final replies back to Chatwoot
@@ -68,6 +69,24 @@ Current live order routes called from `1.0`:
 Current disabled capability:
 
 - `Send_Pictures` tool workflow, which should point to `1.3 - SAM - Sales Agent - Media Tool` when ready.
+
+Phase 5.6 shadow mode - complete and live-verified:
+
+- `Code - Build Intake Shadow Payload` builds a proposed intake patch from the current message after chat history formatting and before the escalation classifier.
+- `HTTP - Intake Shadow Update` calls `POST /api/order-intake/update` on the backend.
+- `Code - Attach Intake Shadow Result` attaches backend intake status/readiness/missing-field debug data.
+- The result is not used for live route selection yet.
+- Live verification on 2026-05-12 created intake `INTAKE-2026-4D7825` for conversation `1774` and updated it to `Ready_For_Draft` after the follow-up commitment message.
+
+Phase 5.7 intake-driven draft creation - complete and live-verified:
+
+- Use `intake_shadow_result.ready_for_draft = true` and `next_action = create_draft` as the first backend-intake-driven draft creation trigger.
+- Prefer calling existing `1.2` create-with-lines behavior rather than duplicating order-writing logic in `1.0`.
+- Keep current route behavior as fallback until the intake-driven path is live-verified.
+- `Code - Attach Intake Shadow Result` feeds both the escalation classifier and `Merge - Sales Agent Context A`, so intake fields survive the normal sales-agent context path and are available to route decision.
+- After successful draft creation, `Code - Build Intake Draft Link Payload` and `HTTP - Link Intake Draft Order` patch `ORDER_INTAKE_STATE.Draft_Order_ID` through `POST /api/order-intake/update`.
+- Live verification on 2026-05-12 created `ORD-2026-A822D3` from intake `INTAKE-2026-4D7825` and synced one active Female Grower `35_to_39_Kg` line.
+- Cleanup is required after intake-driven flows are proven: remove duplicate shadow/legacy route fallbacks and keep intake state as the primary order-intake truth.
 
 ## `1.1 - SAM - Sales Agent - Escalation Telegram`
 

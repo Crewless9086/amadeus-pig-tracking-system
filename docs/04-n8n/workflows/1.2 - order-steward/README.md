@@ -8,6 +8,12 @@
 
 Order operation workflow called by the sales workflow for specific order tasks. This is the only workflow that actually does edits/updates or actions towards the orders section. This workflow used the data pass on and pick the correct path to tak and executes the command. 
 
+## Create-With-Lines Empty-Draft Guard
+
+When `create_order_with_lines` creates a new Draft and then syncs requested lines, the sync payload sends `cancel_order_if_no_matches = true`. The backend uses that flag only for this create path. If no pigs match any requested item, the newly-created empty Draft is automatically cancelled and the formatted workflow result returns `success = false` with `order_status = Cancelled`.
+
+This prevents active zero-line Draft orders from being left behind when Sam understood the customer's request but there is no matching sale stock.
+
 ## Export File
 
 Place the current n8n export in `workflow.json` when available.

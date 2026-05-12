@@ -289,31 +289,31 @@
             {
               "id": "c47b6fdb-d901-4ffd-94d5-ea247bce64b7",
               "name": "action",
-              "value": "={{ Array.isArray($json.order_state?.requested_items) && $json.order_state.requested_items.length > 0 ? 'create_order_with_lines' : 'create_order' }}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? 'create_order_with_lines' : (Array.isArray($json.order_state?.requested_items) && $json.order_state.requested_items.length > 0 ? 'create_order_with_lines' : 'create_order') }}",
               "type": "string"
             },
             {
               "id": "8b5c7af1-4af8-4bc8-9270-e779dda29a15",
               "name": "customer_name",
-              "value": "={{$json.order_state.customer_name}}",
+              "value": "={{ $json.intake_shadow_payload?.customer_name || $json.order_state.customer_name }}",
               "type": "string"
             },
             {
               "id": "1622672d-e5e8-4150-8adb-1d7d232a2e07",
               "name": "customer_phone",
-              "value": "={{ $('Code - Normalize Incoming Message').item.json.Raw.conversation.messages[0].sender.phone_number }}",
+              "value": "={{ $json.intake_shadow_payload?.customer_phone || $('Code - Normalize Incoming Message').item.json.Raw.conversation.messages[0].sender.phone_number }}",
               "type": "string"
             },
             {
               "id": "c9917b22-f2eb-4bfa-adfa-2d9ac495eafd",
               "name": "customer_channel",
-              "value": "={{$json.order_state.customer_channel}}",
+              "value": "={{ $json.intake_shadow_payload?.customer_channel || $json.order_state.customer_channel }}",
               "type": "string"
             },
             {
               "id": "473829e9-cb22-4b38-99ae-8dcd41036a8e",
               "name": "customer_language",
-              "value": "={{$json.order_state.customer_language}}",
+              "value": "={{ $json.intake_shadow_payload?.customer_language || $json.order_state.customer_language }}",
               "type": "string"
             },
             {
@@ -325,25 +325,25 @@
             {
               "id": "13ef6153-0b09-48c1-bebc-cd440e3096f2",
               "name": "requested_category",
-              "value": "={{$json.order_state.requested_category}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ($json.intake_shadow_raw_response?.items?.[0]?.category || '') : $json.order_state.requested_category }}",
               "type": "string"
             },
             {
               "id": "d0b77411-4d49-4f9d-b9fc-91e553ac67da",
               "name": "requested_weight_range",
-              "value": "={{$json.order_state.requested_weight_range}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ($json.intake_shadow_raw_response?.items?.[0]?.weight_range || '') : $json.order_state.requested_weight_range }}",
               "type": "string"
             },
             {
               "id": "405e6918-87c5-412e-92e0-f5d6f1d8acb9",
               "name": "requested_sex",
-              "value": "={{$json.order_state.requested_sex}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ($json.intake_shadow_raw_response?.items?.[0]?.sex || 'Any') : $json.order_state.requested_sex }}",
               "type": "string"
             },
             {
               "id": "4af02c7a-83e7-4c1b-b191-7f639b97350c",
               "name": "requested_quantity",
-              "value": "={{$json.order_state.requested_quantity}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ($json.intake_shadow_raw_response?.items?.reduce((sum, item) => sum + Number(item.quantity || 0), 0) || '') : $json.order_state.requested_quantity }}",
               "type": "string"
             },
             {
@@ -355,43 +355,43 @@
             {
               "id": "f4f869e2-d9f5-4136-a0f4-13e9b1b61798",
               "name": "notes",
-              "value": "={{$json.order_state.notes}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ('Created from intake ' + ($json.intake_shadow_raw_response?.intake_id || '')) : $json.order_state.notes }}",
               "type": "string"
             },
             {
               "id": "c258b905-d29e-4a12-916f-f9203bdfd168",
               "name": "changed_by",
-              "value": "=Sam",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? 'Sam Phase 5.7 intake' : 'Sam' }}",
               "type": "string"
             },
             {
               "id": "f1d68965-a90f-4f8e-b114-48a46a579bf4",
               "name": "conversation_id",
-              "value": "={{$json.order_state.conversation_id}}",
+              "value": "={{ $json.intake_shadow_raw_response?.conversation_id || $json.order_state.conversation_id }}",
               "type": "string"
             },
             {
               "id": "029f4e89-3171-45db-b26a-c1d205837418",
               "name": "contact_id",
-              "value": "={{$json.order_state.contact_id}}",
+              "value": "={{ $json.intake_shadow_payload?.contact_id || $json.order_state.contact_id }}",
               "type": "string"
             },
             {
               "id": "f9a0b1c2-d3e4-4f5a-6b7c-8d9e0f1a2b3c",
               "name": "requested_items",
-              "value": "={{ $json.order_state?.requested_items || [] }}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? (($json.intake_shadow_raw_response?.items || []).filter(item => item.status === 'active').map((item, index) => ({ request_item_key: item.item_key || ('item_' + (index + 1)), category: item.category, weight_range: item.weight_range, sex: item.sex || 'Any', quantity: item.quantity, intent_type: item.intent_type || 'primary', status: 'active', notes: item.notes || '' }))) : ($json.order_state?.requested_items || []) }}",
               "type": "array"
             },
             {
               "id": "ea8267f3-69ad-41c6-b50d-06d8e82b1831",
               "name": "collection_location",
-              "value": "={{$json.order_state.collection_location}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ($json.intake_shadow_raw_response?.known_fields?.collection_location || '') : $json.order_state.collection_location }}",
               "type": "string"
             },
             {
               "id": "3a289d4d-c6c9-4a1e-a2d9-f7bf33b43b12",
               "name": "payment_method",
-              "value": "={{$json.order_state.payment_method}}",
+              "value": "={{ $json.debug_intake_ready_create_draft === true ? ($json.intake_shadow_raw_response?.known_fields?.payment_method || '') : $json.order_state.payment_method }}",
               "type": "string"
             }
           ]
@@ -838,7 +838,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $json || {};\nconst state = item.order_state || {};\n\nfunction clean(value) {\n  return String(value || \"\").trim();\n}\n\nconst hasExistingDraft = state.has_existing_draft === true;\nconst shouldCreateDraft = item.should_create_draft === true;\nconst shouldEnrichExistingDraft = state.should_enrich_existing_draft === true;\nconst shouldSyncOrderLines = state.should_sync_order_lines === true;\nconst partialStockMixFollowThrough = state.partial_stock_mix_follow_through === true;\n\nconst pendingAction = clean(item.pending_action || state.pending_action || \"\");\nconst proceedSignal = state.proceed_signal === true;\nconst cancelOrderIntent = state.cancel_order_intent === true;\nconst existingOrderId = clean(state.existing_order_id || item.existing_order_id || item.ExistingOrderId || \"\");\nconst existingOrderStatus = clean(state.existing_order_status || item.ExistingOrderStatus || \"\");\nconst paymentMethod = clean(state.payment_method || \"\");\nconst paymentMethodSet = paymentMethod === \"Cash\" || paymentMethod === \"EFT\";\nconst sendForApprovalIntent = state.send_for_approval_intent === true;\n\nconst cancelConfirmMissingOrder = pendingAction === \"cancel_order\" && proceedSignal && !existingOrderId;\nconst pendingCancelConfirmed = pendingAction === \"cancel_order\" && hasExistingDraft && proceedSignal;\nconst stalePendingCancel = pendingAction === \"cancel_order\" && !proceedSignal && !cancelOrderIntent;\nconst sendForApprovalReady =\n  sendForApprovalIntent &&\n  hasExistingDraft &&\n  existingOrderStatus === \"Draft\" &&\n  paymentMethodSet;\n\n// Approval preflight: intent present but not all required fields are ready\nconst approvalPreflightBlocked = sendForApprovalIntent && !sendForApprovalReady;\n\nconst missingApprovalFields = [];\nif (sendForApprovalIntent) {\n  if (!paymentMethodSet) missingApprovalFields.push(\"payment_method\");\n  // Future: add !hasExistingDraft and existingOrderStatus !== \"Draft\" checks here\n}\n\nlet replyInstruction = \"\";\nif (approvalPreflightBlocked && missingApprovalFields.length > 0) {\n  if (!paymentMethodSet) {\n    replyInstruction = \"INSTRUCTION: The customer wants to send their order for approval but payment method is missing. Do NOT say the order was sent or will be sent for approval. Ask exactly one question: Cash or EFT?\";\n  } else {\n    replyInstruction = \"INSTRUCTION: The customer wants to send their order for approval but required information is missing: \" + missingApprovalFields.join(\", \") + \". Do NOT say the order was sent. Ask the customer for the first missing field only.\";\n  }\n}\n\nlet orderRoute = \"REPLY_ONLY\";\n\nif (cancelConfirmMissingOrder) {\n  orderRoute = \"REPLY_ONLY\";\n} else if (pendingCancelConfirmed) {\n  orderRoute = \"CANCEL_ORDER\";\n} else if (cancelOrderIntent && hasExistingDraft) {\n  orderRoute = \"CANCEL_PENDING\";\n} else if (stalePendingCancel) {\n  orderRoute = \"CLEAR_PENDING\";\n} else if (shouldCreateDraft) {\n  orderRoute = \"CREATE_DRAFT\";\n} else if (sendForApprovalReady) {\n  orderRoute = \"SEND_FOR_APPROVAL\";\n} else if (\n  hasExistingDraft &&\n  shouldSyncOrderLines &&\n  (shouldEnrichExistingDraft || partialStockMixFollowThrough)\n) {\n  orderRoute = \"UPDATE_HEADER_AND_LINES\";\n} else if (hasExistingDraft && shouldEnrichExistingDraft) {\n  orderRoute = \"UPDATE_HEADER_ONLY\";\n} else {\n  orderRoute = \"REPLY_ONLY\";\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n      order_route: orderRoute,\n      reply_instruction: replyInstruction,\n      debug_pending_action: pendingAction,\n      debug_pending_cancel_confirmed: pendingCancelConfirmed,\n      debug_cancel_order_intent: cancelOrderIntent,\n      debug_stale_pending_cancel: stalePendingCancel,\n      debug_should_create_draft: shouldCreateDraft,\n      debug_has_existing_draft: hasExistingDraft,\n      debug_should_enrich_existing_draft: shouldEnrichExistingDraft,\n      debug_should_sync_order_lines: shouldSyncOrderLines,\n      debug_partial_stock_mix_follow_through: partialStockMixFollowThrough,\n      debug_cancel_missing_order_id: cancelConfirmMissingOrder,\n      debug_send_for_approval_intent: sendForApprovalIntent,\n      debug_send_for_approval_ready: sendForApprovalReady,\n      debug_payment_method_set: paymentMethodSet,\n      debug_approval_preflight_blocked: approvalPreflightBlocked,\n      debug_approval_missing_fields: missingApprovalFields\n    }\n  }\n];"
+        "jsCode": "const item = $json || {};\nconst state = item.order_state || {};\n\nfunction clean(value) {\n  return String(value || \"\").trim();\n}\n\nconst hasExistingDraft = state.has_existing_draft === true;\nconst shouldCreateDraft = item.should_create_draft === true;\nconst shouldEnrichExistingDraft = state.should_enrich_existing_draft === true;\nconst shouldSyncOrderLines = state.should_sync_order_lines === true;\nconst partialStockMixFollowThrough = state.partial_stock_mix_follow_through === true;\nlet shadowSource = item;\nif (!shadowSource.intake_shadow_result) {\n  try {\n    shadowSource = $('Code - Attach Intake Shadow Result').first().json || item;\n  } catch (_) {\n    shadowSource = item;\n  }\n}\nconst intakeResult = shadowSource.intake_shadow_result || {};\nconst intakeRaw = shadowSource.intake_shadow_raw_response || {};\nconst intakePayload = shadowSource.intake_shadow_payload || {};\nconst intakeReadyCreateDraft =\n  intakeResult.ready_for_draft === true &&\n  (intakeResult.next_action === \"create_draft\" || intakeRaw.next_action === \"create_draft\") &&\n  !clean(intakeResult.draft_order_id || intakeRaw.draft_order_id || \"\");\n\nconst pendingAction = clean(item.pending_action || state.pending_action || \"\");\nconst proceedSignal = state.proceed_signal === true;\nconst cancelOrderIntent = state.cancel_order_intent === true;\nconst existingOrderId = clean(state.existing_order_id || item.existing_order_id || item.ExistingOrderId || \"\");\nconst existingOrderStatus = clean(state.existing_order_status || item.ExistingOrderStatus || \"\");\nconst paymentMethod = clean(state.payment_method || \"\");\nconst paymentMethodSet = paymentMethod === \"Cash\" || paymentMethod === \"EFT\";\nconst sendForApprovalIntent = state.send_for_approval_intent === true;\n\nconst cancelConfirmMissingOrder = pendingAction === \"cancel_order\" && proceedSignal && !existingOrderId;\nconst pendingCancelConfirmed = pendingAction === \"cancel_order\" && hasExistingDraft && proceedSignal;\nconst stalePendingCancel = pendingAction === \"cancel_order\" && !proceedSignal && !cancelOrderIntent;\nconst sendForApprovalReady =\n  sendForApprovalIntent &&\n  hasExistingDraft &&\n  existingOrderStatus === \"Draft\" &&\n  paymentMethodSet;\n\n// Approval preflight: intent present but not all required fields are ready\nconst approvalPreflightBlocked = sendForApprovalIntent && !sendForApprovalReady;\n\nconst missingApprovalFields = [];\nif (sendForApprovalIntent) {\n  if (!paymentMethodSet) missingApprovalFields.push(\"payment_method\");\n  // Future: add !hasExistingDraft and existingOrderStatus !== \"Draft\" checks here\n}\n\nlet replyInstruction = \"\";\nif (approvalPreflightBlocked && missingApprovalFields.length > 0) {\n  if (!paymentMethodSet) {\n    replyInstruction = \"INSTRUCTION: The customer wants to send their order for approval but payment method is missing. Do NOT say the order was sent or will be sent for approval. Ask exactly one question: Cash or EFT?\";\n  } else {\n    replyInstruction = \"INSTRUCTION: The customer wants to send their order for approval but required information is missing: \" + missingApprovalFields.join(\", \") + \". Do NOT say the order was sent. Ask the customer for the first missing field only.\";\n  }\n}\n\nlet orderRoute = \"REPLY_ONLY\";\n\nif (cancelConfirmMissingOrder) {\n  orderRoute = \"REPLY_ONLY\";\n} else if (pendingCancelConfirmed) {\n  orderRoute = \"CANCEL_ORDER\";\n} else if (cancelOrderIntent && hasExistingDraft) {\n  orderRoute = \"CANCEL_PENDING\";\n} else if (stalePendingCancel) {\n  orderRoute = \"CLEAR_PENDING\";\n} else if (intakeReadyCreateDraft) {\n  orderRoute = \"CREATE_DRAFT\";\n} else if (shouldCreateDraft) {\n  orderRoute = \"CREATE_DRAFT\";\n} else if (sendForApprovalReady) {\n  orderRoute = \"SEND_FOR_APPROVAL\";\n} else if (\n  hasExistingDraft &&\n  shouldSyncOrderLines &&\n  (shouldEnrichExistingDraft || partialStockMixFollowThrough)\n) {\n  orderRoute = \"UPDATE_HEADER_AND_LINES\";\n} else if (hasExistingDraft && shouldEnrichExistingDraft) {\n  orderRoute = \"UPDATE_HEADER_ONLY\";\n} else {\n  orderRoute = \"REPLY_ONLY\";\n}\n\nreturn [\n  {\n    json: {\n      ...item,\n      intake_shadow_result: item.intake_shadow_result || intakeResult,\n      intake_shadow_raw_response: item.intake_shadow_raw_response || intakeRaw,\n      intake_shadow_payload: item.intake_shadow_payload || intakePayload,\n      order_route: orderRoute,\n      reply_instruction: replyInstruction,\n      debug_pending_action: pendingAction,\n      debug_pending_cancel_confirmed: pendingCancelConfirmed,\n      debug_cancel_order_intent: cancelOrderIntent,\n      debug_stale_pending_cancel: stalePendingCancel,\n      debug_should_create_draft: shouldCreateDraft,\n      debug_has_existing_draft: hasExistingDraft,\n      debug_should_enrich_existing_draft: shouldEnrichExistingDraft,\n      debug_should_sync_order_lines: shouldSyncOrderLines,\n      debug_partial_stock_mix_follow_through: partialStockMixFollowThrough,\n      debug_intake_ready_create_draft: intakeReadyCreateDraft,\n      debug_cancel_missing_order_id: cancelConfirmMissingOrder,\n      debug_send_for_approval_intent: sendForApprovalIntent,\n      debug_send_for_approval_ready: sendForApprovalReady,\n      debug_payment_method_set: paymentMethodSet,\n      debug_approval_preflight_blocked: approvalPreflightBlocked,\n      debug_approval_missing_fields: missingApprovalFields\n    }\n  }\n];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1112,7 +1112,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $json || {};\nconst state = item.order_state || {};\nconst memory = item.structured_conversation_memory || {};\n\nfunction clean(value) {\n  return String(value || \"\").trim();\n}\n\nconst hasExistingDraft = state.has_existing_draft === true;\n\nconst requestedQuantity = clean(state.requested_quantity);\nconst requestedCategory = clean(state.requested_category);\nconst requestedWeightRange = clean(state.requested_weight_range);\nconst timingPreference = clean(state.timing_preference);\nconst collectionLocation = clean(state.collection_location);\n\nconst decisionMode = clean(\n  item.effective_decision_mode ||\n  item.decision_mode ||\n  state.decision_mode ||\n  \"AUTO\"\n);\n\nconst quoteIntent = state.quote_intent === true;\nconst orderCommitmentIntent = state.order_commitment_intent === true;\nconst conversationCommitmentIntent = state.conversation_commitment_intent === true;\nconst proceedSignal = state.proceed_signal === true;\nconst strongIntent = state.strong_intent === true;\n\nconst missingFacts = Array.isArray(memory.missing_facts) ? memory.missing_facts : [];\n\nconst hasMinimumDraftInfo =\n  requestedQuantity !== \"\" &&\n  requestedCategory !== \"\" &&\n  requestedWeightRange !== \"\";\n\nconst hasDraftCoreFields =\n  requestedQuantity !== \"\" &&\n  requestedCategory !== \"\" &&\n  requestedWeightRange !== \"\" &&\n  timingPreference !== \"\" &&\n  collectionLocation !== \"\";\n\nconst noCriticalMissingCoreFields =\n  !missingFacts.includes(\"Product direction still unclear\") &&\n  !missingFacts.includes(\"Weight range not yet confirmed\") &&\n  !missingFacts.includes(\"Category not yet confirmed\") &&\n  !missingFacts.includes(\"Timing not yet confirmed\") &&\n  !missingFacts.includes(\"Collection location not yet confirmed\");\n\nconst hasCommitmentSignal =\n  orderCommitmentIntent === true ||\n  conversationCommitmentIntent === true ||\n  proceedSignal === true ||\n  strongIntent === true;\n\n// Draft creation should only happen when the conversation is in AUTO mode.\n// If another node says CLARIFY, do not create draft here.\nconst shouldCreateDraft =\n  hasExistingDraft === false &&\n  quoteIntent === false &&\n  decisionMode === \"AUTO\" &&\n  hasCommitmentSignal &&\n  hasDraftCoreFields &&\n  noCriticalMissingCoreFields;\n\nreturn [\n  {\n    json: {\n      ...item,\n      should_create_draft: shouldCreateDraft,\n      debug_has_existing_draft: hasExistingDraft,\n      debug_has_minimum_draft_info: hasMinimumDraftInfo,\n      debug_has_draft_core_fields: hasDraftCoreFields,\n      debug_no_critical_missing_core_fields: noCriticalMissingCoreFields,\n      debug_decision_mode: decisionMode,\n      debug_quote_intent: quoteIntent,\n      debug_order_commitment_intent: orderCommitmentIntent,\n      debug_conversation_commitment_intent: conversationCommitmentIntent,\n      debug_proceed_signal: proceedSignal,\n      debug_strong_intent: strongIntent,\n      debug_has_commitment_signal: hasCommitmentSignal\n    }\n  }\n];"
+        "jsCode": "const item = $json || {};\nconst state = item.order_state || {};\nconst memory = item.structured_conversation_memory || {};\n\nfunction clean(value) {\n  return String(value || \"\").trim();\n}\n\nconst hasExistingDraft = state.has_existing_draft === true;\n\nlet intakeReadyCreateDraft = item.intake_ready_create_draft === true;\nif (!intakeReadyCreateDraft) {\n  try {\n    const shadowItem = $('Code - Attach Intake Shadow Result').first().json || {};\n    const shadow = shadowItem.intake_shadow_result || {};\n    const raw = shadowItem.intake_shadow_raw_response || {};\n    intakeReadyCreateDraft =\n      shadow.ready_for_draft === true &&\n      (shadow.next_action === \"create_draft\" || raw.next_action === \"create_draft\") &&\n      !clean(shadow.draft_order_id || raw.draft_order_id || \"\");\n  } catch (_) {\n    intakeReadyCreateDraft = false;\n  }\n}\n\nconst requestedQuantity = clean(state.requested_quantity);\nconst requestedCategory = clean(state.requested_category);\nconst requestedWeightRange = clean(state.requested_weight_range);\nconst timingPreference = clean(state.timing_preference);\nconst collectionLocation = clean(state.collection_location);\nconst requestedItems = Array.isArray(state.requested_items) ? state.requested_items : [];\nconst activeLineReadyItems = requestedItems.filter((entry) => {\n  if (!entry || typeof entry !== \"object\") return false;\n  const status = clean(entry.status || \"active\").toLowerCase();\n  return status !== \"removed\" &&\n    clean(entry.quantity) !== \"\" &&\n    clean(entry.category) !== \"\" &&\n    clean(entry.weight_range) !== \"\";\n});\nconst hasLineReadyItems = activeLineReadyItems.length > 0;\n\nconst decisionMode = clean(\n  item.effective_decision_mode ||\n  item.decision_mode ||\n  state.decision_mode ||\n  \"AUTO\"\n);\n\nconst quoteIntent = state.quote_intent === true;\nconst orderCommitmentIntent = state.order_commitment_intent === true;\nconst conversationCommitmentIntent = state.conversation_commitment_intent === true;\nconst proceedSignal = state.proceed_signal === true;\nconst strongIntent = state.strong_intent === true;\n\nconst missingFacts = Array.isArray(memory.missing_facts) ? memory.missing_facts : [];\n\nconst hasMinimumDraftInfo =\n  requestedQuantity !== \"\" &&\n  requestedCategory !== \"\" &&\n  requestedWeightRange !== \"\";\n\nconst hasDraftCoreFields =\n  requestedQuantity !== \"\" &&\n  requestedCategory !== \"\" &&\n  requestedWeightRange !== \"\" &&\n  timingPreference !== \"\" &&\n  collectionLocation !== \"\";\n\nconst noCriticalMissingCoreFields =\n  !missingFacts.includes(\"Product direction still unclear\") &&\n  !missingFacts.includes(\"Weight range not yet confirmed\") &&\n  !missingFacts.includes(\"Category not yet confirmed\") &&\n  !missingFacts.includes(\"Timing not yet confirmed\") &&\n  !missingFacts.includes(\"Collection location not yet confirmed\");\n\nconst hasCommitmentSignal =\n  orderCommitmentIntent === true ||\n  conversationCommitmentIntent === true ||\n  proceedSignal === true ||\n  strongIntent === true;\n\n// Draft creation must not fall back to a header-only legacy create.\n// Either intake is ready, or legacy state must already contain line-ready requested_items.\nconst shouldCreateDraft =\n  (intakeReadyCreateDraft && hasExistingDraft === false) ||\n  (hasExistingDraft === false &&\n    quoteIntent === false &&\n    decisionMode === \"AUTO\" &&\n    hasCommitmentSignal &&\n    hasDraftCoreFields &&\n    hasLineReadyItems &&\n    noCriticalMissingCoreFields);\n\nreturn [\n  {\n    json: {\n      ...item,\n      should_create_draft: shouldCreateDraft,\n      debug_has_existing_draft: hasExistingDraft,\n      debug_has_minimum_draft_info: hasMinimumDraftInfo,\n      debug_has_draft_core_fields: hasDraftCoreFields,\n      debug_has_line_ready_items: hasLineReadyItems,\n      debug_no_critical_missing_core_fields: noCriticalMissingCoreFields,\n      debug_decision_mode: decisionMode,\n      debug_quote_intent: quoteIntent,\n      debug_order_commitment_intent: orderCommitmentIntent,\n      debug_conversation_commitment_intent: conversationCommitmentIntent,\n      debug_proceed_signal: proceedSignal,\n      debug_strong_intent: strongIntent,\n      debug_has_commitment_signal: hasCommitmentSignal,\n      debug_intake_ready_create_draft: intakeReadyCreateDraft\n    }\n  }\n];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -3208,6 +3208,95 @@
       ],
       "id": "49fff03c-1fbc-4ac8-9cd2-b0a4fb2e31d9",
       "name": "Code - Attach Active Customer Order Context"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json || {};\nconst os = item.order_state || {};\nconst memory = item.structured_conversation_memory || item.sales_agent_memory || {};\n\nfunction clean(value) {\n  return String(value || \"\").trim();\n}\n\nfunction bool(value) {\n  return value === true || value === \"true\" || value === \"Yes\" || value === \"yes\" || value === 1;\n}\n\nfunction firstNonEmpty(values) {\n  for (const value of values) {\n    const cleaned = clean(value);\n    if (cleaned) return cleaned;\n  }\n  return \"\";\n}\n\nfunction normalizeSex(value) {\n  const v = clean(value).toLowerCase();\n  if (!v) return \"Any\";\n  if ([\"male\", \"males\", \"boar\", \"boars\"].includes(v)) return \"Male\";\n  if ([\"female\", \"females\", \"sow\", \"sows\"].includes(v)) return \"Female\";\n  if ([\"any\", \"either\", \"male or female\", \"female or male\"].includes(v)) return \"Any\";\n  const exact = clean(value);\n  return [\"Male\", \"Female\", \"Any\"].includes(exact) ? exact : \"Any\";\n}\n\nfunction normalizeIntentType(value) {\n  const v = clean(value) || \"primary\";\n  return [\"primary\", \"addon\", \"nearby_addon\", \"extractor_slot\"].includes(v) ? v : \"primary\";\n}\n\nfunction normalizeStatus(value) {\n  const v = clean(value) || \"active\";\n  return [\"active\", \"removed\", \"replaced\"].includes(v) ? v : \"active\";\n}\n\nfunction normalizeCategoryFromText(text) {\n  const t = clean(text).toLowerCase();\n  if (/\\bslaughter\\b|\\bslaughterer\\b/.test(t)) return \"Slaughter\";\n  if (/\\bfinisher(s)?\\b/.test(t)) return \"Finisher\";\n  if (/\\bgrower(s)?\\b/.test(t)) return \"Grower\";\n  if (/\\bweaner(s)?\\b/.test(t)) return \"Weaner\";\n  if (/\\bpiglet(s)?\\b/.test(t)) return \"Piglet\";\n  return \"\";\n}\n\nfunction normalizeWeightRangeFromText(text) {\n  const t = clean(text).toLowerCase().replace(/\\u2013|\\u2014|\\u2212/g, \"-\");\n  const bands = [\n    [90,94],[85,89],[80,84],[75,79],[70,74],[65,69],[60,64],[55,59],[50,54],[45,49],\n    [40,44],[35,39],[30,34],[25,29],[20,24],[15,19],[10,14],[7,9],[5,6],[2,4]\n  ];\n  for (const [lo, hi] of bands) {\n    const re = new RegExp(`(?:^|\\\\D)${lo}\\\\s*(?:-|to|_)\\\\s*${hi}\\\\s*(?:kg|kgs|kilogram|kilograms)?\\\\b`, \"i\");\n    if (re.test(t)) return `${lo}_to_${hi}_Kg`;\n  }\n  return \"\";\n}\n\nfunction quantityFromText(text) {\n  const t = clean(text);\n  const patterns = [\n    /\\bi\\s+(?:want|need|will take|would like|am looking for)\\s+(\\d+)\\b/i,\n    /\\bcan i (?:get|order)\\s+(\\d+)\\b/i,\n    /\\b(\\d+)\\s+(?:female|male)?\\s*(?:piglet|piglets|weaner|weaners|grower|growers|finisher|finishers|pig|pigs)\\b/i\n  ];\n  for (const re of patterns) {\n    const m = t.match(re);\n    if (m) return m[1];\n  }\n  return \"\";\n}\n\nfunction locationFromText(text) {\n  const t = clean(text).toLowerCase();\n  if (/\\briversdale\\b/.test(t) && !/\\balbertinia\\b/.test(t)) return \"Riversdale\";\n  if (/\\balbertinia\\b/.test(t) && !/\\briversdale\\b/.test(t)) return \"Albertinia\";\n  if (/\\briversdale\\b/.test(t) && /\\balbertinia\\b/.test(t)) return \"Any\";\n  return \"\";\n}\n\nfunction paymentFromText(text) {\n  const t = clean(text).toLowerCase();\n  if (/\\beft\\b|\\bbank transfer\\b|\\btransfer\\b/.test(t)) return \"EFT\";\n  if (/\\bcash\\b/.test(t)) return \"Cash\";\n  return \"\";\n}\n\nfunction timingFromText(text) {\n  const t = clean(text);\n  const lower = t.toLowerCase();\n  const weekday = t.match(/\\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\\s+(?:at\\s*)?(\\d{1,2})(?::(\\d{2}))?)?\\b/i);\n  if (weekday) {\n    const day = weekday[1].charAt(0).toUpperCase() + weekday[1].slice(1).toLowerCase();\n    if (weekday[2]) return `${day} at ${weekday[2]}:${weekday[3] || \"00\"}`;\n    return day;\n  }\n  if (/\\btomorrow\\b/.test(lower)) return \"Tomorrow\";\n  if (/\\btoday\\b/.test(lower)) return \"Today\";\n  if (/\\bnext week\\b/.test(lower)) return \"Next week\";\n  return \"\";\n}\n\nfunction sexFromText(text) {\n  const t = clean(text).toLowerCase();\n  if (/\\bfemale(s)?\\b|\\bsow(s)?\\b/.test(t)) return \"Female\";\n  if (/\\bmale(s)?\\b|\\bboar(s)?\\b/.test(t)) return \"Male\";\n  return \"Any\";\n}\n\nlet normalizedMessage = {};\ntry {\n  normalizedMessage = $('Code - Normalize Incoming Message').first().json || {};\n} catch (_) {\n  normalizedMessage = {};\n}\n\nconst currentMessage = firstNonEmpty([\n  os.customer_message,\n  item.customer_message,\n  item.CustomerMessage,\n  memory.current_message,\n  normalizedMessage.CustomerMessage\n]);\n\nconst conversationId = firstNonEmpty([\n  os.conversation_id,\n  item.conversation_id,\n  item.ConversationId,\n  item.WebConversationID,\n  normalizedMessage.ConversationId\n]);\n\nconst requestedItems = [];\nconst sourceItems = Array.isArray(os.requested_items) ? os.requested_items : [];\nconst explicitCurrentSex = sexFromText(currentMessage);\n\nfor (let index = 0; index < sourceItems.length; index += 1) {\n  const source = sourceItems[index] || {};\n  const itemKey = firstNonEmpty([source.item_key, source.request_item_key, `item_${index + 1}`]);\n  const quantity = clean(source.quantity);\n  const category = clean(source.category);\n  const weightRange = clean(source.weight_range);\n  let sex = normalizeSex(source.sex);\n  if ((sex === \"Any\" || !sex) && [\"Male\", \"Female\"].includes(explicitCurrentSex)) {\n    sex = explicitCurrentSex;\n  }\n  if (!itemKey) continue;\n  if (!(quantity || category || weightRange || sex)) continue;\n  requestedItems.push({\n    item_key: itemKey,\n    quantity,\n    category,\n    weight_range: weightRange,\n    sex,\n    intent_type: normalizeIntentType(source.intent_type),\n    status: normalizeStatus(source.status),\n    notes: clean(source.notes)\n  });\n}\n\nconst memoryQuantity = firstNonEmpty([os.requested_quantity, memory.quantity, quantityFromText(currentMessage)]);\nconst memoryCategory = firstNonEmpty([os.requested_category, memory.category, normalizeCategoryFromText(currentMessage)]);\nconst memoryWeightRange = firstNonEmpty([os.requested_weight_range, memory.weight_range, normalizeWeightRangeFromText(currentMessage)]);\nconst memorySex = firstNonEmpty([os.requested_sex, memory.requested_sex, explicitCurrentSex]);\n\nif (requestedItems.length === 0 && (memoryQuantity || memoryCategory || memoryWeightRange)) {\n  requestedItems.push({\n    item_key: \"item_1\",\n    quantity: memoryQuantity,\n    category: memoryCategory,\n    weight_range: memoryWeightRange,\n    sex: normalizeSex(memorySex),\n    intent_type: \"primary\",\n    status: \"active\",\n    notes: \"Phase 5.6 shadow mode lightweight extraction\"\n  });\n}\n\nconst quoteRequested = bool(os.quote_intent) || bool(memory.quote_stage) || /\\bquote|quotation\\b/i.test(currentMessage);\nconst orderCommitment =\n  bool(os.order_commitment_intent) ||\n  bool(os.conversation_commitment_intent) ||\n  bool(os.proceed_signal) ||\n  bool(os.strong_intent) ||\n  bool(memory.order_intent_stage) ||\n  bool(memory.confirmation_signals) ||\n  /\\b(?:i\\s+)?(?:want|would like|would love|need)\\s+to\\s+proceed\\b|\\b(?:please\\s+)?go ahead\\b|\\byes please\\b|\\border it\\b|\\b(?:create|prepare|make)\\s+(?:a\\s+|the\\s+)?(?:draft\\s+)?order\\b|\\bdraft order\\b|\\bprepare (?:the )?next step\\b/i.test(currentMessage);\n\nconst paymentMethod = firstNonEmpty([\n  os.detected_payment_method,\n  os.payment_method,\n  item.PaymentMethod,\n  paymentFromText(currentMessage)\n]);\n\nconst payload = {\n  conversation_id: conversationId,\n  account_id: firstNonEmpty([item.AccountId, item.account_id, normalizedMessage.AccountId]),\n  contact_id: firstNonEmpty([os.contact_id, item.ContactId, item.contact_id, normalizedMessage.ContactId]),\n  customer_name: firstNonEmpty([os.customer_name, item.CustomerName, item.customer_name, memory.customer_name, normalizedMessage.CustomerName]),\n  customer_phone: firstNonEmpty([os.customer_phone, item.CustomerPhone, item.customer_phone]),\n  customer_channel: firstNonEmpty([os.customer_channel, item.CustomerChannel, item.customer_channel, normalizedMessage.Channel, \"Sam - WhatsApp\"]),\n  customer_language: firstNonEmpty([os.customer_language, item.CustomerLanguage, item.customer_language, \"English\"]),\n  updated_by: \"Sam Phase 5.6 shadow mode\",\n  patch: {\n    draft_order_id: clean(os.existing_order_id || memory.existing_order_id),\n    collection_location: firstNonEmpty([os.collection_location, memory.collection_location, locationFromText(currentMessage)]),\n    collection_time_text: firstNonEmpty([os.timing_preference, os.timing_raw, memory.timing, memory.timing_preference, timingFromText(currentMessage)]),\n    payment_method: [\"Cash\", \"EFT\"].includes(paymentMethod) ? paymentMethod : \"\",\n    quote_requested: quoteRequested,\n    order_commitment: orderCommitment,\n    last_customer_message: currentMessage,\n    notes: \"Phase 5.6 shadow mode update from 1.0\"\n  },\n  items: requestedItems\n};\n\nreturn [{\n  json: {\n    ...item,\n    intake_shadow_enabled: true,\n    intake_shadow_payload: payload,\n    intake_shadow_skipped: !conversationId,\n    intake_shadow_skip_reason: conversationId ? \"\" : \"missing_conversation_id\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        91616,
+        19024
+      ],
+      "id": "f56a0001-5a6b-4b7c-8d9e-001122334455",
+      "name": "Code - Build Intake Shadow Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/order-intake/update",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.intake_shadow_payload }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        91840,
+        19024
+      ],
+      "id": "f56a0002-5a6b-4b7c-8d9e-001122334456",
+      "name": "HTTP - Intake Shadow Update",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let original = {};\ntry {\n  original = $('Code - Build Intake Shadow Payload').first().json || {};\n} catch (_) {\n  original = {};\n}\nconst response = $json || {};\nconst failed = response.error !== undefined || response.message === \"Authorization failed - please check your credentials\";\n\nconst shadow = {\n  attempted: original.intake_shadow_skipped !== true,\n  skipped: original.intake_shadow_skipped === true,\n  skip_reason: original.intake_shadow_skip_reason || \"\",\n  success: response.success === true,\n  lookup_status: response.lookup_status || \"\",\n  intake_id: response.intake_id || \"\",\n  intake_status: response.intake_status || \"\",\n  next_action: response.next_action || \"\",\n  ready_for_draft: response.ready_for_draft === true,\n  ready_for_quote: response.ready_for_quote === true,\n  missing_fields: Array.isArray(response.missing_fields) ? response.missing_fields : [],\n  item_count: Array.isArray(response.items) ? response.items.length : 0,\n  draft_order_id: response.draft_order_id || \"\",\n  error: failed ? (response.message || response.error || \"intake shadow update failed\") : \"\"\n};\n\nfunction clean(value) {\n  return String(value || \"\").trim();\n}\n\nfunction quantityTotal(items) {\n  return items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);\n}\n\nconst activeItems = Array.isArray(response.items)\n  ? response.items.filter((item) => item && item.status === \"active\")\n  : [];\n\nconst intakeReadyCreateDraft =\n  shadow.ready_for_draft === true &&\n  shadow.next_action === \"create_draft\" &&\n  !clean(response.draft_order_id || \"\") &&\n  activeItems.length > 0;\n\nlet next = {\n  ...original,\n  intake_shadow_result: shadow,\n  intake_shadow_raw_response: response,\n  intake_ready_create_draft: intakeReadyCreateDraft\n};\n\nif (intakeReadyCreateDraft) {\n  const first = activeItems[0] || {};\n  const known = response.known_fields || {};\n  const payload = original.intake_shadow_payload || {};\n  const requestedItems = activeItems.map((item, index) => ({\n    request_item_key: item.item_key || `item_${index + 1}`,\n    item_key: item.item_key || `item_${index + 1}`,\n    category: item.category || \"\",\n    weight_range: item.weight_range || \"\",\n    sex: item.sex || \"Any\",\n    quantity: item.quantity || \"\",\n    intent_type: item.intent_type || \"primary\",\n    status: \"active\",\n    notes: item.notes || \"\"\n  }));\n  const existingState = next.order_state && typeof next.order_state === \"object\" ? next.order_state : {};\n  next = {\n    ...next,\n    should_create_draft: true,\n    order_state: {\n      ...existingState,\n      customer_name: payload.customer_name || existingState.customer_name || \"\",\n      customer_phone: payload.customer_phone || existingState.customer_phone || \"\",\n      customer_channel: payload.customer_channel || existingState.customer_channel || \"Sam - WhatsApp\",\n      customer_language: payload.customer_language || existingState.customer_language || \"English\",\n      conversation_id: response.conversation_id || payload.conversation_id || existingState.conversation_id || \"\",\n      contact_id: payload.contact_id || existingState.contact_id || \"\",\n      requested_quantity: String(quantityTotal(activeItems) || existingState.requested_quantity || \"\"),\n      requested_category: first.category || existingState.requested_category || \"\",\n      requested_weight_range: first.weight_range || existingState.requested_weight_range || \"\",\n      requested_sex: first.sex || existingState.requested_sex || \"Any\",\n      requested_items: requestedItems,\n      collection_location: known.collection_location || existingState.collection_location || \"\",\n      payment_method: known.payment_method || existingState.payment_method || \"\",\n      timing_preference: known.collection_time_text || existingState.timing_preference || \"\",\n      conversation_commitment_intent: true,\n      order_commitment_intent: true,\n      has_minimum_draft_info: true,\n      has_draft_core_fields: true,\n      notes: `Created from intake ${response.intake_id || \"\"}`.trim()\n    }\n  };\n}\n\nreturn [{ json: next }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        92064,
+        19024
+      ],
+      "id": "f56a0003-5a6b-4b7c-8d9e-001122334457",
+      "name": "Code - Attach Intake Shadow Result"
+    },
+    {
+      "parameters": {
+        "jsCode": "const createResult = $json || {};\nlet routeContext = {};\ntry {\n  routeContext = $('Code - Decide Order Route').first().json || {};\n} catch (_) {\n  routeContext = {};\n}\n\nconst intakeRaw = routeContext.intake_shadow_raw_response || {};\nconst intakePayload = routeContext.intake_shadow_payload || {};\nconst orderId = String(createResult.order_id || '').trim();\nconst conversationId = String(intakeRaw.conversation_id || intakePayload.conversation_id || '').trim();\nconst shouldUpdate = Boolean(orderId && conversationId && routeContext.debug_intake_ready_create_draft === true);\n\nif (!shouldUpdate) {\n  return [];\n}\n\nreturn [{\n  json: {\n    ...createResult,\n    intake_link_should_update: true,\n    intake_link_payload: {\n      conversation_id: conversationId,\n      account_id: intakePayload.account_id || '',\n      contact_id: intakePayload.contact_id || '',\n      customer_name: intakePayload.customer_name || '',\n      customer_phone: intakePayload.customer_phone || '',\n      customer_channel: intakePayload.customer_channel || 'Sam - WhatsApp',\n      customer_language: intakePayload.customer_language || 'English',\n      updated_by: 'Sam Phase 5.7 intake draft link',\n      patch: {\n        draft_order_id: orderId,\n        notes: 'Phase 5.7 linked draft order to intake state'\n      },\n      items: []\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        94784,
+        18352
+      ],
+      "id": "phase57-build-intake-draft-link",
+      "name": "Code - Build Intake Draft Link Payload"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/order-intake/update",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.intake_link_payload }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        95008,
+        18352
+      ],
+      "id": "phase57-http-link-intake-draft",
+      "name": "HTTP - Link Intake Draft Order",
+      "continueOnFail": true
     }
   ],
   "pinData": {
@@ -3472,6 +3561,11 @@
             "node": "Merge - Draft Result With Reply Context",
             "type": "main",
             "index": 1
+          },
+          {
+            "node": "Code - Build Intake Draft Link Payload",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -4083,12 +4177,7 @@
       "main": [
         [
           {
-            "node": "Ai Agent - Escalation Classifier",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Merge - Sales Agent Context A",
+            "node": "Code - Build Intake Shadow Payload",
             "type": "main",
             "index": 0
           }
@@ -4437,6 +4526,60 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Code - Build Intake Shadow Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Intake Shadow Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Intake Shadow Update": {
+      "main": [
+        [
+          {
+            "node": "Code - Attach Intake Shadow Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Attach Intake Shadow Result": {
+      "main": [
+        [
+          {
+            "node": "Ai Agent - Escalation Classifier",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge - Sales Agent Context A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Intake Draft Link Payload": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Link Intake Draft Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Link Intake Draft Order": {
+      "main": [
+        []
       ]
     }
   },
