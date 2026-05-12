@@ -1774,14 +1774,32 @@
               "value": "={{ $('Code - Normalize Order Payload').item.json.payment_method }}",
               "type": "string"
             },
-            {
-              "id": "ef8551df-06cc-4bb8-a915-2fcb4b3a1ea3",
-              "name": "conversation_id",
-              "value": "={{ $('Code - Normalize Order Payload').item.json.conversation_id }}",
-              "type": "string"
-            }
-          ]
-        },
+                                            {
+                                                "id": "ef8551df-06cc-4bb8-a915-2fcb4b3a1ea3",
+                                                "name": "conversation_id",
+                                                "value": "={{ $('Code - Normalize Order Payload').item.json.conversation_id }}",
+                                                "type": "string"
+                                            },
+                                            {
+                                                "id": "b62d18df-2675-46b1-9305-9e41d5a0209f",
+                                                "name": "changed_by",
+                                                "value": "={{ $('Code - Normalize Order Payload').item.json.changed_by }}",
+                                                "type": "string"
+                                            },
+                                            {
+                                                "id": "e5de5fc4-b588-4d76-ac4d-0dba15771018",
+                                                "name": "requested_items",
+                                                "value": "={{ $('Code - Normalize Order Payload').item.json.requested_items }}",
+                                                "type": "array"
+                                            },
+                                            {
+                                                "id": "b05793a7-457f-4612-90e8-cb954b305c7d",
+                                                "name": "cancel_order_if_no_matches",
+                                                "value": true,
+                                                "type": "boolean"
+                                            }
+                                        ]
+                                    },
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1796,7 +1814,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://amadeus-pig-tracking-system.onrender.com/api/master/orders",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/master/orders/create-with-lines",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{$json}}",
@@ -1856,7 +1874,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const syncResp = $json || {};\nconst buildPayload = $('Code - Build Sync After Create Payload').item.json || {};\nconst results = Array.isArray(syncResp.results) ? syncResp.results : [];\n\nfunction toNum(value) {\n  const n = Number(value);\n  return Number.isNaN(n) ? 0 : n;\n}\n\nfunction isIncompleteSyncRow(r) {\n  if (!r) return false;\n  const status = r.match_status || '';\n  const requested = toNum(r.requested_quantity);\n  const matched = toNum(r.matched_quantity);\n  return ['partial_match', 'no_match', 'error'].includes(status) || matched < requested;\n}\n\nconst partialFulfillment =\n  syncResp.partial_fulfillment === true ||\n  results.some(isIncompleteSyncRow);\nconst completeFulfillment =\n  syncResp.complete_fulfillment === true ||\n  (syncResp.success === true && results.length > 0 && !results.some(isIncompleteSyncRow));\nconst fulfillmentStatus = syncResp.fulfillment_status || (completeFulfillment ? 'complete' : (partialFulfillment ? 'partial' : ''));\nconst cancelledEmptyOrder = syncResp.cancelled_empty_order === true;\nconst orderStatus = cancelledEmptyOrder ? 'Cancelled' : 'Draft';\n\nreturn [{\n  json: {\n    success: buildPayload.create_success === true && syncResp.success === true && !cancelledEmptyOrder,\n    action: \"create_order_with_lines\",\n    order_id: buildPayload.order_id || \"\",\n    order_status: orderStatus,\n    status: orderStatus,\n    message: cancelledEmptyOrder ? \"No matching pigs were available, so the empty draft was cancelled.\" : (buildPayload.create_message || \"\"),\n    sync_success: syncResp.success === true,\n    sync_results: syncResp.lines_synced || results,\n    results: results,\n    partial_fulfillment: partialFulfillment,\n    complete_fulfillment: completeFulfillment,\n    fulfillment_status: fulfillmentStatus,\n    requested_total: syncResp.requested_total,\n    matched_total: syncResp.matched_total,\n    unmatched_total: syncResp.unmatched_total,\n    incomplete_items: Array.isArray(syncResp.incomplete_items) ? syncResp.incomplete_items : [],\n    cancelled_empty_order: cancelledEmptyOrder,\n    cancel_result: syncResp.cancel_result || null,\n    sync_message: syncResp.message || \"\",\n    customer_name: $('Code - Normalize Order Payload').item.json.customer_name || \"\",\n    requested_category: $('Code - Normalize Order Payload').item.json.requested_category || \"\",\n    requested_weight_range: $('Code - Normalize Order Payload').item.json.requested_weight_range || \"\"\n  }\n}];"
+        "jsCode": "const resp = $json || {};\nconst results = Array.isArray(resp.results) ? resp.results : [];\nconst cancelledEmptyOrder = resp.cancelled_empty_order === true;\nconst orderStatus = resp.order_status || resp.status || (cancelledEmptyOrder ? 'Cancelled' : 'Draft');\nconst normalized = $('Code - Normalize Order Payload').item.json || {};\n\nreturn [{\n  json: {\n    success: resp.success === true && !cancelledEmptyOrder,\n    action: \"create_order_with_lines\",\n    order_id: resp.order_id || \"\",\n    order_status: orderStatus,\n    status: orderStatus,\n    message: resp.message || (cancelledEmptyOrder ? \"No matching pigs were available, so the empty draft was cancelled.\" : \"\"),\n    create_success: resp.create_success === true,\n    sync_success: resp.sync_success === true,\n    sync_results: resp.sync_results || results,\n    results: results,\n    partial_fulfillment: resp.partial_fulfillment === true,\n    complete_fulfillment: resp.complete_fulfillment === true,\n    fulfillment_status: resp.fulfillment_status || \"\",\n    requested_total: resp.requested_total,\n    matched_total: resp.matched_total,\n    unmatched_total: resp.unmatched_total,\n    incomplete_items: Array.isArray(resp.incomplete_items) ? resp.incomplete_items : [],\n    cancelled_empty_order: cancelledEmptyOrder,\n    cancel_result: resp.cancel_result || null,\n    sync_message: resp.sync_message || \"\",\n    customer_name: normalized.customer_name || \"\",\n    requested_category: normalized.requested_category || \"\",\n    requested_weight_range: normalized.requested_weight_range || \"\"\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -2332,7 +2350,7 @@
       "main": [
         [
           {
-            "node": "Code - Build Sync After Create Payload",
+            "node": "Code - Format Create With Lines Result",
             "type": "main",
             "index": 0
           }

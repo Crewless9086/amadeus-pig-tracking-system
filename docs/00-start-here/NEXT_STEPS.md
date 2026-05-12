@@ -1062,6 +1062,20 @@ Live verification 2026-05-12:
   - `sync_order_lines_from_request` auto-cancels the newly-created Draft when that flag is set and `matched_total = 0`, returning `cancelled_empty_order = true` and `order_status = Cancelled`.
   - `1.2 Code - Format Create With Lines Result` treats that zero-match auto-cancel as not successful for Sam's downstream response.
 - Local verification passed: workflow JSON parses, all workflow connections resolve, all Code-node JavaScript compiles, the stale `Any` -> `Male` simulation passes, and a backend mocked no-match sync returns `cancelled_empty_order = true`.
+- Live targeted retest after backend deploy and workflow imports:
+  - Male weaner sex preservation passed. `ORD-2026-8096C6` was created with header `Requested_Sex = Male` and two active Male Weaner `10_to_14_Kg` lines. The test order was cancelled.
+  - The earlier Female Weaner `15_to_19_Kg` case is no longer a zero-match case because live stock now has one matching pig; it correctly created `ORD-2026-0B3C01` with one active Female Weaner `15_to_19_Kg` line. The test order was cancelled.
+  - True zero-match workflow test using Female Weaner `7_to_9_Kg` left no active order for conversation `1774`.
+  - Direct deployed-backend create+sync test proved the auto-cancel guard: `ORD-2026-009333` returned `cancelled_empty_order = true`, `fulfillment_status = no_match`, `matched_total = 0`, and final `Order_Status = Cancelled`.
+  - Final cleanup verification returned `no_match` for both intake context and active customer order context on conversation `1774`.
+- Wider regression after those fixes exposed a remaining structural issue in `1.2`: `create_order_with_lines` was still two backend calls (`create order` then `sync lines`). If the second call failed or timed out, an active zero-line Draft could remain. Example: `ORD-2026-CA751C`, created by `Sam Phase 5.7 intake`, had zero lines and was manually cancelled during cleanup.
+- Structural fix prepared in repo:
+  - Added backend endpoint `POST /api/master/orders/create-with-lines`.
+  - Added backend service `create_order_with_lines(order_data, sync_data)`.
+  - The backend now creates the order, syncs lines, and cancels the newly-created Draft if sync fails or if matched quantity is zero.
+  - Updated `1.2 - order-steward` so `HTTP - Create With Lines Order` calls the atomic backend endpoint directly.
+  - `HTTP - Create Order` still calls the normal header-only create endpoint.
+  - Local validation passed: Python compiles, `1.2` JSON parses, all workflow connections resolve, Code-node JavaScript compiles, create-order URL and create-with-lines URL are correct, and a mocked zero-match atomic create returns `order_status = Cancelled`.
 
 First live test scope:
 

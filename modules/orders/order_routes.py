@@ -18,6 +18,7 @@ from modules.orders.order_service import (
     cancel_order,
     complete_order,
     sync_order_lines_from_request,
+    create_order_with_lines,
 )
 from modules.documents.quote_service import generate_quote_for_order
 from modules.documents.invoice_service import generate_invoice_for_order
@@ -317,6 +318,38 @@ def new_order():
 
     result = create_order(validation["cleaned_data"])
     return jsonify(result), 201
+
+
+@orders_bp.route("/master/orders/create-with-lines", methods=["POST"])
+def new_order_with_lines():
+    payload = request.get_json(silent=True) or {}
+    order_validation = validate_new_order_payload(payload)
+    sync_validation = validate_sync_order_lines_payload(payload)
+
+    errors = []
+    if not order_validation["is_valid"]:
+        errors.extend(order_validation["errors"])
+    if not sync_validation["is_valid"]:
+        errors.extend(sync_validation["errors"])
+
+    if errors:
+        return jsonify({
+            "success": False,
+            "errors": errors,
+        }), 400
+
+    try:
+        result = create_order_with_lines(
+            order_validation["cleaned_data"],
+            sync_validation["cleaned_data"],
+        )
+        status_code = 201 if result.get("create_success") else 400
+        return jsonify(result), status_code
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
 
 
 @orders_bp.route("/master/orders/<order_id>", methods=["PATCH"])

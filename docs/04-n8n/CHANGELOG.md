@@ -45,6 +45,10 @@ Type: `ADD`
 
 **Additional fix prepared:** `1.0 Code - Build Intake Shadow Payload` now overrides stale `Any` item sex with the latest explicit `Male` / `Female` from the customer message. `1.2` create-with-lines now sends `cancel_order_if_no_matches = true` to backend line sync. Backend validation accepts that flag, and `sync_order_lines_from_request` auto-cancels the newly-created Draft when the create path matches zero pigs. `1.2 Code - Format Create With Lines Result` returns `success = false` for that auto-cancel so Sam does not treat a zero-line draft as a valid draft.
 
+**Live targeted retest:** Passed after backend deploy and `1.0` / `1.2` imports. `ORD-2026-8096C6` verified the male sex fix: header `Requested_Sex = Male` and two active Male Weaner `10_to_14_Kg` lines, then cancelled. The old Female Weaner `15_to_19_Kg` no-match case now has live stock and correctly created `ORD-2026-0B3C01` with one active line, then cancelled. A true no-stock Female Weaner `7_to_9_Kg` workflow test left no active order. Direct deployed-backend create+sync verified auto-cancel with `ORD-2026-009333`: `cancelled_empty_order = true`, `fulfillment_status = no_match`, `matched_total = 0`, and final `Order_Status = Cancelled`. Final conversation `1774` cleanup returned no active intake and no active order.
+
+**Atomic create-with-lines fix prepared:** Wider regression showed the previous `1.2` create-with-lines path could still leave an active zero-line Draft if the second HTTP call (`sync-lines`) failed after the header was created. `ORD-2026-CA751C` was the evidence order and was cancelled during cleanup. Backend now exposes `POST /api/master/orders/create-with-lines`, which creates the order, syncs lines, and cancels the new Draft if sync fails or matches zero pigs. `1.2 HTTP - Create With Lines Order` now calls this atomic endpoint directly. The ordinary `create_order` route remains unchanged.
+
 **Cleanup note:** Phase 5.6/5.7 added compatibility paths while proving intake behavior. A planned cleanup pass must remove duplicated shadow/legacy routing once intake-driven draft/update/quote paths are proven.
 
 ---

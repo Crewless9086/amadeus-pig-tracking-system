@@ -14,6 +14,13 @@ When `create_order_with_lines` creates a new Draft and then syncs requested line
 
 This prevents active zero-line Draft orders from being left behind when Sam understood the customer's request but there is no matching sale stock.
 
+Updated boundary:
+
+- `HTTP - Create With Lines Order` now calls `POST /api/master/orders/create-with-lines`.
+- The backend owns create + sync + rollback/cancel as one operation.
+- The normal `HTTP - Create Order` node still calls `POST /api/master/orders`.
+- Older split create/sync helper nodes remain in the export for now but are no longer on the create-with-lines path; remove them in the planned cleanup pass after live regression is stable.
+
 ## Export File
 
 Place the current n8n export in `workflow.json` when available.
