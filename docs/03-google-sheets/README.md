@@ -54,6 +54,15 @@ The current documented Google Sheets are:
 | `SALES_STOCK_SUMMARY` | Formula sales display | `sheets/SALES_STOCK_SUMMARY.md` |
 | `SALES_STOCK_TOTALS` | Formula sales display | `sheets/SALES_STOCK_TOTALS.md` |
 
+## Planned Sheet Files
+
+These sheets are documented for upcoming phases but are not live until the matching implementation/setup phase is approved and run.
+
+| Sheet | Planned Phase | File |
+| --- | --- | --- |
+| `ORDER_INTAKE_STATE` | Phase 5.5 backend-owned intake state | `sheets/ORDER_INTAKE_STATE.md` |
+| `ORDER_INTAKE_ITEMS` | Phase 5.5 backend-owned intake item rows | `sheets/ORDER_INTAKE_ITEMS.md` |
+
 ## Core Rules
 
 - Master, log, register, pricing, and user/admin sheets are the only write targets.

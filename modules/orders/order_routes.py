@@ -22,6 +22,12 @@ from modules.orders.order_service import (
 from modules.documents.quote_service import generate_quote_for_order
 from modules.documents.invoice_service import generate_invoice_for_order
 from modules.documents.document_service import get_order_documents, send_order_document
+from modules.orders.order_intake_service import (
+    get_intake_context,
+    update_intake_state,
+    reset_intake,
+    validate_intake_update_payload,
+)
 from modules.orders.order_validation import (
     validate_new_order_payload,
     validate_update_order_payload,
@@ -41,6 +47,61 @@ def order_list():
         "count": len(records),
         "orders": records
     })
+
+
+@orders_bp.route("/order-intake/context", methods=["GET"])
+def order_intake_context():
+    try:
+        result = get_intake_context(
+            conversation_id=request.args.get("conversation_id", ""),
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/order-intake/update", methods=["POST"])
+def order_intake_update():
+    payload = request.get_json(silent=True) or {}
+    validation = validate_intake_update_payload(payload)
+
+    if not validation["is_valid"]:
+        return jsonify({
+            "success": False,
+            "errors": validation["errors"]
+        }), 400
+
+    try:
+        result = update_intake_state(validation["cleaned_data"])
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
+
+
+@orders_bp.route("/order-intake/<conversation_id>/reset", methods=["POST"])
+def order_intake_reset(conversation_id):
+    payload = request.get_json(silent=True) or {}
+    closed_reason = str(payload.get("closed_reason", "admin_reset")).strip() or "admin_reset"
+    updated_by = str(payload.get("updated_by", payload.get("changed_by", "App"))).strip() or "App"
+
+    try:
+        result = reset_intake(
+            conversation_id,
+            closed_reason=closed_reason,
+            updated_by=updated_by,
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)]
+        }), 400
 
 
 @orders_bp.route("/orders/active-customer-context", methods=["GET"])

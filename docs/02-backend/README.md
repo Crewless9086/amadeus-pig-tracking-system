@@ -13,6 +13,7 @@ The backend is responsible for safe API behavior between n8n, the web app, and G
 | `API_STRUCTURE.md` | Current backend endpoints, inputs, outputs, and callers. |
 | `ORDER_LOGIC.md` | Business rules for drafts, lines, reservation, release, approval, rejection, cancellation, and completion. |
 | `QUOTE_INVOICE_DESIGN.md` | Phase 2 quote/invoice generation design before implementation. |
+| `ORDER_INTAKE_STATE_DESIGN.md` | Phase 5.4 persistent intake-state design for natural Sam sales conversations before implementation. |
 | `DATA_MODELS.md` | Backend-facing order data models and important fields. |
 | `MODULE_STRUCTURE.md` | Current backend module layout and ownership. |
 | `REFACTOR_PLAN.md` | Planned backend cleanup and hardening work. |
@@ -31,3 +32,4 @@ The order system needs stabilization before new features. Known focus areas:
 - repeated syncs must not create duplicates
 - partial matches must not silently look complete
 - Sam should get order context through backend/Order Steward, not direct uncontrolled sheet access
+- persistent sales intake state should be owned by backend APIs before Sam uses it for live draft/quote routing

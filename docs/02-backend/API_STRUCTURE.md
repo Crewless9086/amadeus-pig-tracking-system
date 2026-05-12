@@ -11,6 +11,9 @@ All order API routes are registered under `/api`.
 | Method | Path | Current purpose | Main caller |
 | --- | --- | --- | --- |
 | `GET` | `/api/orders` | List orders from `ORDER_OVERVIEW`. | Web app, future review tooling. |
+| `GET` | `/api/order-intake/context` | Read one active persistent intake state by Chatwoot `conversation_id`. | Future `1.0` shadow mode. |
+| `POST` | `/api/order-intake/update` | Validate and merge an intake patch plus item patches into backend-owned intake sheets. | Future `1.0` shadow mode. |
+| `POST` | `/api/order-intake/<conversation_id>/reset` | Close an active intake row without deleting history. | Admin/debug tooling, future `1.2`. |
 | `GET` | `/api/orders/active-customer-context` | Safe active customer order lookup by `order_id`, `conversation_id`, or `customer_phone`. Returns one filtered context, a short multiple-match list, no match, or terminal-order status. | Future `1.2` / Sam review action. |
 | `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES` and generated `ORDER_DOCUMENTS` rows. Header includes `payment_method` (from `ORDER_MASTER`), `line_count` (from overview: **all** line rows including cancelled — see `ORDER_OVERVIEW.md`), **`active_line_count`**, **`cancelled_line_count`**, **`active_line_total`**, and **`all_line_total`**. | Web app, `1.2` `get_order_context` branch. |
 | `GET` | `/api/reports/daily-summary` | Return daily operational order buckets and counts for n8n/reporting. Optional `?date=YYYY-MM-DD`. | n8n scheduled summary, web app/report tooling. |
@@ -45,6 +48,81 @@ The n8n docs currently treat only these actions as live from Sam/`1.0`:
 | `send_for_approval` | `POST /api/orders/<order_id>/send-for-approval` | Live — happy path and backend `400` customer-safe reply verified. |
 
 Other backend endpoints may exist and work from the web app, but they should not be treated as active Sam tools until wired, tested, and documented.
+
+## Order Intake State API (Phase 5.5)
+
+These endpoints are backend-ready for persistent intake state. They are not yet live Sam routing truth until Phase 5.6 shadow-mode verification passes.
+
+### Read Intake Context
+
+Endpoint: `GET /api/order-intake/context?conversation_id=<id>`
+
+Returns:
+
+- `lookup_status = single_match` with current intake state and items when an active intake exists.
+- `lookup_status = no_match` when no active intake exists.
+
+### Update Intake State
+
+Endpoint: `POST /api/order-intake/update`
+
+Payload shape:
+
+```json
+{
+  "conversation_id": "1774",
+  "account_id": "147387",
+  "contact_id": "123",
+  "customer_name": "Charl N",
+  "customer_phone": "447388223114",
+  "customer_channel": "Sam - WhatsApp",
+  "customer_language": "English",
+  "updated_by": "Sam",
+  "patch": {
+    "collection_location": "Riversdale",
+    "collection_time_text": "Friday at 14:00",
+    "payment_method": "Cash",
+    "quote_requested": true,
+    "order_commitment": true,
+    "last_customer_message": "Can I get a quote?"
+  },
+  "items": [
+    {
+      "item_key": "item_1",
+      "quantity": 1,
+      "category": "Grower",
+      "weight_range": "35_to_39_Kg",
+      "sex": "Female",
+      "intent_type": "primary",
+      "status": "active"
+    }
+  ]
+}
+```
+
+Rules:
+
+- n8n/Sam may propose a patch, but backend validates and merges it.
+- Blank patch values do not erase known state.
+- Invalid enum values return `400`.
+- Existing items are matched by stable `item_key`.
+- Removed/replaced items are kept in `ORDER_INTAKE_ITEMS`; they are not deleted.
+- Response includes `missing_fields`, `ready_for_draft`, `ready_for_quote`, `next_action`, and `safe_reply_facts`.
+
+### Reset Intake
+
+Endpoint: `POST /api/order-intake/<conversation_id>/reset`
+
+Payload:
+
+```json
+{
+  "closed_reason": "admin_reset",
+  "updated_by": "App"
+}
+```
+
+This marks the active intake `Closed` and keeps the row for audit/history.
 
 ## Active Customer Order Context Lookup
 

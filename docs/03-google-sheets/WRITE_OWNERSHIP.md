@@ -27,6 +27,8 @@ Formula-driven sheets must not be written to by n8n, AI agents, or backend code.
 | `USERS` | Controlled admin/manual | Backend, web app | User/access data. Not fully automated unless later approved. |
 | `SALES_PRICING` | Admin/manual pricing owner | Backend, n8n, AI, web app | Pricing source. AI must never invent prices. |
 | `SYSTEM_SETTINGS` | Backend setup utility/admin tooling | Backend, web app | Configurable settings for document generation. Stable setting keys must not be renamed casually. |
+| `ORDER_INTAKE_STATE` | Backend | Backend, n8n, web app/admin views | Phase 5.5 persistent sales intake header. Create with setup utility; n8n/Sam must call backend, not write directly. |
+| `ORDER_INTAKE_ITEMS` | Backend | Backend, n8n, web app/admin views | Phase 5.5 persistent sales intake item rows. Create with setup utility; n8n/Sam must call backend, not write directly. |
 | `PIG_OVERVIEW` | Formula only | Backend, web app, n8n, AI | Read-only calculated pig state. |
 | `MATING_OVERVIEW` | Formula only | Backend, web app | Read-only calculated breeding state. |
 | `LITTER_OVERVIEW` | Formula only | Backend, web app | Read-only calculated litter state. |

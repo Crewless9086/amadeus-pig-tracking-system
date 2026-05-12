@@ -15,6 +15,26 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-12 - Phase 5.5 backend intake endpoint scaffold
+
+Type: `ADD`
+
+**Summary:** Added backend-ready persistent order intake endpoints for the upcoming `1.0` shadow-mode integration: `GET /api/order-intake/context`, `POST /api/order-intake/update`, and `POST /api/order-intake/<conversation_id>/reset`. The backend validates proposed intake patches, preserves known facts when blank values arrive, merges item rows by stable `item_key`, computes missing fields/readiness/next action, and keeps closed/removed history instead of deleting it.
+
+**Runtime note:** No n8n workflow behavior has changed yet. Live Google Sheet setup and a direct local-backend smoke test passed on 2026-05-12 using `PHASE55-TEST-20260512`; the test intake was reset/closed. Phase 5.6 will call these endpoints in shadow mode after backend deployment, before intake state drives live draft/quote actions.
+
+---
+
+### 2026-05-11 - Persistent order intake state plan
+
+Type: `DOCS`
+
+**Summary:** Planned the next order-conversation architecture change. The agreed direction is a backend-owned persistent order intake state with item-level rows, followed by shadow-mode verification, intake-driven draft creation, formal quote generation, and only then n8n/Chatwoot payload cleanup. This is intended to stop long conversations from losing customer-confirmed order facts and to separate Draft Orders from backend-generated quote PDFs.
+
+**Design progress:** Added the Phase 5.4 backend design document and planned sheet specs for `ORDER_INTAKE_STATE` and `ORDER_INTAKE_ITEMS`. No runtime behavior was changed.
+
+---
+
 ### 2026-05-11 - Phase 5.3 Sam order-review wording guard
 
 Type: `IMPROVEMENT`

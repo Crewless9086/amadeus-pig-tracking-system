@@ -59,6 +59,40 @@ Important fields:
 - `notes`
 - `requested_items[]`
 
+## Planned Persistent Order Intake State
+
+Status: planned after Phase 5.3; do not implement until the design is agreed and sheet schemas are documented.
+
+Current issue:
+
+- Sam's natural language reply can contain the right order details while the deterministic `order_state` no longer has those fields.
+- Rebuilding order facts from the last N Chatwoot messages is not reliable enough for operational order capture.
+- A formal quote must be a backend-generated PDF from order/document state, not just a chat summary.
+
+Target ownership:
+
+| Layer | Ownership |
+| --- | --- |
+| Backend | Intake state, missing-field calculation, next action, draft creation/update, line sync, quote/invoice generation. |
+| Google Sheets | Persistent intake state and item rows until a stronger database exists. |
+| n8n | Orchestration only: normalize message, call backend, pass compact context to Sam, call approved action branches. |
+| Chatwoot attributes | Lightweight routing hints only, not intake truth. |
+| Sam | Natural language reply and one clear next question; not operational source of truth. |
+
+Target flow:
+
+1. Customer sends a message.
+2. `1.0` normalizes the message and calls backend intake update.
+3. Backend merges newly confirmed facts into existing intake state.
+4. Backend returns known fields, `missing_fields`, `next_action`, and safe reply facts.
+5. Sam asks the next missing field or confirms the backend action result.
+6. If intake is complete and customer requests a formal quote, n8n/backend creates or updates the draft, syncs lines, generates a quote PDF, and uses the document delivery path.
+7. If customer wants to proceed, n8n/backend creates or updates the draft and syncs lines.
+
+Planned cleanup rule:
+
+- Do not remove existing `1.0` payload fields or Chatwoot attributes until intake state has passed shadow-mode verification and live draft/quote tests.
+
 ## Draft order context prefetch (`get_order_context`)
 
 Before `Switch - Clarify or Auto` on the AUTO preparation path, when `sales_agent_memory.existing_order_id` (or equivalent) is non-empty, `1.0` calls `1.2` with `action: get_order_context`. The steward performs `GET /api/orders/<order_id>` and returns:

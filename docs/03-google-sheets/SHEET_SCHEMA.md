@@ -42,6 +42,15 @@ These sheets hold controlled lookup or admin data.
 | `SALES_PRICING` | Manual pricing source for sales categories and weight bands. |
 | `SYSTEM_SETTINGS` | Backend-readable settings for document generation and configurable business rules. |
 
+### Operational State Sheets
+
+These sheets support persistent order intake state. They should be created only by the approved setup utility and written only through backend endpoints.
+
+| Sheet | Purpose |
+| --- | --- |
+| `ORDER_INTAKE_STATE` | One active sales/order-intake header per conversation. Tracks known customer/order facts, missing fields, next action, draft link, quote request state, and lifecycle state for natural Sam conversations before or alongside a Draft order. |
+| `ORDER_INTAKE_ITEMS` | Item-level requested products for an intake. Supports multi-category orders, split sex requests, additions, changes, removals, and links back to synced `ORDER_LINES`. |
+
 ### Formula Overview Sheets
 
 These sheets calculate operational views. They are read-only outputs.

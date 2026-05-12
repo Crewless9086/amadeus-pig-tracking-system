@@ -816,7 +816,190 @@ Live verification 2026-05-11:
 - All five Phase 5.3 prompts were accepted by the live workflow and project owner confirmed Sam's replies were good.
 - Temporary order `ORD-2026-DDFEE6` was cancelled after verification; its single line is `Cancelled`, `reserved_pig_count = 0`, and conversation `1774` active lookup now returns `no_match`.
 
-### 5.4 Order Archive / History Scaling - Future Design, Not Now
+### 5.4 Persistent Order Intake State Design - Complete / Approved
+
+Problem to solve:
+
+- Sam can hold a natural conversation and repeat the right order details, but the deterministic order route can still lose those details when they are not present in the latest structured state.
+- Recent-history reconstruction is not reliable enough for operations because older customer facts can fall outside the message window.
+- A formal quote is a backend-generated PDF document; it is not the same thing as a chat quote or draft order.
+- Draft order creation, quote generation, and later approval must be driven by backend-confirmed structured state, not Sam's prose.
+
+Architecture decision:
+
+- Add backend-owned persistent order intake state as the truth for in-progress sales conversations.
+- Chatwoot attributes should remain lightweight routing hints only, not the source of truth for intake.
+- n8n should orchestrate calls and pass compact context, not large duplicated raw payloads.
+- Sam should handle natural wording and one clear next question, not own operational truth.
+
+Planned sheets:
+
+- `ORDER_INTAKE_STATE`: one active intake header per conversation/customer sales flow.
+- `ORDER_INTAKE_ITEMS`: one row per requested item/category/weight/sex line in the intake.
+
+Required behavior:
+
+- Every customer turn can update intake state with newly confirmed facts.
+- Backend returns known fields, missing fields, next allowed action, and safe reply facts.
+- Sam asks only the next missing field.
+- When required fields are complete and the customer asks for a formal quote, backend/n8n should create or update the draft, sync lines, generate the quote PDF, and offer/send it through the document path.
+- When the customer clearly wants to proceed, backend/n8n should create or update the draft and sync lines.
+- Multi-category requests must be represented as `requested_items[]`, not collapsed into one flat product field.
+- Draft changes are allowed before approval and should update intake/draft/order lines.
+- Approved/reserved/completed orders must not be silently changed by Sam; they should be blocked or routed to admin review.
+
+Core intake state fields:
+
+- `ConversationId`
+- customer identity fields
+- `Draft_Order_ID`
+- `Intake_Status`
+- `Collection_Location`
+- `Collection_Time_Text`
+- `Collection_Date`
+- `Collection_Time`
+- `Payment_Method`
+- `Quote_Requested`
+- `Order_Commitment`
+- `Missing_Fields`
+- `Next_Action`
+- `Last_Customer_Message`
+- `Updated_At`
+
+Collection timing decision:
+
+- Store customer wording such as "Friday at 14:00" in `Collection_Time_Text`.
+- Store parsed `Collection_Date` / `Collection_Time` only when safe or confirmed.
+- If the date is ambiguous, Sam should ask one confirmation question before relying on it operationally.
+
+Core intake item fields:
+
+- `Intake_ID`
+- `Item_Key`
+- `Quantity`
+- `Category`
+- `Weight_Range`
+- `Sex`
+- `Intent_Type`
+- `Status`
+- `Linked_Order_Line_IDs`
+
+Settled design decisions:
+
+- Draft creation requires the minimum operational fields: at least one active requested item with quantity/category/weight range, `Collection_Location`, customer identity/contact route, and a clear commitment signal. Do not create a Draft merely because two fields are known.
+- `Payment_Method` is not required for the first Draft, but it is required before formal quote generation and before sending for approval.
+- A formal quote request must create/update a backend Draft order first when no suitable Draft exists, then sync lines, generate the PDF, and offer/send it through the document delivery path.
+- If the customer wants to proceed but has not asked for a formal quote, the system may create/update the Draft once ready, then Sam should ask whether the customer wants a formal quote PDF or wants to continue toward approval.
+- AI-assisted extraction may propose intake patches, but the backend validates and merges them. n8n and Sam do not write intake state directly.
+- Ambiguous edits such as "change the grower" when multiple grower items exist must return `ask_disambiguation`; Sam asks one clarifying question.
+- Removed or replaced intake items are marked with `Status = removed` or `Status = replaced`, with timestamps/reason where available. They are not deleted.
+- Closed intake rows are kept for audit/history.
+- Abandoned open intake rows may later be marked closed with `Closed_Reason = abandoned` after an agreed inactivity window; draft-linked abandoned cases need a separate approved rule.
+
+Design draft 2026-05-11:
+
+- Added `docs/02-backend/ORDER_INTAKE_STATE_DESIGN.md`.
+- Added planned sheet specs for `ORDER_INTAKE_STATE` and `ORDER_INTAKE_ITEMS`.
+- No sheets, endpoints, workflow nodes, or runtime behavior have been created yet.
+- Owner review/sign-off completed on 2026-05-11.
+- Next step is Phase 5.5 implementation of backend-owned intake sheets and endpoints.
+
+### 5.5 Backend Intake State Sheets And Endpoints - Live Sheet Verified / Awaiting Backend Deploy
+
+Required outcome:
+
+- Create documented sheet schemas for `ORDER_INTAKE_STATE` and `ORDER_INTAKE_ITEMS`. - Done in repo.
+- Add backend endpoints to read/update intake state by `conversation_id`. - Done in repo.
+- Backend merges new facts into existing intake state rather than replacing known facts with blanks. - Done in repo.
+- Backend computes `missing_fields`, `ready_for_draft`, `ready_for_quote`, and `next_action`. - Done in repo.
+- No live behavior should depend on this until shadow-mode verification passes. - Still applies.
+
+Implemented endpoints:
+
+- `GET /api/order-intake/context?conversation_id=<id>`
+- `POST /api/order-intake/update`
+- `POST /api/order-intake/<conversation_id>/reset`
+
+Repo implementation 2026-05-12:
+
+- Added `modules/orders/order_intake_service.py`.
+- Added order intake routes under the existing `/api` order blueprint.
+- Added `scripts/setup_order_intake_infrastructure.py` with dry-run default and `--apply` for live sheet creation.
+- Added API docs and sheet changelog entries.
+- Local verification passed:
+  - Python compile check passed for intake service, order routes, and setup script.
+  - Flask route map includes all three `/api/order-intake/*` endpoints.
+  - Mocked in-memory intake test passed for create/update, item merge, `create_draft_then_quote` next action, context read, and reset/close.
+- Live Google Sheet setup dry-run passed on 2026-05-12:
+  - `ORDER_INTAKE_STATE` is currently missing and would be created with the documented headers.
+  - `ORDER_INTAKE_ITEMS` is currently missing and would be created with the documented headers.
+  - No live sheet changes were made during dry-run.
+- Live Google Sheet setup apply passed on 2026-05-12:
+  - Created `ORDER_INTAKE_STATE`.
+  - Created `ORDER_INTAKE_ITEMS`.
+  - Header verification passed for both sheets.
+- Direct local-backend-to-live-sheet smoke test passed on 2026-05-12:
+  - Test conversation: `PHASE55-TEST-20260512`.
+  - Created intake `INTAKE-2026-6C3CD0` and item `INTAKEITEM-2026-C6680E`.
+  - Update response returned `next_action = create_draft_then_quote`, `ready_for_draft = true`, `ready_for_quote = false`, and `missing_fields = ["draft_order_id"]`.
+  - Context read returned `lookup_status = single_match`.
+  - Reset closed the intake with `Closed_Reason = phase_5_5_smoke_test_complete`.
+  - Post-reset context read returned `lookup_status = no_match`, confirming no active test intake remains.
+
+Remaining before Phase 5.5 live closure:
+
+- Deploy backend.
+- Run the same intake update/context/reset smoke test against the deployed backend URL.
+
+### 5.6 Intake Shadow Mode In `1.0` - Planned
+
+Required outcome:
+
+- `1.0 - Sam-sales-agent-chatwoot` calls intake update/read every customer turn but does not yet use it as the primary routing truth.
+- Compare backend intake state against the current `order_state`, Sam replies, and known problem transcripts.
+- Prove the intake state retains facts after long conversations and repeated follow-up questions.
+- Do not remove existing Chatwoot attributes or payload fields during shadow mode.
+
+Acceptance tests:
+
+- The transcript where the customer wants 1 female grower, `35_to_39_Kg`, Friday 14:00, Riversdale, Cash must retain those fields even after more than 25 messages.
+- "I told you what I want", "Yes", "I told you 1", and "I need a quote" must not erase known intake facts.
+
+### 5.7 Intake-Driven Draft Creation And Line Sync - Planned
+
+Required outcome:
+
+- When intake is complete and the customer clearly wants to proceed, backend/n8n creates a draft order from intake state.
+- `ORDER_MASTER` and `ORDER_LINES` are created from backend-confirmed intake state and `ORDER_INTAKE_ITEMS`.
+- Multi-category and split-sex requests sync through `requested_items[]`.
+- Existing Draft orders are updated, not duplicated, when the customer changes, adds, or removes items.
+
+Draft edit behavior:
+
+- Before approval: allow changes, additions, removals, and re-sync lines.
+- After approval/reservation/completion: block automatic changes or route to admin review.
+- Ambiguous item edits must ask one disambiguation question.
+
+### 5.8 Formal Quote Request Flow - Planned
+
+Required outcome:
+
+- A formal quote request means backend PDF quote generation, not just a chat price summary.
+- If no draft exists and intake is complete, create draft, sync lines, then generate quote.
+- If a draft exists, update/sync it from intake first, then generate quote.
+- Quote PDFs continue to use the Phase 2 backend document path and `ORDER_DOCUMENTS`.
+- Sam must not claim a quote was generated or sent unless backend document generation/delivery confirms it.
+
+### 5.9 n8n Payload And Chatwoot Attribute Cleanup - Planned After Intake Is Proven
+
+Required outcome:
+
+- Reduce duplicated fields passed between `1.0` nodes.
+- Keep only compact, intentional objects in prompts and node transitions.
+- Chatwoot custom attributes should be reduced to routing state such as `conversation_mode`, `order_id`, and `pending_action`.
+- Do not remove legacy attributes or payload branches until intake-driven routing is live-verified.
+
+### 5.10 Order Archive / History Scaling - Future Design, Not Now
 
 Current decision:
 
