@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import uuid
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -219,6 +219,21 @@ def send_order_document(document_id, conversation_id, sent_by="App", account_id=
     if str(document.get("Document_Status", "")).strip() == STATUS_VOIDED:
         raise ValueError("Voided documents cannot be sent.")
 
+    if _recently_sent(document):
+        return {
+            "success": True,
+            "skipped": True,
+            "reason": "already_sent",
+            "document_id": str(document.get("Document_ID", "")).strip(),
+            "order_id": str(document.get("Order_ID", "")).strip(),
+            "document_type": str(document.get("Document_Type", "")).strip(),
+            "document_ref": str(document.get("Document_Ref", "")).strip(),
+            "document_status": STATUS_SENT,
+            "conversation_id": str(conversation_id or "").strip(),
+            "delivery_webhook_sent": False,
+            "message": "Document was already sent recently.",
+        }
+
     conversation_id = str(conversation_id or "").strip()
     if not conversation_id:
         raise ValueError("conversation_id is required for document delivery.")
@@ -251,6 +266,22 @@ def send_order_document(document_id, conversation_id, sent_by="App", account_id=
             result["skipped"] = True
 
     return result
+
+
+def _recently_sent(document, within_minutes=10):
+    if str(document.get("Document_Status", "")).strip() != STATUS_SENT:
+        return False
+
+    sent_at = str(document.get("Sent_At", "")).strip()
+    if not sent_at:
+        return False
+
+    try:
+        sent_dt = datetime.strptime(sent_at, "%d %b %Y %H:%M")
+    except ValueError:
+        return False
+
+    return datetime.now() - sent_dt <= timedelta(minutes=within_minutes)
 
 
 def _notify_document_delivery_workflow(document, conversation_id, sent_by, account_id):

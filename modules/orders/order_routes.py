@@ -311,7 +311,7 @@ def send_latest_quote(order_id):
             result["quote_ensured"] = True
             result["ensure_quote_reason"] = str(ensure_result.get("reason", "")).strip()
         status_code = 200 if result.get("success") else 502
-        if result.get("skipped"):
+        if result.get("skipped") and result.get("reason") != "already_sent":
             status_code = 400
         return jsonify(result), status_code
     except ValueError as exc:
@@ -353,7 +353,7 @@ def send_document(document_id):
             account_id=account_id,
         )
         status_code = 200 if result.get("success") else 502
-        if result.get("skipped"):
+        if result.get("skipped") and result.get("reason") != "already_sent":
             status_code = 400
         return jsonify(result), status_code
     except ValueError as exc:
@@ -405,6 +405,19 @@ def new_order_with_lines():
             result,
             result.get("order_id", ""),
             changed_by=order_validation["cleaned_data"].get("created_by", "App"),
+        )
+        _attach_quote_send_result(
+            result,
+            send_quote_if_ready=_truthy(payload.get("send_quote_if_ready")),
+            conversation_id=payload.get("conversation_id", ""),
+            account_id=payload.get("account_id", "147387"),
+            sent_by=payload.get(
+                "sent_by",
+                payload.get(
+                    "changed_by",
+                    order_validation["cleaned_data"].get("created_by", "App"),
+                ),
+            ),
         )
         status_code = 201 if result.get("create_success") else 400
         return jsonify(result), status_code
@@ -591,6 +604,56 @@ def _attach_auto_quote_result(result, order_id, changed_by="App"):
             "errors": [str(exc)],
             "message": "Automatic quote generation failed after the order update.",
         }
+
+
+def _attach_quote_send_result(
+    result,
+    send_quote_if_ready=False,
+    conversation_id="",
+    account_id="147387",
+    sent_by="App",
+):
+    if not result or not send_quote_if_ready:
+        return
+
+    document = (result.get("auto_quote") or {}).get("document") or {}
+    document_id = str(document.get("document_id", "")).strip()
+    if not document_id:
+        result["quote_send"] = {
+            "success": False,
+            "skipped": True,
+            "reason": "quote_not_ready",
+            "order_id": str(result.get("order_id", "")).strip(),
+            "message": "Quote was not generated, so it could not be sent.",
+        }
+        return
+
+    try:
+        quote_send = send_order_document(
+            document_id,
+            conversation_id=str(conversation_id or "").strip(),
+            sent_by=str(sent_by or "App").strip() or "App",
+            account_id=str(account_id or "147387").strip() or "147387",
+        )
+        quote_send["action"] = "send_latest_quote"
+        result["quote_send"] = quote_send
+    except Exception as exc:
+        logger.exception(
+            "Automatic quote send failed for order %s",
+            result.get("order_id", ""),
+        )
+        result["quote_send"] = {
+            "success": False,
+            "action": "send_latest_quote",
+            "order_id": str(result.get("order_id", "")).strip(),
+            "document_id": document_id,
+            "errors": [str(exc)],
+            "message": "Quote was generated but could not be sent automatically.",
+        }
+
+
+def _truthy(value):
+    return value is True or str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
 def _auto_quote_skipped_incomplete(order_id):

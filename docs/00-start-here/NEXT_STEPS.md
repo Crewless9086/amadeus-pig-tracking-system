@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 quote-send confirmation wiring | Import/deploy 5.8.1, live-test quote delivery, then move to 5.9 cleanup. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 quote-send confirmation wiring; backend-owned create/generate/send correction prepared | Deploy backend, import updated `1.2` and `1.0`, live-test exact one-turn create-and-send quote delivery, then move to 5.9 cleanup. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -1191,8 +1191,9 @@ Repo implementation 2026-05-13:
 
 Still required before closing 5.8.1:
 
-- Import updated `1.0` and run one final live phrase check for `create the draft and send me the quote`.
-- No blocking quote-send issue remains from the integrated retest.
+- Deploy backend changes, import updated `1.2`, import updated `1.0`, and run one final live phrase check for `create the draft and send me the quote`.
+- Expected result: one customer turn creates the Draft, creates active lines, auto-generates the quote, sends the PDF through `1.5`, marks `ORDER_DOCUMENTS.Document_Status = Sent`, clears Chatwoot `pending_action`, and Sam says the quote was sent only after `quote_send.success = true`.
+- No blocking quote-send issue remains after that integrated retest.
 
 Live smoke 2026-05-13:
 
@@ -1208,6 +1209,8 @@ Live smoke 2026-05-13:
 - Follow-up `Yes, please` sent the PDF through `1.5`, changed the document to `Sent`, stamped `Sent_By = Sam Phase 5.8.1 quote send`, cleared Chatwoot `pending_action`, and Sam replied that the formal quote was sent.
 - Cleanup completed: `ORD-2026-1D782B` cancelled, intake `INTAKE-2026-782FD8` closed, Chatwoot order attributes cleared, and both active lookup endpoints returned `no_match`.
 - Parser edge fixed in repo: `create/prepare/make + draft` now counts as order commitment, so `create the draft and send me the quote` is covered. Local regex simulation confirms quote-only wording still does not trigger commitment.
+- Follow-up patch prepared after exact-phrase live check: when a quote-requested create result is returned, `1.0` now suppresses the draft-only reply and calls `Call 1.2 - Send Quote` so backend `send-latest` can generate-if-needed and send. JSON and Code-node syntax validation passed.
+- Backend-owned correction prepared after Claude review: removed the fragile `1.0` post-create fan-out/send branch, added backend `send_quote_if_ready` handling to create-with-lines, made `1.2` pass and echo `quote_send`, and made `1.0` set/clear `pending_action` from the backend `quote_send` result. Local validation passed; live deploy/import/retest remains required.
 
 Live test progress 2026-05-13:
 
