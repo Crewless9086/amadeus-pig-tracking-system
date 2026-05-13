@@ -281,8 +281,19 @@ def send_latest_quote(order_id):
 
     try:
         quote = get_latest_non_voided_quote(order_id)
+        ensure_result = None
         if not quote:
-            raise ValueError("No generated quote was found for this order.")
+            ensure_result = auto_generate_quote_if_ready(
+                order_id,
+                created_by=sent_by,
+            )
+            if not ensure_result.get("quote_ready"):
+                missing = ensure_result.get("missing_fields", [])
+                detail = f" Missing fields: {', '.join(missing)}." if missing else ""
+                raise ValueError("No generated quote was found and the order is not quote-ready." + detail)
+            quote = get_latest_non_voided_quote(order_id)
+            if not quote:
+                raise ValueError("Quote generation did not create a sendable quote document.")
 
         document_id = str(quote.get("Document_ID", "")).strip()
         if not document_id:
@@ -296,6 +307,9 @@ def send_latest_quote(order_id):
         )
         result["action"] = "send_latest_quote"
         result["order_id"] = str(result.get("order_id") or order_id).strip()
+        if ensure_result:
+            result["quote_ensured"] = True
+            result["ensure_quote_reason"] = str(ensure_result.get("reason", "")).strip()
         status_code = 200 if result.get("success") else 502
         if result.get("skipped"):
             status_code = 400

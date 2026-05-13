@@ -27,6 +27,12 @@ Type: `FIX`
 
 **Live test still required:** Deploy backend, import `1.2` and `1.0`, create a quote-ready draft, confirm Sam offers to send the generated quote, reply `Yes, please`, and verify `ORDER_DOCUMENTS.Document_Status = Sent` plus the Chatwoot attachment delivery from `1.5`.
 
+**Live smoke result:** After deploy/import, safe conversation `1774` created test order `ORD-2026-DA3EAC` with one Female Grower `35_to_39_Kg` line, Cash, Riversdale. Direct quote generation created `DOC-2026-B05CD6` / `Q-2026-DA3EAC`; direct `POST /api/orders/ORD-2026-DA3EAC/quote/send-latest` returned `success = true`, `delivery_webhook_sent = true`, and `document_status = Sent`. The actual `1.0` confirmation route was then tested with a synthetic `Yes, please` inbound message and `pending_action = send_quote`; it called `1.2` / backend successfully and updated `ORDER_DOCUMENTS.Sent_By = Sam Phase 5.8.1 quote send`, `Sent_At = 13 May 2026 11:05`. Cleanup cancelled the order and closed intake `INTAKE-2026-DE3E83`; active lookup for conversation `1774` returned `no_match`.
+
+**Smoke findings before closing 5.8.1:** The first full synthetic Chatwoot create message created the Draft and active line, but did not auto-generate the quote on that workflow path. Direct backend create-with-lines control then passed: `ORD-2026-7D0692` returned `auto_quote.generated = true` with `DOC-2026-A12EEF`, proving the deployed backend auto-quote service is healthy. A harmless backend PATCH to the earlier Draft updated the note but returned `500`; direct quote generation still worked. Treat the send-confirmation path as live-verified, but keep a follow-up check on the live `1.0`/`1.2` create path or synthetic payload path before calling the whole automatic quote flow fully closed.
+
+**Backend hardening prepared:** `POST /api/orders/<order_id>/quote/send-latest` now self-heals when no quote exists yet: it runs `auto_generate_quote_if_ready()`, returns a clear missing-fields error if the draft is not quote-ready, or sends the newly generated/latest quote if ready. This keeps the customer confirmation path reliable even if create-time auto-quote missed. Local Flask monkeypatch test passed with `quote_ensured = true` and `document_status = Sent`.
+
 ---
 
 ### 2026-05-13 - Phase 5.8 formal quote request first slice

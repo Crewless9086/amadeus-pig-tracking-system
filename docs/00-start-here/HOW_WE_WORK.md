@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 5.8.1** - Quote Send Confirmation |
-| **Status** | Phase 5.8.1 implemented in repo; deploy/import and live quote-send test next |
-| **Current focus** | Deploy backend, import `1.2` then `1.0`, and verify `Yes, please` sends the generated quote PDF before Phase 5.9 cleanup |
-| **Current last verified** | **2026-05-13** - Phase 5.8 live smoke passed; Phase 5.8.1 local validation passed with backend route monkeypatch, workflow JSON parse checks, and Code-node syntax checks |
+| **Status** | Phase 5.8.1 send-confirmation path live-verified; workflow create-path auto-quote follow-up needed |
+| **Current focus** | Recheck the live `1.0`/`1.2` create path so auto-quote appears without direct quote generation, then move to Phase 5.9 cleanup |
+| **Current last verified** | **2026-05-13** - `send_latest_quote` and `1.0` `SEND_QUOTE` confirmation route live-verified on `ORD-2026-DA3EAC`; cleanup completed |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
