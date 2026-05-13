@@ -94,10 +94,12 @@ Implemented behavior:
 - Sam's system prompt now distinguishes Draft order, formal quote PDF, and approval.
 - `Code - Slim Sales Agent User Context` also carries backend `auto_quote` from create/update/sync results into `StewardCompact`.
 - When `auto_quote` says a quote was generated or the latest quote is current, Sam should offer to send the quote instead of asking whether to generate one.
+- Phase 5.8.1 adds the confirmation path: generated/current quote offers write `pending_action = send_quote`; a later customer confirmation routes to `SEND_QUOTE`; `Call 1.2 - Send Quote` calls the steward with `action = send_latest_quote`; and Sam may only say the PDF was sent when `backend_success = true`.
 
 Important boundary:
 
 - Backend automatic quote generation creates the quote PDF only. It must not tell the customer the quote was sent unless a later document-delivery action confirms sending.
+- The send confirmation is a real backend action. A customer reply such as `Yes, please` after Sam offers to send the generated quote must call `POST /api/orders/<order_id>/quote/send-latest` through `1.2`, clear `pending_action`, and mark the document sent only after `1.5` confirms delivery.
 - Payment method changes the final total, so quote generation waits for `Cash` or `EFT`.
 - Drafts that are missing payment method, collection location, active lines, complete line count, or valid line prices are not quote-ready; Sam should ask for the first missing fact.
 - `HTTP - Get Conversation Messages` is non-blocking. If Chatwoot history lookup returns 404 or another API error, the workflow should continue with no history rather than dropping the current customer message before order/quote routing.

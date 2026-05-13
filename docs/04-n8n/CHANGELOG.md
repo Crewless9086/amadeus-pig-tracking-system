@@ -15,6 +15,20 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-13 - Phase 5.8.1 quote send confirmation path
+
+Type: `FIX`
+
+**Summary:** Wired the customer confirmation after an auto-generated quote into real document delivery.
+
+**Behavior:** Backend now exposes `POST /api/orders/<order_id>/quote/send-latest`, which finds the latest non-voided quote and delegates to the existing document-send path. `1.2 - Amadeus Order Steward` now supports `action = send_latest_quote`. `1.0 - Sam-sales-agent-chatwoot` now stores `pending_action = send_quote` when a generated/current quote is offered, routes a later customer confirmation such as `Yes, please` to `SEND_QUOTE`, clears the pending action after the send call, and only lets Sam say the quote was sent when the backend confirms delivery.
+
+**Verification:** Backend route compiled and a Flask test-client monkeypatch returned `200` with `document_status = Sent`. Both workflow JSON exports parsed successfully, embedded Code-node JavaScript passed syntax checks, and the extractor companion source passed syntax checks.
+
+**Live test still required:** Deploy backend, import `1.2` and `1.0`, create a quote-ready draft, confirm Sam offers to send the generated quote, reply `Yes, please`, and verify `ORDER_DOCUMENTS.Document_Status = Sent` plus the Chatwoot attachment delivery from `1.5`.
+
+---
+
 ### 2026-05-13 - Phase 5.8 formal quote request first slice
 
 Type: `ADD`
@@ -40,6 +54,8 @@ Type: `ADD`
 **Direction update:** Phase 5.8 now treats formal quotes as automatic backend artifacts of quote-ready draft orders, not as something customers must ask for with exact wording. Backend mutations now return `auto_quote` after create-with-lines, update, and line sync. `auto_quote` generates only when the draft is ready and skips duplicate versions when the latest quote fingerprint still matches the current draft. `1.2` preserves the field and `1.0` passes it into Sam's compact steward context so Sam can offer to send an already-generated quote.
 
 **Claude review fixes before live import:** Removed volatile `order_line_id` from quote fingerprints, added rendered customer fields to the fingerprint, made manual quote generation stamp fingerprints, made quote readiness use `ORDER_MASTER` truth/fallback instead of relying only on formula-driven `ORDER_OVERVIEW`, and added a defensive skip for partial/incomplete fulfillment results.
+
+**Live smoke:** Backend direct smoke passed on `ORD-2026-2BF6EE`: missing payment blocked auto-quote, patching `Cash` generated `DOC-2026-19D8D0` / `Q-2026-2BF6EE`, and same-item resync returned `latest_quote_current` with no duplicate quote version. Full `1.0 -> 1.2 -> backend` smoke passed on safe conversation `1774`, creating `ORD-2026-BCC742` and auto-generating `DOC-2026-3960F1` / `Q-2026-BCC742`. Sam's reply correctly said the draft was ready, the formal quote had been generated, and asked whether to send it now. Both test orders were cancelled and conversation `1774` returned `no_match`.
 
 ---
 

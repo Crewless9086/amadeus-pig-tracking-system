@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.7; 5.8 auto quote readiness implemented in repo | Import/retest automatic quote generation, then close 5.8 or move to cleanup. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 quote-send confirmation wiring | Import/deploy 5.8.1, live-test quote delivery, then move to 5.9 cleanup. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -1107,7 +1107,7 @@ Draft edit behavior:
 - After approval/reservation/completion: block automatic changes or route to admin review.
 - Ambiguous item edits must ask one disambiguation question.
 
-### 5.8 Automatic Formal Quote Readiness And Generation - In Progress
+### 5.8 Automatic Formal Quote Readiness And Generation - Complete And Live-Verified
 
 Required outcome:
 
@@ -1153,12 +1153,47 @@ Claude review blocker fixes added 2026-05-13:
 - Quote readiness overlays `ORDER_MASTER` fields and can fall back to `ORDER_MASTER` + `ORDER_LINES` if formula-driven `ORDER_OVERVIEW` is not current yet.
 - Auto-quote hook skips immediately when sync/create results show partial or incomplete fulfillment, before any PDF generation attempt.
 
-Still required before closing 5.8:
+5.8 closure checks:
 
-- Import updated backend and n8n workflow exports, then live-test both cases on a safe Charl N conversation:
-  - draft reaches quote-ready with payment method present -> quote is generated automatically and Sam offers to send it
-  - draft missing payment method -> no quote is generated and Sam asks Cash/EFT
-- Decide later whether explicit "send it" after quote-ready should call the existing document delivery path automatically; for now generation and sending remain separate.
+- Complete: draft reaches quote-ready with payment method present -> quote is generated automatically and Sam offers to send it.
+- Complete: draft missing payment method -> no quote is generated and Sam asks Cash/EFT.
+- Follow-up moved to Phase 5.8.1: explicit "send it" after quote-ready must call the existing document delivery path.
+
+Live verification 2026-05-13:
+
+- Direct backend create-with-lines without payment created `ORD-2026-2BF6EE` with one active Female Grower `35_to_39_Kg` line and returned `auto_quote.quote_ready = false`, `generated = false`, `missing_fields = ["payment_method"]`.
+- Patching `ORD-2026-2BF6EE` to `Payment_Method = Cash` generated `DOC-2026-19D8D0`, `Q-2026-2BF6EE`, total `R1,400.00`.
+- Re-syncing the same requested item cancelled/recreated the line but returned `auto_quote.reason = latest_quote_current` with the same document ID/ref; no duplicate quote version was created.
+- Full workflow smoke via `1.0` webhook for safe conversation `1774` created `ORD-2026-BCC742` through `1.0 -> 1.2 -> backend`, generated `DOC-2026-3960F1`, `Q-2026-BCC742`, total `R1,400.00`, with a `Quote_Fingerprint` note.
+- Cleanup completed: `ORD-2026-2BF6EE` and `ORD-2026-BCC742` were cancelled, and active lookup for conversation `1774` returned `no_match`.
+- Chatwoot wording check passed. Sam replied: `Thanks, Charl. Your draft order (ORD-2026-BCC742) for 1 female grower pig (35-39 kg), collection at Riversdale on Friday at 14:00, with cash payment is ready. Your formal quote with reference Q-2026-BCC742 has also been generated. Would you like me to send the quote to you now?`
+- Phase 5.8 is complete and live-verified. Quote sending remains a separate confirmed document-delivery step.
+
+### 5.8.1 Quote Send Confirmation - Implemented In Repo
+
+Required outcome:
+
+- When Sam offers to send a generated/current quote and the customer confirms, the workflow must call backend document delivery before Sam says it was sent.
+- The confirmation state must survive to the next customer turn through Chatwoot `custom_attributes.pending_action = send_quote`.
+- `1.0` must route a short confirmation such as `Yes, please` to a real send action, not a reply-only promise.
+- `1.2` must expose a steward action for sending the latest generated quote for an order.
+- Backend must find the latest non-voided quote, delegate to the existing `send_order_document()` path, and return `document_status = Sent` only after delivery confirms.
+- After the send attempt, `pending_action` must be cleared.
+
+Repo implementation 2026-05-13:
+
+- Backend added `POST /api/orders/<order_id>/quote/send-latest`.
+- `1.2 - Order Steward` added `action = send_latest_quote`.
+- `1.0 - Sam Sales Agent` added `SEND_QUOTE`, `Set - Build Send Quote Payload`, `Call 1.2 - Send Quote`, `HTTP - Clear Pending After Send Quote`, and `Set - Restore Send Quote Result`.
+- Generated/current quote offers now set `pending_action = send_quote` after create, update, sync, and manual quote generation paths.
+- Sam prompt now says `SEND_QUOTE` may only be described as sent when `BackendSuccess = true`.
+- Extractor skips while `pending_action = send_quote`, so a short confirmation is not misread as an order edit.
+
+Still required before closing 5.8.1:
+
+- Deploy backend and import `1.2` then `1.0`.
+- Live-test on safe conversation `1774`: create a quote-ready draft, confirm Sam offers to send it, reply `Yes, please`, verify `ORDER_DOCUMENTS.Document_Status = Sent`, and confirm the quote attachment/message arrives through `1.5`.
+- Cleanup test order and verify active lookup returns `no_match`.
 
 Live test progress 2026-05-13:
 
@@ -1503,11 +1538,11 @@ Recently completed:
 - Phase 1.5 lifecycle guards — Complete And Live-Verified 2026-05-04: `approve_order` only from `Pending_Approval`; payment lock beyond Draft; reject/cancel vs `Completed`; defer auto-reservation (1.8) and outbound notifications (1.9)
 - Phase 1.6 reserve/release hardening — **complete** 2026-05-05 (backend/sheets); 2026-05-06 (order-detail success banner: API `message` + `changed_count` + idempotent copy for second reserve/release)
 - Phase 1.7 slim Sales Agent reply payload — complete and live-verified **2026-05-07**: `Code - Slim Sales Agent User Context` on all four paths into Sam; `OrderStateSummary` + `StewardCompact`; WhatsApp checklist A+B passed
-- Phase 5.8 automatic quote readiness — implemented in repo 2026-05-13: backend `auto_quote` after create/update/sync, quote fingerprint duplicate skip, `1.2` propagation, and `1.0` steward context/wording guidance. Live import/retest still required.
+- Phase 5.8 automatic quote readiness — complete and live-verified 2026-05-13: backend `auto_quote` after create/update/sync, quote fingerprint duplicate skip, `1.2` propagation, `1.0` steward context/wording guidance, and Chatwoot wording confirmed.
 
 Recommended next:
 
-1. **Phase 5.8 live import/retest** — verify automatic quote generation when payment method is present, and no generation when Cash/EFT is missing.
+1. **Phase 5.8.1 live import/retest** — verify `Yes, please` sends the generated quote and marks the document `Sent`.
 2. **Phase 5.9 cleanup** — reduce duplicated shadow/legacy routing after intake/quote behavior is proven.
 3. **Phase 6** (parallel polish when useful) — web app order detail parity and action clarity.
 

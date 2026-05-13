@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today’s focus** | `NEXT_STEPS.md` § **Phase 5.8** — Formal Quote Request Flow |
-| **Status** | Phase 5.8 automatic quote-readiness implementation in repo; live import/retest next |
-| **Current focus** | `NEXT_STEPS.md` Section **5.8** - Formal quote request flow |
-| **Current last verified** | **2026-05-13** - local auto-quote helper check: missing payment blocks generation; quote-ready draft generates once; unchanged draft skips duplicate quote |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 5.8.1** - Quote Send Confirmation |
+| **Status** | Phase 5.8.1 implemented in repo; deploy/import and live quote-send test next |
+| **Current focus** | Deploy backend, import `1.2` then `1.0`, and verify `Yes, please` sends the generated quote PDF before Phase 5.9 cleanup |
+| **Current last verified** | **2026-05-13** - Phase 5.8 live smoke passed; Phase 5.8.1 local validation passed with backend route monkeypatch, workflow JSON parse checks, and Code-node syntax checks |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

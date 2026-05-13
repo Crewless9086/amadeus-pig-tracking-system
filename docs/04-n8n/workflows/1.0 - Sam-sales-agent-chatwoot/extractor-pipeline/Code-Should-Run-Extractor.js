@@ -55,6 +55,9 @@ if (!extractorEnabled) {
 } else if (pendingAction === "cancel_order") {
   run = false;
   reason = "pending_cancel_flow";
+} else if (pendingAction === "send_quote") {
+  run = false;
+  reason = "pending_send_quote_flow";
 } else if (!msg) {
   run = false;
   reason = "empty_customer_message";
