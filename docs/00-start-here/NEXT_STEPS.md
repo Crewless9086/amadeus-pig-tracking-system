@@ -1211,6 +1211,7 @@ Live smoke 2026-05-13:
 - Parser edge fixed in repo: `create/prepare/make + draft` now counts as order commitment, so `create the draft and send me the quote` is covered. Local regex simulation confirms quote-only wording still does not trigger commitment.
 - Follow-up patch prepared after exact-phrase live check: when a quote-requested create result is returned, `1.0` now suppresses the draft-only reply and calls `Call 1.2 - Send Quote` so backend `send-latest` can generate-if-needed and send. JSON and Code-node syntax validation passed.
 - Backend-owned correction prepared after Claude review: removed the fragile `1.0` post-create fan-out/send branch, added backend `send_quote_if_ready` handling to create-with-lines, made `1.2` pass and echo `quote_send`, and made `1.0` set/clear `pending_action` from the backend `quote_send` result. Local validation passed; live deploy/import/retest remains required.
+- Retest after upload/deploy did not pass: the live `1.0 -> 1.2` create path created a correct draft but did not generate/send the quote, while direct backend controls showed quote generation and `send-latest` work. Direct backend create-with-lines with `send_quote_if_ready = true` generated and delivered a PDF but timed out before marking `ORDER_DOCUMENTS` as `Sent`. Repo patch increases document-delivery webhook timeout to 90 seconds and keeps the n8n response parser tolerant. Deploy backend again and re-import the current `1.2` export before the next exact one-turn smoke.
 
 Live test progress 2026-05-13:
 

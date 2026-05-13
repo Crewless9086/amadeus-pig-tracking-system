@@ -323,18 +323,19 @@ def _notify_document_delivery_workflow(document, conversation_id, sent_by, accou
     )
 
     try:
-        with urllib_request.urlopen(req, timeout=30) as response:
+        with urllib_request.urlopen(req, timeout=90) as response:
             body = response.read().decode("utf-8", errors="ignore")
             status_code = getattr(response, "status", 200)
             parsed_body = _parse_json_body(body)
+            delivery_body = _normalize_workflow_response(parsed_body)
             sent = (
                 200 <= status_code < 300
-                and parsed_body.get("success") is True
-                and parsed_body.get("sent") is True
+                and delivery_body.get("success") is True
+                and delivery_body.get("sent") is True
             )
             workflow_error = ""
             if not sent:
-                workflow_error = _workflow_error_from_response(parsed_body, body, status_code)
+                workflow_error = _workflow_error_from_response(delivery_body, body, status_code)
             return {
                 "sent": sent,
                 "status_code": status_code,
@@ -398,6 +399,20 @@ def _parse_json_body(body):
         return json.loads(body or "{}")
     except (TypeError, ValueError):
         return {}
+
+
+def _normalize_workflow_response(parsed_body):
+    if isinstance(parsed_body, dict):
+        nested = parsed_body.get("json")
+        return nested if isinstance(nested, dict) else parsed_body
+
+    if isinstance(parsed_body, list) and parsed_body:
+        first = parsed_body[0]
+        if isinstance(first, dict):
+            nested = first.get("json")
+            return nested if isinstance(nested, dict) else first
+
+    return {}
 
 
 def _workflow_error_from_response(parsed_body, raw_body, status_code):
