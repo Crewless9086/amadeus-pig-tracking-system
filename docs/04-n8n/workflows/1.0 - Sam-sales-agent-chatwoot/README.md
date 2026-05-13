@@ -82,7 +82,7 @@ The current 5.6/5.7 implementation intentionally keeps legacy route fallback whi
 
 ## Phase 5.8 Formal Quote Request Flow
 
-Status: first controlled slice implemented in repo on 2026-05-13; live verification still required.
+Status: automatic quote-readiness direction implemented in repo on 2026-05-13; live import/retest still required.
 
 Implemented behavior:
 
@@ -92,11 +92,14 @@ Implemented behavior:
 - `Merge - Quote Result With Reply Context` combines the steward result back into Sam's reply context.
 - `Code - Slim Sales Agent User Context` includes a compact generated-document summary for Sam.
 - Sam's system prompt now distinguishes Draft order, formal quote PDF, and approval.
+- `Code - Slim Sales Agent User Context` also carries backend `auto_quote` from create/update/sync results into `StewardCompact`.
+- When `auto_quote` says a quote was generated or the latest quote is current, Sam should offer to send the quote instead of asking whether to generate one.
 
 Important boundary:
 
-- This slice generates the quote PDF only. It must not tell the customer the quote was sent unless a later document-delivery action confirms sending.
-- `create_draft_then_quote` is treated as a safe draft-create trigger so complete quote requests without a linked draft do not fall through to chat-only replies. Automatic quote generation immediately after creating that new draft is still pending.
+- Backend automatic quote generation creates the quote PDF only. It must not tell the customer the quote was sent unless a later document-delivery action confirms sending.
+- Payment method changes the final total, so quote generation waits for `Cash` or `EFT`.
+- Drafts that are missing payment method, collection location, active lines, complete line count, or valid line prices are not quote-ready; Sam should ask for the first missing fact.
 - `HTTP - Get Conversation Messages` is non-blocking. If Chatwoot history lookup returns 404 or another API error, the workflow should continue with no history rather than dropping the current customer message before order/quote routing.
 - `HTTP - Send Chatwoot Reply` should match the live-verified `1.4` send-message pattern: fixed account `147387`, normalized `ConversationId`, and explicit JSON body. A previous multi-source URL fallback still returned Chatwoot `404` in the Phase 5.8 test after the quote was generated, so this node should stay simple and consistent with the working outbound notification workflow.
 

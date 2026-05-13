@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today’s focus** | `NEXT_STEPS.md` § **Phase 5.8** — Formal Quote Request Flow |
-| **Status** | Phase 5.7 atomic create-with-lines closed; cleanup/5.8 planned next |
+| **Status** | Phase 5.8 automatic quote-readiness implementation in repo; live import/retest next |
 | **Current focus** | `NEXT_STEPS.md` Section **5.8** - Formal quote request flow |
-| **Current last verified** | **2026-05-13** - atomic create-with-lines no-stock regression (`ORD-2026-CBAE14`) left no active zero-line draft |
+| **Current last verified** | **2026-05-13** - local auto-quote helper check: missing payment blocks generation; quote-ready draft generates once; unchanged draft skips duplicate quote |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

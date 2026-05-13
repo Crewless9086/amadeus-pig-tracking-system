@@ -117,7 +117,7 @@ If the customer asks for a formal quote and no draft exists, the agreed flow is:
 
 Sam must not treat a chat price summary as a generated quote.
 
-If the customer clearly wants to proceed but has not asked for a formal quote, the system may create/update the Draft when the draft requirements are met, then Sam should ask whether the customer wants a formal quote PDF or wants to continue toward approval. The system should not generate a formal quote silently unless the customer requested or confirmed it.
+Decision update 2026-05-13: a formal quote is now treated as a backend-generated artifact of a quote-ready Draft, not as a wording-dependent customer request. The system may create/update the Draft when draft requirements are met, then backend `auto_quote` generates or refreshes the quote once payment method and the other quote-ready facts are present. Sam should not say the quote was sent unless document delivery confirms it; generation and sending remain separate.
 
 ## Intake Merge Rules
 

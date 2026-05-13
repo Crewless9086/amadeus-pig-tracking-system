@@ -1514,7 +1514,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $json || {};\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"update_order\",\n      order_id: item.order_id || \"\",\n      message: item.message || \"\",\n      updated_fields: Array.isArray(item.updated_fields) ? item.updated_fields : [],\n      changed_by: item.changed_by || \"\"\n    }\n  }\n];"
+        "jsCode": "const item = $json || {};\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"update_order\",\n      order_id: item.order_id || \"\",\n      message: item.message || \"\",\n      updated_fields: Array.isArray(item.updated_fields) ? item.updated_fields : [],\n      changed_by: item.changed_by || \"\",\n      auto_quote: item.auto_quote || null\n    }\n  }\n];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1696,6 +1696,12 @@
               "name": "incomplete_items",
               "value": "={{$json.incomplete_items}}",
               "type": "array"
+            },
+            {
+              "id": "phase-5-8-auto-quote",
+              "name": "auto_quote",
+              "value": "={{$json.auto_quote}}",
+              "type": "object"
             }
           ]
         },
@@ -1898,7 +1904,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const resp = $json || {};\nconst results = Array.isArray(resp.results) ? resp.results : [];\nconst cancelledEmptyOrder = resp.cancelled_empty_order === true;\nconst orderStatus = resp.order_status || resp.status || (cancelledEmptyOrder ? 'Cancelled' : 'Draft');\nconst normalized = $('Code - Normalize Order Payload').item.json || {};\n\nreturn [{\n  json: {\n    success: resp.success === true && !cancelledEmptyOrder,\n    action: \"create_order_with_lines\",\n    order_id: resp.order_id || \"\",\n    order_status: orderStatus,\n    status: orderStatus,\n    message: resp.message || (cancelledEmptyOrder ? \"No matching pigs were available, so the empty draft was cancelled.\" : \"\"),\n    create_success: resp.create_success === true,\n    sync_success: resp.sync_success === true,\n    sync_results: resp.sync_results || results,\n    results: results,\n    partial_fulfillment: resp.partial_fulfillment === true,\n    complete_fulfillment: resp.complete_fulfillment === true,\n    fulfillment_status: resp.fulfillment_status || \"\",\n    requested_total: resp.requested_total,\n    matched_total: resp.matched_total,\n    unmatched_total: resp.unmatched_total,\n    incomplete_items: Array.isArray(resp.incomplete_items) ? resp.incomplete_items : [],\n    cancelled_empty_order: cancelledEmptyOrder,\n    cancel_result: resp.cancel_result || null,\n    sync_message: resp.sync_message || \"\",\n    customer_name: normalized.customer_name || \"\",\n    requested_category: normalized.requested_category || \"\",\n    requested_weight_range: normalized.requested_weight_range || \"\"\n  }\n}];"
+        "jsCode": "const resp = $json || {};\nconst results = Array.isArray(resp.results) ? resp.results : [];\nconst cancelledEmptyOrder = resp.cancelled_empty_order === true;\nconst orderStatus = resp.order_status || resp.status || (cancelledEmptyOrder ? 'Cancelled' : 'Draft');\nconst normalized = $('Code - Normalize Order Payload').item.json || {};\n\nreturn [{\n  json: {\n    success: resp.success === true && !cancelledEmptyOrder,\n    action: \"create_order_with_lines\",\n    order_id: resp.order_id || \"\",\n    order_status: orderStatus,\n    status: orderStatus,\n    message: resp.message || (cancelledEmptyOrder ? \"No matching pigs were available, so the empty draft was cancelled.\" : \"\"),\n    create_success: resp.create_success === true,\n    sync_success: resp.sync_success === true,\n    sync_results: resp.sync_results || results,\n    results: results,\n    partial_fulfillment: resp.partial_fulfillment === true,\n    complete_fulfillment: resp.complete_fulfillment === true,\n    fulfillment_status: resp.fulfillment_status || \"\",\n    requested_total: resp.requested_total,\n    matched_total: resp.matched_total,\n    unmatched_total: resp.unmatched_total,\n    incomplete_items: Array.isArray(resp.incomplete_items) ? resp.incomplete_items : [],\n    cancelled_empty_order: cancelledEmptyOrder,\n    cancel_result: resp.cancel_result || null,\n    sync_message: resp.sync_message || \"\",\n    auto_quote: resp.auto_quote || null,\n    customer_name: normalized.customer_name || \"\",\n    requested_category: normalized.requested_category || \"\",\n    requested_weight_range: normalized.requested_weight_range || \"\"\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

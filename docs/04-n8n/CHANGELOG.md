@@ -37,6 +37,8 @@ Type: `ADD`
 
 **Cleanup:** Temporary test order `ORD-2026-AC3DFF` was cancelled after verification. Final state: `Order_Status = Cancelled`, `Payment_Status = Cancelled`, `active_line_count = 0`, `cancelled_line_count = 1`.
 
+**Direction update:** Phase 5.8 now treats formal quotes as automatic backend artifacts of quote-ready draft orders, not as something customers must ask for with exact wording. Backend mutations now return `auto_quote` after create-with-lines, update, and line sync. `auto_quote` generates only when the draft is ready and skips duplicate versions when the latest quote fingerprint still matches the current draft. `1.2` preserves the field and `1.0` passes it into Sam's compact steward context so Sam can offer to send an already-generated quote.
+
 ---
 
 ### 2026-05-12 - Phase 5.7 intake-driven draft creation scaffold

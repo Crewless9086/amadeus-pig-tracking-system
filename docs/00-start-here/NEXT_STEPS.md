@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.7 atomic path; cleanup/5.8 next | Plan cleanup of duplicated shadow/legacy routing before expanding quote automation. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.7; 5.8 auto quote readiness implemented in repo | Import/retest automatic quote generation, then close 5.8 or move to cleanup. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -1107,22 +1107,27 @@ Draft edit behavior:
 - After approval/reservation/completion: block automatic changes or route to admin review.
 - Ambiguous item edits must ask one disambiguation question.
 
-### 5.8 Formal Quote Request Flow - Planned
+### 5.8 Automatic Formal Quote Readiness And Generation - In Progress
 
 Required outcome:
 
-- A formal quote request means backend PDF quote generation, not just a chat price summary.
-- If no draft exists and intake is complete, create draft, sync lines, then generate quote.
-- If a draft exists, update/sync it from intake first, then generate quote.
+- Formal quote PDF generation is backend-owned and should not depend on the customer using the correct quote-request wording.
+- Draft orders may exist before all quote facts are known.
+- A formal quote PDF is generated only when the draft is quote-ready: Draft status, active order lines, complete line count versus requested quantity, customer name, collection location, valid `Payment_Method = Cash|EFT`, and line prices.
+- After draft create-with-lines, order header/payment updates, or line sync, backend checks quote readiness and automatically generates a quote when ready.
+- If the latest quote already matches the current draft fingerprint, backend returns the existing quote instead of creating duplicate versions.
 - Quote PDFs continue to use the Phase 2 backend document path and `ORDER_DOCUMENTS`.
 - Sam must not claim a quote was generated or sent unless backend document generation/delivery confirms it.
-- After a draft is created but before approval, Sam's reply must clearly explain the next operational step. Preferred behavior: say the draft order has been created, offer to generate/send the formal quote when appropriate, and explain that the customer can ask to send the order for approval when ready.
+- After a quote is generated automatically, Sam should say the quote is ready/generated, mention the reference when available, and ask whether the customer wants it sent.
+- If the draft is not quote-ready, Sam should ask for the first missing required fact instead of offering a fake quote. Payment method should be asked as Cash/EFT before quote generation.
 - Sam must keep the distinction clear: Draft order = saved structured order; formal quote = backend-generated PDF document; approval = human/farm-manager order acceptance and reservation step.
 - Once an order is sent for approval or approved, Sam should not leave the customer guessing about who will contact them. The customer-facing copy should explain that after approval the farm manager will provide collection/contact details.
 
-Clarification to confirm during 5.8:
+Decision confirmed 2026-05-13:
 
-- Exact customer-facing wording after draft creation and after quote generation should be approved before live testing.
+- Do not rely on customer prompt phrasing to trigger quote generation.
+- Payment method changes total cost, so quote generation must wait for `Cash` or `EFT`.
+- Preferred behavior is automatic background quote generation once all quote-ready facts are present; sending the document remains a separate confirmed action.
 
 Repo implementation started 2026-05-13:
 
@@ -1132,11 +1137,20 @@ Repo implementation started 2026-05-13:
 - Quote requests with no linked draft but complete intake now treat backend `next_action = create_draft_then_quote` as a safe draft-create trigger instead of falling through to chat-only reply. Automatic quote generation immediately after that new draft is still not wired in this slice.
 - Sam prompt rules now explicitly separate Draft order, formal quote PDF, and approval.
 
+Automatic quote-readiness implementation added 2026-05-13:
+
+- `modules.documents.quote_service.auto_generate_quote_if_ready()` checks backend order detail and returns `quote_ready`, `missing_fields`, `generated`, `skipped`, and compact `document` details.
+- Quote fingerprints are stored in `ORDER_DOCUMENTS.Notes` so repeat create/update/sync calls can skip duplicate quote versions when the draft has not changed.
+- `POST /api/master/orders/create-with-lines`, `PATCH /api/master/orders/<order_id>`, and `POST /api/master/orders/<order_id>/sync-lines` attach `auto_quote` to the backend response after successful mutations.
+- `1.2 - Order Steward` preserves `auto_quote` on create-with-lines, update, and sync results.
+- `1.0 - Sam Sales Agent` includes `auto_quote` in `StewardCompact` and has wording guidance for automatically generated quotes.
+
 Still required before closing 5.8:
 
-- Add or confirm the follow-up path for quote generation immediately after a newly created draft, or approve the two-step behavior where Sam first creates the draft and then asks/continues to quote generation.
-- Live-test existing-draft quote generation on a safe Charl N order.
-- Decide whether Sam should send the generated quote automatically on explicit quote request, or generate first and ask before using the document delivery path.
+- Import updated backend and n8n workflow exports, then live-test both cases on a safe Charl N conversation:
+  - draft reaches quote-ready with payment method present -> quote is generated automatically and Sam offers to send it
+  - draft missing payment method -> no quote is generated and Sam asks Cash/EFT
+- Decide later whether explicit "send it" after quote-ready should call the existing document delivery path automatically; for now generation and sending remain separate.
 
 Live test progress 2026-05-13:
 
@@ -1481,11 +1495,12 @@ Recently completed:
 - Phase 1.5 lifecycle guards — Complete And Live-Verified 2026-05-04: `approve_order` only from `Pending_Approval`; payment lock beyond Draft; reject/cancel vs `Completed`; defer auto-reservation (1.8) and outbound notifications (1.9)
 - Phase 1.6 reserve/release hardening — **complete** 2026-05-05 (backend/sheets); 2026-05-06 (order-detail success banner: API `message` + `changed_count` + idempotent copy for second reserve/release)
 - Phase 1.7 slim Sales Agent reply payload — complete and live-verified **2026-05-07**: `Code - Slim Sales Agent User Context` on all four paths into Sam; `OrderStateSummary` + `StewardCompact`; WhatsApp checklist A+B passed
+- Phase 5.8 automatic quote readiness — implemented in repo 2026-05-13: backend `auto_quote` after create/update/sync, quote fingerprint duplicate skip, `1.2` propagation, and `1.0` steward context/wording guidance. Live import/retest still required.
 
 Recommended next:
 
-1. **Phase 2.1** — Design quote/invoice document schema and generation path.
-2. **Phase 6** (parallel polish when useful) — Web app order detail parity and action clarity after the Phase 1.8 approval/reservation behavior.
-3. Parked / not blocking Phase 1.9: litter detail route mismatch under Phase 6; backend verification and eventual `order_service.py` split under Phase 7.0.
+1. **Phase 5.8 live import/retest** — verify automatic quote generation when payment method is present, and no generation when Cash/EFT is missing.
+2. **Phase 5.9 cleanup** — reduce duplicated shadow/legacy routing after intake/quote behavior is proven.
+3. **Phase 6** (parallel polish when useful) — web app order detail parity and action clarity.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

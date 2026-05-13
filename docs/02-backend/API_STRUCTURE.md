@@ -313,6 +313,13 @@ Important rules:
 
 Generates a quote PDF for an order, uploads it to the configured quote Shared Drive folder, and appends a metadata row to `ORDER_DOCUMENTS`.
 
+Automatic quote readiness:
+
+- `POST /api/master/orders/create-with-lines`, `PATCH /api/master/orders/<order_id>`, and `POST /api/master/orders/<order_id>/sync-lines` attach `auto_quote` after successful order mutations.
+- `auto_quote` generates a quote only when the order is quote-ready: Draft status, customer name, collection location, valid `Payment_Method = Cash|EFT`, active order lines, complete active line count versus requested quantity, and valid unit prices.
+- If the latest non-voided quote already matches the current draft fingerprint, `auto_quote.generated = false` and `reason = latest_quote_current`.
+- If not quote-ready, `auto_quote.missing_fields` explains what is still needed; no PDF is generated.
+
 **Rules:**
 - Order must exist.
 - Order may be `Draft`, `Pending_Approval`, or `Approved`.

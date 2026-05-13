@@ -1,5 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 
@@ -25,6 +27,7 @@ from modules.documents.document_service import (
     build_payment_ref,
     generate_document_id,
     get_document_settings,
+    get_latest_non_voided_quote,
     get_next_document_version,
 )
 from modules.orders.order_service import get_order_detail
@@ -52,7 +55,113 @@ REQUIRED_QUOTE_SETTINGS = [
 ]
 
 
+QUOTE_FINGERPRINT_PREFIX = "Quote_Fingerprint:"
+
+
+def auto_generate_quote_if_ready(order_id, created_by="App"):
+    readiness = get_quote_readiness(order_id)
+
+    if not readiness["quote_ready"]:
+        return {
+            "success": True,
+            "action": "auto_generate_quote_if_ready",
+            "quote_ready": False,
+            "generated": False,
+            "skipped": True,
+            "reason": "not_quote_ready",
+            "missing_fields": readiness["missing_fields"],
+            "order_id": str(order_id or "").strip(),
+            "message": "Quote was not generated because the draft is not quote-ready.",
+        }
+
+    latest = get_latest_non_voided_quote(order_id)
+    if latest and _document_has_fingerprint(latest, readiness["fingerprint"]):
+        return {
+            "success": True,
+            "action": "auto_generate_quote_if_ready",
+            "quote_ready": True,
+            "generated": False,
+            "skipped": True,
+            "reason": "latest_quote_current",
+            "order_id": str(order_id or "").strip(),
+            "document": _document_summary(latest),
+            "message": "Latest quote already matches the current draft.",
+        }
+
+    result = _generate_quote_for_order(
+        order_id,
+        created_by=created_by,
+        quote_fingerprint=readiness["fingerprint"],
+    )
+
+    return {
+        "success": True,
+        "action": "auto_generate_quote_if_ready",
+        "quote_ready": True,
+        "generated": True,
+        "skipped": False,
+        "reason": "generated",
+        "order_id": str(order_id or "").strip(),
+        "document": _result_document_summary(result),
+        "message": "Quote generated automatically because the draft is quote-ready.",
+    }
+
+
+def get_quote_readiness(order_id):
+    order_id = str(order_id or "").strip()
+    detail = get_order_detail(order_id)
+    if not detail:
+        return {
+            "quote_ready": False,
+            "missing_fields": ["order"],
+            "order_id": order_id,
+            "fingerprint": "",
+        }
+
+    order = detail["order"]
+    lines = _active_lines(detail["lines"])
+    missing_fields = []
+
+    if str(order.get("order_status", "")).strip() != "Draft":
+        missing_fields.append("draft_status")
+    if not str(order.get("customer_name", "")).strip():
+        missing_fields.append("customer_name")
+    if str(order.get("payment_method", "")).strip() not in ("Cash", "EFT"):
+        missing_fields.append("payment_method")
+    if not str(order.get("collection_location", "")).strip():
+        missing_fields.append("collection_location")
+    if not lines:
+        missing_fields.append("active_order_lines")
+    requested_quantity = _to_float_or_zero(order.get("requested_quantity", 0))
+    if requested_quantity > 0 and len(lines) < requested_quantity:
+        missing_fields.append("complete_order_lines")
+
+    for line in lines:
+        try:
+            if float(line.get("unit_price") or 0) <= 0:
+                missing_fields.append("unit_price")
+                break
+        except (TypeError, ValueError):
+            missing_fields.append("unit_price")
+            break
+
+    fingerprint = ""
+    if not missing_fields:
+        fingerprint = _quote_fingerprint(order, lines)
+
+    return {
+        "quote_ready": len(missing_fields) == 0,
+        "missing_fields": missing_fields,
+        "order_id": order_id,
+        "fingerprint": fingerprint,
+    }
+
+
 def generate_quote_for_order(order_id, created_by="App"):
+    return _generate_quote_for_order(order_id, created_by=created_by)
+
+
+def _generate_quote_for_order(order_id, created_by="App", quote_fingerprint=""):
     order_id = str(order_id or "").strip()
     created_by = str(created_by or "").strip() or "App"
 
@@ -138,7 +247,7 @@ def generate_quote_for_order(order_id, created_by="App"):
         "File_Name": file_name,
         "Created_At": created_at,
         "Created_By": created_by,
-        "Notes": _draft_note_if_needed(order, settings),
+        "Notes": _quote_notes(order, settings, quote_fingerprint),
     }
     append_order_document(document_record)
 
@@ -151,6 +260,7 @@ def generate_quote_for_order(order_id, created_by="App"):
         "document_ref": document_ref,
         "payment_ref": payment_ref,
         "version": version,
+        "payment_method": payment_method,
         "file_name": file_name,
         "google_drive_file_id": drive_result.get("id", ""),
         "google_drive_url": drive_result.get("webViewLink", ""),
@@ -158,6 +268,86 @@ def generate_quote_for_order(order_id, created_by="App"):
         "vat_amount": vat_amount,
         "total": total,
         "valid_until": valid_until.isoformat(),
+    }
+
+
+def _quote_fingerprint(order, lines):
+    payload = {
+        "order_id": str(order.get("order_id", "")).strip(),
+        "order_status": str(order.get("order_status", "")).strip(),
+        "payment_method": str(order.get("payment_method", "")).strip(),
+        "collection_location": str(order.get("collection_location", "")).strip(),
+        "lines": [
+            {
+                "order_line_id": str(line.get("order_line_id", "")).strip(),
+                "pig_id": str(line.get("pig_id", "")).strip(),
+                "sale_category": str(line.get("sale_category", "")).strip(),
+                "weight_band": str(line.get("weight_band", "")).strip(),
+                "sex": str(line.get("sex", "")).strip(),
+                "unit_price": float(line.get("unit_price") or 0),
+            }
+            for line in sorted(
+                lines,
+                key=lambda item: (
+                    str(item.get("order_line_id", "")).strip(),
+                    str(item.get("pig_id", "")).strip(),
+                ),
+            )
+        ],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _to_float_or_zero(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _quote_notes(order, settings, quote_fingerprint):
+    notes = _draft_note_if_needed(order, settings)
+    quote_fingerprint = str(quote_fingerprint or "").strip()
+    if not quote_fingerprint:
+        return notes
+    fingerprint_note = f"{QUOTE_FINGERPRINT_PREFIX} {quote_fingerprint}"
+    if notes:
+        return f"{notes} | {fingerprint_note}"
+    return fingerprint_note
+
+
+def _document_has_fingerprint(document, quote_fingerprint):
+    quote_fingerprint = str(quote_fingerprint or "").strip()
+    if not quote_fingerprint:
+        return False
+    notes = str(document.get("Notes", "")).strip()
+    return f"{QUOTE_FINGERPRINT_PREFIX} {quote_fingerprint}" in notes
+
+
+def _document_summary(document):
+    return {
+        "document_id": str(document.get("Document_ID", "")).strip(),
+        "document_type": str(document.get("Document_Type", "")).strip(),
+        "document_ref": str(document.get("Document_Ref", "")).strip(),
+        "document_status": str(document.get("Document_Status", "")).strip(),
+        "payment_method": str(document.get("Payment_Method", "")).strip(),
+        "total": document.get("Total", ""),
+        "valid_until": str(document.get("Valid_Until", "")).strip(),
+        "google_drive_url": str(document.get("Google_Drive_URL", "")).strip(),
+    }
+
+
+def _result_document_summary(result):
+    return {
+        "document_id": result.get("document_id", ""),
+        "document_type": result.get("document_type", DOCUMENT_TYPE_QUOTE),
+        "document_ref": result.get("document_ref", ""),
+        "document_status": STATUS_GENERATED,
+        "payment_method": result.get("payment_method", ""),
+        "total": result.get("total", ""),
+        "valid_until": result.get("valid_until", ""),
+        "google_drive_url": result.get("google_drive_url", ""),
     }
 
 
@@ -234,9 +424,10 @@ def _render_quote_pdf(
     bold = ParagraphStyle("Bold", parent=normal, fontName="Helvetica-Bold")
 
     story = []
-    logo_path = Path(settings["document_logo_path"])
+    logo_path_value = str(settings["document_logo_path"] or "").strip()
+    logo_path = Path(logo_path_value) if logo_path_value else None
     header_left = []
-    if logo_path.exists():
+    if logo_path and logo_path.exists() and logo_path.is_file():
         header_left.append(Image(str(logo_path), width=36 * mm, height=24 * mm, kind="proportional"))
     header_left.extend([
         Paragraph(f"<b>{settings['business_name']}</b>", normal),

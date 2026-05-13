@@ -39,6 +39,8 @@ Fields it expects. Discriminator: **`action`**.
 
 **Document action:** `generate_quote` — requires `order_id` and optional `changed_by`. Calls backend `POST /api/orders/<order_id>/quote` and returns compact quote document fields. It does not send the quote to the customer; document delivery remains owned by the backend document-send endpoint and `1.5`.
 
+**Automatic quote result:** create-with-lines, update-order, and sync-lines responses may include `auto_quote`. This is backend-owned quote readiness. If `auto_quote.quote_ready = true` and `auto_quote.generated = true`, the backend generated the formal quote PDF in the background. If `auto_quote.reason = latest_quote_current`, the latest quote already matches the current draft. If `quote_ready = false`, use `missing_fields` to ask for the first missing fact; do not claim a formal quote exists.
+
 Other actions: see `workflow.json` switch rules and `DATA_FLOW.md`.
 
 ## Outputs

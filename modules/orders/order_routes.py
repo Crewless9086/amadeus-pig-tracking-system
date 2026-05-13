@@ -20,7 +20,7 @@ from modules.orders.order_service import (
     sync_order_lines_from_request,
     create_order_with_lines,
 )
-from modules.documents.quote_service import generate_quote_for_order
+from modules.documents.quote_service import auto_generate_quote_if_ready, generate_quote_for_order
 from modules.documents.invoice_service import generate_invoice_for_order
 from modules.documents.document_service import get_order_documents, send_order_document
 from modules.orders.order_intake_service import (
@@ -343,6 +343,11 @@ def new_order_with_lines():
             order_validation["cleaned_data"],
             sync_validation["cleaned_data"],
         )
+        _attach_auto_quote_result(
+            result,
+            result.get("order_id", ""),
+            changed_by=order_validation["cleaned_data"].get("created_by", "App"),
+        )
         status_code = 201 if result.get("create_success") else 400
         return jsonify(result), status_code
     except ValueError as exc:
@@ -365,6 +370,11 @@ def edit_order(order_id):
 
     try:
         result = update_order(order_id, validation["cleaned_data"])
+        _attach_auto_quote_result(
+            result,
+            order_id,
+            changed_by=validation["cleaned_data"].get("changed_by", "App"),
+        )
         return jsonify(result), 200
     except ValueError as exc:
         return jsonify({
@@ -386,6 +396,11 @@ def sync_order_lines(order_id):
 
     try:
         result = sync_order_lines_from_request(order_id, validation["cleaned_data"])
+        _attach_auto_quote_result(
+            result,
+            order_id,
+            changed_by=validation["cleaned_data"].get("changed_by", "App"),
+        )
         return jsonify(result), 200
     except ValueError as exc:
         return jsonify({
@@ -484,3 +499,30 @@ def _serialize_order_documents(documents):
         return (item.get("document_type", ""), version, item.get("created_at", ""))
 
     return sorted(serialized, key=sort_key, reverse=True)
+
+
+def _attach_auto_quote_result(result, order_id, changed_by="App"):
+    if not result or not order_id:
+        return
+    if result.get("cancelled_empty_order") is True:
+        return
+    if result.get("success") is not True and result.get("sync_success") is not True:
+        return
+
+    try:
+        result["auto_quote"] = auto_generate_quote_if_ready(
+            order_id,
+            created_by=changed_by or "App",
+        )
+    except Exception as exc:
+        result["auto_quote"] = {
+            "success": False,
+            "action": "auto_generate_quote_if_ready",
+            "quote_ready": False,
+            "generated": False,
+            "skipped": True,
+            "reason": "auto_quote_error",
+            "order_id": order_id,
+            "errors": [str(exc)],
+            "message": "Automatic quote generation failed after the order update.",
+        }
