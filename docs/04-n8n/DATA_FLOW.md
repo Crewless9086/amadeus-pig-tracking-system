@@ -61,7 +61,7 @@ Important fields:
 
 ## Persistent Order Intake State
 
-Status: backend, sheets, Phase 5.6 `1.0` shadow-mode calls, and Phase 5.7 intake-driven draft creation are live-verified. Cleanup is still needed before treating the current doubled-up workflow shape as final.
+Status: backend, sheets, Phase 5.6 `1.0` shadow-mode calls, Phase 5.7 intake-driven draft creation, and the atomic backend create-with-lines path are live-verified. Cleanup is still needed before treating the current doubled-up workflow shape as final.
 
 Current issue:
 
@@ -87,8 +87,9 @@ Target flow:
 4. Backend returns known fields, `missing_fields`, `next_action`, and safe reply facts.
 5. During Phase 5.6, `1.0` attaches this response as `intake_shadow_result` only. This is live-verified as of 2026-05-12.
 6. Phase 5.7 uses `ready_for_draft = true` / `next_action = create_draft` for the first controlled draft-creation path, with existing routing retained as fallback.
-7. Draft creation still runs through existing `1.2` `create_order_with_lines`; after success, `1.0` patches the returned `order_id` back to intake as `Draft_Order_ID`.
-8. Cleanup pass should remove duplicated shadow/legacy fields after intake-driven draft/update/quote behavior is proven.
+7. Draft creation runs through `1.2` `create_order_with_lines`, which calls backend `POST /api/master/orders/create-with-lines`. The backend creates the draft and syncs requested lines in one service operation; if sync fails or no stock lines match, the new draft is cancelled instead of remaining as an active zero-line order.
+8. After success, `1.0` patches the returned `order_id` back to intake as `Draft_Order_ID`.
+9. Cleanup pass should remove duplicated shadow/legacy fields after intake-driven draft/update/quote behavior is proven.
 
 Planned cleanup rule:
 
@@ -167,12 +168,13 @@ Currently live actions called by `1.0`:
 | `get_active_customer_order_context` | Read-only active-order lookup for missing/stale Chatwoot order IDs. | `order_id`, `conversation_id`, or `customer_phone`. Calls backend `GET /api/orders/active-customer-context` and returns `lookup_status`, `match_count`, `active_order_context`, and `active_order_matches`. |
 | `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
 | `send_for_approval` | Submit draft to pending approval (`POST /api/orders/<order_id>/send-for-approval`). | `order_id`, `changed_by`; caller must satisfy backend guards (Draft, payment method, lines, etc.). |
+| `generate_quote` | Generate a formal backend PDF quote for an existing draft/order. | `order_id`, `changed_by`; calls backend `POST /api/orders/<order_id>/quote` and returns compact document fields. This generates only; document sending stays on the document-delivery path. |
 
 Rule: `1.2` should call the backend API. It should not directly write order sheets.
 
 `requested_items[]` metadata rule: `intent_type` may be `primary`, `addon`, `nearby_addon`, or `extractor_slot` and is only a source label. `status` must be `active`; if `1.0` does not want an item synced, it must omit that item rather than sending `inactive` or `cancelled`.
 
-First-turn committed orders use `create_order_with_lines` when `1.0` has already built non-empty `requested_items[]`. `1.0` decides that action, but `1.2` owns the full create + sync operation and returns a combined result. Top-level `success` means both the draft creation and line sync succeeded.
+First-turn committed orders use `create_order_with_lines` when `1.0` has already built non-empty `requested_items[]`. `1.0` decides that action, but `1.2` owns the handoff to backend `POST /api/master/orders/create-with-lines`. Top-level `success` means the backend created the draft and synced at least one active order line. If the backend cannot sync any requested stock line for the newly created draft, it cancels that draft and returns the cancelled order status so Sam does not continue against an active zero-line order.
 
 Customer cancel confirmation state is stored in Chatwoot custom attributes as `pending_action = cancel_order`; it is set by `1.0`, cleared by `1.0`, and never written to Google Sheets.
 

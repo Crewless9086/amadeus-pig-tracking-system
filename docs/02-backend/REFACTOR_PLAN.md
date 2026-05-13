@@ -95,6 +95,36 @@ Minimum checks:
 - complete order updates lines and pigs
 - Sam/Order Steward only reports success after backend confirms
 
+## Phase 6: Database Scaling Review
+
+Goal: plan the eventual move away from Google Sheets as the transactional database before order volume grows materially.
+
+Current position:
+
+- Keep Google Sheets for now because it gives strong operator visibility and the current priority is stabilizing behavior.
+- Recent Google Sheets `429` quota errors came from automated multi-case live tests, but they are a valid signal that Sheets is not the right long-term transaction store.
+- This is planning only; do not start migration until order/intake/document behavior is stable.
+
+Preferred future direction:
+
+- Evaluate Supabase Postgres first.
+- Keep Google Sheets as reporting/export/operator views if useful.
+- Use Postgres as source of truth for order, intake, line, document, and eventually stock transactions.
+- Add a backend repository/data-access layer before migration so services do not depend directly on `services/google_sheets_service.py`.
+
+Initial migration candidates:
+
+- `ORDER_MASTER`
+- `ORDER_LINES`
+- `ORDER_INTAKE_STATE`
+- `ORDER_INTAKE_ITEMS`
+- `ORDER_DOCUMENTS`
+
+Cost assumption:
+
+- Plan around USD 25/month as a practical starting point for Supabase Postgres-style production use.
+- Re-check pricing and requirements before implementation.
+
 ## Known Bugs / Risks To Track
 
 - `sync_order_lines_from_request` has had split-item issues where `primary_2` rows were missing or not updated correctly.

@@ -50,7 +50,7 @@ Primary responsibilities:
 - classify the message into `AUTO`, `CLARIFY`, or `ESCALATE`
 - run Sam as the sales agent with sales stock and farm-info tools
 - build structured order state from the conversation
-- call backend order-intake update in Phase 5.6 shadow mode, then continue existing routing unchanged until Phase 5.7 promotes a controlled draft-creation route
+- call backend order-intake update and use Phase 5.7 intake readiness for controlled draft creation
 - call `1.2 - Amadeus Order Steward` for currently supported order actions
 - write escalation records and notify Telegram when human help is needed
 - send final replies back to Chatwoot
@@ -65,6 +65,7 @@ Current live order routes called from `1.0`:
 - `get_order_context` (read-only prefetch when a draft id exists, before AUTO `Code - Build Order State`)
 - `cancel_order`
 - `send_for_approval`
+- `generate_quote`
 
 Current disabled capability:
 
@@ -86,6 +87,7 @@ Phase 5.7 intake-driven draft creation - complete and live-verified:
 - `Code - Attach Intake Shadow Result` feeds both the escalation classifier and `Merge - Sales Agent Context A`, so intake fields survive the normal sales-agent context path and are available to route decision.
 - After successful draft creation, `Code - Build Intake Draft Link Payload` and `HTTP - Link Intake Draft Order` patch `ORDER_INTAKE_STATE.Draft_Order_ID` through `POST /api/order-intake/update`.
 - Live verification on 2026-05-12 created `ORD-2026-A822D3` from intake `INTAKE-2026-4D7825` and synced one active Female Grower `35_to_39_Kg` line.
+- Follow-up atomic-path verification on 2026-05-13 proved the backend `POST /api/master/orders/create-with-lines` boundary cancels a newly created draft when requested items produce no stock-line match (`ORD-2026-CBAE14`), so no active zero-line draft remains.
 - Cleanup is required after intake-driven flows are proven: remove duplicate shadow/legacy route fallbacks and keep intake state as the primary order-intake truth.
 
 ## `1.1 - SAM - Sales Agent - Escalation Telegram`
@@ -128,12 +130,15 @@ Currently documented as live for `1.0` only:
 - `get_order_context`
 - `cancel_order`
 - `send_for_approval`
+- `generate_quote`
 
 Other actions present in the workflow should be treated as steward capability or test/planned paths until `1.0` actively calls them.
 
 Customer cancel routing uses `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING` inside `1.0`, with the actual cancellation executed through `1.2` and the backend.
 
-First-turn committed orders with non-empty `requested_items[]` use `create_order_with_lines`. `1.0` chooses the action, while `1.2` creates the draft, syncs `ORDER_LINES`, and returns one combined success result.
+First-turn committed orders with non-empty `requested_items[]` use `create_order_with_lines`. `1.0` chooses the action, while `1.2` calls backend `POST /api/master/orders/create-with-lines` and returns one combined success result. The backend owns the atomic create + line-sync behavior and cancels a newly created draft if no active order lines can be synced.
+
+Formal quote requests with an existing draft use `generate_quote`. `1.0` chooses the route from backend intake `next_action = generate_quote` or from a detected quote request with enough draft context. `1.2` calls backend `POST /api/orders/<order_id>/quote`; it does not send the document to the customer.
 
 Order context today: `get_order_context` in `1.2` calls `GET /api/orders/<id>` and returns slim header + line metadata to `1.0` for merge in `Code - Build Order State`.
 

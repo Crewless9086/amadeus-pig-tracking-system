@@ -37,6 +37,8 @@ Fields it expects. Discriminator: **`action`**.
 
 **Read-only:** `get_active_customer_order_context` — requires at least one of `order_id`, `conversation_id`, or `customer_phone`. Returns backend-filtered active customer order lookup results from `GET /api/orders/active-customer-context`; it never reads `ORDER_MASTER` / `ORDER_OVERVIEW` directly inside n8n.
 
+**Document action:** `generate_quote` — requires `order_id` and optional `changed_by`. Calls backend `POST /api/orders/<order_id>/quote` and returns compact quote document fields. It does not send the quote to the customer; document delivery remains owned by the backend document-send endpoint and `1.5`.
+
 Other actions: see `workflow.json` switch rules and `DATA_FLOW.md`.
 
 ## Outputs
@@ -137,6 +139,7 @@ Mode: Rule
 {{ $json.action }} is equal to update_order
 {{ $json.action }} is equal to sync_order_lines_from_request
 {{ $json.action }} is equal to get_active_customer_order_context
+{{ $json.action }} is equal to generate_quote
 
 ### Read-only active customer order lookup
 

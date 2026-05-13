@@ -345,6 +345,30 @@
               },
               "renameOutput": true,
               "outputKey": "Get Active Customer Order Context"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "f8a0b5a4-2bc5-48ce-9c6d-ef5e5f080801",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "generate_quote",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Generate Quote"
             }
           ]
         },
@@ -1774,32 +1798,32 @@
               "value": "={{ $('Code - Normalize Order Payload').item.json.payment_method }}",
               "type": "string"
             },
-                                            {
-                                                "id": "ef8551df-06cc-4bb8-a915-2fcb4b3a1ea3",
-                                                "name": "conversation_id",
-                                                "value": "={{ $('Code - Normalize Order Payload').item.json.conversation_id }}",
-                                                "type": "string"
-                                            },
-                                            {
-                                                "id": "b62d18df-2675-46b1-9305-9e41d5a0209f",
-                                                "name": "changed_by",
-                                                "value": "={{ $('Code - Normalize Order Payload').item.json.changed_by }}",
-                                                "type": "string"
-                                            },
-                                            {
-                                                "id": "e5de5fc4-b588-4d76-ac4d-0dba15771018",
-                                                "name": "requested_items",
-                                                "value": "={{ $('Code - Normalize Order Payload').item.json.requested_items }}",
-                                                "type": "array"
-                                            },
-                                            {
-                                                "id": "b05793a7-457f-4612-90e8-cb954b305c7d",
-                                                "name": "cancel_order_if_no_matches",
-                                                "value": true,
-                                                "type": "boolean"
-                                            }
-                                        ]
-                                    },
+            {
+              "id": "ef8551df-06cc-4bb8-a915-2fcb4b3a1ea3",
+              "name": "conversation_id",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "b62d18df-2675-46b1-9305-9e41d5a0209f",
+              "name": "changed_by",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.changed_by }}",
+              "type": "string"
+            },
+            {
+              "id": "e5de5fc4-b588-4d76-ac4d-0dba15771018",
+              "name": "requested_items",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.requested_items }}",
+              "type": "array"
+            },
+            {
+              "id": "b05793a7-457f-4612-90e8-cb954b305c7d",
+              "name": "cancel_order_if_no_matches",
+              "value": true,
+              "type": "boolean"
+            }
+          ]
+        },
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1952,6 +1976,73 @@
       ],
       "id": "9532e4a0-c36f-46b9-880c-cdde29b7f36e",
       "name": "Code - Format Active Customer Order Context Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1d2f3b4-c5e6-4a7b-8011-5b6c7d8e9f01",
+              "name": "order_id",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.order_id }}",
+              "type": "string"
+            },
+            {
+              "id": "b2e3f4c5-d6a7-4b8c-9122-6c7d8e9f0a12",
+              "name": "created_by",
+              "value": "={{ $('Code - Normalize Order Payload').item.json.changed_by || 'Sam Phase 5.8 quote' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        992,
+        -1360
+      ],
+      "id": "a8c6a7b1-6a7b-4d8e-9f10-5a8b9c0d1e2f",
+      "name": "Set - Build Generate Quote Body"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://amadeus-pig-tracking-system.onrender.com/api/orders/{{ $json.order_id }}/quote",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { created_by: $json.created_by } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1200,
+        -1360
+      ],
+      "id": "b9d7b8c2-7b8c-4e9f-a011-6b9c0d1e2f3a",
+      "name": "HTTP - Generate Quote",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json || {};\nconst normalized = $('Code - Normalize Order Payload').first()?.json || {};\nconst ok = raw.success === true;\nlet msg = String(raw.message || raw.error || '').trim();\nif (!msg && Array.isArray(raw.errors) && raw.errors.length > 0) msg = String(raw.errors[0] || '').trim();\nif (!msg) msg = ok ? 'Quote generated successfully.' : 'Quote generation failed.';\n\nreturn [{\n  json: {\n    success: ok,\n    action: 'generate_quote',\n    order_id: String(raw.order_id || normalized.order_id || '').trim(),\n    message: msg.slice(0, 500),\n    document_id: raw.document_id || '',\n    document_type: raw.document_type || 'Quote',\n    document_ref: raw.document_ref || '',\n    payment_ref: raw.payment_ref || '',\n    version: raw.version || '',\n    file_name: raw.file_name || '',\n    google_drive_file_id: raw.google_drive_file_id || '',\n    google_drive_url: raw.google_drive_url || '',\n    subtotal_ex_vat: raw.subtotal_ex_vat,\n    vat_amount: raw.vat_amount,\n    total: raw.total,\n    valid_until: raw.valid_until || '',\n    backend_success: ok,\n    backend_error: ok ? '' : msg.slice(0, 500)\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        -1360
+      ],
+      "id": "c0e8c9d3-8c9d-4f10-b122-7c0d1e2f3a4b",
+      "name": "Code - Format Generate Quote Result"
     }
   ],
   "pinData": {
@@ -2093,6 +2184,13 @@
         [
           {
             "node": "HTTP - Get Active Customer Order Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Build Generate Quote Body",
             "type": "main",
             "index": 0
           }
@@ -2395,6 +2493,28 @@
         [
           {
             "node": "Code - Format Active Customer Order Context Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Build Generate Quote Body": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Generate Quote",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Generate Quote": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Generate Quote Result",
             "type": "main",
             "index": 0
           }

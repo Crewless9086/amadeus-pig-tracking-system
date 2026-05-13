@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.7; cleanup/5.8 next | Plan cleanup of duplicated shadow/legacy routing before expanding quote automation. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.7 atomic path; cleanup/5.8 next | Plan cleanup of duplicated shadow/legacy routing before expanding quote automation. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -368,6 +368,10 @@ Implementation status:
 - backend rejection notification path passed on 2026-05-09: `ORD-2026-C3CEDF` moved from `Pending_Approval` to `Cancelled | Rejected`, one line cancelled/released, `Reserved_Pig_Count = 0`, and `customer_notification_sent = true`
 - production backend must keep `ORDER_NOTIFICATION_WEBHOOK_URL=https://charln.app.n8n.cloud/webhook/order-notification` configured so deployed app approvals/rejections continue sending notifications
 
+Follow-up planning note:
+
+- Add an internal farm-manager notification after an order is approved and ready to coordinate collection. The planned recipient is Anton. The notification should include `Order_ID`, customer name, phone number, item list, total, payment type, collection location, date/time, and notes. This is not part of the already closed customer approval/rejection notification test; schedule it as a separate internal operations notification so it can be tested without changing the customer-facing message path.
+
 ## Phase 2: Quote And Invoice Generation - Complete Through 2.6
 
 Goal: backend generates quote and invoice documents. n8n delivers them only.
@@ -695,7 +699,7 @@ Live verification 2026-05-11:
 - Direct live sync with `intent_type = made_up` returned `400` with the expected allowed-value validation error and did not alter order lines.
 - `ORD-2026-07F5C8` was cancelled after verification; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, `active_line_count = 0`, and `reserved_pig_count = 0`.
 
-## Phase 5: Safe Order Review For Sam - Complete Through 5.7; Cleanup/5.8 Next
+## Phase 5: Safe Order Review For Sam - Complete Through 5.7 Atomic Path; Cleanup/5.8 Next
 
 Goal: let Sam understand saved order state without uncontrolled sheet access.
 
@@ -1076,6 +1080,17 @@ Live verification 2026-05-12:
   - Updated `1.2 - order-steward` so `HTTP - Create With Lines Order` calls the atomic backend endpoint directly.
   - `HTTP - Create Order` still calls the normal header-only create endpoint.
   - Local validation passed: Python compiles, `1.2` JSON parses, all workflow connections resolve, Code-node JavaScript compiles, create-order URL and create-with-lines URL are correct, and a mocked zero-match atomic create returns `order_status = Cancelled`.
+- Live retest after backend deploy and `1.2` import:
+  - WR01 passed: `ORD-2026-A1F319` created 2 active Male Grower `20_to_24_Kg` lines, Albertinia, EFT; order was cancelled.
+  - WR02 created the expected Female Grower `35_to_39_Kg` Draft `ORD-2026-63B833` with 1 active line, Riversdale, Cash; validation/cancel initially hit a Sheets quota-related `500`, then the order was cancelled in cleanup.
+  - WR03 created the expected Male Piglet `5_to_6_Kg` Draft `ORD-2026-0F3604` with 2 active lines, Albertinia, Cash; cleanup initially hit a Sheets quota-related `500`, then the retry completed and active lookup returned `no_match`.
+  - Final cleanup verification returned `no_match` for both intake context and active customer order context on conversation `1774`.
+  - Important operational note: multi-case automated live tests still push Google Sheets read/write quota too hard. Further regression should run one case at a time with cooldown, or backend should add read caching/retry/backoff before larger automated batches.
+- Single no-stock regression passed on 2026-05-13:
+  - Request: 1 Female Weaner `7_to_9_Kg`, Riversdale, Friday 14:00, EFT.
+  - Intake linked `ORD-2026-CBAE14`, but active customer lookup returned `no_match`.
+  - Order detail confirmed `Order_Status = Cancelled`, `Payment_Status = Cancelled`, `active_line_count = 0`, and no order lines.
+  - This verifies the atomic create-with-lines path does not leave an active zero-line Draft for a true no-stock request.
 
 First live test scope:
 
@@ -1101,6 +1116,45 @@ Required outcome:
 - If a draft exists, update/sync it from intake first, then generate quote.
 - Quote PDFs continue to use the Phase 2 backend document path and `ORDER_DOCUMENTS`.
 - Sam must not claim a quote was generated or sent unless backend document generation/delivery confirms it.
+- After a draft is created but before approval, Sam's reply must clearly explain the next operational step. Preferred behavior: say the draft order has been created, offer to generate/send the formal quote when appropriate, and explain that the customer can ask to send the order for approval when ready.
+- Sam must keep the distinction clear: Draft order = saved structured order; formal quote = backend-generated PDF document; approval = human/farm-manager order acceptance and reservation step.
+- Once an order is sent for approval or approved, Sam should not leave the customer guessing about who will contact them. The customer-facing copy should explain that after approval the farm manager will provide collection/contact details.
+
+Clarification to confirm during 5.8:
+
+- Exact customer-facing wording after draft creation and after quote generation should be approved before live testing.
+
+Repo implementation started 2026-05-13:
+
+- First controlled slice targets existing-draft formal quote generation.
+- `1.2 - Amadeus Order Steward` now supports `action = generate_quote`, calling backend `POST /api/orders/<order_id>/quote` and returning compact document fields (`document_id`, `document_ref`, `total`, `valid_until`, Drive URL availability).
+- `1.0 - Sam-sales-agent-chatwoot` now has a `GENERATE_QUOTE` route for backend intake `next_action = generate_quote` or a detected quote request with an existing draft/payment method.
+- Quote requests with no linked draft but complete intake now treat backend `next_action = create_draft_then_quote` as a safe draft-create trigger instead of falling through to chat-only reply. Automatic quote generation immediately after that new draft is still not wired in this slice.
+- Sam prompt rules now explicitly separate Draft order, formal quote PDF, and approval.
+
+Still required before closing 5.8:
+
+- Add or confirm the follow-up path for quote generation immediately after a newly created draft, or approve the two-step behavior where Sam first creates the draft and then asks/continues to quote generation.
+- Live-test existing-draft quote generation on a safe Charl N order.
+- Decide whether Sam should send the generated quote automatically on explicit quote request, or generate first and ask before using the document delivery path.
+
+Live test progress 2026-05-13:
+
+- Temporary test draft `ORD-2026-AC3DFF` was created for Charl N with `ConversationId = 1742`, `Payment_Method = Cash`, and one active Female Grower `35_to_39_Kg` line.
+- First direct `1.0` webhook quote request returned `ok = true` but did not generate a document, so the route did not reach `GENERATE_QUOTE`.
+- n8n execution detail showed the workflow stopped earlier at `HTTP - Get Conversation Messages` with Chatwoot `404 Resource could not be found`.
+- Backend control call proved document generation itself is healthy: `POST /api/orders/ORD-2026-AC3DFF/quote` generated `DOC-2026-1B44A1`, `Q-2026-AC3DFF`, total `R1,400.00`, file `QUO_2026_05_13_AC3DFF_V1_(R1,400.00)_Cash.pdf`.
+- Route fix prepared after the failed `1.0` test: carry `PaymentMethod` through `Edit - Keep Chatwoot ID's`, and allow quote-intent + order ID to route to `GENERATE_QUOTE` even if `1.0` payment context is missing. Backend remains the final guard for missing payment method.
+- History-fetch resilience fix prepared: `HTTP - Get Conversation Messages` now continues on fail so a Chatwoot history lookup 404 degrades to `ConversationHistory = N/A` instead of stopping the whole customer workflow.
+- Retest after import passed the actual quote-generation route: `1.0 -> 1.2 -> backend` generated `DOC-2026-50E0D5`, `Q-2026-AC3DFF-V2`, total `R1,400.00`, created by `Sam Phase 5.8 quote`.
+- Remaining issue from that retest: final `HTTP - Send Chatwoot Reply` returned Chatwoot `404 Resource could not be found` after the quote was generated. A URL fallback fix was prepared so the reply node can use current item IDs, `Edit - Keep Chatwoot ID's`, or `Code - Normalize Incoming Message` IDs instead of relying on only one source.
+- Retest after the URL fallback generated `DOC-2026-ACE2E9`, `Q-2026-AC3DFF-V3`, total `R1,400.00`, created by `Sam Phase 5.8 quote`; final `HTTP - Send Chatwoot Reply` still returned Chatwoot `404`.
+- Next reply-node fix prepared: make `HTTP - Send Chatwoot Reply` mirror the live-verified `1.4` Chatwoot send-message shape, using fixed account `147387`, normalized `ConversationId`, and an explicit JSON body.
+- Final generation-and-reply retest passed after correcting the safe test order's `ConversationId` to `1774`:
+  - `1.0 -> 1.2 -> backend` generated `DOC-2026-001270`, `Q-2026-AC3DFF-V5`, total `R1,400.00`, created by `Sam Phase 5.8 quote`.
+  - Sam replied in Chatwoot: `Charl, your formal quote has been generated with reference Q-2026-AC3DFF-V5. Would you like me to send it to you now?`
+  - This confirms generation only, with explicit customer confirmation before document sending.
+- Test order cleanup completed: `ORD-2026-AC3DFF` was cancelled after verification, `active_line_count = 0`, `cancelled_line_count = 1`, `Payment_Status = Cancelled`.
 
 ### 5.9 n8n Payload And Chatwoot Attribute Cleanup - Planned After Intake Is Proven
 
@@ -1205,6 +1259,77 @@ Improvements also in scope:
 - improve Telegram cleanup for human escalation
 - expand monitoring and operational runbooks
 
+### 7.2 Database Scaling Review - Future Planning
+
+Current decision:
+
+- Keep Google Sheets as the operational data store for now while order behavior is still being stabilized.
+- Do not migrate database storage during the active Sam/order workflow cleanup.
+- Treat the recent Google Sheets `429` quota errors as a scaling warning, not an immediate blocker for current low-volume operations.
+
+Why this matters:
+
+- Google Sheets is useful for visibility, manual checks, and simple operational editing.
+- It is not designed as a high-concurrency transactional database.
+- Automated regression runs already showed quota pressure because each test case performs multiple backend reads/writes plus n8n workflow calls.
+- Normal customer conversations are slower, so this is less urgent today, but sales volume will increase once meat sales and broader operations go live.
+
+Preferred future direction:
+
+- Evaluate moving transactional data to Postgres, with Supabase Postgres as the likely best option to assess first.
+- Keep Google Sheets as reporting/export/operator visibility if still useful.
+- Use Postgres as the source of truth for transactional tables that need indexes, concurrency, and atomic writes.
+
+Candidate tables for future migration:
+
+- `ORDER_MASTER`
+- `ORDER_LINES`
+- `ORDER_INTAKE_STATE`
+- `ORDER_INTAKE_ITEMS`
+- `ORDER_DOCUMENTS`
+- later: pig stock / availability data if Sheets becomes too slow or fragile
+
+Why Supabase Postgres is attractive:
+
+- Managed Postgres with a usable dashboard/table editor.
+- Better operator visibility than raw database-only hosting.
+- Good fit for future web app/admin tooling.
+- Supports proper indexes on `order_id`, `conversation_id`, `customer_phone`, `order_status`, and document references.
+- Supports transactions so create order + sync lines + rollback/cancel can be handled as one database operation.
+
+Cost planning:
+
+- Expect roughly USD 25/month as a practical starting point for a Supabase Pro-style production database tier.
+- Higher usage, backups, storage, or extra environments may increase this later.
+- Revisit exact pricing and provider choice before implementation; do not lock in until the migration phase starts.
+
+Suggested migration approach:
+
+- First stabilize the current backend behavior and n8n flow.
+- Add a backend data-access/repository layer so code is not tightly coupled to Google Sheets calls.
+- Migrate order/intake/document transactional tables first.
+- Keep Google Sheets read-only or synced as operational views during transition.
+- Only retire Sheets as a source of truth after the web app and Sam are confirmed against Postgres.
+
+### 7.3 Oom Sakkie Operational Order And Document Lookup - Future Planning
+
+Goal:
+
+- Let Oom Sakkie answer internal operator questions about orders without requiring the operator to open the web app or Google Sheets.
+
+Required outcome:
+
+- Oom Sakkie can look up open orders by order ID, customer name, or phone number.
+- Oom Sakkie can summarize order status, items, totals, payment method, collection location/date, notes, and outstanding actions.
+- Oom Sakkie can retrieve quote/invoice document records and provide or send the correct document link when an operator asks for it.
+- Oom Sakkie must use backend order/document endpoints, not direct sheet guessing.
+- If multiple orders match a name or phone number, Oom Sakkie must ask one disambiguation question.
+- Customer-facing delivery of quotes/invoices remains controlled by the document delivery path; internal lookup must not accidentally send a document to a customer unless that action is explicit and confirmed.
+
+Planning note:
+
+- This complements Phase 6 web app usability. The web app remains the full operations interface; Oom Sakkie becomes the quick internal assistant for checks and document retrieval when operators are away from the app.
+
 ## Phase 8: Breeding Board Improvements — Completed 2026-05-02
 
 ### 8A Optional Pen Movement On Add Mating — Complete
@@ -1297,6 +1422,28 @@ Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
 
+### 9.7 Business Scenario Calculator - Future Planning
+
+Goal:
+
+- Build a planning calculator where business assumptions can be changed and the totals recalculate automatically.
+
+Preferred starting point:
+
+- Google Sheet model first, because it is easier to inspect, adjust, and refine while the business scenarios are still changing.
+
+Required outcome:
+
+- Compare scenarios such as selling live stock, selling slaughter-ready animals, slaughtering and selling meat, and later selling meat directly.
+- Allow editable assumptions for quantities, prices, costs, margins, survival/profit targets, and time periods.
+- Calculate how many animals or meat units are needed to hit a monthly survival/profit target.
+- Make formulas visible and maintainable, with clearly marked input cells vs calculated cells.
+- Keep this separate from live operational order sheets; it is a planning model, not the system of record.
+
+Clarification to confirm when this phase starts:
+
+- Which first scenarios, cost lines, and target-profit fields should be included in the first calculator version.
+
 ## Phase 10: Farm Operating System Integration - Not Started
 
 Goal: bring Sam, Oom Sakkie, the web app, backend modules, weather logging, Synsynk solar data, n8n workflows, and Google Sheets into one documented operating-system structure.
@@ -1309,6 +1456,8 @@ Required outcome:
 
 - document every major workflow and platform under one system map
 - define ownership for each module: sales, farm operations, pig records, worker assistant, weather, solar, reporting, notifications, and admin web app
+- plan the web app as the main operating interface with clear modules for sales/orders, piggery, weather, irrigation, electricity/solar, and other farm systems as they are added
+- the first screen after login should eventually make those modules easy to reach and show the most important status for each module
 - create a workflow register showing trigger, purpose, inputs, outputs, reads, writes, dependencies, and risk level for each n8n workflow
 - create data contracts for information passed between workflows, backend endpoints, web app pages, Google Sheets, and external systems
 - set up Oom Sakkie documentation in the same style as Sam: workflow map, data flow, node responsibilities, protected logic, and input/output contracts

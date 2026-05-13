@@ -15,6 +15,30 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-13 - Phase 5.8 formal quote request first slice
+
+Type: `ADD`
+
+**Summary:** Added the first controlled Sam-to-backend formal quote route.
+
+**Behavior:** `1.2 - Amadeus Order Steward` now supports `action = generate_quote`, calling backend `POST /api/orders/<order_id>/quote` and formatting compact quote document fields. `1.0 - Sam-sales-agent-chatwoot` now routes existing-draft quote requests to `GENERATE_QUOTE`, calls `1.2`, merges the result back into Sam context, and gives Sam explicit wording rules that a generated quote is not the same as a sent quote or an approved order.
+
+**Boundary:** This slice generates the quote only. Sending remains on the existing backend document delivery path and `1.5`. Complete quote requests with no linked draft now trigger safe draft creation via `create_draft_then_quote`, but automatic quote generation immediately after that new draft is still pending.
+
+**Verification:** Workflow JSON parsed successfully, all connection targets exist, and Code-node JavaScript passed syntax checks. Live n8n import and safe-order quote test still required.
+
+**Live test progress:** Temporary test order `ORD-2026-AC3DFF` was created with `ConversationId = 1742`, `Payment_Method = Cash`, and one active Female Grower line. A direct `1.0` webhook quote request returned `ok = true` but did not generate a document. n8n execution detail showed the workflow stopped earlier at `HTTP - Get Conversation Messages` with Chatwoot `404 Resource could not be found`. Backend control call generated quote `DOC-2026-1B44A1` / `Q-2026-AC3DFF`, proving document generation is healthy. Fixes prepared: `HTTP - Get Conversation Messages` now continues on fail so history lookup problems do not stop the current message, `PaymentMethod` is carried through `Edit - Keep Chatwoot ID's`, and quote-intent + order ID routes to `GENERATE_QUOTE` without requiring `1.0` to prove payment first. Backend remains the final guard for payment readiness.
+
+**Retest after import:** The actual Phase 5.8 route passed. `1.0 -> 1.2 -> backend` generated quote `DOC-2026-50E0D5`, `Q-2026-AC3DFF-V2`, total `R1,400.00`, created by `Sam Phase 5.8 quote`. The final `HTTP - Send Chatwoot Reply` then returned Chatwoot `404 Resource could not be found`, so the customer reply failed after the document was already generated. Reply-node URL fallback fix prepared so it can use current item IDs, `Edit - Keep Chatwoot ID's`, or `Code - Normalize Incoming Message` IDs.
+
+**Reply-node retest:** After the URL fallback import, quote generation still passed and created `DOC-2026-ACE2E9`, `Q-2026-AC3DFF-V3`, total `R1,400.00`, but `HTTP - Send Chatwoot Reply` still returned Chatwoot `404`. Next fix prepared: make the final reply node match the live-verified `1.4` send-message pattern with fixed account `147387`, normalized `ConversationId`, and explicit JSON body.
+
+**Final retest:** Passed after correcting the safe test order's `ConversationId` to `1774`. The workflow generated `DOC-2026-001270`, `Q-2026-AC3DFF-V5`, total `R1,400.00`, created by `Sam Phase 5.8 quote`, and Sam successfully replied in Chatwoot: `Charl, your formal quote has been generated with reference Q-2026-AC3DFF-V5. Would you like me to send it to you now?`
+
+**Cleanup:** Temporary test order `ORD-2026-AC3DFF` was cancelled after verification. Final state: `Order_Status = Cancelled`, `Payment_Status = Cancelled`, `active_line_count = 0`, `cancelled_line_count = 1`.
+
+---
+
 ### 2026-05-12 - Phase 5.7 intake-driven draft creation scaffold
 
 Type: `ADD`
@@ -48,6 +72,10 @@ Type: `ADD`
 **Live targeted retest:** Passed after backend deploy and `1.0` / `1.2` imports. `ORD-2026-8096C6` verified the male sex fix: header `Requested_Sex = Male` and two active Male Weaner `10_to_14_Kg` lines, then cancelled. The old Female Weaner `15_to_19_Kg` no-match case now has live stock and correctly created `ORD-2026-0B3C01` with one active line, then cancelled. A true no-stock Female Weaner `7_to_9_Kg` workflow test left no active order. Direct deployed-backend create+sync verified auto-cancel with `ORD-2026-009333`: `cancelled_empty_order = true`, `fulfillment_status = no_match`, `matched_total = 0`, and final `Order_Status = Cancelled`. Final conversation `1774` cleanup returned no active intake and no active order.
 
 **Atomic create-with-lines fix prepared:** Wider regression showed the previous `1.2` create-with-lines path could still leave an active zero-line Draft if the second HTTP call (`sync-lines`) failed after the header was created. `ORD-2026-CA751C` was the evidence order and was cancelled during cleanup. Backend now exposes `POST /api/master/orders/create-with-lines`, which creates the order, syncs lines, and cancels the new Draft if sync fails or matches zero pigs. `1.2 HTTP - Create With Lines Order` now calls this atomic endpoint directly. The ordinary `create_order` route remains unchanged.
+
+**Atomic create-with-lines live retest:** After deploy/import, WR01 passed with `ORD-2026-A1F319` creating 2 active Male Grower `20_to_24_Kg` lines. WR02 created expected Female Grower `35_to_39_Kg` draft `ORD-2026-63B833`, and WR03 created expected Male Piglet `5_to_6_Kg` draft `ORD-2026-0F3604`. Both were cancelled during cleanup after quota-related 500s interrupted inline validation/cancel. Final conversation `1774` state returned no active intake and no active order. Larger automated live batches still need slower pacing or backend Sheets read caching/retry/backoff.
+
+**Single no-stock regression:** Passed on 2026-05-13. A request for 1 Female Weaner `7_to_9_Kg`, Riversdale, Friday 14:00, EFT linked intake to `ORD-2026-CBAE14`; active customer lookup returned `no_match`, and order detail confirmed `Order_Status = Cancelled`, `Payment_Status = Cancelled`, and `active_line_count = 0`. This verifies the atomic create-with-lines path does not leave an active zero-line Draft for true no-stock requests.
 
 **Cleanup note:** Phase 5.6/5.7 added compatibility paths while proving intake behavior. A planned cleanup pass must remove duplicated shadow/legacy routing once intake-driven draft/update/quote paths are proven.
 

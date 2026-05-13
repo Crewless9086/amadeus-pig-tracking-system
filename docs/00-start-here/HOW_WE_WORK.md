@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today’s focus** | `NEXT_STEPS.md` § **Phase 1.9** — Outbound approval/rejection notifications |
-| **Status** | Phase 5.7 closed; cleanup/5.8 planned next |
-| **Current focus** | `NEXT_STEPS.md` Section **5.7** - Intake-driven draft creation and line sync |
-| **Current last verified** | **2026-05-12** - Section 5.7 intake-driven draft creation live check |
+| **Today’s focus** | `NEXT_STEPS.md` § **Phase 5.8** — Formal Quote Request Flow |
+| **Status** | Phase 5.7 atomic create-with-lines closed; cleanup/5.8 planned next |
+| **Current focus** | `NEXT_STEPS.md` Section **5.8** - Formal quote request flow |
+| **Current last verified** | **2026-05-13** - atomic create-with-lines no-stock regression (`ORD-2026-CBAE14`) left no active zero-line draft |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
