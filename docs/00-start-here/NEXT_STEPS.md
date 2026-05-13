@@ -1191,8 +1191,8 @@ Repo implementation 2026-05-13:
 
 Still required before closing 5.8.1:
 
-- Fix/retest the remaining workflow auto-quote reliability issue found during live smoke: the full synthetic Chatwoot create message created a quote-ready Draft and active line but did not auto-generate the quote document on that workflow path. Direct backend create-with-lines auto-quote passed, so focus on the live `1.0`/`1.2` create path or synthetic payload path. A backend PATCH on the earlier Draft updated the order note but returned `500`.
-- After that fix, rerun the full customer path without direct quote generation: create quote-ready draft -> Sam offers to send generated quote -> reply `Yes, please` -> verify `ORDER_DOCUMENTS.Document_Status = Sent`.
+- Import updated `1.0` and run one final live phrase check for `create the draft and send me the quote`.
+- No blocking quote-send issue remains from the integrated retest.
 
 Live smoke 2026-05-13:
 
@@ -1204,6 +1204,10 @@ Live smoke 2026-05-13:
 - Cleanup completed: `ORD-2026-DA3EAC` cancelled, one line cancelled, intake `INTAKE-2026-DE3E83` closed, active lookup for conversation `1774` returned `no_match`.
 - Direct backend create-with-lines control passed with `ORD-2026-7D0692`: `auto_quote.generated = true`, `DOC-2026-A12EEF`, `Q-2026-7D0692`; cleanup cancelled the order.
 - Backend hardening prepared: `POST /api/orders/<order_id>/quote/send-latest` now runs `auto_generate_quote_if_ready()` if no quote exists yet, then sends the generated/latest quote. Local Flask monkeypatch passed with `quote_ensured = true` and `document_status = Sent`.
+- Integrated retest after backend redeploy passed on conversation `1774`: follow-up `Yes, please create the draft order.` created `ORD-2026-1D782B`, auto-generated `DOC-2026-CAA774` / `Q-2026-1D782B`, wrote Chatwoot `pending_action = send_quote`, and Sam offered to send it.
+- Follow-up `Yes, please` sent the PDF through `1.5`, changed the document to `Sent`, stamped `Sent_By = Sam Phase 5.8.1 quote send`, cleared Chatwoot `pending_action`, and Sam replied that the formal quote was sent.
+- Cleanup completed: `ORD-2026-1D782B` cancelled, intake `INTAKE-2026-782FD8` closed, Chatwoot order attributes cleared, and both active lookup endpoints returned `no_match`.
+- Parser edge fixed in repo: `create/prepare/make + draft` now counts as order commitment, so `create the draft and send me the quote` is covered. Local regex simulation confirms quote-only wording still does not trigger commitment.
 
 Live test progress 2026-05-13:
 

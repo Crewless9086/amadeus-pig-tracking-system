@@ -33,6 +33,12 @@ Type: `FIX`
 
 **Backend hardening prepared:** `POST /api/orders/<order_id>/quote/send-latest` now self-heals when no quote exists yet: it runs `auto_generate_quote_if_ready()`, returns a clear missing-fields error if the draft is not quote-ready, or sends the newly generated/latest quote if ready. This keeps the customer confirmation path reliable even if create-time auto-quote missed. Local Flask monkeypatch test passed with `quote_ensured = true` and `document_status = Sent`.
 
+**Integrated retest after backend deploy:** Full backend + `1.0` + `1.2` + `1.5` path passed on safe conversation `1774`. First message `I want 1 female grower pig 35-39 kg, collection at Riversdale on Friday at 14:00, cash payment. Please create the draft and send me the quote.` correctly captured item/payment/location and `quote_requested = true`, but did not set `order_commitment = true`; Sam asked whether to create the draft and formal quote. Follow-up `Yes, please create the draft order.` created `ORD-2026-1D782B`, generated quote `DOC-2026-CAA774` / `Q-2026-1D782B`, and wrote Chatwoot custom attributes `order_id = ORD-2026-1D782B`, `pending_action = send_quote`, `payment_method = Cash`. Follow-up `Yes, please` sent the PDF through `1.5`, updated `ORDER_DOCUMENTS.Document_Status = Sent`, stamped `Sent_By = Sam Phase 5.8.1 quote send`, cleared `pending_action`, and Sam replied that the formal quote was sent. Cleanup cancelled the test order, closed intake `INTAKE-2026-782FD8`, cleared Chatwoot attributes, and both active lookup endpoints returned `no_match`.
+
+**Parser edge to fix later:** The phrase `create the draft and send me the quote` did not set `order_commitment = true` because the current regex expects stronger wording such as `create the draft order`. This did not break the flow because Sam asked for confirmation, but it is a natural phrase worth adding to the commitment detector.
+
+**Parser edge fixed in repo:** `1.0 Code - Build Intake Shadow Payload` now treats `create/prepare/make + draft` as order commitment, covering `create the draft and send me the quote`. Local regex simulation confirms this phrase now returns commitment `true`, while quote-only wording such as `send me the quote` and `Can I get a quote?` remains `false`.
+
 ---
 
 ### 2026-05-13 - Phase 5.8 formal quote request first slice
