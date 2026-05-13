@@ -1,3 +1,5 @@
+import logging
+
 from flask import Blueprint, jsonify, request
 
 from modules.orders.order_service import (
@@ -38,6 +40,7 @@ from modules.orders.order_validation import (
 )
 
 orders_bp = Blueprint("orders", __name__)
+logger = logging.getLogger(__name__)
 
 
 @orders_bp.route("/orders", methods=["GET"])
@@ -508,6 +511,12 @@ def _attach_auto_quote_result(result, order_id, changed_by="App"):
         return
     if result.get("success") is not True and result.get("sync_success") is not True:
         return
+    if result.get("partial_fulfillment") is True:
+        result["auto_quote"] = _auto_quote_skipped_incomplete(order_id)
+        return
+    if "complete_fulfillment" in result and result.get("complete_fulfillment") is not True:
+        result["auto_quote"] = _auto_quote_skipped_incomplete(order_id)
+        return
 
     try:
         result["auto_quote"] = auto_generate_quote_if_ready(
@@ -515,6 +524,7 @@ def _attach_auto_quote_result(result, order_id, changed_by="App"):
             created_by=changed_by or "App",
         )
     except Exception as exc:
+        logger.exception("Automatic quote generation failed for order %s", order_id)
         result["auto_quote"] = {
             "success": False,
             "action": "auto_generate_quote_if_ready",
@@ -526,3 +536,17 @@ def _attach_auto_quote_result(result, order_id, changed_by="App"):
             "errors": [str(exc)],
             "message": "Automatic quote generation failed after the order update.",
         }
+
+
+def _auto_quote_skipped_incomplete(order_id):
+    return {
+        "success": True,
+        "action": "auto_generate_quote_if_ready",
+        "quote_ready": False,
+        "generated": False,
+        "skipped": True,
+        "reason": "incomplete_fulfillment",
+        "order_id": order_id,
+        "missing_fields": ["complete_order_lines"],
+        "message": "Quote was not generated because the draft lines do not fully match the requested quantity.",
+    }

@@ -39,6 +39,8 @@ Type: `ADD`
 
 **Direction update:** Phase 5.8 now treats formal quotes as automatic backend artifacts of quote-ready draft orders, not as something customers must ask for with exact wording. Backend mutations now return `auto_quote` after create-with-lines, update, and line sync. `auto_quote` generates only when the draft is ready and skips duplicate versions when the latest quote fingerprint still matches the current draft. `1.2` preserves the field and `1.0` passes it into Sam's compact steward context so Sam can offer to send an already-generated quote.
 
+**Claude review fixes before live import:** Removed volatile `order_line_id` from quote fingerprints, added rendered customer fields to the fingerprint, made manual quote generation stamp fingerprints, made quote readiness use `ORDER_MASTER` truth/fallback instead of relying only on formula-driven `ORDER_OVERVIEW`, and added a defensive skip for partial/incomplete fulfillment results.
+
 ---
 
 ### 2026-05-12 - Phase 5.7 intake-driven draft creation scaffold

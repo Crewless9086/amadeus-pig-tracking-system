@@ -1145,6 +1145,14 @@ Automatic quote-readiness implementation added 2026-05-13:
 - `1.2 - Order Steward` preserves `auto_quote` on create-with-lines, update, and sync results.
 - `1.0 - Sam Sales Agent` includes `auto_quote` in `StewardCompact` and has wording guidance for automatically generated quotes.
 
+Claude review blocker fixes added 2026-05-13:
+
+- Quote fingerprint no longer includes volatile `order_line_id`; resyncing the same logical lines should not create a duplicate quote.
+- Fingerprint now includes rendered customer fields (`customer_name`, `customer_phone`, `collection_date`) alongside payment/location/line content.
+- Manual `POST /api/orders/<order_id>/quote` also stamps the current fingerprint, so the next automatic check can recognize it as current.
+- Quote readiness overlays `ORDER_MASTER` fields and can fall back to `ORDER_MASTER` + `ORDER_LINES` if formula-driven `ORDER_OVERVIEW` is not current yet.
+- Auto-quote hook skips immediately when sync/create results show partial or incomplete fulfillment, before any PDF generation attempt.
+
 Still required before closing 5.8:
 
 - Import updated backend and n8n workflow exports, then live-test both cases on a safe Charl N conversation:

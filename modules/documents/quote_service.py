@@ -30,7 +30,12 @@ from modules.documents.document_service import (
     get_latest_non_voided_quote,
     get_next_document_version,
 )
-from modules.orders.order_service import get_order_detail
+from modules.orders.order_service import (
+    ORDER_LINES_SHEET,
+    _get_order_master_row,
+    get_order_detail,
+)
+from services.google_sheets_service import get_all_records
 from services.google_drive_service import upload_file_to_drive
 
 
@@ -109,7 +114,7 @@ def auto_generate_quote_if_ready(order_id, created_by="App"):
 
 def get_quote_readiness(order_id):
     order_id = str(order_id or "").strip()
-    detail = get_order_detail(order_id)
+    detail = _get_quote_order_detail(order_id)
     if not detail:
         return {
             "quote_ready": False,
@@ -165,7 +170,7 @@ def _generate_quote_for_order(order_id, created_by="App", quote_fingerprint=""):
     order_id = str(order_id or "").strip()
     created_by = str(created_by or "").strip() or "App"
 
-    detail = get_order_detail(order_id)
+    detail = _get_quote_order_detail(order_id)
     if not detail:
         raise ValueError("Order not found.")
 
@@ -177,6 +182,10 @@ def _generate_quote_for_order(order_id, created_by="App", quote_fingerprint=""):
     payment_method = str(order.get("payment_method", "")).strip()
     if payment_method not in ("Cash", "EFT"):
         raise ValueError("Cannot generate quote because Payment_Method must be Cash or EFT.")
+
+    quote_fingerprint = str(quote_fingerprint or "").strip()
+    if not quote_fingerprint:
+        quote_fingerprint = _quote_fingerprint(order, lines)
 
     settings = get_document_settings(REQUIRED_QUOTE_SETTINGS)
     quote_valid_days = _to_int(settings["quote_valid_days"], "quote_valid_days")
@@ -275,11 +284,13 @@ def _quote_fingerprint(order, lines):
     payload = {
         "order_id": str(order.get("order_id", "")).strip(),
         "order_status": str(order.get("order_status", "")).strip(),
+        "customer_name": str(order.get("customer_name", "")).strip(),
+        "customer_phone": str(order.get("customer_phone", "")).strip(),
         "payment_method": str(order.get("payment_method", "")).strip(),
+        "collection_date": str(order.get("collection_date", "")).strip(),
         "collection_location": str(order.get("collection_location", "")).strip(),
         "lines": [
             {
-                "order_line_id": str(line.get("order_line_id", "")).strip(),
                 "pig_id": str(line.get("pig_id", "")).strip(),
                 "sale_category": str(line.get("sale_category", "")).strip(),
                 "weight_band": str(line.get("weight_band", "")).strip(),
@@ -289,8 +300,11 @@ def _quote_fingerprint(order, lines):
             for line in sorted(
                 lines,
                 key=lambda item: (
-                    str(item.get("order_line_id", "")).strip(),
                     str(item.get("pig_id", "")).strip(),
+                    str(item.get("sale_category", "")).strip(),
+                    str(item.get("weight_band", "")).strip(),
+                    str(item.get("sex", "")).strip(),
+                    str(item.get("unit_price", "")).strip(),
                 ),
             )
         ],
@@ -349,6 +363,101 @@ def _result_document_summary(result):
         "valid_until": result.get("valid_until", ""),
         "google_drive_url": result.get("google_drive_url", ""),
     }
+
+
+def _get_quote_order_detail(order_id):
+    order_id = str(order_id or "").strip()
+    detail = get_order_detail(order_id)
+    master_row = _get_order_master_row(order_id)
+
+    if not master_row:
+        return detail
+
+    master_order = _order_from_master_row(master_row)
+    lines = detail["lines"] if detail else _get_order_lines_from_sheet(order_id)
+    order = dict(detail["order"]) if detail else {}
+    order.update(master_order)
+    _attach_line_totals(order, lines)
+
+    return {
+        "order": order,
+        "lines": lines,
+    }
+
+
+def _order_from_master_row(row):
+    return {
+        "order_id": _clean(row.get("Order_ID", "")),
+        "order_date": _clean(row.get("Order_Date", "")),
+        "customer_name": _clean(row.get("Customer_Name", "")),
+        "customer_phone": _clean(row.get("Customer_Phone", "")),
+        "customer_channel": _clean(row.get("Customer_Channel", "")),
+        "customer_language": _clean(row.get("Customer_Language", "")),
+        "order_source": _clean(row.get("Order_Source", "")),
+        "requested_category": _clean(row.get("Requested_Category", "")),
+        "requested_weight_range": _clean(row.get("Requested_Weight_Range", "")),
+        "requested_sex": _clean(row.get("Requested_Sex", "")),
+        "requested_quantity": _to_float_or_zero(row.get("Requested_Quantity", "")),
+        "quoted_total": _to_float_or_zero(row.get("Quoted_Total", "")),
+        "final_total": _to_float_or_zero(row.get("Final_Total", "")),
+        "order_status": _clean(row.get("Order_Status", "")),
+        "approval_status": _clean(row.get("Approval_Status", "")),
+        "payment_status": _clean(row.get("Payment_Status", "")),
+        "collection_date": _clean(row.get("Collection_Date", "")),
+        "collection_location": _clean(row.get("Collection_Location", "")),
+        "notes": _clean(row.get("Notes", "")),
+        "created_by": _clean(row.get("Created_By", "")),
+        "created_at": _clean(row.get("Created_At", "")),
+        "updated_at": _clean(row.get("Updated_At", "")),
+        "payment_method": _clean(row.get("Payment_Method", "")),
+        "conversation_id": _clean(row.get("ConversationId", "")),
+    }
+
+
+def _get_order_lines_from_sheet(order_id):
+    lines = []
+    for row in get_all_records(ORDER_LINES_SHEET):
+        if _clean(row.get("Order_ID", "")) != order_id:
+            continue
+        lines.append({
+            "order_line_id": _clean(row.get("Order_Line_ID", "")),
+            "order_id": _clean(row.get("Order_ID", "")),
+            "pig_id": _clean(row.get("Pig_ID", "")),
+            "tag_number": _clean(row.get("Tag_Number", "")),
+            "sale_category": _clean(row.get("Sale_Category", "")),
+            "weight_band": _clean(row.get("Weight_Band", "")),
+            "sex": _clean(row.get("Sex", "")),
+            "current_weight_kg": _to_float_or_none(row.get("Current_Weight_Kg", "")),
+            "unit_price": _to_float_or_zero(row.get("Unit_Price", "")),
+            "line_status": _clean(row.get("Line_Status", "")),
+            "reserved_status": _clean(row.get("Reserved_Status", "")),
+            "notes": _clean(row.get("Notes", "")),
+            "request_item_key": _clean(row.get("Request_Item_Key", "")),
+            "created_at": _clean(row.get("Created_At", "")),
+            "updated_at": _clean(row.get("Updated_At", "")),
+        })
+    return lines
+
+
+def _attach_line_totals(order, lines):
+    active_lines = _active_lines(lines)
+    order["active_line_count"] = len(active_lines)
+    order["cancelled_line_count"] = len(lines) - len(active_lines)
+    order["active_line_total"] = sum(float(line.get("unit_price") or 0) for line in active_lines)
+    order["all_line_total"] = sum(float(line.get("unit_price") or 0) for line in lines)
+
+
+def _clean(value):
+    return str(value or "").strip()
+
+
+def _to_float_or_none(value):
+    try:
+        if value is None or str(value).strip() == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _active_lines(lines):
