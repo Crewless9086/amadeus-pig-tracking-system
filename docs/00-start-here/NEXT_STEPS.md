@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 quote-send confirmation wiring; backend-owned create/generate/send correction prepared | Deploy backend, import updated `1.2` and `1.0`, live-test exact one-turn create-and-send quote delivery, then move to 5.9 cleanup. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery, live-verified | Move to Phase 5.9 n8n payload and Chatwoot attribute cleanup. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -1191,9 +1191,7 @@ Repo implementation 2026-05-13:
 
 Still required before closing 5.8.1:
 
-- Deploy backend changes, import updated `1.2`, import updated `1.0`, and run one final live phrase check for `create the draft and send me the quote`.
-- Expected result: one customer turn creates the Draft, creates active lines, auto-generates the quote, sends the PDF through `1.5`, marks `ORDER_DOCUMENTS.Document_Status = Sent`, clears Chatwoot `pending_action`, and Sam says the quote was sent only after `quote_send.success = true`.
-- No blocking quote-send issue remains after that integrated retest.
+- Complete. The final live phrase check passed after the `1.2` linear send correction.
 
 Live smoke 2026-05-13:
 
@@ -1212,6 +1210,8 @@ Live smoke 2026-05-13:
 - Follow-up patch prepared after exact-phrase live check: when a quote-requested create result is returned, `1.0` now suppresses the draft-only reply and calls `Call 1.2 - Send Quote` so backend `send-latest` can generate-if-needed and send. JSON and Code-node syntax validation passed.
 - Backend-owned correction prepared after Claude review: removed the fragile `1.0` post-create fan-out/send branch, added backend `send_quote_if_ready` handling to create-with-lines, made `1.2` pass and echo `quote_send`, and made `1.0` set/clear `pending_action` from the backend `quote_send` result. Local validation passed; live deploy/import/retest remains required.
 - Retest after upload/deploy did not pass: the live `1.0 -> 1.2` create path created a correct draft but did not generate/send the quote, while direct backend controls showed quote generation and `send-latest` work. Direct backend create-with-lines with `send_quote_if_ready = true` generated and delivered a PDF but timed out before marking `ORDER_DOCUMENTS` as `Sent`. Repo patch increases document-delivery webhook timeout to 90 seconds and keeps the n8n response parser tolerant. Deploy backend again and re-import the current `1.2` export before the next exact one-turn smoke.
+- Follow-up correction: `1.2` now performs the post-create send as a second linear backend request after create-with-lines returns with `auto_quote.document.document_id`. The backend create request no longer receives `send_quote_if_ready`, avoiding the long single Flask request. Import updated `1.2` again, then rerun the exact one-turn smoke.
+- Final one-turn smoke passed on `ORD-2026-D3BB1C`: draft and active line created, `Q-2026-D3BB1C` generated and sent through `1.5`, `ORDER_DOCUMENTS.Document_Status = Sent`, Chatwoot `pending_action` cleared, and Sam correctly said the formal quote had been sent. Cleanup cancelled the order, closed intake `INTAKE-2026-D9B528`, cleared Chatwoot attributes, and active lookup returned `no_match`.
 
 Live test progress 2026-05-13:
 
@@ -1250,6 +1250,14 @@ Cleanup notes captured during 5.6/5.7:
 - Keep `1.2 - Amadeus Order Steward` as the only order-writing workflow; do not duplicate order creation or line sync in `1.0`.
 - Keep Chatwoot attributes lightweight: `conversation_mode`, `order_id`, `order_status`, `pending_action`, and payment method only if still operationally useful.
 - Review Sam prompt context and remove duplicated large payloads once compact intake + steward context is sufficient.
+
+Progress 2026-05-13:
+
+- Contract docs updated: `send_quote` is now documented as a valid Chatwoot `pending_action`, and `generate_quote` / `send_latest_quote` are documented as live steward actions.
+- `1.0` runtime intake naming cleaned up: `intake_shadow_*` fields and the three intake shadow node names were renamed to primary intake naming.
+- Chatwoot order-context writes now prefer current steward/result state before falling back to old Chatwoot attributes.
+- `1.2 Code - Format Create With Lines Result` now echoes `payment_method` and `collection_location` from the normalized create payload so the successful create/send path can preserve `payment_method` in Chatwoot.
+- Validation passed: `1.0` and `1.2` JSON parse, all Code-node JavaScript compiles, no `1.0` connection references are broken, and no `intake_shadow` runtime references remain.
 
 ### 5.10 Order Archive / History Scaling - Future Design, Not Now
 
@@ -1560,8 +1568,7 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 5.8.1 live import/retest** — verify `Yes, please` sends the generated quote and marks the document `Sent`.
-2. **Phase 5.9 cleanup** — reduce duplicated shadow/legacy routing after intake/quote behavior is proven.
-3. **Phase 6** (parallel polish when useful) — web app order detail parity and action clarity.
+1. **Phase 5.9 cleanup** - reduce duplicated shadow/legacy routing after intake/quote behavior is proven.
+2. **Phase 6** (parallel polish when useful) - web app order detail parity and action clarity.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

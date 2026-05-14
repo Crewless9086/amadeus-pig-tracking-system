@@ -61,7 +61,7 @@ Important fields:
 
 ## Persistent Order Intake State
 
-Status: backend, sheets, Phase 5.6 `1.0` shadow-mode calls, Phase 5.7 intake-driven draft creation, and the atomic backend create-with-lines path are live-verified. Cleanup is still needed before treating the current doubled-up workflow shape as final.
+Status: backend, sheets, intake update calls, intake-driven draft creation, atomic backend create-with-lines, automatic quote generation, and quote delivery are live-verified. Phase 5.9 cleanup is making intake the primary runtime naming and reducing the doubled-up workflow shape.
 
 Current issue:
 
@@ -85,15 +85,15 @@ Target flow:
 2. `1.0` normalizes the message and calls backend intake update.
 3. Backend merges newly confirmed facts into existing intake state.
 4. Backend returns known fields, `missing_fields`, `next_action`, and safe reply facts.
-5. During Phase 5.6, `1.0` attaches this response as `intake_shadow_result` only. This is live-verified as of 2026-05-12.
+5. `1.0` attaches this response as compact intake result fields and uses backend `ready_for_draft` / `next_action` to decide controlled draft and quote actions.
 6. Phase 5.7 uses `ready_for_draft = true` / `next_action = create_draft` for the first controlled draft-creation path, with existing routing retained as fallback.
 7. Draft creation runs through `1.2` `create_order_with_lines`, which calls backend `POST /api/master/orders/create-with-lines`. The backend creates the draft and syncs requested lines in one service operation; if sync fails or no stock lines match, the new draft is cancelled instead of remaining as an active zero-line order.
 8. After success, `1.0` patches the returned `order_id` back to intake as `Draft_Order_ID`.
-9. Cleanup pass should remove duplicated shadow/legacy fields after intake-driven draft/update/quote behavior is proven.
+9. Cleanup pass removes duplicated shadow/legacy fields after intake-driven draft/update/quote behavior is proven.
 
 Planned cleanup rule:
 
-- Do not remove existing `1.0` payload fields or Chatwoot attributes until intake state has passed shadow-mode verification and live draft/quote tests.
+- Keep Chatwoot attributes lightweight and do not use them as intake truth. They should preserve only routing state such as `order_id`, `order_status`, `conversation_mode`, `pending_action`, and `payment_method` where still operationally useful.
 
 ## Draft order context prefetch (`get_order_context`)
 
@@ -169,6 +169,7 @@ Currently live actions called by `1.0`:
 | `cancel_order` | Customer-confirmed cancellation of an active order. | `order_id`, `changed_by`, optional `reason`. |
 | `send_for_approval` | Submit draft to pending approval (`POST /api/orders/<order_id>/send-for-approval`). | `order_id`, `changed_by`; caller must satisfy backend guards (Draft, payment method, lines, etc.). |
 | `generate_quote` | Generate a formal backend PDF quote for an existing draft/order. | `order_id`, `changed_by`; calls backend `POST /api/orders/<order_id>/quote` and returns compact document fields. This generates only; document sending stays on the document-delivery path. |
+| `send_latest_quote` | Send the latest generated/current quote for an order. | `order_id`, `conversation_id`, `account_id`, `changed_by`; calls backend `POST /api/orders/<order_id>/quote/send-latest`, which can generate-if-needed, then delegates to document delivery. |
 
 Rule: `1.2` should call the backend API. It should not directly write order sheets.
 

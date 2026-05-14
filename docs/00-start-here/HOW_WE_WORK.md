@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 5.8.1** - Quote Send Confirmation |
-| **Status** | Phase 5.8.1 backend-owned create/generate/send correction prepared in repo after `1.0` fan-out review |
-| **Current focus** | Deploy backend, import updated `1.2` and `1.0`, then run exact one-turn create-and-send quote smoke before Phase 5.9 |
-| **Current last verified** | **2026-05-13** - `1.0 -> 1.2 -> backend -> 1.5` quote flow live-verified on `ORD-2026-1D782B`; quote generated, pending send persisted, PDF sent, pending cleared, cleanup completed |
+| **Status** | Phase 5.8.1 one-turn create/generate/send quote flow live-verified and cleaned up |
+| **Current focus** | Move to Phase 5.9 n8n payload and Chatwoot attribute cleanup |
+| **Current last verified** | **2026-05-13** - exact one-turn `1.0 -> 1.2 -> backend -> 1.5` quote flow live-verified on `ORD-2026-D3BB1C`; draft created, quote generated, PDF sent, document marked Sent, pending cleared, cleanup completed |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

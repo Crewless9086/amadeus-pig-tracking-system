@@ -66,10 +66,14 @@ For `1.0`, these `1.2` actions are currently treated as live (aligned with `docs
 - `get_order_context` (read-only; called by `1.0` before AUTO order-state build when a draft id exists)
 - `cancel_order`
 - `send_for_approval`
+- `generate_quote`
+- `send_latest_quote`
 
 Other actions present in `1.2` (for example `view_order`, `reserve_order`) are not automatically considered live for Sam until wired, tested, and documented.
 
 Customer cancellation requires two-turn confirmation. `1.0` must set `pending_action = cancel_order` on first cancel intent, call `cancel_order` only after a clear confirmation, and clear stale pending state when the next customer message does not confirm cancellation.
+
+Quote delivery may also use pending confirmation. When a quote is generated/current but not yet sent, `1.0` may set `pending_action = send_quote`. A later clear confirmation routes to `send_latest_quote`; Sam may only say the quote was sent after the backend/steward response confirms delivery.
 
 Sam should not directly write order sheets. Future order review should preferably go through `1.2` and backend order lookup/review endpoints rather than direct `ORDER_OVERVIEW` sheet access.
 

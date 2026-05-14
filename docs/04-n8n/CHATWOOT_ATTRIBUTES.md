@@ -21,7 +21,7 @@ Chatwoot conversation custom attributes are high risk because the Chatwoot API r
 | `order_id` | text | `1.0`, `1.1` | Active order context for later customer turns. | Yes |
 | `order_status` | text | `1.0`, `1.1` | Active order lifecycle status context. | Yes |
 | `conversation_mode` | text | `1.0`, `1.1` | `AUTO` or `HUMAN` mode gate. | Yes |
-| `pending_action` | text | `1.0`, `1.1` | Guarded customer action state, currently `cancel_order` or blank. | Yes |
+| `pending_action` | text | `1.0`, `1.1` | Guarded customer action state, currently `cancel_order`, `send_quote`, or blank. | Yes |
 | `escalation_ticket_id` | text | `1.0`, `1.1` | Links Chatwoot conversation to Telegram escalation ticket. | Escalation writes only |
 | `last_escalated_at` | date | `1.0`, `1.1` | Date the conversation was moved to human handling. | Escalation writes only |
 | `last_human_replay` | date | `1.0`, `1.1` | Human reply tracking field. Name is currently spelled `replay` in workflow exports. | Escalation writes only |

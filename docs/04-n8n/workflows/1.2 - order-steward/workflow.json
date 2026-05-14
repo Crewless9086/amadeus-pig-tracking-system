@@ -1855,7 +1855,7 @@
             {
               "id": "f0466b7a-5ea5-4026-a3af-1e0a02c7b6d1",
               "name": "send_quote_if_ready",
-              "value": "={{ $('Code - Normalize Order Payload').item.json.send_quote_if_ready === true }}",
+              "value": false,
               "type": "boolean"
             }
           ]
@@ -1934,7 +1934,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const resp = $json || {};\nconst results = Array.isArray(resp.results) ? resp.results : [];\nconst cancelledEmptyOrder = resp.cancelled_empty_order === true;\nconst orderStatus = resp.order_status || resp.status || (cancelledEmptyOrder ? 'Cancelled' : 'Draft');\nconst normalized = $('Code - Normalize Order Payload').item.json || {};\n\nreturn [{\n  json: {\n    success: resp.success === true && !cancelledEmptyOrder,\n    action: \"create_order_with_lines\",\n    order_id: resp.order_id || \"\",\n    order_status: orderStatus,\n    status: orderStatus,\n    message: resp.message || (cancelledEmptyOrder ? \"No matching pigs were available, so the empty draft was cancelled.\" : \"\"),\n    create_success: resp.create_success === true,\n    sync_success: resp.sync_success === true,\n    sync_results: resp.sync_results || results,\n    results: results,\n    partial_fulfillment: resp.partial_fulfillment === true,\n    complete_fulfillment: resp.complete_fulfillment === true,\n    fulfillment_status: resp.fulfillment_status || \"\",\n    requested_total: resp.requested_total,\n    matched_total: resp.matched_total,\n    unmatched_total: resp.unmatched_total,\n    incomplete_items: Array.isArray(resp.incomplete_items) ? resp.incomplete_items : [],\n    cancelled_empty_order: cancelledEmptyOrder,\n    cancel_result: resp.cancel_result || null,\n    sync_message: resp.sync_message || \"\",\n    auto_quote: resp.auto_quote || null,\n    quote_send: resp.quote_send || null,\n    send_quote_if_ready: normalized.send_quote_if_ready === true,\n    customer_name: normalized.customer_name || \"\",\n    requested_category: normalized.requested_category || \"\",\n    requested_weight_range: normalized.requested_weight_range || \"\"\n  }\n}];"
+        "jsCode": "const resp = $json || {};\nconst results = Array.isArray(resp.results) ? resp.results : [];\nconst cancelledEmptyOrder = resp.cancelled_empty_order === true;\nconst orderStatus = resp.order_status || resp.status || (cancelledEmptyOrder ? 'Cancelled' : 'Draft');\nconst normalized = $('Code - Normalize Order Payload').item.json || {};\n\nreturn [{\n  json: {\n    success: resp.success === true && !cancelledEmptyOrder,\n    action: \"create_order_with_lines\",\n    order_id: resp.order_id || \"\",\n    order_status: orderStatus,\n    status: orderStatus,\n    message: resp.message || (cancelledEmptyOrder ? \"No matching pigs were available, so the empty draft was cancelled.\" : \"\"),\n    create_success: resp.create_success === true,\n    sync_success: resp.sync_success === true,\n    sync_results: resp.sync_results || results,\n    results: results,\n    partial_fulfillment: resp.partial_fulfillment === true,\n    complete_fulfillment: resp.complete_fulfillment === true,\n    fulfillment_status: resp.fulfillment_status || \"\",\n    requested_total: resp.requested_total,\n    matched_total: resp.matched_total,\n    unmatched_total: resp.unmatched_total,\n    incomplete_items: Array.isArray(resp.incomplete_items) ? resp.incomplete_items : [],\n    cancelled_empty_order: cancelledEmptyOrder,\n    cancel_result: resp.cancel_result || null,\n    sync_message: resp.sync_message || \"\",\n    auto_quote: resp.auto_quote || null,\n    quote_send: resp.quote_send || null,\n    send_quote_if_ready: normalized.send_quote_if_ready === true,\n    payment_method: normalized.payment_method || \"\",\n    collection_location: normalized.collection_location || \"\",\n    customer_name: normalized.customer_name || \"\",\n    requested_category: normalized.requested_category || \"\",\n    requested_weight_range: normalized.requested_weight_range || \"\"\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -2153,6 +2153,113 @@
       ],
       "id": "b4f694bf-4565-45a7-8f4e-6e367f59f103",
       "name": "Code - Format Send Latest Quote Result"
+    },
+    {
+      "id": "phase58-if-send-after-create",
+      "name": "IF - Send Quote After Create With Lines",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        992,
+        -784
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "send-after-create-ready",
+                                    "leftValue": "={{ $json.success === true && $(\"Code - Normalize Order Payload\").item.json.send_quote_if_ready === true && !!$json.order_id }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "phase58-set-send-after-create",
+      "name": "Set - Build Send Quote After Create Body",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1200,
+        -880
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "phase58-send-conversation",
+              "name": "conversation_id",
+              "value": "={{ $(\"Code - Normalize Order Payload\").item.json.conversation_id }}",
+              "type": "string"
+            },
+            {
+              "id": "phase58-send-account",
+              "name": "account_id",
+              "value": "={{ $(\"Code - Normalize Order Payload\").item.json.account_id || \"147387\" }}",
+              "type": "string"
+            },
+            {
+              "id": "phase58-send-changed-by",
+              "name": "changed_by",
+              "value": "={{ $(\"Code - Normalize Order Payload\").item.json.changed_by || \"Sam Phase 5.8.1 create quote send\" }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "phase58-http-send-after-create",
+      "name": "HTTP - Send Quote After Create With Lines",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1408,
+        -880
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://amadeus-pig-tracking-system.onrender.com/api/orders/' + $(\"HTTP - Create With Lines Order\").item.json.order_id + '/quote/send-latest' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      }
+    },
+    {
+      "id": "phase58-merge-create-send-result",
+      "name": "Code - Attach Quote Send To Create Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        -880
+      ],
+      "parameters": {
+        "jsCode": "const createResp = $(\"HTTP - Create With Lines Order\").item.json || {};\nconst sendResp = $json || {};\nconst ok = sendResp.success === true;\nlet msg = String(sendResp.message || sendResp.error || '').trim();\nif (!msg && Array.isArray(sendResp.errors) && sendResp.errors.length > 0) msg = String(sendResp.errors[0] || '').trim();\nif (!msg) msg = ok ? 'Quote sent successfully.' : 'Quote send failed.';\n\nreturn [{\n  json: {\n    ...createResp,\n    quote_send: {\n      success: ok,\n      action: 'send_latest_quote',\n      order_id: String(sendResp.order_id || createResp.order_id || '').trim(),\n      message: msg.slice(0, 500),\n      document_id: sendResp.document_id || '',\n      document_type: sendResp.document_type || 'Quote',\n      document_ref: sendResp.document_ref || '',\n      document_status: sendResp.document_status || '',\n      conversation_id: sendResp.conversation_id || $(\"Code - Normalize Order Payload\").item.json.conversation_id || '',\n      delivery_webhook_sent: sendResp.delivery_webhook_sent === true,\n      backend_success: ok,\n      backend_error: ok ? '' : msg.slice(0, 500),\n      skipped: sendResp.skipped === true,\n      reason: sendResp.reason || ''\n    }\n  }\n}];"
+      }
     }
   ],
   "pinData": {
@@ -2565,7 +2672,7 @@
       "main": [
         [
           {
-            "node": "Code - Format Create With Lines Result",
+            "node": "IF - Send Quote After Create With Lines",
             "type": "main",
             "index": 0
           }
@@ -2654,6 +2761,57 @@
         [
           {
             "node": "Code - Format Send Latest Quote Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Send Quote After Create With Lines": {
+      "main": [
+        [
+          {
+            "node": "Set - Build Send Quote After Create Body",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Format Create With Lines Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set - Build Send Quote After Create Body": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Send Quote After Create With Lines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Send Quote After Create With Lines": {
+      "main": [
+        [
+          {
+            "node": "Code - Attach Quote Send To Create Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Attach Quote Send To Create Result": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Create With Lines Result",
             "type": "main",
             "index": 0
           }
