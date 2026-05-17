@@ -1276,6 +1276,10 @@ Progress 2026-05-17:
 - `1.2` now preserves and echoes `created_from_intake`, `intake_id`, conversation/customer IDs, channel, language, `payment_method`, and `collection_location` on the create-with-lines result.
 - `1.0` workflow README updated to current Phase 5.9 intake naming, while keeping historical 5.6/5.7 notes clear.
 - Local validation passed after cleanup: both workflow JSON exports parse, all Code-node JavaScript compiles, `1.0` connection references are intact, and the targeted `debug_intake` / `debug_quote` / `intake_shadow` / route-fallback reads are gone.
+- First post-upload smoke created `ORD-2026-3E46B8` and generated `DOC-2026-44FC1C` / `Q-2026-3E46B8`, but did not send the PDF; quote stayed `Generated`.
+- Follow-up fix prepared in `1.2`: `Set - Build Create With Lines Body` no longer hard-codes `send_quote_if_ready = false`; it now mirrors `Code - Normalize Order Payload`, and the post-create send IF checks the same normalized/body flag. Re-import `1.2` before retesting.
+- Retest after `1.2` upload created and linked `ORD-2026-D547AD`, but immediate quote generation/send still missed; a delayed direct `send-latest` control generated and sent `DOC-2026-0519FE` / `Q-2026-D547AD`.
+- Backend timing hardening prepared: `send-latest` and create-time quote-send now retry quote readiness briefly when the only blocker is likely Google Sheets visibility lag (`order`, `active_order_lines`, or `complete_order_lines`). Deploy backend before the next one-turn smoke.
 
 ### 5.10 Order Archive / History Scaling - Future Design, Not Now
 

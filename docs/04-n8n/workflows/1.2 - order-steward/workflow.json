@@ -1594,7 +1594,7 @@
                                        -336
                                    ],
                       "id":  "702a31fa-c79f-4e09-aa9f-dfd16b9c9dd0",
-                      "name":  "When clicking Ã¢â‚¬ËœExecute workflowÃ¢â‚¬â„¢",
+                      "name":  "When clicking ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“Execute workflowÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢",
                       "disabled":  true
                   },
                   {
@@ -1897,7 +1897,7 @@
                                                                                  {
                                                                                      "id":  "f0466b7a-5ea5-4026-a3af-1e0a02c7b6d1",
                                                                                      "name":  "send_quote_if_ready",
-                                                                                     "value":  false,
+                                                                                     "value":  "={{ $(\"Code - Normalize Order Payload\").item.json.send_quote_if_ready === true }}",
                                                                                      "type":  "boolean"
                                                                                  }
                                                                              ]
@@ -2222,7 +2222,7 @@
                                                             "conditions":  [
                                                                                {
                                                                                    "id":  "send-after-create-ready",
-                                                                                   "leftValue":  "={{ $json.success === true \u0026\u0026 $(\"Code - Normalize Order Payload\").item.json.send_quote_if_ready === true \u0026\u0026 !!$json.order_id }}",
+                                                                                   "leftValue":  "={{ $json.success === true \u0026\u0026 !!$json.order_id \u0026\u0026 ($(\"Code - Normalize Order Payload\").item.json.send_quote_if_ready === true || $(\"Set - Build Create With Lines Body\").item.json.send_quote_if_ready === true) }}",
                                                                                    "rightValue":  true,
                                                                                    "operator":  {
                                                                                                     "type":  "boolean",
@@ -2671,17 +2671,17 @@
                                                                  ]
                                                              ]
                                                 },
-                        "When clicking Ã¢â‚¬ËœExecute workflowÃ¢â‚¬â„¢":  {
-                                                                              "main":  [
-                                                                                           [
-                                                                                               {
-                                                                                                   "node":  "Edit Fields",
-                                                                                                   "type":  "main",
-                                                                                                   "index":  0
-                                                                                               }
-                                                                                           ]
-                                                                                       ]
-                                                                          },
+                        "When clicking ÃƒÂ¢Ã¢â€šÂ¬Ã‹Å“Execute workflowÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢":  {
+                                                                                                "main":  [
+                                                                                                             [
+                                                                                                                 {
+                                                                                                                     "node":  "Edit Fields",
+                                                                                                                     "type":  "main",
+                                                                                                                     "index":  0
+                                                                                                                 }
+                                                                                                             ]
+                                                                                                         ]
+                                                                                            },
                         "Edit Fields":  {
                                             "main":  [
                                                          [

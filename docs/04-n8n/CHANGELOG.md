@@ -27,6 +27,10 @@ Type: `REFACTOR`
 
 **Verification:** Workflow JSON parsing, Code-node JavaScript syntax checks, and `1.0` connection reference checks passed locally. Live import/retest is still required.
 
+**Smoke finding after import:** The first live smoke after uploading both workflows created `ORD-2026-3E46B8` correctly and generated `DOC-2026-44FC1C` / `Q-2026-3E46B8`, but the quote remained `Generated` rather than `Sent`. Root cause found in `1.2`: `Set - Build Create With Lines Body` still carried `send_quote_if_ready = false`. The export now sets that field from `Code - Normalize Order Payload` and the post-create send IF accepts the same normalized/body flag, keeping the send decision consistent.
+
+**Retest finding after `1.2` upload:** The next live smoke created and linked `ORD-2026-D547AD`, but `ORDER_DOCUMENTS` was initially empty. A direct delayed control call to `POST /api/orders/ORD-2026-D547AD/quote/send-latest` then generated and sent `DOC-2026-0519FE` / `Q-2026-D547AD`, proving backend delivery was healthy and the failure was create-time sheet visibility timing. Backend patch prepared: `send-latest` and create-time quote-send now retry quote readiness briefly for timing-sensitive missing fields (`order`, `active_order_lines`, `complete_order_lines`) before returning `quote_not_ready`.
+
 ---
 
 ### 2026-05-13 - Phase 5.9 intake naming and attribute cleanup start

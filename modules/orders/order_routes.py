@@ -22,7 +22,11 @@ from modules.orders.order_service import (
     sync_order_lines_from_request,
     create_order_with_lines,
 )
-from modules.documents.quote_service import auto_generate_quote_if_ready, generate_quote_for_order
+from modules.documents.quote_service import (
+    auto_generate_quote_if_ready,
+    auto_generate_quote_if_ready_with_retry,
+    generate_quote_for_order,
+)
 from modules.documents.invoice_service import generate_invoice_for_order
 from modules.documents.document_service import (
     get_latest_non_voided_quote,
@@ -283,7 +287,7 @@ def send_latest_quote(order_id):
         quote = get_latest_non_voided_quote(order_id)
         ensure_result = None
         if not quote:
-            ensure_result = auto_generate_quote_if_ready(
+            ensure_result = auto_generate_quote_if_ready_with_retry(
                 order_id,
                 created_by=sent_by,
             )
@@ -618,6 +622,15 @@ def _attach_quote_send_result(
 
     document = (result.get("auto_quote") or {}).get("document") or {}
     document_id = str(document.get("document_id", "")).strip()
+    if not document_id:
+        ensure_result = auto_generate_quote_if_ready_with_retry(
+            str(result.get("order_id", "")).strip(),
+            created_by=sent_by or "App",
+        )
+        result["auto_quote"] = ensure_result
+        document = (ensure_result or {}).get("document") or {}
+        document_id = str(document.get("document_id", "")).strip()
+
     if not document_id:
         result["quote_send"] = {
             "success": False,

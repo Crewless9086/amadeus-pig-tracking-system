@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+import time
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -110,6 +111,30 @@ def auto_generate_quote_if_ready(order_id, created_by="App"):
         "document": _result_document_summary(result),
         "message": "Quote generated automatically because the draft is quote-ready.",
     }
+
+
+def auto_generate_quote_if_ready_with_retry(
+    order_id,
+    created_by="App",
+    retry_delays=(3, 7),
+):
+    result = auto_generate_quote_if_ready(order_id, created_by=created_by)
+    if result.get("quote_ready"):
+        return result
+
+    retryable_missing = {"order", "active_order_lines", "complete_order_lines"}
+    for delay in retry_delays:
+        missing = set(result.get("missing_fields") or [])
+        if missing and missing.isdisjoint(retryable_missing):
+            break
+        time.sleep(delay)
+        result = auto_generate_quote_if_ready(order_id, created_by=created_by)
+        if result.get("quote_ready"):
+            result["retried"] = True
+            result["retry_delay_seconds"] = delay
+            return result
+
+    return result
 
 
 def get_quote_readiness(order_id):
