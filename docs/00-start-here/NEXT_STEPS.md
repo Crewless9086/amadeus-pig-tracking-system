@@ -1259,6 +1259,15 @@ Progress 2026-05-13:
 - `1.2 Code - Format Create With Lines Result` now echoes `payment_method` and `collection_location` from the normalized create payload so the successful create/send path can preserve `payment_method` in Chatwoot.
 - Validation passed: `1.0` and `1.2` JSON parse, all Code-node JavaScript compiles, no `1.0` connection references are broken, and no `intake_shadow` runtime references remain.
 
+Live smoke 2026-05-14:
+
+- After importing the updated `1.0` and `1.2`, the exact one-turn quote message passed again on safe conversation `1774`.
+- Workflow created `ORD-2026-E3BFCF` with one active Female Grower `35_to_39_Kg` line, Riversdale collection, and `payment_method = Cash`.
+- Quote `DOC-2026-923849` / `Q-2026-E3BFCF` was generated and sent through `1.5`; `ORDER_DOCUMENTS.Document_Status = Sent`, `Sent_At = 14 May 2026 02:20`, `Sent_By = Sam Phase 5.7 intake`, total `R1,400.00`.
+- The new runtime note on the line is `Phase 5.9 intake extraction`, confirming the renamed intake path is live.
+- Direct Chatwoot attribute read was not possible without the Chatwoot API token, but backend order/document state confirmed the create/generate/send path and preserved `Cash` on the order.
+- Cleanup completed: `ORD-2026-E3BFCF` cancelled, `INTAKE-2026-AA2FAC` closed, active customer lookup returned `no_match`, and intake lookup returned `no_match`.
+
 ### 5.10 Order Archive / History Scaling - Future Design, Not Now
 
 Current decision:

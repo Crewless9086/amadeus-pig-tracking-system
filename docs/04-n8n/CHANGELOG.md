@@ -27,6 +27,8 @@ Type: `REFACTOR`
 
 **Verification:** `1.0` and `1.2` workflow JSON parse successfully, all Code-node JavaScript compiles, `1.0` connection references are intact, and no `intake_shadow` runtime references remain in the active workflow/contracts.
 
+**Live smoke:** After importing both updated workflows, the exact one-turn create/generate/send quote message passed on safe conversation `1774`. The workflow created `ORD-2026-E3BFCF`, added one active Female Grower `35_to_39_Kg` line with note `Phase 5.9 intake extraction`, preserved `Payment_Method = Cash`, generated `DOC-2026-923849` / `Q-2026-E3BFCF`, sent the PDF through `1.5`, and marked the document `Sent` at `14 May 2026 02:20`. Direct Chatwoot attribute read was not available without the Chatwoot API token, but backend order/document truth confirmed the flow. Cleanup cancelled the order, closed intake `INTAKE-2026-AA2FAC`, and both active order and intake lookups returned `no_match`.
+
 ---
 
 ### 2026-05-13 - Phase 5.8.1 quote send confirmation path
