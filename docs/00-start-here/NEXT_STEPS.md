@@ -21,8 +21,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery, live-verified; Phase 5.9 cleanup in progress | Import Phase 5.9 slice 2 workflow cleanup and rerun one-turn quote smoke. |
-| Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
+| Phase 6: Web App Order Usability | In Progress / 6.1 Repo-Implemented | Browser/live verification next. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
@@ -1280,6 +1280,9 @@ Progress 2026-05-17:
 - Follow-up fix prepared in `1.2`: `Set - Build Create With Lines Body` no longer hard-codes `send_quote_if_ready = false`; it now mirrors `Code - Normalize Order Payload`, and the post-create send IF checks the same normalized/body flag. Re-import `1.2` before retesting.
 - Retest after `1.2` upload created and linked `ORD-2026-D547AD`, but immediate quote generation/send still missed; a delayed direct `send-latest` control generated and sent `DOC-2026-0519FE` / `Q-2026-D547AD`.
 - Backend timing hardening prepared: `send-latest` and create-time quote-send now retry quote readiness briefly when the only blocker is likely Google Sheets visibility lag (`order`, `active_order_lines`, or `complete_order_lines`). Deploy backend before the next one-turn smoke.
+- Restart-recovery test on 2026-05-17 found leftover smoke draft `ORD-2026-683FC3` and intake `INTAKE-2026-25FCA7` on safe conversation `1774`: draft/header/line were correct, but no quote document existed. Production `send-latest` and direct production quote generation both returned `500`; local repo code generated `DOC-2026-8D3420` / `Q-2026-683FC3` successfully against live Sheets/Drive, and production then sent that existing quote successfully (`Document_Status = Sent`). Cleanup cancelled `ORD-2026-683FC3`, closed the intake, cleared Chatwoot attributes, and verified active order/intake lookups returned `no_match`. Do not call Phase 5.9 closed until production quote generation passes in the real one-turn path without local recovery.
+- Fresh one-turn smoke on 2026-05-17 after cleanup reproduced the live n8n gap: `1.0` accepted the exact create-and-send quote message and created `ORD-2026-644D1A` with one active Female Grower `35_to_39_Kg` line, Cash, Riversdale, and generated `DOC-2026-02ADA4` / `Q-2026-644D1A`, but the document remained `Generated` until a direct backend `send-latest` control marked it `Sent`. Intake `INTAKE-2026-56A068` also stayed unlinked (`draft_order_id` blank), which matches a stale/lean `1.2` create result that does not echo `created_from_intake` / `send_quote_if_ready`. Repo patch added defensive metadata recovery in `1.0 Code - Store Draft Order Context`; local validation passed for JSON parse, all Code-node JavaScript, and the `1.2` create-with-lines post-create send branch connections. Re-import current `1.2` and updated `1.0`, then rerun the exact one-turn smoke. Cleanup cancelled `ORD-2026-644D1A`, closed the intake, cleared Chatwoot attributes, and active order/intake lookups returned `no_match`.
+- Final Phase 5.9 slice-2 smoke passed on 2026-05-17 after n8n API upload of active `1.0` (`V73HaIqVpzv44SFc`) and `1.2` (`YDRs6fwde7MzPYn7`): `1.2 Set - Build Create With Lines Body` now keeps backend create `send_quote_if_ready = false`, `1.2` sends the latest quote in a separate post-create request after a 45-second quota-cooldown Code node, and `1.0 Code - Store Draft Order Context` is a simple pass-through again because `1.2` echoes create metadata. Exact one-turn message on safe conversation `1774` created `ORD-2026-6E5A81`, linked intake `INTAKE-2026-F787C6` (`draft_order_id = ORD-2026-6E5A81`), generated `DOC-2026-E8A19A` / `Q-2026-6E5A81`, sent the PDF through `1.5`, and marked `ORDER_DOCUMENTS.Document_Status = Sent` with `Sent_By = Sam Phase 5.9 intake`. n8n executions `1.2 #44579` and `1.0 #44581/#44582` succeeded. Cleanup cancelled `ORD-2026-6E5A81`, closed the intake, cleared Chatwoot attributes, and active order/intake lookups returned `no_match`.
 
 ### 5.10 Order Archive / History Scaling - Future Design, Not Now
 
@@ -1317,11 +1320,11 @@ Focus areas:
 - order list clarity
 - order detail clarity
 - visible line/reservation state
-- reserve/release success feedback on order detail is done (API `message` + `changed_count` + `warning`); still need button visibility parity for approve/reject and other actions
+- reserve/release success feedback on order detail is done (API `message` + `changed_count` + `warning`)
 - **Pen / location labels:** dropdowns and pig pickers should show **pen name** (human-readable) alongside or instead of raw **pen ID** wherever the app still exposes IDs only
 - **Known route mismatch to park:** `static/js/litterDetail.js` currently calls `/api/pig-weights/litter/<id>/detail`, while the Flask route is `/api/pig-weights/litter/<id>`; fix under web app/pig detail usability unless it blocks live order work
 - clear approve/reject/cancel buttons
-- order detail actions must match backend rules: show approve/reject when `Order_Status = Pending_Approval`, reserve/release when appropriate; avoid forcing ops through OOM SAKKIE workflows when parity with API is intended
+- order detail actions must match backend rules: show approve/reject when `Order_Status = Pending_Approval`, show cancel before terminal statuses, reserve/release when appropriate; avoid forcing ops through OOM SAKKIE workflows when parity with API is intended
 - safe release/reserve controls
 - useful logs/history
 - clear success/failure messages
@@ -1331,6 +1334,26 @@ Focus areas:
 Rule:
 
 Do not redesign the app before the backend order behavior is safe.
+
+### 6.1 Order Detail Action Parity - Repo-Implemented, Browser Verification Next
+
+Implementation added 2026-05-17:
+
+- `/order/<order_id>` now exposes a `Cancel Order` button wired to `POST /api/orders/<order_id>/cancel`.
+- Order action visibility now hides all order-level actions for `Cancelled` and `Completed`, shows approve/reject only for `Pending_Approval`, shows complete only for `Approved`, and shows cancel for non-terminal Draft/Pending/Approved orders.
+- Reserve, release, send-for-approval, approve, reject, cancel, and complete actions now disable the action row while running and show short working labels.
+- Approve, reject, cancel, and complete require confirmation before calling the backend.
+- Order action success text now prefers backend `message`, preserves reserve/release `changed_count` detail, and appends `warning` / `reserve_warning` where returned.
+
+Verification so far:
+
+- `node --check static/js/orderDetail.js` passed.
+- Flask app import via `.venv` passed.
+
+Still required:
+
+- Browser check one Draft order, one Pending_Approval order, one Approved order, and one terminal order.
+- Use a safe temporary order before clicking cancel/reject/complete in the browser.
 
 ## Phase 7: Broader Workflow Improvements - Not Started
 
@@ -1590,7 +1613,7 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 5.9 cleanup** - reduce duplicated shadow/legacy routing after intake/quote behavior is proven.
-2. **Phase 6** (parallel polish when useful) - web app order detail parity and action clarity.
+1. **Phase 6.1 browser verification** - confirm order detail action visibility, confirmations, and running/success/error messages.
+2. **Phase 6.2 order list clarity** - choose after 6.1 browser verification is complete.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

@@ -27,6 +27,7 @@ function applyOrderActionVisibility(order) {
   const sendForApprovalBtn = document.getElementById("send_for_approval_btn");
   const approveBtn = document.getElementById("approve_order_btn");
   const rejectBtn = document.getElementById("reject_order_btn");
+  const cancelBtn = document.getElementById("cancel_order_btn");
   const completeBtn = document.getElementById("complete_order_btn");
   const addOrderLineForm = document.getElementById("addOrderLineForm");
 
@@ -37,6 +38,7 @@ function applyOrderActionVisibility(order) {
   const isPendingApproval = orderStatus === "Pending_Approval";
   const isApproved = orderStatus === "Approved" || approvalStatus === "Approved";
   const isCancelled = orderStatus === "Cancelled" || approvalStatus === "Rejected";
+  const isCompleted = orderStatus === "Completed";
 
   // Default hide everything first
   hideElement(reserveBtn);
@@ -44,13 +46,19 @@ function applyOrderActionVisibility(order) {
   hideElement(sendForApprovalBtn);
   hideElement(approveBtn);
   hideElement(rejectBtn);
+  hideElement(cancelBtn);
   hideElement(completeBtn);
   hideElement(addOrderLineForm);
+
+  if (isCancelled || isCompleted) {
+    return;
+  }
 
   if (isDraft) {
     showElement(reserveBtn);
     showElement(releaseBtn);
     showElement(sendForApprovalBtn);
+    showElement(cancelBtn);
     showElement(addOrderLineForm);
     return;
   }
@@ -59,18 +67,47 @@ function applyOrderActionVisibility(order) {
     showElement(approveBtn);
     showElement(rejectBtn);
     showElement(releaseBtn);
+    showElement(cancelBtn);
     return;
   }
 
   if (isApproved) {
     showElement(releaseBtn);
+    showElement(cancelBtn);
     showElement(completeBtn);
-    return;
   }
+}
 
-  if (isCancelled) {
-    return;
-  }
+function getOrderActionButtons() {
+  return [
+    "reserve_order_btn",
+    "release_order_btn",
+    "send_for_approval_btn",
+    "approve_order_btn",
+    "reject_order_btn",
+    "cancel_order_btn",
+    "complete_order_btn"
+  ]
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+}
+
+function setOrderActionBusy(activeButton, busy, workingText) {
+  getOrderActionButtons().forEach(button => {
+    if (!button.dataset.originalText) {
+      button.dataset.originalText = button.textContent;
+    }
+
+    button.disabled = busy;
+
+    if (button === activeButton) {
+      button.textContent = busy
+        ? (workingText || "Working...")
+        : button.dataset.originalText;
+    } else if (!busy) {
+      button.textContent = button.dataset.originalText;
+    }
+  });
 }
 
 function populateOrderHeaderForm(order) {
@@ -545,6 +582,7 @@ function setupOrderActions(orderId) {
   const sendForApprovalBtn = document.getElementById("send_for_approval_btn");
   const approveBtn = document.getElementById("approve_order_btn");
   const rejectBtn = document.getElementById("reject_order_btn");
+  const cancelBtn = document.getElementById("cancel_order_btn");
   const completeBtn = document.getElementById("complete_order_btn");
   const actionMessage = document.getElementById("order_action_message");
 
@@ -556,6 +594,10 @@ function setupOrderActions(orderId) {
         orderId,
         "Order lines reserved successfully.",
         "reserve",
+        {
+          button: reserveBtn,
+          workingText: "Reserving..."
+        }
       );
     });
   }
@@ -568,35 +610,98 @@ function setupOrderActions(orderId) {
         orderId,
         "Order reservations released successfully.",
         "release",
+        {
+          button: releaseBtn,
+          workingText: "Releasing..."
+        }
       );
     });
   }
 
   if (sendForApprovalBtn) {
     sendForApprovalBtn.addEventListener("click", async function () {
-      await runOrderAction(`/api/orders/${orderId}/send-for-approval`, actionMessage, orderId, "Order sent for approval.");
+      await runOrderAction(
+        `/api/orders/${orderId}/send-for-approval`,
+        actionMessage,
+        orderId,
+        "Order sent for approval.",
+        "",
+        {
+          button: sendForApprovalBtn,
+          workingText: "Sending..."
+        }
+      );
     });
   }
 
   if (approveBtn) {
     approveBtn.addEventListener("click", async function () {
-      await runOrderAction(`/api/orders/${orderId}/approve`, actionMessage, orderId, "Order approved successfully.", "approve");
+      await runOrderAction(
+        `/api/orders/${orderId}/approve`,
+        actionMessage,
+        orderId,
+        "Order approved successfully.",
+        "approve",
+        {
+          button: approveBtn,
+          workingText: "Approving...",
+          confirmMessage: "Approve this order?\n\nThis will mark the order approved and attempt to reserve active lines."
+        }
+      );
     });
   }
 
   if (rejectBtn) {
     rejectBtn.addEventListener("click", async function () {
-      await runOrderAction(`/api/orders/${orderId}/reject`, actionMessage, orderId, "Order rejected successfully.");
+      await runOrderAction(
+        `/api/orders/${orderId}/reject`,
+        actionMessage,
+        orderId,
+        "Order rejected successfully.",
+        "",
+        {
+          button: rejectBtn,
+          workingText: "Rejecting...",
+          confirmMessage: "Reject this order?\n\nThis will cancel linked active lines and release reservations."
+        }
+      );
+    });
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", async function () {
+      await runOrderAction(
+        `/api/orders/${orderId}/cancel`,
+        actionMessage,
+        orderId,
+        "Order cancelled successfully.",
+        "",
+        {
+          button: cancelBtn,
+          workingText: "Cancelling...",
+          confirmMessage: "Cancel this order?\n\nThis will cancel linked active lines and release reservations.",
+          payload: {
+            reason: "Cancelled from web app"
+          }
+        }
+      );
     });
   }
 
   if (completeBtn) {
     completeBtn.addEventListener("click", async function () {
-      const confirmed = window.confirm(
-        "Complete this order?\n\nThis will mark all pigs as Sold, update their records, and cannot be undone."
+      await runOrderAction(
+        `/api/orders/${orderId}/complete`,
+        actionMessage,
+        orderId,
+        "Order completed successfully. All pigs marked as sold.",
+        "",
+        {
+          button: completeBtn,
+          workingText: "Completing...",
+          confirmMessage: "Complete this order?\n\nThis will mark all pigs as Sold, update their records, and cannot be undone."
+        }
       );
-      if (!confirmed) return;
-      await runOrderAction(`/api/orders/${orderId}/complete`, actionMessage, orderId, "Order completed successfully. All pigs marked as sold.");
     });
   }
 }
@@ -759,7 +864,13 @@ async function sendDocument(documentId, documentRef) {
   }
 }
 
-async function runOrderAction(url, messageBox, orderId, successText, reserveReleaseKind) {
+async function runOrderAction(url, messageBox, orderId, successText, reserveReleaseKind, options = {}) {
+  if (options.confirmMessage && !window.confirm(options.confirmMessage)) {
+    return;
+  }
+
+  setOrderActionBusy(options.button, true, options.workingText);
+
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -767,7 +878,8 @@ async function runOrderAction(url, messageBox, orderId, successText, reserveRele
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        changed_by: "App"
+        changed_by: "App",
+        ...(options.payload || {})
       })
     });
 
@@ -781,7 +893,7 @@ async function runOrderAction(url, messageBox, orderId, successText, reserveRele
       let message =
         reserveReleaseKind === "reserve" || reserveReleaseKind === "release"
           ? (result.message || successText || "").trim() || successText
-          : successText;
+          : (result.message || successText || "").trim() || successText;
 
       if (reserveReleaseKind === "reserve" || reserveReleaseKind === "release") {
         const cc = result.changed_count;
@@ -812,13 +924,15 @@ async function runOrderAction(url, messageBox, orderId, successText, reserveRele
       await loadAvailablePigs();
     } else {
       messageBox.classList.add("message-error");
-      messageBox.textContent = (result.errors || [result.message || "Order action failed."]).join(" ");
+      messageBox.textContent = (result.errors || [result.error || result.message || "Order action failed."]).join(" ");
     }
   } catch (error) {
     console.error("Order action error:", error);
     messageBox.classList.remove("hidden", "message-success", "message-error");
     messageBox.classList.add("message-error");
     messageBox.textContent = "Order action failed.";
+  } finally {
+    setOrderActionBusy(options.button, false);
   }
 }
 

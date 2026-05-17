@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 5.8.1** - Quote Send Confirmation |
-| **Status** | Phase 5.8.1 one-turn create/generate/send quote flow live-verified and cleaned up |
-| **Current focus** | Move to Phase 5.9 n8n payload and Chatwoot attribute cleanup |
-| **Current last verified** | **2026-05-13** - exact one-turn `1.0 -> 1.2 -> backend -> 1.5` quote flow live-verified on `ORD-2026-D3BB1C`; draft created, quote generated, PDF sent, document marked Sent, pending cleared, cleanup completed |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 6.1** - Order Detail Action Parity |
+| **Status** | Phase 6.1 repo implementation complete; browser/live verification still required |
+| **Current focus** | Verify order detail action visibility, confirmations, and action feedback in browser |
+| **Current last verified** | **2026-05-17** - Phase 6.1 static validation passed (`node --check static/js/orderDetail.js` and Flask app import); latest full live workflow verification remains Phase 5.9 on `ORD-2026-6E5A81` |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

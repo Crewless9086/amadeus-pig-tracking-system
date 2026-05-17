@@ -488,6 +488,25 @@ After backend behavior is safe, test the app for usability:
 - failed actions show helpful errors
 - app reduces manual work instead of increasing it
 
+### Phase 6.1 Order Detail Action Parity
+
+Repo checks completed 2026-05-17:
+
+1. `node --check static/js/orderDetail.js` passed.
+2. Flask app import passed.
+3. `/order/<order_id>` has a `Cancel Order` button wired to `POST /api/orders/<order_id>/cancel`.
+4. Order action buttons disable while an order action request is running.
+5. Order action messages prefer backend `message`, preserve reserve/release `changed_count`, and append `warning` / `reserve_warning`.
+
+Browser verification still required:
+
+1. Draft order: reserve, release, send-for-approval, cancel, and add-line controls are visible; approve/reject/complete are hidden.
+2. Pending Approval order: approve, reject, release, and cancel are visible; send-for-approval and complete are hidden.
+3. Approved order: release, cancel, and complete are visible; approve/reject/send-for-approval are hidden.
+4. Cancelled or Completed order: order-level action buttons and add-line form are hidden.
+5. Confirm approve/reject/cancel/complete prompts appear before backend calls.
+6. Use only a safe temporary order for destructive actions.
+
 ## Web App Breeding Board Tests
 
 The `/matings` page is a read-only operational view for mating and movement planning.

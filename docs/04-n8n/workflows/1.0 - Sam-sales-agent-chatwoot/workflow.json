@@ -448,7 +448,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const orderId = $json.order_id || \"\";\nconst status = $json.order_status || $json.status || \"Draft\";\nreturn [{ json: { ...$json, order_id: orderId, order_status: status } }];"
+                                         "jsCode":  "const createResult = $json || {};\nconst orderId = createResult.order_id || \"\";\nconst status = createResult.order_status || createResult.status || \"Draft\";\n\nreturn [{\n  json: {\n    ...createResult,\n    order_id: orderId,\n    order_status: status,\n  }\n}];"
                                      },
                       "type":  "n8n-nodes-base.code",
                       "typeVersion":  2,

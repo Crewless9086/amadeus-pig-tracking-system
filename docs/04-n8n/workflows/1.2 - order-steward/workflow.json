@@ -1897,7 +1897,7 @@
                                                                                  {
                                                                                      "id":  "f0466b7a-5ea5-4026-a3af-1e0a02c7b6d1",
                                                                                      "name":  "send_quote_if_ready",
-                                                                                     "value":  "={{ $(\"Code - Normalize Order Payload\").item.json.send_quote_if_ready === true }}",
+                                                                                     "value":  "={{ false }}",
                                                                                      "type":  "boolean"
                                                                                  }
                                                                              ]
@@ -2275,12 +2275,25 @@
                                      }
                   },
                   {
+                      "id":  "phase59-wait-send-after-create",
+                      "name":  "Code - Wait Before Send Quote After Create",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1408,
+                                       -880
+                                   ],
+                      "parameters":  {
+                                         "jsCode":  "await new Promise(resolve => setTimeout(resolve, 45000));\nreturn $input.all();"
+                                     }
+                  },
+                  {
                       "id":  "phase58-http-send-after-create",
                       "name":  "HTTP - Send Quote After Create With Lines",
                       "type":  "n8n-nodes-base.httpRequest",
                       "typeVersion":  4.3,
                       "position":  [
-                                       1408,
+                                       1616,
                                        -880
                                    ],
                       "continueOnFail":  true,
@@ -2306,7 +2319,7 @@
                       "type":  "n8n-nodes-base.code",
                       "typeVersion":  2,
                       "position":  [
-                                       1616,
+                                       1824,
                                        -880
                                    ],
                       "parameters":  {
@@ -2840,6 +2853,17 @@
                                                                                  ]
                                                                     },
                         "Set - Build Send Quote After Create Body":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "Code - Wait Before Send Quote After Create",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                        "Code - Wait Before Send Quote After Create":  {
                                                                          "main":  [
                                                                                       [
                                                                                           {
