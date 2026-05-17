@@ -15,6 +15,20 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-17 - Phase 5.9 route payload cleanup
+
+Type: `REFACTOR`
+
+**Summary:** Continued Phase 5.9 cleanup to reduce live workflow noise after the one-turn create/generate/send quote flow was proven.
+
+**Behavior:** No intended customer-facing behavior change. `1.0` keeps the same create/quote/send path, but route-gating nodes now use item-local intake fields instead of troubleshooting fallback reads. Remaining route `debug_*` payload fields were removed from create gating, route decision, and lead classification outputs. `1.2` now preserves and echoes intake/customer context on create-with-lines results so `1.0` does not need to recover that state from old nodes.
+
+**Docs:** Updated `NEXT_STEPS.md` and the `1.0` workflow README to describe the current primary intake naming and the Phase 5.9 cleanup scope.
+
+**Verification:** Workflow JSON parsing, Code-node JavaScript syntax checks, and `1.0` connection reference checks passed locally. Live import/retest is still required.
+
+---
+
 ### 2026-05-13 - Phase 5.9 intake naming and attribute cleanup start
 
 Type: `REFACTOR`

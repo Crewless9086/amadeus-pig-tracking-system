@@ -21,7 +21,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 2: Quote And Invoice Generation | Complete Through 2.6 | Continue future document/operator polish only when planned. |
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
-| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery, live-verified | Move to Phase 5.9 n8n payload and Chatwoot attribute cleanup. |
+| Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery, live-verified; Phase 5.9 cleanup in progress | Import Phase 5.9 slice 2 workflow cleanup and rerun one-turn quote smoke. |
 | Phase 6: Web App Order Usability | In Progress / Ongoing | Continue after backend order truth is stable. |
 | Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
@@ -1231,7 +1231,7 @@ Live test progress 2026-05-13:
   - This confirms generation only, with explicit customer confirmation before document sending.
 - Test order cleanup completed: `ORD-2026-AC3DFF` was cancelled after verification, `active_line_count = 0`, `cancelled_line_count = 1`, `Payment_Status = Cancelled`.
 
-### 5.9 n8n Payload And Chatwoot Attribute Cleanup - Planned After Intake Is Proven
+### 5.9 n8n Payload And Chatwoot Attribute Cleanup - In Progress
 
 Required outcome:
 
@@ -1267,6 +1267,15 @@ Live smoke 2026-05-14:
 - The new runtime note on the line is `Phase 5.9 intake extraction`, confirming the renamed intake path is live.
 - Direct Chatwoot attribute read was not possible without the Chatwoot API token, but backend order/document state confirmed the create/generate/send path and preserved `Cash` on the order.
 - Cleanup completed: `ORD-2026-E3BFCF` cancelled, `INTAKE-2026-AA2FAC` closed, active customer lookup returned `no_match`, and intake lookup returned `no_match`.
+
+Progress 2026-05-17:
+
+- `1.0` route cleanup prepared without changing the proven order/quote/send graph: removed remaining `debug_*` routing fields from create gating, route decision, and lead classification outputs.
+- Removed the fragile route-decision fallback reads from `Code - Should Create Draft Order?`, `Code - Decide Order Route`, and `Code - Build Intake Draft Link Payload`; these nodes now rely on item-local intake/steward fields.
+- `Set - Draft Order Payload` now carries `created_from_intake` and `intake_id` into `1.2`, so the intake-draft link node can use the steward result instead of reading old node state.
+- `1.2` now preserves and echoes `created_from_intake`, `intake_id`, conversation/customer IDs, channel, language, `payment_method`, and `collection_location` on the create-with-lines result.
+- `1.0` workflow README updated to current Phase 5.9 intake naming, while keeping historical 5.6/5.7 notes clear.
+- Local validation passed after cleanup: both workflow JSON exports parse, all Code-node JavaScript compiles, `1.0` connection references are intact, and the targeted `debug_intake` / `debug_quote` / `intake_shadow` / route-fallback reads are gone.
 
 ### 5.10 Order Archive / History Scaling - Future Design, Not Now
 

@@ -20,26 +20,26 @@ The goals is not to over complicated it with adding new nodes for every problem 
 
 The current n8n export is stored in `workflow.json`.
 
-## Phase 5.6 Intake Shadow Mode
+## Phase 5.6 Intake Capture
 
 Status: complete and live-verified on 2026-05-12.
 
-Shadow mode adds three nodes after `Code - Format Chat History` and before `Ai Agent - Escalation Classifier`:
+Phase 5.6 originally proved intake in shadow mode. Phase 5.9 renamed the active runtime nodes and fields after the intake path became live routing truth. The current three intake nodes after `Code - Format Chat History` are:
 
-- `Code - Build Intake Shadow Payload`
-- `HTTP - Intake Shadow Update`
-- `Code - Attach Intake Shadow Result`
+- `Code - Build Intake Payload`
+- `HTTP - Intake Update`
+- `Code - Attach Intake Result`
 
 Purpose:
 
 - call backend `POST /api/order-intake/update` on each customer turn before AI classification and AUTO/ESCALATE routing
 - persist confirmed intake facts in `ORDER_INTAKE_STATE` / `ORDER_INTAKE_ITEMS`
-- attach `intake_shadow_result` and `intake_shadow_raw_response` for debugging/comparison
+- attach `intake_result` and `intake_raw_response` for downstream routing
 - leave existing draft creation, update, sync, cancel, approval, CLARIFY, and reply routing unchanged
 
 Important rule:
 
-Phase 5.6 does not use backend intake state as routing truth yet. Existing classifier route, `order_state`, Chatwoot attributes, and current route decisions still drive live behavior until shadow mode is verified.
+Phase 5.6 did not use backend intake state as routing truth. That changed in Phase 5.7 and was cleaned up in Phase 5.9; the current create/quote path uses backend-confirmed intake facts where available.
 
 Live verification:
 
@@ -54,8 +54,8 @@ Status: complete and live-verified on 2026-05-12.
 
 Phase 5.7 should use the verified intake result only for the first controlled route:
 
-- when `intake_shadow_result.ready_for_draft = true`
-- and `intake_shadow_result.next_action = create_draft`
+- when `intake_result.ready_for_draft = true`
+- and `intake_result.next_action = create_draft` or `create_draft_then_quote`
 - and no existing draft is linked yet
 
 The preferred implementation is to pass backend-confirmed intake facts into the existing `1.2 - Amadeus Order Steward` create-with-lines route, then link the returned draft order ID back to intake state. Formal quote PDF generation remains Phase 5.8.
@@ -63,11 +63,11 @@ The preferred implementation is to pass backend-confirmed intake facts into the 
 Repo implementation:
 
 - `Code - Decide Order Route` promotes the verified intake-ready case to `CREATE_DRAFT`.
-- `Set - Draft Order Payload` uses `intake_shadow_raw_response` and `intake_shadow_payload` for the create-with-lines payload when `debug_intake_ready_create_draft = true`.
+- `Set - Draft Order Payload` uses `intake_raw_response` and `intake_payload` for the create-with-lines payload when `intake_ready_create_draft = true`.
 - `Code - Build Intake Draft Link Payload` builds a `POST /api/order-intake/update` payload with the returned `order_id`.
 - `HTTP - Link Intake Draft Order` patches `Draft_Order_ID` back to the intake state.
 - The link branch outputs nothing unless the route was intake-driven, avoiding extra backend calls for legacy create behavior.
-- `Code - Attach Intake Shadow Result` feeds both the escalation classifier and `Merge - Sales Agent Context A`; this is required because classifier output does not reliably preserve all incoming fields.
+- `Code - Attach Intake Result` feeds both the escalation classifier and `Merge - Sales Agent Context A`; this is required because classifier output does not reliably preserve all incoming fields.
 
 Live verification:
 
@@ -78,7 +78,7 @@ Live verification:
 
 Cleanup note:
 
-The current 5.6/5.7 implementation intentionally keeps legacy route fallback while proving intake behavior. Once intake-driven update and quote flows are verified, simplify the workflow so intake state is the primary order-intake truth and remove duplicated shadow/legacy payload paths.
+Phase 5.9 removed the old shadow runtime names, removed debug routing payloads, and removed route-decision fallback reads that were added during 5.7 troubleshooting. Some legacy order-state fallback remains intentionally, but only behind the line-ready guard.
 
 ## Phase 5.8 Formal Quote Request Flow
 
@@ -107,9 +107,9 @@ Important boundary:
 
 Regression fix note:
 
-- `Code - Build Intake Shadow Payload` recognizes broader natural commitment wording so intake reaches `Ready_For_Draft` for phrases such as `I would like to proceed`, `create a draft order`, and `prepare the next step`.
+- `Code - Build Intake Payload` recognizes broader natural commitment wording so intake reaches `Ready_For_Draft` for phrases such as `I would like to proceed`, `create a draft order`, and `prepare the next step`.
 - `Code - Should Create Draft Order?` blocks legacy header-only draft creation unless legacy state contains line-ready `requested_items`. Intake-ready creation still uses the normal `create_order_with_lines` route.
-- `Code - Build Intake Shadow Payload` also lets the latest explicit customer sex override stale `Any` values in existing `requested_items`, so messages like `2 male weaner pigs` do not keep an older generic sex preference.
+- `Code - Build Intake Payload` also lets the latest explicit customer sex override stale `Any` values in existing `requested_items`, so messages like `2 male weaner pigs` do not keep an older generic sex preference.
 
 ## Migration Note
 
