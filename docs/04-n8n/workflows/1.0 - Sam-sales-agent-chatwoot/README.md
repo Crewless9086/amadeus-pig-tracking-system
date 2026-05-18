@@ -20,6 +20,66 @@ The goals is not to over complicated it with adding new nodes for every problem 
 
 The current n8n export is stored in `workflow.json`.
 
+## Phase 7.1A Payload Ownership Planning
+
+Status: planning only. Do not change workflow JSON until the handoff contracts are agreed.
+
+Boundary:
+
+- `1.0` owns conversation routing, customer-message interpretation, and Sam reply context.
+- `ORDER_INTAKE_STATE` / `ORDER_INTAKE_ITEMS` own pre-draft customer intent and requested items.
+- `1.2 - Amadeus Order Steward` owns order actions and calls backend order/document endpoints.
+- Backend APIs own confirmed order truth, quote/document truth, lifecycle state, and active-order lookup.
+- Chatwoot custom attributes should stay lightweight: `conversation_mode`, active `order_id`, `order_status`, `pending_action`, and possibly `payment_method` while it is still useful for escalation/pending-action recovery.
+- Sam should receive compact backend-confirmed summaries. Sam should not receive raw sheet data or direct sheet access for orders.
+
+Cleanup rule:
+
+Remove fallback reads only after each consuming node has one agreed source of truth. The first implementation slice should document and test the `1.0` -> `1.2` handoff contracts before changing nodes.
+
+Phase 7.1B completion:
+
+- Handoff contracts are documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- `tests/test_workflow_contracts.py` protects the expected steward execute nodes, steward switch actions, and normalized handoff fields.
+- The next safe slice is to define the slim `steward_result` / `order_context` shape that Sam and Chatwoot updates should consume.
+
+Phase 7.1C completion:
+
+- Slim result/context shapes are documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- `Code - Slim Sales Agent User Context` remains the owner of `sam_order_state_slim` and `sam_steward_result_compact`.
+- Sam should consume compact backend-confirmed summaries, not raw workflow payloads, raw intake payloads, raw document payloads, or direct sheet data.
+- `tests/test_workflow_contracts.py` protects the compact Sam context fields in the exported workflow.
+
+Phase 7.1D completion:
+
+- Chatwoot `order_id` lifecycle policy is documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- Chatwoot remains a lightweight routing cache for one current order pointer, not customer order history.
+- Cancelled and completed orders may stay linked for immediate follow-up, but Sam must not mutate terminal orders; a clear new-order intent may replace the link only after backend draft creation succeeds.
+- Multiple active matches must not overwrite Chatwoot with a guessed order ID. Sam should ask one disambiguation question.
+- Every Chatwoot custom attribute write in this workflow must preserve `order_id`, `order_status`, `conversation_mode`, `pending_action`, and `payment_method`.
+- `tests/test_workflow_contracts.py` protects the approved lightweight Chatwoot attribute fields in the exported workflow.
+
+Phase 7.1E completion:
+
+- Chatwoot write pattern is documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- Separate HTTP write nodes were kept to reduce import risk.
+- `HTTP - Set Conversation Human Mode` was standardized to the same n8n expression style as the other Chatwoot custom-attribute writes.
+- All approved Chatwoot write nodes now have tests protecting the node list, the five required lightweight fields, and the standard field order.
+
+Phase 7.1F completion:
+
+- Workflow export validation is documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- The `1.0` export parses, connection references resolve, and all Code-node JavaScript passes local syntax checking.
+- From a local validation standpoint, this export is ready for controlled n8n import/live smoke.
+- Live smoke should focus on Chatwoot custom-attribute preservation after create/update, pending quote/cancel, and human escalation paths.
+
+Phase 7.1G completion:
+
+- `1.0` workflow `V73HaIqVpzv44SFc` was uploaded through the n8n API on 2026-05-18.
+- API readback confirmed the workflow stayed active with 112 nodes.
+- API readback confirmed `HTTP - Set Conversation Human Mode` matches the local standardized 7.1E custom-attribute expression.
+- No forced customer escalation smoke was run, to avoid unnecessary Chatwoot/Telegram side effects. Verify the next natural escalation/create/update/pending-action execution if it occurs.
+
 ## Phase 5.6 Intake Capture
 
 Status: complete and live-verified on 2026-05-12.

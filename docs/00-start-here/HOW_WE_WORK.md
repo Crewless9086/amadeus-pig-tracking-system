@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 7.0** - Backend Verification And Service Boundary Cleanup |
-| **Status** | Phase 7.0C local code verified: service extraction cleanup has 65 passing mocked tests and a local-code/live-data create-with-lines checkpoint passed; production `500` traced to Google Sheets `429` quota |
-| **Current focus** | Deploy the Google Sheets cache/retry fix, then rerun the controlled production create-with-lines checkpoint |
-| **Current last verified** | **2026-05-18** - local-code/live-data checkpoint passed on `ORD-2026-900422`; post-deploy production retest wrote `ORD-2026-CF8C38` and generated `Q-2026-CF8C38` but returned `500`; cleanup cancelled the order and active lookup returned `no_match` |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 7.2** - Database Scaling Review |
+| **Status** | Phase 7.1 complete: payload contracts documented, Chatwoot lifecycle/write pattern standardized, `1.0` uploaded to n8n and verified, 75 local tests passing |
+| **Current focus** | Phase 7.2 planning only: decide database scaling direction and migration gates before any implementation |
+| **Current last verified** | **2026-05-18** - `1.0` n8n upload/readback passed; `1.2` live workflow matched repo structurally; full local suite passed with 75 tests |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

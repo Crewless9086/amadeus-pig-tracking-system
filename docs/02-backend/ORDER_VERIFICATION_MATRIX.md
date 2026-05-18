@@ -177,10 +177,10 @@ Current passing checks:
 - lifecycle module directly covers approval submission, approval, rejection, customer cancel, and completion behavior
 - route smoke checks for order detail 200/404, create/update order, create/update/delete order lines, reserve 200/422, release guard 400, lifecycle guard 400s, cancel reason forwarding, sync validation 400, and sync success auto-quote attachment
 
-Next recommended coverage:
+Phase 7.0 completion:
 
-1. Deploy the Google Sheets cache/retry fix.
-2. Rerun the controlled production live checkpoint against create-with-lines before marking Phase 7.0 complete.
+- Complete on 2026-05-18 after the controlled production create-with-lines checkpoint passed.
+- Next backend work should start from the next active phase in `docs/00-start-here/NEXT_STEPS.md`.
 
 Cleanup status:
 
@@ -191,6 +191,7 @@ Cleanup status:
 - Production checkpoint on 2026-05-18 did not pass cleanly before redeploy: `ORD-2026-D15B1E` was written with one active line but production returned `500` and no quote document. Cleanup cancelled the order and active lookup returned `no_match`.
 - Post-deploy production retest on 2026-05-18 still returned `500`: `ORD-2026-CF8C38` was written with one active line and generated quote `Q-2026-CF8C38`, then cleanup cancelled the order and active lookup returned `no_match`.
 - Render logs confirmed the `500` source was Google Sheets `429` read quota at spreadsheet metadata fetch. A cache/retry fix is prepared in `services/google_sheets_service.py` to reuse the gspread client, spreadsheet, and worksheet handles and retry quota-related `APIError` calls.
+- Final production checkpoint passed after deploying the Google Sheets cache/retry fix: `ORD-2026-BBF8B3` returned cleanly with `success = true`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, one active line, and generated quote `Q-2026-BBF8B3`. Cleanup cancelled the order and active lookup returned `no_match`.
 
 ## Service Boundary Candidates
 

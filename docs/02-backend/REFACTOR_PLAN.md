@@ -160,6 +160,10 @@ Minimum checks:
 
 Goal: plan the eventual move away from Google Sheets as the transactional database before order volume grows materially.
 
+Detailed Phase 7.2 planning source:
+
+- `docs/02-backend/DATABASE_SCALING_PLAN.md`
+
 Current position:
 
 - Keep Google Sheets for now because it gives strong operator visibility and the current priority is stabilizing behavior.

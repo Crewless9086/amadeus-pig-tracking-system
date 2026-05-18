@@ -33,6 +33,44 @@ Input data mode: Accept all data
 
 Fields it expects. Discriminator: **`action`**.
 
+Phase 7.1A planning boundary:
+
+- `1.2` should receive one clean action request from `1.0`, not broad Sam conversation state.
+- `1.2` may return compact action results for Sam, Chatwoot state updates, and follow-up routing.
+- `1.2` should not become a prompt-context warehouse. If Sam needs old/completed order context later, add a deliberate read-only backend/steward action instead of passing raw sheets or oversized workflow payloads.
+- Order writes, stock matching, reservation, quote generation, and document sending remain backend-owned through explicit actions.
+
+Phase 7.1B completion:
+
+- Handoff contracts are documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- `tests/test_workflow_contracts.py` verifies the steward switch actions and normalized handoff fields from the exported workflow JSON.
+- Future cleanup should keep the documented action contracts stable unless this README and the contract test are deliberately updated together.
+
+Phase 7.1C completion:
+
+- Slim result/context shapes are documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- `get_order_context` should keep returning `existing_order_context` as a compact current-order read model, not a raw backend detail dump.
+- `tests/test_workflow_contracts.py` protects the compact `existing_order_context` formatter fields in the exported workflow.
+
+Phase 7.1D completion:
+
+- Chatwoot `order_id` lifecycle policy is documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- `1.2` remains the safe place for read-only order context actions. It should not rely on Chatwoot as order truth.
+- Terminal orders may be read for follow-up context, but lifecycle writes must remain backend-guarded.
+- Old-order history should be added later as a deliberate read-only backend/steward action, not by passing raw order sheets or old order history through Chatwoot custom attributes.
+
+Phase 7.1F completion:
+
+- Workflow export validation is documented in `../ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- The `1.2` export parses, connection references resolve, and all Code-node JavaScript passes local syntax checking.
+- No `1.2` workflow JSON cleanup is required before the next controlled import/live smoke unless the live n8n instance is behind the repo export.
+
+Phase 7.1G completion:
+
+- Live `1.2` workflow `YDRs6fwde7MzPYn7` was checked through the n8n API on 2026-05-18.
+- It remained active with 55 nodes.
+- Node count, connection count, and node names matched the repo export, so it was not re-imported.
+
 **Read-only:** `get_order_context` — requires `order_id` (and optional `changed_by`). Returns slim `existing_order_context` for Sam state merge in `1.0`; uses `GET /api/orders/<order_id>`.
 
 **Read-only:** `get_active_customer_order_context` — requires at least one of `order_id`, `conversation_id`, or `customer_phone`. Returns backend-filtered active customer order lookup results from `GET /api/orders/active-customer-context`; it never reads `ORDER_MASTER` / `ORDER_OVERVIEW` directly inside n8n.

@@ -2758,7 +2758,7 @@
                                                               },
                                          "sendBody":  true,
                                          "specifyBody":  "json",
-                                         "jsonBody":  "={\n  \"custom_attributes\": {\n    \"order_id\": \"{{ $(\u0027Code - Normalize Incoming Message\u0027).item.json.ExistingOrderId }}\",\n    \"order_status\": \"{{ $(\u0027Code - Normalize Incoming Message\u0027).item.json.ExistingOrderStatus }}\",\n    \"conversation_mode\": \"HUMAN\",\n    \"pending_action\": \"{{ $(\u0027Code - Normalize Incoming Message\u0027).item.json.PendingAction }}\",\n    \"payment_method\": \"{{ $(\u0027Code - Normalize Incoming Message\u0027).item.json.PaymentMethod || \u0027\u0027 }}\",\n    \"escalation_ticket_id\": \"{{ $(\u0027Edit - Build Ticket Data\u0027).item.json.TicketID }}\",\n    \"last_escalated_at\": \"{{ $now.toISODate() }}\",\n    \"last_human_replay\": \"\"\n  }\n}",
+                                         "jsonBody":  "={{ { custom_attributes: { order_id: $(\"Code - Normalize Incoming Message\").item.json.ExistingOrderId || \"\", order_status: $(\"Code - Normalize Incoming Message\").item.json.ExistingOrderStatus || \"\", conversation_mode: \"HUMAN\", pending_action: $(\"Code - Normalize Incoming Message\").item.json.PendingAction || \"\", payment_method: $(\"Code - Normalize Incoming Message\").item.json.PaymentMethod || \"\", escalation_ticket_id: $(\"Edit - Build Ticket Data\").item.json.TicketID || \"\", last_escalated_at: $now.toISODate(), last_human_replay: \"\" } } }}",
                                          "options":  {
 
                                                      }

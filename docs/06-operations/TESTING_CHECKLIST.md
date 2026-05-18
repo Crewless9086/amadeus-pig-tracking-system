@@ -161,7 +161,8 @@ Live verification reference:
   - Post-deploy production retest still returned `500`, but wrote `ORD-2026-CF8C38` and generated `Q-2026-CF8C38`. Cleanup cancelled the order; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
   - Render logs confirmed Google Sheets `429` read quota at spreadsheet metadata fetch (`client.open(GOOGLE_SHEET_NAME)`) was causing the production `500`.
   - Google Sheets cache/retry fix prepared in `services/google_sheets_service.py`: reuse the gspread client, opened spreadsheet, and worksheet handles per process, and retry quota-related `APIError` calls with short backoff.
-  - Required before closing Phase 7.0: deploy the Google Sheets cache/retry fix and rerun the production create-with-lines checkpoint.
+  - Final retest passed after deploying the Google Sheets cache/retry fix: `ORD-2026-BBF8B3` returned cleanly with `success = true`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, one active Female Grower `35_to_39_Kg` line, and generated `DOC-2026-6B90C2` / `Q-2026-BBF8B3`.
+  - Cleanup cancelled `ORD-2026-BBF8B3`; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
 
 ### Split Male/Female Request
 

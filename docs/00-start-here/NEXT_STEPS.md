@@ -23,7 +23,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
-| Phase 7: Broader Workflow Improvements | Next | Start 7.0 backend verification and service-boundary planning. |
+| Phase 7: Broader Workflow Improvements | 7.0 And 7.1 Complete; 7.2 Planning Started | Plan database scaling without implementation changes yet. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
@@ -1380,7 +1380,7 @@ Still required:
 
 Only after order stability:
 
-### 7.0 Backend Verification And Service Boundary Cleanup
+### 7.0 Backend Verification And Service Boundary Cleanup - Complete
 
 This is a planned technical-debt checkpoint, not a reason to delay Phase 1.8.
 
@@ -1402,7 +1402,8 @@ Current status:
 - Post-deploy production retest on 2026-05-18 still returned `500` from `POST /api/master/orders/create-with-lines`, but the write path mostly completed: `ORD-2026-CF8C38` was created with one active line and generated `Q-2026-CF8C38`. Cleanup succeeded through local-code/live-data access: final state `Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
 - Render logs confirmed the production `500` was Google Sheets `429` read quota at `client.open(GOOGLE_SHEET_NAME)` / spreadsheet metadata fetch, not a failed order state transition.
 - Google Sheets service fix prepared: cache the gspread client, opened spreadsheet, and worksheet handles per process, and retry quota-related `APIError` calls with a short backoff. Added unit coverage to confirm repeated worksheet access does not reopen the spreadsheet.
-- Next slice should deploy the Google Sheets cache/retry fix, then rerun the controlled production live checkpoint before marking Phase 7.0 complete.
+- Final production checkpoint passed on 2026-05-18 after deploying the Google Sheets cache/retry fix: `ORD-2026-BBF8B3` returned cleanly with `success = true`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, one active Female Grower `35_to_39_Kg` line, and generated `DOC-2026-6B90C2` / `Q-2026-BBF8B3`. Cleanup cancelled the order; final state `Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
+- Phase 7.0 is complete.
 
 Required outcome:
 
@@ -1417,13 +1418,185 @@ Verification command:
 .\venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-### 7.1 Intake (from planning triage — not yet scheduled)
+### 7.1 Intake And Payload Hygiene - Complete
 
 Carry these when capacity allows; they do not block current order hardening.
 
+#### 7.1A Payload Ownership Map - Complete
+
+Decision:
+
+- Do not edit workflow JSON until the payload ownership map is agreed.
+- Keep `1.2 - Amadeus Order Steward` as the only order-writing workflow.
+- Sam must not read or write order sheets directly. Sam should receive compact, backend-confirmed context through tools/workflow results.
+- Inventory, pricing, reservation, order writes, quote generation, and document sending remain deterministic backend/steward actions.
+
+Current problem:
+
+- `1.0` currently carries overlapping facts across `order_state`, `intake_payload`, `intake_result`, `intake_raw_response`, `sales_agent_memory`, Chatwoot custom attributes, and `1.2` steward results.
+- The same facts can appear in several places: `order_id`, `conversation_id`, `payment_method`, `collection_location`, requested items, quote state, and `pending_action`.
+- This works, but it makes workflow changes fragile because downstream nodes may read old/stale values from a fallback source.
+
+Ownership map:
+
+| Object / layer | Owns | Should not own |
+| --- | --- | --- |
+| `ORDER_INTAKE_STATE` / `ORDER_INTAKE_ITEMS` | pre-draft customer intent, requested items, collection preference, payment method while order facts are still being gathered | final order status, document status, reservation state |
+| `order_state` in `1.0` | temporary turn-level routing facts and normalized customer message interpretation | long-term order truth, document truth, stock truth |
+| `1.2` steward normalized payload | one action request at a time, already cleaned for backend route calls | broad Sam prompt context or unrelated conversation memory |
+| backend order APIs | confirmed order header, lines, lifecycle state, active-order lookup, quote/document records | customer conversation wording or LLM interpretation |
+| Chatwoot custom attributes | lightweight routing state only: `conversation_mode`, active `order_id`, `order_status`, `pending_action`, and maybe `payment_method` while operationally useful | order history, full requested items, raw intake payloads, quote/document details |
+| Sam prompt context / `StewardCompact` | compact read-only summary for the customer reply | raw workflow payloads, full sheets data, duplicated internal debug fields |
+
+Planned cleanup order:
+
+1. Document exact handoff contracts between `1.0` and `1.2`: create draft, update draft, sync lines, cancel, send for approval, generate quote, send quote, active lookup.
+2. Standardize a slim `steward_result` / `order_context` shape for Sam replies so prompt context does not depend on raw node output.
+3. Standardize Chatwoot custom attribute writes into one helper pattern or a small set of equivalent nodes that always preserve the approved lightweight fields.
+4. Remove stale fallback reads only after each consuming node has one agreed source of truth.
+5. Add narrow validation before each workflow import: JSON parse, Code-node JavaScript compile, connection integrity, and targeted payload-shape checks.
+
+Open decisions before implementation:
+
+- When an order becomes `Completed`, should Chatwoot keep `order_id` for follow-up context or clear it so a new order can start cleanly?
+- Should cancelled orders keep `order_id` until the next customer order intent, or should cancel cleanup clear it immediately?
+- Should `payment_method` remain a Chatwoot attribute, or should it only be read from backend active-order context?
+- What compact fields should Sam receive for old/completed orders once order history lookup exists?
+
+Recommendation:
+
+- Keep only one active order linked in Chatwoot at a time.
+- Use backend active-order lookup for current order context.
+- Add a future read-only backend/steward action for old order history instead of giving Sam direct sheet access.
+- Keep `payment_method` in Chatwoot for now because escalation and pending actions still use it, but treat it as a cache, not the source of truth.
+
+#### 7.1B `1.0` -> `1.2` Handoff Contracts - Complete
+
+Completed on 2026-05-18:
+
+- Added `docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md`.
+- Documented the shared normalized fields accepted by `1.2`.
+- Documented action contracts for `create_order_with_lines`, `update_order`, `sync_order_lines_from_request`, `cancel_order`, `send_for_approval`, `generate_quote`, `send_latest_quote`, `get_order_context`, and `get_active_customer_order_context`.
+- Added `tests/test_workflow_contracts.py` to verify:
+  - `1.2 Switch - Route by Action` still supports the required actions.
+  - `1.2 Code - Normalize Order Payload` still normalizes the required handoff fields.
+  - `1.0` still has the expected steward execute nodes.
+
+Next 7.1 implementation slice after approval:
+
+- 7.1C should standardize the slim `steward_result` / `order_context` shape used for Sam replies and Chatwoot updates before removing duplicated payload fields.
+
+#### 7.1C Slim Steward Result And Order Context Shape - Complete
+
+Completed on 2026-05-18:
+
+- Extended `docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md` with the consumer-facing result/context shapes:
+  - `sam_order_state_slim`
+  - `sam_steward_result_compact`
+  - `existing_order_context`
+  - approved Chatwoot custom attribute fields
+- Documented what Sam may receive as compact backend-confirmed context and what must not be passed into Sam prompt context.
+- Extended `tests/test_workflow_contracts.py` to verify:
+  - `1.0 Code - Slim Sales Agent User Context` still emits the compact Sam context fields.
+  - `1.2 Code - Format Get Order Context Result` still preserves the slim current-order context fields.
+
+Next 7.1 implementation slice after approval:
+
+- 7.1D should decide the Chatwoot `order_id` lifecycle policy for active, cancelled, completed, and old-order follow-up scenarios before workflow cleanup.
+
+#### 7.1D Chatwoot `order_id` Lifecycle Policy - Complete
+
+Completed on 2026-05-18:
+
+- Extended `docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md` with the Chatwoot `order_id` lifecycle policy.
+- Decision: Chatwoot keeps one lightweight current-order pointer, not order history.
+- Active orders keep the linked `order_id`; cancelled and completed orders may remain linked for immediate follow-up, but Sam must not mutate terminal orders.
+- A new order may replace the linked `order_id` only after a clear new-order intent and successful backend draft creation.
+- Multiple active matches must ask one disambiguation question and must not overwrite Chatwoot with a guessed order.
+- Old order follow-up should use read-only backend/steward lookup later; do not store old order history or document details in Chatwoot custom attributes.
+- Extended `tests/test_workflow_contracts.py` to verify every Chatwoot custom attribute write in the exported `1.0` workflow preserves the approved lightweight fields: `order_id`, `order_status`, `conversation_mode`, `pending_action`, and `payment_method`.
+
+Next 7.1 implementation slice after approval:
+
+- 7.1E should standardize the actual Chatwoot write pattern in workflow JSON only after deciding whether to keep separate HTTP write nodes or move toward a small helper-style pattern.
+
+#### 7.1E Chatwoot Write Pattern Standardization - Complete
+
+Completed on 2026-05-18:
+
+- Decision: keep the existing separate Chatwoot HTTP write nodes for now to reduce workflow import risk.
+- Standardized the outlier `HTTP - Set Conversation Human Mode` custom-attribute body to the same n8n expression style as the other write nodes.
+- Documented the approved Chatwoot custom-attribute field order in `docs/04-n8n/workflows/ORDER_STEWARD_HANDOFF_CONTRACTS.md`:
+  - `order_id`
+  - `order_status`
+  - `conversation_mode`
+  - `pending_action`
+  - `payment_method`
+- Extra escalation fields remain allowed only after the five standard fields on the human-mode write.
+- Extended `tests/test_workflow_contracts.py` to protect the approved writer-node list, required lightweight fields, and field order.
+
+Next 7.1 implementation slice after approval:
+
+- 7.1F should run a controlled local workflow-export validation pass and then decide whether this cleanup is ready for n8n import/live smoke, or whether one more narrow JSON cleanup is needed first.
+
+#### 7.1F Workflow Export Validation - Complete
+
+Completed on 2026-05-18:
+
+- Extended `tests/test_workflow_contracts.py` with local workflow-export validation:
+  - both `1.0` and `1.2` workflow exports parse as JSON
+  - both exports have expected `nodes` and `connections`
+  - every workflow connection references an existing node
+  - every Code-node JavaScript block syntax-checks with Node using an async wrapper to match n8n Code-node behavior
+- Targeted workflow contract suite passed with 10 tests.
+- Full local suite passed with the broader backend and workflow checks.
+- Decision: from local validation, the current exports are ready for controlled n8n import/live smoke.
+- Recommended live smoke after import:
+  - confirm existing linked order context still reads
+  - confirm pending quote/cancel custom attributes are preserved
+  - confirm human escalation still preserves order context
+  - keep the test narrow to avoid Google Sheets quota pressure
+
+Next 7.1 implementation slice after approval:
+
+- 7.1G should be the controlled n8n import/live smoke checkpoint for the `1.0` export change, with `1.2` re-imported only if the live workflow is behind the repo export.
+
+#### 7.1G n8n Import And Readback Smoke - Complete
+
+Completed on 2026-05-18:
+
+- Uploaded `1.0 - SAM - Sales Agent - Chatwoot` (`V73HaIqVpzv44SFc`) through the n8n public API.
+- The API update needed the older live endpoint behavior: `PUT /api/v1/workflows/{id}` with `name`, `nodes`, `connections`, and a sanitized `settings` object. `active` is read-only and `settings.binaryMode` is rejected by the public API.
+- Readback confirmed:
+  - `1.0` remained active.
+  - `1.0` has 112 nodes.
+  - `HTTP - Set Conversation Human Mode` matches the local standardized 7.1E expression.
+- Checked live `1.2 - Amadeus Order Steward` (`YDRs6fwde7MzPYn7`) without re-importing:
+  - `1.2` remained active.
+  - `1.2` has 55 nodes.
+  - node count, connection count, and node names match the repo export.
+- No forced customer escalation smoke was run because it would create unnecessary Chatwoot/Telegram side effects for a one-node custom-attribute expression cleanup.
+
+Next 7.1 implementation slice after approval:
+
+- Monitor the next natural live create/update/pending-action/escalation run and record whether Chatwoot custom attributes remain correct, or move on to the next planned Phase 7 item if no regression appears.
+
+#### 7.1 Closure - Complete
+
+Completed on 2026-05-18:
+
+- Phase 7.1 is complete through 7.1A-G.
+- `1.0` was uploaded to n8n and verified by API readback.
+- `1.2` was checked against the repo export and not re-imported because the live workflow matched structurally.
+- Local workflow contract validation remains in `tests/test_workflow_contracts.py`.
+- Full local suite passed with 75 tests after the n8n upload/readback documentation.
+- Remaining action is monitoring only: if the next natural live create/update/pending-action/escalation run shows a Chatwoot custom-attribute regression, log it under Phase 7.1 as a follow-up bug rather than reopening the whole cleanup phase.
+
+Future follow-ups, not blockers for closing 7.1:
+
 - **1.0 payload hygiene:** reduce duplicated / noisy fields crossing nodes; prefer one structured slim object per stage
 - **Sam + completed orders:** order history lookup (backend / `1.2` action) so Sam can reference past orders; customer asks for **old invoices** — tie to Phase 2 delivery when quotes/invoices exist
-- **Chatwoot `order_id` lifecycle:** decide whether conversation custom attributes clear on **Completed**, or keep stable links plus a separate **customer order history** view
+- **Chatwoot custom attribute cleanup:** apply the 7.1D lifecycle policy consistently when workflow JSON cleanup starts.
 - **LLM vs Code:** short paraphrases may use hybrid extractor; inventory, price, and reservation stay **deterministic**. Prefer extending **`sam_text_parse`** + caps when wording drifts rather than replacing Code with LLM-only routing
 
 Improvements also in scope:
@@ -1434,13 +1607,22 @@ Improvements also in scope:
 - improve Telegram cleanup for human escalation
 - expand monitoring and operational runbooks
 
-### 7.2 Database Scaling Review - Future Planning
+### 7.2 Database Scaling Review - Planning Started
+
+Planning status:
+
+- Started on 2026-05-18 after Phase 7.1 was closed.
+- This is planning only. Do not build a database migration, add a new provider, or change production data storage during this slice.
+- The goal is to decide the future architecture and safe migration path before implementation.
+- Detailed planning source: `docs/02-backend/DATABASE_SCALING_PLAN.md`.
 
 Current decision:
 
 - Keep Google Sheets as the operational data store for now while order behavior is still being stabilized.
-- Do not migrate database storage during the active Sam/order workflow cleanup.
+- Do not migrate database storage immediately after the Phase 7.1 workflow cleanup.
 - Treat the recent Google Sheets `429` quota errors as a scaling warning, not an immediate blocker for current low-volume operations.
+- Keep the Google Sheets cache/retry fix in place and monitor whether normal live traffic stays stable.
+- Owner review captured: long-term direction is Postgres-backed operations with Google Sheets used only during migration, not as the permanent operator system.
 
 Why this matters:
 
@@ -1452,8 +1634,16 @@ Why this matters:
 Preferred future direction:
 
 - Evaluate moving transactional data to Postgres, with Supabase Postgres as the likely best option to assess first.
-- Keep Google Sheets as reporting/export/operator visibility if still useful.
+- Keep Google Sheets as reporting/export/operator visibility only during migration.
 - Use Postgres as the source of truth for transactional tables that need indexes, concurrency, and atomic writes.
+- Keep n8n and Sam behind backend APIs. They should not write directly to Postgres any more than they should write directly to operational Google Sheets.
+
+Working recommendation:
+
+- Treat Google Sheets as the current operational source of truth until the backend has a clear data-access boundary.
+- Build toward a repository/data-access layer inside the Flask backend first.
+- Design the database schema before choosing final provider settings or moving data.
+- Start with orders/intake/documents only. Do not include the full piggery data model in the first migration unless Sheets becomes unstable for those pages too.
 
 Candidate tables for future migration:
 
@@ -1462,7 +1652,23 @@ Candidate tables for future migration:
 - `ORDER_INTAKE_STATE`
 - `ORDER_INTAKE_ITEMS`
 - `ORDER_DOCUMENTS`
+- `ORDER_STATUS_LOG`
+- `SALES_PRICING`
 - later: pig stock / availability data if Sheets becomes too slow or fragile
+
+Candidate indexes / lookup keys:
+
+- `order_id`
+- `order_status`
+- `conversation_id`
+- `customer_phone`
+- `customer_name`
+- `order_line_id`
+- `pig_id`
+- `document_id`
+- `document_ref`
+- `intake_id`
+- `created_at` / `updated_at`
 
 Why Supabase Postgres is attractive:
 
@@ -1478,13 +1684,49 @@ Cost planning:
 - Higher usage, backups, storage, or extra environments may increase this later.
 - Revisit exact pricing and provider choice before implementation; do not lock in until the migration phase starts.
 
+Key risks to plan for:
+
+- Dual-write drift if Sheets and Postgres are both writable at the same time.
+- Data migration mistakes around order statuses, cancelled lines, document references, and intake-to-order links.
+- n8n workflows accidentally bypassing backend APIs if direct database access is introduced.
+- Web app pages assuming sheet-specific column names or formula outputs.
+- Operator visibility loss if Google Sheets disappears before the web app has replacement views.
+- Formula behavior being lost or changed if sheet formulas are not mapped to backend calculations, SQL views, or stored snapshots before migration.
+- Cost and backup planning being ignored until after production data has moved.
+
 Suggested migration approach:
 
 - First stabilize the current backend behavior and n8n flow.
-- Add a backend data-access/repository layer so code is not tightly coupled to Google Sheets calls.
-- Migrate order/intake/document transactional tables first.
+- Add a backend data-access/repository layer so order code is not tightly coupled to Google Sheets calls.
+- Define schemas and migrations for order/intake/document tables.
+- Add import/export scripts and dry-run checks against a copied dataset.
+- Run read-only shadow comparisons first: backend reads from Sheets and compares equivalent Postgres rows without serving Postgres to users.
+- Move selected backend reads to Postgres only after comparison passes.
+- Move writes only when transactions, backups, and rollback are ready.
 - Keep Google Sheets read-only or synced as operational views during transition.
-- Only retire Sheets as a source of truth after the web app and Sam are confirmed against Postgres.
+- Only retire Sheets as a source of truth after the web app, Sam, and operational reports are confirmed against Postgres.
+- Replace Google Sheets formulas deliberately: business decisions in backend services, read-only summaries in SQL/API views, and historical document values as stored snapshots.
+- Pricing should use effective-dated records: future prices can be entered ahead of time, and the backend selects the newest valid price for the order/quote date while copying the selected price onto each order line.
+- Owner-confirmed test marker: `Customer_Name = Charl N` should be excluded from the production import.
+- Real cancelled customer orders with documents or payments should become archived history after a suitable period, not active operational clutter.
+- Sheet retirement should be systematic: replace and accept the matching web app/API view first, then make the Sheet read-only/synced, then retire it.
+
+7.2A planning tasks:
+
+- Inventory every backend function that reads/writes the candidate order/intake/document sheets. - Started in `DATABASE_SCALING_PLAN.md`.
+- Identify sheet formulas/views that depend on those sheets. - Started in `DATABASE_SCALING_PLAN.md`; owner formula question captured and replacement strategy drafted.
+- Define the minimum Postgres schema for `ORDER_MASTER`, `ORDER_LINES`, `ORDER_INTAKE_STATE`, `ORDER_INTAKE_ITEMS`, `ORDER_DOCUMENTS`, `ORDER_STATUS_LOG`, and `SALES_PRICING`. - Drafted in `DATABASE_SCALING_PLAN.md`.
+- Decide whether Google Sheets should become read-only reporting, synced operator view, or be retired per table. - Owner decision: use only during migration, then retire per table once replacement web views are accepted.
+- Define import rules for historical data. - Owner direction captured: import useful business data, exclude test data, and exclude `Charl N` test orders.
+- Draft a migration checklist with rollback rules before any implementation. - Drafted in `DATABASE_SCALING_PLAN.md`; needs review before implementation.
+- Confirm pricing effective-date behavior. - Owner decision captured and drafted in `DATABASE_SCALING_PLAN.md`.
+- Define Sheet retirement acceptance rules. - Drafted in `DATABASE_SCALING_PLAN.md`; replacement views must be accepted before Sheets are retired.
+
+7.2B implementation gate:
+
+- Do not start implementation until 7.2A is reviewed and accepted.
+- Before implementation, run a Claude Code review because this will be cross-cutting across backend, web app, n8n assumptions, data contracts, and operations.
+- Implementation should start with tests and adapters, not with a production database cutover.
 
 ### 7.3 Oom Sakkie Operational Order And Document Lookup - Future Planning
 
@@ -1701,10 +1943,12 @@ Recently completed:
 - Phase 1.6 reserve/release hardening — **complete** 2026-05-05 (backend/sheets); 2026-05-06 (order-detail success banner: API `message` + `changed_count` + idempotent copy for second reserve/release)
 - Phase 1.7 slim Sales Agent reply payload — complete and live-verified **2026-05-07**: `Code - Slim Sales Agent User Context` on all four paths into Sam; `OrderStateSummary` + `StewardCompact`; WhatsApp checklist A+B passed
 - Phase 5.8 automatic quote readiness — complete and live-verified 2026-05-13: backend `auto_quote` after create/update/sync, quote fingerprint duplicate skip, `1.2` propagation, `1.0` steward context/wording guidance, and Chatwoot wording confirmed.
+- Phase 7.0 backend verification and service-boundary cleanup — complete 2026-05-18: order service modules extracted, cleanup done, Google Sheets quota cache/retry deployed, and production create-with-lines checkpoint passed.
+- Phase 7.1 intake and payload hygiene — complete 2026-05-18: handoff contracts, slim context shapes, Chatwoot lifecycle/write policy, workflow validation tests, and n8n `1.0` upload/readback completed.
 
 Recommended next:
 
-1. **Phase 7.0 Backend Verification And Service Boundary Cleanup** - plan focused verification around existing order lifecycle and requested-item sync before larger refactors.
+1. **Phase 7.2 Database Scaling Review** - planning only: inventory data-access risk, define the future Postgres/Supabase direction, and set migration gates before implementation.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
