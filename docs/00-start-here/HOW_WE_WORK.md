@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 7.0** - Backend Verification And Service Boundary Cleanup |
-| **Status** | Phase 7.0C local code verified: service extraction cleanup has 63 passing mocked tests and a local-code/live-data create-with-lines checkpoint passed |
-| **Current focus** | Deploy current backend code, then rerun the controlled production live checkpoint before marking Phase 7.0 complete |
-| **Current last verified** | **2026-05-18** - local-code/live-data checkpoint passed on `ORD-2026-900422` and cleanup returned active lookup to `no_match`; production create-with-lines still needs redeploy/retest after `ORD-2026-D15B1E` returned `500` post-write |
+| **Status** | Phase 7.0C local code verified: service extraction cleanup has 65 passing mocked tests and a local-code/live-data create-with-lines checkpoint passed; production `500` traced to Google Sheets `429` quota |
+| **Current focus** | Deploy the Google Sheets cache/retry fix, then rerun the controlled production create-with-lines checkpoint |
+| **Current last verified** | **2026-05-18** - local-code/live-data checkpoint passed on `ORD-2026-900422`; post-deploy production retest wrote `ORD-2026-CF8C38` and generated `Q-2026-CF8C38` but returned `500`; cleanup cancelled the order and active lookup returned `no_match` |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

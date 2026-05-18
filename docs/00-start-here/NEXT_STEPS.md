@@ -1396,10 +1396,13 @@ Current status:
 - Fifth backend boundary extracted: `modules/orders/order_line_sync.py` owns requested-item matching and sync behavior; `order_service` keeps imported compatibility names for current routes and create-with-lines integration.
 - Sixth backend boundary extracted: `modules/orders/order_lifecycle.py` owns send-for-approval, approve, reject, cancel, and complete behavior; `order_service` keeps imported compatibility names for current routes.
 - Cleanup completed: legacy in-file bodies and unused imports were removed from `modules/orders/order_service.py`; it is now a compatibility facade over the extracted modules, with `create_order_with_lines(...)` kept as the current orchestration wrapper.
-- Full mocked verification passed after cleanup and route CRUD smoke coverage: 63 tests green on 2026-05-18.
+- Full mocked verification passed after cleanup, route CRUD smoke coverage, and Google Sheets cache coverage: 65 tests green on 2026-05-18.
 - Controlled production checkpoint on 2026-05-18 exposed a deploy/live gap: direct production `POST /api/master/orders/create-with-lines` wrote `ORD-2026-D15B1E` with one active Female Grower `35_to_39_Kg` line but returned `500` instead of a clean response and did not attach a quote document. Cleanup succeeded: `ORD-2026-D15B1E` is `Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
 - Local-code/live-data checkpoint on 2026-05-18 passed against the current workspace code: `ORD-2026-900422` returned `201`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, auto-generated `DOC-2026-B474FD` / `Q-2026-900422`, and cleanup cancelled the order with active lookup back to `no_match`.
-- Next slice should deploy the current backend code, then rerun the controlled production live checkpoint before marking Phase 7.0 complete.
+- Post-deploy production retest on 2026-05-18 still returned `500` from `POST /api/master/orders/create-with-lines`, but the write path mostly completed: `ORD-2026-CF8C38` was created with one active line and generated `Q-2026-CF8C38`. Cleanup succeeded through local-code/live-data access: final state `Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
+- Render logs confirmed the production `500` was Google Sheets `429` read quota at `client.open(GOOGLE_SHEET_NAME)` / spreadsheet metadata fetch, not a failed order state transition.
+- Google Sheets service fix prepared: cache the gspread client, opened spreadsheet, and worksheet handles per process, and retry quota-related `APIError` calls with a short backoff. Added unit coverage to confirm repeated worksheet access does not reopen the spreadsheet.
+- Next slice should deploy the Google Sheets cache/retry fix, then rerun the controlled production live checkpoint before marking Phase 7.0 complete.
 
 Required outcome:
 

@@ -1,5 +1,8 @@
 import os
+import threading
+import time
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 
 SCOPES = [
@@ -10,44 +13,111 @@ SCOPES = [
 # Render / production env vars already in use
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "service_account.json").strip()
 GOOGLE_SHEET_NAME = os.getenv("GOOGLE_SHEET_NAME", "AMADEUS PIG TRACKING SYSTEM").strip()
+SHEETS_RETRY_DELAYS = (2, 5)
+
+_CACHE_LOCK = threading.RLock()
+_CLIENT = None
+_SPREADSHEET = None
+_WORKSHEETS = {}
 
 
 def _get_client():
-    creds = Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_FILE,
-        scopes=SCOPES
-    )
-    return gspread.authorize(creds)
+    global _CLIENT
+
+    with _CACHE_LOCK:
+        if _CLIENT is not None:
+            return _CLIENT
+
+        creds = Credentials.from_service_account_file(
+            GOOGLE_SERVICE_ACCOUNT_FILE,
+            scopes=SCOPES
+        )
+        _CLIENT = gspread.authorize(creds)
+        return _CLIENT
+
+
+def _reset_cached_spreadsheet():
+    global _SPREADSHEET
+
+    with _CACHE_LOCK:
+        _SPREADSHEET = None
+        _WORKSHEETS.clear()
+
+
+def _is_quota_error(exc):
+    text = str(exc).lower()
+    return "429" in text or "quota exceeded" in text
+
+
+def _run_with_quota_retry(operation):
+    last_exc = None
+
+    for attempt, delay in enumerate((0, *SHEETS_RETRY_DELAYS)):
+        if delay:
+            time.sleep(delay)
+
+        try:
+            return operation()
+        except APIError as exc:
+            last_exc = exc
+            if not _is_quota_error(exc) or attempt >= len(SHEETS_RETRY_DELAYS):
+                raise
+            _reset_cached_spreadsheet()
+
+    raise last_exc
 
 
 def _get_spreadsheet():
+    global _SPREADSHEET
+
+    with _CACHE_LOCK:
+        if _SPREADSHEET is not None:
+            return _SPREADSHEET
+
     client = _get_client()
-    return client.open(GOOGLE_SHEET_NAME)
+    spreadsheet = _run_with_quota_retry(lambda: client.open(GOOGLE_SHEET_NAME))
+
+    with _CACHE_LOCK:
+        _SPREADSHEET = spreadsheet
+        return _SPREADSHEET
 
 
 def get_worksheet(sheet_name: str):
+    sheet_name = str(sheet_name or "").strip()
+    if not sheet_name:
+        raise ValueError("Sheet name is required.")
+
+    with _CACHE_LOCK:
+        worksheet = _WORKSHEETS.get(sheet_name)
+        if worksheet is not None:
+            return worksheet
+
     spreadsheet = _get_spreadsheet()
-    return spreadsheet.worksheet(sheet_name)
+    worksheet = _run_with_quota_retry(lambda: spreadsheet.worksheet(sheet_name))
+
+    with _CACHE_LOCK:
+        _WORKSHEETS[sheet_name] = worksheet
+        return worksheet
 
 
 def get_all_records(sheet_name: str):
     worksheet = get_worksheet(sheet_name)
-    return worksheet.get_all_records()
+    return _run_with_quota_retry(lambda: worksheet.get_all_records())
 
 
 def append_row(sheet_name: str, row_values: list):
     worksheet = get_worksheet(sheet_name)
-    worksheet.append_row(row_values, value_input_option="USER_ENTERED")
+    _run_with_quota_retry(lambda: worksheet.append_row(row_values, value_input_option="USER_ENTERED"))
 
 
 def get_all_values(sheet_name: str):
     worksheet = get_worksheet(sheet_name)
-    return worksheet.get_all_values()
+    return _run_with_quota_retry(lambda: worksheet.get_all_values())
 
 
 def update_row_by_first_column_match(sheet_name: str, match_value: str, new_row_values: list):
     worksheet = get_worksheet(sheet_name)
-    all_values = worksheet.get_all_values()
+    all_values = _run_with_quota_retry(lambda: worksheet.get_all_values())
 
     if not all_values or len(all_values) < 2:
         raise ValueError(f"No data rows found in sheet '{sheet_name}'.")
@@ -57,7 +127,9 @@ def update_row_by_first_column_match(sheet_name: str, match_value: str, new_row_
     for row_index, row in enumerate(all_values[1:], start=2):
         first_col = str(row[0]).strip() if row else ""
         if first_col == match_value:
-            worksheet.update(f"A{row_index}", [new_row_values], value_input_option="USER_ENTERED")
+            _run_with_quota_retry(
+                lambda: worksheet.update(f"A{row_index}", [new_row_values], value_input_option="USER_ENTERED")
+            )
             return row_index
 
     raise ValueError(f"Match value '{match_value}' not found in first column of '{sheet_name}'.")
@@ -75,7 +147,7 @@ def batch_update_rows_by_id(sheet_name: str, updates_map: dict):
         return 0
 
     worksheet = get_worksheet(sheet_name)
-    all_values = worksheet.get_all_values()
+    all_values = _run_with_quota_retry(lambda: worksheet.get_all_values())
 
     if not all_values or len(all_values) < 2:
         raise ValueError(f"No data rows found in sheet '{sheet_name}'.")
@@ -107,6 +179,6 @@ def batch_update_rows_by_id(sheet_name: str, updates_map: dict):
         raise ValueError(f"IDs not found in '{sheet_name}': {', '.join(sorted(missing))}")
 
     if batch_data:
-        worksheet.batch_update(batch_data, value_input_option="USER_ENTERED")
+        _run_with_quota_retry(lambda: worksheet.batch_update(batch_data, value_input_option="USER_ENTERED"))
 
     return len(batch_data)

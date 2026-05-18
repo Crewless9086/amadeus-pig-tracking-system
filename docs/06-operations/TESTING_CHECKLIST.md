@@ -158,7 +158,10 @@ Live verification reference:
 - 2026-05-18 Phase 7.0 checkpoint:
   - Production pre-redeploy create-with-lines wrote `ORD-2026-D15B1E` with one active Female Grower `35_to_39_Kg` line but returned `500` and did not attach a quote document. Cleanup cancelled the order; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
   - Current local workspace code against live Sheets/Drive passed with `ORD-2026-900422`: response `201`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, auto quote `DOC-2026-B474FD` / `Q-2026-900422`, then cleanup cancelled the order and active lookup returned `no_match`.
-  - Required before closing Phase 7.0: deploy current backend code and rerun the production create-with-lines checkpoint.
+  - Post-deploy production retest still returned `500`, but wrote `ORD-2026-CF8C38` and generated `Q-2026-CF8C38`. Cleanup cancelled the order; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
+  - Render logs confirmed Google Sheets `429` read quota at spreadsheet metadata fetch (`client.open(GOOGLE_SHEET_NAME)`) was causing the production `500`.
+  - Google Sheets cache/retry fix prepared in `services/google_sheets_service.py`: reuse the gspread client, opened spreadsheet, and worksheet handles per process, and retry quota-related `APIError` calls with short backoff.
+  - Required before closing Phase 7.0: deploy the Google Sheets cache/retry fix and rerun the production create-with-lines checkpoint.
 
 ### Split Male/Female Request
 

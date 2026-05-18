@@ -179,16 +179,18 @@ Current passing checks:
 
 Next recommended coverage:
 
-1. Deploy current backend code.
+1. Deploy the Google Sheets cache/retry fix.
 2. Rerun the controlled production live checkpoint against create-with-lines before marking Phase 7.0 complete.
 
 Cleanup status:
 
 - `order_service.py` legacy renamed bodies and unused imports were removed on 2026-05-18.
 - The file is now a compatibility facade over the extracted order modules, with `create_order_with_lines(...)` kept as the current orchestration wrapper.
-- Full mocked verification passed after cleanup and route CRUD smoke coverage: 63 tests green.
+- Full mocked verification passed after cleanup, route CRUD smoke coverage, and Google Sheets cache coverage: 65 tests green.
 - Local-code/live-data checkpoint passed on 2026-05-18: `ORD-2026-900422` created through create-with-lines, synced one active line, auto-generated quote `Q-2026-900422`, then cancelled cleanly.
 - Production checkpoint on 2026-05-18 did not pass cleanly before redeploy: `ORD-2026-D15B1E` was written with one active line but production returned `500` and no quote document. Cleanup cancelled the order and active lookup returned `no_match`.
+- Post-deploy production retest on 2026-05-18 still returned `500`: `ORD-2026-CF8C38` was written with one active line and generated quote `Q-2026-CF8C38`, then cleanup cancelled the order and active lookup returned `no_match`.
+- Render logs confirmed the `500` source was Google Sheets `429` read quota at spreadsheet metadata fetch. A cache/retry fix is prepared in `services/google_sheets_service.py` to reuse the gspread client, spreadsheet, and worksheet handles and retry quota-related `APIError` calls.
 
 ## Service Boundary Candidates
 
