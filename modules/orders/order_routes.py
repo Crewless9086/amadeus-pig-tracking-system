@@ -5,6 +5,8 @@ from flask import Blueprint, jsonify, request
 from modules.orders.order_service import (
     list_orders,
     get_order_detail,
+    search_orders,
+    get_order_operator_summary,
     get_active_customer_order_context,
     get_available_pigs_for_orders,
     create_order,
@@ -59,6 +61,26 @@ def order_list():
         "count": len(records),
         "orders": records
     })
+
+
+@orders_bp.route("/orders/search", methods=["GET"])
+def order_search():
+    try:
+        result = search_orders(
+            order_id=request.args.get("order_id", ""),
+            customer_phone=request.args.get("customer_phone", ""),
+            customer_name=request.args.get("customer_name", ""),
+            conversation_id=request.args.get("conversation_id", ""),
+            status_scope=request.args.get("status_scope", "active"),
+            limit=request.args.get("limit", 5),
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "search_orders",
+            "errors": [str(exc)]
+        }), 400
 
 
 @orders_bp.route("/order-intake/context", methods=["GET"])
@@ -148,6 +170,22 @@ def order_detail(order_id):
         "lines": detail["lines"],
         "documents": _serialize_order_documents(get_order_documents(order_id)),
     })
+
+
+@orders_bp.route("/orders/<order_id>/operator-summary", methods=["GET"])
+def order_operator_summary(order_id):
+    result = get_order_operator_summary(order_id)
+
+    if not result:
+        return jsonify({
+            "success": False,
+            "action": "get_order_operator_summary",
+            "lookup_status": "no_match",
+            "order_id": order_id,
+            "error": "Order not found.",
+        }), 404
+
+    return jsonify(result), 200
 
 
 @orders_bp.route("/orders/available-pigs", methods=["GET"])

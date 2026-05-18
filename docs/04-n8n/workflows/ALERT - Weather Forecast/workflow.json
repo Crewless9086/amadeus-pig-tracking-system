@@ -1,0 +1,514 @@
+﻿{
+    "updatedAt":  "2026-02-02T06:07:07.416Z",
+    "createdAt":  "2026-01-03T11:16:38.163Z",
+    "id":  "I4D76Gb9ddGFhSP5",
+    "name":  "ALERT - Weather Forecast",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "jsCode":  "function parseDateSafe(s) {\n  if (!s) return null;\n  const d = new Date(s);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nconst all = $input.all().map(i =\u003e i.json);\n\n// ✅ Only treat rows with timestamp_alert_za as “candidates”\nconst candidates = all.filter(r =\u003e r.alert_key \u0026\u0026 r.timestamp_alert_za);\n\n// ✅ Only treat rows with last_timestamp_za as “log rows”\nconst logs = all.filter(r =\u003e r.alert_key \u0026\u0026 r.last_timestamp_za);\n\n// Build last sent map\nconst lastByKey = new Map();\nfor (const row of logs) {\n  const last = parseDateSafe(row.last_timestamp_za);\n  if (!last) continue;\n  const prev = lastByKey.get(row.alert_key);\n  if (!prev || last \u003e prev) lastByKey.set(row.alert_key, last);\n}\n\nconst now = new Date();\nconst allowed = [];\n\nfor (const c of candidates) {\n  const key = c.alert_key;\n  const cooldownMin = Number(c.cooldown_min ?? 0);\n\n  const last = lastByKey.get(key);\n\n  // Never sent before\n  if (!last) {\n    allowed.push(c);\n    continue;\n  }\n\n  // Special case: “send once” alerts\n  // If you truly want “only once ever”, keep it as 999999 and block forever:\n  // if (cooldownMin \u003e= 999999) continue;\n\n  const effectiveCooldown = cooldownMin \u003e= 999999 ? (24 * 60) : cooldownMin;\n\n  const diffMin = (now.getTime() - last.getTime()) / 60000;\n  if (diffMin \u003e= effectiveCooldown) allowed.push(c);\n}\n\nreturn allowed.map(a =\u003e ({ json: a }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       976,
+                                       64
+                                   ],
+                      "id":  "e2ea9ee0-1f53-4848-a4c8-71e80fb66ee6",
+                      "name":  "Filter by Cooldown"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       784,
+                                       64
+                                   ],
+                      "id":  "a62967dc-5336-4117-9079-58834dc926c6",
+                      "name":  "Merge Candidates + Log"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const items = $input.all();\nif (!items.length) return [];\n\nconst nowZa = new Date().toLocaleString(\"en-ZA\", { timeZone: \"Africa/Johannesburg\" });\n// nowZa looks like \"2025/12/27, 10:15:00\"\nconst hh = Number(nowZa.split(\",\")[1].trim().split(\":\")[0]);\n\n// Quiet hours: 22:00–06:00 (no alerts)\nconst isQuiet = (hh \u003e= 22 || hh \u003c 6);\nif (isQuiet) return [];\n\nreturn items;\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1136,
+                                       64
+                                   ],
+                      "id":  "1670cac3-c3c1-4e2c-8659-7a71ad07997f",
+                      "name":  "Quiet Hours"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const chatIds = [\"5721652188\", \"8235612950\", \"8228742738\"];\n\nconst out = [];\nfor (const item of $input.all()) {\n  for (const chatId of chatIds) {\n    out.push({\n      json: {\n        chatId,\n        message: item.json.message,\n        alert_key: item.json.alert_key,\n        alert_type: item.json.alert_type,\n        severity: item.json.severity,\n        cooldown_min: item.json.cooldown_min,\n        timestamp_alert_za: item.json.timestamp_alert_za || item.json.timestamp_za,\n        // keep the full candidate object if you want\n        _candidate: item.json,\n      }\n    });\n  }\n}\nreturn out;\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1440,
+                                       64
+                                   ],
+                      "id":  "bc620a60-c378-4ce2-b21d-1bd25f36fcc2",
+                      "name":  "Expand Recipients"
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "={{$json.chatId}}",
+                                         "text":  "={{$json.message}}",
+                                         "additionalFields":  {
+                                                                  "appendAttribution":  false,
+                                                                  "parse_mode":  "Markdown"
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       1600,
+                                       64
+                                   ],
+                      "id":  "6e94bf95-7c10-4ef7-8796-dbaec60f009d",
+                      "name":  "Send Sunsynk Alert",
+                      "webhookId":  "91ef889c-2cef-4841-90cc-e5b4d76a2e22",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "NIEUAI_Telegram"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Weather_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  2045303470,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Weather_Alert_Log",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=2045303470"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "timestamp_za":  "={{$json.timestamp_alert_za}}",
+                                                                       "alert_type":  "={{$json.alert_type}}",
+                                                                       "alert_key":  "={{$json.alert_key}}",
+                                                                       "severity":  "={{$json.severity}}",
+                                                                       "cooldown_min":  "={{$json.cooldown_min}}",
+                                                                       "message":  "={{$json.message}}",
+                                                                       "last_timestamp_za":  "={{$json.timestamp_alert_za}}",
+                                                                       "extra_json":  "={{ JSON.stringify($json._candidate) }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "timestamp_za",
+                                                                            "displayName":  "timestamp_za",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "alert_type",
+                                                                            "displayName":  "alert_type",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "alert_key",
+                                                                            "displayName":  "alert_key",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "severity",
+                                                                            "displayName":  "severity",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "cooldown_min",
+                                                                            "displayName":  "cooldown_min",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "message",
+                                                                            "displayName":  "message",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_timestamp_za",
+                                                                            "displayName":  "last_timestamp_za",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "extra_json",
+                                                                            "displayName":  "extra_json",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       1280,
+                                       64
+                                   ],
+                      "id":  "19710c83-19c3-4cbd-a5e1-1f36c018ddf5",
+                      "name":  "Append Alert Log",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "triggerAtHour":  7
+                                                                       },
+                                                                       {
+                                                                           "triggerAtHour":  13
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       -16,
+                                       64
+                                   ],
+                      "id":  "2f710037-1c12-4f17-ae54-8902c10a2f82",
+                      "name":  "Schedule – Forecast Alerts"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Weather_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1060125627,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Forecast_10Day_Current",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=1060125627"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       176,
+                                       64
+                                   ],
+                      "id":  "8e763f89-8bf3-4d10-9bd7-9858a1ffdc20",
+                      "name":  "Read Forecast_10Day_Current",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Filter Next 3 Days (ZA anchored)\n// Keeps only forecast rows for ZA \"today\" + next 2 days (total 3 days)\n\nfunction toDateStrZA(date = new Date()) {\n  // Build YYYY-MM-DD in Africa/Johannesburg without relying on server timezone\n  const parts = new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  }).formatToParts(date);\n\n  const y = parts.find(p =\u003e p.type === \"year\")?.value;\n  const m = parts.find(p =\u003e p.type === \"month\")?.value;\n  const d = parts.find(p =\u003e p.type === \"day\")?.value;\n  return `${y}-${m}-${d}`;\n}\n\nfunction addDays(dateStr, days) {\n  // dateStr must be YYYY-MM-DD\n  const [y, m, d] = dateStr.split(\"-\").map(Number);\n  const dt = new Date(Date.UTC(y, m - 1, d));\n  dt.setUTCDate(dt.getUTCDate() + days);\n\n  const yy = dt.getUTCFullYear();\n  const mm = String(dt.getUTCMonth() + 1).padStart(2, \"0\");\n  const dd = String(dt.getUTCDate()).padStart(2, \"0\");\n  return `${yy}-${mm}-${dd}`;\n}\n\nconst all = $input.all().map(i =\u003e i.json);\n\n// ZA \"today\"\nconst todayZA = toDateStrZA(new Date());\nconst endZA = addDays(todayZA, 2); // today + 2 days = 3-day window\n\n// Keep rows where forecast_date is within [todayZA, endZA]\nconst filtered = all.filter(r =\u003e {\n  const fd = r.forecast_date ?? r.ForecastDate ?? r.date ?? r.Date;\n  if (!fd) return false;\n\n  // Ensure we only use YYYY-MM-DD part\n  const fdStr = String(fd).slice(0, 10);\n  return fdStr \u003e= todayZA \u0026\u0026 fdStr \u003c= endZA;\n});\n\n// Output in a single object (so your next node can read forecast_rows_3day)\nreturn [{\n  json: {\n    timezone: \"Africa/Johannesburg\",\n    anchor_today_za: todayZA,\n    window_end_za: endZA,\n    forecast_rows_3day: filtered\n  }\n}];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       368,
+                                       64
+                                   ],
+                      "id":  "0f86b7c2-37f8-4d2d-90bd-7bd57aef405f",
+                      "name":  "Filter Next 3 Days"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Build Forecast Alert Candidates (GROUPED: Rain + Wind + Heat)\n// Outputs ONE alert per type (same pattern as Sunsynk / Station)\n\nconst data = $input.first().json || {};\nconst rows = data.forecast_rows_3day || [];\n\n// --- thresholds ---\nconst WIND_THRESHOLD_KMH = 40;\nconst TEMP_MAX_ALERT = 28;\nconst RAIN_MM_ALERT = 0.5;\nconst RAIN_PROB_ALERT = 60;\n\nconst COOLDOWN_MIN_DEFAULT = 120;\n\nfunction num(v) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : 0;\n}\n\nfunction zaNowISO() {\n  return new Date().toISOString();\n}\n\nfunction fmt1(v) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n.toFixed(1) : String(v ?? \"\");\n}\n\nconst candidates = [];\n\n// =======================\n// 🌧️ RAIN (GROUPED)\n// =======================\nconst rainDays = [];\n\nfor (const r of rows) {\n  const date = r.forecast_date ?? r.date ?? r.Date;\n  if (!date) continue;\n\n  const rainMM = num(r.rain_sum_mm);\n  const rainProb = num(r.rain_prob_max_pct);\n\n  if (rainMM \u003e= RAIN_MM_ALERT || rainProb \u003e= RAIN_PROB_ALERT) {\n    rainDays.push({\n      date,\n      rainMM,\n      rainProb,\n      tmax: num(r.temp_max_c),\n      tmin: num(r.temp_min_c),\n      wind: num(r.wind_max_kmh),\n      gust: num(r.gust_max_kmh)\n    });\n  }\n}\n\nif (rainDays.length \u003e 0) {\n  const lines = rainDays.map(d =\u003e\n    `• *${d.date}:* ${fmt1(d.rainMM)} mm (${fmt1(d.rainProb)}%)`\n  ).join(\"\\n\");\n\n  candidates.push({\n    alert_key: \"FORECAST_RAIN_GROUP\",\n    alert_type: \"FORECAST_RAIN\",\n    severity: \"warning\",\n    cooldown_min: COOLDOWN_MIN_DEFAULT,\n    timestamp_alert_za: zaNowISO(),\n    days_affected: rainDays.length,\n    message:\n`🌧️ *WEATHER FORECAST ALERT — RAIN*\n${lines}\n\n🌡️ Temp range: _${fmt1(Math.min(...rainDays.map(d =\u003e d.tmin)))}°C → ${fmt1(Math.max(...rainDays.map(d =\u003e d.tmax)))}°C_\n🌬️ Wind up to _${fmt1(Math.max(...rainDays.map(d =\u003e d.gust)))} km/h_`\n  });\n}\n\n// =======================\n// 💨 WIND (GROUPED)\n// =======================\nconst windDays = [];\n\nfor (const r of rows) {\n  const date = r.forecast_date ?? r.date ?? r.Date;\n  if (!date) continue;\n\n  const wind = num(r.wind_max_kmh);\n\n  if (wind \u003e= WIND_THRESHOLD_KMH) {\n    windDays.push({\n      date,\n      wind,\n      gust: num(r.gust_max_kmh),\n      tmax: num(r.temp_max_c),\n      tmin: num(r.temp_min_c),\n      rainMM: num(r.rain_sum_mm)\n    });\n  }\n}\n\nif (windDays.length \u003e 0) {\n  const lines = windDays.map(d =\u003e\n    `• *${d.date}:* Wind ${fmt1(d.wind)} km/h (gust ${fmt1(d.gust)} km/h)`\n  ).join(\"\\n\");\n\n  candidates.push({\n    alert_key: \"FORECAST_WIND_GROUP\",\n    alert_type: \"FORECAST_WIND\",\n    severity: \"warning\",\n    cooldown_min: COOLDOWN_MIN_DEFAULT,\n    timestamp_alert_za: zaNowISO(),\n    days_affected: windDays.length,\n    message:\n`💨 *WEATHER FORECAST ALERT — WIND*\n${lines}\n\n🌡️ Temp range: _${fmt1(Math.min(...windDays.map(d =\u003e d.tmin)))}°C → ${fmt1(Math.max(...windDays.map(d =\u003e d.tmax)))}°C_\n🌧️ Rain up to _${fmt1(Math.max(...windDays.map(d =\u003e d.rainMM)))} mm_`\n  });\n}\n\n// =======================\n// 🔥 HEAT (GROUPED)\n// =======================\nconst heatDays = [];\n\nfor (const r of rows) {\n  const date = r.forecast_date ?? r.date ?? r.Date;\n  if (!date) continue;\n\n  const tmax = num(r.temp_max_c);\n\n  if (tmax \u003e TEMP_MAX_ALERT) {\n    heatDays.push({\n      date,\n      tmax,\n      tmin: num(r.temp_min_c),\n      wind: num(r.wind_max_kmh),\n      gust: num(r.gust_max_kmh),\n      rainMM: num(r.rain_sum_mm)\n    });\n  }\n}\n\nif (heatDays.length \u003e 0) {\n  const lines = heatDays.map(d =\u003e\n    `• *${d.date}:* Max ${fmt1(d.tmax)}°C (Min ${fmt1(d.tmin)}°C)`\n  ).join(\"\\n\");\n\n  candidates.push({\n    alert_key: \"FORECAST_HEAT_GROUP\",\n    alert_type: \"FORECAST_HEAT\",\n    severity: \"warning\",\n    cooldown_min: COOLDOWN_MIN_DEFAULT,\n    timestamp_alert_za: zaNowISO(),\n    days_affected: heatDays.length,\n    message:\n`🔥 *WEATHER FORECAST ALERT — HEAT*\n${lines}\n\n🌬️ Wind up to _${fmt1(Math.max(...heatDays.map(d =\u003e d.gust)))} km/h_\n🌧️ Rain expected: _${fmt1(Math.max(...heatDays.map(d =\u003e d.rainMM)))} mm_`\n  });\n}\n\n// =======================\n// OUTPUT\n// =======================\nreturn candidates.map(c =\u003e ({ json: c }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       576,
+                                       -16
+                                   ],
+                      "id":  "36ce54b3-c24f-49cc-a545-eb30efbb05f6",
+                      "name":  "Build Forecast Alert Candidates"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Weather_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  2045303470,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Weather_Alert_Log",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=2045303470"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       576,
+                                       144
+                                   ],
+                      "id":  "e94a085a-bb23-4eb4-a6b0-e5fd4dcb3288",
+                      "name":  "Read Weather_Alert_Log",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Merge Candidates + Log":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Filter by Cooldown",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Filter by Cooldown":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Quiet Hours",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Quiet Hours":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Append Alert Log",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Expand Recipients":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Send Sunsynk Alert",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Send Sunsynk Alert":  {
+                                                   "main":  [
+                                                                [
+
+                                                                ]
+                                                            ]
+                                               },
+                        "Append Alert Log":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Expand Recipients",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Schedule – Forecast Alerts":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Read Forecast_10Day_Current",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Read Forecast_10Day_Current":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Filter Next 3 Days",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "Filter Next 3 Days":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Build Forecast Alert Candidates",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    },
+                                                                    {
+                                                                        "node":  "Read Weather_Alert_Log",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Build Forecast Alert Candidates":  {
+                                                                "main":  [
+                                                                             [
+                                                                                 {
+                                                                                     "node":  "Merge Candidates + Log",
+                                                                                     "type":  "main",
+                                                                                     "index":  0
+                                                                                 }
+                                                                             ]
+                                                                         ]
+                                                            },
+                        "Read Weather_Alert_Log":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Merge Candidates + Log",
+                                                                            "type":  "main",
+                                                                            "index":  1
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  {
+                       "node:Check Weather Station":  {
+                                                          "recurrenceRules":  [
+
+                                                                              ]
+                                                      },
+                       "node:Schedule – Sunsynk Alerts":  {
+                                                              "recurrenceRules":  [
+
+                                                                                  ]
+                                                          },
+                       "node:Schedule – Forecast Alerts":  {
+                                                               "recurrenceRules":  [
+
+                                                                                   ]
+                                                           }
+                   },
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "c63546af-2be7-4d15-b40a-d6bff8ece747",
+    "activeVersionId":  null,
+    "versionCounter":  155,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-01-03T11:16:38.165Z",
+                       "createdAt":  "2026-01-03T11:16:38.165Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "I4D76Gb9ddGFhSP5",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

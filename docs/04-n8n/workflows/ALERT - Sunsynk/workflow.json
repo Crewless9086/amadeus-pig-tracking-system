@@ -1,0 +1,514 @@
+﻿{
+    "updatedAt":  "2026-02-22T16:20:18.733Z",
+    "createdAt":  "2025-12-26T14:36:20.477Z",
+    "id":  "2LETWzde7lMDlMnl",
+    "name":  "ALERT - Sunsynk",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1334521254,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Sunsynk_Current_Overview",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=1334521254"
+                                                       },
+                                         "options":  {
+                                                         "dataLocationOnSheet":  {
+                                                                                     "values":  {
+                                                                                                    "rangeDefinition":  "specifyRange"
+                                                                                                }
+                                                                                 }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       176,
+                                       64
+                                   ],
+                      "id":  "759c026d-2537-44dd-a1ef-06a2a0bb74ab",
+                      "name":  "Get Last Sunsynk Row",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "minutes"
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       -16,
+                                       64
+                                   ],
+                      "id":  "d3c76b2b-5974-40d6-bba8-53e8d46a4071",
+                      "name":  "Schedule – Sunsynk Alerts"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Get last row\nif (!items.length) {\n  return [{ json: { _error: \"No rows returned from Sunsynk_Log\" } }];\n}\nconst row = items[0].json;\n\n// Helpers\nconst asNum = (v) =\u003e {\n  if (v === null || v === undefined || v === \"\") return null;\n  const n = Number(v);\n  return Number.isFinite(n) ? n : null;\n};\nconst asBool = (v) =\u003e {\n  if (typeof v === \"boolean\") return v;\n  if (v === null || v === undefined) return null;\n  const s = String(v).toLowerCase().trim();\n  if ([\"true\", \"1\", \"yes\", \"y\"].includes(s)) return true;\n  if ([\"false\", \"0\", \"no\", \"n\"].includes(s)) return false;\n  return null;\n};\n\n// Normalize the important fields\nrow.battery_soc = asNum(row.battery_soc);\nrow.battery_power_w = asNum(row.battery_power_w);\nrow.pv_power_w = asNum(row.pv_power_w);\nrow.pv1_power_w = asNum(row.pv1_power_w);\nrow.pv2_power_w = asNum(row.pv2_power_w);\nrow.load_power_w = asNum(row.load_power_w);\nrow.grid_power_w = asNum(row.grid_power_w);\nrow.gen_power_w = asNum(row.gen_power_w);\nrow.inv_pinv_w = asNum(row.inv_pinv_w);\nrow.inv_pac_w = asNum(row.inv_pac_w);\n\nrow.grid_active = asBool(row.grid_active);\nrow.gen_active = asBool(row.gen_active);\nrow.battery_charging = asBool(row.battery_charging);\nrow.battery_discharging = asBool(row.battery_discharging);\n\n// Compute now in Africa/Johannesburg\nfunction nowZA() {\n  const s = new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\", month: \"2-digit\", day: \"2-digit\",\n    hour: \"2-digit\", minute: \"2-digit\", second: \"2-digit\",\n    hour12: false\n  }).format(new Date());\n  return new Date(s.replace(\", \", \"T\") + \"+02:00\");\n}\nconst now = nowZA();\n\n// Parse last timestamp from sheet (timestamp_za OR date_za+time_za)\nfunction parseZA(ts, d, t) {\n  if (ts \u0026\u0026 String(ts).trim()) {\n    const s = String(ts).trim();\n    const iso = (s.includes(\"+\") || s.endsWith(\"Z\")) ? s : s.replace(\" \", \"T\") + \"+02:00\";\n    const dt = new Date(iso);\n    return isNaN(dt) ? null : dt;\n  }\n  if (d \u0026\u0026 t) {\n    const dt = new Date(`${d}T${t}+02:00`);\n    return isNaN(dt) ? null : dt;\n  }\n  return null;\n}\n\nconst lastTs = parseZA(row.timestamp_za, row.date_za, row.time_za);\nconst diffMinutes = lastTs ? (now - lastTs) / 60000 : Number.POSITIVE_INFINITY;\n\nconst fmtZA = (d) =\u003e new Intl.DateTimeFormat(\"sv-SE\", {\n  timeZone: \"Africa/Johannesburg\",\n  year: \"numeric\", month: \"2-digit\", day: \"2-digit\",\n  hour: \"2-digit\", minute: \"2-digit\", second: \"2-digit\",\n  hour12: false\n}).format(d).replace(\" \", \"T\") + \"+02:00\";\n\nrow._now_za = fmtZA(new Date());\nrow._last_ts = lastTs ? fmtZA(lastTs) : null;\n;\nrow._diff_minutes = diffMinutes;\n\nreturn [{ json: row }];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       368,
+                                       64
+                                   ],
+                      "id":  "025407d3-bcdd-4fd1-93f0-0fa7ea4ca3c5",
+                      "name":  "Latest Row + Normalize"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const row = items[0].json;\n\n// --------------------\n// Thresholds\n// --------------------\nconst NOT_LOGGING_MIN = 12;\nconst GRID_W_THRESHOLD = 100;\nconst GEN_W_THRESHOLD = 100; // \"actually giving power\" threshold\n\n// --------------------\n// Cooldowns (minutes)\n// --------------------\nconst cooldown = {\n  not_logging: 240,\n  batt_low_30: 180,\n  batt_med_50: 360,\n  batt_high_95: 180,\n  grid_active: 180,\n  gen_active: 180, // ✅ new\n};\n\n// --------------------\n// Helper: safe numbers\n// --------------------\nconst num = (v) =\u003e {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : 0;\n};\n\n// --------------------\n// Grid rule C (Both)\n// --------------------\nconst grid_power = num(row.grid_power_w);\nconst gridRuleC = (row.grid_active === true) || (grid_power \u003e GRID_W_THRESHOLD);\n\n// --------------------\n// Generator rule:\n// \"gen is being used AND actually giving power\"\n// --------------------\nconst gen_power = num(row.gen_power_w);\nconst genRule = ((row.gen_active === true) || (gen_power \u003e 0)) \u0026\u0026 (gen_power \u003e GEN_W_THRESHOLD);\n\n// --------------------\n// Alert conditions\n// --------------------\nconst alerts = [];\n\n// 1) Not logging\nif (num(row._diff_minutes) \u003e NOT_LOGGING_MIN) {\n  alerts.push({\n    alert_key: \"not_logging\",\n    alert_type: \"NOT_LOGGING\",\n    severity: \"HIGH\",\n    cooldown_min: cooldown.not_logging,\n    message: `⚠️ *Sunsynk Alert*: Not logging\\nLast data is *${Math.round(num(row._diff_minutes))} min* old.\\nLast timestamp: ${row.timestamp_za || row._last_ts || \"unknown\"}`\n  });\n}\n\n// 2) Battery low 30\nif (row.battery_soc !== null \u0026\u0026 row.battery_soc !== \"\" \u0026\u0026 num(row.battery_soc) \u003c= 30) {\n  alerts.push({\n    alert_key: \"batt_low_30\",\n    alert_type: \"BATTERY_LOW_30\",\n    severity: \"HIGH\",\n    cooldown_min: cooldown.batt_low_30,\n    message: `🔴 *Sunsynk Alert*: Battery LOW (≤30%)\\nSOC: *${num(row.battery_soc)}%*`\n  });\n}\n\n// 3) Battery med 50\nif (row.battery_soc !== null \u0026\u0026 row.battery_soc !== \"\" \u0026\u0026 num(row.battery_soc) \u003c= 50) {\n  alerts.push({\n    alert_key: \"batt_med_50\",\n    alert_type: \"BATTERY_MED_50\",\n    severity: \"MED\",\n    cooldown_min: cooldown.batt_med_50,\n    message: `🟠 *Sunsynk Alert*: Battery MED (≤50%)\\nSOC: *${num(row.battery_soc)}%*`\n  });\n}\n\n// 4) Battery high 95\nif (row.battery_soc !== null \u0026\u0026 row.battery_soc !== \"\" \u0026\u0026 num(row.battery_soc) \u003e= 95) {\n  alerts.push({\n    alert_key: \"batt_high_95\",\n    alert_type: \"BATTERY_HIGH_95\",\n    severity: \"INFO\",\n    cooldown_min: cooldown.batt_high_95,\n    message: `🟢 *Sunsynk Alert*\\nBattery is HIGH, greater than (95%)\\nSOC: *${num(row.battery_soc)}%*`\n  });\n}\n\n// 5) Grid active\nif (gridRuleC) {\n  alerts.push({\n    alert_key: \"grid_active\",\n    alert_type: \"GRID_ACTIVE\",\n    severity: \"MED\",\n    cooldown_min: cooldown.grid_active,\n    message: `⚡ *Sunsynk Alert*: Grid \"Eskom\" is being used\\nGrid power: *${grid_power} W*\\n(grid_active: ${row.grid_active})`\n  });\n}\n\n// 6) ✅ Generator active (actually producing power)\nif (genRule) {\n  alerts.push({\n    alert_key: \"gen_active\",\n    alert_type: \"GEN_ACTIVE\",\n    severity: \"HIGH\",\n    cooldown_min: cooldown.gen_active,\n    message: `🛢️ *Sunsynk Alert*: Generator is supplying power\\nGen power: *${gen_power} W*\\n(gen_active: ${row.gen_active})`\n  });\n}\n\n// --------------------\n// Return items\n// --------------------\nreturn alerts.map(a =\u003e ({\n  json: {\n    ...row,\n    ...a,\n    timestamp_alert_za: row.timestamp_za || row._last_ts || row._now_za,\n  }\n}));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       576,
+                                       -16
+                                   ],
+                      "id":  "31464f4c-c253-4b5d-93d5-93f8cb3013e4",
+                      "name":  "Build Alert Candidates"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1609666813,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Sunsynk_Alert_Log",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=1609666813"
+                                                       },
+                                         "options":  {
+                                                         "dataLocationOnSheet":  {
+                                                                                     "values":  {
+                                                                                                    "rangeDefinition":  "detectAutomatically"
+                                                                                                }
+                                                                                 }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       576,
+                                       144
+                                   ],
+                      "id":  "00cb9333-88c5-454e-8a72-87510526e4f3",
+                      "name":  "Read Sunsynk_Alert_Log",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "function parseDateSafe(s) {\n  if (!s) return null;\n  const d = new Date(s);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nconst all = $input.all().map(i =\u003e i.json);\n\n// ✅ Only treat rows with timestamp_alert_za as “candidates”\nconst candidates = all.filter(r =\u003e r.alert_key \u0026\u0026 r.timestamp_alert_za);\n\n// ✅ Only treat rows with last_timestamp_za as “log rows”\nconst logs = all.filter(r =\u003e r.alert_key \u0026\u0026 r.last_timestamp_za);\n\n// Build last sent map\nconst lastByKey = new Map();\nfor (const row of logs) {\n  const last = parseDateSafe(row.last_timestamp_za);\n  if (!last) continue;\n  const prev = lastByKey.get(row.alert_key);\n  if (!prev || last \u003e prev) lastByKey.set(row.alert_key, last);\n}\n\nconst now = new Date();\nconst allowed = [];\n\nfor (const c of candidates) {\n  const key = c.alert_key;\n  const cooldownMin = Number(c.cooldown_min ?? 0);\n\n  const last = lastByKey.get(key);\n\n  // Never sent before\n  if (!last) {\n    allowed.push(c);\n    continue;\n  }\n\n  // Special case: “send once” alerts\n  // If you truly want “only once ever”, keep it as 999999 and block forever:\n  // if (cooldownMin \u003e= 999999) continue;\n\n  const effectiveCooldown = cooldownMin \u003e= 999999 ? (24 * 60) : cooldownMin;\n\n  const diffMin = (now.getTime() - last.getTime()) / 60000;\n  if (diffMin \u003e= effectiveCooldown) allowed.push(c);\n}\n\nreturn allowed.map(a =\u003e ({ json: a }));\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       976,
+                                       64
+                                   ],
+                      "id":  "38aaacd3-5f41-46d7-a425-4fb573d69ccd",
+                      "name":  "Filter by Cooldown"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       784,
+                                       64
+                                   ],
+                      "id":  "aa79b986-1e49-44c4-9563-746bb7f2b259",
+                      "name":  "Merge Candidates + Log"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const items = $input.all();\nif (!items.length) return [];\n\nconst nowZa = new Date().toLocaleString(\"en-ZA\", { timeZone: \"Africa/Johannesburg\" });\n// nowZa looks like \"2025/12/27, 10:15:00\"\nconst hh = Number(nowZa.split(\",\")[1].trim().split(\":\")[0]);\n\n// Quiet hours: 22:00–06:00 (no alerts)\nconst isQuiet = (hh \u003e= 22 || hh \u003c 6);\nif (isQuiet) return [];\n\nreturn items;\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1136,
+                                       64
+                                   ],
+                      "id":  "7576a719-cbe1-48a8-a2d7-2261fd2ab74f",
+                      "name":  "Quiet Hours"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const chatIds = [\"5721652188\", \"8235612950\", \"8228742738\"];\n\nconst out = [];\nfor (const item of $input.all()) {\n  for (const chatId of chatIds) {\n    out.push({\n      json: {\n        chatId,\n        message: item.json.message,\n        alert_key: item.json.alert_key,\n        alert_type: item.json.alert_type,\n        severity: item.json.severity,\n        cooldown_min: item.json.cooldown_min,\n        timestamp_alert_za: item.json.timestamp_alert_za || item.json.timestamp_za,\n        // keep the full candidate object if you want\n        _candidate: item.json,\n      }\n    });\n  }\n}\nreturn out;\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1440,
+                                       64
+                                   ],
+                      "id":  "6c710d84-570c-45be-9153-c55565d093d5",
+                      "name":  "Expand Recipients"
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "={{$json.chatId}}",
+                                         "text":  "={{$json.message}}",
+                                         "additionalFields":  {
+                                                                  "appendAttribution":  false,
+                                                                  "parse_mode":  "Markdown"
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       1600,
+                                       64
+                                   ],
+                      "id":  "22a801b9-01b4-45a4-8bce-408461ab50a9",
+                      "name":  "Send Sunsynk Alert",
+                      "webhookId":  "244f722d-bfc7-4397-9a1f-64fe2080344c",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "NIEUAI_Telegram"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1609666813,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Sunsynk_Alert_Log",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=1609666813"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "timestamp_za":  "={{$json.timestamp_alert_za}}",
+                                                                       "alert_type":  "={{$json.alert_type}}",
+                                                                       "alert_key":  "={{$json.alert_key}}",
+                                                                       "severity":  "={{$json.severity}}",
+                                                                       "cooldown_min":  "={{$json.cooldown_min}}",
+                                                                       "message":  "={{$json.message}}",
+                                                                       "last_timestamp_za":  "={{$json.timestamp_alert_za}}",
+                                                                       "extra_json":  "={{ JSON.stringify($json._candidate) }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "timestamp_za",
+                                                                            "displayName":  "timestamp_za",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "alert_type",
+                                                                            "displayName":  "alert_type",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "alert_key",
+                                                                            "displayName":  "alert_key",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "severity",
+                                                                            "displayName":  "severity",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "cooldown_min",
+                                                                            "displayName":  "cooldown_min",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "message",
+                                                                            "displayName":  "message",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_timestamp_za",
+                                                                            "displayName":  "last_timestamp_za",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "extra_json",
+                                                                            "displayName":  "extra_json",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       1280,
+                                       64
+                                   ],
+                      "id":  "b161bb0b-3446-42cf-a36b-907d31748c32",
+                      "name":  "Append Alert Log",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Get Last Sunsynk Row":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Latest Row + Normalize",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Schedule – Sunsynk Alerts":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Get Last Sunsynk Row",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Latest Row + Normalize":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Build Alert Candidates",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        },
+                                                                        {
+                                                                            "node":  "Read Sunsynk_Alert_Log",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Build Alert Candidates":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Merge Candidates + Log",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Read Sunsynk_Alert_Log":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Merge Candidates + Log",
+                                                                            "type":  "main",
+                                                                            "index":  1
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Merge Candidates + Log":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Filter by Cooldown",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Filter by Cooldown":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Quiet Hours",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Quiet Hours":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Append Alert Log",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Expand Recipients":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Send Sunsynk Alert",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Send Sunsynk Alert":  {
+                                                   "main":  [
+                                                                [
+
+                                                                ]
+                                                            ]
+                                               },
+                        "Append Alert Log":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Expand Recipients",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  {
+                       "node:Check Weather Station":  {
+                                                          "recurrenceRules":  [
+
+                                                                              ]
+                                                      },
+                       "node:Schedule – Sunsynk Alerts":  {
+                                                              "recurrenceRules":  [
+
+                                                                                  ]
+                                                          }
+                   },
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "47592477-d8e6-4ea1-b738-7b16a0fba609",
+    "activeVersionId":  null,
+    "versionCounter":  145,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-26T14:36:20.480Z",
+                       "createdAt":  "2025-12-26T14:36:20.480Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "2LETWzde7lMDlMnl",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

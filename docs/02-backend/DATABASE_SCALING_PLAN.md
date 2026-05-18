@@ -4,7 +4,7 @@
 
 Phase 7.2 planning for moving transactional order data away from Google Sheets when volume or reliability requires it.
 
-Status: planning only. Do not implement a database migration from this document until the 7.2A inventory is reviewed and accepted.
+Status: Phase 7.2 planning accepted. Do not implement a database migration from this document until a future database implementation phase is deliberately opened.
 
 ## Current Decision
 

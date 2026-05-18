@@ -23,6 +23,20 @@ It documents:
 | `1.4 - Outbound Order Notification` | `workflows/1.4 - outbound-order-notification/` | Planned/import pending | Receives backend approval/rejection events and sends the customer Chatwoot message. |
 | `1.5 - Outbound Document Delivery` | `workflows/1.5 - outbound-document-delivery/` | Live-verified 2026-05-10 | Receives backend document-delivery events and sends generated quote/invoice PDFs as Chatwoot attachments. |
 | `1.6 - Daily Order Summary` | `workflows/1.6 - daily-order-summary/` | Manual-verified 2026-05-10, scheduled for 16:00 | Scheduled operations summary from backend report endpoint to Telegram. |
+| `2 - The GateKeeper` | `workflows/2 - The GateKeeper/` | Active | Telegram access gate for Oom Sakkie. |
+| `2.0 - OOM SAKKIE - Amadeus Assistant Agent` | `workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/` | Active | Main internal Telegram assistant. |
+| `2.1 - Amadeus Weather Sub-Agent` | `workflows/2.1 - Amadeus Weather Sub-Agent/` | Active | Weather sub-agent called by Oom Sakkie. |
+| `2.1.1 - Amadeus Forecast Tool` | `workflows/2.1.1 - Amadeus Forecast Tool/` | Active | Focused Open-Meteo forecast utility. |
+| `2.2 - Amadeus Sunsynk Sub-Agent` | `workflows/2.2 - Amadeus Sunsynk Sub-Agent/` | Active | Solar and power sub-agent called by Oom Sakkie. |
+| `2.3.1 - Build Daily Irrigation Plan` | `workflows/2.3.1 - Build Daily Irrigation Plan/` | Active | Scheduled daily irrigation planning. |
+| `2.3.2 - Run Irrigation Controller` | `workflows/2.3.2 - Run Irrigation Controller/` | Inactive | Scheduled irrigation valve controller. |
+| `2.4 - Amadeus Orders Sub Agent` | `workflows/2.4 - Amadeus Orders Sub Agent/` | Active | Internal order approval sub-agent. |
+| `2.4.1 - Test Caller` | `workflows/2.4.1 - Test Caller/` | Inactive | Manual test caller for the orders sub-agent. |
+| `2.4.2 - Orders Approval Callback Handler` | `workflows/2.4.2 - Orders Approval Callback Handler/` | Active | Telegram callback handler for order approval actions. |
+| `2.4.3 - Order Approval Request Webhook` | `workflows/2.4.3 - Order Approval Request Webhook/` | Active | Webhook entry for order approval requests. |
+| `ALERT - Local Weather Station` | `workflows/ALERT - Local Weather Station/` | Inactive | Scheduled local weather station alerts. |
+| `ALERT - Sunsynk` | `workflows/ALERT - Sunsynk/` | Inactive | Scheduled Sunsynk alerts. |
+| `ALERT - Weather Forecast` | `workflows/ALERT - Weather Forecast/` | Inactive | Scheduled forecast alerts. |
 
 ## Folder Map
 
@@ -36,6 +50,7 @@ It documents:
 | `DO_NOT_CHANGE.md` | Protected fields, routes, node contracts, and fragile behavior. |
 | `CHANGELOG.md` | n8n documentation and workflow change history. |
 | `workflows/` | One folder per n8n workflow with `README.md` and `workflow.json`. |
+| `workflows/OOM_SAKKIE_ORDER_LOOKUP_PLAN.md` | Phase 7.3 planning for internal Oom Sakkie order/document lookup before implementation. |
 
 ## Core Architecture
 
@@ -75,6 +90,9 @@ flowchart TD
 - `1.4` is the outbound order notification workflow. It must only send backend-confirmed approval/rejection messages and must use `ConversationId` from `ORDER_MASTER`.
 - `1.5` is the outbound document delivery workflow. It must only send backend-generated quote/invoice PDFs and must not calculate totals or VAT.
 - `1.6` is the daily operations summary workflow. It must read from the backend summary endpoint, not directly from order sheets.
+- `2.#` workflows are the Oom Sakkie internal assistant layer. Changes to Oom Sakkie order lookup must be planned around the live `2 - The GateKeeper`, `2.0`, and `2.4` workflows.
+- `2 - The GateKeeper` is the access-control entry point and should stay in front of Oom Sakkie.
+- `2.4` already handles internal order approval behavior. Phase 7.3 order lookup should build around it, not replace it.
 - Telegram cleanup after human reply is desired but should be treated as a planned improvement unless confirmed implemented.
 - This repo is private, so workflow exports may keep full technical detail for local build planning.
 

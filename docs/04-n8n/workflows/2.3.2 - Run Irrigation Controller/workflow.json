@@ -1,0 +1,1388 @@
+﻿{
+    "updatedAt":  "2026-03-12T18:30:00.817Z",
+    "createdAt":  "2026-01-04T10:53:07.364Z",
+    "id":  "f6oPLsaolGH4pMKC",
+    "name":  "2.3.2 - Run Irrigation Controller",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "field":  "minutes",
+                                                                           "minutesInterval":  1
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "b670fd59-a05c-4717-ae53-4333f02a40f8",
+                      "name":  "B1 — Schedule Trigger"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1686887236,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "STATE",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1686887236"
+                                                       },
+                                         "combineFilters":  "OR",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       208,
+                                       0
+                                   ],
+                      "id":  "61597699-b464-4155-b74a-887de67396ac",
+                      "name":  "B2 — Get STATE",
+                      "alwaysOutputData":  false,
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1810796082,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "RULES",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1810796082"
+                                                       },
+                                         "options":  {
+                                                         "dataLocationOnSheet":  {
+                                                                                     "values":  {
+                                                                                                    "rangeDefinition":  "specifyRangeA1",
+                                                                                                    "range":  "A1:B10"
+                                                                                                }
+                                                                                 }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       416,
+                                       0
+                                   ],
+                      "id":  "5d8dca65-81c5-42bb-8d85-dd1839de0334",
+                      "name":  "B3 — Get RULES",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Weather_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  592616766,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "LLM_Latest_Reading",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=592616766"
+                                                       },
+                                         "options":  {
+                                                         "dataLocationOnSheet":  {
+                                                                                     "values":  {
+                                                                                                    "rangeDefinition":  "specifyRangeA1",
+                                                                                                    "range":  "A1:I2"
+                                                                                                }
+                                                                                 }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       624,
+                                       0
+                                   ],
+                      "id":  "57133865-5668-4dd0-85d6-402d3e55701a",
+                      "name":  "B4 — Get “Weather Now”",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  919711200,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "DAILY_PLAN",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                       },
+                                         "filtersUI":  {
+                                                           "values":  [
+                                                                          {
+                                                                              "lookupColumn":  "date",
+                                                                              "lookupValue":  "={{ $now.setZone(\u0027Africa/Johannesburg\u0027).toFormat(\u0027yyyy-MM-dd\u0027) }}"
+                                                                          }
+                                                                      ]
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       1040,
+                                       0
+                                   ],
+                      "id":  "6505fb0e-78cd-4c66-a6e0-1623ef4fc0b7",
+                      "name":  "B5 — Get TODAY DAILY_PLAN",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "function toNum(v, fallback = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : fallback;\n}\n\nfunction nowZA() {\n  return DateTime.now().setZone(\u0027Africa/Johannesburg\u0027);\n}\n\nfunction normalizeStatus(value) {\n  return String(value || \u0027\u0027).trim().toUpperCase();\n}\n\nfunction clean(value) {\n  return String(value || \u0027\u0027).trim();\n}\n\n// --- read source data from earlier nodes ---\nconst stateRows = $items(\"B2 — Get STATE\").map(i =\u003e i.json);\nconst rulesRows = $items(\"B3 — Get RULES\").map(i =\u003e i.json);\nconst weatherRows = $items(\"B4 — Get “Weather Now”\").map(i =\u003e i.json);\nconst zoneRows = $items(\"B4B — Get ZONES\").map(i =\u003e i.json);\nconst planRows = $items(\"B5 — Get TODAY DAILY_PLAN\").map(i =\u003e i.json);\n\n// --- normalize base rows ---\nconst state = stateRows[0] || {};\nconst weather = weatherRows[0] || {};\n\n// --- normalize RULES ---\nconst rules = {};\nfor (const r of rulesRows) {\n  const k = clean(r.rule_key || Object.values(r)[0]);\n  const v = r.rule_value ?? Object.values(r)[1];\n  if (k) rules[k] = v;\n}\n\n// --- map zones by zone_id ---\nconst zonesById = Object.fromEntries(\n  zoneRows\n    .filter(z =\u003e clean(z.zone_id) !== \u0027\u0027)\n    .map(z =\u003e [clean(z.zone_id), z])\n);\n\n// --- keep only relevant plan rows ---\nconst todayPlan = planRows.filter(r =\u003e {\n  const s = normalizeStatus(r.status);\n  return [\u0027PLANNED\u0027, \u0027RUNNING\u0027, \u0027PAUSED\u0027].includes(s);\n});\n\n// --- sort planned rows ---\nconst sortedPlannedRows = todayPlan\n  .filter(r =\u003e normalizeStatus(r.status) === \u0027PLANNED\u0027)\n  .sort((a, b) =\u003e {\n    const waterDiff = toNum(b.water_score, 0) - toNum(a.water_score, 0);\n    if (waterDiff !== 0) return waterDiff;\n\n    const zoneA = zonesById[clean(a.zone_id)] || {};\n    const zoneB = zonesById[clean(b.zone_id)] || {};\n    const priorityDiff = toNum(zoneA.priority, 999) - toNum(zoneB.priority, 999);\n    if (priorityDiff !== 0) return priorityDiff;\n\n    return clean(a.zone_id).localeCompare(clean(b.zone_id));\n  });\n\nconst currentZoneId = clean(state.current_zone_id);\nconst currentStatus = normalizeStatus(state.current_status);\n\nconst rainToday = toNum(weather.rain_today_mm || weather.rain_mm, 0);\nconst windKph = toNum(weather.wind_kph || weather.wind_speed_kph, 0);\n\n// --- thresholds from RULES with safe defaults ---\nconst liveRainSkipMm = toNum(rules[\"live_rain_skip_mm\"], 2);\nconst liveWindSkipKph = toNum(rules[\"wind_pause_kmh\"], 35);\n\nconst weatherSnapshot = JSON.stringify({\n  station_time: weather.timestamp || weather.reading_time || weather.station_time || \u0027\u0027,\n  weather_summary: weather.weather_summary || weather.summary || \u0027\u0027,\n  temperature_c: weather.temperature_c || weather.temp_c || \u0027\u0027,\n  rain_today_mm: rainToday,\n  wind_kph: windKph,\n  humidity_pct: weather.humidity_pct || weather.humidity || \u0027\u0027\n});\n\n// ----------------------------------------------------\n// CASE 1: A zone is currently running -\u003e check if stop\n// ----------------------------------------------------\nif (currentStatus === \u0027RUNNING\u0027 \u0026\u0026 currentZoneId) {\n  const runningRow = todayPlan.find(r =\u003e\n    clean(r.zone_id) === currentZoneId \u0026\u0026\n    normalizeStatus(r.status) === \u0027RUNNING\u0027\n  );\n\n  if (!runningRow) {\n    return [\n      {\n        json: {\n          action: \u0027DO_NOTHING\u0027,\n          zone_id: currentZoneId,\n          reason: \u0027STATE says RUNNING but no RUNNING row found in DAILY_PLAN\u0027,\n          weather_snapshot: weatherSnapshot\n        }\n      }\n    ];\n  }\n\n  if (!runningRow.actual_start) {\n    return [\n      {\n        json: {\n          action: \u0027DO_NOTHING\u0027,\n          plan_id: runningRow.plan_id || \u0027\u0027,\n          zone_id: currentZoneId,\n          reason: \u0027RUNNING row has no actual_start yet\u0027,\n          weather_snapshot: weatherSnapshot\n        }\n      }\n    ];\n  }\n\n  const startedAt = DateTime.fromISO(String(runningRow.actual_start), { zone: \u0027utc\u0027 });\n  if (!startedAt.isValid) {\n    return [\n      {\n        json: {\n          action: \u0027DO_NOTHING\u0027,\n          plan_id: runningRow.plan_id || \u0027\u0027,\n          zone_id: currentZoneId,\n          reason: \u0027actual_start is not a valid ISO datetime\u0027,\n          weather_snapshot: weatherSnapshot\n        }\n      }\n    ];\n  }\n\n  const elapsedMinutes = Math.max(\n    0,\n    Math.floor(nowZA().toUTC().diff(startedAt, \u0027minutes\u0027).minutes)\n  );\n\n  const plannedMinutes = toNum(runningRow.planned_minutes, 0);\n  const zone = zonesById[currentZoneId] || {};\n\n  if (elapsedMinutes \u003e= plannedMinutes) {\n    return [\n      {\n        json: {\n          action: \u0027STOP_ZONE\u0027,\n          plan_id: runningRow.plan_id || \u0027\u0027,\n          zone_id: currentZoneId,\n          planned_minutes: plannedMinutes,\n          actual_minutes: elapsedMinutes,\n          ifttt_off_event: clean(zone.ifttt_off_event),\n          ifttt_on_event: clean(zone.ifttt_on_event),\n          reason: \u0027Planned runtime completed\u0027,\n          weather_snapshot: weatherSnapshot\n        }\n      }\n    ];\n  }\n\n  return [\n    {\n      json: {\n        action: \u0027DO_NOTHING\u0027,\n        plan_id: runningRow.plan_id || \u0027\u0027,\n        zone_id: currentZoneId,\n        planned_minutes: plannedMinutes,\n        actual_minutes: elapsedMinutes,\n        reason: `Zone still running (${elapsedMinutes}/${plannedMinutes} min)`,\n        weather_snapshot: weatherSnapshot\n      }\n    }\n  ];\n}\n\n// ----------------------------------------------------\n// CASE 2: Nothing is running -\u003e weather gate first\n// ----------------------------------------------------\nif (rainToday \u003e= liveRainSkipMm) {\n  return [\n    {\n      json: {\n        action: \u0027DO_NOTHING\u0027,\n        reason: `Live weather gate blocked start: rain_today_mm ${rainToday} \u003e= ${liveRainSkipMm}`,\n        weather_snapshot: weatherSnapshot\n      }\n    }\n  ];\n}\n\nif (windKph \u003e= liveWindSkipKph) {\n  return [\n    {\n      json: {\n        action: \u0027DO_NOTHING\u0027,\n        reason: `Live weather gate blocked start: wind_kph ${windKph} \u003e= ${liveWindSkipKph}`,\n        weather_snapshot: weatherSnapshot\n      }\n    }\n  ];\n}\n\n// ----------------------------------------------------\n// CASE 3: Nothing is running -\u003e start next planned zone\n// ----------------------------------------------------\nif (sortedPlannedRows.length \u003e 0) {\n  const nextRow = sortedPlannedRows[0];\n  const zoneId = clean(nextRow.zone_id);\n  const zone = zonesById[zoneId] || {};\n\n  return [\n    {\n      json: {\n        action: \u0027START_ZONE\u0027,\n        plan_id: nextRow.plan_id || \u0027\u0027,\n        zone_id: zoneId,\n        planned_minutes: toNum(nextRow.planned_minutes, 0),\n        ifttt_on_event: clean(zone.ifttt_on_event),\n        ifttt_off_event: clean(zone.ifttt_off_event),\n        reason: \u0027Starting next planned zone\u0027,\n        weather_snapshot: weatherSnapshot\n      }\n    }\n  ];\n}\n\n// ----------------------------------------------------\n// CASE 4: Nothing left to do\n// ----------------------------------------------------\nreturn [\n  {\n    json: {\n      action: \u0027DO_NOTHING\u0027,\n      reason: \u0027No PLANNED rows left for today\u0027,\n      weather_snapshot: weatherSnapshot\n    }\n  }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1248,
+                                       0
+                                   ],
+                      "id":  "3d1c18a2-62e7-4d6c-93f6-07bdbb985edc",
+                      "name":  "B6 — Code: Decide action"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "gid=0",
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "ZONES",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=0"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       832,
+                                       0
+                                   ],
+                      "id":  "f25b321d-f1f6-4533-b80f-c57dc8054462",
+                      "name":  "B4B — Get ZONES",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  2
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "198bcd08-8264-481c-acb3-42e24d175cf4",
+                                                                                   "leftValue":  "={{ $json.action }}",
+                                                                                   "rightValue":  "START_ZONE",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals",
+                                                                                                    "name":  "filter.operator.equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       1520,
+                                       -80
+                                   ],
+                      "id":  "b090c285-ea21-4d84-a6c6-0072152f9019",
+                      "name":  "B7A — IF action == START_ZONE"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "ab025fe7-8352-470b-b0db-736ef0214622",
+                                                                                   "leftValue":  "={{ $json.action }}",
+                                                                                   "rightValue":  "STOP_ZONE",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals",
+                                                                                                    "name":  "filter.operator.equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       1520,
+                                       112
+                                   ],
+                      "id":  "60405e02-e362-44aa-944f-f3f46d6342f0",
+                      "name":  "B7B — IF action == STOP_ZONE"
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \"https://maker.ifttt.com/trigger/\" + $json.ifttt_on_event + \"/with/key/CeZgKs55xCFP-NObYleAh79jzLFr8MTpg7jBt82o_Y\" }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.3,
+                      "position":  [
+                                       1776,
+                                       -240
+                                   ],
+                      "id":  "cc0e18b3-0736-42fd-aae5-fe636ee7340c",
+                      "name":  "B8A — HTTP START_ZONE (IFTTT ON)"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "appendOrUpdate",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  919711200,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "DAILY_PLAN",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "plan_id":  "={{ $(\u0027B7A — IF action == START_ZONE\u0027).item.json.plan_id }}",
+                                                                       "status":  "RUNNING",
+                                                                       "actual_start":  "={{ $now.toISO() }}"
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "plan_id"
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "plan_id",
+                                                                            "displayName":  "plan_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "date",
+                                                                            "displayName":  "date",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "zone_id",
+                                                                            "displayName":  "zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "planned_start",
+                                                                            "displayName":  "planned_start",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "planned_minutes",
+                                                                            "displayName":  "planned_minutes",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "status",
+                                                                            "displayName":  "status",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "reason",
+                                                                            "displayName":  "reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actual_start",
+                                                                            "displayName":  "actual_start",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actual_end",
+                                                                            "displayName":  "actual_end",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "water_score",
+                                                                            "displayName":  "water_score",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2000,
+                                       -240
+                                   ],
+                      "id":  "86b695a9-f07c-4f62-b8a7-ac064abeaf46",
+                      "name":  "B9A — Update DAILY_PLAN to RUNNING",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "appendOrUpdate",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1686887236,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "STATE",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1686887236"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "current_zone_id":  "={{ $(\u0027B7A — IF action == START_ZONE\u0027).item.json.zone_id }}",
+                                                                       "state_id":  "MAIN",
+                                                                       "current_status":  "RUNNING",
+                                                                       "remaining_minutes":  "={{ $item(0).$node[\"B7A — IF action == START_ZONE\"].json.planned_minutes }}",
+                                                                       "last_update":  "={{ $now.toISO() }}"
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "state_id"
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "state_id",
+                                                                            "displayName":  "state_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "current_zone_id",
+                                                                            "displayName":  "current_zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "current_status",
+                                                                            "displayName":  "current_status",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "remaining_minutes",
+                                                                            "displayName":  "remaining_minutes",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "pause_reason",
+                                                                            "displayName":  "pause_reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_update",
+                                                                            "displayName":  "last_update",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_zone_completed",
+                                                                            "displayName":  "last_zone_completed",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "next_zone_id",
+                                                                            "displayName":  "next_zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2208,
+                                       -240
+                                   ],
+                      "id":  "217e0d57-170b-4ac6-9084-9582ca4ef735",
+                      "name":  "B10A — Update STATE to RUNNING",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1808956673,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "LOG",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1808956673"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "timestamp":  "={{ $now.toISO() }}",
+                                                                       "zone_id":  "={{ $(\u0027B7A — IF action == START_ZONE\u0027).item.json.zone_id }}",
+                                                                       "event":  "ZONE_STARTED",
+                                                                       "reason":  "={{ $(\u0027B7A — IF action == START_ZONE\u0027).item.json.reason }}",
+                                                                       "weather_snapshot":  "={{ $(\u0027B7A — IF action == START_ZONE\u0027).item.json.weather_snapshot }}",
+                                                                       "run_minutes_planned":  "={{ $json.planned_minutes }}",
+                                                                       "actor":  "AUTO",
+                                                                       "plan_id":  "={{ $(\u0027B7A — IF action == START_ZONE\u0027).item.json.plan_id }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "timestamp",
+                                                                            "displayName":  "timestamp",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "zone_id",
+                                                                            "displayName":  "zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "event",
+                                                                            "displayName":  "event",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "reason",
+                                                                            "displayName":  "reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "weather_snapshot",
+                                                                            "displayName":  "weather_snapshot",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "run_minutes_planned",
+                                                                            "displayName":  "run_minutes_planned",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "run_minutes_actual",
+                                                                            "displayName":  "run_minutes_actual",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actor",
+                                                                            "displayName":  "actor",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "plan_id",
+                                                                            "displayName":  "plan_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2416,
+                                       -240
+                                   ],
+                      "id":  "46b1c5b7-1dbc-4384-b0e7-cbaf58317a68",
+                      "name":  "B11A — Append LOG (ZONE_STARTED)",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "={{ \"https://maker.ifttt.com/trigger/\" + $json.ifttt_off_event + \"/with/key/CeZgKs55xCFP-NObYleAh79jzLFr8MTpg7jBt82o_Y\" }}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.3,
+                      "position":  [
+                                       1776,
+                                       16
+                                   ],
+                      "id":  "e52ab128-15a9-4be6-ac11-29342355e08b",
+                      "name":  "B8B — HTTP STOP_ZONE (IFTTT OFF)"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "appendOrUpdate",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  919711200,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "DAILY_PLAN",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "plan_id":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.plan_id }}",
+                                                                       "status":  "DONE",
+                                                                       "actual_end":  "={{ $now.toISO() }}"
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "plan_id"
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "plan_id",
+                                                                            "displayName":  "plan_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "date",
+                                                                            "displayName":  "date",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "zone_id",
+                                                                            "displayName":  "zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "planned_start",
+                                                                            "displayName":  "planned_start",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "planned_minutes",
+                                                                            "displayName":  "planned_minutes",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "status",
+                                                                            "displayName":  "status",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "reason",
+                                                                            "displayName":  "reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actual_start",
+                                                                            "displayName":  "actual_start",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actual_end",
+                                                                            "displayName":  "actual_end",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "water_score",
+                                                                            "displayName":  "water_score",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2000,
+                                       16
+                                   ],
+                      "id":  "d8d3bc8d-220e-47ff-b62a-123245e7c000",
+                      "name":  "B9B — Update DAILY_PLAN to DONE",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "appendOrUpdate",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1686887236,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "STATE",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1686887236"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "state_id":  "MAIN",
+                                                                       "current_status":  "IDLE",
+                                                                       "remaining_minutes":  "0",
+                                                                       "last_update":  "={{ $now.toISO() }}",
+                                                                       "last_zone_completed":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.zone_id }}"
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "state_id"
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "state_id",
+                                                                            "displayName":  "state_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "current_zone_id",
+                                                                            "displayName":  "current_zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "current_status",
+                                                                            "displayName":  "current_status",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "remaining_minutes",
+                                                                            "displayName":  "remaining_minutes",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "pause_reason",
+                                                                            "displayName":  "pause_reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_update",
+                                                                            "displayName":  "last_update",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_zone_completed",
+                                                                            "displayName":  "last_zone_completed",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "next_zone_id",
+                                                                            "displayName":  "next_zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2208,
+                                       16
+                                   ],
+                      "id":  "fb372b7d-4b88-4530-b494-44697787ba39",
+                      "name":  "B10B — Update STATE to IDLE",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1808956673,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "LOG",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1808956673"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "timestamp":  "={{ $now.toISO() }}",
+                                                                       "zone_id":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.zone_id }}",
+                                                                       "event":  "ZONE_COMPLETED",
+                                                                       "reason":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.reason }}",
+                                                                       "weather_snapshot":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.weather_snapshot }}",
+                                                                       "run_minutes_planned":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.planned_minutes }}",
+                                                                       "run_minutes_actual":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.actual_minutes }}",
+                                                                       "actor":  "AUTO",
+                                                                       "plan_id":  "={{ $item(0).$node[\"B7B — IF action == STOP_ZONE\"].json.plan_id }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "timestamp",
+                                                                            "displayName":  "timestamp",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "zone_id",
+                                                                            "displayName":  "zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "event",
+                                                                            "displayName":  "event",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "reason",
+                                                                            "displayName":  "reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "weather_snapshot",
+                                                                            "displayName":  "weather_snapshot",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "run_minutes_planned",
+                                                                            "displayName":  "run_minutes_planned",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "run_minutes_actual",
+                                                                            "displayName":  "run_minutes_actual",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actor",
+                                                                            "displayName":  "actor",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "plan_id",
+                                                                            "displayName":  "plan_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2416,
+                                       16
+                                   ],
+                      "id":  "eeecbeb5-7e2a-4244-844f-6103169dc203",
+                      "name":  "B11B — Append LOG (ZONE_COMPLETED)",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "B1 — Schedule Trigger":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "B2 — Get STATE",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "B2 — Get STATE":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "B3 — Get RULES",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "B3 — Get RULES":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "B4 — Get “Weather Now”",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "B4 — Get “Weather Now”":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "B4B — Get ZONES",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "B5 — Get TODAY DAILY_PLAN":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "B6 — Code: Decide action",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "B6 — Code: Decide action":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "B7B — IF action == STOP_ZONE",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          },
+                                                                          {
+                                                                              "node":  "B7A — IF action == START_ZONE",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "B4B — Get ZONES":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "B5 — Get TODAY DAILY_PLAN",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "B7B — IF action == STOP_ZONE":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "B8B — HTTP STOP_ZONE (IFTTT OFF)",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
+                        "B7A — IF action == START_ZONE":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "B8A — HTTP START_ZONE (IFTTT ON)",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "B8A — HTTP START_ZONE (IFTTT ON)":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "B9A — Update DAILY_PLAN to RUNNING",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "B9A — Update DAILY_PLAN to RUNNING":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "B10A — Update STATE to RUNNING",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               },
+                        "B10A — Update STATE to RUNNING":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "B11A — Append LOG (ZONE_STARTED)",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                        "B8B — HTTP STOP_ZONE (IFTTT OFF)":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "B9B — Update DAILY_PLAN to DONE",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "B9B — Update DAILY_PLAN to DONE":  {
+                                                                "main":  [
+                                                                             [
+                                                                                 {
+                                                                                     "node":  "B10B — Update STATE to IDLE",
+                                                                                     "type":  "main",
+                                                                                     "index":  0
+                                                                                 }
+                                                                             ]
+                                                                         ]
+                                                            },
+                        "B10B — Update STATE to IDLE":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "B11B — Append LOG (ZONE_COMPLETED)",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "23086bd5-242a-4e32-be15-ff8321636194",
+    "activeVersionId":  null,
+    "versionCounter":  33,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-01-04T10:53:07.367Z",
+                       "createdAt":  "2026-01-04T10:53:07.367Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "f6oPLsaolGH4pMKC",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

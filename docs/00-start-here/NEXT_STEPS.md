@@ -23,7 +23,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
-| Phase 7: Broader Workflow Improvements | 7.0 And 7.1 Complete; 7.2 Planning Started | Plan database scaling without implementation changes yet. |
+| Phase 7: Broader Workflow Improvements | 7.0, 7.1, And 7.2 Planning Complete; 7.3 Next | Plan Oom Sakkie operational order/document lookup before implementation. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
@@ -1607,7 +1607,7 @@ Improvements also in scope:
 - improve Telegram cleanup for human escalation
 - expand monitoring and operational runbooks
 
-### 7.2 Database Scaling Review - Planning Started
+### 7.2 Database Scaling Review - Planning Complete
 
 Planning status:
 
@@ -1615,6 +1615,8 @@ Planning status:
 - This is planning only. Do not build a database migration, add a new provider, or change production data storage during this slice.
 - The goal is to decide the future architecture and safe migration path before implementation.
 - Detailed planning source: `docs/02-backend/DATABASE_SCALING_PLAN.md`.
+- Owner review is accepted for the current planning level.
+- Phase 7.2 is closed as a planning checkpoint. Database implementation remains gated for a future deliberate phase.
 
 Current decision:
 
@@ -1711,14 +1713,14 @@ Suggested migration approach:
 - Real cancelled customer orders with documents or payments should become archived history after a suitable period, not active operational clutter.
 - Sheet retirement should be systematic: replace and accept the matching web app/API view first, then make the Sheet read-only/synced, then retire it.
 
-7.2A planning tasks:
+7.2A planning tasks - Accepted:
 
-- Inventory every backend function that reads/writes the candidate order/intake/document sheets. - Started in `DATABASE_SCALING_PLAN.md`.
-- Identify sheet formulas/views that depend on those sheets. - Started in `DATABASE_SCALING_PLAN.md`; owner formula question captured and replacement strategy drafted.
+- Inventory every backend function that reads/writes the candidate order/intake/document sheets. - Captured in `DATABASE_SCALING_PLAN.md`.
+- Identify sheet formulas/views that depend on those sheets. - Captured in `DATABASE_SCALING_PLAN.md`; owner formula question captured and replacement strategy drafted.
 - Define the minimum Postgres schema for `ORDER_MASTER`, `ORDER_LINES`, `ORDER_INTAKE_STATE`, `ORDER_INTAKE_ITEMS`, `ORDER_DOCUMENTS`, `ORDER_STATUS_LOG`, and `SALES_PRICING`. - Drafted in `DATABASE_SCALING_PLAN.md`.
 - Decide whether Google Sheets should become read-only reporting, synced operator view, or be retired per table. - Owner decision: use only during migration, then retire per table once replacement web views are accepted.
 - Define import rules for historical data. - Owner direction captured: import useful business data, exclude test data, and exclude `Charl N` test orders.
-- Draft a migration checklist with rollback rules before any implementation. - Drafted in `DATABASE_SCALING_PLAN.md`; needs review before implementation.
+- Draft a migration checklist with rollback rules before any implementation. - Drafted in `DATABASE_SCALING_PLAN.md`.
 - Confirm pricing effective-date behavior. - Owner decision captured and drafted in `DATABASE_SCALING_PLAN.md`.
 - Define Sheet retirement acceptance rules. - Drafted in `DATABASE_SCALING_PLAN.md`; replacement views must be accepted before Sheets are retired.
 
@@ -1727,12 +1729,34 @@ Suggested migration approach:
 - Do not start implementation until 7.2A is reviewed and accepted.
 - Before implementation, run a Claude Code review because this will be cross-cutting across backend, web app, n8n assumptions, data contracts, and operations.
 - Implementation should start with tests and adapters, not with a production database cutover.
+- 7.2B is not started now. Treat it as future implementation work only when database migration becomes the selected priority.
 
-### 7.3 Oom Sakkie Operational Order And Document Lookup - Future Planning
+### 7.3 Oom Sakkie Operational Order And Document Lookup - Planning Next
 
 Goal:
 
 - Let Oom Sakkie answer internal operator questions about orders without requiring the operator to open the web app or Google Sheets.
+
+Planning source:
+
+- `docs/04-n8n/workflows/OOM_SAKKIE_ORDER_LOOKUP_PLAN.md`
+
+Live workflow baseline imported:
+
+- `2 - The GateKeeper`
+- `2.0 - OOM SAKKIE - Amadeus Assistant Agent`
+- `2.1 - Amadeus Weather Sub-Agent`
+- `2.1.1 - Amadeus Forecast Tool`
+- `2.2 - Amadeus Sunsynk Sub-Agent`
+- `2.3.1 - Build Daily Irrigation Plan`
+- `2.3.2 - Run Irrigation Controller`
+- `2.4 - Amadeus Orders Sub Agent`
+- `2.4.1 - Test Caller`
+- `2.4.2 - Orders Approval Callback Handler`
+- `2.4.3 - Order Approval Request Webhook`
+- `ALERT - Local Weather Station`
+- `ALERT - Sunsynk`
+- `ALERT - Weather Forecast`
 
 Required outcome:
 
@@ -1746,6 +1770,69 @@ Required outcome:
 Planning note:
 
 - This complements Phase 6 web app usability. The web app remains the full operations interface; Oom Sakkie becomes the quick internal assistant for checks and document retrieval when operators are away from the app.
+
+Recommended direction:
+
+- Start read-only.
+- Build around the existing live `2.#` workflow suite. Do not create a replacement Oom Sakkie path.
+- Preserve `2 - The GateKeeper` as the access-control entry point.
+- Preserve existing `2.4` order approval behavior.
+- Use existing backend endpoints first where practical:
+  - `GET /api/orders/<order_id>`
+  - `GET /api/orders/active-customer-context`
+  - `GET /api/orders`
+- Add a controlled `GET /api/orders/search` endpoint if name/phone matching should be backend-owned before workflow implementation.
+- Keep document sending behind an explicit confirmation step and the existing backend document-send endpoints.
+
+7.3A planning tasks:
+
+- Review and accept the Oom Sakkie lookup plan.
+- Review imported live `2.#` workflow READMEs.
+- Read-only order lookup belongs inside existing `2.4 - Amadeus Orders Sub Agent`. - Owner decision captured; preserve existing approval behavior.
+- Decide whether 7.3B should add `GET /api/orders/search` before workflow work. - Recommended: yes, keep matching backend-owned.
+- Decide whether Oom Sakkie may show Google Drive URLs to operators or only document refs/statuses. - Recommended first slice: refs/statuses only.
+- Decide whether invoice sending is in 7.3 or future-only. - Recommended: future-only; prove quote lookup/send guard first.
+- Confirm the first operator channel for Oom Sakkie. - Recommended: existing Telegram Oom Sakkie path through `2 - The GateKeeper` and `2.0`.
+
+7.3A recommended path:
+
+- Build lookup into existing `2.4`; do not create `2.4.4` for the first slice.
+- Add backend `GET /api/orders/search` first.
+- Add backend `GET /api/orders/<order_id>/operator-summary` as the compact internal-safe detail contract for Oom Sakkie.
+- Add read-only `2.4` actions first: `find_order`, `get_order_summary`, `get_order_documents`.
+- Keep document sending out of the first live lookup slice.
+
+7.3B backend contract:
+
+- Drafted in `docs/02-backend/API_STRUCTURE.md`.
+- `GET /api/orders/search` returns compact match rows for `order_id`, `customer_phone`, `customer_name`, or `conversation_id`.
+- `GET /api/orders/<order_id>/operator-summary` returns compact `order_summary`, grouped `line_summary`, `document_summary`, `outstanding_actions`, and `safe_document_actions`.
+- First slice must not return Google Drive URLs and must not send documents.
+
+7.3B local implementation:
+
+- Backend endpoints added locally:
+  - `GET /api/orders/search`
+  - `GET /api/orders/<order_id>/operator-summary`
+- Search and operator-summary helpers added to `modules/orders/order_read.py`.
+- Routes added in `modules/orders/order_routes.py`.
+- Existing `/api/orders/<order_id>` route left unchanged.
+- Focused route/read tests added.
+- Full local suite passed with 82 tests.
+- Next step: plan and implement the read-only `2.4` workflow actions after backend deployment decision.
+
+7.3B implementation gate:
+
+- Do not update workflow JSON until 7.3A is accepted.
+- Read-only lookup must pass before adding any document-send action.
+- Document send must use backend endpoints, never direct workflow-to-Chatwoot delivery.
+
+7.3 side-track captured for later:
+
+- `2.3.2 - Run Irrigation Controller` currently contains direct IFTTT webhook key usage in its HTTP node URL expressions.
+- Short-term hardening: move the IFTTT Maker key into n8n credential storage or protected n8n environment variables such as `IFTTT_BASE_URL` and `IFTTT_MAKER_KEY`.
+- Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
+- Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
 ## Phase 8: Breeding Board Improvements — Completed 2026-05-02
 
@@ -1886,6 +1973,8 @@ Required outcome:
 - create data contracts for information passed between workflows, backend endpoints, web app pages, Google Sheets, and external systems
 - set up Oom Sakkie documentation in the same style as Sam: workflow map, data flow, node responsibilities, protected logic, and input/output contracts
 - ensure important operational writes go through backend-controlled logic where possible instead of direct workflow-to-sheet writes
+- ensure hardware-control secrets such as IFTTT irrigation keys are stored in protected credentials/env values, not workflow expressions or sheet data
+- prefer backend-owned hardware-control endpoints for irrigation start/stop before expanding Oom Sakkie irrigation commands
 - keep AI agents responsible for interpretation and wording, not hidden data ownership or business-rule enforcement
 - document backend module boundaries for orders, pig operations, farm worker tasks, weather logging, solar data, reporting, and notifications
 - add logging and audit expectations for customer actions, worker actions, web-app actions, backend actions, weather imports, and solar imports
@@ -1945,10 +2034,11 @@ Recently completed:
 - Phase 5.8 automatic quote readiness — complete and live-verified 2026-05-13: backend `auto_quote` after create/update/sync, quote fingerprint duplicate skip, `1.2` propagation, `1.0` steward context/wording guidance, and Chatwoot wording confirmed.
 - Phase 7.0 backend verification and service-boundary cleanup — complete 2026-05-18: order service modules extracted, cleanup done, Google Sheets quota cache/retry deployed, and production create-with-lines checkpoint passed.
 - Phase 7.1 intake and payload hygiene — complete 2026-05-18: handoff contracts, slim context shapes, Chatwoot lifecycle/write policy, workflow validation tests, and n8n `1.0` upload/readback completed.
+- Phase 7.2 database scaling review — planning complete 2026-05-18: future Postgres direction, owner decisions, draft schema, formula replacement strategy, import rules, Sheet retirement rules, and rollback gates captured in `docs/02-backend/DATABASE_SCALING_PLAN.md`.
 
 Recommended next:
 
-1. **Phase 7.2 Database Scaling Review** - planning only: inventory data-access risk, define the future Postgres/Supabase direction, and set migration gates before implementation.
+1. **Phase 7.3 Oom Sakkie Operational Order And Document Lookup** - planning first: define lookup actions, backend endpoint needs, permissions, and document retrieval behavior before implementation.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

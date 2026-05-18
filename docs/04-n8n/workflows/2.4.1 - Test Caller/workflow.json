@@ -1,0 +1,140 @@
+﻿{
+    "updatedAt":  "2026-04-27T06:56:05.533Z",
+    "createdAt":  "2026-03-24T11:53:28.945Z",
+    "id":  "GwWZueB0iyonpscl",
+    "name":  "2.4.1 - Test Caller",
+    "description":  null,
+    "active":  false,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "31566a5a-d9dc-4865-abe2-0c4b8da8300c",
+                      "name":  "When clicking ‘Execute workflow’"
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "raw",
+                                         "jsonOutput":  "{\n  \"action\": \"request_order_approval\",\n  \"order_id\": \"ORD-2026-9C0F8B\",\n  \"changed_by\": \"Sam\",\n  \"trigger_source\": \"Order Steward\",\n  \"notes\": \"Test approval request\"\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       208,
+                                       0
+                                   ],
+                      "id":  "c1eb565c-1e05-400d-b02e-c91b5817aa1b",
+                      "name":  "Set - Test Payload"
+                  },
+                  {
+                      "parameters":  {
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "T8LLCAtYDLNRPoRx",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
+                                                            "cachedResultName":  "My project — 2.4A - Amadeus Orders Sub Agent"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+
+                                                                          },
+                                                                "matchingColumns":  [
+
+                                                                                    ],
+                                                                "schema":  [
+
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  true
+                                                            },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflow",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       416,
+                                       0
+                                   ],
+                      "id":  "1ebc6a33-f8f4-42f7-8dfa-73ab0580b66a",
+                      "name":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027"
+                  }
+              ],
+    "connections":  {
+                        "When clicking ‘Execute workflow’":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Set - Test Payload",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "Set - Test Payload":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "789ca7a3-411a-4416-94e2-6ce94def90c6",
+    "activeVersionId":  null,
+    "versionCounter":  9,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-03-24T11:53:28.948Z",
+                       "createdAt":  "2026-03-24T11:53:28.948Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "GwWZueB0iyonpscl",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  null
+}

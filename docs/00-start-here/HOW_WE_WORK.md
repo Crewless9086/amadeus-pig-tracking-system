@@ -10,9 +10,9 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 7.2** - Database Scaling Review |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 7.3** - Oom Sakkie Operational Order And Document Lookup |
 | **Status** | Phase 7.1 complete: payload contracts documented, Chatwoot lifecycle/write pattern standardized, `1.0` uploaded to n8n and verified, 75 local tests passing |
-| **Current focus** | Phase 7.2 planning only: decide database scaling direction and migration gates before any implementation |
+| **Current focus** | Phase 7.3 planning only: define Oom Sakkie order/document lookup scope before implementation |
 | **Current last verified** | **2026-05-18** - `1.0` n8n upload/readback passed; `1.2` live workflow matched repo structurally; full local suite passed with 75 tests |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 

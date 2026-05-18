@@ -1,0 +1,457 @@
+﻿{
+    "updatedAt":  "2025-12-28T08:38:42.000Z",
+    "createdAt":  "2025-12-28T06:55:23.304Z",
+    "id":  "vx1lV8aFCG28KSIN",
+    "name":  "2.1.1 - Amadeus Forecast Tool",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "workflowInputs":  {
+                                                                "values":  [
+                                                                               {
+                                                                                   "name":  "offsetDays",
+                                                                                   "type":  "number"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "startOffsetDays",
+                                                                                   "type":  "number"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "endOffsetDays",
+                                                                                   "type":  "number"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "day"
+                                                                               }
+                                                                           ]
+                                                            }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflowTrigger",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "5b3ff04c-84e0-4d00-b0b8-675a26b7f3b8",
+                      "name":  "When Executed by Another Workflow"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "54ff1299-1ad6-4b6f-89df-5b2814f0cb81",
+                                                                                     "name":  "lat",
+                                                                                     "value":  "-34.2364910",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "bfc0270d-e53d-4f5d-8f29-5a935fefdffc",
+                                                                                     "name":  "lon",
+                                                                                     "value":  "21.4283380",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "f3350f7e-5398-4418-b70c-b7f1b2fcf23e",
+                                                                                     "name":  "timezone",
+                                                                                     "value":  "Africa/Johannesburg",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "d26798f4-d15d-48c8-bdc0-354e482de906",
+                                                                                     "name":  "day",
+                                                                                     "value":  "={{ $json.day || \"today\" }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "4e609868-01dd-41cf-b47c-22ce6e9d6a1b",
+                                                                                     "name":  "offsetDays",
+                                                                                     "value":  "={{ $json.offsetDays }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "955dbab5-dcad-414f-9e13-faa004d0942e",
+                                                                                     "name":  "startOffsetDays",
+                                                                                     "value":  "={{ $json.startOffsetDays }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "2b6ed9e0-9063-4beb-b1a5-1ecd21ed0907",
+                                                                                     "name":  "endOffsetDays",
+                                                                                     "value":  "={{ $json.endOffsetDays }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       208,
+                                       0
+                                   ],
+                      "id":  "669dbbf5-c208-49d2-95f2-99b3e77e3ab2",
+                      "name":  "Set Forecast Inputs"
+                  },
+                  {
+                      "parameters":  {
+                                         "url":  "https://api.open-meteo.com/v1/forecast",
+                                         "sendQuery":  true,
+                                         "queryParameters":  {
+                                                                 "parameters":  [
+                                                                                    {
+                                                                                        "name":  "latitude",
+                                                                                        "value":  "={{ $json.lat }}"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "longitude",
+                                                                                        "value":  "={{ $json.lon }}"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "timezone",
+                                                                                        "value":  "={{ $json.timezone }}"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "daily",
+                                                                                        "value":  "temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "forecast_days",
+                                                                                        "value":  "10"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "temperature_unit",
+                                                                                        "value":  "celsius"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "wind_speed_unit",
+                                                                                        "value":  "kmh"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "precipitation_unit",
+                                                                                        "value":  "mm"
+                                                                                    }
+                                                                                ]
+                                                             },
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "responseFormat":  "json"
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.3,
+                      "position":  [
+                                       416,
+                                       0
+                                   ],
+                      "id":  "37636d72-0dbb-45b3-8185-35b2f2959276",
+                      "name":  "Get Forecast (Open-Meteo)"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// ---- Inputs (preferred) ----\n// offsetDays: 0..10 (single day)\n// startOffsetDays/endOffsetDays: 0..10 (range)\n\n// Backwards compatible \"day\" string:\n// \"today\" =\u003e 0\n// \"tomorrow\" =\u003e 1\n\nconst setNode = $node[\"Set Forecast Inputs\"]?.json || {};\nconst data = $json;\n\nconst daily = data.daily;\nif (!daily || !daily.time || daily.time.length === 0) {\n  return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"No daily forecast data returned.\" } }];\n}\n\n// ---------- helper ----------\nfunction clampInt(n, min, max) {\n  const x = Number.parseInt(n, 10);\n  if (Number.isNaN(x)) return null;\n  return Math.max(min, Math.min(max, x));\n}\n\nlet startOffset = null;\nlet endOffset = null;\nlet offset = null;\n\n// Only treat as \"range\" if startOffsetDays/endOffsetDays are actually provided (not blank/null)\nconst hasStart = setNode.startOffsetDays !== undefined \u0026\u0026 setNode.startOffsetDays !== null \u0026\u0026 setNode.startOffsetDays !== \"\";\nconst hasEnd   = setNode.endOffsetDays   !== undefined \u0026\u0026 setNode.endOffsetDays   !== null \u0026\u0026 setNode.endOffsetDays   !== \"\";\n\nif (hasStart || hasEnd) {\n  startOffset = clampInt(hasStart ? setNode.startOffsetDays : 0, 0, 10);\n  endOffset   = clampInt(hasEnd ? setNode.endOffsetDays : startOffset, 0, 10);\n\n  if (startOffset === null || endOffset === null) {\n    return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Invalid startOffsetDays/endOffsetDays.\" } }];\n  }\n  if (endOffset \u003c startOffset) [startOffset, endOffset] = [endOffset, startOffset];\n}\n// Else prefer explicit single offset\nelse if (setNode.offsetDays !== undefined \u0026\u0026 setNode.offsetDays !== null \u0026\u0026 setNode.offsetDays !== \"\") {\n  offset = clampInt(setNode.offsetDays, 0, 10);\n  if (offset === null) {\n    return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Invalid offsetDays.\" } }];\n  }\n}\n// Else fall back to \"day\" string\nelse {\n  const dayStr = (setNode.day || \"today\").toLowerCase().trim();\n  if (dayStr === \"today\") offset = 0;\n  else if (dayStr === \"tomorrow\") offset = 1;\n  else {\n    return [{\n      json: {\n        ok: false,\n        source: \"Open-Meteo\",\n        reason: `Unsupported \u0027day\u0027 value: \u0027${setNode.day}\u0027. Use offsetDays or startOffsetDays/endOffsetDays.`\n      }\n    }];\n  }\n}\n\n\n// Build output\nconst tz = data.timezone || \"Africa/Johannesburg\";\n\nfunction buildRow(idx) {\n  if (idx \u003c 0 || idx \u003e= daily.time.length) return null;\n  return {\n    date: daily.time[idx],\n    temp_max_c: daily.temperature_2m_max?.[idx],\n    temp_min_c: daily.temperature_2m_min?.[idx],\n    rain_sum_mm: daily.precipitation_sum?.[idx],\n    wind_max_kmh: daily.wind_speed_10m_max?.[idx],\n    gust_max_kmh: daily.wind_gusts_10m_max?.[idx],\n  };\n}\n\n// Range mode\nif (startOffset !== null \u0026\u0026 endOffset !== null) {\n  const rows = [];\n  for (let i = startOffset; i \u003c= endOffset; i++) {\n    const r = buildRow(i);\n    if (r) rows.push({ ...r, offsetDays: i });\n  }\n\n  if (rows.length === 0) {\n    return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Requested range not available in forecast.\" } }];\n  }\n\n  return [{\n    json: {\n      ok: true,\n      source: \"Open-Meteo\",\n      timezone: tz,\n      mode: \"range\",\n      startOffsetDays: startOffset,\n      endOffsetDays: endOffset,\n      days: rows\n    }\n  }];\n}\n\n// Single-day mode\nconst single = buildRow(offset);\nif (!single) {\n  return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Requested offset not available in forecast.\" } }];\n}\n\nreturn [{\n  json: {\n    ok: true,\n    source: \"Open-Meteo\",\n    timezone: tz,\n    mode: \"single\",\n    offsetDays: offset,\n    day_requested: offset === 0 ? \"today\" : offset === 1 ? \"tomorrow\" : `in ${offset} days`,\n    ...single\n  }\n}];\n"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       624,
+                                       0
+                                   ],
+                      "id":  "b8cba3c5-15d1-4336-937e-8e921557f8fa",
+                      "name":  "Format Daily Forecast"
+                  }
+              ],
+    "connections":  {
+                        "When Executed by Another Workflow":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "Set Forecast Inputs",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              },
+                        "Set Forecast Inputs":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Get Forecast (Open-Meteo)",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Get Forecast (Open-Meteo)":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Format Daily Forecast",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "versionId":  "fe56ab9d-b7b8-4da6-940b-29e6bb3ccee8",
+    "activeVersionId":  "fe56ab9d-b7b8-4da6-940b-29e6bb3ccee8",
+    "versionCounter":  30,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-28T06:55:23.306Z",
+                       "createdAt":  "2025-12-28T06:55:23.306Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "vx1lV8aFCG28KSIN",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2025-12-28T08:38:42.227Z",
+                          "createdAt":  "2025-12-28T08:38:42.227Z",
+                          "versionId":  "fe56ab9d-b7b8-4da6-940b-29e6bb3ccee8",
+                          "workflowId":  "vx1lV8aFCG28KSIN",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "workflowInputs":  {
+                                                                                      "values":  [
+                                                                                                     {
+                                                                                                         "name":  "offsetDays",
+                                                                                                         "type":  "number"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "startOffsetDays",
+                                                                                                         "type":  "number"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "endOffsetDays",
+                                                                                                         "type":  "number"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "day"
+                                                                                                     }
+                                                                                                 ]
+                                                                                  }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflowTrigger",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             0,
+                                                             0
+                                                         ],
+                                            "id":  "5b3ff04c-84e0-4d00-b0b8-675a26b7f3b8",
+                                            "name":  "When Executed by Another Workflow"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "54ff1299-1ad6-4b6f-89df-5b2814f0cb81",
+                                                                                                           "name":  "lat",
+                                                                                                           "value":  "-34.2364910",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "bfc0270d-e53d-4f5d-8f29-5a935fefdffc",
+                                                                                                           "name":  "lon",
+                                                                                                           "value":  "21.4283380",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "f3350f7e-5398-4418-b70c-b7f1b2fcf23e",
+                                                                                                           "name":  "timezone",
+                                                                                                           "value":  "Africa/Johannesburg",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "d26798f4-d15d-48c8-bdc0-354e482de906",
+                                                                                                           "name":  "day",
+                                                                                                           "value":  "={{ $json.day || \"today\" }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "4e609868-01dd-41cf-b47c-22ce6e9d6a1b",
+                                                                                                           "name":  "offsetDays",
+                                                                                                           "value":  "={{ $json.offsetDays }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "955dbab5-dcad-414f-9e13-faa004d0942e",
+                                                                                                           "name":  "startOffsetDays",
+                                                                                                           "value":  "={{ $json.startOffsetDays }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "2b6ed9e0-9063-4beb-b1a5-1ecd21ed0907",
+                                                                                                           "name":  "endOffsetDays",
+                                                                                                           "value":  "={{ $json.endOffsetDays }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             208,
+                                                             0
+                                                         ],
+                                            "id":  "669dbbf5-c208-49d2-95f2-99b3e77e3ab2",
+                                            "name":  "Set Forecast Inputs"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "url":  "https://api.open-meteo.com/v1/forecast",
+                                                               "sendQuery":  true,
+                                                               "queryParameters":  {
+                                                                                       "parameters":  [
+                                                                                                          {
+                                                                                                              "name":  "latitude",
+                                                                                                              "value":  "={{ $json.lat }}"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "longitude",
+                                                                                                              "value":  "={{ $json.lon }}"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "timezone",
+                                                                                                              "value":  "={{ $json.timezone }}"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "daily",
+                                                                                                              "value":  "temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_gusts_10m_max"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "forecast_days",
+                                                                                                              "value":  "10"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "temperature_unit",
+                                                                                                              "value":  "celsius"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "wind_speed_unit",
+                                                                                                              "value":  "kmh"
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "name":  "precipitation_unit",
+                                                                                                              "value":  "mm"
+                                                                                                          }
+                                                                                                      ]
+                                                                                   },
+                                                               "options":  {
+                                                                               "response":  {
+                                                                                                "response":  {
+                                                                                                                 "responseFormat":  "json"
+                                                                                                             }
+                                                                                            }
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.3,
+                                            "position":  [
+                                                             416,
+                                                             0
+                                                         ],
+                                            "id":  "37636d72-0dbb-45b3-8185-35b2f2959276",
+                                            "name":  "Get Forecast (Open-Meteo)"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "// ---- Inputs (preferred) ----\n// offsetDays: 0..10 (single day)\n// startOffsetDays/endOffsetDays: 0..10 (range)\n\n// Backwards compatible \"day\" string:\n// \"today\" =\u003e 0\n// \"tomorrow\" =\u003e 1\n\nconst setNode = $node[\"Set Forecast Inputs\"]?.json || {};\nconst data = $json;\n\nconst daily = data.daily;\nif (!daily || !daily.time || daily.time.length === 0) {\n  return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"No daily forecast data returned.\" } }];\n}\n\n// ---------- helper ----------\nfunction clampInt(n, min, max) {\n  const x = Number.parseInt(n, 10);\n  if (Number.isNaN(x)) return null;\n  return Math.max(min, Math.min(max, x));\n}\n\nlet startOffset = null;\nlet endOffset = null;\nlet offset = null;\n\n// Only treat as \"range\" if startOffsetDays/endOffsetDays are actually provided (not blank/null)\nconst hasStart = setNode.startOffsetDays !== undefined \u0026\u0026 setNode.startOffsetDays !== null \u0026\u0026 setNode.startOffsetDays !== \"\";\nconst hasEnd   = setNode.endOffsetDays   !== undefined \u0026\u0026 setNode.endOffsetDays   !== null \u0026\u0026 setNode.endOffsetDays   !== \"\";\n\nif (hasStart || hasEnd) {\n  startOffset = clampInt(hasStart ? setNode.startOffsetDays : 0, 0, 10);\n  endOffset   = clampInt(hasEnd ? setNode.endOffsetDays : startOffset, 0, 10);\n\n  if (startOffset === null || endOffset === null) {\n    return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Invalid startOffsetDays/endOffsetDays.\" } }];\n  }\n  if (endOffset \u003c startOffset) [startOffset, endOffset] = [endOffset, startOffset];\n}\n// Else prefer explicit single offset\nelse if (setNode.offsetDays !== undefined \u0026\u0026 setNode.offsetDays !== null \u0026\u0026 setNode.offsetDays !== \"\") {\n  offset = clampInt(setNode.offsetDays, 0, 10);\n  if (offset === null) {\n    return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Invalid offsetDays.\" } }];\n  }\n}\n// Else fall back to \"day\" string\nelse {\n  const dayStr = (setNode.day || \"today\").toLowerCase().trim();\n  if (dayStr === \"today\") offset = 0;\n  else if (dayStr === \"tomorrow\") offset = 1;\n  else {\n    return [{\n      json: {\n        ok: false,\n        source: \"Open-Meteo\",\n        reason: `Unsupported \u0027day\u0027 value: \u0027${setNode.day}\u0027. Use offsetDays or startOffsetDays/endOffsetDays.`\n      }\n    }];\n  }\n}\n\n\n// Build output\nconst tz = data.timezone || \"Africa/Johannesburg\";\n\nfunction buildRow(idx) {\n  if (idx \u003c 0 || idx \u003e= daily.time.length) return null;\n  return {\n    date: daily.time[idx],\n    temp_max_c: daily.temperature_2m_max?.[idx],\n    temp_min_c: daily.temperature_2m_min?.[idx],\n    rain_sum_mm: daily.precipitation_sum?.[idx],\n    wind_max_kmh: daily.wind_speed_10m_max?.[idx],\n    gust_max_kmh: daily.wind_gusts_10m_max?.[idx],\n  };\n}\n\n// Range mode\nif (startOffset !== null \u0026\u0026 endOffset !== null) {\n  const rows = [];\n  for (let i = startOffset; i \u003c= endOffset; i++) {\n    const r = buildRow(i);\n    if (r) rows.push({ ...r, offsetDays: i });\n  }\n\n  if (rows.length === 0) {\n    return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Requested range not available in forecast.\" } }];\n  }\n\n  return [{\n    json: {\n      ok: true,\n      source: \"Open-Meteo\",\n      timezone: tz,\n      mode: \"range\",\n      startOffsetDays: startOffset,\n      endOffsetDays: endOffset,\n      days: rows\n    }\n  }];\n}\n\n// Single-day mode\nconst single = buildRow(offset);\nif (!single) {\n  return [{ json: { ok: false, source: \"Open-Meteo\", reason: \"Requested offset not available in forecast.\" } }];\n}\n\nreturn [{\n  json: {\n    ok: true,\n    source: \"Open-Meteo\",\n    timezone: tz,\n    mode: \"single\",\n    offsetDays: offset,\n    day_requested: offset === 0 ? \"today\" : offset === 1 ? \"tomorrow\" : `in ${offset} days`,\n    ...single\n  }\n}];\n"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             624,
+                                                             0
+                                                         ],
+                                            "id":  "b8cba3c5-15d1-4336-937e-8e921557f8fa",
+                                            "name":  "Format Daily Forecast"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "When Executed by Another Workflow":  {
+                                                                                        "main":  [
+                                                                                                     [
+                                                                                                         {
+                                                                                                             "node":  "Set Forecast Inputs",
+                                                                                                             "type":  "main",
+                                                                                                             "index":  0
+                                                                                                         }
+                                                                                                     ]
+                                                                                                 ]
+                                                                                    },
+                                              "Set Forecast Inputs":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Get Forecast (Open-Meteo)",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "Get Forecast (Open-Meteo)":  {
+                                                                                "main":  [
+                                                                                             [
+                                                                                                 {
+                                                                                                     "node":  "Format Daily Forecast",
+                                                                                                     "type":  "main",
+                                                                                                     "index":  0
+                                                                                                 }
+                                                                                             ]
+                                                                                         ]
+                                                                            }
+                                          },
+                          "authors":  "Charl Nieuwendyk",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+
+                                                     ]
+                      }
+}

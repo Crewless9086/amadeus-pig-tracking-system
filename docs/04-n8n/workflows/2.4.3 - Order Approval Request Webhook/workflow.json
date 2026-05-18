@@ -1,0 +1,533 @@
+﻿{
+    "updatedAt":  "2026-04-27T06:57:01.728Z",
+    "createdAt":  "2026-03-25T10:33:34.938Z",
+    "id":  "k4XVMoJ1hK09PIvT",
+    "name":  "2.4.3 - Order Approval Request Webhook",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "46935f6b-2921-4d51-a477-1db5ac1024f7",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2.1,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "39371227-040e-4926-9aeb-b5a719de27aa",
+                      "name":  "Webhook - Order Approval Request",
+                      "webhookId":  "46935f6b-2921-4d51-a477-1db5ac1024f7"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const input = $json.body || {};\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nreturn [\n  {\n    json: {\n      action: clean(input.action),\n      order_id: clean(input.order_id).toUpperCase(),\n      changed_by: clean(input.changed_by) || \"App\",\n      trigger_source: clean(input.trigger_source) || \"Flask App\",\n      notes: clean(input.notes) || \"Order sent for approval from app\"\n    }\n  }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       208,
+                                       0
+                                   ],
+                      "id":  "cfc7eff1-9840-45df-afac-99a9741ce29d",
+                      "name":  "Code - Normalize Webhook Payload"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  3
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "6905bc6a-3c00-4525-9c4a-64fe4d435ecc",
+                                                                                   "leftValue":  "={{$json.action}}",
+                                                                                   "rightValue":  "request_order_approval",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals",
+                                                                                                    "name":  "filter.operator.equals"
+                                                                                                }
+                                                                               },
+                                                                               {
+                                                                                   "id":  "7aa1df19-15bb-4c2e-b869-d580dd464cb2",
+                                                                                   "leftValue":  "={{$json.order_id}}",
+                                                                                   "rightValue":  "",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "notEmpty",
+                                                                                                    "singleValue":  true
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.3,
+                      "position":  [
+                                       416,
+                                       0
+                                   ],
+                      "id":  "6543be31-2daa-455a-97bd-868f6dc1aa5d",
+                      "name":  "IF - Valid Approval Request"
+                  },
+                  {
+                      "parameters":  {
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "T8LLCAtYDLNRPoRx",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
+                                                            "cachedResultName":  "My project — 2.4A - Amadeus Orders Sub Agent"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+
+                                                                          },
+                                                                "matchingColumns":  [
+
+                                                                                    ],
+                                                                "schema":  [
+
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  true
+                                                            },
+                                         "options":  {
+                                                         "waitForSubWorkflow":  true
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflow",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       704,
+                                       -128
+                                   ],
+                      "id":  "f34ee64b-bd5b-4631-b704-ec2d9a3324b9",
+                      "name":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027"
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "{\n  \"success\": true,\n  \"message\": \"Approval request forwarded to Oom Sakkie.\"\n}",
+                                         "options":  {
+                                                         "responseCode":  200
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       912,
+                                       -128
+                                   ],
+                      "id":  "7522bf2a-2098-4c0c-84b9-560da19b1919",
+                      "name":  "Respond to Webhook - Success"
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "{\n  \"success\": false,\n  \"message\": \"Invalid approval request payload.\"\n}",
+                                         "options":  {
+                                                         "responseCode":  400
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.5,
+                      "position":  [
+                                       704,
+                                       96
+                                   ],
+                      "id":  "52d61c97-7757-4147-b820-9a2ff938e0de",
+                      "name":  "Respond to Webhook - Invalid Payload"
+                  }
+              ],
+    "connections":  {
+                        "Webhook - Order Approval Request":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Code - Normalize Webhook Payload",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "Code - Normalize Webhook Payload":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "IF - Valid Approval Request",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "IF - Valid Approval Request":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ],
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Respond to Webhook - Invalid Payload",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                        "Call \u00272.4A - Amadeus Orders Sub Agent\u0027":  {
+                                                                                 "main":  [
+                                                                                              [
+                                                                                                  {
+                                                                                                      "node":  "Respond to Webhook - Success",
+                                                                                                      "type":  "main",
+                                                                                                      "index":  0
+                                                                                                  }
+                                                                                              ]
+                                                                                          ]
+                                                                             }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate"
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+                    "Webhook - Order Approval Request":  [
+                                                             {
+                                                                 "json":  {
+                                                                              "headers":  {
+                                                                                              "host":  "charln.app.n8n.cloud",
+                                                                                              "user-agent":  "Python-urllib/3.14",
+                                                                                              "content-length":  "164",
+                                                                                              "accept-encoding":  "gzip, br",
+                                                                                              "cdn-loop":  "cloudflare; loops=1; subreqs=1",
+                                                                                              "cf-connecting-ip":  "74.220.48.241",
+                                                                                              "cf-ew-via":  "15",
+                                                                                              "cf-ipcountry":  "US",
+                                                                                              "cf-ray":  "9e1db80dd8ddff15-PDX",
+                                                                                              "cf-visitor":  "{\"scheme\":\"https\"}",
+                                                                                              "cf-worker":  "n8n.cloud",
+                                                                                              "content-type":  "application/json",
+                                                                                              "x-forwarded-for":  "74.220.48.241, 172.68.174.30",
+                                                                                              "x-forwarded-host":  "charln.app.n8n.cloud",
+                                                                                              "x-forwarded-port":  "443",
+                                                                                              "x-forwarded-proto":  "https",
+                                                                                              "x-forwarded-server":  "traefik-prod-users-gwc-67-949b7659c-gm298",
+                                                                                              "x-is-trusted":  "yes",
+                                                                                              "x-real-ip":  "74.220.48.241"
+                                                                                          },
+                                                                              "params":  {
+
+                                                                                         },
+                                                                              "query":  {
+
+                                                                                        },
+                                                                              "body":  {
+                                                                                           "action":  "request_order_approval",
+                                                                                           "order_id":  "ORD-2026-9C0F8B",
+                                                                                           "changed_by":  "App",
+                                                                                           "trigger_source":  "Flask App",
+                                                                                           "notes":  "Order sent for approval from app"
+                                                                                       },
+                                                                              "webhookUrl":  "https://charln.app.n8n.cloud/webhook/46935f6b-2921-4d51-a477-1db5ac1024f7",
+                                                                              "executionMode":  "production"
+                                                                          },
+                                                                 "pairedItem":  {
+                                                                                    "item":  0
+                                                                                }
+                                                             }
+                                                         ]
+                },
+    "versionId":  "eea16601-d627-447c-9be2-537262a5d29a",
+    "activeVersionId":  "eea16601-d627-447c-9be2-537262a5d29a",
+    "versionCounter":  27,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-03-25T10:33:34.941Z",
+                       "createdAt":  "2026-03-25T10:33:34.941Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "k4XVMoJ1hK09PIvT",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-03-25T11:59:16.456Z",
+                          "createdAt":  "2026-03-25T11:59:16.456Z",
+                          "versionId":  "eea16601-d627-447c-9be2-537262a5d29a",
+                          "workflowId":  "k4XVMoJ1hK09PIvT",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "46935f6b-2921-4d51-a477-1db5ac1024f7",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2.1,
+                                            "position":  [
+                                                             0,
+                                                             0
+                                                         ],
+                                            "id":  "39371227-040e-4926-9aeb-b5a719de27aa",
+                                            "name":  "Webhook - Order Approval Request",
+                                            "webhookId":  "46935f6b-2921-4d51-a477-1db5ac1024f7"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const input = $json.body || {};\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nreturn [\n  {\n    json: {\n      action: clean(input.action),\n      order_id: clean(input.order_id).toUpperCase(),\n      changed_by: clean(input.changed_by) || \"App\",\n      trigger_source: clean(input.trigger_source) || \"Flask App\",\n      notes: clean(input.notes) || \"Order sent for approval from app\"\n    }\n  }\n];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             208,
+                                                             0
+                                                         ],
+                                            "id":  "cfc7eff1-9840-45df-afac-99a9741ce29d",
+                                            "name":  "Code - Normalize Webhook Payload"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "strict",
+                                                                                                  "version":  3
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "6905bc6a-3c00-4525-9c4a-64fe4d435ecc",
+                                                                                                         "leftValue":  "={{$json.action}}",
+                                                                                                         "rightValue":  "request_order_approval",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "string",
+                                                                                                                          "operation":  "equals",
+                                                                                                                          "name":  "filter.operator.equals"
+                                                                                                                      }
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "7aa1df19-15bb-4c2e-b869-d580dd464cb2",
+                                                                                                         "leftValue":  "={{$json.order_id}}",
+                                                                                                         "rightValue":  "",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "string",
+                                                                                                                          "operation":  "notEmpty",
+                                                                                                                          "singleValue":  true
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.3,
+                                            "position":  [
+                                                             416,
+                                                             0
+                                                         ],
+                                            "id":  "6543be31-2daa-455a-97bd-868f6dc1aa5d",
+                                            "name":  "IF - Valid Approval Request"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "T8LLCAtYDLNRPoRx",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
+                                                                                  "cachedResultName":  "My project — 2.4A - Amadeus Orders Sub Agent"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+
+                                                                                                },
+                                                                                      "matchingColumns":  [
+
+                                                                                                          ],
+                                                                                      "schema":  [
+
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  false,
+                                                                                      "convertFieldsToString":  true
+                                                                                  },
+                                                               "options":  {
+                                                                               "waitForSubWorkflow":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflow",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             704,
+                                                             -128
+                                                         ],
+                                            "id":  "f34ee64b-bd5b-4631-b704-ec2d9a3324b9",
+                                            "name":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "respondWith":  "json",
+                                                               "responseBody":  "{\n  \"success\": true,\n  \"message\": \"Approval request forwarded to Oom Sakkie.\"\n}",
+                                                               "options":  {
+                                                                               "responseCode":  200
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.5,
+                                            "position":  [
+                                                             912,
+                                                             -128
+                                                         ],
+                                            "id":  "7522bf2a-2098-4c0c-84b9-560da19b1919",
+                                            "name":  "Respond to Webhook - Success"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "respondWith":  "json",
+                                                               "responseBody":  "{\n  \"success\": false,\n  \"message\": \"Invalid approval request payload.\"\n}",
+                                                               "options":  {
+                                                                               "responseCode":  400
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.5,
+                                            "position":  [
+                                                             704,
+                                                             96
+                                                         ],
+                                            "id":  "52d61c97-7757-4147-b820-9a2ff938e0de",
+                                            "name":  "Respond to Webhook - Invalid Payload"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Webhook - Order Approval Request":  {
+                                                                                       "main":  [
+                                                                                                    [
+                                                                                                        {
+                                                                                                            "node":  "Code - Normalize Webhook Payload",
+                                                                                                            "type":  "main",
+                                                                                                            "index":  0
+                                                                                                        }
+                                                                                                    ]
+                                                                                                ]
+                                                                                   },
+                                              "Code - Normalize Webhook Payload":  {
+                                                                                       "main":  [
+                                                                                                    [
+                                                                                                        {
+                                                                                                            "node":  "IF - Valid Approval Request",
+                                                                                                            "type":  "main",
+                                                                                                            "index":  0
+                                                                                                        }
+                                                                                                    ]
+                                                                                                ]
+                                                                                   },
+                                              "IF - Valid Approval Request":  {
+                                                                                  "main":  [
+                                                                                               [
+                                                                                                   {
+                                                                                                       "node":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027",
+                                                                                                       "type":  "main",
+                                                                                                       "index":  0
+                                                                                                   }
+                                                                                               ],
+                                                                                               [
+                                                                                                   {
+                                                                                                       "node":  "Respond to Webhook - Invalid Payload",
+                                                                                                       "type":  "main",
+                                                                                                       "index":  0
+                                                                                                   }
+                                                                                               ]
+                                                                                           ]
+                                                                              },
+                                              "Call \u00272.4A - Amadeus Orders Sub Agent\u0027":  {
+                                                                                                       "main":  [
+                                                                                                                    [
+                                                                                                                        {
+                                                                                                                            "node":  "Respond to Webhook - Success",
+                                                                                                                            "type":  "main",
+                                                                                                                            "index":  0
+                                                                                                                        }
+                                                                                                                    ]
+                                                                                                                ]
+                                                                                                   }
+                                          },
+                          "authors":  "Charl Nieuwendyk",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-03-25T11:59:16.607Z",
+                                                             "id":  206,
+                                                             "workflowId":  "k4XVMoJ1hK09PIvT",
+                                                             "versionId":  "eea16601-d627-447c-9be2-537262a5d29a",
+                                                             "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         },
+                                                         {
+                                                             "createdAt":  "2026-04-27T06:57:01.981Z",
+                                                             "id":  484,
+                                                             "workflowId":  "k4XVMoJ1hK09PIvT",
+                                                             "versionId":  "eea16601-d627-447c-9be2-537262a5d29a",
+                                                             "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         },
+                                                         {
+                                                             "createdAt":  "2026-04-27T06:57:01.841Z",
+                                                             "id":  483,
+                                                             "workflowId":  "k4XVMoJ1hK09PIvT",
+                                                             "versionId":  "eea16601-d627-447c-9be2-537262a5d29a",
+                                                             "event":  "deactivated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         }
+                                                     ]
+                      }
+}

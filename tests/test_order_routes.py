@@ -296,6 +296,67 @@ class OrderRoutesTests(unittest.TestCase):
             "error": "Order not found.",
         })
 
+    def test_order_search_route_passes_query_and_returns_400_for_validation_error(self):
+        service_result = {
+            "success": True,
+            "action": "search_orders",
+            "lookup_status": "single_match",
+            "matches": [{"order_id": "ORD-1"}],
+        }
+
+        with patch.object(order_routes, "search_orders", return_value=service_result) as search:
+            response = self.client.get(
+                "/api/orders/search?customer_name=charl&status_scope=all&limit=3"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        search.assert_called_once_with(
+            order_id="",
+            customer_phone="",
+            customer_name="charl",
+            conversation_id="",
+            status_scope="all",
+            limit="3",
+        )
+
+        with patch.object(order_routes, "search_orders", side_effect=ValueError("Provide order_id.")):
+            error_response = self.client.get("/api/orders/search")
+
+        self.assertEqual(error_response.status_code, 400)
+        self.assertEqual(error_response.get_json(), {
+            "success": False,
+            "action": "search_orders",
+            "errors": ["Provide order_id."],
+        })
+
+    def test_operator_summary_route_returns_summary_and_404_for_missing_order(self):
+        service_result = {
+            "success": True,
+            "action": "get_order_operator_summary",
+            "order_id": "ORD-1",
+            "order_summary": {"order_id": "ORD-1"},
+        }
+
+        with patch.object(order_routes, "get_order_operator_summary", return_value=service_result) as summary:
+            response = self.client.get("/api/orders/ORD-1/operator-summary")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        summary.assert_called_once_with("ORD-1")
+
+        with patch.object(order_routes, "get_order_operator_summary", return_value=None):
+            missing_response = self.client.get("/api/orders/ORD-MISSING/operator-summary")
+
+        self.assertEqual(missing_response.status_code, 404)
+        self.assertEqual(missing_response.get_json(), {
+            "success": False,
+            "action": "get_order_operator_summary",
+            "lookup_status": "no_match",
+            "order_id": "ORD-MISSING",
+            "error": "Order not found.",
+        })
+
     def test_sync_lines_route_validates_payload_and_attaches_auto_quote_on_success(self):
         service_result = {
             "success": True,

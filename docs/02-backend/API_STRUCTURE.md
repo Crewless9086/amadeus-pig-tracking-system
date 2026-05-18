@@ -11,6 +11,8 @@ All order API routes are registered under `/api`.
 | Method | Path | Current purpose | Main caller |
 | --- | --- | --- | --- |
 | `GET` | `/api/orders` | List orders from `ORDER_OVERVIEW`. | Web app, future review tooling. |
+| `GET` | `/api/orders/search` | Phase 7.3 controlled order search for Oom Sakkie and future web app search. | Future Oom Sakkie `2.4` order lookup. |
+| `GET` | `/api/orders/<order_id>/operator-summary` | Phase 7.3 compact internal-safe order summary. | Future Oom Sakkie `2.4` order lookup. |
 | `GET` | `/api/order-intake/context` | Read one active persistent intake state by Chatwoot `conversation_id`. | Future `1.0` shadow mode. |
 | `POST` | `/api/order-intake/update` | Validate and merge an intake patch plus item patches into backend-owned intake sheets. | Future `1.0` shadow mode. |
 | `POST` | `/api/order-intake/<conversation_id>/reset` | Close an active intake row without deleting history. | Admin/debug tooling, future `1.2`. |
@@ -164,6 +166,211 @@ Safe context shape:
 - No raw full order list is returned.
 - No direct sheet rows are returned.
 - No pig IDs or tag numbers are returned in this endpoint.
+
+## Oom Sakkie Order Search Contract (Phase 7.3)
+
+Endpoint: `GET /api/orders/search`
+
+Purpose:
+
+- Provide a controlled backend-owned search endpoint for Oom Sakkie and future web app search.
+- Keep order matching rules out of n8n Code nodes.
+- Return compact matches for internal operator disambiguation.
+
+Caller:
+
+- Future `2.4 - Amadeus Orders Sub Agent` read-only lookup actions.
+
+Query parameters:
+
+| Parameter | Required | Notes |
+| --- | --- | --- |
+| `order_id` | no | Exact order ID. If supplied, this wins over other filters. |
+| `customer_phone` | no | Normalize digits before matching. |
+| `customer_name` | no | Partial case-insensitive match, conservative enough for operator disambiguation. |
+| `conversation_id` | no | Match `ORDER_MASTER.ConversationId` where available. |
+| `status_scope` | no | `active`, `history`, or `all`. Defaults to `active`. |
+| `limit` | no | Maximum matches to return. Default `5`, maximum `10`. |
+
+At least one of `order_id`, `customer_phone`, `customer_name`, or `conversation_id` is required.
+
+Status scope:
+
+| Scope | Included statuses |
+| --- | --- |
+| `active` | `Draft`, `Pending_Approval`, `Approved` |
+| `history` | `Cancelled`, `Completed`, `Rejected`-style terminal records where present |
+| `all` | Active and history statuses |
+
+Behavior:
+
+- Exact `order_id` lookup returns either `single_match`, `terminal_order`, or `no_match`.
+- `customer_phone`, `customer_name`, and `conversation_id` searches return `single_match`, `multiple_matches`, or `no_match`.
+- Multiple matches are sorted newest first.
+- Return compact match rows only; do not return raw Google Sheet rows.
+- Do not include Google Drive URLs in search results.
+- Do not send documents or mutate orders.
+
+Response shape:
+
+```json
+{
+  "success": true,
+  "action": "search_orders",
+  "lookup_status": "multiple_matches",
+  "match_count": 2,
+  "status_scope": "active",
+  "query": {
+    "order_id": "",
+    "customer_phone": "084...",
+    "customer_name": "",
+    "conversation_id": "",
+    "limit": 5
+  },
+  "matches": [
+    {
+      "order_id": "ORD-2026-123456",
+      "order_date": "2026-05-18",
+      "customer_name": "Customer Name",
+      "customer_phone": "084...",
+      "order_status": "Draft",
+      "approval_status": "Not_Required",
+      "payment_status": "Pending",
+      "payment_method": "Cash",
+      "collection_location": "Riversdale",
+      "collection_date": "",
+      "active_line_count": 1,
+      "active_line_total": 1400,
+      "document_count": 1,
+      "latest_quote_ref": "Q-2026-123456",
+      "latest_quote_status": "Generated",
+      "outstanding_actions": ["send_for_approval_when_ready"]
+    }
+  ],
+  "message": "Multiple matching orders were found."
+}
+```
+
+Error response:
+
+```json
+{
+  "success": false,
+  "action": "search_orders",
+  "errors": ["Provide order_id, customer_phone, customer_name, or conversation_id."]
+}
+```
+
+HTTP status codes:
+
+- `200` - valid search, including no matches
+- `400` - missing search identifier or invalid `status_scope`
+
+## Oom Sakkie Operator Summary Contract (Phase 7.3)
+
+Endpoint: `GET /api/orders/<order_id>/operator-summary`
+
+Purpose:
+
+- Return a compact, backend-owned, internal-safe order summary for Oom Sakkie.
+- Avoid making n8n format raw order detail data.
+- Keep wording facts stable as the underlying storage changes later.
+
+Caller:
+
+- Future `2.4 - Amadeus Orders Sub Agent` `get_order_summary` and `get_order_documents` actions.
+
+Behavior:
+
+- Read from the same backend order detail/document truth as `GET /api/orders/<order_id>`.
+- Return grouped active lines and compact document records.
+- Return outstanding actions useful to an operator.
+- Do not return raw sheet rows.
+- Do not send documents.
+- Do not include Google Drive URLs in the first 7.3 slice.
+
+Response shape:
+
+```json
+{
+  "success": true,
+  "action": "get_order_operator_summary",
+  "lookup_status": "single_match",
+  "order_id": "ORD-2026-123456",
+  "order_summary": {
+    "order_id": "ORD-2026-123456",
+    "order_date": "2026-05-18",
+    "customer_name": "Customer Name",
+    "customer_phone": "084...",
+    "order_status": "Draft",
+    "approval_status": "Not_Required",
+    "payment_status": "Pending",
+    "payment_method": "Cash",
+    "collection_location": "Riversdale",
+    "collection_date": "",
+    "active_line_count": 1,
+    "cancelled_line_count": 0,
+    "active_line_total": 1400,
+    "notes": ""
+  },
+  "line_summary": [
+    {
+      "quantity": 1,
+      "sale_category": "Grower",
+      "weight_band": "35_to_39_Kg",
+      "sex": "Female",
+      "line_status": "Draft",
+      "reserved_status": "Not_Reserved",
+      "unit_price": 1400,
+      "total": 1400
+    }
+  ],
+  "document_summary": [
+    {
+      "document_id": "DOC-2026-ABC123",
+      "document_type": "Quote",
+      "document_ref": "Q-2026-123456",
+      "version": 1,
+      "document_status": "Generated",
+      "payment_method": "Cash",
+      "total": 1400,
+      "valid_until": "2026-05-21",
+      "created_at": "2026-05-18T10:00:00",
+      "sent_at": "",
+      "sent_by": ""
+    }
+  ],
+  "outstanding_actions": [
+    {
+      "code": "send_for_approval_when_ready",
+      "label": "Order can be sent for approval once operator confirms details."
+    }
+  ],
+  "safe_document_actions": [
+    {
+      "action": "view_document_record",
+      "document_id": "DOC-2026-ABC123",
+      "document_ref": "Q-2026-123456"
+    }
+  ]
+}
+```
+
+HTTP status codes:
+
+- `200` - summary returned
+- `404` - order not found
+
+Initial outstanding action rules:
+
+- Draft missing payment method: `missing_payment_method`
+- Draft missing collection location: `missing_collection_location`
+- Draft with no active lines: `missing_active_lines`
+- Draft with required fields and active lines: `send_for_approval_when_ready`
+- Pending approval: `awaiting_approval`
+- Approved with reserved count below active line count: `reservation_follow_up`
+- Approved with enough reserved/active lines: `ready_for_collection_or_completion`
+- Cancelled or completed: `terminal_order`
 
 ## Daily Summary Report (Phase 3.1)
 

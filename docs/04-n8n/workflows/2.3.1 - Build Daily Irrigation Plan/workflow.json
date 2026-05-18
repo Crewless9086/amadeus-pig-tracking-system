@@ -1,0 +1,1748 @@
+﻿{
+    "updatedAt":  "2026-03-12T16:21:53.763Z",
+    "createdAt":  "2026-01-04T08:26:29.311Z",
+    "id":  "UNwNmx0TwtFf8mjo",
+    "name":  "2.3.1 - Build Daily Irrigation Plan",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "rule":  {
+                                                      "interval":  [
+                                                                       {
+                                                                           "triggerAtMinute":  5
+                                                                       }
+                                                                   ]
+                                                  }
+                                     },
+                      "type":  "n8n-nodes-base.scheduleTrigger",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "b5b90cf9-8ee3-49a9-bcc0-0465c8d0b25a",
+                      "name":  "A1 - Daily 00:05 Trigger"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "gid=0",
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "ZONES",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=0"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       208,
+                                       0
+                                   ],
+                      "id":  "ffb3cabb-25a3-49e1-80e2-8fad9dee8abc",
+                      "name":  "A2 - Get ZONES",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1810796082,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "RULES",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1810796082"
+                                                       },
+                                         "options":  {
+                                                         "dataLocationOnSheet":  {
+                                                                                     "values":  {
+                                                                                                    "rangeDefinition":  "specifyRangeA1",
+                                                                                                    "range":  "A1:B20"
+                                                                                                }
+                                                                                 }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       416,
+                                       0
+                                   ],
+                      "id":  "195b9a7a-a24e-4ac9-996c-366d0f2b9c9c",
+                      "name":  "A3 - Get RULES",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Weather_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  625956541,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "Forecast_24hr_Current",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=625956541"
+                                                       },
+                                         "options":  {
+                                                         "dataLocationOnSheet":  {
+                                                                                     "values":  {
+                                                                                                    "rangeDefinition":  "specifyRangeA1",
+                                                                                                    "range":  "A1:F2"
+                                                                                                }
+                                                                                 }
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       624,
+                                       0
+                                   ],
+                      "id":  "71003f03-f454-4c98-8c13-0b7c3427758e",
+                      "name":  "A4 - Get Forecast_24h Summary",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Workflow A5: Build DAILY_PLAN rows for \"today\"\n// Inputs (from previous nodes):\n// - A2: ZONES rows\n// - A3: RULES rows (format B: rule_key, rule_value)\n// - A4: Forecast_24hr_Current summary rows\n// - A6: DAILY_PLAN existing rows (to detect if today already planned)\n\nfunction zaTodayISO() {\n  // YYYY-MM-DD in Africa/Johannesburg\n  const fmt = new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  });\n  return fmt.format(new Date());\n}\n\nfunction toNum(v, fallback = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : fallback;\n}\n\nfunction clamp(n, min, max) {\n  return Math.max(min, Math.min(max, n));\n}\n\n// --- pull data from other nodes ---\nconst zones = $items(\"A2 - Get ZONES\")\n  .map(i =\u003e i.json)\n  .filter(z =\u003e (z.zone_id ?? \"\").toString().trim() !== \"\");\n\nconst rulesRows = $items(\"A3 - Get RULES\").map(i =\u003e i.json);\nconst forecastRows = $items(\"A4 - Get Forecast_24h Summary\").map(i =\u003e i.json);\nconst existingPlanRows = $items(\"A6 - Check Existing Plan (Today)\").map(i =\u003e i.json);\n\n// --- normalize RULES (format B) into object ---\nconst rules = {};\nfor (const r of rulesRows) {\n  const k = (r.rule_key ?? r.wind_pause_kmh ?? r[Object.keys(r)[0]] ?? \"\").toString().trim();\n  const v = r.rule_value ?? r[Object.keys(r)[1]];\n  if (k) rules[k] = v;\n}\n\n// --- pick forecast summary row (first row returned) ---\nconst fc = forecastRows[0] ?? {};\nconst forecast_updated_at = fc.forecast_updated_at ?? fc.forecast_updated ?? fc.run_timestamp ?? \"\";\nconst rain24 = toNum(fc.rain_total_next_24h_mm ?? fc.rain_total_next_24h ?? fc.rain_sum_mm, 0);\nconst windMax24 = toNum(fc.max_wind_next_24h_kmh ?? fc.wind_max_kmh, 0);\nconst gustMax24 = toNum(fc.max_gust_next_24h_kmh ?? fc.gust_max_kmh, 0);\nconst tMin24 = toNum(fc.temp_min_next_24h_c ?? fc.temp_min_c, 0);\nconst tMax24 = toNum(fc.temp_max_next_24h_c ?? fc.temp_max_c, 0);\n\n// --- today + check if already planned ---\nconst today = zaTodayISO();\nconst alreadyPlanned = existingPlanRows.some(r =\u003e (r.date ?? \"\").toString().slice(0, 10) === today);\n\n// --- thresholds ---\nconst rain_skip_threshold = toNum(rules[\"rain_forecast_skip_mm_24h\"], 9999);\nconst min_runtime = toNum(rules[\"min_runtime_minutes\"], 5);\nconst max_runtime = toNum(rules[\"max_runtime_minutes\"], 120);\n\n// --- simple season choice (v1): hot day = summer minutes ---\nconst useSummer = tMax24 \u003e= 25;\n\n// --- build plan rows ---\nlet planRows = [];\nlet skipAll = rain24 \u003e= rain_skip_threshold;\n\nconst sortedZones = [...zones].sort((a, b) =\u003e {\n  const pa = toNum(a.priority, 99);\n  const pb = toNum(b.priority, 99);\n  if (pa !== pb) return pa - pb;\n  return (a.zone_id ?? \"\").toString().localeCompare((b.zone_id ?? \"\").toString());\n});\n\nfor (const z of sortedZones) {\n  const zoneId = (z.zone_id ?? \"\").toString().trim();\n  const plan_id = `${today}_${zoneId}`;\n\n  const base = useSummer ? toNum(z.summer_minutes, 0) : toNum(z.winter_minutes, 0);\n  const planned_minutes = clamp(base, min_runtime, max_runtime);\n\n  const status = skipAll ? \"SKIPPED\" : \"PLANNED\";\n  const reason = skipAll\n    ? `Skipped: rain forecast next 24h (${rain24}mm) \u003e= threshold (${rain_skip_threshold}mm)`\n    : \"\";\n\n  planRows.push({\n    plan_id,\n    date: today,\n    zone_id: zoneId,\n    planned_start: \"\",                 // controller (Workflow B) will choose runtime window\n    planned_minutes: String(planned_minutes),\n    status,\n    reason,\n    actual_start: \"\",\n    actual_end: \"\",\n    water_score: String(toNum(z.priority, 99)), // simple score for now\n  });\n}\n\n// next zone = first PLANNED\nconst next = planRows.find(r =\u003e r.status === \"PLANNED\")?.zone_id ?? \"\";\n\n// totals for log\nconst totalPlannedMinutes = planRows\n  .filter(r =\u003e r.status === \"PLANNED\")\n  .reduce((sum, r) =\u003e sum + toNum(r.planned_minutes, 0), 0);\n\nconst weather_snapshot =\n  `rain24=${rain24}mm, windMax=${windMax24}km/h, gustMax=${gustMax24}km/h, tMin=${tMin24}°C, tMax=${tMax24}°C, updated=${forecast_updated_at}`;\n\n// IMPORTANT: Return ONE item only (prevents repeated reads/appends)\nreturn [\n  {\n    json: {\n      today,\n      alreadyPlanned,\n      planRows,\n      next_zone_id: next,\n      totalPlannedMinutes,\n      weather_snapshot,\n      forecast_updated_at\n    }\n  }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1024,
+                                       0
+                                   ],
+                      "id":  "7c4c4d2e-1078-4bcc-a0cd-69dcdb64d99d",
+                      "name":  "A5 - Build DAILY_PLAN Rows"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  919711200,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "DAILY_PLAN",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       816,
+                                       0
+                                   ],
+                      "id":  "35899f43-8463-41be-b1db-f5907129cd9b",
+                      "name":  "A6 - Check Existing Plan (Today)",
+                      "alwaysOutputData":  true,
+                      "retryOnFail":  true,
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      },
+                      "onError":  "continueRegularOutput"
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict",
+                                                                            "version":  2
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "2054a53e-99a3-43b2-b059-1695b5c02384",
+                                                                                   "leftValue":  "={{$json.alreadyPlanned}}",
+                                                                                   "rightValue":  "",
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "true",
+                                                                                                    "singleValue":  true
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       1440,
+                                       0
+                                   ],
+                      "id":  "db677066-f408-458f-903c-a07537dbca89",
+                      "name":  "A7 - If Plan Exists, Stop"
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  919711200,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "DAILY_PLAN",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "date":  "={{$json.planRows.date}}",
+                                                                       "zone_id":  "={{$json.planRows.zone_id}}",
+                                                                       "planned_start":  "={{$json.planRows.planned_start}}",
+                                                                       "planned_minutes":  "={{$json.planRows.planned_minutes}}",
+                                                                       "status":  "={{$json.planRows.status}}",
+                                                                       "reason":  "={{$json.planRows.reason}}",
+                                                                       "actual_start":  "={{$json.planRows.actual_start}}",
+                                                                       "actual_end":  "={{$json.planRows.actual_end}}",
+                                                                       "water_score":  "={{$json.planRows.water_score}}",
+                                                                       "plan_id":  "={{$json.planRows.plan_id}}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "plan_id",
+                                                                            "displayName":  "plan_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "removed":  false
+                                                                        },
+                                                                        {
+                                                                            "id":  "date",
+                                                                            "displayName":  "date",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "zone_id",
+                                                                            "displayName":  "zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "planned_start",
+                                                                            "displayName":  "planned_start",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "planned_minutes",
+                                                                            "displayName":  "planned_minutes",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "status",
+                                                                            "displayName":  "status",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "reason",
+                                                                            "displayName":  "reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actual_start",
+                                                                            "displayName":  "actual_start",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actual_end",
+                                                                            "displayName":  "actual_end",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "water_score",
+                                                                            "displayName":  "water_score",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       1808,
+                                       16
+                                   ],
+                      "id":  "5c752683-6a80-4818-9570-36527a6657de",
+                      "name":  "A8 - Append DAILY_PLAN",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "update",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1686887236,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "STATE",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1686887236"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "current_status":  "IDLE",
+                                                                       "last_update":  "={{$now.toISO()}}",
+                                                                       "remaining_minutes":  "0",
+                                                                       "next_zone_id":  "={{ $(\u0027A7B - Split Plan Rows\u0027).item.json.next_zone_id }}",
+                                                                       "row_number":  2
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "row_number"
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "current_zone_id",
+                                                                            "displayName":  "current_zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "current_status",
+                                                                            "displayName":  "current_status",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "remaining_minutes",
+                                                                            "displayName":  "remaining_minutes",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "pause_reason",
+                                                                            "displayName":  "pause_reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_update",
+                                                                            "displayName":  "last_update",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "last_zone_completed",
+                                                                            "displayName":  "last_zone_completed",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "next_zone_id",
+                                                                            "displayName":  "next_zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "row_number",
+                                                                            "displayName":  "row_number",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "number",
+                                                                            "canBeUsedToMatch":  true,
+                                                                            "readOnly":  true,
+                                                                            "removed":  false
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2144,
+                                       16
+                                   ],
+                      "id":  "b7a3483c-fbbd-4156-ba6b-f41b18421950",
+                      "name":  "A9 - Update STATE",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  1808956673,
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "LOG",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1808956673"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "timestamp":  "={{$now.toISO()}}",
+                                                                       "zone_id":  "SYSTEM",
+                                                                       "event":  "PLAN_CREATED",
+                                                                       "reason":  "=Daily plan created for {{$node[\"A5B - Keep State Values\"].json.state_today}}",
+                                                                       "weather_snapshot":  "={{$node[\"A5B - Keep State Values\"].json.state_weather_snapshot}}",
+                                                                       "run_minutes_planned":  "={{$node[\"A5B - Keep State Values\"].json.state_total_planned_minutes}}",
+                                                                       "actor":  "AUTO"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+                                                                        {
+                                                                            "id":  "timestamp",
+                                                                            "displayName":  "timestamp",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "zone_id",
+                                                                            "displayName":  "zone_id",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "event",
+                                                                            "displayName":  "event",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "reason",
+                                                                            "displayName":  "reason",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "weather_snapshot",
+                                                                            "displayName":  "weather_snapshot",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "run_minutes_planned",
+                                                                            "displayName":  "run_minutes_planned",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "run_minutes_actual",
+                                                                            "displayName":  "run_minutes_actual",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        },
+                                                                        {
+                                                                            "id":  "actor",
+                                                                            "displayName":  "actor",
+                                                                            "required":  false,
+                                                                            "defaultMatch":  false,
+                                                                            "display":  true,
+                                                                            "type":  "string",
+                                                                            "canBeUsedToMatch":  true
+                                                                        }
+                                                                    ],
+                                                         "attemptToConvertTypes":  false,
+                                                         "convertFieldsToString":  false
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       2320,
+                                       16
+                                   ],
+                      "id":  "b8ad7451-3bc9-4fa9-8456-6e70b3ce8c45",
+                      "name":  "A10 - Append LOG",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "fieldToSplitOut":  "planRows",
+                                         "include":  "allOtherFields",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.splitOut",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1648,
+                                       16
+                                   ],
+                      "id":  "3baa613a-bec4-4696-b7ad-51fd5485b44d",
+                      "name":  "A7B - Split Plan Rows"
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.limit",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1968,
+                                       16
+                                   ],
+                      "id":  "46792df8-037b-4e92-b22c-d40d33f9d7d7",
+                      "name":  "A8C - Limit to 1 Item"
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "af2bd319-b593-4f60-a205-02846391f34a",
+                                                                                     "name":  "state_next_zone_id",
+                                                                                     "value":  "={{$json.next_zone_id}}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "e0d4e1dc-f2f1-4bd5-8227-f30f1c9d512c",
+                                                                                     "name":  "state_today",
+                                                                                     "value":  "={{$json.today}}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "fab26016-3b6f-40d6-8715-925d050d6726",
+                                                                                     "name":  "state_weather_snapshot",
+                                                                                     "value":  "={{$json.weather_snapshot}}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "c96c1294-0440-4ccf-8c3c-0a75d0b0ef75",
+                                                                                     "name":  "state_total_planned_minutes",
+                                                                                     "value":  "={{$json.totalPlannedMinutes}}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "includeOtherFields":  true,
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       1232,
+                                       0
+                                   ],
+                      "id":  "021a2190-a74f-4f69-8134-a132a2e5c2e4",
+                      "name":  "A5B - Keep State Values"
+                  }
+              ],
+    "connections":  {
+                        "A1 - Daily 00:05 Trigger":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "A2 - Get ZONES",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "A2 - Get ZONES":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "A3 - Get RULES",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "A3 - Get RULES":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "A4 - Get Forecast_24h Summary",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "A4 - Get Forecast_24h Summary":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "A6 - Check Existing Plan (Today)",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "A5 - Build DAILY_PLAN Rows":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "A5B - Keep State Values",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "A6 - Check Existing Plan (Today)":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "A5 - Build DAILY_PLAN Rows",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
+                        "A7 - If Plan Exists, Stop":  {
+                                                          "main":  [
+                                                                       [
+
+                                                                       ],
+                                                                       [
+                                                                           {
+                                                                               "node":  "A7B - Split Plan Rows",
+                                                                               "type":  "main",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "A8 - Append DAILY_PLAN":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "A8C - Limit to 1 Item",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "A9 - Update STATE":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "A10 - Append LOG",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "A7B - Split Plan Rows":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "A8 - Append DAILY_PLAN",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "A8C - Limit to 1 Item":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "A9 - Update STATE",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "A5B - Keep State Values":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "A7 - If Plan Exists, Stop",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  {
+                       "node:A1 - Daily 00:05 Trigger":  {
+                                                             "recurrenceRules":  [
+
+                                                                                 ]
+                                                         }
+                   },
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+
+                },
+    "versionId":  "8a12de2f-202d-4e79-8139-f10e0e8e8f95",
+    "activeVersionId":  "8a12de2f-202d-4e79-8139-f10e0e8e8f95",
+    "versionCounter":  43,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-01-04T08:26:29.316Z",
+                       "createdAt":  "2026-01-04T08:26:29.316Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "UNwNmx0TwtFf8mjo",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-03-12T16:21:53.764Z",
+                          "createdAt":  "2026-03-12T16:21:53.764Z",
+                          "versionId":  "8a12de2f-202d-4e79-8139-f10e0e8e8f95",
+                          "workflowId":  "UNwNmx0TwtFf8mjo",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "rule":  {
+                                                                            "interval":  [
+                                                                                             {
+                                                                                                 "triggerAtMinute":  5
+                                                                                             }
+                                                                                         ]
+                                                                        }
+                                                           },
+                                            "type":  "n8n-nodes-base.scheduleTrigger",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             0,
+                                                             0
+                                                         ],
+                                            "id":  "b5b90cf9-8ee3-49a9-bcc0-0465c8d0b25a",
+                                            "name":  "A1 - Daily 00:05 Trigger"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  "gid=0",
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "ZONES",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=0"
+                                                                             },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             208,
+                                                             0
+                                                         ],
+                                            "id":  "ffb3cabb-25a3-49e1-80e2-8fad9dee8abc",
+                                            "name":  "A2 - Get ZONES",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  1810796082,
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "RULES",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1810796082"
+                                                                             },
+                                                               "options":  {
+                                                                               "dataLocationOnSheet":  {
+                                                                                                           "values":  {
+                                                                                                                          "rangeDefinition":  "specifyRangeA1",
+                                                                                                                          "range":  "A1:B20"
+                                                                                                                      }
+                                                                                                       }
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             416,
+                                                             0
+                                                         ],
+                                            "id":  "195b9a7a-a24e-4ac9-996c-366d0f2b9c9c",
+                                            "name":  "A3 - Get RULES",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Weather_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  625956541,
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "Forecast_24hr_Current",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=625956541"
+                                                                             },
+                                                               "options":  {
+                                                                               "dataLocationOnSheet":  {
+                                                                                                           "values":  {
+                                                                                                                          "rangeDefinition":  "specifyRangeA1",
+                                                                                                                          "range":  "A1:F2"
+                                                                                                                      }
+                                                                                                       }
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             624,
+                                                             0
+                                                         ],
+                                            "id":  "71003f03-f454-4c98-8c13-0b7c3427758e",
+                                            "name":  "A4 - Get Forecast_24h Summary",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "// Workflow A5: Build DAILY_PLAN rows for \"today\"\n// Inputs (from previous nodes):\n// - A2: ZONES rows\n// - A3: RULES rows (format B: rule_key, rule_value)\n// - A4: Forecast_24hr_Current summary rows\n// - A6: DAILY_PLAN existing rows (to detect if today already planned)\n\nfunction zaTodayISO() {\n  // YYYY-MM-DD in Africa/Johannesburg\n  const fmt = new Intl.DateTimeFormat(\"en-CA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"2-digit\",\n    day: \"2-digit\",\n  });\n  return fmt.format(new Date());\n}\n\nfunction toNum(v, fallback = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : fallback;\n}\n\nfunction clamp(n, min, max) {\n  return Math.max(min, Math.min(max, n));\n}\n\n// --- pull data from other nodes ---\nconst zones = $items(\"A2 - Get ZONES\")\n  .map(i =\u003e i.json)\n  .filter(z =\u003e (z.zone_id ?? \"\").toString().trim() !== \"\");\n\nconst rulesRows = $items(\"A3 - Get RULES\").map(i =\u003e i.json);\nconst forecastRows = $items(\"A4 - Get Forecast_24h Summary\").map(i =\u003e i.json);\nconst existingPlanRows = $items(\"A6 - Check Existing Plan (Today)\").map(i =\u003e i.json);\n\n// --- normalize RULES (format B) into object ---\nconst rules = {};\nfor (const r of rulesRows) {\n  const k = (r.rule_key ?? r.wind_pause_kmh ?? r[Object.keys(r)[0]] ?? \"\").toString().trim();\n  const v = r.rule_value ?? r[Object.keys(r)[1]];\n  if (k) rules[k] = v;\n}\n\n// --- pick forecast summary row (first row returned) ---\nconst fc = forecastRows[0] ?? {};\nconst forecast_updated_at = fc.forecast_updated_at ?? fc.forecast_updated ?? fc.run_timestamp ?? \"\";\nconst rain24 = toNum(fc.rain_total_next_24h_mm ?? fc.rain_total_next_24h ?? fc.rain_sum_mm, 0);\nconst windMax24 = toNum(fc.max_wind_next_24h_kmh ?? fc.wind_max_kmh, 0);\nconst gustMax24 = toNum(fc.max_gust_next_24h_kmh ?? fc.gust_max_kmh, 0);\nconst tMin24 = toNum(fc.temp_min_next_24h_c ?? fc.temp_min_c, 0);\nconst tMax24 = toNum(fc.temp_max_next_24h_c ?? fc.temp_max_c, 0);\n\n// --- today + check if already planned ---\nconst today = zaTodayISO();\nconst alreadyPlanned = existingPlanRows.some(r =\u003e (r.date ?? \"\").toString().slice(0, 10) === today);\n\n// --- thresholds ---\nconst rain_skip_threshold = toNum(rules[\"rain_forecast_skip_mm_24h\"], 9999);\nconst min_runtime = toNum(rules[\"min_runtime_minutes\"], 5);\nconst max_runtime = toNum(rules[\"max_runtime_minutes\"], 120);\n\n// --- simple season choice (v1): hot day = summer minutes ---\nconst useSummer = tMax24 \u003e= 25;\n\n// --- build plan rows ---\nlet planRows = [];\nlet skipAll = rain24 \u003e= rain_skip_threshold;\n\nconst sortedZones = [...zones].sort((a, b) =\u003e {\n  const pa = toNum(a.priority, 99);\n  const pb = toNum(b.priority, 99);\n  if (pa !== pb) return pa - pb;\n  return (a.zone_id ?? \"\").toString().localeCompare((b.zone_id ?? \"\").toString());\n});\n\nfor (const z of sortedZones) {\n  const zoneId = (z.zone_id ?? \"\").toString().trim();\n  const plan_id = `${today}_${zoneId}`;\n\n  const base = useSummer ? toNum(z.summer_minutes, 0) : toNum(z.winter_minutes, 0);\n  const planned_minutes = clamp(base, min_runtime, max_runtime);\n\n  const status = skipAll ? \"SKIPPED\" : \"PLANNED\";\n  const reason = skipAll\n    ? `Skipped: rain forecast next 24h (${rain24}mm) \u003e= threshold (${rain_skip_threshold}mm)`\n    : \"\";\n\n  planRows.push({\n    plan_id,\n    date: today,\n    zone_id: zoneId,\n    planned_start: \"\",                 // controller (Workflow B) will choose runtime window\n    planned_minutes: String(planned_minutes),\n    status,\n    reason,\n    actual_start: \"\",\n    actual_end: \"\",\n    water_score: String(toNum(z.priority, 99)), // simple score for now\n  });\n}\n\n// next zone = first PLANNED\nconst next = planRows.find(r =\u003e r.status === \"PLANNED\")?.zone_id ?? \"\";\n\n// totals for log\nconst totalPlannedMinutes = planRows\n  .filter(r =\u003e r.status === \"PLANNED\")\n  .reduce((sum, r) =\u003e sum + toNum(r.planned_minutes, 0), 0);\n\nconst weather_snapshot =\n  `rain24=${rain24}mm, windMax=${windMax24}km/h, gustMax=${gustMax24}km/h, tMin=${tMin24}°C, tMax=${tMax24}°C, updated=${forecast_updated_at}`;\n\n// IMPORTANT: Return ONE item only (prevents repeated reads/appends)\nreturn [\n  {\n    json: {\n      today,\n      alreadyPlanned,\n      planRows,\n      next_zone_id: next,\n      totalPlannedMinutes,\n      weather_snapshot,\n      forecast_updated_at\n    }\n  }\n];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             1024,
+                                                             0
+                                                         ],
+                                            "id":  "7c4c4d2e-1078-4bcc-a0cd-69dcdb64d99d",
+                                            "name":  "A5 - Build DAILY_PLAN Rows"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  919711200,
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "DAILY_PLAN",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                                             },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             816,
+                                                             0
+                                                         ],
+                                            "id":  "35899f43-8463-41be-b1db-f5907129cd9b",
+                                            "name":  "A6 - Check Existing Plan (Today)",
+                                            "alwaysOutputData":  true,
+                                            "retryOnFail":  true,
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            },
+                                            "onError":  "continueRegularOutput"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "strict",
+                                                                                                  "version":  2
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "2054a53e-99a3-43b2-b059-1695b5c02384",
+                                                                                                         "leftValue":  "={{$json.alreadyPlanned}}",
+                                                                                                         "rightValue":  "",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "boolean",
+                                                                                                                          "operation":  "true",
+                                                                                                                          "singleValue":  true
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.if",
+                                            "typeVersion":  2.2,
+                                            "position":  [
+                                                             1440,
+                                                             0
+                                                         ],
+                                            "id":  "db677066-f408-458f-903c-a07537dbca89",
+                                            "name":  "A7 - If Plan Exists, Stop"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "append",
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  919711200,
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "DAILY_PLAN",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=919711200"
+                                                                             },
+                                                               "columns":  {
+                                                                               "mappingMode":  "defineBelow",
+                                                                               "value":  {
+                                                                                             "date":  "={{$json.planRows.date}}",
+                                                                                             "zone_id":  "={{$json.planRows.zone_id}}",
+                                                                                             "planned_start":  "={{$json.planRows.planned_start}}",
+                                                                                             "planned_minutes":  "={{$json.planRows.planned_minutes}}",
+                                                                                             "status":  "={{$json.planRows.status}}",
+                                                                                             "reason":  "={{$json.planRows.reason}}",
+                                                                                             "actual_start":  "={{$json.planRows.actual_start}}",
+                                                                                             "actual_end":  "={{$json.planRows.actual_end}}",
+                                                                                             "water_score":  "={{$json.planRows.water_score}}",
+                                                                                             "plan_id":  "={{$json.planRows.plan_id}}"
+                                                                                         },
+                                                                               "matchingColumns":  [
+
+                                                                                                   ],
+                                                                               "schema":  [
+                                                                                              {
+                                                                                                  "id":  "plan_id",
+                                                                                                  "displayName":  "plan_id",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true,
+                                                                                                  "removed":  false
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "date",
+                                                                                                  "displayName":  "date",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "zone_id",
+                                                                                                  "displayName":  "zone_id",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "planned_start",
+                                                                                                  "displayName":  "planned_start",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "planned_minutes",
+                                                                                                  "displayName":  "planned_minutes",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "status",
+                                                                                                  "displayName":  "status",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "reason",
+                                                                                                  "displayName":  "reason",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "actual_start",
+                                                                                                  "displayName":  "actual_start",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "actual_end",
+                                                                                                  "displayName":  "actual_end",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "water_score",
+                                                                                                  "displayName":  "water_score",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              }
+                                                                                          ],
+                                                                               "attemptToConvertTypes":  false,
+                                                                               "convertFieldsToString":  false
+                                                                           },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             1808,
+                                                             16
+                                                         ],
+                                            "id":  "5c752683-6a80-4818-9570-36527a6657de",
+                                            "name":  "A8 - Append DAILY_PLAN",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "update",
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  1686887236,
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "STATE",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1686887236"
+                                                                             },
+                                                               "columns":  {
+                                                                               "mappingMode":  "defineBelow",
+                                                                               "value":  {
+                                                                                             "current_status":  "IDLE",
+                                                                                             "last_update":  "={{$now.toISO()}}",
+                                                                                             "remaining_minutes":  "0",
+                                                                                             "next_zone_id":  "={{ $(\u0027A7B - Split Plan Rows\u0027).item.json.next_zone_id }}",
+                                                                                             "row_number":  2
+                                                                                         },
+                                                                               "matchingColumns":  [
+                                                                                                       "row_number"
+                                                                                                   ],
+                                                                               "schema":  [
+                                                                                              {
+                                                                                                  "id":  "current_zone_id",
+                                                                                                  "displayName":  "current_zone_id",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "current_status",
+                                                                                                  "displayName":  "current_status",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "remaining_minutes",
+                                                                                                  "displayName":  "remaining_minutes",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "pause_reason",
+                                                                                                  "displayName":  "pause_reason",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "last_update",
+                                                                                                  "displayName":  "last_update",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "last_zone_completed",
+                                                                                                  "displayName":  "last_zone_completed",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "next_zone_id",
+                                                                                                  "displayName":  "next_zone_id",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "row_number",
+                                                                                                  "displayName":  "row_number",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "number",
+                                                                                                  "canBeUsedToMatch":  true,
+                                                                                                  "readOnly":  true,
+                                                                                                  "removed":  false
+                                                                                              }
+                                                                                          ],
+                                                                               "attemptToConvertTypes":  false,
+                                                                               "convertFieldsToString":  false
+                                                                           },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             2144,
+                                                             16
+                                                         ],
+                                            "id":  "b7a3483c-fbbd-4156-ba6b-f41b18421950",
+                                            "name":  "A9 - Update STATE",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "append",
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Irrigation_Logs",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  1808956673,
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "LOG",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1Wsje-g76mecOPWwQRvFR_TEdvfoUf9Vf1gL2pxmGX4E/edit#gid=1808956673"
+                                                                             },
+                                                               "columns":  {
+                                                                               "mappingMode":  "defineBelow",
+                                                                               "value":  {
+                                                                                             "timestamp":  "={{$now.toISO()}}",
+                                                                                             "zone_id":  "SYSTEM",
+                                                                                             "event":  "PLAN_CREATED",
+                                                                                             "reason":  "=Daily plan created for {{$node[\"A5B - Keep State Values\"].json.state_today}}",
+                                                                                             "weather_snapshot":  "={{$node[\"A5B - Keep State Values\"].json.state_weather_snapshot}}",
+                                                                                             "run_minutes_planned":  "={{$node[\"A5B - Keep State Values\"].json.state_total_planned_minutes}}",
+                                                                                             "actor":  "AUTO"
+                                                                                         },
+                                                                               "matchingColumns":  [
+
+                                                                                                   ],
+                                                                               "schema":  [
+                                                                                              {
+                                                                                                  "id":  "timestamp",
+                                                                                                  "displayName":  "timestamp",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "zone_id",
+                                                                                                  "displayName":  "zone_id",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "event",
+                                                                                                  "displayName":  "event",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "reason",
+                                                                                                  "displayName":  "reason",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "weather_snapshot",
+                                                                                                  "displayName":  "weather_snapshot",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "run_minutes_planned",
+                                                                                                  "displayName":  "run_minutes_planned",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "run_minutes_actual",
+                                                                                                  "displayName":  "run_minutes_actual",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              },
+                                                                                              {
+                                                                                                  "id":  "actor",
+                                                                                                  "displayName":  "actor",
+                                                                                                  "required":  false,
+                                                                                                  "defaultMatch":  false,
+                                                                                                  "display":  true,
+                                                                                                  "type":  "string",
+                                                                                                  "canBeUsedToMatch":  true
+                                                                                              }
+                                                                                          ],
+                                                                               "attemptToConvertTypes":  false,
+                                                                               "convertFieldsToString":  false
+                                                                           },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             2320,
+                                                             16
+                                                         ],
+                                            "id":  "b8ad7451-3bc9-4fa9-8456-6e70b3ce8c45",
+                                            "name":  "A10 - Append LOG",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "fieldToSplitOut":  "planRows",
+                                                               "include":  "allOtherFields",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.splitOut",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             1648,
+                                                             16
+                                                         ],
+                                            "id":  "3baa613a-bec4-4696-b7ad-51fd5485b44d",
+                                            "name":  "A7B - Split Plan Rows"
+                                        },
+                                        {
+                                            "parameters":  {
+
+                                                           },
+                                            "type":  "n8n-nodes-base.limit",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             1968,
+                                                             16
+                                                         ],
+                                            "id":  "46792df8-037b-4e92-b22c-d40d33f9d7d7",
+                                            "name":  "A8C - Limit to 1 Item"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "af2bd319-b593-4f60-a205-02846391f34a",
+                                                                                                           "name":  "state_next_zone_id",
+                                                                                                           "value":  "={{$json.next_zone_id}}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "e0d4e1dc-f2f1-4bd5-8227-f30f1c9d512c",
+                                                                                                           "name":  "state_today",
+                                                                                                           "value":  "={{$json.today}}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "fab26016-3b6f-40d6-8715-925d050d6726",
+                                                                                                           "name":  "state_weather_snapshot",
+                                                                                                           "value":  "={{$json.weather_snapshot}}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "c96c1294-0440-4ccf-8c3c-0a75d0b0ef75",
+                                                                                                           "name":  "state_total_planned_minutes",
+                                                                                                           "value":  "={{$json.totalPlannedMinutes}}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "includeOtherFields":  true,
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             1232,
+                                                             0
+                                                         ],
+                                            "id":  "021a2190-a74f-4f69-8134-a132a2e5c2e4",
+                                            "name":  "A5B - Keep State Values"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "A1 - Daily 00:05 Trigger":  {
+                                                                               "main":  [
+                                                                                            [
+                                                                                                {
+                                                                                                    "node":  "A2 - Get ZONES",
+                                                                                                    "type":  "main",
+                                                                                                    "index":  0
+                                                                                                }
+                                                                                            ]
+                                                                                        ]
+                                                                           },
+                                              "A2 - Get ZONES":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "A3 - Get RULES",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "A3 - Get RULES":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "A4 - Get Forecast_24h Summary",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "A4 - Get Forecast_24h Summary":  {
+                                                                                    "main":  [
+                                                                                                 [
+                                                                                                     {
+                                                                                                         "node":  "A6 - Check Existing Plan (Today)",
+                                                                                                         "type":  "main",
+                                                                                                         "index":  0
+                                                                                                     }
+                                                                                                 ]
+                                                                                             ]
+                                                                                },
+                                              "A5 - Build DAILY_PLAN Rows":  {
+                                                                                 "main":  [
+                                                                                              [
+                                                                                                  {
+                                                                                                      "node":  "A5B - Keep State Values",
+                                                                                                      "type":  "main",
+                                                                                                      "index":  0
+                                                                                                  }
+                                                                                              ]
+                                                                                          ]
+                                                                             },
+                                              "A6 - Check Existing Plan (Today)":  {
+                                                                                       "main":  [
+                                                                                                    [
+                                                                                                        {
+                                                                                                            "node":  "A5 - Build DAILY_PLAN Rows",
+                                                                                                            "type":  "main",
+                                                                                                            "index":  0
+                                                                                                        }
+                                                                                                    ]
+                                                                                                ]
+                                                                                   },
+                                              "A7 - If Plan Exists, Stop":  {
+                                                                                "main":  [
+                                                                                             [
+
+                                                                                             ],
+                                                                                             [
+                                                                                                 {
+                                                                                                     "node":  "A7B - Split Plan Rows",
+                                                                                                     "type":  "main",
+                                                                                                     "index":  0
+                                                                                                 }
+                                                                                             ]
+                                                                                         ]
+                                                                            },
+                                              "A8 - Append DAILY_PLAN":  {
+                                                                             "main":  [
+                                                                                          [
+                                                                                              {
+                                                                                                  "node":  "A8C - Limit to 1 Item",
+                                                                                                  "type":  "main",
+                                                                                                  "index":  0
+                                                                                              }
+                                                                                          ]
+                                                                                      ]
+                                                                         },
+                                              "A9 - Update STATE":  {
+                                                                        "main":  [
+                                                                                     [
+                                                                                         {
+                                                                                             "node":  "A10 - Append LOG",
+                                                                                             "type":  "main",
+                                                                                             "index":  0
+                                                                                         }
+                                                                                     ]
+                                                                                 ]
+                                                                    },
+                                              "A7B - Split Plan Rows":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "A8 - Append DAILY_PLAN",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                                              "A8C - Limit to 1 Item":  {
+                                                                            "main":  [
+                                                                                         [
+                                                                                             {
+                                                                                                 "node":  "A9 - Update STATE",
+                                                                                                 "type":  "main",
+                                                                                                 "index":  0
+                                                                                             }
+                                                                                         ]
+                                                                                     ]
+                                                                        },
+                                              "A5B - Keep State Values":  {
+                                                                              "main":  [
+                                                                                           [
+                                                                                               {
+                                                                                                   "node":  "A7 - If Plan Exists, Stop",
+                                                                                                   "type":  "main",
+                                                                                                   "index":  0
+                                                                                               }
+                                                                                           ]
+                                                                                       ]
+                                                                          }
+                                          },
+                          "authors":  "Charl Nieuwendyk",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-03-12T16:21:53.869Z",
+                                                             "id":  140,
+                                                             "workflowId":  "UNwNmx0TwtFf8mjo",
+                                                             "versionId":  "8a12de2f-202d-4e79-8139-f10e0e8e8f95",
+                                                             "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         }
+                                                     ]
+                      }
+}

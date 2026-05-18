@@ -1,0 +1,977 @@
+﻿{
+    "updatedAt":  "2026-03-21T10:15:09.189Z",
+    "createdAt":  "2025-11-29T16:06:58.891Z",
+    "id":  "6UscGE44eTfdLp1A",
+    "name":  "2.0 - OOM SAKKIE - Amadeus Assistant Agent",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "content":  "AMADEUS ASSISTANT AGENT",
+                                         "height":  256,
+                                         "width":  560
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       480,
+                                       -64
+                                   ],
+                      "id":  "bc2df6f9-53f3-4152-9e30-586a1018b352",
+                      "name":  "Sticky Note2"
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "REPLAY AGENT",
+                                         "height":  384,
+                                         "width":  576,
+                                         "color":  6
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1088,
+                                       -64
+                                   ],
+                      "id":  "0a0815db-c4bd-42e6-bcbd-37e874798abc",
+                      "name":  "Sticky Note3"
+                  },
+                  {
+                      "parameters":  {
+                                         "model":  {
+                                                       "__rl":  true,
+                                                       "mode":  "list",
+                                                       "value":  "gpt-4.1-mini"
+                                                   },
+                                         "builtInTools":  {
+
+                                                          },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       80,
+                                       560
+                                   ],
+                      "id":  "1beba50e-baae-4833-902f-d0bb2a23bd76",
+                      "name":  "Brain ChatGPT",
+                      "credentials":  {
+                                          "openAiApi":  {
+                                                            "id":  "Lp7Z2HFOXfBCGvVg",
+                                                            "name":  "OpenAi_Sales Agent"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "BRAIN:",
+                                         "height":  192,
+                                         "width":  176,
+                                         "color":  3
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "position":  [
+                                       32,
+                                       496
+                                   ],
+                      "typeVersion":  1,
+                      "id":  "59a38a9b-893c-467f-8ac4-6fc1835bf2e3",
+                      "name":  "Sticky Note4"
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "TOOLS",
+                                         "height":  80,
+                                         "width":  928,
+                                         "color":  7
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       720,
+                                       400
+                                   ],
+                      "id":  "27f0a2ef-fa5e-4f76-a4b8-96dd513bd026",
+                      "name":  "Sticky Note5"
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "MEMORY:",
+                                         "height":  192,
+                                         "width":  464,
+                                         "color":  4
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       240,
+                                       496
+                                   ],
+                      "id":  "2cc55cb7-1f5e-48df-b965-f583f9654fef",
+                      "name":  "Sticky Note6"
+                  },
+                  {
+                      "parameters":  {
+                                         "promptType":  "define",
+                                         "text":  "=User: {{ $json.user_name }}\nMessage: {{ $json.message_text }}",
+                                         "options":  {
+                                                         "systemMessage":  "You are Amadeus Assistant, the main helper for Amadeus Farm.\n\nCURRENT TOOLS AVAILABLE\nYou have TWO tools available:\n\n1) Weather_Info_Tool  \nUse this whenever the user asks anything about:\n- weather, temperature, rain, storms\n- wind, forecasts\n- mud, dryness, farming conditions\n- “weather today”, “nou”, “vandag”\n- planning work or visits affected by weather\n\n2) Sunsynk_Info_Tool  \nUse this whenever the user asks anything about:\n- electricity, power, solar, PV\n- battery, SOC, charging, discharging\n- grid usage, Eskom, generator\n- “power now”, “electricity today”\n- “how much grid today”, “last 24h trend”\n- “are we running on solar”\n- load, inverter, power situation\n\nHOW TO WORK\n1. Read the user\u0027s message.\n2. Decide which tool is relevant.\n3. CALL THE CORRECT TOOL.\n4. The tool will return a COMPLETE, USER-READY answer.\n5. Your FINAL reply must be EXACTLY the tool’s output.\n   - Do NOT rephrase.\n   - Do NOT summarise.\n   - Do NOT add interpretation.\n   - Do NOT mix tool outputs.\n\nWHEN NOT TO USE A TOOL\n- If the message is pure small talk (“Hi”, “Hello”, “What can you do?”)\n- Respond briefly and invite a weather or power question.\n\nLANGUAGE\n- Always reply in the same language as the user (Afrikaans or English).\n\nSTRICT RULES\n- Never invent data.\n- Never guess.\n- Never combine tools in one answer.\n- Never mention tools, workflows, Google Sheets or systems.\n- Never remove hyperlinks or links, keep them as they are\n",
+                                                         "passthroughBinaryImages":  false
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.agent",
+                      "typeVersion":  3,
+                      "position":  [
+                                       528,
+                                       16
+                                   ],
+                      "id":  "6573f83e-566a-4814-8e3c-3708d6355d6a",
+                      "name":  "AI Assistant Agent"
+                  },
+                  {
+                      "parameters":  {
+                                         "promptType":  "define",
+                                         "text":  "=Assistant Draft: {{ $json.output }}",
+                                         "options":  {
+                                                         "systemMessage":  "You are Amadeus Reply Formatter.\n\nINPUT\n- You receive a message that already contains a COMPLETE and FACTUALLY CORRECT answer\n  generated by Amadeus\u0027 internal tools.\n- This text is in the field you see as the user message.\n\nYOUR JOB\n- Lightly clean up formatting for Telegram (line breaks, bullet points).\n- Keep the language the SAME as the input (Afrikaans stays Afrikaans, English stays English).\n- Make it easy to read, but DO NOT change the facts.\n\nSTRICT RULES\n- Do NOT change any numbers, dates, times, links, hyperlinks or measurements.\n- Do NOT add new information or guesses.\n- Do NOT remove important disclaimers (for example, notes about last measurement time).\n- You may:\n  • add or fix bullet points\n  • split long paragraphs\n  • correct obvious typos\n\nENDING\n- End with exactly ONE short, friendly follow-up question, for example:\n  • “Is there anything else you’d like to know?”\n  • “Wil jy nog iets oor die weer weet?”\n\nOUTPUT\n- Return only the final message text to send to the user."
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.agent",
+                      "typeVersion":  3,
+                      "position":  [
+                                       1120,
+                                       16
+                                   ],
+                      "id":  "f07be14b-e590-47b0-9a48-112315102697",
+                      "name":  "AI Replay Agent"
+                  },
+                  {
+                      "parameters":  {
+                                         "model":  {
+                                                       "__rl":  true,
+                                                       "mode":  "list",
+                                                       "value":  "gpt-4.1-mini"
+                                                   },
+                                         "builtInTools":  {
+
+                                                          },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       1120,
+                                       208
+                                   ],
+                      "id":  "9c3c8f5d-cefa-4a1b-80d3-e1b98cc47688",
+                      "name":  "Replay ChatGPT",
+                      "credentials":  {
+                                          "openAiApi":  {
+                                                            "id":  "Lp7Z2HFOXfBCGvVg",
+                                                            "name":  "OpenAi_Sales Agent"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "SUB-AGENTS FOR INFO",
+                                         "height":  192,
+                                         "width":  928,
+                                         "color":  5
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "typeVersion":  1,
+                      "position":  [
+                                       720,
+                                       496
+                                   ],
+                      "id":  "c9e6bbe0-44e7-4f19-a1fe-1f5e8d6f6437",
+                      "name":  "Sticky Note7"
+                  },
+                  {
+                      "parameters":  {
+                                         "sessionIdType":  "customKey",
+                                         "sessionKey":  "={{ $json.user_id }}\n",
+                                         "contextWindowLength":  10
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       288,
+                                       560
+                                   ],
+                      "id":  "2f009b70-eaf7-4a1d-8aee-02ca96530b30",
+                      "name":  "Simple Memory"
+                  },
+                  {
+                      "parameters":  {
+                                         "description":  "Use this tool whenever the user asks anything related to weather at the farm. \nThis includes questions about current weather, rain, wind, temperature, \nstorms, sunshine, forecasts, farming conditions, or how the weather will \naffect visits, piglets, animals, crops, or farm operations. \nReturn the most accurate weather information available from the data source.\n",
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "L4c34rFmN0kUJvWc",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/L4c34rFmN0kUJvWc",
+                                                            "cachedResultName":  "My project — 2.1 - Amadeus Weather Sub-Agent"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+                                                                              "input":  "={{ $json.message_text }}"
+                                                                          },
+                                                                "matchingColumns":  [
+                                                                                        "input"
+                                                                                    ],
+                                                                "schema":  [
+                                                                               {
+                                                                                   "id":  "input",
+                                                                                   "displayName":  "input",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               }
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  false
+                                                            }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.toolWorkflow",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       768,
+                                       560
+                                   ],
+                      "id":  "e820afcc-f367-4c3e-a2d6-c91a6eec2c41",
+                      "name":  "Weather_Info_Tool"
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "={{ $(\u0027When Executed by Another Workflow\u0027).item.json.user_id }}",
+                                         "text":  "={{ $json.output }}",
+                                         "additionalFields":  {
+                                                                  "appendAttribution":  false,
+                                                                  "parse_mode":  "HTML"
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       1456,
+                                       16
+                                   ],
+                      "id":  "5f2fe7f7-5266-4430-b765-d566e6515863",
+                      "name":  "Send Replay",
+                      "webhookId":  "43d79297-3f7b-4852-826e-ef5a682fb523",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "NIEUAI_Telegram"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "description":  "Use this tool whenever the user asks anything related to electricity on Amadeus Farm, this is the only place you get true data related to Amadeus farms electricity. The Sunsynk inverter is used to help log and track data that we then put in to the google sheet where you get the info from. \n",
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "tKVKoCcxhT7CAydT",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/tKVKoCcxhT7CAydT",
+                                                            "cachedResultName":  "My project — 2.2 - Amadeus Sunsynk Sub-Agent"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+                                                                              "input":  "={{ $json.message_text }}"
+                                                                          },
+                                                                "matchingColumns":  [
+                                                                                        "input"
+                                                                                    ],
+                                                                "schema":  [
+                                                                               {
+                                                                                   "id":  "input",
+                                                                                   "displayName":  "input",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               }
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  false
+                                                            }
+                                     },
+                      "type":  "@n8n/n8n-nodes-langchain.toolWorkflow",
+                      "typeVersion":  2.2,
+                      "position":  [
+                                       928,
+                                       560
+                                   ],
+                      "id":  "6da9cd5f-4b76-4d2b-9a95-1cc242c92683",
+                      "name":  "Sunsynk_Info_Tool"
+                  },
+                  {
+                      "parameters":  {
+                                         "workflowInputs":  {
+                                                                "values":  [
+                                                                               {
+                                                                                   "name":  "user_id"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "message_text"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "timestamp"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "user_name"
+                                                                               },
+                                                                               {
+                                                                                   "name":  "message_id"
+                                                                               }
+                                                                           ]
+                                                            }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflowTrigger",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       240,
+                                       16
+                                   ],
+                      "id":  "8a9b5cad-53c8-40b1-a1ac-3f66decc8e17",
+                      "name":  "When Executed by Another Workflow"
+                  },
+                  {
+                      "parameters":  {
+                                         "content":  "TRIGGERS",
+                                         "height":  256,
+                                         "width":  208,
+                                         "color":  6
+                                     },
+                      "type":  "n8n-nodes-base.stickyNote",
+                      "position":  [
+                                       192,
+                                       -64
+                                   ],
+                      "typeVersion":  1,
+                      "id":  "5232516b-7a31-4557-839f-e4adb3c56e43",
+                      "name":  "Sticky Note"
+                  }
+              ],
+    "connections":  {
+                        "Brain ChatGPT":  {
+                                              "ai_languageModel":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "AI Assistant Agent",
+                                                                               "type":  "ai_languageModel",
+                                                                               "index":  0
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                          },
+                        "AI Assistant Agent":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "AI Replay Agent",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Replay ChatGPT":  {
+                                               "ai_languageModel":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "AI Replay Agent",
+                                                                                "type":  "ai_languageModel",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                           },
+                        "AI Replay Agent":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Send Replay",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Simple Memory":  {
+                                              "ai_memory":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "AI Assistant Agent",
+                                                                        "type":  "ai_memory",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                          },
+                        "Weather_Info_Tool":  {
+                                                  "ai_tool":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "AI Assistant Agent",
+                                                                          "type":  "ai_tool",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                              },
+                        "Sunsynk_Info_Tool":  {
+                                                  "ai_tool":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "AI Assistant Agent",
+                                                                          "type":  "ai_tool",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                              },
+                        "When Executed by Another Workflow":  {
+                                                                  "main":  [
+                                                                               [
+                                                                                   {
+                                                                                       "node":  "AI Assistant Agent",
+                                                                                       "type":  "main",
+                                                                                       "index":  0
+                                                                                   }
+                                                                               ]
+                                                                           ]
+                                                              }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+                    "When Executed by Another Workflow":  [
+                                                              {
+                                                                  "json":  {
+                                                                               "user_id":  "5721652188",
+                                                                               "message_text":  "Whats the weather like today?",
+                                                                               "timestamp":  "2025-12-29T22:51:50.516+02:00",
+                                                                               "user_name":  "Charl",
+                                                                               "message_id":  "525"
+                                                                           }
+                                                              }
+                                                          ]
+                },
+    "versionId":  "270fbbd8-b184-4c61-9fbf-b6d3aba6b3b1",
+    "activeVersionId":  "270fbbd8-b184-4c61-9fbf-b6d3aba6b3b1",
+    "versionCounter":  334,
+    "triggerCount":  0,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-11-29T16:06:58.894Z",
+                       "createdAt":  "2025-11-29T16:06:58.894Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "6UscGE44eTfdLp1A",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-03-21T10:15:09.190Z",
+                          "createdAt":  "2026-03-21T10:15:09.190Z",
+                          "versionId":  "270fbbd8-b184-4c61-9fbf-b6d3aba6b3b1",
+                          "workflowId":  "6UscGE44eTfdLp1A",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "content":  "AMADEUS ASSISTANT AGENT",
+                                                               "height":  256,
+                                                               "width":  560
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             480,
+                                                             -64
+                                                         ],
+                                            "id":  "bc2df6f9-53f3-4152-9e30-586a1018b352",
+                                            "name":  "Sticky Note2"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "REPLAY AGENT",
+                                                               "height":  384,
+                                                               "width":  576,
+                                                               "color":  6
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             1088,
+                                                             -64
+                                                         ],
+                                            "id":  "0a0815db-c4bd-42e6-bcbd-37e874798abc",
+                                            "name":  "Sticky Note3"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "model":  {
+                                                                             "__rl":  true,
+                                                                             "mode":  "list",
+                                                                             "value":  "gpt-4.1-mini"
+                                                                         },
+                                                               "builtInTools":  {
+
+                                                                                },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             80,
+                                                             560
+                                                         ],
+                                            "id":  "1beba50e-baae-4833-902f-d0bb2a23bd76",
+                                            "name":  "Brain ChatGPT",
+                                            "credentials":  {
+                                                                "openAiApi":  {
+                                                                                  "id":  "Lp7Z2HFOXfBCGvVg",
+                                                                                  "name":  "OpenAi_Sales Agent"
+                                                                              }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "BRAIN:",
+                                                               "height":  192,
+                                                               "width":  176,
+                                                               "color":  3
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "position":  [
+                                                             32,
+                                                             496
+                                                         ],
+                                            "typeVersion":  1,
+                                            "id":  "59a38a9b-893c-467f-8ac4-6fc1835bf2e3",
+                                            "name":  "Sticky Note4"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "TOOLS",
+                                                               "height":  80,
+                                                               "width":  928,
+                                                               "color":  7
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             720,
+                                                             400
+                                                         ],
+                                            "id":  "27f0a2ef-fa5e-4f76-a4b8-96dd513bd026",
+                                            "name":  "Sticky Note5"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "MEMORY:",
+                                                               "height":  192,
+                                                               "width":  464,
+                                                               "color":  4
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             240,
+                                                             496
+                                                         ],
+                                            "id":  "2cc55cb7-1f5e-48df-b965-f583f9654fef",
+                                            "name":  "Sticky Note6"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "promptType":  "define",
+                                                               "text":  "=User: {{ $json.user_name }}\nMessage: {{ $json.message_text }}",
+                                                               "options":  {
+                                                                               "systemMessage":  "You are Amadeus Assistant, the main helper for Amadeus Farm.\n\nCURRENT TOOLS AVAILABLE\nYou have TWO tools available:\n\n1) Weather_Info_Tool  \nUse this whenever the user asks anything about:\n- weather, temperature, rain, storms\n- wind, forecasts\n- mud, dryness, farming conditions\n- “weather today”, “nou”, “vandag”\n- planning work or visits affected by weather\n\n2) Sunsynk_Info_Tool  \nUse this whenever the user asks anything about:\n- electricity, power, solar, PV\n- battery, SOC, charging, discharging\n- grid usage, Eskom, generator\n- “power now”, “electricity today”\n- “how much grid today”, “last 24h trend”\n- “are we running on solar”\n- load, inverter, power situation\n\nHOW TO WORK\n1. Read the user\u0027s message.\n2. Decide which tool is relevant.\n3. CALL THE CORRECT TOOL.\n4. The tool will return a COMPLETE, USER-READY answer.\n5. Your FINAL reply must be EXACTLY the tool’s output.\n   - Do NOT rephrase.\n   - Do NOT summarise.\n   - Do NOT add interpretation.\n   - Do NOT mix tool outputs.\n\nWHEN NOT TO USE A TOOL\n- If the message is pure small talk (“Hi”, “Hello”, “What can you do?”)\n- Respond briefly and invite a weather or power question.\n\nLANGUAGE\n- Always reply in the same language as the user (Afrikaans or English).\n\nSTRICT RULES\n- Never invent data.\n- Never guess.\n- Never combine tools in one answer.\n- Never mention tools, workflows, Google Sheets or systems.\n- Never remove hyperlinks or links, keep them as they are\n",
+                                                                               "passthroughBinaryImages":  false
+                                                                           }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.agent",
+                                            "typeVersion":  3,
+                                            "position":  [
+                                                             528,
+                                                             16
+                                                         ],
+                                            "id":  "6573f83e-566a-4814-8e3c-3708d6355d6a",
+                                            "name":  "AI Assistant Agent"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "promptType":  "define",
+                                                               "text":  "=Assistant Draft: {{ $json.output }}",
+                                                               "options":  {
+                                                                               "systemMessage":  "You are Amadeus Reply Formatter.\n\nINPUT\n- You receive a message that already contains a COMPLETE and FACTUALLY CORRECT answer\n  generated by Amadeus\u0027 internal tools.\n- This text is in the field you see as the user message.\n\nYOUR JOB\n- Lightly clean up formatting for Telegram (line breaks, bullet points).\n- Keep the language the SAME as the input (Afrikaans stays Afrikaans, English stays English).\n- Make it easy to read, but DO NOT change the facts.\n\nSTRICT RULES\n- Do NOT change any numbers, dates, times, links, hyperlinks or measurements.\n- Do NOT add new information or guesses.\n- Do NOT remove important disclaimers (for example, notes about last measurement time).\n- You may:\n  • add or fix bullet points\n  • split long paragraphs\n  • correct obvious typos\n\nENDING\n- End with exactly ONE short, friendly follow-up question, for example:\n  • “Is there anything else you’d like to know?”\n  • “Wil jy nog iets oor die weer weet?”\n\nOUTPUT\n- Return only the final message text to send to the user."
+                                                                           }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.agent",
+                                            "typeVersion":  3,
+                                            "position":  [
+                                                             1120,
+                                                             16
+                                                         ],
+                                            "id":  "f07be14b-e590-47b0-9a48-112315102697",
+                                            "name":  "AI Replay Agent"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "model":  {
+                                                                             "__rl":  true,
+                                                                             "mode":  "list",
+                                                                             "value":  "gpt-4.1-mini"
+                                                                         },
+                                                               "builtInTools":  {
+
+                                                                                },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             1120,
+                                                             208
+                                                         ],
+                                            "id":  "9c3c8f5d-cefa-4a1b-80d3-e1b98cc47688",
+                                            "name":  "Replay ChatGPT",
+                                            "credentials":  {
+                                                                "openAiApi":  {
+                                                                                  "id":  "Lp7Z2HFOXfBCGvVg",
+                                                                                  "name":  "OpenAi_Sales Agent"
+                                                                              }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "SUB-AGENTS FOR INFO",
+                                                               "height":  192,
+                                                               "width":  928,
+                                                               "color":  5
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             720,
+                                                             496
+                                                         ],
+                                            "id":  "c9e6bbe0-44e7-4f19-a1fe-1f5e8d6f6437",
+                                            "name":  "Sticky Note7"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "sessionIdType":  "customKey",
+                                                               "sessionKey":  "={{ $json.user_id }}\n",
+                                                               "contextWindowLength":  10
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             288,
+                                                             560
+                                                         ],
+                                            "id":  "2f009b70-eaf7-4a1d-8aee-02ca96530b30",
+                                            "name":  "Simple Memory"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "description":  "Use this tool whenever the user asks anything related to weather at the farm. \nThis includes questions about current weather, rain, wind, temperature, \nstorms, sunshine, forecasts, farming conditions, or how the weather will \naffect visits, piglets, animals, crops, or farm operations. \nReturn the most accurate weather information available from the data source.\n",
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "L4c34rFmN0kUJvWc",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/L4c34rFmN0kUJvWc",
+                                                                                  "cachedResultName":  "My project — 2.1 - Amadeus Weather Sub-Agent"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+                                                                                                    "input":  "={{ $json.message_text }}"
+                                                                                                },
+                                                                                      "matchingColumns":  [
+                                                                                                              "input"
+                                                                                                          ],
+                                                                                      "schema":  [
+                                                                                                     {
+                                                                                                         "id":  "input",
+                                                                                                         "displayName":  "input",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     }
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  false,
+                                                                                      "convertFieldsToString":  false
+                                                                                  }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.toolWorkflow",
+                                            "typeVersion":  2.2,
+                                            "position":  [
+                                                             768,
+                                                             560
+                                                         ],
+                                            "id":  "e820afcc-f367-4c3e-a2d6-c91a6eec2c41",
+                                            "name":  "Weather_Info_Tool"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "chatId":  "={{ $(\u0027When Executed by Another Workflow\u0027).item.json.user_id }}",
+                                                               "text":  "={{ $json.output }}",
+                                                               "additionalFields":  {
+                                                                                        "appendAttribution":  false,
+                                                                                        "parse_mode":  "HTML"
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             1456,
+                                                             16
+                                                         ],
+                                            "id":  "5f2fe7f7-5266-4430-b765-d566e6515863",
+                                            "name":  "Send Replay",
+                                            "webhookId":  "43d79297-3f7b-4852-826e-ef5a682fb523",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "NIEUAI_Telegram"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "description":  "Use this tool whenever the user asks anything related to electricity on Amadeus Farm, this is the only place you get true data related to Amadeus farms electricity. The Sunsynk inverter is used to help log and track data that we then put in to the google sheet where you get the info from. \n",
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "tKVKoCcxhT7CAydT",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/tKVKoCcxhT7CAydT",
+                                                                                  "cachedResultName":  "My project — 2.2 - Amadeus Sunsynk Sub-Agent"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+                                                                                                    "input":  "={{ $json.message_text }}"
+                                                                                                },
+                                                                                      "matchingColumns":  [
+                                                                                                              "input"
+                                                                                                          ],
+                                                                                      "schema":  [
+                                                                                                     {
+                                                                                                         "id":  "input",
+                                                                                                         "displayName":  "input",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     }
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  false,
+                                                                                      "convertFieldsToString":  false
+                                                                                  }
+                                                           },
+                                            "type":  "@n8n/n8n-nodes-langchain.toolWorkflow",
+                                            "typeVersion":  2.2,
+                                            "position":  [
+                                                             928,
+                                                             560
+                                                         ],
+                                            "id":  "6da9cd5f-4b76-4d2b-9a95-1cc242c92683",
+                                            "name":  "Sunsynk_Info_Tool"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "workflowInputs":  {
+                                                                                      "values":  [
+                                                                                                     {
+                                                                                                         "name":  "user_id"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "message_text"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "timestamp"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "user_name"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "message_id"
+                                                                                                     }
+                                                                                                 ]
+                                                                                  }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflowTrigger",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             240,
+                                                             16
+                                                         ],
+                                            "id":  "8a9b5cad-53c8-40b1-a1ac-3f66decc8e17",
+                                            "name":  "When Executed by Another Workflow"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "content":  "TRIGGERS",
+                                                               "height":  256,
+                                                               "width":  208,
+                                                               "color":  6
+                                                           },
+                                            "type":  "n8n-nodes-base.stickyNote",
+                                            "position":  [
+                                                             192,
+                                                             -64
+                                                         ],
+                                            "typeVersion":  1,
+                                            "id":  "5232516b-7a31-4557-839f-e4adb3c56e43",
+                                            "name":  "Sticky Note"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Brain ChatGPT":  {
+                                                                    "ai_languageModel":  [
+                                                                                             [
+                                                                                                 {
+                                                                                                     "node":  "AI Assistant Agent",
+                                                                                                     "type":  "ai_languageModel",
+                                                                                                     "index":  0
+                                                                                                 }
+                                                                                             ]
+                                                                                         ]
+                                                                },
+                                              "AI Assistant Agent":  {
+                                                                         "main":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "AI Replay Agent",
+                                                                                              "type":  "main",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                     },
+                                              "Replay ChatGPT":  {
+                                                                     "ai_languageModel":  [
+                                                                                              [
+                                                                                                  {
+                                                                                                      "node":  "AI Replay Agent",
+                                                                                                      "type":  "ai_languageModel",
+                                                                                                      "index":  0
+                                                                                                  }
+                                                                                              ]
+                                                                                          ]
+                                                                 },
+                                              "AI Replay Agent":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Send Replay",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "Simple Memory":  {
+                                                                    "ai_memory":  [
+                                                                                      [
+                                                                                          {
+                                                                                              "node":  "AI Assistant Agent",
+                                                                                              "type":  "ai_memory",
+                                                                                              "index":  0
+                                                                                          }
+                                                                                      ]
+                                                                                  ]
+                                                                },
+                                              "Weather_Info_Tool":  {
+                                                                        "ai_tool":  [
+                                                                                        [
+                                                                                            {
+                                                                                                "node":  "AI Assistant Agent",
+                                                                                                "type":  "ai_tool",
+                                                                                                "index":  0
+                                                                                            }
+                                                                                        ]
+                                                                                    ]
+                                                                    },
+                                              "Sunsynk_Info_Tool":  {
+                                                                        "ai_tool":  [
+                                                                                        [
+                                                                                            {
+                                                                                                "node":  "AI Assistant Agent",
+                                                                                                "type":  "ai_tool",
+                                                                                                "index":  0
+                                                                                            }
+                                                                                        ]
+                                                                                    ]
+                                                                    },
+                                              "When Executed by Another Workflow":  {
+                                                                                        "main":  [
+                                                                                                     [
+                                                                                                         {
+                                                                                                             "node":  "AI Assistant Agent",
+                                                                                                             "type":  "main",
+                                                                                                             "index":  0
+                                                                                                         }
+                                                                                                     ]
+                                                                                                 ]
+                                                                                    }
+                                          },
+                          "authors":  "Charl Nieuwendyk",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+
+                                                     ]
+                      }
+}

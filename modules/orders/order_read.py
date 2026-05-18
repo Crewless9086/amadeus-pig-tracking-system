@@ -16,6 +16,16 @@ ACTIVE_ORDER_STATUSES_FOR_REVIEW = {
     "Pending_Approval",
     "Approved",
 }
+HISTORY_ORDER_STATUSES_FOR_REVIEW = {
+    "Cancelled",
+    "Completed",
+    "Rejected",
+}
+VALID_ORDER_SEARCH_STATUS_SCOPES = {
+    "active",
+    "history",
+    "all",
+}
 
 WEIGHT_BAND_ORDER = [
     "N/A",
@@ -211,6 +221,130 @@ def get_order_detail(order_id: str):
     }
 
 
+def search_orders(
+    order_id: str = "",
+    customer_phone: str = "",
+    customer_name: str = "",
+    conversation_id: str = "",
+    status_scope: str = "active",
+    limit=5,
+):
+    order_id = to_clean_string(order_id)
+    customer_phone = _normalize_phone_for_lookup(customer_phone)
+    customer_name = to_clean_string(customer_name).lower()
+    conversation_id = to_clean_string(conversation_id)
+    status_scope = to_clean_string(status_scope).lower() or "active"
+    limit = _normalize_search_limit(limit)
+
+    if status_scope not in VALID_ORDER_SEARCH_STATUS_SCOPES:
+        raise ValueError("status_scope must be active, history, or all.")
+
+    if not any((order_id, customer_phone, customer_name, conversation_id)):
+        raise ValueError("Provide order_id, customer_phone, customer_name, or conversation_id.")
+
+    if order_id:
+        detail = get_order_detail(order_id)
+        if not detail:
+            return _order_search_response(
+                lookup_status="no_match",
+                status_scope=status_scope,
+                query=_order_search_query(order_id, customer_phone, customer_name, conversation_id, limit),
+                matches=[],
+                message="No matching order was found.",
+            )
+
+        order = detail.get("order", {})
+        lookup_status = "single_match" if _order_matches_status_scope(order, status_scope) else "terminal_order"
+        return _order_search_response(
+            lookup_status=lookup_status,
+            status_scope=status_scope,
+            query=_order_search_query(order_id, customer_phone, customer_name, conversation_id, limit),
+            matches=[_operator_order_match_summary(order, get_order_documents_for_summary(order_id))],
+            message=(
+                "Matching order found."
+                if lookup_status == "single_match"
+                else "The matching order is outside the requested status scope."
+            ),
+        )
+
+    records = list_orders()
+    candidates = []
+
+    for record in records:
+        if not _order_matches_status_scope(record, status_scope):
+            continue
+        if conversation_id and to_clean_string(record.get("conversation_id", "")) != conversation_id:
+            continue
+        if customer_phone and _normalize_phone_for_lookup(record.get("customer_phone", "")) != customer_phone:
+            continue
+        if customer_name and customer_name not in to_clean_string(record.get("customer_name", "")).lower():
+            continue
+        candidates.append(record)
+
+    candidates = _dedupe_and_sort_order_records(candidates)
+    limited = candidates[:limit]
+    matches = [
+        _operator_order_match_summary(
+            candidate,
+            get_order_documents_for_summary(candidate.get("order_id", "")),
+        )
+        for candidate in limited
+    ]
+
+    if not candidates:
+        lookup_status = "no_match"
+        message = "No matching order was found."
+    elif len(candidates) == 1:
+        lookup_status = "single_match"
+        message = "One matching order was found."
+    else:
+        lookup_status = "multiple_matches"
+        message = "Multiple matching orders were found."
+
+    return _order_search_response(
+        lookup_status=lookup_status,
+        status_scope=status_scope,
+        query=_order_search_query(order_id, customer_phone, customer_name, conversation_id, limit),
+        matches=matches,
+        message=message,
+        match_count=len(candidates),
+    )
+
+
+def get_order_operator_summary(order_id: str, documents=None):
+    order_id = to_clean_string(order_id)
+    detail = get_order_detail(order_id)
+
+    if not detail:
+        return None
+
+    documents = documents if documents is not None else get_order_documents_for_summary(order_id)
+    order = detail.get("order", {})
+    lines = detail.get("lines", [])
+    active_lines = [
+        line for line in lines
+        if to_clean_string(line.get("line_status", "")) != "Cancelled"
+    ]
+
+    return {
+        "success": True,
+        "action": "get_order_operator_summary",
+        "lookup_status": "single_match",
+        "order_id": order_id,
+        "order_summary": _operator_order_summary(order),
+        "line_summary": _summarize_lines_for_review(active_lines),
+        "document_summary": _operator_document_summary(documents),
+        "outstanding_actions": _outstanding_actions_for_order(order),
+        "safe_document_actions": _safe_document_actions(documents),
+    }
+
+
+def get_order_documents_for_summary(order_id: str):
+    from modules.documents.document_service import get_order_documents
+
+    return get_order_documents(to_clean_string(order_id))
+
+
 def get_active_customer_order_context(
     order_id: str = "",
     conversation_id: str = "",
@@ -341,6 +475,218 @@ def _is_active_order_for_review(order: dict):
 
 def _normalize_phone_for_lookup(value):
     return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def _normalize_search_limit(value):
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        limit = 5
+    return max(1, min(limit, 10))
+
+
+def _order_search_query(order_id, customer_phone, customer_name, conversation_id, limit):
+    return {
+        "order_id": to_clean_string(order_id),
+        "customer_phone": to_clean_string(customer_phone),
+        "customer_name": to_clean_string(customer_name),
+        "conversation_id": to_clean_string(conversation_id),
+        "limit": limit,
+    }
+
+
+def _order_search_response(
+    lookup_status,
+    status_scope,
+    query,
+    matches,
+    message,
+    match_count=None,
+):
+    return {
+        "success": True,
+        "action": "search_orders",
+        "lookup_status": lookup_status,
+        "match_count": len(matches) if match_count is None else match_count,
+        "status_scope": status_scope,
+        "query": query,
+        "matches": matches,
+        "message": message,
+    }
+
+
+def _dedupe_and_sort_order_records(records):
+    unique_records = {}
+    for record in records:
+        record_order_id = to_clean_string(record.get("order_id", ""))
+        if record_order_id:
+            unique_records[record_order_id] = record
+
+    return sorted(
+        unique_records.values(),
+        key=lambda item: parse_sheet_date(item.get("order_date", "")) or parse_sheet_date("1900-01-01"),
+        reverse=True,
+    )
+
+
+def _order_matches_status_scope(order, status_scope):
+    order_status = to_clean_string(order.get("order_status", ""))
+    if status_scope == "all":
+        return True
+    if status_scope == "active":
+        return order_status in ACTIVE_ORDER_STATUSES_FOR_REVIEW
+    if status_scope == "history":
+        return order_status in HISTORY_ORDER_STATUSES_FOR_REVIEW
+    return False
+
+
+def _operator_order_match_summary(order, documents=None):
+    documents = documents or []
+    latest_quote = _latest_document(documents, "Quote")
+    return {
+        "order_id": to_clean_string(order.get("order_id", "")),
+        "order_date": format_date_for_json(order.get("order_date", "")),
+        "customer_name": to_clean_string(order.get("customer_name", "")),
+        "customer_phone": to_clean_string(order.get("customer_phone", "")),
+        "order_status": to_clean_string(order.get("order_status", "")),
+        "approval_status": to_clean_string(order.get("approval_status", "")),
+        "payment_status": to_clean_string(order.get("payment_status", "")),
+        "payment_method": to_clean_string(order.get("payment_method", "")),
+        "collection_location": to_clean_string(order.get("collection_location", "")),
+        "collection_date": format_date_for_json(order.get("collection_date", "")),
+        "active_line_count": to_float(order.get("active_line_count", "")) or 0,
+        "active_line_total": to_float(order.get("active_line_total", "")) or 0,
+        "document_count": len(documents),
+        "latest_quote_ref": to_clean_string(latest_quote.get("Document_Ref", "")) if latest_quote else "",
+        "latest_quote_status": to_clean_string(latest_quote.get("Document_Status", "")) if latest_quote else "",
+        "outstanding_actions": [
+            action["code"] for action in _outstanding_actions_for_order(order)
+        ],
+    }
+
+
+def _operator_order_summary(order):
+    return {
+        "order_id": to_clean_string(order.get("order_id", "")),
+        "order_date": format_date_for_json(order.get("order_date", "")),
+        "customer_name": to_clean_string(order.get("customer_name", "")),
+        "customer_phone": to_clean_string(order.get("customer_phone", "")),
+        "order_status": to_clean_string(order.get("order_status", "")),
+        "approval_status": to_clean_string(order.get("approval_status", "")),
+        "payment_status": to_clean_string(order.get("payment_status", "")),
+        "payment_method": to_clean_string(order.get("payment_method", "")),
+        "collection_location": to_clean_string(order.get("collection_location", "")),
+        "collection_date": format_date_for_json(order.get("collection_date", "")),
+        "active_line_count": to_float(order.get("active_line_count", "")) or 0,
+        "cancelled_line_count": to_float(order.get("cancelled_line_count", "")) or 0,
+        "active_line_total": to_float(order.get("active_line_total", "")) or 0,
+        "notes": to_clean_string(order.get("notes", "")),
+    }
+
+
+def _operator_document_summary(documents):
+    return [
+        {
+            "document_id": to_clean_string(row.get("Document_ID", "")),
+            "document_type": to_clean_string(row.get("Document_Type", "")),
+            "document_ref": to_clean_string(row.get("Document_Ref", "")),
+            "version": row.get("Version", ""),
+            "document_status": to_clean_string(row.get("Document_Status", "")),
+            "payment_method": to_clean_string(row.get("Payment_Method", "")),
+            "total": to_float(row.get("Total", "")) or 0,
+            "valid_until": format_date_for_json(row.get("Valid_Until", "")),
+            "created_at": format_date_for_json(row.get("Created_At", "")),
+            "sent_at": format_date_for_json(row.get("Sent_At", "")),
+            "sent_by": to_clean_string(row.get("Sent_By", "")),
+        }
+        for row in _sort_documents(documents)
+    ]
+
+
+def _safe_document_actions(documents):
+    return [
+        {
+            "action": "view_document_record",
+            "document_id": to_clean_string(row.get("Document_ID", "")),
+            "document_ref": to_clean_string(row.get("Document_Ref", "")),
+        }
+        for row in _sort_documents(documents)
+        if to_clean_string(row.get("Document_ID", "")) and to_clean_string(row.get("Document_Ref", ""))
+    ]
+
+
+def _outstanding_actions_for_order(order):
+    order_status = to_clean_string(order.get("order_status", ""))
+    payment_method = to_clean_string(order.get("payment_method", ""))
+    collection_location = to_clean_string(order.get("collection_location", ""))
+    active_line_count = to_float(order.get("active_line_count", "")) or 0
+    reserved_pig_count = to_float(order.get("reserved_pig_count", "")) or 0
+
+    if order_status == "Draft":
+        actions = []
+        if payment_method not in {"Cash", "EFT"}:
+            actions.append(_outstanding_action("missing_payment_method", "Payment method is still missing."))
+        if not collection_location:
+            actions.append(_outstanding_action("missing_collection_location", "Collection location is still missing."))
+        if active_line_count <= 0:
+            actions.append(_outstanding_action("missing_active_lines", "Order has no active lines."))
+        if not actions:
+            actions.append(_outstanding_action(
+                "send_for_approval_when_ready",
+                "Order can be sent for approval once operator confirms details.",
+            ))
+        return actions
+
+    if order_status == "Pending_Approval":
+        return [_outstanding_action("awaiting_approval", "Order is waiting for approval.")]
+
+    if order_status == "Approved":
+        if reserved_pig_count < active_line_count:
+            return [_outstanding_action(
+                "reservation_follow_up",
+                "Approved order needs reservation follow-up.",
+            )]
+        return [_outstanding_action(
+            "ready_for_collection_or_completion",
+            "Approved order is ready for collection or completion handling.",
+        )]
+
+    if order_status in {"Cancelled", "Completed"}:
+        return [_outstanding_action("terminal_order", "Order is closed.")]
+
+    return []
+
+
+def _outstanding_action(code, label):
+    return {
+        "code": code,
+        "label": label,
+    }
+
+
+def _latest_document(documents, document_type):
+    matching = [
+        row for row in documents
+        if to_clean_string(row.get("Document_Type", "")).lower() == document_type.lower()
+        and to_clean_string(row.get("Document_Status", "")) != "Voided"
+    ]
+    sorted_docs = _sort_documents(matching)
+    return sorted_docs[0] if sorted_docs else None
+
+
+def _sort_documents(documents):
+    def sort_key(row):
+        try:
+            version = int(row.get("Version") or 0)
+        except (TypeError, ValueError):
+            version = 0
+        return (
+            to_clean_string(row.get("Document_Type", "")),
+            version,
+            to_clean_string(row.get("Created_At", "")),
+        )
+
+    return sorted(documents or [], key=sort_key, reverse=True)
 
 
 def _safe_order_match_summary(order: dict):

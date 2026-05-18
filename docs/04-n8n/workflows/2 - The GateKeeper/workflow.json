@@ -1,0 +1,978 @@
+﻿{
+    "updatedAt":  "2026-03-23T13:26:41.740Z",
+    "createdAt":  "2025-12-29T17:30:56.688Z",
+    "id":  "yt4qc1kP5riAfLfL",
+    "name":  "2 - The GateKeeper",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "updates":  [
+                                                         "message"
+                                                     ],
+                                         "additionalFields":  {
+
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegramTrigger",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "id":  "740e2041-7277-429d-80bf-9616beda71b6",
+                      "name":  "Telegram Trigger",
+                      "webhookId":  "41252191-96ae-4913-b545-af19e8ade5dc",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "NIEUAI_Telegram"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "3eec81ed-9d98-4fcb-a60c-3d2bf5adda81",
+                                                                                     "name":  "user_id",
+                                                                                     "value":  "={{ $json.message.from.id }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "993d3ec7-d695-4430-9a96-42c3c985e6b3",
+                                                                                     "name":  "user_name",
+                                                                                     "value":  "={{ $json.message.from.first_name }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "62c15e0d-8983-4bc4-bc35-fa91fbf3693b",
+                                                                                     "name":  "message_text",
+                                                                                     "value":  "={{ $json.message.text }}",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "1842c30c-b865-4d30-9c66-0193df1b55da",
+                                                                                     "name":  "channel",
+                                                                                     "value":  "TELEGRAM",
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                                 {
+                                                                                     "id":  "a2ec9d6b-0c04-4a84-8622-d7756d32975f",
+                                                                                     "name":  "timestamp",
+                                                                                     "value":  "={{ $now.toISO() }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       288,
+                                       -80
+                                   ],
+                      "id":  "57a5a452-9800-4399-bd79-66281dd70aed",
+                      "name":  "Prepare Message"
+                  },
+                  {
+                      "parameters":  {
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "1ZagpneFVjhLEfX6D2Yry8FWBNBnQ3HQoSLt1Z6GPtzM",
+                                                            "mode":  "list",
+                                                            "cachedResultName":  "Amadeus_Users",
+                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZagpneFVjhLEfX6D2Yry8FWBNBnQ3HQoSLt1Z6GPtzM/edit?usp=drivesdk"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "gid=0",
+                                                           "mode":  "list",
+                                                           "cachedResultName":  "ASSISTANT_USERS",
+                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZagpneFVjhLEfX6D2Yry8FWBNBnQ3HQoSLt1Z6GPtzM/edit#gid=0"
+                                                       },
+                                         "filtersUI":  {
+                                                           "values":  [
+                                                                          {
+                                                                              "lookupColumn":  "telegram_id",
+                                                                              "lookupValue":  "={{ $json.message.from.id }}"
+                                                                          }
+                                                                      ]
+                                                       },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.7,
+                      "position":  [
+                                       288,
+                                       96
+                                   ],
+                      "id":  "ddf4a804-e909-4fe7-91b1-1e80f6e7d756",
+                      "name":  "Get User Info",
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "DbtelWXdvwe4DuHc",
+                                                                        "name":  "Google Sheets - Sales"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "assignments":  {
+                                                             "assignments":  [
+                                                                                 {
+                                                                                     "id":  "5348d076-8434-42f9-8f3a-b396bb555b81",
+                                                                                     "name":  "is_authorized",
+                                                                                     "value":  "={{ !!$json.telegram_id }}",
+                                                                                     "type":  "string"
+                                                                                 }
+                                                                             ]
+                                                         },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  3.4,
+                      "position":  [
+                                       1056,
+                                       0
+                                   ],
+                      "id":  "3d4e4bf4-50ce-430c-8f89-75e57477c12d",
+                      "name":  "Normalize Auth Check"
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "loose",
+                                                                                                             "version":  2
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.is_authorized }}",
+                                                                                                                    "rightValue":  "=false",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "boolean",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "b0a9e00c-2545-46ed-a54c-768862adced6"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Blocked"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "loose",
+                                                                                                             "version":  2
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "id":  "ddbafbbb-5fe4-436e-a53f-20fb2a2859e6",
+                                                                                                                    "leftValue":  "={{ $json.is_authorized }}",
+                                                                                                                    "rightValue":  "=true",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 }
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Authorized"
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "looseTypeValidation":  true,
+                                         "options":  {
+                                                         "allMatchingOutputs":  false
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  3.3,
+                      "position":  [
+                                       1296,
+                                       0
+                                   ],
+                      "id":  "dde5a9f8-905e-4dae-8d88-3dd5cd22542e",
+                      "name":  "Security Check"
+                  },
+                  {
+                      "parameters":  {
+                                         "chatId":  "={{ $(\u0027Merge\u0027).item.json.user_id }}",
+                                         "text":  "=Hi {{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }} 👋 Sorry, you’re not registered for the Amadeus Assistant system. If you believe this is a mistake, please ask Charl to add your Telegram ID.",
+                                         "additionalFields":  {
+                                                                  "appendAttribution":  false
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       1600,
+                                       -112
+                                   ],
+                      "id":  "84d27254-a057-4c0f-b13c-c1686d51d496",
+                      "name":  "Send Not Authorized",
+                      "webhookId":  "3c5edd77-487a-49f0-b7ba-7fd1e47d3587",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "NIEUAI_Telegram"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+
+                                     },
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       560,
+                                       0
+                                   ],
+                      "id":  "063adeb5-efb6-4703-811a-871040f48f80",
+                      "name":  "Merge"
+                  },
+                  {
+                      "parameters":  {
+                                         "keep":  "lastItems"
+                                     },
+                      "type":  "n8n-nodes-base.limit",
+                      "typeVersion":  1,
+                      "position":  [
+                                       816,
+                                       0
+                                   ],
+                      "id":  "59a2cd98-c2a9-4b8b-96db-0a8dd49396cb",
+                      "name":  "Limit"
+                  },
+                  {
+                      "parameters":  {
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "6UscGE44eTfdLp1A",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/6UscGE44eTfdLp1A",
+                                                            "cachedResultName":  "My project — 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+                                                                              "timestamp":  "={{ $now.toISO() }}",
+                                                                              "message_text":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.text }}",
+                                                                              "user_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.id }}",
+                                                                              "user_name":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }}",
+                                                                              "message_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.message_id }}"
+                                                                          },
+                                                                "matchingColumns":  [
+
+                                                                                    ],
+                                                                "schema":  [
+                                                                               {
+                                                                                   "id":  "user_id",
+                                                                                   "displayName":  "user_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "message_text",
+                                                                                   "displayName":  "message_text",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "timestamp",
+                                                                                   "displayName":  "timestamp",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "user_name",
+                                                                                   "displayName":  "user_name",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "message_id",
+                                                                                   "displayName":  "message_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               }
+                                                                           ],
+                                                                "attemptToConvertTypes":  true,
+                                                                "convertFieldsToString":  true
+                                                            },
+                                         "options":  {
+                                                         "waitForSubWorkflow":  false
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflow",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       1600,
+                                       80
+                                   ],
+                      "id":  "ea78da43-0adf-4f41-a2a8-9a114b06e5c0",
+                      "name":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027"
+                  }
+              ],
+    "connections":  {
+                        "Telegram Trigger":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Prepare Message",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  },
+                                                                  {
+                                                                      "node":  "Get User Info",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Prepare Message":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Merge",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Get User Info":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Merge",
+                                                                   "type":  "main",
+                                                                   "index":  1
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Normalize Auth Check":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Security Check",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Security Check":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Send Not Authorized",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ],
+                                                            [
+                                                                {
+                                                                    "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Merge":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Limit",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Limit":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Normalize Auth Check",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "staticData":  null,
+    "meta":  {
+                 "templateCredsSetupCompleted":  true
+             },
+    "pinData":  {
+                    "Telegram Trigger":  [
+                                             {
+                                                 "json":  {
+                                                              "update_id":  549157700,
+                                                              "message":  {
+                                                                              "message_id":  525,
+                                                                              "from":  {
+                                                                                           "id":  5721652188,
+                                                                                           "is_bot":  false,
+                                                                                           "first_name":  "Charl",
+                                                                                           "last_name":  "Nieuwendyk",
+                                                                                           "username":  "CharlNPersonal",
+                                                                                           "language_code":  "en"
+                                                                                       },
+                                                                              "chat":  {
+                                                                                           "id":  5721652188,
+                                                                                           "first_name":  "Charl",
+                                                                                           "last_name":  "Nieuwendyk",
+                                                                                           "username":  "CharlNPersonal",
+                                                                                           "type":  "private"
+                                                                                       },
+                                                                              "date":  1767030272,
+                                                                              "text":  "Hi"
+                                                                          }
+                                                          }
+                                             }
+                                         ]
+                },
+    "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+    "activeVersionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+    "versionCounter":  59,
+    "triggerCount":  1,
+    "shared":  [
+                   {
+                       "updatedAt":  "2025-12-29T17:30:56.691Z",
+                       "createdAt":  "2025-12-29T17:30:56.691Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "yt4qc1kP5riAfLfL",
+                       "projectId":  "dUeH9AUxBtKxgNPX",
+                       "project":  {
+                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
+                                       "createdAt":  "2025-07-13T13:07:42.154Z",
+                                       "id":  "dUeH9AUxBtKxgNPX",
+                                       "name":  "My project",
+                                       "type":  "team",
+                                       "icon":  {
+                                                    "type":  "icon",
+                                                    "value":  "layer-group"
+                                                },
+                                       "description":  null,
+                                       "creatorId":  null
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-03-23T13:26:41.741Z",
+                          "createdAt":  "2026-03-23T13:26:41.741Z",
+                          "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+                          "workflowId":  "yt4qc1kP5riAfLfL",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "updates":  [
+                                                                               "message"
+                                                                           ],
+                                                               "additionalFields":  {
+
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegramTrigger",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             0,
+                                                             0
+                                                         ],
+                                            "id":  "740e2041-7277-429d-80bf-9616beda71b6",
+                                            "name":  "Telegram Trigger",
+                                            "webhookId":  "41252191-96ae-4913-b545-af19e8ade5dc",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "NIEUAI_Telegram"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "3eec81ed-9d98-4fcb-a60c-3d2bf5adda81",
+                                                                                                           "name":  "user_id",
+                                                                                                           "value":  "={{ $json.message.from.id }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "993d3ec7-d695-4430-9a96-42c3c985e6b3",
+                                                                                                           "name":  "user_name",
+                                                                                                           "value":  "={{ $json.message.from.first_name }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "62c15e0d-8983-4bc4-bc35-fa91fbf3693b",
+                                                                                                           "name":  "message_text",
+                                                                                                           "value":  "={{ $json.message.text }}",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "1842c30c-b865-4d30-9c66-0193df1b55da",
+                                                                                                           "name":  "channel",
+                                                                                                           "value":  "TELEGRAM",
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                                                       {
+                                                                                                           "id":  "a2ec9d6b-0c04-4a84-8622-d7756d32975f",
+                                                                                                           "name":  "timestamp",
+                                                                                                           "value":  "={{ $now.toISO() }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             288,
+                                                             -80
+                                                         ],
+                                            "id":  "57a5a452-9800-4399-bd79-66281dd70aed",
+                                            "name":  "Prepare Message"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "documentId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "1ZagpneFVjhLEfX6D2Yry8FWBNBnQ3HQoSLt1Z6GPtzM",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultName":  "Amadeus_Users",
+                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZagpneFVjhLEfX6D2Yry8FWBNBnQ3HQoSLt1Z6GPtzM/edit?usp=drivesdk"
+                                                                              },
+                                                               "sheetName":  {
+                                                                                 "__rl":  true,
+                                                                                 "value":  "gid=0",
+                                                                                 "mode":  "list",
+                                                                                 "cachedResultName":  "ASSISTANT_USERS",
+                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1ZagpneFVjhLEfX6D2Yry8FWBNBnQ3HQoSLt1Z6GPtzM/edit#gid=0"
+                                                                             },
+                                                               "filtersUI":  {
+                                                                                 "values":  [
+                                                                                                {
+                                                                                                    "lookupColumn":  "telegram_id",
+                                                                                                    "lookupValue":  "={{ $json.message.from.id }}"
+                                                                                                }
+                                                                                            ]
+                                                                             },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.googleSheets",
+                                            "typeVersion":  4.7,
+                                            "position":  [
+                                                             288,
+                                                             96
+                                                         ],
+                                            "id":  "ddf4a804-e909-4fe7-91b1-1e80f6e7d756",
+                                            "name":  "Get User Info",
+                                            "credentials":  {
+                                                                "googleSheetsOAuth2Api":  {
+                                                                                              "id":  "DbtelWXdvwe4DuHc",
+                                                                                              "name":  "Google Sheets - Sales"
+                                                                                          }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "assignments":  {
+                                                                                   "assignments":  [
+                                                                                                       {
+                                                                                                           "id":  "5348d076-8434-42f9-8f3a-b396bb555b81",
+                                                                                                           "name":  "is_authorized",
+                                                                                                           "value":  "={{ !!$json.telegram_id }}",
+                                                                                                           "type":  "string"
+                                                                                                       }
+                                                                                                   ]
+                                                                               },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.set",
+                                            "typeVersion":  3.4,
+                                            "position":  [
+                                                             1056,
+                                                             0
+                                                         ],
+                                            "id":  "3d4e4bf4-50ce-430c-8f89-75e57477c12d",
+                                            "name":  "Normalize Auth Check"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rules":  {
+                                                                             "values":  [
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "loose",
+                                                                                                                                   "version":  2
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{ $json.is_authorized }}",
+                                                                                                                                          "rightValue":  "=false",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "boolean",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "b0a9e00c-2545-46ed-a54c-768862adced6"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Blocked"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "loose",
+                                                                                                                                   "version":  2
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "id":  "ddbafbbb-5fe4-436e-a53f-20fb2a2859e6",
+                                                                                                                                          "leftValue":  "={{ $json.is_authorized }}",
+                                                                                                                                          "rightValue":  "=true",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       }
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Authorized"
+                                                                                            }
+                                                                                        ]
+                                                                         },
+                                                               "looseTypeValidation":  true,
+                                                               "options":  {
+                                                                               "allMatchingOutputs":  false
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.switch",
+                                            "typeVersion":  3.3,
+                                            "position":  [
+                                                             1296,
+                                                             0
+                                                         ],
+                                            "id":  "dde5a9f8-905e-4dae-8d88-3dd5cd22542e",
+                                            "name":  "Security Check"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "chatId":  "={{ $(\u0027Merge\u0027).item.json.user_id }}",
+                                                               "text":  "=Hi {{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }} 👋 Sorry, you’re not registered for the Amadeus Assistant system. If you believe this is a mistake, please ask Charl to add your Telegram ID.",
+                                                               "additionalFields":  {
+                                                                                        "appendAttribution":  false
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             1600,
+                                                             -112
+                                                         ],
+                                            "id":  "84d27254-a057-4c0f-b13c-c1686d51d496",
+                                            "name":  "Send Not Authorized",
+                                            "webhookId":  "3c5edd77-487a-49f0-b7ba-7fd1e47d3587",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "NIEUAI_Telegram"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+
+                                                           },
+                                            "type":  "n8n-nodes-base.merge",
+                                            "typeVersion":  3.2,
+                                            "position":  [
+                                                             560,
+                                                             0
+                                                         ],
+                                            "id":  "063adeb5-efb6-4703-811a-871040f48f80",
+                                            "name":  "Merge"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "keep":  "lastItems"
+                                                           },
+                                            "type":  "n8n-nodes-base.limit",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             816,
+                                                             0
+                                                         ],
+                                            "id":  "59a2cd98-c2a9-4b8b-96db-0a8dd49396cb",
+                                            "name":  "Limit"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "6UscGE44eTfdLp1A",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/6UscGE44eTfdLp1A",
+                                                                                  "cachedResultName":  "My project — 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+                                                                                                    "timestamp":  "={{ $now.toISO() }}",
+                                                                                                    "message_text":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.text }}",
+                                                                                                    "user_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.id }}",
+                                                                                                    "user_name":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }}",
+                                                                                                    "message_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.message_id }}"
+                                                                                                },
+                                                                                      "matchingColumns":  [
+
+                                                                                                          ],
+                                                                                      "schema":  [
+                                                                                                     {
+                                                                                                         "id":  "user_id",
+                                                                                                         "displayName":  "user_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "message_text",
+                                                                                                         "displayName":  "message_text",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "timestamp",
+                                                                                                         "displayName":  "timestamp",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "user_name",
+                                                                                                         "displayName":  "user_name",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "message_id",
+                                                                                                         "displayName":  "message_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     }
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  true,
+                                                                                      "convertFieldsToString":  true
+                                                                                  },
+                                                               "options":  {
+                                                                               "waitForSubWorkflow":  false
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflow",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             1600,
+                                                             80
+                                                         ],
+                                            "id":  "ea78da43-0adf-4f41-a2a8-9a114b06e5c0",
+                                            "name":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Telegram Trigger":  {
+                                                                       "main":  [
+                                                                                    [
+                                                                                        {
+                                                                                            "node":  "Prepare Message",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        },
+                                                                                        {
+                                                                                            "node":  "Get User Info",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        }
+                                                                                    ]
+                                                                                ]
+                                                                   },
+                                              "Prepare Message":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Merge",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "Get User Info":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Merge",
+                                                                                         "type":  "main",
+                                                                                         "index":  1
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "Normalize Auth Check":  {
+                                                                           "main":  [
+                                                                                        [
+                                                                                            {
+                                                                                                "node":  "Security Check",
+                                                                                                "type":  "main",
+                                                                                                "index":  0
+                                                                                            }
+                                                                                        ]
+                                                                                    ]
+                                                                       },
+                                              "Security Check":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "Send Not Authorized",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ],
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "Merge":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Limit",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                                              "Limit":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Normalize Auth Check",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        }
+                                          },
+                          "authors":  "Charl Nieuwendyk",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-03-23T13:26:41.992Z",
+                                                             "id":  142,
+                                                             "workflowId":  "yt4qc1kP5riAfLfL",
+                                                             "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+                                                             "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         }
+                                                     ]
+                      }
+}
