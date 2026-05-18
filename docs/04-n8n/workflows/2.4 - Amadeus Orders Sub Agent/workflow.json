@@ -1,5 +1,5 @@
 ﻿{
-    "updatedAt":  "2026-04-27T06:55:21.478Z",
+    "updatedAt":  "2026-05-18T07:30:12.764Z",
     "createdAt":  "2026-03-23T14:42:35.937Z",
     "id":  "T8LLCAtYDLNRPoRx",
     "name":  "2.4 - Amadeus Orders Sub Agent",
@@ -135,7 +135,7 @@
                   },
                   {
                       "parameters":  {
-                                         "jsCode":  "const order = $json.order || {};\nconst orderId = order.order_id || \"Unknown\";\nconst customerName = order.customer_name || \"-\";\nconst channel = order.customer_channel || \"-\";\nconst category = order.requested_category || \"-\";\nconst weightRange = order.requested_weight_range || \"-\";\nconst quantity = order.requested_quantity || \"-\";\nconst lineCount = order.line_count || 0;\nconst reservedPigCount = order.reserved_pig_count || 0;\nconst orderStatus = order.order_status || \"-\";\nconst approvalStatus = order.approval_status || \"-\";\n\nconst message =\n`🐷 Order Approval Needed\n\nOrder ID: ${orderId}\nCustomer: ${customerName}\nChannel: ${channel}\nCategory: ${category}\nWeight Range: ${weightRange}\nQuantity Requested: ${quantity}\nLine Count: ${lineCount}\nReserved Pig Count: ${reservedPigCount}\nOrder Status: ${orderStatus}\nApproval Status: ${approvalStatus}\n\nPlease reply with:\n\napprove ${orderId}\nor\nreject ${orderId}`;\n\nreturn [\n  {\n    json: {\n      order_id: orderId,\n      telegram_chat_id: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"telegram_chat_id\"],\n      message_text: message,\n      changed_by: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"changed_by\"],\n      trigger_source: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"trigger_source\"]\n    }\n  }\n];"
+                                         "jsCode":  "const order = $json.order || {};\nconst orderId = order.order_id || \"Unknown\";\nconst customerName = order.customer_name || \"-\";\nconst channel = order.customer_channel || \"-\";\nconst category = order.requested_category || \"-\";\nconst weightRange = order.requested_weight_range || \"-\";\nconst quantity = order.requested_quantity || \"-\";\nconst lineCount = order.line_count || 0;\nconst reservedPigCount = order.reserved_pig_count || 0;\nconst orderStatus = order.order_status || \"-\";\nconst approvalStatus = order.approval_status || \"-\";\n\nconst message =\n`?? Order Approval Needed\n\nOrder ID: ${orderId}\nCustomer: ${customerName}\nChannel: ${channel}\nCategory: ${category}\nWeight Range: ${weightRange}\nQuantity Requested: ${quantity}\nLine Count: ${lineCount}\nReserved Pig Count: ${reservedPigCount}\nOrder Status: ${orderStatus}\nApproval Status: ${approvalStatus}\n\nPlease reply with:\n\napprove ${orderId}\nor\nreject ${orderId}`;\n\nreturn [\n  {\n    json: {\n      order_id: orderId,\n      telegram_chat_id: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"telegram_chat_id\"],\n      message_text: message,\n      changed_by: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"changed_by\"],\n      trigger_source: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"trigger_source\"]\n    }\n  }\n];"
                                      },
                       "type":  "n8n-nodes-base.code",
                       "typeVersion":  2,
@@ -157,13 +157,13 @@
                                                                                  "row":  {
                                                                                              "buttons":  [
                                                                                                              {
-                                                                                                                 "text":  "✅ Approve",
+                                                                                                                 "text":  "? Approve",
                                                                                                                  "additionalFields":  {
                                                                                                                                           "callback_data":  "=approve_{{$node[\"Code - Build Approval Message\"].json[\"order_id\"]}}"
                                                                                                                                       }
                                                                                                              },
                                                                                                              {
-                                                                                                                 "text":  "❌ Reject",
+                                                                                                                 "text":  "? Reject",
                                                                                                                  "additionalFields":  {
                                                                                                                                           "callback_data":  "=reject_{{$node[\"Code - Build Approval Message\"].json[\"order_id\"]}}"
                                                                                                                                       }
@@ -322,7 +322,8 @@
                                                               "id":  "e5jS1ondryiauRNX",
                                                               "name":  "Telegram - Oom Sakkie"
                                                           }
-                                      }
+                                      },
+                      "disabled":  true
                   },
                   {
                       "parameters":  {
@@ -399,7 +400,7 @@
                   {
                       "parameters":  {
                                          "chatId":  "={{$node[\"Code - Parse Approval Command\"].json[\"chat_id\"]}}",
-                                         "text":  "=⚠️ Invalid Order Command\n\nPlease use:\napprove ORD-XXXX\nor\nreject ORD-XXXX",
+                                         "text":  "=?? Invalid Order Command\n\nPlease use:\napprove ORD-XXXX\nor\nreject ORD-XXXX",
                                          "additionalFields":  {
                                                                   "appendAttribution":  false
                                                               }
@@ -479,7 +480,7 @@
                   {
                       "parameters":  {
                                          "chatId":  "={{$node[\"Set - Unified Decision Context\"].json[\"telegram_chat_id\"]}}",
-                                         "text":  "=⚠️ Order Already Processed\n\nOrder ID: {{$json.order.order_id}}\nCurrent Status: {{$json.order.order_status}}\nApproval Status: {{$json.order.approval_status}}\n\nNo further action was taken.",
+                                         "text":  "=?? Order Already Processed\n\nOrder ID: {{$json.order.order_id}}\nCurrent Status: {{$json.order.order_status}}\nApproval Status: {{$json.order.approval_status}}\n\nNo further action was taken.",
                                          "additionalFields":  {
                                                                   "appendAttribution":  false
                                                               }
@@ -626,7 +627,7 @@
                                                                                  {
                                                                                      "id":  "6aed9f2c-a902-4752-a250-24a73a8fb6a1",
                                                                                      "name":  "message",
-                                                                                     "value":  "=✅ Order Approved\n\nOrder ID: {{$json.order_id}}\nStatus: Approved\nApproval Status: Approved\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
+                                                                                     "value":  "=? Order Approved\n\nOrder ID: {{$json.order_id}}\nStatus: Approved\nApproval Status: Approved\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
                                                                                      "type":  "string"
                                                                                  },
                                                                                  {
@@ -681,7 +682,7 @@
                                                                                  {
                                                                                      "id":  "6aed9f2c-a902-4752-a250-24a73a8fb6a1",
                                                                                      "name":  "message",
-                                                                                     "value":  "=❌ Order Rejected\n\nOrder ID: {{$json.order_id}}\nStatus: Cancelled\nApproval Status: Rejected\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
+                                                                                     "value":  "=? Order Rejected\n\nOrder ID: {{$json.order_id}}\nStatus: Cancelled\nApproval Status: Rejected\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
                                                                                      "type":  "string"
                                                                                  },
                                                                                  {
@@ -810,7 +811,7 @@
                                                                                  {
                                                                                      "id":  "794a4755-8a8e-4b88-9dc8-2fecf6b5c992",
                                                                                      "name":  "message",
-                                                                                     "value":  "=⚠️ Order Approval Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe approval could not be processed.\nPlease try again or use the manual command format.",
+                                                                                     "value":  "=?? Order Approval Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe approval could not be processed.\nPlease try again or use the manual command format.",
                                                                                      "type":  "string"
                                                                                  },
                                                                                  {
@@ -841,7 +842,7 @@
                                                                                  {
                                                                                      "id":  "ba7a75c4-49c6-467b-ba5e-7c1f08cde2f1",
                                                                                      "name":  "message",
-                                                                                     "value":  "=⚠️ Order Rejecttion Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe rejection could not be processed.\nPlease try again or use the manual command format.",
+                                                                                     "value":  "=?? Order Rejecttion Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe rejection could not be processed.\nPlease try again or use the manual command format.",
                                                                                      "type":  "string"
                                                                                  },
                                                                                  {
@@ -868,7 +869,7 @@
                   {
                       "parameters":  {
                                          "chatId":  "={{$node[\"Set - Unified Decision Context\"].json[\"telegram_chat_id\"]}}",
-                                         "text":  "=⚠️ Order Action Failed  The order decision could not be processed. Please try again or use the manual command format.",
+                                         "text":  "=?? Order Action Failed  The order decision could not be processed. Please try again or use the manual command format.",
                                          "additionalFields":  {
 
                                                               }
@@ -892,7 +893,7 @@
                   {
                       "parameters":  {
                                          "chatId":  "={{ $(\u0027Code - Normalize Orders Sub Agent Payload\u0027).item.json.telegram_chat_id }}",
-                                         "text":  "=⚠️ Invalid approval button data received. No action was taken.",
+                                         "text":  "=?? Invalid approval button data received. No action was taken.",
                                          "additionalFields":  {
 
                                                               }
@@ -1257,10 +1258,10 @@
                                                               }
                                                           ]
                 },
-    "versionId":  "a6805388-5277-4619-8cad-fad6c2ccec7d",
-    "activeVersionId":  "a6805388-5277-4619-8cad-fad6c2ccec7d",
-    "versionCounter":  116,
-    "triggerCount":  1,
+    "versionId":  "b860c5f3-ec4f-42aa-8f60-42b50ff4a63a",
+    "activeVersionId":  "b860c5f3-ec4f-42aa-8f60-42b50ff4a63a",
+    "versionCounter":  119,
+    "triggerCount":  0,
     "shared":  [
                    {
                        "updatedAt":  "2026-03-23T14:42:35.939Z",
@@ -1287,9 +1288,9 @@
 
              ],
     "activeVersion":  {
-                          "updatedAt":  "2026-03-25T09:06:02.897Z",
-                          "createdAt":  "2026-03-25T09:06:02.897Z",
-                          "versionId":  "a6805388-5277-4619-8cad-fad6c2ccec7d",
+                          "updatedAt":  "2026-05-18T07:30:12.766Z",
+                          "createdAt":  "2026-05-18T07:30:12.766Z",
+                          "versionId":  "b860c5f3-ec4f-42aa-8f60-42b50ff4a63a",
                           "workflowId":  "T8LLCAtYDLNRPoRx",
                           "nodes":  [
                                         {
@@ -1420,7 +1421,7 @@
                                         },
                                         {
                                             "parameters":  {
-                                                               "jsCode":  "const order = $json.order || {};\nconst orderId = order.order_id || \"Unknown\";\nconst customerName = order.customer_name || \"-\";\nconst channel = order.customer_channel || \"-\";\nconst category = order.requested_category || \"-\";\nconst weightRange = order.requested_weight_range || \"-\";\nconst quantity = order.requested_quantity || \"-\";\nconst lineCount = order.line_count || 0;\nconst reservedPigCount = order.reserved_pig_count || 0;\nconst orderStatus = order.order_status || \"-\";\nconst approvalStatus = order.approval_status || \"-\";\n\nconst message =\n`🐷 Order Approval Needed\n\nOrder ID: ${orderId}\nCustomer: ${customerName}\nChannel: ${channel}\nCategory: ${category}\nWeight Range: ${weightRange}\nQuantity Requested: ${quantity}\nLine Count: ${lineCount}\nReserved Pig Count: ${reservedPigCount}\nOrder Status: ${orderStatus}\nApproval Status: ${approvalStatus}\n\nPlease reply with:\n\napprove ${orderId}\nor\nreject ${orderId}`;\n\nreturn [\n  {\n    json: {\n      order_id: orderId,\n      telegram_chat_id: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"telegram_chat_id\"],\n      message_text: message,\n      changed_by: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"changed_by\"],\n      trigger_source: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"trigger_source\"]\n    }\n  }\n];"
+                                                               "jsCode":  "const order = $json.order || {};\nconst orderId = order.order_id || \"Unknown\";\nconst customerName = order.customer_name || \"-\";\nconst channel = order.customer_channel || \"-\";\nconst category = order.requested_category || \"-\";\nconst weightRange = order.requested_weight_range || \"-\";\nconst quantity = order.requested_quantity || \"-\";\nconst lineCount = order.line_count || 0;\nconst reservedPigCount = order.reserved_pig_count || 0;\nconst orderStatus = order.order_status || \"-\";\nconst approvalStatus = order.approval_status || \"-\";\n\nconst message =\n`?? Order Approval Needed\n\nOrder ID: ${orderId}\nCustomer: ${customerName}\nChannel: ${channel}\nCategory: ${category}\nWeight Range: ${weightRange}\nQuantity Requested: ${quantity}\nLine Count: ${lineCount}\nReserved Pig Count: ${reservedPigCount}\nOrder Status: ${orderStatus}\nApproval Status: ${approvalStatus}\n\nPlease reply with:\n\napprove ${orderId}\nor\nreject ${orderId}`;\n\nreturn [\n  {\n    json: {\n      order_id: orderId,\n      telegram_chat_id: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"telegram_chat_id\"],\n      message_text: message,\n      changed_by: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"changed_by\"],\n      trigger_source: $node[\"Code - Normalize Orders Sub Agent Payload\"].json[\"trigger_source\"]\n    }\n  }\n];"
                                                            },
                                             "type":  "n8n-nodes-base.code",
                                             "typeVersion":  2,
@@ -1442,13 +1443,13 @@
                                                                                                        "row":  {
                                                                                                                    "buttons":  [
                                                                                                                                    {
-                                                                                                                                       "text":  "✅ Approve",
+                                                                                                                                       "text":  "? Approve",
                                                                                                                                        "additionalFields":  {
                                                                                                                                                                 "callback_data":  "=approve_{{$node[\"Code - Build Approval Message\"].json[\"order_id\"]}}"
                                                                                                                                                             }
                                                                                                                                    },
                                                                                                                                    {
-                                                                                                                                       "text":  "❌ Reject",
+                                                                                                                                       "text":  "? Reject",
                                                                                                                                        "additionalFields":  {
                                                                                                                                                                 "callback_data":  "=reject_{{$node[\"Code - Build Approval Message\"].json[\"order_id\"]}}"
                                                                                                                                                             }
@@ -1607,7 +1608,8 @@
                                                                                     "id":  "e5jS1ondryiauRNX",
                                                                                     "name":  "Telegram - Oom Sakkie"
                                                                                 }
-                                                            }
+                                                            },
+                                            "disabled":  true
                                         },
                                         {
                                             "parameters":  {
@@ -1684,7 +1686,7 @@
                                         {
                                             "parameters":  {
                                                                "chatId":  "={{$node[\"Code - Parse Approval Command\"].json[\"chat_id\"]}}",
-                                                               "text":  "=⚠️ Invalid Order Command\n\nPlease use:\napprove ORD-XXXX\nor\nreject ORD-XXXX",
+                                                               "text":  "=?? Invalid Order Command\n\nPlease use:\napprove ORD-XXXX\nor\nreject ORD-XXXX",
                                                                "additionalFields":  {
                                                                                         "appendAttribution":  false
                                                                                     }
@@ -1764,7 +1766,7 @@
                                         {
                                             "parameters":  {
                                                                "chatId":  "={{$node[\"Set - Unified Decision Context\"].json[\"telegram_chat_id\"]}}",
-                                                               "text":  "=⚠️ Order Already Processed\n\nOrder ID: {{$json.order.order_id}}\nCurrent Status: {{$json.order.order_status}}\nApproval Status: {{$json.order.approval_status}}\n\nNo further action was taken.",
+                                                               "text":  "=?? Order Already Processed\n\nOrder ID: {{$json.order.order_id}}\nCurrent Status: {{$json.order.order_status}}\nApproval Status: {{$json.order.approval_status}}\n\nNo further action was taken.",
                                                                "additionalFields":  {
                                                                                         "appendAttribution":  false
                                                                                     }
@@ -1911,7 +1913,7 @@
                                                                                                        {
                                                                                                            "id":  "6aed9f2c-a902-4752-a250-24a73a8fb6a1",
                                                                                                            "name":  "message",
-                                                                                                           "value":  "=✅ Order Approved\n\nOrder ID: {{$json.order_id}}\nStatus: Approved\nApproval Status: Approved\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
+                                                                                                           "value":  "=? Order Approved\n\nOrder ID: {{$json.order_id}}\nStatus: Approved\nApproval Status: Approved\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
                                                                                                            "type":  "string"
                                                                                                        },
                                                                                                        {
@@ -1966,7 +1968,7 @@
                                                                                                        {
                                                                                                            "id":  "6aed9f2c-a902-4752-a250-24a73a8fb6a1",
                                                                                                            "name":  "message",
-                                                                                                           "value":  "=❌ Order Rejected\n\nOrder ID: {{$json.order_id}}\nStatus: Cancelled\nApproval Status: Rejected\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
+                                                                                                           "value":  "=? Order Rejected\n\nOrder ID: {{$json.order_id}}\nStatus: Cancelled\nApproval Status: Rejected\nHandled By: {{$node[\"Set - Unified Decision Context\"].json[\"changed_by\"]}}\nMethod: {{$node[\"Set - Unified Decision Context\"].json[\"decision_method\"]}}",
                                                                                                            "type":  "string"
                                                                                                        },
                                                                                                        {
@@ -2095,7 +2097,7 @@
                                                                                                        {
                                                                                                            "id":  "794a4755-8a8e-4b88-9dc8-2fecf6b5c992",
                                                                                                            "name":  "message",
-                                                                                                           "value":  "=⚠️ Order Approval Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe approval could not be processed.\nPlease try again or use the manual command format.",
+                                                                                                           "value":  "=?? Order Approval Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe approval could not be processed.\nPlease try again or use the manual command format.",
                                                                                                            "type":  "string"
                                                                                                        },
                                                                                                        {
@@ -2126,7 +2128,7 @@
                                                                                                        {
                                                                                                            "id":  "ba7a75c4-49c6-467b-ba5e-7c1f08cde2f1",
                                                                                                            "name":  "message",
-                                                                                                           "value":  "=⚠️ Order Rejecttion Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe rejection could not be processed.\nPlease try again or use the manual command format.",
+                                                                                                           "value":  "=?? Order Rejecttion Failed\n\nOrder ID: {{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}\n\nThe rejection could not be processed.\nPlease try again or use the manual command format.",
                                                                                                            "type":  "string"
                                                                                                        },
                                                                                                        {
@@ -2153,7 +2155,7 @@
                                         {
                                             "parameters":  {
                                                                "chatId":  "={{$node[\"Set - Unified Decision Context\"].json[\"telegram_chat_id\"]}}",
-                                                               "text":  "=⚠️ Order Action Failed  The order decision could not be processed. Please try again or use the manual command format.",
+                                                               "text":  "=?? Order Action Failed  The order decision could not be processed. Please try again or use the manual command format.",
                                                                "additionalFields":  {
 
                                                                                     }
@@ -2177,7 +2179,7 @@
                                         {
                                             "parameters":  {
                                                                "chatId":  "={{ $(\u0027Code - Normalize Orders Sub Agent Payload\u0027).item.json.telegram_chat_id }}",
-                                                               "text":  "=⚠️ Invalid approval button data received. No action was taken.",
+                                                               "text":  "=?? Invalid approval button data received. No action was taken.",
                                                                "additionalFields":  {
 
                                                                                     }
@@ -2494,26 +2496,18 @@
                           "autosaved":  false,
                           "workflowPublishHistory":  [
                                                          {
-                                                             "createdAt":  "2026-03-25T09:06:03.304Z",
-                                                             "id":  199,
+                                                             "createdAt":  "2026-05-18T07:30:13.035Z",
+                                                             "id":  752,
                                                              "workflowId":  "T8LLCAtYDLNRPoRx",
-                                                             "versionId":  "a6805388-5277-4619-8cad-fad6c2ccec7d",
+                                                             "versionId":  "b860c5f3-ec4f-42aa-8f60-42b50ff4a63a",
                                                              "event":  "activated",
                                                              "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
                                                          },
                                                          {
-                                                             "createdAt":  "2026-04-27T06:55:20.353Z",
-                                                             "id":  480,
+                                                             "createdAt":  "2026-05-18T07:30:12.933Z",
+                                                             "id":  751,
                                                              "workflowId":  "T8LLCAtYDLNRPoRx",
-                                                             "versionId":  "a6805388-5277-4619-8cad-fad6c2ccec7d",
-                                                             "event":  "activated",
-                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
-                                                         },
-                                                         {
-                                                             "createdAt":  "2026-04-27T06:55:20.117Z",
-                                                             "id":  479,
-                                                             "workflowId":  "T8LLCAtYDLNRPoRx",
-                                                             "versionId":  "a6805388-5277-4619-8cad-fad6c2ccec7d",
+                                                             "versionId":  "b860c5f3-ec4f-42aa-8f60-42b50ff4a63a",
                                                              "event":  "deactivated",
                                                              "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
                                                          }

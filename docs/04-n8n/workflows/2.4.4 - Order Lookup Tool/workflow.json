@@ -1,0 +1,1041 @@
+{
+  "updatedAt": "2026-05-18T07:13:31.557Z",
+  "createdAt": "2026-05-18T06:56:20.061Z",
+  "id": "1VNdetSbgP0ffNyH",
+  "name": "2.4.4 - Order Lookup Tool",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "input"
+            },
+            {
+              "name": "action"
+            },
+            {
+              "name": "order_id"
+            },
+            {
+              "name": "customer_phone"
+            },
+            {
+              "name": "customer_name"
+            },
+            {
+              "name": "conversation_id"
+            },
+            {
+              "name": "status_scope"
+            },
+            {
+              "name": "limit"
+            },
+            {
+              "name": "changed_by"
+            },
+            {
+              "name": "telegram_chat_id"
+            },
+            {
+              "name": "telegram_user_id"
+            },
+            {
+              "name": "telegram_user_name"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -768,
+        224
+      ],
+      "id": "f768396c-3c2e-4ad9-aec6-169f9fef8d44",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction cleanAction(value) {\n  return clean(value).toLowerCase();\n}\n\nfunction cleanLimit(value) {\n  const parsed = parseInt(value, 10);\n  if (!Number.isFinite(parsed)) return \"5\";\n  return String(Math.max(1, Math.min(parsed, 10)));\n}\n\nfunction firstRegex(text, regex) {\n  const match = text.match(regex);\n  return match ? clean(match[1] || match[0]) : \"\";\n}\n\nfunction inferCustomerName(text, orderId, phone, conversationId) {\n  if (!text || orderId || phone || conversationId) return \"\";\n\n  let candidate = firstRegex(text, /(?:for|customer|name)\\s+(.+)/i) || text;\n  candidate = candidate\n    .replace(/\\b(find|search|show|open|get|look\\s*up|lookup|order|orders|summary|status|document|documents|quote|invoice|please|pls|me|the|for|customer|name|send|latest|to)\\b/gi, \" \")\n    .replace(/[^a-zA-Z\\s'-]/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim();\n\n  if (candidate.length < 2 || candidate.length > 80) return \"\";\n  return candidate;\n}\n\nconst allowedActions = new Set([\n  \"find_order\",\n  \"get_order_summary\",\n  \"get_order_documents\",\n  \"prepare_latest_quote_send\",\n]);\n\nconst rawInput = clean(input.input || input.message_text || input.query || input.text || input.message);\nconst rawAction = cleanAction(input.action);\nconst inferredOrderId = firstRegex(rawInput, /\\b(ORD-\\d{4}-[A-Z0-9]{4,})\\b/i).toUpperCase();\nconst inferredConversationId = firstRegex(rawInput, /\\bconversation(?:\\s*id)?\\s*[:#]?\\s*(\\d+)\\b/i);\nconst phoneCandidate = firstRegex(rawInput, /(?:\\+?\\d[\\d\\s().-]{6,}\\d)/);\nconst inferredPhone = phoneCandidate.replace(/[^\\d+]/g, \"\");\n\nconst orderId = (clean(input.order_id) || inferredOrderId).toUpperCase();\nconst customerPhone = clean(input.customer_phone) || inferredPhone;\nconst conversationId = clean(input.conversation_id) || inferredConversationId;\nconst customerName = clean(input.customer_name) || inferCustomerName(rawInput, orderId, customerPhone, conversationId);\nconst telegramChatId = clean(input.telegram_chat_id || input.user_id);\nconst telegramUserId = clean(input.telegram_user_id || input.user_id);\nconst telegramUserName = clean(input.telegram_user_name || input.user_name);\n\nconst requestedStatusScope = clean(input.status_scope).toLowerCase();\nconst statusScope = [\"active\", \"history\", \"all\"].includes(requestedStatusScope) ? requestedStatusScope : \"active\";\nconst limit = cleanLimit(input.limit || 5);\nconst changedBy = clean(input.changed_by) || telegramUserName || \"Oom Sakkie\";\n\nlet action = rawAction;\nif (!allowedActions.has(action)) {\n  if (/\\b(send|stuur)\\b/i.test(rawInput) && /\\b(quote|kwotasie)\\b/i.test(rawInput) && orderId) {\n    action = \"prepare_latest_quote_send\";\n  } else if (/\\b(document|documents|quote|invoice|pdf)\\b/i.test(rawInput) && orderId) {\n    action = \"get_order_documents\";\n  } else if (orderId) {\n    action = \"get_order_summary\";\n  } else {\n    action = \"find_order\";\n  }\n}\n\nlet validationError = \"\";\nif (action === \"find_order\" && !orderId && !customerPhone && !customerName && !conversationId) {\n  action = \"invalid_lookup_action\";\n  validationError = \"Provide order_id, customer_phone, customer_name, or conversation_id for find_order.\";\n}\n\nif ((action === \"get_order_summary\" || action === \"get_order_documents\" || action === \"prepare_latest_quote_send\") && !orderId) {\n  action = \"invalid_lookup_action\";\n  validationError = \"Provide order_id for order summary, document lookup, or quote-send preparation.\";\n}\n\nif (action === \"prepare_latest_quote_send\" && !telegramChatId) {\n  action = \"invalid_lookup_action\";\n  validationError = \"Telegram chat context is required to prepare quote send buttons.\";\n}\n\nconst searchParams = [];\nif (orderId) searchParams.push([\"order_id\", orderId]);\nif (customerPhone) searchParams.push([\"customer_phone\", customerPhone]);\nif (customerName) searchParams.push([\"customer_name\", customerName]);\nif (conversationId) searchParams.push([\"conversation_id\", conversationId]);\nif (statusScope) searchParams.push([\"status_scope\", statusScope]);\nif (limit) searchParams.push([\"limit\", limit]);\n\nconst query = searchParams\n  .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)\n  .join(\"&\");\n\nreturn [\n  {\n    json: {\n      action,\n      input: rawInput,\n      order_id: orderId,\n      customer_phone: customerPhone,\n      customer_name: customerName,\n      conversation_id: conversationId,\n      telegram_chat_id: telegramChatId,\n      telegram_user_id: telegramUserId,\n      telegram_user_name: telegramUserName,\n      status_scope: statusScope,\n      limit,\n      changed_by: changedBy,\n      validation_error: validationError,\n      search_url: `https://amadeus-pig-tracking-system.onrender.com/api/orders/search?${query}`,\n      operator_summary_url: orderId\n        ? `https://amadeus-pig-tracking-system.onrender.com/api/orders/${encodeURIComponent(orderId)}/operator-summary`\n        : \"\",\n      prepare_quote_send_url: orderId\n        ? `https://amadeus-pig-tracking-system.onrender.com/api/orders/${encodeURIComponent(orderId)}/quote/prepare-send`\n        : \"\",\n      prepare_quote_send_body: {\n        conversation_id: conversationId,\n        requested_by: changedBy,\n      },\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        224
+      ],
+      "id": "ed88733c-02f1-4732-a61d-e91943ef8fb0",
+      "name": "Code - Normalize Lookup Payload"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "find_order",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "24a99f4a-4170-4d53-92e8-ae2cf40a7b91"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Find Order"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "get_order_summary",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "28edbfb1-f603-49c5-95bd-e0f5dcbd463f"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Get Order Summary"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "get_order_documents",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "88fd5486-522f-4fbc-949f-8058bbd09be4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Get Order Documents"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "prepare_latest_quote_send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "5e3abbad-1585-44f4-bd47-210b4b3be2f1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Prepare Latest Quote Send"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "invalid_lookup_action",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "02c08213-cdb2-4c9b-9fe1-3ed47494cbb7"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Invalid Lookup Action"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -288,
+        224
+      ],
+      "id": "10583b85-57d6-49f9-86c4-2263580039d7",
+      "name": "Switch - Route Lookup Action"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.search_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "845ed51d-55b0-460f-9dc4-2b7b70ec86a9",
+      "name": "HTTP - Search Orders",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json || {};\nconst matches = Array.isArray(item.matches) ? item.matches : [];\n\nfunction lineForMatch(match) {\n  const bits = [\n    match.order_id,\n    match.customer_name,\n    match.order_status,\n    match.payment_status,\n  ].filter(Boolean);\n  return `- ${bits.join(\" | \")}`;\n}\n\nlet message = item.message || \"Order search completed.\";\nif (item.lookup_status === \"multiple_matches\" && matches.length) {\n  message += \"\\n\" + matches.map(lineForMatch).join(\"\\n\");\n  message += \"\\nPlease choose one order ID.\";\n} else if (item.lookup_status === \"single_match\" && matches[0]) {\n  message += `\\n${lineForMatch(matches[0])}`;\n}\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"find_order\",\n      lookup_status: item.lookup_status || \"error\",\n      match_count: item.match_count || 0,\n      status_scope: item.status_scope || \"\",\n      message,\n      matches,\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "2efafd3e-4c8c-4fa6-8808-6a1aaeb09f84",
+      "name": "Code - Format Find Order Result"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.operator_summary_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        224
+      ],
+      "id": "92e59f3a-5b5d-483a-ace3-9d4f18eb773a",
+      "name": "HTTP - Get Operator Summary",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json || {};\nconst order = item.order_summary || {};\nconst lines = Array.isArray(item.line_summary) ? item.line_summary : [];\nconst docs = Array.isArray(item.document_summary) ? item.document_summary : [];\nconst actions = Array.isArray(item.outstanding_actions) ? item.outstanding_actions : [];\n\nconst lineText = lines.map((line) => {\n  return `${line.quantity || 0} x ${line.sex || \"\"} ${line.sale_category || \"\"} ${line.weight_band || \"\"} @ R${line.unit_price || 0}`.replace(/\\s+/g, \" \").trim();\n}).join(\"; \");\n\nconst docText = docs.map((doc) => `${doc.document_type || \"Document\"} ${doc.document_ref || \"\"} (${doc.document_status || \"\"})`).join(\"; \");\nconst actionText = actions.map((action) => action.label || action.code).filter(Boolean).join(\"; \");\n\nconst message = [\n  `Order ${order.order_id || item.order_id || \"\"}: ${order.order_status || \"\"} / ${order.approval_status || \"\"}`,\n  order.customer_name ? `Customer: ${order.customer_name}` : \"\",\n  lineText ? `Items: ${lineText}` : \"Items: none active\",\n  `Total: R${order.active_line_total || 0}`,\n  order.payment_method ? `Payment: ${order.payment_method} (${order.payment_status || \"\"})` : \"\",\n  order.collection_location ? `Collection: ${order.collection_location}${order.collection_date ? \", \" + order.collection_date : \"\"}` : \"\",\n  docText ? `Documents: ${docText}` : \"Documents: none\",\n  actionText ? `Outstanding: ${actionText}` : \"\",\n].filter(Boolean).join(\"\\n\");\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"get_order_summary\",\n      lookup_status: item.lookup_status || \"error\",\n      order_id: item.order_id || order.order_id || \"\",\n      message,\n      order_summary: order,\n      line_summary: lines,\n      document_summary: docs,\n      outstanding_actions: actions,\n      safe_document_actions: Array.isArray(item.safe_document_actions) ? item.safe_document_actions : [],\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        224
+      ],
+      "id": "c7b58006-cee0-4e2a-92c9-c2605ccfcf23",
+      "name": "Code - Format Order Summary Result"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.operator_summary_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        448
+      ],
+      "id": "fb1da351-6626-4c12-8fb8-6c024aac341f",
+      "name": "HTTP - Get Documents Summary",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json || {};\nconst docs = Array.isArray(item.document_summary) ? item.document_summary : [];\nconst orderId = item.order_id || (item.order_summary || {}).order_id || \"\";\n\nconst lines = docs.map((doc) => {\n  const parts = [\n    doc.document_type || \"Document\",\n    doc.document_ref || doc.document_id || \"\",\n    doc.document_status || \"\",\n    doc.total !== undefined ? `R${doc.total}` : \"\",\n  ].filter(Boolean);\n  return `- ${parts.join(\" | \")}`;\n});\n\nconst message = lines.length\n  ? `Documents for ${orderId}:\\n${lines.join(\"\\n\")}`\n  : `No documents found for ${orderId}.`;\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"get_order_documents\",\n      lookup_status: item.lookup_status || \"error\",\n      order_id: orderId,\n      message,\n      document_summary: docs,\n      safe_document_actions: Array.isArray(item.safe_document_actions) ? item.safe_document_actions : [],\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        448
+      ],
+      "id": "b406c5f4-f7fa-4811-bd0c-d1ef5a2df2a1",
+      "name": "Code - Format Documents Result"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8a0e4a80-813f-496c-915e-e095eeff6b44",
+              "name": "success",
+              "value": "false",
+              "type": "boolean"
+            },
+            {
+              "id": "864d10dd-0ac9-49ad-a073-a9b40c8ed6f4",
+              "name": "action",
+              "value": "={{$json.action || \"invalid_lookup_action\"}}",
+              "type": "string"
+            },
+            {
+              "id": "d6e70b64-385b-4eef-a275-cdd17643e72d",
+              "name": "lookup_status",
+              "value": "error",
+              "type": "string"
+            },
+            {
+              "id": "a1468d25-3a71-47c4-b59c-9fb0413812d9",
+              "name": "message",
+              "value": "={{$json.validation_error || \"Unsupported order lookup action. Use find_order, get_order_summary, or get_order_documents.\"}}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        672
+      ],
+      "id": "934271a3-be68-4e40-8d8d-4e73269cdd30",
+      "name": "Set - Invalid Lookup Action"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.prepare_quote_send_url}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.prepare_quote_send_body}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        760,
+        440
+      ],
+      "id": "4a6c831d-7008-4002-8d1a-b2b9dd824250",
+      "name": "HTTP - Prepare Latest Quote Send",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json || {};\nconst doc = item.document || {};\nconst dest = item.destination || {};\nconst buttons = item.button_context || {};\n\nif (item.success !== true || item.send_ready !== true) {\n  const errors = Array.isArray(item.errors) ? item.errors.join(\"; \") : \"Quote send preparation failed.\";\n  return [{\n    json: {\n      success: false,\n      action: \"prepare_latest_quote_send\",\n      lookup_status: \"error\",\n      message: errors,\n    },\n  }];\n}\n\nconst total = doc.total !== undefined && doc.total !== \"\" ? `R${doc.total}` : \"total not set\";\nconst text = [\n  item.message || `Quote ${doc.document_ref || \"\"} is ready to send.`,\n  \"\",\n  `Order: ${item.order_id || \"\"}`,\n  `Document: ${doc.document_ref || doc.document_id || \"\"}`,\n  `Customer: ${item.customer_name || \"\"}`,\n  `Destination conversation: ${dest.conversation_id || \"\"}`,\n  `Total: ${total}`,\n].filter((line) => line !== undefined && line !== null).join(\"\\n\");\n\nreturn [{\n  json: {\n    success: true,\n    action: \"prepare_latest_quote_send\",\n    lookup_status: \"send_prepared\",\n    order_id: item.order_id || \"\",\n    message: \"Quote send confirmation buttons prepared.\",\n    telegram_chat_id: item.telegram_chat_id || \"\",\n    telegram_message: text,\n    document: doc,\n    destination: dest,\n    button_context: buttons,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        440
+      ],
+      "id": "378a957b-0e70-4441-a04b-dee9e4d852a3",
+      "name": "Code - Format Prepare Quote Send Result"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.telegram_chat_id}}",
+        "text": "={{$json.telegram_message}}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "={{$json.button_context.send_label || \"Send quote to customer\"}}",
+                    "additionalFields": {
+                      "callback_data": "={{$json.button_context.callback_data}}"
+                    }
+                  },
+                  {
+                    "text": "={{$json.button_context.cancel_label || \"Cancel\"}}",
+                    "additionalFields": {
+                      "callback_data": "={{$json.button_context.cancel_callback_data}}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        440
+      ],
+      "id": "8738fab5-f1f6-45cc-af50-b02f2bba182b",
+      "name": "Telegram - Send Quote Confirmation Buttons",
+      "credentials": {
+        "telegramApi": {
+          "id": "e5jS1ondryiauRNX",
+          "name": "Telegram - Oom Sakkie"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    success: true,\n    action: \"prepare_latest_quote_send\",\n    lookup_status: \"send_prepared\",\n    message: \"I prepared the quote send confirmation buttons. Use the Telegram buttons to send or cancel.\",\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        440
+      ],
+      "id": "7f64d477-cc08-4db2-8d52-f18ffc6748a9",
+      "name": "Code - Format Prepare Quote Tool Response"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Lookup Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize Lookup Payload": {
+      "main": [
+        [
+          {
+            "node": "Switch - Route Lookup Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Route Lookup Action": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Search Orders",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Get Operator Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Get Documents Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Prepare Latest Quote Send",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set - Invalid Lookup Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Search Orders": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Find Order Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Operator Summary": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Order Summary Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Documents Summary": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Documents Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Prepare Latest Quote Send": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Prepare Quote Send Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Prepare Quote Send Result": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Quote Confirmation Buttons",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Send Quote Confirmation Buttons": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Prepare Quote Tool Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "523f48a5-0190-44db-a324-630c64de6f30",
+  "activeVersionId": "523f48a5-0190-44db-a324-630c64de6f30",
+  "versionCounter": 6,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-05-18T06:56:20.063Z",
+      "createdAt": "2026-05-18T06:56:20.063Z",
+      "role": "workflow:owner",
+      "workflowId": "1VNdetSbgP0ffNyH",
+      "projectId": "dUeH9AUxBtKxgNPX",
+      "project": {
+        "updatedAt": "2025-07-13T13:07:42.154Z",
+        "createdAt": "2025-07-13T13:07:42.154Z",
+        "id": "dUeH9AUxBtKxgNPX",
+        "name": "My project",
+        "type": "team",
+        "icon": {
+          "type": "icon",
+          "value": "layer-group"
+        },
+        "description": null,
+        "creatorId": null
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-18T07:13:31.558Z",
+    "createdAt": "2026-05-18T07:13:31.558Z",
+    "versionId": "523f48a5-0190-44db-a324-630c64de6f30",
+    "workflowId": "1VNdetSbgP0ffNyH",
+    "nodes": [
+      {
+        "parameters": {
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "input"
+              },
+              {
+                "name": "action"
+              },
+              {
+                "name": "order_id"
+              },
+              {
+                "name": "customer_phone"
+              },
+              {
+                "name": "customer_name"
+              },
+              {
+                "name": "conversation_id"
+              },
+              {
+                "name": "status_scope"
+              },
+              {
+                "name": "limit"
+              },
+              {
+                "name": "changed_by"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -768,
+          224
+        ],
+        "id": "f768396c-3c2e-4ad9-aec6-169f9fef8d44",
+        "name": "When Executed by Another Workflow"
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $json || {};\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction cleanAction(value) {\n  return clean(value).toLowerCase();\n}\n\nfunction cleanLimit(value) {\n  const parsed = parseInt(value, 10);\n  if (!Number.isFinite(parsed)) return \"5\";\n  return String(Math.max(1, Math.min(parsed, 10)));\n}\n\nfunction firstRegex(text, regex) {\n  const match = text.match(regex);\n  return match ? clean(match[1] || match[0]) : \"\";\n}\n\nfunction inferCustomerName(text, orderId, phone, conversationId) {\n  if (!text || orderId || phone || conversationId) return \"\";\n\n  let candidate = firstRegex(text, /(?:for|customer|name)\\s+(.+)/i) || text;\n  candidate = candidate\n    .replace(/\\b(find|search|show|open|get|look\\s*up|lookup|order|orders|summary|status|document|documents|quote|invoice|please|pls|me|the|for|customer|name)\\b/gi, \" \")\n    .replace(/[^a-zA-Z\\s'-]/g, \" \")\n    .replace(/\\s+/g, \" \")\n    .trim();\n\n  if (candidate.length < 2 || candidate.length > 80) return \"\";\n  return candidate;\n}\n\nconst allowedActions = new Set([\n  \"find_order\",\n  \"get_order_summary\",\n  \"get_order_documents\",\n]);\n\nconst rawInput = clean(input.input || input.message_text || input.query || input.text || input.message);\nconst rawAction = cleanAction(input.action);\nconst inferredOrderId = firstRegex(rawInput, /\\b(ORD-\\d{4}-[A-Z0-9]{4,})\\b/i).toUpperCase();\nconst inferredConversationId = firstRegex(rawInput, /\\bconversation(?:\\s*id)?\\s*[:#]?\\s*(\\d+)\\b/i);\nconst phoneCandidate = firstRegex(rawInput, /(?:\\+?\\d[\\d\\s().-]{6,}\\d)/);\nconst inferredPhone = phoneCandidate.replace(/[^\\d+]/g, \"\");\n\nconst orderId = (clean(input.order_id) || inferredOrderId).toUpperCase();\nconst customerPhone = clean(input.customer_phone) || inferredPhone;\nconst conversationId = clean(input.conversation_id) || inferredConversationId;\nconst customerName = clean(input.customer_name) || inferCustomerName(rawInput, orderId, customerPhone, conversationId);\n\nconst requestedStatusScope = clean(input.status_scope).toLowerCase();\nconst statusScope = [\"active\", \"history\", \"all\"].includes(requestedStatusScope) ? requestedStatusScope : \"active\";\nconst limit = cleanLimit(input.limit || 5);\nconst changedBy = clean(input.changed_by) || \"Oom Sakkie\";\n\nlet action = rawAction;\nif (!allowedActions.has(action)) {\n  if (/\\b(document|documents|quote|invoice|pdf)\\b/i.test(rawInput) && orderId) {\n    action = \"get_order_documents\";\n  } else if (orderId) {\n    action = \"get_order_summary\";\n  } else {\n    action = \"find_order\";\n  }\n}\n\nlet validationError = \"\";\nif (action === \"find_order\" && !orderId && !customerPhone && !customerName && !conversationId) {\n  action = \"invalid_lookup_action\";\n  validationError = \"Provide order_id, customer_phone, customer_name, or conversation_id for find_order.\";\n}\n\nif ((action === \"get_order_summary\" || action === \"get_order_documents\") && !orderId) {\n  action = \"invalid_lookup_action\";\n  validationError = \"Provide order_id for order summary or document lookup.\";\n}\n\nconst searchParams = [];\nif (orderId) searchParams.push([\"order_id\", orderId]);\nif (customerPhone) searchParams.push([\"customer_phone\", customerPhone]);\nif (customerName) searchParams.push([\"customer_name\", customerName]);\nif (conversationId) searchParams.push([\"conversation_id\", conversationId]);\nif (statusScope) searchParams.push([\"status_scope\", statusScope]);\nif (limit) searchParams.push([\"limit\", limit]);\n\nconst query = searchParams\n  .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)\n  .join(\"&\");\n\nreturn [\n  {\n    json: {\n      action,\n      input: rawInput,\n      order_id: orderId,\n      customer_phone: customerPhone,\n      customer_name: customerName,\n      conversation_id: conversationId,\n      status_scope: statusScope,\n      limit,\n      changed_by: changedBy,\n      validation_error: validationError,\n      search_url: `https://amadeus-pig-tracking-system.onrender.com/api/orders/search?${query}`,\n      operator_summary_url: orderId\n        ? `https://amadeus-pig-tracking-system.onrender.com/api/orders/${encodeURIComponent(orderId)}/operator-summary`\n        : \"\",\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -528,
+          224
+        ],
+        "id": "ed88733c-02f1-4732-a61d-e91943ef8fb0",
+        "name": "Code - Normalize Lookup Payload"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.action}}",
+                      "rightValue": "find_order",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "24a99f4a-4170-4d53-92e8-ae2cf40a7b91"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Find Order"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.action}}",
+                      "rightValue": "get_order_summary",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "28edbfb1-f603-49c5-95bd-e0f5dcbd463f"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Get Order Summary"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.action}}",
+                      "rightValue": "get_order_documents",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "88fd5486-522f-4fbc-949f-8058bbd09be4"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Get Order Documents"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.action}}",
+                      "rightValue": "invalid_lookup_action",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "02c08213-cdb2-4c9b-9fe1-3ed47494cbb7"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Invalid Lookup Action"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          -288,
+          224
+        ],
+        "id": "10583b85-57d6-49f9-86c4-2263580039d7",
+        "name": "Switch - Route Lookup Action"
+      },
+      {
+        "parameters": {
+          "url": "={{$json.search_url}}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          0,
+          0
+        ],
+        "id": "845ed51d-55b0-460f-9dc4-2b7b70ec86a9",
+        "name": "HTTP - Search Orders",
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $json || {};\nconst matches = Array.isArray(item.matches) ? item.matches : [];\n\nfunction lineForMatch(match) {\n  const bits = [\n    match.order_id,\n    match.customer_name,\n    match.order_status,\n    match.payment_status,\n  ].filter(Boolean);\n  return `- ${bits.join(\" | \")}`;\n}\n\nlet message = item.message || \"Order search completed.\";\nif (item.lookup_status === \"multiple_matches\" && matches.length) {\n  message += \"\\n\" + matches.map(lineForMatch).join(\"\\n\");\n  message += \"\\nPlease choose one order ID.\";\n} else if (item.lookup_status === \"single_match\" && matches[0]) {\n  message += `\\n${lineForMatch(matches[0])}`;\n}\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"find_order\",\n      lookup_status: item.lookup_status || \"error\",\n      match_count: item.match_count || 0,\n      status_scope: item.status_scope || \"\",\n      message,\n      matches,\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          0
+        ],
+        "id": "2efafd3e-4c8c-4fa6-8808-6a1aaeb09f84",
+        "name": "Code - Format Find Order Result"
+      },
+      {
+        "parameters": {
+          "url": "={{$json.operator_summary_url}}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          0,
+          224
+        ],
+        "id": "92e59f3a-5b5d-483a-ace3-9d4f18eb773a",
+        "name": "HTTP - Get Operator Summary",
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $json || {};\nconst order = item.order_summary || {};\nconst lines = Array.isArray(item.line_summary) ? item.line_summary : [];\nconst docs = Array.isArray(item.document_summary) ? item.document_summary : [];\nconst actions = Array.isArray(item.outstanding_actions) ? item.outstanding_actions : [];\n\nconst lineText = lines.map((line) => {\n  return `${line.quantity || 0} x ${line.sex || \"\"} ${line.sale_category || \"\"} ${line.weight_band || \"\"} @ R${line.unit_price || 0}`.replace(/\\s+/g, \" \").trim();\n}).join(\"; \");\n\nconst docText = docs.map((doc) => `${doc.document_type || \"Document\"} ${doc.document_ref || \"\"} (${doc.document_status || \"\"})`).join(\"; \");\nconst actionText = actions.map((action) => action.label || action.code).filter(Boolean).join(\"; \");\n\nconst message = [\n  `Order ${order.order_id || item.order_id || \"\"}: ${order.order_status || \"\"} / ${order.approval_status || \"\"}`,\n  order.customer_name ? `Customer: ${order.customer_name}` : \"\",\n  lineText ? `Items: ${lineText}` : \"Items: none active\",\n  `Total: R${order.active_line_total || 0}`,\n  order.payment_method ? `Payment: ${order.payment_method} (${order.payment_status || \"\"})` : \"\",\n  order.collection_location ? `Collection: ${order.collection_location}${order.collection_date ? \", \" + order.collection_date : \"\"}` : \"\",\n  docText ? `Documents: ${docText}` : \"Documents: none\",\n  actionText ? `Outstanding: ${actionText}` : \"\",\n].filter(Boolean).join(\"\\n\");\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"get_order_summary\",\n      lookup_status: item.lookup_status || \"error\",\n      order_id: item.order_id || order.order_id || \"\",\n      message,\n      order_summary: order,\n      line_summary: lines,\n      document_summary: docs,\n      outstanding_actions: actions,\n      safe_document_actions: Array.isArray(item.safe_document_actions) ? item.safe_document_actions : [],\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          224
+        ],
+        "id": "c7b58006-cee0-4e2a-92c9-c2605ccfcf23",
+        "name": "Code - Format Order Summary Result"
+      },
+      {
+        "parameters": {
+          "url": "={{$json.operator_summary_url}}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          0,
+          448
+        ],
+        "id": "fb1da351-6626-4c12-8fb8-6c024aac341f",
+        "name": "HTTP - Get Documents Summary",
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $json || {};\nconst docs = Array.isArray(item.document_summary) ? item.document_summary : [];\nconst orderId = item.order_id || (item.order_summary || {}).order_id || \"\";\n\nconst lines = docs.map((doc) => {\n  const parts = [\n    doc.document_type || \"Document\",\n    doc.document_ref || doc.document_id || \"\",\n    doc.document_status || \"\",\n    doc.total !== undefined ? `R${doc.total}` : \"\",\n  ].filter(Boolean);\n  return `- ${parts.join(\" | \")}`;\n});\n\nconst message = lines.length\n  ? `Documents for ${orderId}:\\n${lines.join(\"\\n\")}`\n  : `No documents found for ${orderId}.`;\n\nreturn [\n  {\n    json: {\n      success: item.success === true,\n      action: \"get_order_documents\",\n      lookup_status: item.lookup_status || \"error\",\n      order_id: orderId,\n      message,\n      document_summary: docs,\n      safe_document_actions: Array.isArray(item.safe_document_actions) ? item.safe_document_actions : [],\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          448
+        ],
+        "id": "b406c5f4-f7fa-4811-bd0c-d1ef5a2df2a1",
+        "name": "Code - Format Documents Result"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "8a0e4a80-813f-496c-915e-e095eeff6b44",
+                "name": "success",
+                "value": "false",
+                "type": "boolean"
+              },
+              {
+                "id": "864d10dd-0ac9-49ad-a073-a9b40c8ed6f4",
+                "name": "action",
+                "value": "={{$json.action || \"invalid_lookup_action\"}}",
+                "type": "string"
+              },
+              {
+                "id": "d6e70b64-385b-4eef-a275-cdd17643e72d",
+                "name": "lookup_status",
+                "value": "error",
+                "type": "string"
+              },
+              {
+                "id": "a1468d25-3a71-47c4-b59c-9fb0413812d9",
+                "name": "message",
+                "value": "={{$json.validation_error || \"Unsupported order lookup action. Use find_order, get_order_summary, or get_order_documents.\"}}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          0,
+          672
+        ],
+        "id": "934271a3-be68-4e40-8d8d-4e73269cdd30",
+        "name": "Set - Invalid Lookup Action"
+      }
+    ],
+    "connections": {
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Code - Normalize Lookup Payload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Normalize Lookup Payload": {
+        "main": [
+          [
+            {
+              "node": "Switch - Route Lookup Action",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch - Route Lookup Action": {
+        "main": [
+          [
+            {
+              "node": "HTTP - Search Orders",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "HTTP - Get Operator Summary",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "HTTP - Get Documents Summary",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Set - Invalid Lookup Action",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP - Search Orders": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Find Order Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP - Get Operator Summary": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Order Summary Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP - Get Documents Summary": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Documents Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Charl Nieuwendyk",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-05-18T07:13:31.786Z",
+        "id": 750,
+        "workflowId": "1VNdetSbgP0ffNyH",
+        "versionId": "523f48a5-0190-44db-a324-630c64de6f30",
+        "event": "activated",
+        "userId": "8691148d-2442-4b8d-b051-2cffc74988b1"
+      }
+    ]
+  }
+}

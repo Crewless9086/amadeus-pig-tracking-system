@@ -357,6 +357,196 @@ class OrderRoutesTests(unittest.TestCase):
             "error": "Order not found.",
         })
 
+    def test_prepare_latest_quote_send_route_returns_button_context_without_sending(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "customer_name": "Charl N",
+                "conversation_id": "1774",
+            },
+            "lines": [],
+        }
+        quote = {
+            "Document_ID": "DOC-1",
+            "Order_ID": "ORD-1",
+            "Document_Type": "Quote",
+            "Document_Ref": "Q-1",
+            "Document_Status": "Generated",
+            "Total": 1400,
+            "Valid_Until": "2026-05-20",
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote", return_value=quote), \
+             patch.object(order_routes, "send_order_document") as send_document:
+            response = self.client.post(
+                "/api/orders/ORD-1/quote/prepare-send",
+                json={"requested_by": "Oom Sakkie"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["send_ready"])
+        self.assertEqual(payload["action"], "prepare_latest_quote_send")
+        self.assertEqual(payload["destination"]["conversation_id"], "1774")
+        self.assertEqual(payload["destination"]["source"], "order_record")
+        self.assertEqual(payload["document"]["document_id"], "DOC-1")
+        self.assertEqual(payload["button_context"]["send_label"], "Send quote to customer")
+        self.assertIn("quote_send|ORD-1|DOC-1|1774", payload["button_context"]["callback_data"])
+        send_document.assert_not_called()
+
+    def test_prepare_latest_quote_send_route_uses_explicit_conversation_id(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "customer_name": "Charl N",
+                "conversation_id": "1774",
+            },
+            "lines": [],
+        }
+        quote = {
+            "Document_ID": "DOC-1",
+            "Document_Type": "Quote",
+            "Document_Ref": "Q-1",
+            "Document_Status": "Generated",
+            "Total": 1400,
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote", return_value=quote):
+            response = self.client.post(
+                "/api/orders/ORD-1/quote/prepare-send",
+                json={"conversation_id": "9999"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["destination"]["conversation_id"], "9999")
+        self.assertEqual(payload["destination"]["source"], "operator_input")
+
+    def test_prepare_latest_quote_send_route_blocks_missing_destination_and_superseded_quote(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "customer_name": "Charl N",
+                "conversation_id": "",
+            },
+            "lines": [],
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail):
+            missing_destination = self.client.post("/api/orders/ORD-1/quote/prepare-send")
+
+        self.assertEqual(missing_destination.status_code, 400)
+        self.assertFalse(missing_destination.get_json()["send_ready"])
+        self.assertIn("No confirmed customer conversation", missing_destination.get_json()["errors"][0])
+
+        detail["order"]["conversation_id"] = "1774"
+        superseded_quote = {
+            "Document_ID": "DOC-1",
+            "Document_Type": "Quote",
+            "Document_Ref": "Q-1",
+            "Document_Status": "Superseded",
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote", return_value=superseded_quote):
+            superseded = self.client.post("/api/orders/ORD-1/quote/prepare-send")
+
+        self.assertEqual(superseded.status_code, 400)
+        self.assertIn("Superseded quotes cannot be sent", superseded.get_json()["errors"][0])
+
+    def test_send_latest_quote_confirmed_route_rechecks_and_sends_matching_latest_quote(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "customer_name": "Charl N",
+                "conversation_id": "1774",
+            },
+            "lines": [],
+        }
+        quote = {
+            "Document_ID": "DOC-1",
+            "Document_Type": "Quote",
+            "Document_Ref": "Q-1",
+            "Document_Status": "Generated",
+        }
+        send_result = {
+            "success": True,
+            "document_id": "DOC-1",
+            "order_id": "ORD-1",
+            "conversation_id": "1774",
+            "message": "Document sent successfully.",
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote", return_value=quote), \
+             patch.object(order_routes, "send_order_document", return_value=send_result) as send_document:
+            response = self.client.post(
+                "/api/orders/ORD-1/quote/send-latest-confirmed",
+                json={
+                    "document_id": "DOC-1",
+                    "conversation_id": "1774",
+                    "sent_by": "Oom Sakkie",
+                    "confirmation_source": "telegram_button",
+                    "telegram_user_id": "123",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["action"], "send_latest_quote_confirmed")
+        self.assertEqual(payload["confirmation_source"], "telegram_button")
+        self.assertEqual(payload["telegram_user_id"], "123")
+        send_document.assert_called_once_with(
+            "DOC-1",
+            conversation_id="1774",
+            sent_by="Oom Sakkie",
+            account_id="147387",
+        )
+
+    def test_send_latest_quote_confirmed_route_blocks_stale_document_selection(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "conversation_id": "1774",
+            },
+            "lines": [],
+        }
+        newer_quote = {
+            "Document_ID": "DOC-2",
+            "Document_Type": "Quote",
+            "Document_Ref": "Q-2",
+            "Document_Status": "Generated",
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote", return_value=newer_quote), \
+             patch.object(order_routes, "send_order_document") as send_document:
+            response = self.client.post(
+                "/api/orders/ORD-1/quote/send-latest-confirmed",
+                json={
+                    "document_id": "DOC-1",
+                    "conversation_id": "1774",
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("no longer the latest", response.get_json()["errors"][0])
+        send_document.assert_not_called()
+
+    def test_send_latest_quote_confirmed_route_requires_document_and_conversation(self):
+        response = self.client.post(
+            "/api/orders/ORD-1/quote/send-latest-confirmed",
+            json={"document_id": "DOC-1"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["action"], "send_latest_quote_confirmed")
+        self.assertIn("conversation_id is required", response.get_json()["errors"][0])
+
     def test_sync_lines_route_validates_payload_and_attaches_auto_quote_on_success(self):
         service_result = {
             "success": True,

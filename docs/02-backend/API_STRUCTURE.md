@@ -606,6 +606,106 @@ Generates an invoice PDF for an approved/completed order, uploads it to the conf
 
 ## Document Delivery Behavior (Phase 2.5)
 
+## Oom Sakkie Document Send Guard (Phase 7.3D)
+
+### `POST /api/orders/<order_id>/quote/prepare-send`
+
+Prepares a safe operator confirmation context for sending the latest quote through Oom Sakkie.
+
+This endpoint **does not send the document**. It only returns the order/document/destination context and Telegram button data needed for the next guarded step.
+
+Payload:
+
+```json
+{
+  "conversation_id": "1774",
+  "requested_by": "Oom Sakkie"
+}
+```
+
+Rules:
+
+- Order must exist.
+- A customer destination conversation must be confirmed.
+- If `conversation_id` is provided, it is used as the explicit operator destination.
+- If `conversation_id` is not provided, the endpoint may use `ORDER_MASTER.ConversationId` as the confirmed destination.
+- Latest quote must exist.
+- Latest quote must have `Document_Type = Quote`.
+- Voided and superseded quotes cannot be prepared for sending.
+- The endpoint must not call n8n, Chatwoot, or `send_order_document`.
+
+Response:
+
+```json
+{
+  "success": true,
+  "action": "prepare_latest_quote_send",
+  "send_ready": true,
+  "order_id": "ORD-2026-3E46B8",
+  "customer_name": "Charl N",
+  "destination": {
+    "conversation_id": "1774",
+    "source": "order_record",
+    "confirmed": true
+  },
+  "document": {
+    "document_id": "DOC-...",
+    "document_type": "Quote",
+    "document_ref": "Q-2026-3E46B8",
+    "document_status": "Generated",
+    "total": 1400,
+    "valid_until": "2026-05-20"
+  },
+  "button_context": {
+    "send_label": "Send quote to customer",
+    "cancel_label": "Cancel",
+    "callback_action": "send_latest_quote_confirmed",
+    "callback_data": "quote_send|ORD-2026-3E46B8|DOC-...|1774",
+    "cancel_callback_data": "quote_cancel|ORD-2026-3E46B8|DOC-..."
+  },
+  "message": "Quote Q-2026-3E46B8 is ready for Charl N. Total R1400. Send it to the customer?"
+}
+```
+
+**HTTP status codes:**
+- `200` — send context prepared; no document sent
+- `400` — missing order, missing confirmed destination, missing quote, voided/superseded quote, or invalid document type
+
+Planned next endpoint:
+
+### `POST /api/orders/<order_id>/quote/send-latest-confirmed`
+
+Backend-owned final send endpoint for Oom Sakkie Telegram button callbacks.
+
+Payload:
+
+```json
+{
+  "document_id": "DOC-...",
+  "conversation_id": "1774",
+  "sent_by": "Oom Sakkie",
+  "confirmation_source": "telegram_button",
+  "telegram_user_id": "123456"
+}
+```
+
+Rules:
+
+- `document_id` is required.
+- `conversation_id` is required.
+- Order must exist.
+- Latest quote must exist.
+- The selected `document_id` must still be the latest sendable quote for the order.
+- Latest document must have `Document_Type = Quote`.
+- Voided and superseded quotes cannot be sent.
+- Backend re-checks all safety rules at button-click time before calling `send_order_document`.
+- Existing document delivery behavior still owns the actual n8n/Chatwoot delivery.
+
+**HTTP status codes:**
+- `200` — send confirmed by backend/document delivery path or recently-sent duplicate skipped safely
+- `400` — missing input, missing order, missing quote, stale document selection, voided/superseded quote, or invalid document type
+- `502` — backend attempted delivery but the delivery workflow did not confirm send
+
 ### `POST /api/order-documents/<document_id>/send`
 
 Triggers outbound n8n delivery for an existing generated document.

@@ -23,7 +23,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
-| Phase 7: Broader Workflow Improvements | 7.0, 7.1, And 7.2 Planning Complete; 7.3 Next | Plan Oom Sakkie operational order/document lookup before implementation. |
+| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified | Plan 7.3D document-send guard before any send behavior is added. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
@@ -1376,7 +1376,7 @@ Still required:
 
 - Owner will continue live testing during normal use and make notes for a future small polish pass if needed.
 
-## Phase 7: Broader Workflow Improvements - Next
+## Phase 7: Broader Workflow Improvements - In Progress
 
 Only after order stability:
 
@@ -1731,7 +1731,7 @@ Suggested migration approach:
 - Implementation should start with tests and adapters, not with a production database cutover.
 - 7.2B is not started now. Treat it as future implementation work only when database migration becomes the selected priority.
 
-### 7.3 Oom Sakkie Operational Order And Document Lookup - Planning Next
+### 7.3 Oom Sakkie Operational Order And Document Lookup - 7.3C Complete And Live-Verified
 
 Goal:
 
@@ -1788,7 +1788,7 @@ Recommended direction:
 
 - Review and accept the Oom Sakkie lookup plan.
 - Review imported live `2.#` workflow READMEs.
-- Read-only order lookup belongs inside existing `2.4 - Amadeus Orders Sub Agent`. - Owner decision captured; preserve existing approval behavior.
+- Read-only order lookup belongs in new `2.4.4 - Order Lookup Tool`. - Owner decision after safety review; preserve existing `2.4` approval behavior.
 - Decide whether 7.3B should add `GET /api/orders/search` before workflow work. - Recommended: yes, keep matching backend-owned.
 - Decide whether Oom Sakkie may show Google Drive URLs to operators or only document refs/statuses. - Recommended first slice: refs/statuses only.
 - Decide whether invoice sending is in 7.3 or future-only. - Recommended: future-only; prove quote lookup/send guard first.
@@ -1796,10 +1796,10 @@ Recommended direction:
 
 7.3A recommended path:
 
-- Build lookup into existing `2.4`; do not create `2.4.4` for the first slice.
+- Build lookup into new `2.4.4 - Order Lookup Tool`; do not edit/import the live approval `2.4` workflow for lookup.
 - Add backend `GET /api/orders/search` first.
 - Add backend `GET /api/orders/<order_id>/operator-summary` as the compact internal-safe detail contract for Oom Sakkie.
-- Add read-only `2.4` actions first: `find_order`, `get_order_summary`, `get_order_documents`.
+- Add read-only `2.4.4` actions first: `find_order`, `get_order_summary`, `get_order_documents`.
 - Keep document sending out of the first live lookup slice.
 
 7.3B backend contract:
@@ -1819,7 +1819,62 @@ Recommended direction:
 - Existing `/api/orders/<order_id>` route left unchanged.
 - Focused route/read tests added.
 - Full local suite passed with 82 tests.
-- Next step: plan and implement the read-only `2.4` workflow actions after backend deployment decision.
+- Backend deployed and read-only production smoke passed:
+  - `/api/orders/search` with no identifier returned expected `400`.
+  - `/api/orders/search?customer_name=Charl%20N&status_scope=all&limit=3` returned compact multiple matches.
+  - `/api/orders/ORD-2026-3E46B8/operator-summary` returned compact order, document, outstanding action, and safe document action data.
+  - No Google Drive URL was returned by the operator summary.
+- Read-only `2.4.4 - Order Lookup Tool` workflow created in n8n and read back into the repo:
+  - n8n workflow ID: `1VNdetSbgP0ffNyH`
+  - current n8n status: active and wired into `2.0`
+  - local export: `docs/04-n8n/workflows/2.4.4 - Order Lookup Tool/workflow.json`
+  - local README: `docs/04-n8n/workflows/2.4.4 - Order Lookup Tool/README.md`
+  - local validation passed: JSON parsed, node count checked, and all Code node JavaScript compiled
+  - `2.4 - Amadeus Orders Sub Agent` was left untouched
+- Next step: wire `2.0 - OOM SAKKIE - Amadeus Assistant Agent` to call `2.4.4` through a new `Orders_Info_Tool`, then test exact order lookup before broader name/phone lookup.
+
+7.3C local workflow update:
+
+- `2.0 - OOM SAKKIE - Amadeus Assistant Agent` now has an `Orders_Info_Tool` node pointing to `2.4.4`.
+- `2.0` prompt now routes order status, order summary, customer/order search, and quote/invoice document lookup questions to the order lookup tool.
+- `2.4.4` now accepts raw `input` as well as structured fields so Oom Sakkie can pass the full operator message safely.
+- `2.4.4` uploaded and read back from n8n successfully on 2026-05-18.
+- `2.0` API upload is blocked by n8n server-side `500`; the same failure occurs when PUTting the unchanged live export, so the 2026-05-18 update was completed through the n8n UI.
+- `2.0` readback confirmed active, 17 nodes, and `Orders_Info_Tool` pointing to `1VNdetSbgP0ffNyH`.
+- `2.4.4` readback confirmed active, 10 nodes, and declared trigger inputs.
+- Telegram routing fix applied:
+  - disabled `2.4`'s normal-message approval trigger because it intercepted general Oom Sakkie messages and dropped non-approval text
+  - refreshed `2 - The GateKeeper` activation so it owns normal Telegram messages
+  - kept `2.4.2` active for approval button callbacks
+- Exact Oom Sakkie smoke passed:
+  - `Hi` routed through the GateKeeper and received a normal assistant reply.
+  - `Show me order ORD-2026-3E46B8` returned the expected cancelled order summary and quote reference.
+- Document lookup smoke passed:
+  - `What documents are on order ORD-2026-3E46B8?` returned quote `Q-2026-3E46B8`, generated status, total, and valid-until date.
+- Name search/disambiguation smoke passed:
+  - `Find order for Charl N` returned multiple active draft matches and asked the operator to choose one order ID.
+- Phone search no-match smoke passed:
+  - `Find orders for 0645087806` returned no matching active orders.
+- Follow-up parked:
+  - Oom Sakkie phone/name search currently defaults to active orders only.
+  - Later enhancement: support explicit historical/all-status wording such as `search all orders for 064...` without changing the default active lookup behavior.
+- 7.3C status: complete and live-verified.
+- Pending: plan 7.3D document-send guard before adding any send behavior.
+
+7.3C workflow wiring plan:
+
+- Add `Orders_Info_Tool` to existing `2.0 - OOM SAKKIE - Amadeus Assistant Agent`.
+- Point `Orders_Info_Tool` to new `2.4.4 - Order Lookup Tool`.
+- Add separate read-only `2.4.4` switch branches:
+  - `find_order`
+  - `get_order_summary`
+  - `get_order_documents`
+- Keep existing `2.4` approval branches unchanged:
+  - `request_order_approval`
+  - `process_order_approval_reply`
+  - `invalid_callback`
+- Do not route lookup through `Telegram Trigger - Approval Chat`.
+- Do not add document-send actions in this slice.
 
 7.3B implementation gate:
 
@@ -2038,7 +2093,47 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 7.3 Oom Sakkie Operational Order And Document Lookup** - planning first: define lookup actions, backend endpoint needs, permissions, and document retrieval behavior before implementation.
+1. **Phase 7.3D Oom Sakkie Document-Send Guard** - plan first; do not add send behavior until confirmation, destination, document eligibility, and backend endpoint rules are approved.
+
+7.3D planning note:
+
+- Use Telegram buttons where they make operator actions easier, similar to the approval workflow.
+- Buttons may support actions like `Send latest quote`, `Choose quote Q-...`, `Cancel`, or `Open order summary`.
+- Buttons must not bypass confirmation, backend destination checks, document eligibility checks, or backend-owned send endpoints.
+- Approval buttons and document-send buttons must remain separate paths.
+- Decision: use one explicit send button after Oom Sakkie has shown document/order/customer context.
+- Button text must be specific, for example `Send quote to customer`, with a nearby `Cancel` button.
+- Backend must re-check the latest/non-voided quote, order, confirmed destination conversation, and stale/replaced document state at click time.
+- Existing backend send endpoints already exist, but they require explicit `conversation_id` and should not be called directly by Oom Sakkie without a prepare/confirm guard.
+- Recommended first implementation plan:
+  - add backend `prepare_latest_quote_send` contract that returns safe button context but sends nothing - Done locally
+  - add backend `send_latest_quote_confirmed` contract for button callbacks that re-checks safety, then calls existing send logic - Done locally
+  - add a separate document-send callback worker workflow, likely `2.4.5`, and route to it from the existing callback entry point so there is not a second active Telegram callback trigger - Local export created
+  - keep `1.5 - Outbound Document Delivery` unchanged as the backend-owned Chatwoot attachment delivery path
+- Invoice sending remains future-only unless explicitly approved.
+
+7.3D backend prepare endpoint:
+
+- Added `POST /api/orders/<order_id>/quote/prepare-send`.
+- It prepares order/document/destination context and Telegram button labels/callback data.
+- It does not send anything and does not call n8n or Chatwoot.
+- Focused route tests passed.
+
+7.3D backend confirmed-send endpoint:
+
+- Added `POST /api/orders/<order_id>/quote/send-latest-confirmed`.
+- Requires `document_id` and `conversation_id`.
+- Re-checks order existence, latest quote, selected document ID, document type, and voided/superseded state before sending.
+- Calls existing `send_order_document` only after checks pass.
+- Focused route tests passed.
+
+7.3D workflow local exports:
+
+- `2.0` local export passes Telegram chat/user context into `Orders_Info_Tool`.
+- `2.4.4` local export adds `prepare_latest_quote_send`, calls the backend prepare endpoint, and sends operator-only Telegram confirmation buttons.
+- `2.4.5 - Document Send Callback Handler` created in n8n as inactive workflow `8b14lAqmyrD0LYZz`.
+- `2.4.2` local export now routes `quote_send|...` and `quote_cancel|...` callbacks to `2.4.5`.
+- Do not import these workflow changes live until the backend endpoints are deployed.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

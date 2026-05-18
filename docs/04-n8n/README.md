@@ -34,6 +34,8 @@ It documents:
 | `2.4.1 - Test Caller` | `workflows/2.4.1 - Test Caller/` | Inactive | Manual test caller for the orders sub-agent. |
 | `2.4.2 - Orders Approval Callback Handler` | `workflows/2.4.2 - Orders Approval Callback Handler/` | Active | Telegram callback handler for order approval actions. |
 | `2.4.3 - Order Approval Request Webhook` | `workflows/2.4.3 - Order Approval Request Webhook/` | Active | Webhook entry for order approval requests. |
+| `2.4.4 - Order Lookup Tool` | `workflows/2.4.4 - Order Lookup Tool/` | Active read-only; local 7.3D changes pending | Oom Sakkie order lookup and quote-send preparation tool. |
+| `2.4.5 - Document Send Callback Handler` | `workflows/2.4.5 - Document Send Callback Handler/` | Created in n8n; inactive | Worker workflow for guarded quote-send button callbacks. |
 | `ALERT - Local Weather Station` | `workflows/ALERT - Local Weather Station/` | Inactive | Scheduled local weather station alerts. |
 | `ALERT - Sunsynk` | `workflows/ALERT - Sunsynk/` | Inactive | Scheduled Sunsynk alerts. |
 | `ALERT - Weather Forecast` | `workflows/ALERT - Weather Forecast/` | Inactive | Scheduled forecast alerts. |
@@ -93,6 +95,8 @@ flowchart TD
 - `2.#` workflows are the Oom Sakkie internal assistant layer. Changes to Oom Sakkie order lookup must be planned around the live `2 - The GateKeeper`, `2.0`, and `2.4` workflows.
 - `2 - The GateKeeper` is the access-control entry point and should stay in front of Oom Sakkie.
 - `2.4` already handles internal order approval behavior. Phase 7.3 order lookup should build around it, not replace it.
+- `2.4.4` is the separate read-only lookup tool for Oom Sakkie order/document questions. It must stay read-only until a later document-send guard phase is planned.
+- `2.4.5` should be called by the existing callback entry point for quote-send buttons. Do not create a second active `callback_query` Telegram trigger on the same Oom Sakkie bot.
 - Telegram cleanup after human reply is desired but should be treated as a planned improvement unless confirmed implemented.
 - This repo is private, so workflow exports may keep full technical detail for local build planning.
 

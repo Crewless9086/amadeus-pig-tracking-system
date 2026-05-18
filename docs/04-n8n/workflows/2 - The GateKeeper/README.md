@@ -36,3 +36,11 @@ Imported for docs: 2026-05-18
 - This workflow is the correct entry point for operator access control.
 - Oom Sakkie planning should preserve this gate and not expose the main assistant directly.
 - Any new Oom Sakkie order lookup capability should remain behind this gate.
+
+## Telegram Routing Note
+
+2026-05-18:
+
+- This workflow owns normal Telegram `message` updates for Oom Sakkie.
+- The conflicting normal-message trigger in `2.4 - Amadeus Orders Sub Agent` was disabled because it intercepted general Oom Sakkie messages before they reached this GateKeeper.
+- `2.4.2 - Orders Approval Callback Handler` still handles Telegram `callback_query` updates for approval buttons.

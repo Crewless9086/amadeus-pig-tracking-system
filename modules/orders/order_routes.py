@@ -365,6 +365,64 @@ def send_latest_quote(order_id):
         }), 400
 
 
+@orders_bp.route("/orders/<order_id>/quote/prepare-send", methods=["POST"])
+def prepare_latest_quote_send(order_id):
+    payload = request.get_json(silent=True) or {}
+    conversation_id = str(payload.get("conversation_id", "")).strip()
+    requested_by = str(payload.get("requested_by", payload.get("changed_by", "Oom Sakkie"))).strip() or "Oom Sakkie"
+
+    try:
+        result = _prepare_latest_quote_send_context(
+            order_id,
+            conversation_id=conversation_id,
+            requested_by=requested_by,
+        )
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "prepare_latest_quote_send",
+            "order_id": order_id,
+            "send_ready": False,
+            "errors": [str(exc)],
+        }), 400
+
+
+@orders_bp.route("/orders/<order_id>/quote/send-latest-confirmed", methods=["POST"])
+def send_latest_quote_confirmed(order_id):
+    payload = request.get_json(silent=True) or {}
+    document_id = str(payload.get("document_id", "")).strip()
+    conversation_id = str(payload.get("conversation_id", "")).strip()
+    sent_by = str(payload.get("sent_by", payload.get("changed_by", "Oom Sakkie"))).strip() or "Oom Sakkie"
+    account_id = str(payload.get("account_id", "147387")).strip() or "147387"
+    confirmation_source = str(payload.get("confirmation_source", "")).strip()
+    telegram_user_id = str(payload.get("telegram_user_id", "")).strip()
+
+    try:
+        result = _send_latest_quote_confirmed(
+            order_id,
+            document_id=document_id,
+            conversation_id=conversation_id,
+            sent_by=sent_by,
+            account_id=account_id,
+            confirmation_source=confirmation_source,
+            telegram_user_id=telegram_user_id,
+        )
+        status_code = 200 if result.get("success") else 502
+        if result.get("skipped") and result.get("reason") != "already_sent":
+            status_code = 400
+        return jsonify(result), status_code
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "action": "send_latest_quote_confirmed",
+            "order_id": order_id,
+            "document_id": document_id,
+            "conversation_id": conversation_id,
+            "errors": [str(exc)],
+        }), 400
+
+
 @orders_bp.route("/orders/<order_id>/invoice", methods=["POST"])
 def generate_invoice(order_id):
     payload = request.get_json(silent=True) or {}
@@ -701,6 +759,137 @@ def _attach_quote_send_result(
             "errors": [str(exc)],
             "message": "Quote was generated but could not be sent automatically.",
         }
+
+
+def _prepare_latest_quote_send_context(order_id, conversation_id="", requested_by="Oom Sakkie"):
+    order_id = str(order_id or "").strip()
+    if not order_id:
+        raise ValueError("order_id is required.")
+
+    detail = get_order_detail(order_id)
+    if not detail:
+        raise ValueError("Order not found.")
+
+    order = detail.get("order") or {}
+    order_conversation_id = str(order.get("conversation_id", "")).strip()
+    destination_conversation_id = str(conversation_id or "").strip() or order_conversation_id
+    destination_source = "operator_input" if str(conversation_id or "").strip() else "order_record"
+
+    if not destination_conversation_id:
+        raise ValueError("No confirmed customer conversation is available for this order.")
+
+    quote = get_latest_non_voided_quote(order_id)
+    if not quote:
+        raise ValueError("No generated quote is available for this order.")
+
+    document_id = str(quote.get("Document_ID", "")).strip()
+    document_ref = str(quote.get("Document_Ref", "")).strip()
+    document_status = str(quote.get("Document_Status", "")).strip()
+    document_type = str(quote.get("Document_Type", "")).strip()
+
+    if not document_id:
+        raise ValueError("Latest quote is missing a document ID.")
+    if document_type != "Quote":
+        raise ValueError("Latest sendable document is not a quote.")
+    if document_status == "Voided":
+        raise ValueError("Voided quotes cannot be sent.")
+    if document_status == "Superseded":
+        raise ValueError("Superseded quotes cannot be sent.")
+
+    total = quote.get("Total", "")
+    customer_name = str(order.get("customer_name", "")).strip()
+    message = (
+        f"Quote {document_ref} is ready for {customer_name or 'the customer'}. "
+        f"Total R{total}. Send it to the customer?"
+    )
+
+    return {
+        "success": True,
+        "action": "prepare_latest_quote_send",
+        "send_ready": True,
+        "order_id": order_id,
+        "customer_name": customer_name,
+        "requested_by": str(requested_by or "").strip() or "Oom Sakkie",
+        "destination": {
+            "conversation_id": destination_conversation_id,
+            "source": destination_source,
+            "confirmed": True,
+        },
+        "document": {
+            "document_id": document_id,
+            "document_type": document_type,
+            "document_ref": document_ref,
+            "document_status": document_status,
+            "total": total,
+            "valid_until": str(quote.get("Valid_Until", "")).strip(),
+        },
+        "button_context": {
+            "send_label": "Send quote to customer",
+            "cancel_label": "Cancel",
+            "callback_action": "send_latest_quote_confirmed",
+            "callback_data": (
+                f"quote_send|{order_id}|{document_id}|{destination_conversation_id}"
+            ),
+            "cancel_callback_data": f"quote_cancel|{order_id}|{document_id}",
+        },
+        "message": message,
+    }
+
+
+def _send_latest_quote_confirmed(
+    order_id,
+    document_id,
+    conversation_id,
+    sent_by="Oom Sakkie",
+    account_id="147387",
+    confirmation_source="",
+    telegram_user_id="",
+):
+    order_id = str(order_id or "").strip()
+    document_id = str(document_id or "").strip()
+    conversation_id = str(conversation_id or "").strip()
+
+    if not order_id:
+        raise ValueError("order_id is required.")
+    if not document_id:
+        raise ValueError("document_id is required.")
+    if not conversation_id:
+        raise ValueError("conversation_id is required.")
+
+    detail = get_order_detail(order_id)
+    if not detail:
+        raise ValueError("Order not found.")
+
+    quote = get_latest_non_voided_quote(order_id)
+    if not quote:
+        raise ValueError("No generated quote is available for this order.")
+
+    latest_document_id = str(quote.get("Document_ID", "")).strip()
+    document_type = str(quote.get("Document_Type", "")).strip()
+    document_status = str(quote.get("Document_Status", "")).strip()
+
+    if latest_document_id != document_id:
+        raise ValueError("The selected quote is no longer the latest sendable quote. Refresh the order documents before sending.")
+    if document_type != "Quote":
+        raise ValueError("Latest sendable document is not a quote.")
+    if document_status == "Voided":
+        raise ValueError("Voided quotes cannot be sent.")
+    if document_status == "Superseded":
+        raise ValueError("Superseded quotes cannot be sent.")
+
+    result = send_order_document(
+        document_id,
+        conversation_id=conversation_id,
+        sent_by=sent_by,
+        account_id=account_id,
+    )
+    result["action"] = "send_latest_quote_confirmed"
+    result["order_id"] = str(result.get("order_id") or order_id).strip()
+    result["document_id"] = str(result.get("document_id") or document_id).strip()
+    result["conversation_id"] = str(result.get("conversation_id") or conversation_id).strip()
+    result["confirmation_source"] = str(confirmation_source or "").strip()
+    result["telegram_user_id"] = str(telegram_user_id or "").strip()
+    return result
 
 
 def _truthy(value):

@@ -26,6 +26,19 @@ Imported for docs: 2026-05-18
 
 - Calls workflow `2.4 - Amadeus Orders Sub Agent` (`T8LLCAtYDLNRPoRx`).
 
+## Phase 7.3D Routing Note
+
+This workflow is the existing Telegram `callback_query` entry point for the Oom Sakkie bot.
+
+To avoid another Telegram trigger conflict, quote-send button callbacks should be routed from this callback entry workflow into `2.4.5 - Document Send Callback Handler`, instead of creating a second active `callback_query` trigger on the same bot.
+
+Local 7.3D export status:
+
+- Adds `Switch - Route Callback Type`.
+- Keeps approval callbacks routed to `2.4`.
+- Routes `quote_send|...` and `quote_cancel|...` callbacks to `2.4.5`.
+- Do not import this local router update until the backend 7.3D endpoints are deployed.
+
 ## Planning Notes
 
 - This is part of the existing order approval path.

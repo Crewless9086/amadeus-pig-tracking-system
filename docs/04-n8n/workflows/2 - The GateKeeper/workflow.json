@@ -486,7 +486,7 @@
                 },
     "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
     "activeVersionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
-    "versionCounter":  59,
+    "versionCounter":  62,
     "triggerCount":  1,
     "shared":  [
                    {
@@ -971,6 +971,22 @@
                                                              "workflowId":  "yt4qc1kP5riAfLfL",
                                                              "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
                                                              "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         },
+                                                         {
+                                                             "createdAt":  "2026-05-18T07:30:29.860Z",
+                                                             "id":  754,
+                                                             "workflowId":  "yt4qc1kP5riAfLfL",
+                                                             "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+                                                             "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         },
+                                                         {
+                                                             "createdAt":  "2026-05-18T07:30:29.446Z",
+                                                             "id":  753,
+                                                             "workflowId":  "yt4qc1kP5riAfLfL",
+                                                             "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+                                                             "event":  "deactivated",
                                                              "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
                                                          }
                                                      ]

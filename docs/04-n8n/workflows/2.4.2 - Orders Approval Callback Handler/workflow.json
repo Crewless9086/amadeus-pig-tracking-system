@@ -1,425 +1,638 @@
-﻿{
-    "updatedAt":  "2026-04-27T06:56:30.693Z",
-    "createdAt":  "2026-03-24T08:30:50.468Z",
-    "id":  "wmsgzHNywC6okTuI",
-    "name":  "2.4.2 - Orders Approval Callback Handler",
-    "description":  null,
-    "active":  true,
-    "isArchived":  false,
-    "nodes":  [
-                  {
-                      "parameters":  {
-                                         "updates":  [
-                                                         "callback_query"
-                                                     ],
-                                         "additionalFields":  {
-
-                                                              }
-                                     },
-                      "type":  "n8n-nodes-base.telegramTrigger",
-                      "typeVersion":  1.2,
-                      "position":  [
-                                       0,
-                                       0
-                                   ],
-                      "id":  "17100551-49e1-4c47-a522-1d81ad6c5780",
-                      "name":  "Telegram Trigger",
-                      "webhookId":  "55af666c-ba87-4416-b8bf-3e6a9f53f980",
-                      "credentials":  {
-                                          "telegramApi":  {
-                                                              "id":  "e5jS1ondryiauRNX",
-                                                              "name":  "Telegram - Oom Sakkie"
-                                                          }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const query = $json.callback_query;\n\nconst data = query.data || \"\";\nconst chat_id = query.message?.chat?.id || \"\";\nconst callback_query_id = query.id || \"\";\nconst clicked_by = query.from?.first_name || \"Unknown\";\n\nlet decision = \"\";\nlet order_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n}\n\nif (!decision || !order_id) {\n  return [\n    {\n      json: {\n        action: \"invalid_callback\",\n        reason: \"Malformed callback data\",\n        chat_id: String(chat_id),\n        callback_query_id,\n        changed_by: clicked_by,\n        trigger_source: \"Telegram Button\",\n        clicked_by,\n        decision_method: \"Button\"\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      action: \"process_order_approval_reply\",\n      decision,\n      order_id,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      decision_method: \"Button\"\n    }\n  }\n];"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       208,
-                                       0
-                                   ],
-                      "id":  "b0851263-677e-433d-9735-8029c844d5fb",
-                      "name":  "Code - Normalize Callback"
-                  },
-                  {
-                      "parameters":  {
-                                         "workflowId":  {
-                                                            "__rl":  true,
-                                                            "value":  "T8LLCAtYDLNRPoRx",
-                                                            "mode":  "list",
-                                                            "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
-                                                            "cachedResultName":  "My project — 2.4A - Amadeus Orders Sub Agent"
-                                                        },
-                                         "workflowInputs":  {
-                                                                "mappingMode":  "defineBelow",
-                                                                "value":  {
-
-                                                                          },
-                                                                "matchingColumns":  [
-
-                                                                                    ],
-                                                                "schema":  [
-
-                                                                           ],
-                                                                "attemptToConvertTypes":  false,
-                                                                "convertFieldsToString":  true
-                                                            },
-                                         "options":  {
-                                                         "waitForSubWorkflow":  true
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.executeWorkflow",
-                      "typeVersion":  1.3,
-                      "position":  [
-                                       448,
-                                       96
-                                   ],
-                      "id":  "c0bd9fe8-8f31-4f94-ac92-8441620d0fb3",
-                      "name":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027"
-                  },
-                  {
-                      "parameters":  {
-                                         "resource":  "callback",
-                                         "queryId":  "={{ $(\u0027Code - Normalize Callback\u0027).item.json.callback_query_id }}",
-                                         "additionalFields":  {
-                                                                  "text":  "Processing decision..."
-                                                              }
-                                     },
-                      "type":  "n8n-nodes-base.telegram",
-                      "typeVersion":  1.2,
-                      "position":  [
-                                       448,
-                                       -80
-                                   ],
-                      "id":  "ba0261f0-a012-49d8-93a9-b797284826fd",
-                      "name":  "Answer Query a callback",
-                      "webhookId":  "61955a62-74a6-4cda-b919-2d28e1c056dc",
-                      "credentials":  {
-                                          "telegramApi":  {
-                                                              "id":  "e5jS1ondryiauRNX",
-                                                              "name":  "Telegram - Oom Sakkie"
-                                                          }
-                                      }
-                  }
-              ],
-    "connections":  {
-                        "Telegram Trigger":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Code - Normalize Callback",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Code - Normalize Callback":  {
-                                                          "main":  [
-                                                                       [
-                                                                           {
-                                                                               "node":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027",
-                                                                               "type":  "main",
-                                                                               "index":  0
-                                                                           },
-                                                                           {
-                                                                               "node":  "Answer Query a callback",
-                                                                               "type":  "main",
-                                                                               "index":  0
-                                                                           }
-                                                                       ]
-                                                                   ]
-                                                      },
-                        "Answer Query a callback":  {
-                                                        "main":  [
-                                                                     [
-
-                                                                     ]
-                                                                 ]
-                                                    },
-                        "Call \u00272.4A - Amadeus Orders Sub Agent\u0027":  {
-                                                                                 "main":  [
-                                                                                              [
-
-                                                                                              ]
-                                                                                          ]
-                                                                             }
-                    },
-    "settings":  {
-                     "executionOrder":  "v1",
-                     "binaryMode":  "separate"
-                 },
-    "staticData":  null,
-    "meta":  {
-                 "templateCredsSetupCompleted":  true
-             },
-    "pinData":  {
-                    "Telegram Trigger":  [
-                                             {
-                                                 "json":  {
-                                                              "update_id":  549157861,
-                                                              "callback_query":  {
-                                                                                     "id":  "6127564956978575746",
-                                                                                     "from":  {
-                                                                                                  "id":  5721652188,
-                                                                                                  "is_bot":  false,
-                                                                                                  "first_name":  "Charl",
-                                                                                                  "last_name":  "Nieuwendyk",
-                                                                                                  "username":  "CharlNPersonal",
-                                                                                                  "language_code":  "en"
-                                                                                              },
-                                                                                     "message":  {
-                                                                                                     "message_id":  1674,
-                                                                                                     "from":  {
-                                                                                                                  "id":  8108062534,
-                                                                                                                  "is_bot":  true,
-                                                                                                                  "first_name":  "Oom Sakkie - Amadeus",
-                                                                                                                  "username":  "nieuai_agent_bot"
-                                                                                                              },
-                                                                                                     "chat":  {
-                                                                                                                  "id":  5721652188,
-                                                                                                                  "first_name":  "Charl",
-                                                                                                                  "last_name":  "Nieuwendyk",
-                                                                                                                  "username":  "CharlNPersonal",
-                                                                                                                  "type":  "private"
-                                                                                                              },
-                                                                                                     "date":  1774355793,
-                                                                                                     "text":  "🐷 Order Approval Needed\n\nOrder ID: ORD-2026-9C0F8B\nCustomer: Testing Charl\nChannel: WhatsApp\nCategory: -\nWeight Range: -\nQuantity Requested: -\nLine Count: 0\nReserved Pig Count: 0\nOrder Status: Draft\nApproval Status: Pending\n\nPlease reply with:\n\napprove ORD-2026-9C0F8B\nor\nreject ORD-2026-9C0F8B",
-                                                                                                     "reply_markup":  {
-                                                                                                                          "inline_keyboard":  [
-                                                                                                                                                  [
-                                                                                                                                                      {
-                                                                                                                                                          "text":  "✅ Approve",
-                                                                                                                                                          "callback_data":  "approve_ORD-2026-9C0F8B"
-                                                                                                                                                      },
-                                                                                                                                                      {
-                                                                                                                                                          "text":  "❌ Reject",
-                                                                                                                                                          "callback_data":  "reject_ORD-2026-9C0F8B"
-                                                                                                                                                      }
-                                                                                                                                                  ]
-                                                                                                                                              ]
-                                                                                                                      }
-                                                                                                 },
-                                                                                     "chat_instance":  "-191914073859557758",
-                                                                                     "data":  "approve_ORD-2026-9C0F8B"
-                                                                                 }
-                                                          },
-                                                 "pairedItem":  {
-                                                                    "item":  0
-                                                                }
-                                             }
-                                         ]
+{
+  "updatedAt": "2026-04-27T06:56:30.693Z",
+  "createdAt": "2026-03-24T08:30:50.468Z",
+  "id": "wmsgzHNywC6okTuI",
+  "name": "2.4.2 - Orders Approval Callback Handler",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "17100551-49e1-4c47-a522-1d81ad6c5780",
+      "name": "Telegram Trigger",
+      "webhookId": "55af666c-ba87-4416-b8bf-3e6a9f53f980",
+      "credentials": {
+        "telegramApi": {
+          "id": "e5jS1ondryiauRNX",
+          "name": "Telegram - Oom Sakkie"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const query = $json.callback_query || {};\nconst data = query.data || \"\";\nconst chat_id = query.message?.chat?.id || \"\";\nconst callback_query_id = query.id || \"\";\nconst clicked_by = query.from?.first_name || \"Unknown\";\nconst telegram_user_id = query.from?.id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\n      decision_method: \"Button\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "b0851263-677e-433d-9735-8029c844d5fb",
+      "name": "Code - Normalize Callback"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "T8LLCAtYDLNRPoRx",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/T8LLCAtYDLNRPoRx",
+          "cachedResultName": "My project \u2014 2.4A - Amadeus Orders Sub Agent"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        704,
+        120
+      ],
+      "id": "c0bd9fe8-8f31-4f94-ac92-8441620d0fb3",
+      "name": "Call '2.4A - Amadeus Orders Sub Agent'"
+    },
+    {
+      "parameters": {
+        "resource": "callback",
+        "queryId": "={{ $('Code - Normalize Callback').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "Processing decision..."
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        448,
+        -240
+      ],
+      "id": "ba0261f0-a012-49d8-93a9-b797284826fd",
+      "name": "Answer Query a callback",
+      "webhookId": "61955a62-74a6-4cda-b919-2d28e1c056dc",
+      "credentials": {
+        "telegramApi": {
+          "id": "e5jS1ondryiauRNX",
+          "name": "Telegram - Oom Sakkie"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
                 },
-    "versionId":  "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
-    "activeVersionId":  "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
-    "versionCounter":  50,
-    "triggerCount":  1,
-    "shared":  [
-                   {
-                       "updatedAt":  "2026-03-24T08:30:50.471Z",
-                       "createdAt":  "2026-03-24T08:30:50.471Z",
-                       "role":  "workflow:owner",
-                       "workflowId":  "wmsgzHNywC6okTuI",
-                       "projectId":  "dUeH9AUxBtKxgNPX",
-                       "project":  {
-                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
-                                       "createdAt":  "2025-07-13T13:07:42.154Z",
-                                       "id":  "dUeH9AUxBtKxgNPX",
-                                       "name":  "My project",
-                                       "type":  "team",
-                                       "icon":  {
-                                                    "type":  "icon",
-                                                    "value":  "layer-group"
-                                                },
-                                       "description":  null,
-                                       "creatorId":  null
-                                   }
-                   }
-               ],
-    "tags":  [
-
-             ],
-    "activeVersion":  {
-                          "updatedAt":  "2026-03-25T09:32:20.592Z",
-                          "createdAt":  "2026-03-25T09:32:20.592Z",
-                          "versionId":  "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
-                          "workflowId":  "wmsgzHNywC6okTuI",
-                          "nodes":  [
-                                        {
-                                            "parameters":  {
-                                                               "updates":  [
-                                                                               "callback_query"
-                                                                           ],
-                                                               "additionalFields":  {
-
-                                                                                    }
-                                                           },
-                                            "type":  "n8n-nodes-base.telegramTrigger",
-                                            "typeVersion":  1.2,
-                                            "position":  [
-                                                             0,
-                                                             0
-                                                         ],
-                                            "id":  "17100551-49e1-4c47-a522-1d81ad6c5780",
-                                            "name":  "Telegram Trigger",
-                                            "webhookId":  "55af666c-ba87-4416-b8bf-3e6a9f53f980",
-                                            "credentials":  {
-                                                                "telegramApi":  {
-                                                                                    "id":  "e5jS1ondryiauRNX",
-                                                                                    "name":  "Telegram - Oom Sakkie"
-                                                                                }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "jsCode":  "const query = $json.callback_query;\n\nconst data = query.data || \"\";\nconst chat_id = query.message?.chat?.id || \"\";\nconst callback_query_id = query.id || \"\";\nconst clicked_by = query.from?.first_name || \"Unknown\";\n\nlet decision = \"\";\nlet order_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n}\n\nif (!decision || !order_id) {\n  return [\n    {\n      json: {\n        action: \"invalid_callback\",\n        reason: \"Malformed callback data\",\n        chat_id: String(chat_id),\n        callback_query_id,\n        changed_by: clicked_by,\n        trigger_source: \"Telegram Button\",\n        clicked_by,\n        decision_method: \"Button\"\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      action: \"process_order_approval_reply\",\n      decision,\n      order_id,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      decision_method: \"Button\"\n    }\n  }\n];"
-                                                           },
-                                            "type":  "n8n-nodes-base.code",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             208,
-                                                             0
-                                                         ],
-                                            "id":  "b0851263-677e-433d-9735-8029c844d5fb",
-                                            "name":  "Code - Normalize Callback"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "workflowId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "T8LLCAtYDLNRPoRx",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
-                                                                                  "cachedResultName":  "My project — 2.4A - Amadeus Orders Sub Agent"
-                                                                              },
-                                                               "workflowInputs":  {
-                                                                                      "mappingMode":  "defineBelow",
-                                                                                      "value":  {
-
-                                                                                                },
-                                                                                      "matchingColumns":  [
-
-                                                                                                          ],
-                                                                                      "schema":  [
-
-                                                                                                 ],
-                                                                                      "attemptToConvertTypes":  false,
-                                                                                      "convertFieldsToString":  true
-                                                                                  },
-                                                               "options":  {
-                                                                               "waitForSubWorkflow":  true
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.executeWorkflow",
-                                            "typeVersion":  1.3,
-                                            "position":  [
-                                                             448,
-                                                             96
-                                                         ],
-                                            "id":  "c0bd9fe8-8f31-4f94-ac92-8441620d0fb3",
-                                            "name":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "resource":  "callback",
-                                                               "queryId":  "={{ $(\u0027Code - Normalize Callback\u0027).item.json.callback_query_id }}",
-                                                               "additionalFields":  {
-                                                                                        "text":  "Processing decision..."
-                                                                                    }
-                                                           },
-                                            "type":  "n8n-nodes-base.telegram",
-                                            "typeVersion":  1.2,
-                                            "position":  [
-                                                             448,
-                                                             -80
-                                                         ],
-                                            "id":  "ba0261f0-a012-49d8-93a9-b797284826fd",
-                                            "name":  "Answer Query a callback",
-                                            "webhookId":  "61955a62-74a6-4cda-b919-2d28e1c056dc",
-                                            "credentials":  {
-                                                                "telegramApi":  {
-                                                                                    "id":  "e5jS1ondryiauRNX",
-                                                                                    "name":  "Telegram - Oom Sakkie"
-                                                                                }
-                                                            }
-                                        }
-                                    ],
-                          "connections":  {
-                                              "Telegram Trigger":  {
-                                                                       "main":  [
-                                                                                    [
-                                                                                        {
-                                                                                            "node":  "Code - Normalize Callback",
-                                                                                            "type":  "main",
-                                                                                            "index":  0
-                                                                                        }
-                                                                                    ]
-                                                                                ]
-                                                                   },
-                                              "Code - Normalize Callback":  {
-                                                                                "main":  [
-                                                                                             [
-                                                                                                 {
-                                                                                                     "node":  "Call \u00272.4A - Amadeus Orders Sub Agent\u0027",
-                                                                                                     "type":  "main",
-                                                                                                     "index":  0
-                                                                                                 },
-                                                                                                 {
-                                                                                                     "node":  "Answer Query a callback",
-                                                                                                     "type":  "main",
-                                                                                                     "index":  0
-                                                                                                 }
-                                                                                             ]
-                                                                                         ]
-                                                                            },
-                                              "Answer Query a callback":  {
-                                                                              "main":  [
-                                                                                           [
-
-                                                                                           ]
-                                                                                       ]
-                                                                          },
-                                              "Call \u00272.4A - Amadeus Orders Sub Agent\u0027":  {
-                                                                                                       "main":  [
-                                                                                                                    [
-
-                                                                                                                    ]
-                                                                                                                ]
-                                                                                                   }
-                                          },
-                          "authors":  "Charl Nieuwendyk",
-                          "name":  null,
-                          "description":  null,
-                          "autosaved":  false,
-                          "workflowPublishHistory":  [
-                                                         {
-                                                             "createdAt":  "2026-03-25T09:32:20.855Z",
-                                                             "id":  200,
-                                                             "workflowId":  "wmsgzHNywC6okTuI",
-                                                             "versionId":  "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
-                                                             "event":  "activated",
-                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
-                                                         },
-                                                         {
-                                                             "createdAt":  "2026-04-27T06:56:31.091Z",
-                                                             "id":  482,
-                                                             "workflowId":  "wmsgzHNywC6okTuI",
-                                                             "versionId":  "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
-                                                             "event":  "activated",
-                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
-                                                         },
-                                                         {
-                                                             "createdAt":  "2026-04-27T06:56:30.873Z",
-                                                             "id":  481,
-                                                             "workflowId":  "wmsgzHNywC6okTuI",
-                                                             "versionId":  "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
-                                                             "event":  "deactivated",
-                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
-                                                         }
-                                                     ]
-                      }
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "route_document_send_callback",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "10575d1e-7b30-4980-97a3-eb89df16a08f"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Document Send Callback"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "process_order_approval_reply",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7d034fbf-3ed0-470a-ba0d-a811b65faeca"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Approval Callback"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.action}}",
+                    "rightValue": "invalid_callback",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "16a56865-6f6c-439c-9dd9-ccefe39388d1"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Invalid Approval Callback"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "5a980145-b602-4f6d-8aa4-9db907c5e9ea",
+      "name": "Switch - Route Callback Type"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "8b14lAqmyrD0LYZz",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/8b14lAqmyrD0LYZz",
+          "cachedResultName": "My project ? 2.4.5 - Document Send Callback Handler"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "callback_data": "={{$json.callback_data}}",
+            "chat_id": "={{$json.chat_id}}",
+            "callback_query_id": "={{$json.callback_query_id}}",
+            "clicked_by": "={{$json.clicked_by}}",
+            "telegram_user_id": "={{$json.telegram_user_id}}",
+            "order_id": "={{$json.order_id}}",
+            "document_id": "={{$json.document_id}}",
+            "conversation_id": "={{$json.conversation_id}}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "callback_data",
+              "displayName": "callback_data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "chat_id",
+              "displayName": "chat_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "callback_query_id",
+              "displayName": "callback_query_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "clicked_by",
+              "displayName": "clicked_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "telegram_user_id",
+              "displayName": "telegram_user_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "order_id",
+              "displayName": "order_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "document_id",
+              "displayName": "document_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "conversation_id",
+              "displayName": "conversation_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        704,
+        -80
+      ],
+      "id": "1f864a96-1f92-48c0-9b34-83fc40465608",
+      "name": "Call 2.4.5 - Document Send Callback Handler"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize Callback": {
+      "main": [
+        [
+          {
+            "node": "Switch - Route Callback Type",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Answer Query a callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer Query a callback": {
+      "main": [
+        []
+      ]
+    },
+    "Call '2.4A - Amadeus Orders Sub Agent'": {
+      "main": [
+        []
+      ]
+    },
+    "Switch - Route Callback Type": {
+      "main": [
+        [
+          {
+            "node": "Call 2.4.5 - Document Send Callback Handler",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call '2.4A - Amadeus Orders Sub Agent'",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Call '2.4A - Amadeus Orders Sub Agent'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 2.4.5 - Document Send Callback Handler": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Telegram Trigger": [
+      {
+        "json": {
+          "update_id": 549157861,
+          "callback_query": {
+            "id": "6127564956978575746",
+            "from": {
+              "id": 5721652188,
+              "is_bot": false,
+              "first_name": "Charl",
+              "last_name": "Nieuwendyk",
+              "username": "CharlNPersonal",
+              "language_code": "en"
+            },
+            "message": {
+              "message_id": 1674,
+              "from": {
+                "id": 8108062534,
+                "is_bot": true,
+                "first_name": "Oom Sakkie - Amadeus",
+                "username": "nieuai_agent_bot"
+              },
+              "chat": {
+                "id": 5721652188,
+                "first_name": "Charl",
+                "last_name": "Nieuwendyk",
+                "username": "CharlNPersonal",
+                "type": "private"
+              },
+              "date": 1774355793,
+              "text": "\ud83d\udc37 Order Approval Needed\n\nOrder ID: ORD-2026-9C0F8B\nCustomer: Testing Charl\nChannel: WhatsApp\nCategory: -\nWeight Range: -\nQuantity Requested: -\nLine Count: 0\nReserved Pig Count: 0\nOrder Status: Draft\nApproval Status: Pending\n\nPlease reply with:\n\napprove ORD-2026-9C0F8B\nor\nreject ORD-2026-9C0F8B",
+              "reply_markup": {
+                "inline_keyboard": [
+                  [
+                    {
+                      "text": "\u2705 Approve",
+                      "callback_data": "approve_ORD-2026-9C0F8B"
+                    },
+                    {
+                      "text": "\u274c Reject",
+                      "callback_data": "reject_ORD-2026-9C0F8B"
+                    }
+                  ]
+                ]
+              }
+            },
+            "chat_instance": "-191914073859557758",
+            "data": "approve_ORD-2026-9C0F8B"
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
+  "activeVersionId": "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
+  "versionCounter": 50,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-24T08:30:50.471Z",
+      "createdAt": "2026-03-24T08:30:50.471Z",
+      "role": "workflow:owner",
+      "workflowId": "wmsgzHNywC6okTuI",
+      "projectId": "dUeH9AUxBtKxgNPX",
+      "project": {
+        "updatedAt": "2025-07-13T13:07:42.154Z",
+        "createdAt": "2025-07-13T13:07:42.154Z",
+        "id": "dUeH9AUxBtKxgNPX",
+        "name": "My project",
+        "type": "team",
+        "icon": {
+          "type": "icon",
+          "value": "layer-group"
+        },
+        "description": null,
+        "creatorId": null
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-25T09:32:20.592Z",
+    "createdAt": "2026-03-25T09:32:20.592Z",
+    "versionId": "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
+    "workflowId": "wmsgzHNywC6okTuI",
+    "nodes": [
+      {
+        "parameters": {
+          "updates": [
+            "callback_query"
+          ],
+          "additionalFields": {}
+        },
+        "type": "n8n-nodes-base.telegramTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          0
+        ],
+        "id": "17100551-49e1-4c47-a522-1d81ad6c5780",
+        "name": "Telegram Trigger",
+        "webhookId": "55af666c-ba87-4416-b8bf-3e6a9f53f980",
+        "credentials": {
+          "telegramApi": {
+            "id": "e5jS1ondryiauRNX",
+            "name": "Telegram - Oom Sakkie"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const query = $json.callback_query;\n\nconst data = query.data || \"\";\nconst chat_id = query.message?.chat?.id || \"\";\nconst callback_query_id = query.id || \"\";\nconst clicked_by = query.from?.first_name || \"Unknown\";\n\nlet decision = \"\";\nlet order_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n}\n\nif (!decision || !order_id) {\n  return [\n    {\n      json: {\n        action: \"invalid_callback\",\n        reason: \"Malformed callback data\",\n        chat_id: String(chat_id),\n        callback_query_id,\n        changed_by: clicked_by,\n        trigger_source: \"Telegram Button\",\n        clicked_by,\n        decision_method: \"Button\"\n      }\n    }\n  ];\n}\n\nreturn [\n  {\n    json: {\n      action: \"process_order_approval_reply\",\n      decision,\n      order_id,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      decision_method: \"Button\"\n    }\n  }\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          208,
+          0
+        ],
+        "id": "b0851263-677e-433d-9735-8029c844d5fb",
+        "name": "Code - Normalize Callback"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "value": "T8LLCAtYDLNRPoRx",
+            "mode": "list",
+            "cachedResultUrl": "/workflow/T8LLCAtYDLNRPoRx",
+            "cachedResultName": "My project \u2014 2.4A - Amadeus Orders Sub Agent"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": true
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          }
+        },
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          448,
+          96
+        ],
+        "id": "c0bd9fe8-8f31-4f94-ac92-8441620d0fb3",
+        "name": "Call '2.4A - Amadeus Orders Sub Agent'"
+      },
+      {
+        "parameters": {
+          "resource": "callback",
+          "queryId": "={{ $('Code - Normalize Callback').item.json.callback_query_id }}",
+          "additionalFields": {
+            "text": "Processing decision..."
+          }
+        },
+        "type": "n8n-nodes-base.telegram",
+        "typeVersion": 1.2,
+        "position": [
+          448,
+          -80
+        ],
+        "id": "ba0261f0-a012-49d8-93a9-b797284826fd",
+        "name": "Answer Query a callback",
+        "webhookId": "61955a62-74a6-4cda-b919-2d28e1c056dc",
+        "credentials": {
+          "telegramApi": {
+            "id": "e5jS1ondryiauRNX",
+            "name": "Telegram - Oom Sakkie"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Telegram Trigger": {
+        "main": [
+          [
+            {
+              "node": "Code - Normalize Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Normalize Callback": {
+        "main": [
+          [
+            {
+              "node": "Call '2.4A - Amadeus Orders Sub Agent'",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Answer Query a callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Answer Query a callback": {
+        "main": [
+          []
+        ]
+      },
+      "Call '2.4A - Amadeus Orders Sub Agent'": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "authors": "Charl Nieuwendyk",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-03-25T09:32:20.855Z",
+        "id": 200,
+        "workflowId": "wmsgzHNywC6okTuI",
+        "versionId": "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
+        "event": "activated",
+        "userId": "8691148d-2442-4b8d-b051-2cffc74988b1"
+      },
+      {
+        "createdAt": "2026-04-27T06:56:31.091Z",
+        "id": 482,
+        "workflowId": "wmsgzHNywC6okTuI",
+        "versionId": "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
+        "event": "activated",
+        "userId": "8691148d-2442-4b8d-b051-2cffc74988b1"
+      },
+      {
+        "createdAt": "2026-04-27T06:56:30.873Z",
+        "id": 481,
+        "workflowId": "wmsgzHNywC6okTuI",
+        "versionId": "1b1708df-4228-486d-9f65-e53c3d8d5b3b",
+        "event": "deactivated",
+        "userId": "8691148d-2442-4b8d-b051-2cffc74988b1"
+      }
+    ]
+  }
 }
