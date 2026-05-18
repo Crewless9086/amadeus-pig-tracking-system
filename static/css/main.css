@@ -564,6 +564,58 @@ button:disabled {
   gap: 12px;
 }
 
+.orders-status-tabs {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.order-status-tab {
+  min-height: 58px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-main);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  text-align: left;
+}
+
+.order-status-tab span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.order-status-tab strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.order-status-tab:hover,
+.order-status-tab-active {
+  background: var(--green-main);
+  border-color: var(--green-main);
+  color: #ffffff;
+}
+
+.order-status-tab:hover span,
+.order-status-tab-active span {
+  color: #ffffff;
+}
+
+.order-card-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
 .history-list {
   display: flex;
   flex-direction: column;
@@ -828,6 +880,10 @@ button:disabled {
 
   .document-actions {
     justify-content: flex-start;
+  }
+
+  .orders-status-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .summary-hero,

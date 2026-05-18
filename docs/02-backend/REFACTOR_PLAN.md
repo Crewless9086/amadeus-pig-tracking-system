@@ -15,7 +15,7 @@ Goal: make reject, cancel, release, and status logging safe.
 Tasks:
 
 - Reject behavior is implemented and live-verified; keep regression checks in the testing checklist.
-- Customer cancel endpoint/action is implemented; verify against live Google Sheets.
+- Customer cancel endpoint/action is implemented and live-verified; keep regression checks in the testing checklist.
 - Ensure cancel/reject appends `ORDER_STATUS_LOG`.
 - Ensure cancelled/rejected orders cannot keep pigs reserved.
 - Customer cancellation uses `Approval_Status = Not_Required` and `Payment_Status = Cancelled`; keep regression checks in the testing checklist.
@@ -68,18 +68,79 @@ Goal: reduce one large service file into focused modules.
 
 Proposed modules:
 
-- `order_read.py`
-- `order_write.py`
+- `order_read.py` - extracted; active customer lookup tests target the new module directly while routes keep the `order_service` public names
+- `order_write.py` - extracted; create/update/order-line CRUD tests target the new module directly while routes keep the `order_service` public names
 - `order_matching.py`
-- `order_line_sync.py`
-- `order_reservation.py`
-- `order_lifecycle.py`
-- `order_status_log.py`
+- `order_line_sync.py` - extracted; requested-item sync tests target the new module directly while routes keep the `order_service` public name
+- `order_reservation.py` - extracted; `order_service.reserve_order_lines` and `order_service.release_order_lines` remain available through imported compatibility names
+- `order_lifecycle.py` - extracted; lifecycle tests target the new module directly while routes keep the `order_service` public names
+- `order_status_log.py` - extracted; status-log callers now use the focused module through the service facade where needed
 - `integrations/n8n_orders.py`
 
 ## Phase 5: Add Verification Coverage
 
 Goal: prevent regressions.
+
+Phase 7.0A inventory:
+
+- `docs/02-backend/ORDER_VERIFICATION_MATRIX.md`
+
+Phase 7.0B harness:
+
+- use stdlib `unittest`
+- mock Google Sheets boundaries
+- run with `.\venv\Scripts\python.exe -m unittest discover -s tests -v`
+- passing tests cover `create_order`, `update_order`, basic order-line CRUD, `reserve_order_lines`, `release_order_lines`, `send_order_for_approval`, `approve_order` reserve-warning behavior, `reject_order`, `cancel_order`, `complete_order`, `sync_order_lines_from_request`, `get_active_customer_order_context`, direct `order_status_log.py` writes, and mocked route smoke behavior for order detail, create/update order, create/update/delete order lines, reserve/release, lifecycle actions, and sync validation/auto-quote attachment
+
+Phase 7.0C first extraction:
+
+- `modules/orders/order_status_log.py` owns status log ID generation and appending rows to `ORDER_STATUS_LOG`.
+- `modules/orders/order_service.py` keeps `_write_order_status_log(...)` as a stable wrapper so existing service code, route behavior, and tests are not forced to change in the same step.
+- Verified with the full local mocked suite.
+
+Phase 7.0C second extraction:
+
+- `modules/orders/order_reservation.py` owns `reserve_order_lines(...)` and `release_order_lines(...)`.
+- `modules/orders/order_service.py` imports those names so routes and lifecycle code keep the same public call surface.
+- Reservation tests now target `order_reservation.py` directly; lifecycle tests still patch `order_service.reserve_order_lines` to protect the approve-order integration point.
+- Verified with the full local mocked suite.
+
+Phase 7.0C third extraction:
+
+- `modules/orders/order_write.py` owns `create_order(...)`, `update_order(...)`, `create_order_line(...)`, `update_order_line(...)`, and `delete_order_line(...)`.
+- `modules/orders/order_service.py` imports those names so existing routes and create-with-lines integration continue to call the same public names.
+- CRUD service tests now target `order_write.py` directly.
+- Verified with the full local mocked suite.
+
+Phase 7.0C fourth extraction:
+
+- `modules/orders/order_read.py` owns `list_orders(...)`, `get_order_detail(...)`, and `get_active_customer_order_context(...)`.
+- `modules/orders/order_service.py` imports those names so existing routes keep the same public call surface.
+- Active customer lookup tests now target `order_read.py` directly; route tests still protect the `order_service` import path.
+- Verified with the full local mocked suite.
+
+Phase 7.0C fifth extraction:
+
+- `modules/orders/order_line_sync.py` owns requested-item matching and `sync_order_lines_from_request(...)`.
+- `modules/orders/order_service.py` imports that name so existing routes and create-with-lines integration keep the same public call surface.
+- Sync tests now target `order_line_sync.py` directly.
+- The zero-match auto-cancel branch uses a runtime import of `order_service.cancel_order(...)` to avoid circular imports while lifecycle remains in `order_service.py`.
+- Verified with the full local mocked suite.
+
+Phase 7.0C sixth extraction:
+
+- `modules/orders/order_lifecycle.py` owns `send_order_for_approval(...)`, `approve_order(...)`, `reject_order(...)`, `cancel_order(...)`, and `complete_order(...)`.
+- `modules/orders/order_service.py` imports those names so existing routes keep the same public call surface.
+- Lifecycle tests now target `order_lifecycle.py` directly; route tests still protect the `order_service` import path.
+- Verified with the full local mocked suite.
+
+Phase 7.0C cleanup:
+
+- Legacy renamed bodies were removed from `order_service.py`.
+- Unused imports/constants were removed from `order_service.py`.
+- `order_service.py` is now a compatibility facade for routes, document services, report services, and workflow-facing code.
+- Keep `create_order_with_lines(...)` in `order_service.py` until a deliberate orchestration module is chosen, because it coordinates create, sync, and cancel behavior across extracted modules.
+- Verified with the full local mocked suite after route CRUD smoke coverage: 63 tests passing on 2026-05-18.
 
 Minimum checks:
 
@@ -129,6 +190,6 @@ Cost assumption:
 
 - `sync_order_lines_from_request` has had split-item issues where `primary_2` rows were missing or not updated correctly.
 - reject reserved-line cleanup is implemented and live-verified.
-- customer cancel endpoint/action is implemented but needs live Google Sheets verification.
-- reserve may need stronger guards against cancelled/collected lines.
+- customer cancel endpoint/action is implemented and live-verified.
+- reserve/release cancelled/collected-line semantics are hardened; keep regression checks before touching order lifecycle code.
 - partial matches must not silently create incomplete orders.

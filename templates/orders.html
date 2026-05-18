@@ -12,18 +12,55 @@
       <div class="page-header page-header-with-link">
         <div>
           <h1>Orders</h1>
-          <p>Draft and operational orders from ORDER_OVERVIEW.</p>
+          <p>Review active work, approvals, completed orders, and cancelled history.</p>
         </div>
-        <a href="/" class="secondary-link">← Dashboard</a>
+        <div class="detail-actions compact-actions">
+          <a href="/orders/new" class="button-link">Create New Order</a>
+          <a href="/" class="button-link button-link-secondary">Dashboard</a>
+        </div>
       </div>
 
-      <div class="form-actions compact-actions" style="margin-bottom: 18px;">
-        <a href="/orders/new" class="button-link">Create New Order</a>
+      <div id="orders_summary" class="history-summary-grid"></div>
+
+      <div id="orders_status_tabs" class="orders-status-tabs" role="tablist" aria-label="Order status views"></div>
+
+      <div class="sales-filters-grid">
+        <div class="form-group">
+          <label for="orders_search">Search</label>
+          <input type="text" id="orders_search" placeholder="Search order, customer, phone, notes..." />
+        </div>
+
+        <div class="form-group">
+          <label for="orders_source_filter">Source</label>
+          <select id="orders_source_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="orders_payment_filter">Payment Method</label>
+          <select id="orders_payment_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="orders_location_filter">Collection Location</label>
+          <select id="orders_location_filter">
+            <option value="">All</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="detail-actions compact-actions">
+        <button type="button" id="clear_orders_filters_button" class="button-link button-link-secondary">
+          Clear Filters
+        </button>
       </div>
 
       <div id="orders_message" class="message-box hidden"></div>
 
-      <div id="orders_list" class="history-list"></div>
+      <div id="orders_list" class="pig-list-grid"></div>
     </div>
   </div>
 

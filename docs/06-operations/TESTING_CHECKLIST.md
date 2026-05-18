@@ -155,6 +155,10 @@ Test steps:
 Live verification reference:
 
 - 2026-04-29: `ORD-2026-879091` created in `ORDER_MASTER`; three matching `ORDER_LINES` rows created with `request_item_key = primary_1`.
+- 2026-05-18 Phase 7.0 checkpoint:
+  - Production pre-redeploy create-with-lines wrote `ORD-2026-D15B1E` with one active Female Grower `35_to_39_Kg` line but returned `500` and did not attach a quote document. Cleanup cancelled the order; final state was `Order_Status = Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
+  - Current local workspace code against live Sheets/Drive passed with `ORD-2026-900422`: response `201`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, auto quote `DOC-2026-B474FD` / `Q-2026-900422`, then cleanup cancelled the order and active lookup returned `no_match`.
+  - Required before closing Phase 7.0: deploy current backend code and rerun the production create-with-lines checkpoint.
 
 ### Split Male/Female Request
 
@@ -506,6 +510,29 @@ Browser verification still required:
 4. Cancelled or Completed order: order-level action buttons and add-line form are hidden.
 5. Confirm approve/reject/cancel/complete prompts appear before backend calls.
 6. Use only a safe temporary order for destructive actions.
+
+### Phase 6.2 Orders List Usability
+
+Repo checks completed 2026-05-17:
+
+1. `node --check static/js/orders.js` passed.
+2. Flask test client returned the updated `/orders` template.
+3. Local dev server was restarted and serves the updated `/orders` page.
+4. Orders page now uses the same summary/filter/card pattern as Sales Availability.
+
+Owner acceptance 2026-05-17:
+
+- Phase 6.2 is accepted for now.
+- Owner will make notes during live use if further polish is needed.
+
+Future browser/live notes to watch:
+
+1. `/orders` defaults to the Active tab.
+2. Draft, Pending Approval, Approved, Completed, Cancelled, and All tabs show the expected groups.
+3. Search finds order ID, customer, phone, conversation ID, request details, location, and notes.
+4. Source, payment method, and collection location filters work with the active tab.
+5. Clear Filters returns to the Active tab with all filters empty.
+6. Cards remain readable on mobile and desktop.
 
 ## Web App Breeding Board Tests
 

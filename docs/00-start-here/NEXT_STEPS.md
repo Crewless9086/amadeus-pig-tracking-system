@@ -22,11 +22,12 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 3: Daily Order Summary | Complete And Scheduled-Run Verified | Monitor scheduled delivery. |
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
-| Phase 6: Web App Order Usability | In Progress / 6.1 Repo-Implemented | Browser/live verification next. |
-| Phase 7: Broader Workflow Improvements | Not Started | Technical-debt checkpoint after order stability. |
+| Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
+| Phase 7: Broader Workflow Improvements | Next | Start 7.0 backend verification and service-boundary planning. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
+| Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
 
@@ -1335,7 +1336,7 @@ Rule:
 
 Do not redesign the app before the backend order behavior is safe.
 
-### 6.1 Order Detail Action Parity - Repo-Implemented, Browser Verification Next
+### 6.1 Order Detail Action Parity - Complete For Now
 
 Implementation added 2026-05-17:
 
@@ -1350,12 +1351,32 @@ Verification so far:
 - `node --check static/js/orderDetail.js` passed.
 - Flask app import via `.venv` passed.
 
+Owner acceptance / follow-up:
+
+- Cancel action was browser-tested by owner and working.
+- Owner will continue live testing during normal use and make notes for a future small polish pass if needed.
+
+### 6.2 Orders List Usability - Complete For Now
+
+Implementation added 2026-05-17:
+
+- `/orders` now follows the same operating pattern as Sales Availability: summary cards, filter grid, clear filters button, and operational cards.
+- Added status tabs for Active, Draft, Pending Approval, Approved, Completed, Cancelled, and All.
+- Default tab is Active so cancelled/completed history no longer dominates the working view.
+- Added filters for search, order source, payment method, and collection location.
+- Order cards now show status/approval, payment method, request summary, active lines, reserved count, value, collection location, source, and updated date.
+
+Verification so far:
+
+- `node --check static/js/orders.js` passed.
+- Flask test client returned the updated `/orders` template.
+- Local dev server restarted and now serves the updated `/orders` page.
+
 Still required:
 
-- Browser check one Draft order, one Pending_Approval order, one Approved order, and one terminal order.
-- Use a safe temporary order before clicking cancel/reject/complete in the browser.
+- Owner will continue live testing during normal use and make notes for a future small polish pass if needed.
 
-## Phase 7: Broader Workflow Improvements - Not Started
+## Phase 7: Broader Workflow Improvements - Next
 
 Only after order stability:
 
@@ -1363,12 +1384,35 @@ Only after order stability:
 
 This is a planned technical-debt checkpoint, not a reason to delay Phase 1.8.
 
+Current status:
+
+- 7.0A verification inventory added: `docs/02-backend/ORDER_VERIFICATION_MATRIX.md`.
+- 7.0B local test harness started with stdlib `unittest` and mocked Google Sheets boundaries.
+- Passing coverage added for `create_order`, `update_order`, basic order-line CRUD, `reserve_order_lines`, `release_order_lines`, `send_order_for_approval`, `approve_order` reserve-warning behavior, `reject_order`, `cancel_order`, `complete_order`, `sync_order_lines_from_request`, `get_active_customer_order_context`, and mocked route smoke behavior for order detail, create/update order, create/update/delete order lines, reserve/release, lifecycle actions, and sync validation/auto-quote attachment.
+- First small backend boundary extracted: `modules/orders/order_status_log.py` owns status log ID generation and `ORDER_STATUS_LOG` appends; `order_service._write_order_status_log` remains as a compatibility wrapper.
+- Second small backend boundary extracted: `modules/orders/order_reservation.py` owns reserve/release behavior; `order_service` keeps imported compatibility names for current routes and lifecycle code.
+- Third small backend boundary extracted: `modules/orders/order_write.py` owns create/update order and basic order-line CRUD behavior; `order_service` keeps imported compatibility names for current routes and create-with-lines integration.
+- Fourth small backend boundary extracted: `modules/orders/order_read.py` owns list/detail/active-customer lookup behavior; `order_service` keeps imported compatibility names for current routes.
+- Fifth backend boundary extracted: `modules/orders/order_line_sync.py` owns requested-item matching and sync behavior; `order_service` keeps imported compatibility names for current routes and create-with-lines integration.
+- Sixth backend boundary extracted: `modules/orders/order_lifecycle.py` owns send-for-approval, approve, reject, cancel, and complete behavior; `order_service` keeps imported compatibility names for current routes.
+- Cleanup completed: legacy in-file bodies and unused imports were removed from `modules/orders/order_service.py`; it is now a compatibility facade over the extracted modules, with `create_order_with_lines(...)` kept as the current orchestration wrapper.
+- Full mocked verification passed after cleanup and route CRUD smoke coverage: 63 tests green on 2026-05-18.
+- Controlled production checkpoint on 2026-05-18 exposed a deploy/live gap: direct production `POST /api/master/orders/create-with-lines` wrote `ORD-2026-D15B1E` with one active Female Grower `35_to_39_Kg` line but returned `500` instead of a clean response and did not attach a quote document. Cleanup succeeded: `ORD-2026-D15B1E` is `Cancelled`, `Payment_Status = Cancelled`, active lines `0`, cancelled lines `1`, and active lookup for conversation `1774` returned `no_match`.
+- Local-code/live-data checkpoint on 2026-05-18 passed against the current workspace code: `ORD-2026-900422` returned `201`, `create_success = true`, `sync_success = true`, `complete_fulfillment = true`, auto-generated `DOC-2026-B474FD` / `Q-2026-900422`, and cleanup cancelled the order with active lookup back to `no_match`.
+- Next slice should deploy the current backend code, then rerun the controlled production live checkpoint before marking Phase 7.0 complete.
+
 Required outcome:
 
 - add focused backend verification around order lifecycle and requested-item sync before large refactors
 - make the `order_service.py` split visible and deliberate, aligned with `docs/02-backend/REFACTOR_PLAN.md`
 - do not split `order_service.py` until Phase 1 lifecycle behavior and Phase 4/5 order-truth behavior are stable enough to protect with tests or clear manual checklists
 - keep Google Sheets append/write behavior tied to documented sheet headers, not hidden assumptions about column order
+
+Verification command:
+
+```powershell
+.\venv\Scripts\python.exe -m unittest discover -s tests -v
+```
 
 ### 7.1 Intake (from planning triage — not yet scheduled)
 
@@ -1503,6 +1547,13 @@ Required outcome:
 - animals with `Purpose = Unknown` must not appear as for-sale stock
 - once animals are weaned, surface a reminder to assign purpose: `Grow_Out`, `Sale`, or `Breeding`
 
+Future direction:
+
+- At weaning, the system should eventually suggest purpose based on birth weight, weaning weight, growth rate, litter quality, and owner-defined rules.
+- Suggested classes should include breeding candidate, grow-out, sale, and later slaughter-ready/meat-stream eligibility.
+- Suggestions should explain the reason and remain operator-approved, not silently force purpose changes.
+- This ties into Phase 11 because multiple revenue streams need flexible pig allocation from weaning through sale/slaughter weight.
+
 ### 9.2 Pig Dropdown Usability
 
 Required outcome:
@@ -1574,7 +1625,7 @@ Clarification to confirm when this phase starts:
 
 ## Phase 10: Farm Operating System Integration - Not Started
 
-Goal: bring Sam, Oom Sakkie, the web app, backend modules, weather logging, Synsynk solar data, n8n workflows, and Google Sheets into one documented operating-system structure.
+Goal: bring Sam, Oom Sakkie, the web app, backend modules, weather logging, Synsynk solar data, n8n workflows, and Google Sheets into one documented operating-system structure. WE can use teh n8n API to get these workflows in but we need to confirm them before we just bring them in and then start the file and documentation for them. 
 
 Timing rule:
 
@@ -1595,6 +1646,43 @@ Required outcome:
 - add logging and audit expectations for customer actions, worker actions, web-app actions, backend actions, weather imports, and solar imports
 - make the web app the visible control panel where possible so operators can understand system state without jumping between platforms
 
+## Phase 11: Pork Sales Business Module - Discovery Source Captured
+
+Goal: incorporate the new Amadeus Farm pork sales model without breaking the current live pig sales and order system.
+
+Source document:
+
+- `docs/08-business-modules/PORK_SALES_MODEL.md`
+
+Current decision:
+
+- Treat the pork sales model as a business-module source document first, not an implementation backlog.
+- Owner can keep adding assumptions, prices, cut-set details, legal/compliance notes, delivery rules, packaging ideas, and customer-offer wording to the source document.
+- Implementation planning starts only after the business model is stable enough to turn into phases safely.
+
+What this module will eventually affect:
+
+- product types: live pig, assisted slaughter, full carcass, half carcass, custom cut
+- order lifecycle: deposit, balance due, slaughter booking, processing, packing, delivery/collection
+- inventory planning: weaning classification, suggested purpose, live weight, allocation, slaughter date, carcass yield, packed weight
+- finance: VAT, costs, clean profit per pig, clean profit per batch/month
+- web app modules: orders, customers, processing, delivery, finance, labels, loyalty/branding
+- Sam/Oom Sakkie: customer wording, internal operating prompts, order checks, document retrieval
+- Google Sheets/data model: new sheets or tables for carcass orders, cut sets, processing batches, delivery routes, payments, and cost assumptions
+
+Planning rule:
+
+- Do not retrofit carcass meat sales into the current live-pig order flow by quick patches.
+- First capture the business rules clearly, then design data contracts and phased migration.
+- Existing live pig sales must continue working while the meat module is introduced.
+- Prefer one pig source of truth with purpose/revenue-stream fields or views before creating a separate slaughter-ready pig sheet; only split data storage if processing/batch needs clearly justify it.
+
+Immediate next action:
+
+- Keep refining `docs/08-business-modules/PORK_SALES_MODEL.md`.
+- When ready, ask for a dedicated planning pass to split the module into safe implementation phases.
+- This is cross-cutting enough that a Claude Code review should be used before implementation starts.
+
 ## Current Choice Point
 
 Recently completed:
@@ -1613,7 +1701,7 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 6.1 browser verification** - confirm order detail action visibility, confirmations, and running/success/error messages.
-2. **Phase 6.2 order list clarity** - choose after 6.1 browser verification is complete.
+1. **Phase 7.0 Backend Verification And Service Boundary Cleanup** - plan focused verification around existing order lifecycle and requested-item sync before larger refactors.
+2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
