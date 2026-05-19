@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Choose the next Phase 7 slice deliberately before workflow edits. |
 | Phase 8: Breeding Board Improvements | 8D Dry-Run Live-Verified | Keep destructive write verification for a test mating or real farm need only. |
-| Phase 9: Pig, Weight, And Reporting Improvements | Planning 9.1 | Plan new litter defaults and first weaning reminder surface before implementation. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Deployed; 9.1B Implemented Locally | Verify `Purpose = Unknown` on the next real litter; deploy/browser-check the litter attention dashboard. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1929,15 +1929,15 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
 - Destructive write verification should be done only on a dedicated test mating or when the farm genuinely needs to mark a real sow for repeat service.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - Not Started
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Deployed; 9.1B Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
-### 9.1 New Litter Defaults And Weaning Reminder — 9.1A In Progress
+### 9.1 New Litter Defaults And Weaning Reminder — 9.1A Deployed; Live Litter Verification Pending
 
 Required outcome:
 
-- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown` — 9.1A implemented locally; deploy/live verification next
+- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown` — 9.1A implemented, tested, and deployed; live verification will use the next real litter created by the owner
 - animals with `Purpose = Unknown` must not appear as for-sale stock
 - once animals are weaned, surface a reminder to assign purpose: `Grow_Out`, `Sale`, or `Breeding`
 
@@ -1947,6 +1947,22 @@ Future direction:
 - Suggested classes should include breeding candidate, grow-out, sale, and later slaughter-ready/meat-stream eligibility.
 - Suggestions should explain the reason and remain operator-approved, not silently force purpose changes.
 - This ties into Phase 11 because multiple revenue streams need flexible pig allocation from weaning through sale/slaughter weight.
+
+9.1A verification state:
+
+- Local focused litter tests and the full local test suite passed.
+- Production route smoke passed after deploy: `/api/pig-weights/status` returned running, and invalid litter creation returned the expected `400` validation errors without writing data.
+- Do not create artificial litter data just for this check. Owner has a real litter to create later on 2026-05-19; after that, verify the generated `PIG_MASTER` piglet rows have `Purpose = Unknown`.
+
+9.1B litter attention dashboard:
+
+- Added `LITTER_OVERVIEW` as a configured read source.
+- Added backend `get_litter_attention_summary()` for read-only dashboard reminders.
+- Dashboard response now includes `litter_attention`.
+- Dashboard renders a compact `Litter Attention` section with links to `/litter/<litter_id>`.
+- Reminder rules in this slice: include rows where `Needs_Attention = Yes`, and include weaned litters with active piglets as `Weaned - review purpose`.
+- No Google Sheet writes are added.
+- Focused backend tests and `node --check static/js/dashboard.js` passed locally.
 
 ### 9.2 Pig Dropdown Usability
 
@@ -2100,8 +2116,9 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 9.1 New Litter Defaults And Weaning Reminder** - plan first, then implement a small safe slice. Inspect how litter creation currently generates `PIG_MASTER` rows, confirm the current `Purpose` default, and decide the first weaning reminder surface before code changes.
-2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
+1. **Phase 9.1A live litter verification** - after the owner creates the next real litter, confirm generated `PIG_MASTER` piglet rows have `Purpose = Unknown`, then mark 9.1A closed.
+2. **Phase 9.1B deploy/browser verification** - deploy the dashboard litter-attention change, confirm `/api/pig-weights/dashboard` returns `litter_attention`, and confirm the dashboard shows the read-only `Litter Attention` section.
+3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:
 

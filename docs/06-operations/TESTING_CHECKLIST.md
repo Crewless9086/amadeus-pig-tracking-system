@@ -567,11 +567,23 @@ Test steps:
 
 Phase 9.1A:
 
-1. Create a safe test litter only when test data is acceptable.
+1. Prefer the next real litter entry for live verification; do not create artificial litter data only for this check unless explicitly approved.
 2. Confirm `save_new_litter` creates the expected number of `PIG_MASTER` piglet rows.
 3. Confirm each litter-generated piglet row has `Animal_Type = Piglet`, `Status = Active`, `On_Farm = Yes`, `Source = Born_on_Farm`, and `Purpose = Unknown`.
 4. Confirm `Purpose = Unknown` piglets do not appear as available-for-sale stock.
 5. Confirm repeated creation logic does not duplicate piglet rows for an existing `Litter_ID`.
+
+## Litter Attention Dashboard Tests
+
+Phase 9.1B:
+
+1. Confirm `GET /api/pig-weights/dashboard` returns `litter_attention`.
+2. Confirm `litter_attention.count` includes litters where `LITTER_OVERVIEW.Needs_Attention = Yes`.
+3. Confirm weaned litters with active piglets appear as `Weaned - review purpose`.
+4. Confirm quiet active litters are not included.
+5. Confirm `/` renders the `Litter Attention` section.
+6. Confirm each reminder links to `/litter/<litter_id>`.
+7. Confirm opening the dashboard does not write to Google Sheets.
 
 ## Google Sheets Checks
 

@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.1** - New Litter Defaults And Weaning Reminder |
-| **Status** | Phase 8D dry-run live-verified without changing real mating data; Phase 9 is now the active roadmap area |
-| **Current focus** | Plan Phase 9.1 before implementation: inspect litter piglet creation defaults and decide the first weaning reminder surface |
-| **Current last verified** | **2026-05-19** - Phase 8D dry-run passed on `MAT-2026-E05BC0` / Lolly and after-read confirmed the live record was unchanged |
+| **Status** | Phase 9.1A deployed with live litter verification pending; Phase 9.1B implemented locally |
+| **Current focus** | Deploy/browser-check 9.1B litter attention dashboard, and later verify 9.1A on the next real litter |
+| **Current last verified** | **2026-05-19** - production litter route smoke passed; invalid litter create returned expected `400` validation without writing data |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

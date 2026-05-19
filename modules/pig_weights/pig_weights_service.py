@@ -124,6 +124,48 @@ def get_dashboard_summary():
     }
 
 
+def get_litter_attention_summary(limit: int = 5):
+    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    items = []
+
+    for row in rows:
+        litter_id = to_clean_string(row.get("Litter_ID", ""))
+        if not litter_id:
+            continue
+
+        needs_attention = to_clean_string(row.get("Needs_Attention", ""))
+        litter_status = to_clean_string(row.get("Litter_Status", ""))
+        active_pig_count = to_float(row.get("Active_Pig_Count", "")) or 0
+
+        reason = ""
+        if needs_attention == "Yes":
+            reason = "Needs attention"
+        elif litter_status == "Weaned" and active_pig_count > 0:
+            reason = "Weaned - review purpose"
+
+        if not reason:
+            continue
+
+        items.append({
+            "litter_id": litter_id,
+            "sow_tag_number": to_clean_string(row.get("Sow_Tag_Number", "")),
+            "farrowing_date": format_date_for_json(row.get("Farrowing_Date", "")),
+            "wean_date": format_date_for_json(row.get("Wean_Date", "")),
+            "litter_status": litter_status,
+            "needs_attention": needs_attention,
+            "reason": reason,
+            "active_pig_count": active_pig_count,
+            "weaned_count": to_float(row.get("Weaned_Count", "")),
+            "youngest_age_days": row.get("Youngest_Age_Days", ""),
+            "oldest_age_days": row.get("Oldest_Age_Days", ""),
+        })
+
+    return {
+        "count": len(items),
+        "items": items[:limit],
+    }
+
+
 def get_sales_stock_summary():
     rows = get_all_records("SALES_STOCK_SUMMARY")
     records = []

@@ -1,5 +1,6 @@
 from modules.pig_weights.pig_weights_service import (
     get_dashboard_summary,
+    get_litter_attention_summary,
     get_sales_stock_summary,
     get_sales_stock_totals,
     get_parent_options,
@@ -46,7 +47,8 @@ def get_status():
 def get_dashboard_data():
     return {
         "success": True,
-        "summary": get_dashboard_summary()
+        "summary": get_dashboard_summary(),
+        "litter_attention": get_litter_attention_summary(),
     }
 
 

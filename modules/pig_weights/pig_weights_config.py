@@ -9,6 +9,7 @@ PIG_WEIGHTS_CONFIG = {
         "pen_register": "PEN_REGISTER",
         "sales_availability": "SALES_AVAILABILITY",
         "litter_register": "LITTERS",
+        "litter_overview": "LITTER_OVERVIEW",
     },
     "columns": {
         "pig_id": "Pig_ID",
