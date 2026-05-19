@@ -586,6 +586,17 @@ Phase 9.1B:
 7. Confirm the litter detail page loads from `GET /api/pig-weights/litter/<litter_id>` and does not call the obsolete `/detail` API path.
 8. Confirm opening the dashboard does not write to Google Sheets.
 
+## Pig Dropdown Usability Tests
+
+Phase 9.2A:
+
+1. Confirm `GET /api/pig-weights/parent-options` includes `current_pen_name` for breeding mothers/fathers where the pen exists.
+2. Confirm `GET /api/pig-weights/pigs` includes `current_pen_name` for active pigs where the pen exists.
+3. Confirm Add Litter mother/father dropdown labels show tag number plus pen name, with pig ID as secondary context.
+4. Confirm Add Mating sow/boar dropdown labels show tag number plus pen name, with pig ID as secondary context.
+5. Confirm Weight Entry pig dropdown labels show tag number plus pen name, with pig ID as secondary context.
+6. Confirm form submissions still send `pig_id` values, not display labels.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

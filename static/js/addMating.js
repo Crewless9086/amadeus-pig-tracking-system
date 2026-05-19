@@ -44,6 +44,13 @@ function populatePenDropdown(selectId, pens) {
     });
 }
 
+function buildAnimalOptionLabel(item) {
+    const tag = item.tag_number || item.pig_id || "Unknown";
+    const pen = item.current_pen_name || item.current_pen_id || "";
+    const idPart = item.pig_id && item.pig_id !== tag ? ` (${item.pig_id})` : "";
+    return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
+}
+
 async function loadBreedingOptions() {
     try {
         const response = await fetch("/api/pig-weights/breeding-options");
@@ -65,7 +72,7 @@ async function loadBreedingOptions() {
             };
             const option = document.createElement("option");
             option.value = item.pig_id;
-            option.textContent = `${item.tag_number} (${item.pig_id})`;
+            option.textContent = buildAnimalOptionLabel(item);
             sowSelect.appendChild(option);
         });
 
@@ -76,7 +83,7 @@ async function loadBreedingOptions() {
             };
             const option = document.createElement("option");
             option.value = item.pig_id;
-            option.textContent = `${item.tag_number} (${item.pig_id})`;
+            option.textContent = buildAnimalOptionLabel(item);
             boarSelect.appendChild(option);
         });
 

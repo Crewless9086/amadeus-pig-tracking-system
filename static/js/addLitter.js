@@ -55,6 +55,13 @@ function handleMatingSelect(e) {
     if (farrowingDate) farrowingDate.value = selected.dataset.farrow || "";
 }
 
+function buildAnimalOptionLabel(item) {
+    const tag = item.tag_number || item.pig_id || "Unknown";
+    const pen = item.current_pen_name || item.current_pen_id || "";
+    const idPart = item.pig_id && item.pig_id !== tag ? ` (${item.pig_id})` : "";
+    return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
+}
+
 async function loadLitterFormOptions() {
     try {
         const response = await fetch("/api/pig-weights/parent-options");
@@ -73,7 +80,7 @@ async function loadLitterFormOptions() {
 
             const option = document.createElement("option");
             option.value = item.pig_id;
-            option.textContent = `${item.tag_number} (${item.pig_id})`;
+            option.textContent = buildAnimalOptionLabel(item);
             option.dataset.currentPenId = item.current_pen_id || "";
             motherSelect.appendChild(option);
         });
@@ -83,7 +90,7 @@ async function loadLitterFormOptions() {
 
             const option = document.createElement("option");
             option.value = item.pig_id;
-            option.textContent = `${item.tag_number} (${item.pig_id})`;
+            option.textContent = buildAnimalOptionLabel(item);
             fatherSelect.appendChild(option);
         });
 

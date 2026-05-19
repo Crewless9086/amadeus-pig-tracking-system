@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Choose the next Phase 7 slice deliberately before workflow edits. |
 | Phase 8: Breeding Board Improvements | 8D Dry-Run Live-Verified | Keep destructive write verification for a test mating or real farm need only. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Deployed; 9.1B Implemented Locally | Verify `Purpose = Unknown` on the next real litter; deploy/browser-check the litter attention dashboard. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Deployed; 9.1B Browser-Verified; 9.2A Implemented Locally | Deploy/browser-check pig dropdown labels. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1929,7 +1929,7 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
 - Destructive write verification should be done only on a dedicated test mating or when the farm genuinely needs to mark a real sow for repeat service.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Deployed; 9.1B Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Deployed; 9.1B Browser-Verified; 9.2A Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -1963,6 +1963,9 @@ Future direction:
 - Reminder rules in this slice: include rows where `Needs_Attention = Yes`, and include weaned litters with active piglets as `Weaned - review purpose`.
 - No Google Sheet writes are added.
 - Focused backend tests and `node --check static/js/dashboard.js` passed locally.
+- Deployed and browser-verified on 2026-05-19.
+- Tile link issue fixed: `litterDetail.js` now calls the existing `GET /api/pig-weights/litter/<litter_id>` route instead of the obsolete `/detail` path.
+- Owner confirmed dashboard tile opens the litter detail page after deploy.
 
 ### 9.2 Pig Dropdown Usability
 
@@ -1970,6 +1973,14 @@ Required outcome:
 
 - pig-related dropdowns should show tag number and pen name, not only pen ID
 - tag numbers should display as three digits where appropriate: `001`, `010`, `090`, `100`
+
+9.2A dropdown label slice:
+
+- Backend `/api/pig-weights/parent-options` and `/api/pig-weights/pigs` now include `current_pen_name`.
+- `2.0` breeding options already included current pen names; frontend now uses them in labels.
+- Add Litter mother/father dropdowns, Add Mating sow/boar dropdowns, and Weight Entry pig dropdown now prefer labels like `S5 - Kraam Saal 01 (PIG-...)`.
+- IDs remain available in the label as secondary context.
+- Focused backend tests and JavaScript syntax checks passed locally.
 
 ### 9.3 Weight Form Context
 
@@ -2117,7 +2128,7 @@ Recently completed:
 Recommended next:
 
 1. **Phase 9.1A live litter verification** - after the owner creates the next real litter, confirm generated `PIG_MASTER` piglet rows have `Purpose = Unknown`, then mark 9.1A closed.
-2. **Phase 9.1B deploy/browser verification** - deploy the dashboard litter-attention change, confirm `/api/pig-weights/dashboard` returns `litter_attention`, and confirm the dashboard shows the read-only `Litter Attention` section.
+2. **Phase 9.2A deploy/browser verification** - deploy the dropdown label update and confirm Add Litter, Add Mating, and Weight Entry pig dropdowns show tag + pen context.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:

@@ -44,6 +44,28 @@ def _pig_summary_card(row, columns):
     }
 
 
+def _build_pen_lookup():
+    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"])
+    lookup = {}
+
+    for row in rows:
+        pen_id = to_clean_string(row.get("Pen_ID", ""))
+        if not pen_id:
+            continue
+        lookup[pen_id] = {
+            "pen_id": pen_id,
+            "pen_name": to_clean_string(row.get("Pen_Name", "")),
+            "pen_type": to_clean_string(row.get("Pen_Type", "")),
+        }
+
+    return lookup
+
+
+def _pen_name_for_id(pen_lookup, pen_id):
+    pen = pen_lookup.get(to_clean_string(pen_id), {})
+    return to_clean_string(pen.get("pen_name", ""))
+
+
 def get_dashboard_summary():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -223,6 +245,7 @@ def get_parent_options():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
     rows = get_all_records(sheet_name)
+    pen_lookup = _build_pen_lookup()
 
     mother_options = [{
         "pig_id": "Unknown",
@@ -259,6 +282,7 @@ def get_parent_options():
             "status": status,
             "purpose": purpose,
             "current_pen_id": current_pen_id,
+            "current_pen_name": _pen_name_for_id(pen_lookup, current_pen_id),
         }
 
         if sex == "Female" and status == "Active" and purpose == "Breeding":
@@ -278,6 +302,7 @@ def get_active_pigs():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
     rows = get_all_records(sheet_name)
+    pen_lookup = _build_pen_lookup()
 
     active_pigs = []
     for row in rows:
@@ -293,6 +318,10 @@ def get_active_pigs():
                 "current_weight_kg": row.get(columns["current_weight"], ""),
                 "last_weight_date": format_date_for_json(row.get(columns["last_weight_date"], "")),
                 "current_pen_id": to_clean_string(row.get(columns["current_pen_id"], "")),
+                "current_pen_name": _pen_name_for_id(
+                    pen_lookup,
+                    row.get(columns["current_pen_id"], ""),
+                ),
             })
 
     return active_pigs

@@ -225,8 +225,9 @@ async function loadPens() {
 
 function buildPigLabel(pig) {
   const tag = pig.tag_number || pig.pig_id;
-  const pen = pig.current_pen_id ? ` • ${pig.current_pen_id}` : "";
-  return `${tag}${pen}`;
+  const pen = pig.current_pen_name || pig.current_pen_id || "";
+  const idPart = pig.pig_id && pig.pig_id !== tag ? ` (${pig.pig_id})` : "";
+  return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
 }
 
 function populatePenFilterFromActivePigs() {

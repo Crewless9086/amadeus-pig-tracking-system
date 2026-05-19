@@ -173,4 +173,5 @@ Current position:
 - Phase 7.3E weather was triaged; weather is working, while Sunsynk is deferred to a dedicated backend/data/Supabase review.
 - Phase 8D is dry-run live-verified against real data without changing the live mating record.
 - Phase 9.1A is deployed. Live verification is pending until the owner creates the next real litter later on 2026-05-19; then verify generated piglets have `Purpose = Unknown`.
-- Phase 9.1B is implemented locally: dashboard litter attention reads `LITTER_OVERVIEW` and needs deploy/browser verification.
+- Phase 9.1B is deployed and browser-verified: dashboard litter attention reads `LITTER_OVERVIEW`, and litter tiles open the litter detail page.
+- Phase 9.2A is implemented locally: pig dropdown APIs and labels now include current pen context; deploy/browser verification is next.
