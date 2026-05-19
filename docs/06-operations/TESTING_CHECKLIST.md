@@ -583,7 +583,8 @@ Phase 9.1B:
 4. Confirm quiet active litters are not included.
 5. Confirm `/` renders the `Litter Attention` section.
 6. Confirm each reminder links to `/litter/<litter_id>`.
-7. Confirm opening the dashboard does not write to Google Sheets.
+7. Confirm the litter detail page loads from `GET /api/pig-weights/litter/<litter_id>` and does not call the obsolete `/detail` API path.
+8. Confirm opening the dashboard does not write to Google Sheets.
 
 ## Google Sheets Checks
 

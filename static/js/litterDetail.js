@@ -92,7 +92,7 @@ async function loadLitterDetail() {
   }
 
   try {
-    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/detail`);
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}`);
     const data = await response.json();
 
     if (!response.ok || !data.success) {
