@@ -563,6 +563,16 @@ Test steps:
 17. Confirm `Mark Not Pregnant / Repeat Service` can optionally move the sow to a non-farrowing pen and writes `MATING_LOG` as `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`.
 18. Confirm the repeat-service action is not shown or is blocked for matings with a linked litter, actual farrowing date, or non-`Confirmed_Pregnant` status.
 
+## Litter Creation Tests
+
+Phase 9.1A:
+
+1. Create a safe test litter only when test data is acceptable.
+2. Confirm `save_new_litter` creates the expected number of `PIG_MASTER` piglet rows.
+3. Confirm each litter-generated piglet row has `Animal_Type = Piglet`, `Status = Active`, `On_Farm = Yes`, `Source = Born_on_Farm`, and `Purpose = Unknown`.
+4. Confirm `Purpose = Unknown` piglets do not appear as available-for-sale stock.
+5. Confirm repeated creation logic does not duplicate piglet rows for an existing `Litter_ID`.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

@@ -1065,7 +1065,7 @@ def _create_pig_rows_for_litter(
             father_tag,                                        # Father_Tag_Number
             "",                                                # Maternal_Line
             "",                                                # Paternal_Line
-            "",                                                # Purpose
+            "Unknown",                                         # Purpose
             "",                                                # Current_Stage
             current_pen_id,                                    # Current_Pen_ID
             "Born_on_Farm",                                    # Source

@@ -24,8 +24,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Choose the next Phase 7 slice deliberately before workflow edits. |
-| Phase 8: Breeding Board Improvements | 8D Implemented In Repo | Deploy and live-verify 8D before closing Phase 8. |
-| Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
+| Phase 8: Breeding Board Improvements | 8D Dry-Run Live-Verified | Keep destructive write verification for a test mating or real farm need only. |
+| Phase 9: Pig, Weight, And Reporting Improvements | Planning 9.1 | Plan new litter defaults and first weaning reminder surface before implementation. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — 8D Implemented In Repo
+## Phase 8: Breeding Board Improvements — 8D Dry-Run Live-Verified
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1913,7 +1913,7 @@ Recommended direction:
 - In `matings.js`, when `is_overdue_farrowing = "Yes"` and no `linked_litter_id` and no `actual_farrowing_date` and `daysToFarrowing < -21`, the board classifies the record as `Needs Action Now` with action text `"No litter after 3 weeks — review"`.
 - Movement guidance text explains the situation: days past expected farrowing, check if she has farrowed or if repeat service is needed.
 
-### 8D Mark Not Pregnant / Repeat Service — Implemented; Live Verification Next
+### 8D Mark Not Pregnant / Repeat Service — Dry-Run Live-Verified
 
 When a sow has been in a farrowing pen too long with no litter, the next action is to mark her as not pregnant and return to repeat service.
 
@@ -1925,17 +1925,19 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - Supports `dry_run: true` so live real matings can be validated without writing to `MATING_LOG` or `LOCATION_HISTORY`.
 - `/matings` Breeding Board shows a `Mark Not Pregnant / Repeat Service` button on eligible confirmed-pregnant cards. Clicking opens an inline form with a non-farrowing pen dropdown. On confirm, POSTs to the endpoint and reloads the board.
 - Focused service/route tests, full local unittest suite, and JavaScript syntax check passed.
-- Live verification after deploy should use `dry_run: true` first because current eligible matings are real active farm records.
+- Dry-run live verification passed on 2026-05-19 against real eligible mating `MAT-2026-E05BC0` / Lolly. The endpoint returned planned updates for `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, and `Outcome = Repeat_Required`, with `dry_run = true` and `movement_logged = false`.
+- After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
+- Destructive write verification should be done only on a dedicated test mating or when the farm genuinely needs to mark a real sow for repeat service.
 
 ## Phase 9: Pig, Weight, And Reporting Improvements - Not Started
 
 Only after live order stability unless the operational need becomes urgent.
 
-### 9.1 New Litter Defaults And Weaning Reminder
+### 9.1 New Litter Defaults And Weaning Reminder — 9.1A In Progress
 
 Required outcome:
 
-- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown`
+- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown` — 9.1A implemented locally; deploy/live verification next
 - animals with `Purpose = Unknown` must not appear as for-sale stock
 - once animals are weaned, surface a reminder to assign purpose: `Grow_Out`, `Sale`, or `Breeding`
 
@@ -2098,7 +2100,8 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 7.3E quick triage: `2.1 - Amadeus Weather Sub-Agent` LLM errors** - owner noticed live LLM errors in the weather workflow. Before the next larger phase, inspect recent `2.1` executions and workflow config, identify whether the failure is credential/model, prompt/output JSON parsing, missing sheet input, or n8n node-version related, then make the smallest safe fix.
+1. **Phase 9.1 New Litter Defaults And Weaning Reminder** - plan first, then implement a small safe slice. Inspect how litter creation currently generates `PIG_MASTER` rows, confirm the current `Purpose` default, and decide the first weaning reminder surface before code changes.
+2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:
 
@@ -2154,7 +2157,6 @@ Recommended next:
 - Final 7.3D smoke passed on 2026-05-19 with fresh order `ORD-2026-46D437`: prepare produced only one Telegram button message, `Cancel` left quote `Q-2026-46D437` / `DOC-2026-67813E` as `Generated`, prepare again produced one message, `Send quote to customer` sent the PDF to Chatwoot conversation `1774`, WhatsApp received the quote, and backend recorded `Document_Status = Sent`, `Sent_By = Charl`, `Sent_At = 2026-05-19`.
 - Final test order cleanup passed: `ORD-2026-46D437` was cancelled after the successful send test; one line was cancelled, payment status became `Cancelled`, and reserved pig count is zero.
 - Phase 7.3D is complete and live-verified.
-2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
 

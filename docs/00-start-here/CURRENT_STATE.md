@@ -13,7 +13,7 @@ This document is the live operational truth of the project. It summarizes what i
 | n8n workflow docs | Good baseline | Four workflow exports and suite-level rules are documented. |
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
 | Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, lifecycle guards, auto-reservation, outbound notifications, quote/invoice generation, and document delivery are implemented and have been live-verified through the documented phases. |
-| Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is implemented in the repo and awaiting deploy/live verification. |
+| Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is dry-run live-verified; destructive write verification is reserved for a test mating or real farm need. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
 ## Completed Documentation Work
@@ -171,5 +171,5 @@ Current position:
 
 - Phase 7.3D is complete and live-verified.
 - Phase 7.3E weather was triaged; weather is working, while Sunsynk is deferred to a dedicated backend/data/Supabase review.
-- Phase 8D is implemented in the repo and needs deploy/live verification before it is treated as fully closed.
-- Phase 9 is the next broad roadmap area unless a regression appears.
+- Phase 8D is dry-run live-verified against real data without changing the live mating record.
+- Phase 9.1 is the next planning focus: new litter piglet defaults and the first weaning reminder surface.

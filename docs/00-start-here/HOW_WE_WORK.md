@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 8D** - Mark Not Pregnant / Repeat Service |
-| **Status** | Phase 7.3D complete and live-verified; Phase 7.3E weather triaged; Phase 8D implemented in repo and awaiting deploy/live verification |
-| **Current focus** | Deploy and live-test Phase 8D before moving into Phase 9 work |
-| **Current last verified** | **2026-05-19** - Phase 7.3D final Telegram quote-send smoke passed; weather path restored; Phase 8D local service/route checks passed |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.1** - New Litter Defaults And Weaning Reminder |
+| **Status** | Phase 8D dry-run live-verified without changing real mating data; Phase 9 is now the active roadmap area |
+| **Current focus** | Plan Phase 9.1 before implementation: inspect litter piglet creation defaults and decide the first weaning reminder surface |
+| **Current last verified** | **2026-05-19** - Phase 8D dry-run passed on `MAT-2026-E05BC0` / Lolly and after-read confirmed the live record was unchanged |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
