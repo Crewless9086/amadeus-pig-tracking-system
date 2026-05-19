@@ -13,8 +13,8 @@ Imported for docs: 2026-05-18
 - Runs when called by `2 - The GateKeeper`.
 - Uses a LangChain agent as the main assistant brain.
 - Sends replies back to Telegram.
-- Uses memory for the assistant conversation.
 - Calls weather, Sunsynk, and read-only order lookup sub-agents as tools.
+- Does not use assistant memory for operational routing; stale memory can cause tool-backed actions to be skipped.
 
 ## Main Nodes
 
@@ -23,10 +23,10 @@ Imported for docs: 2026-05-18
 - `AI Replay Agent`
 - `Brain ChatGPT`
 - `Replay ChatGPT`
-- `Simple Memory`
 - `Weather_Info_Tool`
 - `Sunsynk_Info_Tool`
 - `Orders_Info_Tool`
+- `Switch - Suppress Direct Tool Reply`
 - `Send Replay`
 
 ## Tools / Sub-Workflows
@@ -42,3 +42,5 @@ Imported for docs: 2026-05-18
 - n8n API upload of this active workflow failed with a server-side 500. The `2.0` workflow was imported/updated through the n8n UI before testing quote-send buttons.
 - Order lookup remains read-only except for guarded quote-send preparation, which only shows operator buttons and does not send until the callback worker confirms through the backend.
 - Access remains controlled by `2 - The GateKeeper`.
+- 2026-05-19: `Simple Memory` was disconnected after repeated quote-send preparation requests were answered from memory without calling `Orders_Info_Tool`.
+- 2026-05-19: `Switch - Suppress Direct Tool Reply` was added locally. When a tool returns `__NO_TELEGRAM_REPLY__`, `2.0` suppresses its normal reply because the worker has already sent the direct Telegram button message.

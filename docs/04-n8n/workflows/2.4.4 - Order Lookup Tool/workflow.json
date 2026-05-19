@@ -441,7 +441,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    success: true,\n    action: \"prepare_latest_quote_send\",\n    lookup_status: \"send_prepared\",\n    message: \"I prepared the quote send confirmation buttons. Use the Telegram buttons to send or cancel.\",\n  },\n}];"
+        "jsCode": "return [{\n  json: {\n    success: true,\n    action: \"prepare_latest_quote_send\",\n    lookup_status: \"send_prepared\",\n    message: \"__NO_TELEGRAM_REPLY__\",\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1056,7 +1056,7 @@
       },
       {
         "parameters": {
-          "jsCode": "return [{\n  json: {\n    success: true,\n    action: \"prepare_latest_quote_send\",\n    lookup_status: \"send_prepared\",\n    message: \"I prepared the quote send confirmation buttons. Use the Telegram buttons to send or cancel.\",\n  },\n}];"
+          "jsCode": "return [{\n  json: {\n    success: true,\n    action: \"prepare_latest_quote_send\",\n    lookup_status: \"send_prepared\",\n    message: \"__NO_TELEGRAM_REPLY__\",\n  },\n}];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,

@@ -2143,6 +2143,12 @@ Recommended next:
 - 2026-05-19 quote-send prepare test reached `2.4.4`, displayed Telegram buttons, and `Cancel` routed through GateKeeper to `2.4.5` successfully. No customer document was sent.
 - Known polish item: prepare currently creates two operator Telegram messages because `2.4.4` sends the button message directly and then `2.0` sends the tool acknowledgement.
 - Safety fix added locally after test: backend now blocks quote-send prepare and confirmed-send for terminal orders (`Cancelled`, `Completed`, or rejected approval state). Deploy backend before testing the real `Send quote to customer` button.
+- Tool-skip issue found on repeated prepare requests: `2.0` used `Simple Memory` to answer without calling `2.4.4`. Local `2.0` export now disconnects `Simple Memory`; apply the same UI change before continuing 7.3D send testing.
+- 2026-05-19 real send button test passed with `ORD-2026-71609C`: quote `Q-2026-71609C` / document `DOC-2026-AD8111` was sent to Chatwoot conversation `1774`, WhatsApp received the quote PDF message, backend document status became `Sent`, and n8n GateKeeper `45071` plus `2.4.5` `45072` succeeded.
+- Remaining 7.3D cleanup before marking complete: remove duplicate operator acknowledgement after prepare buttons, confirm live `2.0` export has memory disconnected, and review blank `sent_at` despite successful sent status.
+- Test order cleanup passed: `ORD-2026-71609C` was cancelled after the successful send test; one line was cancelled and reserved count is zero.
+- Local duplicate-message cleanup prepared: `2.0` now has a suppress-reply switch for `__NO_TELEGRAM_REPLY__`, `2.4.4` returns that marker after sending direct buttons, and the shared date parser now supports sheet datetime strings for `sent_at`.
+- Remaining before marking 7.3D complete: apply the two n8n UI workflow cleanup edits and run one final prepare/send smoke.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

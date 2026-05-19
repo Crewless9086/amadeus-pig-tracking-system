@@ -98,6 +98,7 @@ The trigger declares the accepted workflow inputs so n8n can activate the workfl
 - Do not add approval, rejection, cancellation, reservation, release, completion, generation, or document-send actions.
 - Do not return Google Drive URLs.
 - This workflow may send an operator-only Telegram confirmation button message.
+- After sending that direct Telegram button message, it returns `__NO_TELEGRAM_REPLY__` so `2.0` can suppress the duplicate acknowledgement.
 - It must not send customer documents.
 - Customer document sending remains owned by backend confirmed-send endpoints and the separate callback worker.
 

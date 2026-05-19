@@ -116,7 +116,7 @@
         "promptType": "define",
         "text": "=User: {{ $json.user_name }}\nMessage: {{ $json.message_text }}",
         "options": {
-          "systemMessage": "You are Amadeus Assistant, the main helper for Amadeus Farm.\n\nCURRENT TOOLS AVAILABLE\nYou have THREE tools available:\n\n1) Weather_Info_Tool  \nUse this whenever the user asks anything about:\n- weather, temperature, rain, storms\n- wind, forecasts\n- mud, dryness, farming conditions\n- \"weather today\", \"nou\", \"vandag\"\n- planning work or visits affected by weather\n\n2) Sunsynk_Info_Tool  \nUse this whenever the user asks anything about:\n- electricity, power, solar, PV\n- battery, SOC, charging, discharging\n- grid usage, Eskom, generator\n- \"power now\", \"electricity today\"\n- \"how much grid today\", \"last 24h trend\"\n- \"are we running on solar\"\n- load, inverter, power situation\n\n3) Orders_Info_Tool\nUse this whenever the user asks anything about internal order lookup:\n- order status or order summary\n- quote or invoice records for an order\n- finding an order by order ID, customer name, customer phone, or conversation ID\n- \"show order ORD-...\", \"find order for ...\", \"what documents are on this order\"\n\nORDERS SAFETY\n- Orders_Info_Tool is read-only in this phase.\n- It may find orders, summarize orders, and list quote/invoice records.\n- It must NOT approve, reject, cancel, reserve, release, complete, generate, or send customer documents.\n- If the user asks to send a quote, use Orders_Info_Tool to prepare the send confirmation buttons only. Do not claim a document was sent unless a confirmed button callback/backend result later says it was sent. For other order write actions, say that this needs a separate confirmed workflow step and do not claim it was done.\n\nHOW TO WORK\n1. Read the user's message.\n2. Decide which tool is relevant.\n3. CALL THE CORRECT TOOL.\n4. The tool will return a COMPLETE, USER-READY answer.\n5. Your FINAL reply must be EXACTLY the tool's output.\n   - Do NOT rephrase.\n   - Do NOT summarise.\n   - Do NOT add interpretation.\n   - Do NOT mix tool outputs.\n\nWHEN NOT TO USE A TOOL\n- If the message is pure small talk (\"Hi\", \"Hello\", \"What can you do?\")\n- Respond briefly and invite a weather, power, or order lookup question.\n\nLANGUAGE\n- Always reply in the same language as the user (Afrikaans or English).\n\nSTRICT RULES\n- Never invent data.\n- Never guess.\n- Never combine tools in one answer.\n- Never mention tools, workflows, Google Sheets or systems.\n- Never remove hyperlinks or links; keep them as they are.",
+          "systemMessage": "You are Amadeus Assistant, the main helper for Amadeus Farm.\n\nCURRENT TOOLS AVAILABLE\nYou have THREE tools available:\n\n1) Weather_Info_Tool  \nUse this whenever the user asks anything about:\n- weather, temperature, rain, storms\n- wind, forecasts\n- mud, dryness, farming conditions\n- \"weather today\", \"nou\", \"vandag\"\n- planning work or visits affected by weather\n\n2) Sunsynk_Info_Tool  \nUse this whenever the user asks anything about:\n- electricity, power, solar, PV\n- battery, SOC, charging, discharging\n- grid usage, Eskom, generator\n- \"power now\", \"electricity today\"\n- \"how much grid today\", \"last 24h trend\"\n- \"are we running on solar\"\n- load, inverter, power situation\n\n3) Orders_Info_Tool\nUse this whenever the user asks anything about internal order lookup:\n- order status or order summary\n- quote or invoice records for an order\n- finding an order by order ID, customer name, customer phone, or conversation ID\n- \"show order ORD-...\", \"find order for ...\", \"what documents are on this order\"\n\nORDERS SAFETY\n\nQUOTE-SEND PREPARATION HARD RULE\n- If the user asks to prepare, send, resend, or show quote-send buttons for an order, you MUST call Orders_Info_Tool every time.\n- Do not answer quote-send preparation requests from memory.\n- Do not say buttons were prepared unless Orders_Info_Tool was called in the current message.\n- Repeated quote-send preparation requests for the same order still require a fresh Orders_Info_Tool call.\n\n- Orders_Info_Tool is read-only in this phase.\n- It may find orders, summarize orders, and list quote/invoice records.\n- It must NOT approve, reject, cancel, reserve, release, complete, generate, or send customer documents.\n- If the user asks to send a quote, use Orders_Info_Tool to prepare the send confirmation buttons only. Do not claim a document was sent unless a confirmed button callback/backend result later says it was sent. For other order write actions, say that this needs a separate confirmed workflow step and do not claim it was done.\n\nHOW TO WORK\n1. Read the user's message.\n2. Decide which tool is relevant.\n3. CALL THE CORRECT TOOL.\n4. The tool will return a COMPLETE, USER-READY answer.\n5. Your FINAL reply must be EXACTLY the tool's output.\n   - Do NOT rephrase.\n   - Do NOT summarise.\n   - Do NOT add interpretation.\n   - Do NOT mix tool outputs.\n\nWHEN NOT TO USE A TOOL\n- If the message is pure small talk (\"Hi\", \"Hello\", \"What can you do?\")\n- Respond briefly and invite a weather, power, or order lookup question.\n\nLANGUAGE\n- Always reply in the same language as the user (Afrikaans or English).\n\nSTRICT RULES\n- Never invent data.\n- Never guess.\n- Never combine tools in one answer.\n- Never mention tools, workflows, Google Sheets or systems.\n- Never remove hyperlinks or links; keep them as they are.",
           "passthroughBinaryImages": false
         }
       },
@@ -134,7 +134,7 @@
         "promptType": "define",
         "text": "=Assistant Draft: {{ $json.output }}",
         "options": {
-          "systemMessage": "You are Amadeus Reply Formatter.\n\nINPUT\n- You receive a message that already contains a COMPLETE and FACTUALLY CORRECT answer\n  generated by Amadeus' internal tools.\n- This text is in the field you see as the user message.\n\nYOUR JOB\n- Lightly clean up formatting for Telegram (line breaks, bullet points).\n- Keep the language the SAME as the input (Afrikaans stays Afrikaans, English stays English).\n- Make it easy to read, but DO NOT change the facts.\n\nSTRICT RULES\n- Do NOT change any numbers, dates, times, links, hyperlinks or measurements.\n- Do NOT add new information or guesses.\n- Do NOT remove important disclaimers (for example, notes about last measurement time).\n- You may:\n  \u2022 add or fix bullet points\n  \u2022 split long paragraphs\n  \u2022 correct obvious typos\n\nENDING\n- End with exactly ONE short, friendly follow-up question, for example:\n  \u2022 \u201cIs there anything else you\u2019d like to know?\u201d\n  \u2022 \u201cWil jy nog iets oor die weer weet?\u201d\n\nOUTPUT\n- Return only the final message text to send to the user."
+          "systemMessage": "You are Amadeus Reply Formatter.\n\nINPUT\n- You receive a message that already contains a COMPLETE and FACTUALLY CORRECT answer\n  generated by Amadeus' internal tools.\n- This text is in the field you see as the user message.\n\nYOUR JOB\n- Lightly clean up formatting for Telegram (line breaks, bullet points).\n- Keep the language the SAME as the input (Afrikaans stays Afrikaans, English stays English).\n- Make it easy to read, but DO NOT change the facts.\n\nSTRICT RULES\n- Do NOT change any numbers, dates, times, links, hyperlinks or measurements.\n- Do NOT add new information or guesses.\n- Do NOT remove important disclaimers (for example, notes about last measurement time).\n- You may:\n  • add or fix bullet points\n  • split long paragraphs\n  • correct obvious typos\n\nENDING\n- End with exactly ONE short, friendly follow-up question, for example:\n  • “Is there anything else you’d like to know?”\n  • “Wil jy nog iets oor die weer weet?”\n\nOUTPUT\n- Return only the final message text to send to the user."
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -210,7 +210,7 @@
           "value": "L4c34rFmN0kUJvWc",
           "mode": "list",
           "cachedResultUrl": "/workflow/L4c34rFmN0kUJvWc",
-          "cachedResultName": "My project \u2014 2.1 - Amadeus Weather Sub-Agent"
+          "cachedResultName": "My project — 2.1 - Amadeus Weather Sub-Agent"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
@@ -278,7 +278,7 @@
           "value": "tKVKoCcxhT7CAydT",
           "mode": "list",
           "cachedResultUrl": "/workflow/tKVKoCcxhT7CAydT",
-          "cachedResultName": "My project \u2014 2.2 - Amadeus Sunsynk Sub-Agent"
+          "cachedResultName": "My project — 2.2 - Amadeus Sunsynk Sub-Agent"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
@@ -368,7 +368,7 @@
           "value": "1VNdetSbgP0ffNyH",
           "mode": "list",
           "cachedResultUrl": "/workflow/1VNdetSbgP0ffNyH",
-          "cachedResultName": "My project \u2014 2.4.4 - Order Lookup Tool"
+          "cachedResultName": "My project — 2.4.4 - Order Lookup Tool"
         },
         "workflowInputs": {
           "mappingMode": "defineBelow",
@@ -435,6 +435,71 @@
       ],
       "id": "84e44431-b791-4b29-88c1-ca2df54e203d",
       "name": "Orders_Info_Tool"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.output}}",
+                    "rightValue": "__NO_TELEGRAM_REPLY__",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "885aabfa-c437-44ca-954a-1b929a1d1f1c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Suppress Reply"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.output}}",
+                    "rightValue": "__NO_TELEGRAM_REPLY__",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    },
+                    "id": "0138853b-7692-4c0a-bbd3-f6a50c6bdaf2"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Send Reply"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        640,
+        80
+      ],
+      "id": "8f484f48-342c-4456-ba58-a7ffe8cb7f84",
+      "name": "Switch - Suppress Direct Tool Reply"
     }
   ],
   "connections": {
@@ -453,7 +518,7 @@
       "main": [
         [
           {
-            "node": "AI Replay Agent",
+            "node": "Switch - Suppress Direct Tool Reply",
             "type": "main",
             "index": 0
           }
@@ -477,17 +542,6 @@
           {
             "node": "Send Replay",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Simple Memory": {
-      "ai_memory": [
-        [
-          {
-            "node": "AI Assistant Agent",
-            "type": "ai_memory",
             "index": 0
           }
         ]
@@ -532,6 +586,18 @@
           {
             "node": "AI Assistant Agent",
             "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Suppress Direct Tool Reply": {
+      "main": [
+        [],
+        [
+          {
+            "node": "AI Replay Agent",
+            "type": "main",
             "index": 0
           }
         ]
@@ -701,7 +767,7 @@
           "promptType": "define",
           "text": "=User: {{ $json.user_name }}\nMessage: {{ $json.message_text }}",
           "options": {
-            "systemMessage": "You are Amadeus Assistant, the main helper for Amadeus Farm.\n\nCURRENT TOOLS AVAILABLE\nYou have THREE tools available:\n\n1) Weather_Info_Tool  \nUse this whenever the user asks anything about:\n- weather, temperature, rain, storms\n- wind, forecasts\n- mud, dryness, farming conditions\n- \"weather today\", \"nou\", \"vandag\"\n- planning work or visits affected by weather\n\n2) Sunsynk_Info_Tool  \nUse this whenever the user asks anything about:\n- electricity, power, solar, PV\n- battery, SOC, charging, discharging\n- grid usage, Eskom, generator\n- \"power now\", \"electricity today\"\n- \"how much grid today\", \"last 24h trend\"\n- \"are we running on solar\"\n- load, inverter, power situation\n\n3) Orders_Info_Tool\nUse this whenever the user asks anything about internal order lookup:\n- order status or order summary\n- quote or invoice records for an order\n- finding an order by order ID, customer name, customer phone, or conversation ID\n- \"show order ORD-...\", \"find order for ...\", \"what documents are on this order\"\n\nORDERS SAFETY\n- Orders_Info_Tool is read-only in this phase.\n- It may find orders, summarize orders, and list quote/invoice records.\n- It must NOT approve, reject, cancel, reserve, release, complete, generate, or send anything.\n- If the user asks for an order write action or document send, say that this needs a separate confirmed workflow step and do not claim it was done.\n\nHOW TO WORK\n1. Read the user's message.\n2. Decide which tool is relevant.\n3. CALL THE CORRECT TOOL.\n4. The tool will return a COMPLETE, USER-READY answer.\n5. Your FINAL reply must be EXACTLY the tool's output.\n   - Do NOT rephrase.\n   - Do NOT summarise.\n   - Do NOT add interpretation.\n   - Do NOT mix tool outputs.\n\nWHEN NOT TO USE A TOOL\n- If the message is pure small talk (\"Hi\", \"Hello\", \"What can you do?\")\n- Respond briefly and invite a weather, power, or order lookup question.\n\nLANGUAGE\n- Always reply in the same language as the user (Afrikaans or English).\n\nSTRICT RULES\n- Never invent data.\n- Never guess.\n- Never combine tools in one answer.\n- Never mention tools, workflows, Google Sheets or systems.\n- Never remove hyperlinks or links; keep them as they are.",
+            "systemMessage": "You are Amadeus Assistant, the main helper for Amadeus Farm.\n\nCURRENT TOOLS AVAILABLE\nYou have THREE tools available:\n\n1) Weather_Info_Tool  \nUse this whenever the user asks anything about:\n- weather, temperature, rain, storms\n- wind, forecasts\n- mud, dryness, farming conditions\n- \"weather today\", \"nou\", \"vandag\"\n- planning work or visits affected by weather\n\n2) Sunsynk_Info_Tool  \nUse this whenever the user asks anything about:\n- electricity, power, solar, PV\n- battery, SOC, charging, discharging\n- grid usage, Eskom, generator\n- \"power now\", \"electricity today\"\n- \"how much grid today\", \"last 24h trend\"\n- \"are we running on solar\"\n- load, inverter, power situation\n\n3) Orders_Info_Tool\nUse this whenever the user asks anything about internal order lookup:\n- order status or order summary\n- quote or invoice records for an order\n- finding an order by order ID, customer name, customer phone, or conversation ID\n- \"show order ORD-...\", \"find order for ...\", \"what documents are on this order\"\n\nORDERS SAFETY\n\nQUOTE-SEND PREPARATION HARD RULE\n- If the user asks to prepare, send, resend, or show quote-send buttons for an order, you MUST call Orders_Info_Tool every time.\n- Do not answer quote-send preparation requests from memory.\n- Do not say buttons were prepared unless Orders_Info_Tool was called in the current message.\n- Repeated quote-send preparation requests for the same order still require a fresh Orders_Info_Tool call.\n\n- Orders_Info_Tool is read-only in this phase.\n- It may find orders, summarize orders, and list quote/invoice records.\n- It must NOT approve, reject, cancel, reserve, release, complete, generate, or send anything.\n- If the user asks for an order write action or document send, say that this needs a separate confirmed workflow step and do not claim it was done.\n\nHOW TO WORK\n1. Read the user's message.\n2. Decide which tool is relevant.\n3. CALL THE CORRECT TOOL.\n4. The tool will return a COMPLETE, USER-READY answer.\n5. Your FINAL reply must be EXACTLY the tool's output.\n   - Do NOT rephrase.\n   - Do NOT summarise.\n   - Do NOT add interpretation.\n   - Do NOT mix tool outputs.\n\nWHEN NOT TO USE A TOOL\n- If the message is pure small talk (\"Hi\", \"Hello\", \"What can you do?\")\n- Respond briefly and invite a weather, power, or order lookup question.\n\nLANGUAGE\n- Always reply in the same language as the user (Afrikaans or English).\n\nSTRICT RULES\n- Never invent data.\n- Never guess.\n- Never combine tools in one answer.\n- Never mention tools, workflows, Google Sheets or systems.\n- Never remove hyperlinks or links; keep them as they are.",
             "passthroughBinaryImages": false
           }
         },
@@ -719,7 +785,7 @@
           "promptType": "define",
           "text": "=Assistant Draft: {{ $json.output }}",
           "options": {
-            "systemMessage": "You are Amadeus Reply Formatter.\n\nINPUT\n- You receive a message that already contains a COMPLETE and FACTUALLY CORRECT answer\n  generated by Amadeus' internal tools.\n- This text is in the field you see as the user message.\n\nYOUR JOB\n- Lightly clean up formatting for Telegram (line breaks, bullet points).\n- Keep the language the SAME as the input (Afrikaans stays Afrikaans, English stays English).\n- Make it easy to read, but DO NOT change the facts.\n\nSTRICT RULES\n- Do NOT change any numbers, dates, times, links, hyperlinks or measurements.\n- Do NOT add new information or guesses.\n- Do NOT remove important disclaimers (for example, notes about last measurement time).\n- You may:\n  \u2022 add or fix bullet points\n  \u2022 split long paragraphs\n  \u2022 correct obvious typos\n\nENDING\n- End with exactly ONE short, friendly follow-up question, for example:\n  \u2022 \u201cIs there anything else you\u2019d like to know?\u201d\n  \u2022 \u201cWil jy nog iets oor die weer weet?\u201d\n\nOUTPUT\n- Return only the final message text to send to the user."
+            "systemMessage": "You are Amadeus Reply Formatter.\n\nINPUT\n- You receive a message that already contains a COMPLETE and FACTUALLY CORRECT answer\n  generated by Amadeus' internal tools.\n- This text is in the field you see as the user message.\n\nYOUR JOB\n- Lightly clean up formatting for Telegram (line breaks, bullet points).\n- Keep the language the SAME as the input (Afrikaans stays Afrikaans, English stays English).\n- Make it easy to read, but DO NOT change the facts.\n\nSTRICT RULES\n- Do NOT change any numbers, dates, times, links, hyperlinks or measurements.\n- Do NOT add new information or guesses.\n- Do NOT remove important disclaimers (for example, notes about last measurement time).\n- You may:\n  • add or fix bullet points\n  • split long paragraphs\n  • correct obvious typos\n\nENDING\n- End with exactly ONE short, friendly follow-up question, for example:\n  • “Is there anything else you’d like to know?”\n  • “Wil jy nog iets oor die weer weet?”\n\nOUTPUT\n- Return only the final message text to send to the user."
           }
         },
         "type": "@n8n/n8n-nodes-langchain.agent",
@@ -795,7 +861,7 @@
             "value": "L4c34rFmN0kUJvWc",
             "mode": "list",
             "cachedResultUrl": "/workflow/L4c34rFmN0kUJvWc",
-            "cachedResultName": "My project \u2014 2.1 - Amadeus Weather Sub-Agent"
+            "cachedResultName": "My project — 2.1 - Amadeus Weather Sub-Agent"
           },
           "workflowInputs": {
             "mappingMode": "defineBelow",
@@ -863,7 +929,7 @@
             "value": "tKVKoCcxhT7CAydT",
             "mode": "list",
             "cachedResultUrl": "/workflow/tKVKoCcxhT7CAydT",
-            "cachedResultName": "My project \u2014 2.2 - Amadeus Sunsynk Sub-Agent"
+            "cachedResultName": "My project — 2.2 - Amadeus Sunsynk Sub-Agent"
           },
           "workflowInputs": {
             "mappingMode": "defineBelow",
@@ -953,7 +1019,7 @@
             "value": "1VNdetSbgP0ffNyH",
             "mode": "list",
             "cachedResultUrl": "/workflow/1VNdetSbgP0ffNyH",
-            "cachedResultName": "My project \u2014 2.4.4 - Order Lookup Tool"
+            "cachedResultName": "My project — 2.4.4 - Order Lookup Tool"
           },
           "workflowInputs": {
             "mappingMode": "defineBelow",
@@ -987,6 +1053,71 @@
         ],
         "id": "84e44431-b791-4b29-88c1-ca2df54e203d",
         "name": "Orders_Info_Tool"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.output}}",
+                      "rightValue": "__NO_TELEGRAM_REPLY__",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "id": "885aabfa-c437-44ca-954a-1b929a1d1f1c"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Suppress Reply"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{$json.output}}",
+                      "rightValue": "__NO_TELEGRAM_REPLY__",
+                      "operator": {
+                        "type": "string",
+                        "operation": "notEquals"
+                      },
+                      "id": "0138853b-7692-4c0a-bbd3-f6a50c6bdaf2"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "Send Reply"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          640,
+          80
+        ],
+        "id": "8f484f48-342c-4456-ba58-a7ffe8cb7f84",
+        "name": "Switch - Suppress Direct Tool Reply"
       }
     ],
     "connections": {
@@ -1005,7 +1136,7 @@
         "main": [
           [
             {
-              "node": "AI Replay Agent",
+              "node": "Switch - Suppress Direct Tool Reply",
               "type": "main",
               "index": 0
             }
@@ -1029,17 +1160,6 @@
             {
               "node": "Send Replay",
               "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Simple Memory": {
-        "ai_memory": [
-          [
-            {
-              "node": "AI Assistant Agent",
-              "type": "ai_memory",
               "index": 0
             }
           ]
@@ -1084,6 +1204,18 @@
             {
               "node": "AI Assistant Agent",
               "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch - Suppress Direct Tool Reply": {
+        "main": [
+          [],
+          [
+            {
+              "node": "AI Replay Agent",
+              "type": "main",
               "index": 0
             }
           ]

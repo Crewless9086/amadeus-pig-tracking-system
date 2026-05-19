@@ -37,7 +37,10 @@ def parse_sheet_date(value):
     value = str(value).strip()
 
     formats = [
+        "%d %b %Y %H:%M",
         "%d %b %Y",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
         "%Y-%m-%d",
         "%d/%m/%Y",
         "%m/%d/%Y",

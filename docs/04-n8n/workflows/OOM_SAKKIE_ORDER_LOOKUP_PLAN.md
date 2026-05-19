@@ -635,6 +635,16 @@ Open planning question:
 - `Cancel` button test passed on 2026-05-19: GateKeeper routed the callback to `2.4.5`, which returned `Quote send cancelled`; backend document status remained `Generated` with blank sent fields.
 - Known polish item: prepare currently sends two operator Telegram messages because `2.4.4` sends the button message directly and then returns a normal tool response through `2.0`.
 - Safety issue found during the cancelled-order test: backend prepare allowed a quote-send button for terminal order `ORD-2026-3E46B8`. Local backend guard now blocks terminal orders for both prepare and confirmed-send; deploy backend before any live `Send quote to customer` test.
+- Tool-skip issue found on repeated prepare requests: `2.0` answered from `Simple Memory` without calling `2.4.4`, so it claimed buttons were prepared when none were created. Decision: disconnect/remove `Simple Memory` from `2.0`; Oom Sakkie operational commands should be stateless and tool-backed.
+- Real send button test passed on 2026-05-19 using `ORD-2026-71609C`: GateKeeper routed `quote_send|...` to `2.4.5`, backend sent quote `Q-2026-71609C` / `DOC-2026-AD8111` to Chatwoot conversation `1774`, WhatsApp received the PDF message, and backend document status became `Sent` with `sent_by = Charl`.
+- n8n verification passed for the send click: GateKeeper execution `45071` and `2.4.5` execution `45072` both succeeded.
+- Test order cleanup passed: `ORD-2026-71609C` was cancelled after the send test; one line was cancelled and reserved count returned to zero.
+- Local cleanup prepared:
+  - `2.0` export disconnects `Simple Memory`.
+  - `2.0` export adds `Switch - Suppress Direct Tool Reply` between `AI Assistant Agent` and `AI Replay Agent`; output `__NO_TELEGRAM_REPLY__` is suppressed.
+  - `2.4.4` export returns `__NO_TELEGRAM_REPLY__` after it has already sent the direct Telegram button message.
+  - Shared date parser now accepts sheet datetime strings such as `19 May 2026 04:20`, so operator summaries can show `sent_at` instead of blanking it.
+- Remaining manual n8n UI cleanup: apply the `2.0` suppress-switch change and the `2.4.4` marker response change, then retest prepare once to confirm only one Telegram message appears.
 - Test exact `order_id` lookup.
 - Test phone/name multiple-match handling.
 - Test document list lookup.
