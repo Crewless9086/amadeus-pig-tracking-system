@@ -540,7 +540,7 @@ Future browser/live notes to watch:
 
 ## Web App Breeding Board Tests
 
-The `/matings` page is a read-only operational view for mating and movement planning.
+The `/matings` page is an operational view for mating and movement planning. It reads from mating overview data and writes only through explicit confirmed action buttons.
 
 Test steps:
 
@@ -557,6 +557,10 @@ Test steps:
 11. Confirm linked litter links open `/litter/<litter_id>`.
 12. Confirm `/master/add-mating` still works unchanged.
 13. Confirm opening `/matings` does not write to Google Sheets.
+14. For an eligible open mating, confirm `Move to Farrowing / Assume Pregnant` opens an inline form, optionally moves to a farrowing pen, and updates the mating only after confirmation.
+15. For an eligible `Confirmed_Pregnant` mating with no linked litter and no actual farrowing date, confirm `Mark Not Pregnant / Repeat Service` opens an inline form.
+16. Confirm `Mark Not Pregnant / Repeat Service` can optionally move the sow to a non-farrowing pen and writes `MATING_LOG` as `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`.
+17. Confirm the repeat-service action is not shown or is blocked for matings with a linked litter, actual farrowing date, or non-`Confirmed_Pregnant` status.
 
 ## Google Sheets Checks
 

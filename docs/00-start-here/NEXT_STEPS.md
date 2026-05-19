@@ -23,8 +23,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
-| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D routing restored and first live message test passed | Continue 7.3D live verification: quote-send prepare, Cancel button, then guarded Send only after destination confirmation. |
-| Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
+| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Choose the next Phase 7 slice deliberately before workflow edits. |
+| Phase 8: Breeding Board Improvements | 8D Implemented In Repo | Deploy and live-verify 8D before closing Phase 8. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — Completed 2026-05-02
+## Phase 8: Breeding Board Improvements — 8D Implemented In Repo
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1913,14 +1913,18 @@ Recommended direction:
 - In `matings.js`, when `is_overdue_farrowing = "Yes"` and no `linked_litter_id` and no `actual_farrowing_date` and `daysToFarrowing < -21`, the board classifies the record as `Needs Action Now` with action text `"No litter after 3 weeks — review"`.
 - Movement guidance text explains the situation: days past expected farrowing, check if she has farrowed or if repeat service is needed.
 
-### 8D Not Yet Built — Mark Not Pregnant / Repeat Service
+### 8D Mark Not Pregnant / Repeat Service — Implemented; Live Verification Next
 
-When a sow has been in a farrowing pen too long with no litter, the next action is to mark her as not pregnant and return to repeat service. This is not yet built. When implemented:
+When a sow has been in a farrowing pen too long with no litter, the next action is to mark her as not pregnant and return to repeat service.
 
 - `POST /api/pig-weights/master/matings/<mating_id>/mark-not-pregnant`
 - Updates `MATING_LOG`: `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `Updated_At = today`.
-- Optionally moves sow back to a service pen.
+- Optionally moves sow back to a non-farrowing service/holding/sow/gilt pen and writes `LOCATION_HISTORY` with reason `Moved for repeat service`.
 - Available only for `Confirmed_Pregnant` matings with no litter and no actual farrowing date.
+- Blocks non-confirmed matings, linked litters, actual farrowing dates, missing target pens, and farrowing target pens.
+- `/matings` Breeding Board shows a `Mark Not Pregnant / Repeat Service` button on eligible confirmed-pregnant cards. Clicking opens an inline form with a non-farrowing pen dropdown. On confirm, POSTs to the endpoint and reloads the board.
+- Focused service/route tests, full local unittest suite, and JavaScript syntax check passed.
+- Live verification after deploy is still required before this is marked closed.
 
 ## Phase 9: Pig, Weight, And Reporting Improvements - Not Started
 
@@ -2093,7 +2097,7 @@ Recently completed:
 
 Recommended next:
 
-1. **Phase 7.3D Oom Sakkie Document-Send Guard** - backend guard endpoints and callback workflows are deployed; GateKeeper routing is restored and first live Telegram message test passed.
+1. **Phase 7.3E quick triage: `2.1 - Amadeus Weather Sub-Agent` LLM errors** - owner noticed live LLM errors in the weather workflow. Before the next larger phase, inspect recent `2.1` executions and workflow config, identify whether the failure is credential/model, prompt/output JSON parsing, missing sheet input, or n8n node-version related, then make the smallest safe fix.
 
 7.3D planning note:
 
@@ -2141,14 +2145,30 @@ Recommended next:
 - Repo export refreshed from live n8n GateKeeper workflow `s8QaxmqT69Z5mhvE`, so the current trigger node is preserved in `docs/04-n8n/workflows/2 - The GateKeeper/workflow.json`.
 - Recovery checklist retained for future incidents: `docs/04-n8n/OOM_SAKKIE_MANUAL_RECOVERY_CHECKLIST.md`.
 - 2026-05-19 quote-send prepare test reached `2.4.4`, displayed Telegram buttons, and `Cancel` routed through GateKeeper to `2.4.5` successfully. No customer document was sent.
-- Known polish item: prepare currently creates two operator Telegram messages because `2.4.4` sends the button message directly and then `2.0` sends the tool acknowledgement.
-- Safety fix added locally after test: backend now blocks quote-send prepare and confirmed-send for terminal orders (`Cancelled`, `Completed`, or rejected approval state). Deploy backend before testing the real `Send quote to customer` button.
-- Tool-skip issue found on repeated prepare requests: `2.0` used `Simple Memory` to answer without calling `2.4.4`. Local `2.0` export now disconnects `Simple Memory`; apply the same UI change before continuing 7.3D send testing.
+- Duplicate prepare acknowledgement was fixed in live `2.0`: `2.4.4` sends the direct button message, then `2.0` suppresses the follow-up AI acknowledgement when output contains the quote-send preparation pattern.
+- Safety fix deployed: backend now blocks quote-send prepare and confirmed-send for terminal orders (`Cancelled`, `Completed`, or rejected approval state).
+- Tool-skip issue fixed in live `2.0`: `Simple Memory` was removed/disconnected so repeated prepare requests call `2.4.4` instead of answering from memory.
 - 2026-05-19 real send button test passed with `ORD-2026-71609C`: quote `Q-2026-71609C` / document `DOC-2026-AD8111` was sent to Chatwoot conversation `1774`, WhatsApp received the quote PDF message, backend document status became `Sent`, and n8n GateKeeper `45071` plus `2.4.5` `45072` succeeded.
-- Remaining 7.3D cleanup before marking complete: remove duplicate operator acknowledgement after prepare buttons, confirm live `2.0` export has memory disconnected, and review blank `sent_at` despite successful sent status.
 - Test order cleanup passed: `ORD-2026-71609C` was cancelled after the successful send test; one line was cancelled and reserved count is zero.
-- Local duplicate-message cleanup prepared: `2.0` now has a suppress-reply switch for `__NO_TELEGRAM_REPLY__`, `2.4.4` returns that marker after sending direct buttons, and the shared date parser now supports sheet datetime strings for `sent_at`.
-- Remaining before marking 7.3D complete: apply the two n8n UI workflow cleanup edits and run one final prepare/send smoke.
+- Final 7.3D smoke passed on 2026-05-19 with fresh order `ORD-2026-46D437`: prepare produced only one Telegram button message, `Cancel` left quote `Q-2026-46D437` / `DOC-2026-67813E` as `Generated`, prepare again produced one message, `Send quote to customer` sent the PDF to Chatwoot conversation `1774`, WhatsApp received the quote, and backend recorded `Document_Status = Sent`, `Sent_By = Charl`, `Sent_At = 2026-05-19`.
+- Final test order cleanup passed: `ORD-2026-46D437` was cancelled after the successful send test; one line was cancelled, payment status became `Cancelled`, and reserved pig count is zero.
+- Phase 7.3D is complete and live-verified.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
+
+7.3E weather LLM triage note:
+
+- Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
+- Keep `2.1` as the weather sub-agent; do not merge it into Oom Sakkie or the order workflows while triaging.
+- First checks: latest `2.1` executions, failing node name, input payload to the failing LLM node, model/credential status, JSON-only output parser behavior, and whether `2.1.1` forecast tool is still returning usable data.
+- Desired fix style: smallest contained workflow/backend/doc update, followed by one live Oom Sakkie weather question and one direct `2.1` execution check.
+- 2026-05-19 diagnosis: recent `2.1` executions `45114`, `45118`, and `45120` failed at `Weather Router (JSON Plan)` because model `chatgpt-4o-latest` was rejected. Later executions `45121`, `45123`, and `45125` failed at the same node because OpenAI received `input[1].content[0].text = null`.
+- Execution `45125` confirmed the weather station sheet data was fresh (`2026-05-19 5:10:18`) and the failure was not weather data availability. The trigger payload into `2.1` was `{ "input": null }`.
+- Prepared fix: `2.0` `Weather_Info_Tool` now uses n8n `$fromAI('weather_question', ...)` for the sub-workflow input with a safe fallback, and `2.1` `Weather Router (JSON Plan)` uses `gpt-5.5` plus a non-null prompt fallback (`current weather at the farm`).
+- Regression coverage added in `tests/test_workflow_contracts.py`: `2.0` weather tool must use AI-supplied input, and `2.1` must not reference `chatgpt-4o-latest` or send a nullable router prompt.
+- Follow-up check requested for `2.2 - Amadeus Sunsynk Sub-Agent` and `2.1.1 - Amadeus Forecast Tool` because these features had also stopped responding reliably.
+- 2026-05-19 `2.2` diagnosis: recent execution `45137` was called with valid input (`What's the power like now?`) but was cancelled after about three minutes. The run reached `Sunsynk Current Overview` but did not return a final agent answer. Prepared workflow hardening (`$fromAI('sunsynk_question', ...)`, prompt fallback, `maxIterations = 4`, no-repeat-tool instruction) was not enough; owner retest still ran too long. Decision: stop quick workflow tweaking and defer `2.2` to a dedicated Sunsynk data/backend/Supabase architecture review.
+- 2026-05-19 `2.1.1` diagnosis: workflow is active but had no recent executions, which means the current weather path is not calling it. Prepared hardening: optional forecast offsets now default to blank strings instead of nullable values so direct/future calls remain safe. Keep a future design note open on whether `2.1` should call `2.1.1` again or continue using the `Forecast_10Day_Current` sheet directly.
+- Regression coverage added for `2.2` and `2.1.1`: Sunsynk tool input must use AI-supplied input, Sunsynk agent must have input fallback and iteration cap, and forecast optional offsets must not pass raw nulls.
+- Sunsynk follow-up scope: inventory Sunsynk backend folders/modules if present, n8n workflows (`2.2`, `ALERT - Sunsynk`), Google Sheets tabs (`Amadeus_Sunsynk_Log`, `Sunsynk_Current_Overview`, `Sunsynk_Daily_Summary`, `Sunsynk_Last24h_Hourly`, `Sunsynk_5min_Intervals`, `Sunsynk_Alert_Log`), data volume, read/query patterns, and whether this should move to Supabase/Postgres as farm telemetry before rebuilding the assistant answer path.

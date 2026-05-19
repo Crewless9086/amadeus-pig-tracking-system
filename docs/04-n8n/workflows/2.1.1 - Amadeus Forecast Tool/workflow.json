@@ -69,19 +69,19 @@
                                                                                  {
                                                                                      "id":  "4e609868-01dd-41cf-b47c-22ce6e9d6a1b",
                                                                                      "name":  "offsetDays",
-                                                                                     "value":  "={{ $json.offsetDays }}",
+                                                                       "value":  "={{ $json.offsetDays ?? \"\" }}",
                                                                                      "type":  "string"
                                                                                  },
                                                                                  {
                                                                                      "id":  "955dbab5-dcad-414f-9e13-faa004d0942e",
                                                                                      "name":  "startOffsetDays",
-                                                                                     "value":  "={{ $json.startOffsetDays }}",
+                                                                       "value":  "={{ $json.startOffsetDays ?? \"\" }}",
                                                                                      "type":  "string"
                                                                                  },
                                                                                  {
                                                                                      "id":  "2b6ed9e0-9063-4beb-b1a5-1ecd21ed0907",
                                                                                      "name":  "endOffsetDays",
-                                                                                     "value":  "={{ $json.endOffsetDays }}",
+                                                                       "value":  "={{ $json.endOffsetDays ?? \"\" }}",
                                                                                      "type":  "string"
                                                                                  }
                                                                              ]

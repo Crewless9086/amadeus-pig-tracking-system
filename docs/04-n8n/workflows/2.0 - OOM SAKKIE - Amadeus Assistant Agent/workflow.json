@@ -215,7 +215,7 @@
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {
-            "input": "={{ $json.message_text }}"
+            "input": "={{ $fromAI('weather_question', 'The user weather question to answer. Use the exact user request where possible, for example current weather, rain today, wind, tomorrow forecast, or weekend forecast.', 'string') || $json.message_text || 'current weather at the farm' }}"
           },
           "matchingColumns": [
             "input"
@@ -283,7 +283,7 @@
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {
-            "input": "={{ $json.message_text }}"
+            "input": "={{ $fromAI('sunsynk_question', 'The user electricity, solar, battery, grid, generator, PV, inverter, or power question to answer. Use the exact user request where possible.', 'string') || $json.message_text || 'current power status at the farm' }}"
           },
           "matchingColumns": [
             "input"
@@ -457,9 +457,18 @@
                       "operation": "equals"
                     },
                     "id": "885aabfa-c437-44ca-954a-1b929a1d1f1c"
+                  },
+                  {
+                    "leftValue": "={{$json.output}}",
+                    "rightValue": "quote send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "4f3360d3-74ec-4c49-82ea-0d22e4bf0f4a"
                   }
                 ],
-                "combinator": "and"
+                "combinator": "or"
               },
               "renameOutput": true,
               "outputKey": "Suppress Reply"
@@ -481,6 +490,15 @@
                       "operation": "notEquals"
                     },
                     "id": "0138853b-7692-4c0a-bbd3-f6a50c6bdaf2"
+                  },
+                  {
+                    "leftValue": "={{$json.output}}",
+                    "rightValue": "quote send",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notContains"
+                    },
+                    "id": "dedf90f5-0ea4-4431-a036-c45257a35631"
                   }
                 ],
                 "combinator": "and"
@@ -1075,9 +1093,18 @@
                         "operation": "equals"
                       },
                       "id": "885aabfa-c437-44ca-954a-1b929a1d1f1c"
+                    },
+                    {
+                      "leftValue": "={{$json.output}}",
+                      "rightValue": "quote send",
+                      "operator": {
+                        "type": "string",
+                        "operation": "contains"
+                      },
+                      "id": "4f3360d3-74ec-4c49-82ea-0d22e4bf0f4a"
                     }
                   ],
-                  "combinator": "and"
+                  "combinator": "or"
                 },
                 "renameOutput": true,
                 "outputKey": "Suppress Reply"
@@ -1099,6 +1126,15 @@
                         "operation": "notEquals"
                       },
                       "id": "0138853b-7692-4c0a-bbd3-f6a50c6bdaf2"
+                    },
+                    {
+                      "leftValue": "={{$json.output}}",
+                      "rightValue": "quote send",
+                      "operator": {
+                        "type": "string",
+                        "operation": "notContains"
+                      },
+                      "id": "dedf90f5-0ea4-4431-a036-c45257a35631"
                     }
                   ],
                   "combinator": "and"

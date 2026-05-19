@@ -405,3 +405,95 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
         }
 
     raise ValueError(f"Mating_ID '{mating_id}' not found in MATING_LOG.")
+
+
+def mark_not_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
+    mating_id = str(mating_id).strip()
+    target_pen_id = to_clean_string(target_pen_id)
+    moved_by = to_clean_string(moved_by) or "WebApp"
+
+    all_values = get_all_values(MATING_LOG_SHEET)
+    if not all_values or len(all_values) < 2:
+        raise ValueError("MATING_LOG has no data rows.")
+
+    headers = all_values[0]
+    header_index = {h: i for i, h in enumerate(headers)}
+
+    required_headers = [
+        "Mating_ID", "Sow_Pig_ID",
+        "Pregnancy_Check_Date", "Pregnancy_Check_Result",
+        "Actual_Farrowing_Date", "Mating_Status", "Outcome",
+        "Linked_Litter_ID", "Updated_At",
+    ]
+    for h in required_headers:
+        if h not in header_index:
+            raise ValueError(f"Missing column '{h}' in MATING_LOG.")
+
+    today_str = datetime.now().strftime("%d %b %Y")
+
+    for row in all_values[1:]:
+        if not row:
+            continue
+
+        row_id = to_clean_string(row[0])
+        if row_id != mating_id:
+            continue
+
+        padded_row = list(row) + [""] * (len(headers) - len(row))
+        current_status = to_clean_string(padded_row[header_index["Mating_Status"]])
+        linked_litter_id = to_clean_string(padded_row[header_index["Linked_Litter_ID"]])
+        actual_farrowing_date = to_clean_string(padded_row[header_index["Actual_Farrowing_Date"]])
+
+        if current_status != "Confirmed_Pregnant":
+            raise ValueError("Only Confirmed_Pregnant matings can be marked not pregnant.")
+
+        if linked_litter_id:
+            raise ValueError("Cannot mark not pregnant because a litter is already linked.")
+
+        if actual_farrowing_date:
+            raise ValueError("Cannot mark not pregnant because actual farrowing is already recorded.")
+
+        if target_pen_id:
+            pen_lookup = _get_pen_lookup()
+            target_pen = pen_lookup.get(target_pen_id)
+            if not target_pen:
+                raise ValueError(f"Pen '{target_pen_id}' not found in PEN_REGISTER.")
+            if target_pen.get("pen_type") == "Farrowing":
+                raise ValueError("Target pen must not be a Farrowing pen.")
+
+        padded_row[header_index["Pregnancy_Check_Date"]] = today_str
+        padded_row[header_index["Pregnancy_Check_Result"]] = "Not_Pregnant"
+        padded_row[header_index["Mating_Status"]] = "Repeat_Service"
+        padded_row[header_index["Outcome"]] = "Repeat_Required"
+        padded_row[header_index["Updated_At"]] = today_str
+
+        update_row_by_first_column_match(MATING_LOG_SHEET, mating_id, padded_row)
+
+        movement_logged = False
+        if target_pen_id:
+            sow_pig_id = to_clean_string(padded_row[header_index["Sow_Pig_ID"]])
+            if sow_pig_id:
+                pig_lookup = _get_pig_lookup()
+                sow_row = pig_lookup.get(sow_pig_id, {})
+                current_pen_id = to_clean_string(sow_row.get("Current_Pen_ID", ""))
+                movement_logged = _write_movement_if_needed(
+                    pig_id=sow_pig_id,
+                    current_pen_id=current_pen_id,
+                    target_pen_id=target_pen_id,
+                    move_date=datetime.now().date(),
+                    reason="Moved for repeat service",
+                    moved_by=moved_by,
+                )
+
+        message = "Mating updated to Repeat_Service."
+        if movement_logged:
+            message += " Sow movement logged."
+
+        return {
+            "success": True,
+            "message": message,
+            "mating_id": mating_id,
+            "movement_logged": movement_logged,
+        }
+
+    raise ValueError(f"Mating_ID '{mating_id}' not found in MATING_LOG.")

@@ -7,6 +7,10 @@ from pathlib import Path
 WORKFLOW_ROOT = Path("docs/04-n8n/workflows")
 STEWARD_WORKFLOW = WORKFLOW_ROOT / "1.2 - order-steward" / "workflow.json"
 SAM_WORKFLOW = WORKFLOW_ROOT / "1.0 - Sam-sales-agent-chatwoot" / "workflow.json"
+OOM_SAKKIE_WORKFLOW = WORKFLOW_ROOT / "2.0 - OOM SAKKIE - Amadeus Assistant Agent" / "workflow.json"
+WEATHER_WORKFLOW = WORKFLOW_ROOT / "2.1 - Amadeus Weather Sub-Agent" / "workflow.json"
+FORECAST_WORKFLOW = WORKFLOW_ROOT / "2.1.1 - Amadeus Forecast Tool" / "workflow.json"
+SUNSYNK_WORKFLOW = WORKFLOW_ROOT / "2.2 - Amadeus Sunsynk Sub-Agent" / "workflow.json"
 
 
 REQUIRED_STEWARD_ACTIONS = {
@@ -130,6 +134,10 @@ CHATWOOT_ATTRIBUTE_FIELD_ORDER = [
 WORKFLOW_EXPORTS = {
     "sam": SAM_WORKFLOW,
     "steward": STEWARD_WORKFLOW,
+    "oom_sakkie": OOM_SAKKIE_WORKFLOW,
+    "weather": WEATHER_WORKFLOW,
+    "forecast": FORECAST_WORKFLOW,
+    "sunsynk": SUNSYNK_WORKFLOW,
 }
 
 
@@ -288,6 +296,77 @@ class WorkflowContractTests(unittest.TestCase):
                 with self.subTest(node_name=node_name, field=field):
                     self.assertGreater(position, previous_position)
                 previous_position = position
+
+    def test_oom_sakkie_weather_tool_uses_ai_supplied_input(self):
+        workflow = load_workflow(OOM_SAKKIE_WORKFLOW)
+        node = node_by_name(workflow, "Weather_Info_Tool")
+
+        self.assertIsNotNone(node)
+        workflow_inputs = node.get("parameters", {}).get("workflowInputs", {})
+        input_expression = workflow_inputs.get("value", {}).get("input", "")
+
+        self.assertIn("$fromAI", input_expression)
+        self.assertIn("weather_question", input_expression)
+        self.assertIn("current weather at the farm", input_expression)
+
+    def test_weather_workflow_router_has_supported_model_and_input_fallback(self):
+        workflow = load_workflow(WEATHER_WORKFLOW)
+        router = node_by_name(workflow, "Weather Router (JSON Plan)")
+        answer = node_by_name(workflow, "Weather Answer LLM (JSON only)")
+
+        self.assertIsNotNone(router)
+        self.assertIsNotNone(answer)
+        self.assertNotIn("chatgpt-4o-latest", json.dumps(workflow))
+
+        router_parameters = router.get("parameters", {})
+        router_content = (
+            router_parameters
+            .get("responses", {})
+            .get("values", [{}])[0]
+            .get("content", "")
+        )
+
+        self.assertEqual(router_parameters.get("modelId", {}).get("value"), "gpt-5.5")
+        self.assertEqual(answer.get("parameters", {}).get("modelId", {}).get("value"), "gpt-5.5")
+        self.assertIn("$json.input", router_content)
+        self.assertIn("current weather at the farm", router_content)
+
+    def test_oom_sakkie_sunsynk_tool_uses_ai_supplied_input(self):
+        workflow = load_workflow(OOM_SAKKIE_WORKFLOW)
+        node = node_by_name(workflow, "Sunsynk_Info_Tool")
+
+        self.assertIsNotNone(node)
+        workflow_inputs = node.get("parameters", {}).get("workflowInputs", {})
+        input_expression = workflow_inputs.get("value", {}).get("input", "")
+
+        self.assertIn("$fromAI", input_expression)
+        self.assertIn("sunsynk_question", input_expression)
+        self.assertIn("current power status at the farm", input_expression)
+
+    def test_sunsynk_agent_has_input_fallback_and_iteration_cap(self):
+        workflow = load_workflow(SUNSYNK_WORKFLOW)
+        node = node_by_name(workflow, "AI Sunsynk Agent")
+
+        self.assertIsNotNone(node)
+        parameters = node.get("parameters", {})
+        options = parameters.get("options", {})
+
+        self.assertIn("current power status at the farm", parameters.get("text", ""))
+        self.assertLessEqual(options.get("maxIterations", 99), 4)
+        self.assertIn("Do not call the same tool again", options.get("systemMessage", ""))
+
+    def test_forecast_tool_keeps_safe_blank_defaults_for_optional_offsets(self):
+        workflow = load_workflow(FORECAST_WORKFLOW)
+        node = node_by_name(workflow, "Set Forecast Inputs")
+
+        self.assertIsNotNone(node)
+        assignments = node.get("parameters", {}).get("assignments", {}).get("assignments", [])
+        assignment_by_name = {assignment.get("name"): assignment for assignment in assignments}
+
+        for field in ("offsetDays", "startOffsetDays", "endOffsetDays"):
+            with self.subTest(field=field):
+                self.assertIn(field, assignment_by_name)
+                self.assertIn("?? \"\"", assignment_by_name[field].get("value", ""))
 
 
 if __name__ == "__main__":

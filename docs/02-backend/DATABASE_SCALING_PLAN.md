@@ -44,6 +44,36 @@ The first migration should focus on sales/order transaction data only:
 
 Do not include full piggery records in the first migration unless a separate stability problem appears. Pig records, weight logs, mating records, and stock availability can stay in Sheets for the first database phase.
 
+## Later Boundary: Farm Telemetry
+
+Sunsynk/power and weather telemetry should be treated as a separate migration boundary from the first order-data migration.
+
+2026-05-19 trigger:
+
+- `2.2 - Amadeus Sunsynk Sub-Agent` still ran too long after workflow hardening and had to be cancelled manually.
+- The workflow reached `Sunsynk_Current_Overview`, but the agent did not return a timely final answer.
+- The likely issue is not only prompt/model configuration. The Sunsynk path may now be too large or too slow for direct Google Sheets tool reads inside an agent loop.
+
+Candidate Sunsynk data sources to inventory:
+
+- `Amadeus_Sunsynk_Log`
+- `Sunsynk_Current_Overview`
+- `Sunsynk_Daily_Summary`
+- `Sunsynk_Last24h_Hourly`
+- `Sunsynk_5min_Intervals`
+- `Sunsynk_Alert_Log`
+
+Future review should answer:
+
+- Which backend modules, scripts, or n8n workflows write Sunsynk data today.
+- Whether there are existing backend folders/modules for Sunsynk ingestion or whether n8n owns all ingestion.
+- Current row counts, growth rate, and query patterns for current status, today totals, last 24 hours, and 5-minute detail.
+- Whether Supabase/Postgres should store raw telemetry, rollups, or both.
+- Which read models the assistant actually needs so `2.2` can call a small backend endpoint instead of asking an agent to browse large Google Sheets ranges.
+- How to preserve operator visibility while moving heavy telemetry reads out of Sheets.
+
+Do not include this in the first order migration unless Sunsynk becomes the selected priority. Plan it as a separate farm telemetry phase.
+
 ## Adjacent Dependencies
 
 These sheets are not first-migration source tables, but they affect order behavior and must be planned:

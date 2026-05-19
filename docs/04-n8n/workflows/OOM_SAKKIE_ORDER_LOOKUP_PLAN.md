@@ -633,18 +633,20 @@ Open planning question:
 - If routing fails again, Test 0 is Telegram `getWebhookInfo`; it must show GateKeeper's webhook URL, not an empty URL and not the old `2.4.2` webhook ID.
 - Quote-send preparation test on 2026-05-19 reached `2.4.4`, called the backend prepare endpoint, and displayed Telegram confirmation buttons.
 - `Cancel` button test passed on 2026-05-19: GateKeeper routed the callback to `2.4.5`, which returned `Quote send cancelled`; backend document status remained `Generated` with blank sent fields.
-- Known polish item: prepare currently sends two operator Telegram messages because `2.4.4` sends the button message directly and then returns a normal tool response through `2.0`.
-- Safety issue found during the cancelled-order test: backend prepare allowed a quote-send button for terminal order `ORD-2026-3E46B8`. Local backend guard now blocks terminal orders for both prepare and confirmed-send; deploy backend before any live `Send quote to customer` test.
-- Tool-skip issue found on repeated prepare requests: `2.0` answered from `Simple Memory` without calling `2.4.4`, so it claimed buttons were prepared when none were created. Decision: disconnect/remove `Simple Memory` from `2.0`; Oom Sakkie operational commands should be stateless and tool-backed.
+- Duplicate prepare acknowledgement fixed in live `2.0`: `2.4.4` sends the direct button message, then `2.0` suppresses the follow-up AI acknowledgement when output contains the quote-send preparation pattern.
+- Safety issue found during the cancelled-order test: backend prepare allowed a quote-send button for terminal order `ORD-2026-3E46B8`. Backend guard is now deployed and blocks terminal orders for both prepare and confirmed-send.
+- Tool-skip issue found on repeated prepare requests: `2.0` answered from `Simple Memory` without calling `2.4.4`, so it claimed buttons were prepared when none were created. Decision implemented: disconnect/remove `Simple Memory` from `2.0`; Oom Sakkie operational commands should be stateless and tool-backed.
 - Real send button test passed on 2026-05-19 using `ORD-2026-71609C`: GateKeeper routed `quote_send|...` to `2.4.5`, backend sent quote `Q-2026-71609C` / `DOC-2026-AD8111` to Chatwoot conversation `1774`, WhatsApp received the PDF message, and backend document status became `Sent` with `sent_by = Charl`.
 - n8n verification passed for the send click: GateKeeper execution `45071` and `2.4.5` execution `45072` both succeeded.
 - Test order cleanup passed: `ORD-2026-71609C` was cancelled after the send test; one line was cancelled and reserved count returned to zero.
-- Local cleanup prepared:
+- Cleanup implemented:
   - `2.0` export disconnects `Simple Memory`.
-  - `2.0` export adds `Switch - Suppress Direct Tool Reply` between `AI Assistant Agent` and `AI Replay Agent`; output `__NO_TELEGRAM_REPLY__` is suppressed.
+  - `2.0` export adds `Switch - Suppress Direct Tool Reply` between `AI Assistant Agent` and `AI Replay Agent`; output `__NO_TELEGRAM_REPLY__` and quote-send preparation acknowledgements are suppressed.
   - `2.4.4` export returns `__NO_TELEGRAM_REPLY__` after it has already sent the direct Telegram button message.
   - Shared date parser now accepts sheet datetime strings such as `19 May 2026 04:20`, so operator summaries can show `sent_at` instead of blanking it.
-- Remaining manual n8n UI cleanup: apply the `2.0` suppress-switch change and the `2.4.4` marker response change, then retest prepare once to confirm only one Telegram message appears.
+- Final 7.3D smoke passed on 2026-05-19 with `ORD-2026-46D437`: prepare produced only one Telegram button message, `Cancel` left quote `Q-2026-46D437` / `DOC-2026-67813E` as `Generated`, prepare again produced one message, `Send quote to customer` sent the PDF to Chatwoot conversation `1774`, WhatsApp received the quote, and backend recorded `Document_Status = Sent`, `Sent_By = Charl`, `Sent_At = 2026-05-19`.
+- Final test order cleanup passed: `ORD-2026-46D437` was cancelled after the successful send test; one line was cancelled, payment status became `Cancelled`, and reserved pig count is zero.
+- Phase 7.3D is complete and live-verified.
 - Test exact `order_id` lookup.
 - Test phone/name multiple-match handling.
 - Test document list lookup.

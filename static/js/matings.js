@@ -7,6 +7,7 @@ let allMatingRecords = [];
 let allPens = [];
 let selectedSowId = "";
 let activeAssumePregnantId = null;
+let activeMarkNotPregnantId = null;
 const expandedMatingIds = new Set();
 
 const SECTION_DEFINITIONS = [
@@ -95,6 +96,7 @@ function setupMatingBoardEvents() {
         selectedSowId = event.target.value || "";
         expandedMatingIds.clear();
         activeAssumePregnantId = null;
+        activeMarkNotPregnantId = null;
         renderBoard(document.getElementById("matings_board"), getVisibleRecords());
         renderControls(document.getElementById("mating_controls"), allMatingRecords);
     });
@@ -106,6 +108,7 @@ function setupMatingBoardEvents() {
             if (expandedMatingIds.has(matingId)) {
                 expandedMatingIds.delete(matingId);
                 if (activeAssumePregnantId === matingId) activeAssumePregnantId = null;
+                if (activeMarkNotPregnantId === matingId) activeMarkNotPregnantId = null;
             } else {
                 expandedMatingIds.add(matingId);
             }
@@ -121,6 +124,21 @@ function setupMatingBoardEvents() {
                 activeAssumePregnantId = null;
             } else {
                 activeAssumePregnantId = matingId;
+                activeMarkNotPregnantId = null;
+                expandedMatingIds.add(matingId);
+            }
+            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
+            return;
+        }
+
+        const markNotPregnantBtn = event.target.closest("[data-mark-not-pregnant]");
+        if (markNotPregnantBtn) {
+            const matingId = markNotPregnantBtn.getAttribute("data-mark-not-pregnant");
+            if (activeMarkNotPregnantId === matingId) {
+                activeMarkNotPregnantId = null;
+            } else {
+                activeMarkNotPregnantId = matingId;
+                activeAssumePregnantId = null;
                 expandedMatingIds.add(matingId);
             }
             renderBoard(document.getElementById("matings_board"), getVisibleRecords());
@@ -141,6 +159,20 @@ function setupMatingBoardEvents() {
             return;
         }
 
+        const markConfirmBtn = event.target.closest("[data-mark-not-pregnant-confirm]");
+        if (markConfirmBtn) {
+            const matingId = markConfirmBtn.getAttribute("data-mark-not-pregnant-confirm");
+            await handleMarkNotPregnant(matingId);
+            return;
+        }
+
+        const markCancelBtn = event.target.closest("[data-mark-not-pregnant-cancel]");
+        if (markCancelBtn) {
+            activeMarkNotPregnantId = null;
+            renderBoard(document.getElementById("matings_board"), getVisibleRecords());
+            return;
+        }
+
         if (event.target.id !== "toggle_all_mating_details") return;
 
         const visibleRecords = getVisibleRecords();
@@ -149,6 +181,7 @@ function setupMatingBoardEvents() {
         if (allVisibleExpanded) {
             visibleRecords.forEach(record => expandedMatingIds.delete(record.mating_id));
             activeAssumePregnantId = null;
+            activeMarkNotPregnantId = null;
         } else {
             visibleRecords.forEach(record => expandedMatingIds.add(record.mating_id));
         }
@@ -186,6 +219,42 @@ async function handleAssumePregnant(matingId) {
         await loadMatingBoard();
     } catch (error) {
         console.error("Assume pregnant error:", error);
+        if (msgDiv) {
+            msgDiv.classList.remove("hidden", "message-success", "message-error");
+            msgDiv.classList.add("message-error");
+            msgDiv.textContent = "Something went wrong.";
+        }
+    }
+}
+
+async function handleMarkNotPregnant(matingId) {
+    const penSelect = document.getElementById(`repeat_service_pen_${matingId}`);
+    const msgDiv = document.getElementById(`repeat_service_msg_${matingId}`);
+    const targetPenId = penSelect ? penSelect.value : "";
+
+    try {
+        const response = await fetch(`/api/pig-weights/master/matings/${encodeURIComponent(matingId)}/mark-not-pregnant`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ target_pen_id: targetPenId, moved_by: "WebApp" })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            const msg = (data.errors || ["Failed to update mating."]).join(" ");
+            if (msgDiv) {
+                msgDiv.classList.remove("hidden", "message-success", "message-error");
+                msgDiv.classList.add("message-error");
+                msgDiv.textContent = msg;
+            }
+            return;
+        }
+
+        activeMarkNotPregnantId = null;
+        await loadMatingBoard();
+    } catch (error) {
+        console.error("Mark not pregnant error:", error);
         if (msgDiv) {
             msgDiv.classList.remove("hidden", "message-success", "message-error");
             msgDiv.classList.add("message-error");
@@ -297,6 +366,7 @@ function renderSection(section, records) {
 function renderMatingCard(record) {
     const isExpanded = expandedMatingIds.has(record.mating_id);
     const isAssumeFormOpen = activeAssumePregnantId === record.mating_id;
+    const isMarkNotPregnantFormOpen = activeMarkNotPregnantId === record.mating_id;
     const sowLabel = formatAnimalLabel(record.sow_tag_number, record.sow_pig_id, "Unknown Sow");
     const boarLabel = formatAnimalLabel(record.boar_tag_number, record.boar_pig_id, "Unknown Boar");
     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
@@ -313,6 +383,13 @@ function renderMatingCard(record) {
         : "";
 
     const assumeFormHtml = isAssumeFormOpen ? renderAssumePregnantForm(record.mating_id) : "";
+    const showMarkNotPregnantButton = isEligibleForMarkNotPregnant(record);
+    const markNotPregnantButtonHtml = showMarkNotPregnantButton
+        ? `<button type="button" class="button-link${isMarkNotPregnantFormOpen ? " button-link-secondary" : ""}" data-mark-not-pregnant="${escapeHtml(record.mating_id)}">
+             ${isMarkNotPregnantFormOpen ? "Cancel" : "Mark Not Pregnant / Repeat Service"}
+           </button>`
+        : "";
+    const markNotPregnantFormHtml = isMarkNotPregnantFormOpen ? renderMarkNotPregnantForm(record.mating_id) : "";
 
     return `
         <div class="history-item mating-card ${isExpanded ? "mating-card-expanded" : ""}">
@@ -407,6 +484,13 @@ function renderMatingCard(record) {
               </div>
             ` : ""}
 
+            ${showMarkNotPregnantButton ? `
+              <div class="history-notes" style="margin-top: 8px;">
+                ${markNotPregnantButtonHtml}
+                ${markNotPregnantFormHtml}
+              </div>
+            ` : ""}
+
             ${record.service_notes ? `
               <div class="history-notes">
                 <div class="history-label">Notes</div>
@@ -414,6 +498,39 @@ function renderMatingCard(record) {
               </div>
             ` : ""}
           </div>
+        </div>
+    `;
+}
+
+function renderMarkNotPregnantForm(matingId) {
+    const preferredTypes = new Set(["Sow", "Gilt", "Holding", "Mixed"]);
+    const preferredPens = allPens.filter(p => p.pen_type !== "Farrowing" && preferredTypes.has(p.pen_type));
+    const otherPens = allPens.filter(p => p.pen_type !== "Farrowing" && !preferredTypes.has(p.pen_type));
+
+    const preferredOptions = preferredPens.map(p =>
+        `<option value="${escapeHtml(p.pen_id)}">[${escapeHtml(p.pen_type || "Pen")}] ${escapeHtml(p.pen_name || p.pen_id)}</option>`
+    ).join("");
+    const otherOptions = otherPens.map(p =>
+        `<option value="${escapeHtml(p.pen_id)}">${escapeHtml(p.pen_name || p.pen_id)}</option>`
+    ).join("");
+
+    return `
+        <div class="assume-pregnant-form" style="margin-top: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-subtle, #f9f9f9);">
+          <div class="history-label" style="margin-bottom: 8px;">Mark Not Pregnant / Repeat Service</div>
+          <p style="margin: 0 0 10px 0; font-size: 0.9em;">This will set Pregnancy_Check_Result = Not_Pregnant, Mating_Status = Repeat_Service, and Outcome = Repeat_Required.</p>
+          <div class="form-group" style="margin-bottom: 10px;">
+            <label for="repeat_service_pen_${escapeHtml(matingId)}">Move sow to pen (optional)</label>
+            <select id="repeat_service_pen_${escapeHtml(matingId)}">
+              <option value="">No pen change</option>
+              ${preferredOptions}
+              ${otherOptions}
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button type="button" data-mark-not-pregnant-confirm="${escapeHtml(matingId)}">Confirm</button>
+            <button type="button" class="button-link button-link-secondary" data-mark-not-pregnant-cancel>Cancel</button>
+          </div>
+          <div id="repeat_service_msg_${escapeHtml(matingId)}" class="message-box hidden"></div>
         </div>
     `;
 }
@@ -454,7 +571,14 @@ function isEligibleForAssumePregnant(record) {
     const blocked = new Set(["Farrowed", "Cancelled", "Closed"]);
     return record.is_open === "Yes"
         && !blocked.has(record.mating_status)
+        && record.mating_status !== "Confirmed_Pregnant"
         && !record.linked_litter_id;
+}
+
+function isEligibleForMarkNotPregnant(record) {
+    return record.mating_status === "Confirmed_Pregnant"
+        && !record.linked_litter_id
+        && !record.actual_farrowing_date;
 }
 
 function classifyMating(record) {

@@ -43,3 +43,17 @@ Imported for docs: 2026-05-18
 
 - This is already structured as a sub-agent and should remain separate from order lookup.
 - Oom Sakkie can continue using this as a weather tool while Phase 7.3 adds an orders tool.
+
+## Known Issue Log
+
+- 2026-05-19: Owner reported live LLM errors in this workflow. Logged as Phase 7.3E quick triage in `docs/00-start-here/NEXT_STEPS.md`.
+- Triage should first identify the failing node and cause before editing: credential/model issue, malformed LLM JSON output, missing upstream sheet data, or n8n node-version behavior.
+- Keep fixes contained to this weather workflow or its direct forecast/data dependencies unless the execution evidence shows a wider Oom Sakkie routing issue.
+- Diagnosis from live executions:
+  - `45114`, `45118`, `45120`: `Weather Router (JSON Plan)` failed because `chatgpt-4o-latest` was rejected by OpenAI.
+  - `45121`, `45123`, `45125`: same node failed because the prompt text was `null`.
+  - `45125` showed fresh station data, so the issue was the `2.0 -> 2.1` tool handoff and router prompt fallback, not the weather sheet.
+- Prepared fix:
+  - `2.0` `Weather_Info_Tool` should pass the user question with n8n `$fromAI('weather_question', ...)`.
+  - `2.1` `Weather Router (JSON Plan)` should use `gpt-5.5` and a non-null fallback prompt.
+  - Workflow contract tests now guard both rules.

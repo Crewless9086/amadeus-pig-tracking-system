@@ -54,3 +54,19 @@ def validate_assume_pregnant_payload(payload: dict):
             "moved_by": moved_by,
         }
     }
+
+
+def validate_mark_not_pregnant_payload(payload: dict):
+    errors = []
+
+    target_pen_id = str(payload.get("target_pen_id", "")).strip()
+    moved_by = str(payload.get("moved_by", "")).strip() or "WebApp"
+
+    return {
+        "is_valid": len(errors) == 0,
+        "errors": errors,
+        "cleaned_data": {
+            "target_pen_id": target_pen_id,
+            "moved_by": moved_by,
+        }
+    }

@@ -12,8 +12,8 @@ This document is the live operational truth of the project. It summarizes what i
 | Google Sheets docs | Good baseline | Sheet files, formulas, ownership, field standards, and business rules are documented. |
 | n8n workflow docs | Good baseline | Four workflow exports and suite-level rules are documented. |
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
-| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, Phase 1.5 lifecycle guards, and **Phase 1.6** (reserve/release batch hardening + order-detail success copy) are **complete and live-verified** (backend/sheets 2026-05-05; UI banner 2026-05-06). |
-| Web app | Needs usability work | Reserve/release success messages on order detail now show API text, `changed_count`, and warnings (Phase 1.6). Remaining gap: **Phase 6** parity (e.g. approve/reject when `Pending_Approval`). |
+| Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, lifecycle guards, auto-reservation, outbound notifications, quote/invoice generation, and document delivery are implemented and have been live-verified through the documented phases. |
+| Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is implemented in the repo and awaiting deploy/live verification. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
 ## Completed Documentation Work
@@ -26,14 +26,14 @@ The following documentation areas are now usable as planning inputs:
 
 ## Current Build Priority
 
-The next build work should focus on **orders first**.
+The next build work should continue one documented phase slice at a time.
 
 Reason:
 
-- orders are live
-- orders are the profit section
-- incorrect order behavior can reserve the wrong pigs or block available stock
-- Sam and the web app both depend on reliable backend order truth
+- orders remain live and profit-critical
+- pig and breeding operations are now becoming daily-use web app workflows
+- Oom Sakkie and farm telemetry workflows need careful integration without breaking live sales or Telegram routing
+- Google Sheets limits and future Supabase migration need to be handled deliberately, not through rushed rewrites
 
 ## Known Critical Order Gaps
 
@@ -153,16 +153,23 @@ Reason:
 The app must become useful for daily operations. It should help with:
 
 - viewing orders clearly
-- viewing matings in a clear breeding board for pregnancy checks, farrowing preparation, and movement planning
+- viewing matings in a clear breeding board for pregnancy checks, farrowing preparation, movement planning, and repeat-service decisions
 - understanding reservation status
-- approving/rejecting/cancelling orders safely, with order detail actions visible when `Pending_Approval` (parity with workflows and backend rules)
+- approving/rejecting/cancelling orders safely, with order detail actions visible only when backend rules allow them
 - releasing pigs correctly
 - showing logs/history
 - producing practical farm printouts, starting with a pre-weighing weekly weight sheet that has blank capture columns and can be printed from a phone or laptop
 - reducing manual debugging work
 
-Do not focus on app polish before order behavior is correct.
+Do not focus on app polish before the related backend behavior is correct.
 
 ## Next Decision Point
 
-Pick the next item from `docs/00-start-here/NEXT_STEPS.md`. **Phase 1.8 is closed** (approval auto-reservation live-verified on 2026-05-09). **Primary next implementation focus: Phase 1.9** (outbound approval/rejection notifications). **Phase 6** remains parallel polish when useful — see `NEXT_STEPS` choice point.
+Pick the next item from `docs/00-start-here/NEXT_STEPS.md`.
+
+Current position:
+
+- Phase 7.3D is complete and live-verified.
+- Phase 7.3E weather was triaged; weather is working, while Sunsynk is deferred to a dedicated backend/data/Supabase review.
+- Phase 8D is implemented in the repo and needs deploy/live verification before it is treated as fully closed.
+- Phase 9 is the next broad roadmap area unless a regression appears.

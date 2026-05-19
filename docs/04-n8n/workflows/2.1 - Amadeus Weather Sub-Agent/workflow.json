@@ -78,14 +78,14 @@
                       "parameters":  {
                                          "modelId":  {
                                                          "__rl":  true,
-                                                         "value":  "chatgpt-4o-latest",
+                                                         "value":  "gpt-5.5",
                                                          "mode":  "list",
-                                                         "cachedResultName":  "CHATGPT-4O-LATEST"
+                                                         "cachedResultName":  "GPT-5.5"
                                                      },
                                          "responses":  {
                                                            "values":  [
                                                                           {
-                                                                              "content":  "={{ $(\u0027When Executed by Another Workflow\u0027).item.json.input }}"
+                                                                              "content":  "={{ $json.input || $(\u0027When Executed by Another Workflow\u0027).item.json.input || \u0027current weather at the farm\u0027 }}"
                                                                           }
                                                                       ]
                                                        },
@@ -205,9 +205,9 @@
                       "parameters":  {
                                          "modelId":  {
                                                          "__rl":  true,
-                                                         "value":  "chatgpt-4o-latest",
+                                                         "value":  "gpt-5.5",
                                                          "mode":  "list",
-                                                         "cachedResultName":  "CHATGPT-4O-LATEST"
+                                                         "cachedResultName":  "GPT-5.5"
                                                      },
                                          "responses":  {
                                                            "values":  [
@@ -731,14 +731,14 @@
                                             "parameters":  {
                                                                "modelId":  {
                                                                                "__rl":  true,
-                                                                               "value":  "chatgpt-4o-latest",
+                                                                               "value":  "gpt-5.5",
                                                                                "mode":  "list",
-                                                                               "cachedResultName":  "CHATGPT-4O-LATEST"
+                                                                               "cachedResultName":  "GPT-5.5"
                                                                            },
                                                                "responses":  {
                                                                                  "values":  [
                                                                                                 {
-                                                                                                    "content":  "={{ $(\u0027When Executed by Another Workflow\u0027).item.json.input }}"
+                                                                                                    "content":  "={{ $json.input || $(\u0027When Executed by Another Workflow\u0027).item.json.input || \u0027current weather at the farm\u0027 }}"
                                                                                                 }
                                                                                             ]
                                                                              },
@@ -858,9 +858,9 @@
                                             "parameters":  {
                                                                "modelId":  {
                                                                                "__rl":  true,
-                                                                               "value":  "chatgpt-4o-latest",
+                                                                               "value":  "gpt-5.5",
                                                                                "mode":  "list",
-                                                                               "cachedResultName":  "CHATGPT-4O-LATEST"
+                                                                               "cachedResultName":  "GPT-5.5"
                                                                            },
                                                                "responses":  {
                                                                                  "values":  [

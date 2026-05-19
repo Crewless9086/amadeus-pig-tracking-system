@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 7.3** - Oom Sakkie Operational Order And Document Lookup |
-| **Status** | Phase 7.1 complete: payload contracts documented, Chatwoot lifecycle/write pattern standardized, `1.0` uploaded to n8n and verified, 75 local tests passing |
-| **Current focus** | Phase 7.3 planning only: define Oom Sakkie order/document lookup scope before implementation |
-| **Current last verified** | **2026-05-18** - `1.0` n8n upload/readback passed; `1.2` live workflow matched repo structurally; full local suite passed with 75 tests |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 8D** - Mark Not Pregnant / Repeat Service |
+| **Status** | Phase 7.3D complete and live-verified; Phase 7.3E weather triaged; Phase 8D implemented in repo and awaiting deploy/live verification |
+| **Current focus** | Deploy and live-test Phase 8D before moving into Phase 9 work |
+| **Current last verified** | **2026-05-19** - Phase 7.3D final Telegram quote-send smoke passed; weather path restored; Phase 8D local service/route checks passed |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

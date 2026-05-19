@@ -15,6 +15,14 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-19 - Phase 7.3D Oom Sakkie quote-send guard verified
+
+Type: `ADD`
+
+**Behavior:** Oom Sakkie can prepare guarded Telegram quote-send buttons for the latest quote on an order, route `Cancel` and `Send quote to customer` callbacks through GateKeeper to `2.4.5`, and only send the customer document after the operator presses the explicit send button. `2.0` no longer uses memory for operational quote-send preparation, and duplicate prepare acknowledgements are suppressed after `2.4.4` sends the direct button message.
+
+**Live verification:** Final smoke on `ORD-2026-46D437` passed. Prepare produced one Telegram button message, `Cancel` left `Q-2026-46D437` / `DOC-2026-67813E` as `Generated`, prepare again produced one message, `Send quote to customer` delivered the quote to Chatwoot conversation `1774`, WhatsApp received the PDF message, and backend recorded `Document_Status = Sent`, `Sent_By = Charl`, `Sent_At = 2026-05-19`. Cleanup cancelled the test order, cancelled one line, set payment status to `Cancelled`, and left reserved pig count at zero.
+
 ### 2026-05-17 - Phase 5.9 route payload cleanup
 
 Type: `REFACTOR`
