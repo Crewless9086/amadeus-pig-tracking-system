@@ -224,10 +224,22 @@ async function loadPens() {
 }
 
 function buildPigLabel(pig) {
-  const tag = pig.tag_number || pig.pig_id;
+  const rawTag = pig.tag_number || pig.pig_id;
+  const tag = formatTagNumber(rawTag);
   const pen = pig.current_pen_name || pig.current_pen_id || "";
-  const idPart = pig.pig_id && pig.pig_id !== tag ? ` (${pig.pig_id})` : "";
+  const idPart = pig.pig_id && pig.pig_id !== (pig.tag_number || "") ? ` (${pig.pig_id})` : "";
   return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
+}
+
+function formatTagNumber(value) {
+  const raw = String(value || "").trim();
+  return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
+}
+
+function pigSortKey(pig) {
+  const raw = String(pig.tag_number || pig.pig_id || "").trim();
+  const numeric = /^\d+$/.test(raw) ? raw.padStart(8, "0") : raw.toLowerCase();
+  return `${numeric}|${pig.pig_id || ""}`;
 }
 
 function populatePenFilterFromActivePigs() {
@@ -265,11 +277,7 @@ function populatePigSelect() {
     filteredPigs = filteredPigs.filter((pig) => (pig.current_pen_id || "") === selectedPen);
   }
 
-  filteredPigs.sort((a, b) => {
-    const left = (a.tag_number || a.pig_id || "").toLowerCase();
-    const right = (b.tag_number || b.pig_id || "").toLowerCase();
-    return left.localeCompare(right);
-  });
+  filteredPigs.sort((a, b) => pigSortKey(a).localeCompare(pigSortKey(b)));
 
   filteredPigs.forEach((pig) => {
     const option = document.createElement("option");

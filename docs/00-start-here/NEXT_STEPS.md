@@ -1979,6 +1979,8 @@ Required outcome:
 - Backend `/api/pig-weights/parent-options` and `/api/pig-weights/pigs` now include `current_pen_name`.
 - `2.0` breeding options already included current pen names; frontend now uses them in labels.
 - Add Litter mother/father dropdowns, Add Mating sow/boar dropdowns, and Weight Entry pig dropdown now prefer labels like `S5 - Kraam Saal 01 (PIG-...)`.
+- Numeric-only tag numbers display with three slots, for example `001`, `010`, `099`, `120`.
+- Dropdown sorting uses the tag/name first, not `PIG_ID`.
 - IDs remain available in the label as secondary context.
 - Focused backend tests and JavaScript syntax checks passed locally.
 

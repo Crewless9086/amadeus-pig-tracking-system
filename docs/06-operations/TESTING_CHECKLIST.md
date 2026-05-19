@@ -595,7 +595,9 @@ Phase 9.2A:
 3. Confirm Add Litter mother/father dropdown labels show tag number plus pen name, with pig ID as secondary context.
 4. Confirm Add Mating sow/boar dropdown labels show tag number plus pen name, with pig ID as secondary context.
 5. Confirm Weight Entry pig dropdown labels show tag number plus pen name, with pig ID as secondary context.
-6. Confirm form submissions still send `pig_id` values, not display labels.
+6. Confirm numeric-only tag numbers display as three slots, for example `001`, `010`, `099`, `120`.
+7. Confirm dropdown order follows the tag/name display order rather than `PIG_ID`.
+8. Confirm form submissions still send `pig_id` values, not display labels.
 
 ## Google Sheets Checks
 

@@ -45,10 +45,25 @@ function populatePenDropdown(selectId, pens) {
 }
 
 function buildAnimalOptionLabel(item) {
-    const tag = item.tag_number || item.pig_id || "Unknown";
+    const tag = formatTagNumber(item.tag_number || item.pig_id || "Unknown");
     const pen = item.current_pen_name || item.current_pen_id || "";
-    const idPart = item.pig_id && item.pig_id !== tag ? ` (${item.pig_id})` : "";
+    const idPart = item.pig_id && item.pig_id !== (item.tag_number || "") ? ` (${item.pig_id})` : "";
     return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
+}
+
+function formatTagNumber(value) {
+    const raw = String(value || "").trim();
+    return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
+}
+
+function animalSortKey(item) {
+    const raw = String(item.tag_number || item.pig_id || "").trim();
+    const numeric = /^\d+$/.test(raw) ? raw.padStart(8, "0") : raw.toLowerCase();
+    return `${numeric}|${item.pig_id || ""}`;
+}
+
+function sortAnimalsByTag(items) {
+    return [...items].sort((a, b) => animalSortKey(a).localeCompare(animalSortKey(b)));
 }
 
 async function loadBreedingOptions() {
@@ -65,7 +80,7 @@ async function loadBreedingOptions() {
         sowPenMap = {};
         boarPenMap = {};
 
-        (data.options?.sows || []).forEach(item => {
+        sortAnimalsByTag(data.options?.sows || []).forEach(item => {
             sowPenMap[item.pig_id] = {
                 pen_id: item.current_pen_id || "",
                 pen_name: item.current_pen_name || "",
@@ -76,7 +91,7 @@ async function loadBreedingOptions() {
             sowSelect.appendChild(option);
         });
 
-        (data.options?.boars || []).forEach(item => {
+        sortAnimalsByTag(data.options?.boars || []).forEach(item => {
             boarPenMap[item.pig_id] = {
                 pen_id: item.current_pen_id || "",
                 pen_name: item.current_pen_name || "",

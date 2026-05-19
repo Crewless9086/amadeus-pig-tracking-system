@@ -56,10 +56,25 @@ function handleMatingSelect(e) {
 }
 
 function buildAnimalOptionLabel(item) {
-    const tag = item.tag_number || item.pig_id || "Unknown";
+    const tag = formatTagNumber(item.tag_number || item.pig_id || "Unknown");
     const pen = item.current_pen_name || item.current_pen_id || "";
-    const idPart = item.pig_id && item.pig_id !== tag ? ` (${item.pig_id})` : "";
+    const idPart = item.pig_id && item.pig_id !== (item.tag_number || "") ? ` (${item.pig_id})` : "";
     return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
+}
+
+function formatTagNumber(value) {
+    const raw = String(value || "").trim();
+    return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
+}
+
+function animalSortKey(item) {
+    const raw = String(item.tag_number || item.pig_id || "").trim();
+    const numeric = /^\d+$/.test(raw) ? raw.padStart(8, "0") : raw.toLowerCase();
+    return `${numeric}|${item.pig_id || ""}`;
+}
+
+function sortAnimalsByTag(items) {
+    return [...items].sort((a, b) => animalSortKey(a).localeCompare(animalSortKey(b)));
 }
 
 async function loadLitterFormOptions() {
@@ -75,7 +90,7 @@ async function loadLitterFormOptions() {
         motherSelect.innerHTML = `<option value="">Select mother</option>`;
         fatherSelect.innerHTML = `<option value="">Unknown</option>`;
 
-        (data.options?.mothers || []).forEach(item => {
+        sortAnimalsByTag(data.options?.mothers || []).forEach(item => {
             if (item.pig_id === "Unknown") return;
 
             const option = document.createElement("option");
@@ -85,7 +100,7 @@ async function loadLitterFormOptions() {
             motherSelect.appendChild(option);
         });
 
-        (data.options?.fathers || []).forEach(item => {
+        sortAnimalsByTag(data.options?.fathers || []).forEach(item => {
             if (item.pig_id === "Unknown") return;
 
             const option = document.createElement("option");
