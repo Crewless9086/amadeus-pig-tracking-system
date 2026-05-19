@@ -38,7 +38,9 @@ def parse_sheet_date(value):
 
     formats = [
         "%d %b %Y %H:%M",
+        "%d %B %Y %H:%M",
         "%d %b %Y",
+        "%d %B %Y",
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",
         "%Y-%m-%d",

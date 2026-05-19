@@ -563,6 +563,11 @@ Test steps:
 17. Confirm `Mark Not Pregnant / Repeat Service` can optionally move the sow to a non-farrowing pen and writes `MATING_LOG` as `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`.
 18. Confirm the repeat-service action is not shown or is blocked for matings with a linked litter, actual farrowing date, or non-`Confirmed_Pregnant` status.
 
+Live result:
+
+- 2026-05-20: Passed on real farm data. Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
+- 2026-05-20: New Baby/Prince mating `MAT-2026-9EFC4E` was created open and linked to the correct animals in `Kraam Saal 05`. A backend parser gap was found for formula dates with full month names; local fix verified expected check `2026-06-09` and expected farrowing `2026-09-10`, pending deploy.
+
 ## Litter Creation Tests
 
 Phase 9.1A:
@@ -572,6 +577,10 @@ Phase 9.1A:
 3. Confirm each litter-generated piglet row has `Animal_Type = Piglet`, `Status = Active`, `On_Farm = Yes`, `Source = Born_on_Farm`, and `Purpose = Unknown`.
 4. Confirm `Purpose = Unknown` piglets do not appear as available-for-sale stock.
 5. Confirm repeated creation logic does not duplicate piglet rows for an existing `Litter_ID`.
+
+Live result:
+
+- 2026-05-20: Passed on real farm data. `LIT-2026-9E4A` created 11 Lolly piglets and `LIT-2026-EB92` created 8 Shupe piglets. Direct `PIG_MASTER` verification confirmed `Animal_Type = Piglet`, `Status = Active`, `On_Farm = Yes`, `Source = Born_on_Farm`, and `Purpose = Unknown` for every generated row.
 
 ## Litter Attention Dashboard Tests
 

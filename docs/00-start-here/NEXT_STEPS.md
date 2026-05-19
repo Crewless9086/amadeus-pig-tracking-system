@@ -24,8 +24,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Choose the next Phase 7 slice deliberately before workflow edits. |
-| Phase 8: Breeding Board Improvements | 8D Dry-Run Live-Verified | Keep destructive write verification for a test mating or real farm need only. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Deployed; 9.1B Browser-Verified; 9.2A Implemented Locally | Deploy/browser-check pig dropdown labels. |
+| Phase 8: Breeding Board Improvements | 8D Live-Verified | Continue with small breeding-board improvements only when needed. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified | Plan Phase 9.3 weight form context. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — 8D Dry-Run Live-Verified
+## Phase 8: Breeding Board Improvements — 8D Live-Verified
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1913,7 +1913,7 @@ Recommended direction:
 - In `matings.js`, when `is_overdue_farrowing = "Yes"` and no `linked_litter_id` and no `actual_farrowing_date` and `daysToFarrowing < -21`, the board classifies the record as `Needs Action Now` with action text `"No litter after 3 weeks — review"`.
 - Movement guidance text explains the situation: days past expected farrowing, check if she has farrowed or if repeat service is needed.
 
-### 8D Mark Not Pregnant / Repeat Service — Dry-Run Live-Verified
+### 8D Mark Not Pregnant / Repeat Service — Live-Verified
 
 When a sow has been in a farrowing pen too long with no litter, the next action is to mark her as not pregnant and return to repeat service.
 
@@ -1927,17 +1927,17 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - Focused service/route tests, full local unittest suite, and JavaScript syntax check passed.
 - Dry-run live verification passed on 2026-05-19 against real eligible mating `MAT-2026-E05BC0` / Lolly. The endpoint returned planned updates for `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, and `Outcome = Repeat_Required`, with `dry_run = true` and `movement_logged = false`.
 - After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
-- Destructive write verification should be done only on a dedicated test mating or when the farm genuinely needs to mark a real sow for repeat service.
+- Live write verification passed on 2026-05-20: Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Deployed; 9.1B Browser-Verified; 9.2A Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified
 
 Only after live order stability unless the operational need becomes urgent.
 
-### 9.1 New Litter Defaults And Weaning Reminder — 9.1A Deployed; Live Litter Verification Pending
+### 9.1 New Litter Defaults And Weaning Reminder — 9.1A Live-Verified; 9.1B Browser-Verified
 
 Required outcome:
 
-- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown` — 9.1A implemented, tested, and deployed; live verification will use the next real litter created by the owner
+- new `PIG_MASTER` rows generated from a litter should default `Purpose = Unknown` — 9.1A implemented, tested, deployed, and live-verified
 - animals with `Purpose = Unknown` must not appear as for-sale stock
 - once animals are weaned, surface a reminder to assign purpose: `Grow_Out`, `Sale`, or `Breeding`
 
@@ -1952,7 +1952,10 @@ Future direction:
 
 - Local focused litter tests and the full local test suite passed.
 - Production route smoke passed after deploy: `/api/pig-weights/status` returned running, and invalid litter creation returned the expected `400` validation errors without writing data.
-- Do not create artificial litter data just for this check. Owner has a real litter to create later on 2026-05-19; after that, verify the generated `PIG_MASTER` piglet rows have `Purpose = Unknown`.
+- Live verification passed on real farm data:
+  - `LIT-2026-9E4A` for Lolly generated 11 active piglet rows in `PEN-002`, all with `Animal_Type = Piglet`, `Status = Active`, `On_Farm = Yes`, `Source = Born_on_Farm`, and `Purpose = Unknown`.
+  - `LIT-2026-EB92` for Shupe generated 8 active piglet rows in `PEN-003`, all with `Animal_Type = Piglet`, `Status = Active`, `On_Farm = Yes`, `Source = Born_on_Farm`, and `Purpose = Unknown`.
+  - Linked matings `MAT-2026-E05BC0` and `MAT-2026-78148F` were marked `Farrowed`, `is_open = No`, and linked to their created litters.
 
 9.1B litter attention dashboard:
 
@@ -1983,6 +1986,7 @@ Required outcome:
 - Dropdown sorting uses the tag/name first, not `PIG_ID`.
 - IDs remain available in the label as secondary context.
 - Focused backend tests and JavaScript syntax checks passed locally.
+- Deployed and owner-verified in the browser: Add Litter, Add Mating, and Weight Entry dropdown labels display correctly.
 
 ### 9.3 Weight Form Context
 
@@ -2126,11 +2130,16 @@ Recently completed:
 - Phase 7.0 backend verification and service-boundary cleanup — complete 2026-05-18: order service modules extracted, cleanup done, Google Sheets quota cache/retry deployed, and production create-with-lines checkpoint passed.
 - Phase 7.1 intake and payload hygiene — complete 2026-05-18: handoff contracts, slim context shapes, Chatwoot lifecycle/write policy, workflow validation tests, and n8n `1.0` upload/readback completed.
 - Phase 7.2 database scaling review — planning complete 2026-05-18: future Postgres direction, owner decisions, draft schema, formula replacement strategy, import rules, Sheet retirement rules, rollback gates, and Supabase Pro signup captured in `docs/02-backend/DATABASE_SCALING_PLAN.md`.
+- Phase 8D repeat-service action — live-verified 2026-05-20: Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
+- Phase 8D follow-up fix — implemented locally 2026-05-20: date parsing now accepts full month names from Google Sheet formulas, for example `9 June 2026` and `10 September 2026`, so new mating expected dates display correctly after deploy.
+- Phase 9.1A new litter defaults — live-verified 2026-05-20: Lolly's `LIT-2026-9E4A` created 11 piglets and Shupe's `LIT-2026-EB92` created 8 piglets; generated rows have `Purpose = Unknown` and `Source = Born_on_Farm`.
+- Phase 9.1B litter attention dashboard — deployed and browser-verified 2026-05-19.
+- Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
 
 Recommended next:
 
-1. **Phase 9.1A live litter verification** - after the owner creates the next real litter, confirm generated `PIG_MASTER` piglet rows have `Purpose = Unknown`, then mark 9.1A closed.
-2. **Phase 9.2A deploy/browser verification** - deploy the dropdown label update and confirm Add Litter, Add Mating, and Weight Entry pig dropdowns show tag + pen context.
+1. **Deploy date parser fix** - deploy the full-month Google Sheet date parser fix, then re-check `MAT-2026-9EFC4E` shows expected check `2026-06-09` and expected farrowing `2026-09-10` from the live API.
+2. **Phase 9.3 planning** - weight form context: show the current pen beside `Move to Pen (Optional)` before any weight entry move.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:

@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.1** - New Litter Defaults And Weaning Reminder |
-| **Status** | Phase 9.1A deployed with live litter verification pending; Phase 9.1B deployed and browser-verified; Phase 9.2A implemented locally |
-| **Current focus** | Deploy/browser-check Phase 9.2A pig dropdown labels; later verify 9.1A on the next real litter |
-| **Current last verified** | **2026-05-19** - dashboard litter attention browser check passed after fixing the litter detail API path |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.2** - Pig Dropdown Usability |
+| **Status** | Phase 9.1A live-verified; Phase 9.1B deployed and browser-verified; Phase 9.2A deployed and owner-verified |
+| **Current focus** | Close Phase 9.2A docs, then plan the next Phase 9 slice |
+| **Current last verified** | **2026-05-20** - live litter creation and repeat-service checks passed for Lolly, Shupe, and Baby |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
