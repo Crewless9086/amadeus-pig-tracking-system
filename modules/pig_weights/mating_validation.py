@@ -61,6 +61,7 @@ def validate_mark_not_pregnant_payload(payload: dict):
 
     target_pen_id = str(payload.get("target_pen_id", "")).strip()
     moved_by = str(payload.get("moved_by", "")).strip() or "WebApp"
+    dry_run = payload.get("dry_run", False) is True
 
     return {
         "is_valid": len(errors) == 0,
@@ -68,5 +69,6 @@ def validate_mark_not_pregnant_payload(payload: dict):
         "cleaned_data": {
             "target_pen_id": target_pen_id,
             "moved_by": moved_by,
+            "dry_run": dry_run,
         }
     }

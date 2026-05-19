@@ -56,6 +56,46 @@ class MatingServiceTests(unittest.TestCase):
         self.assertEqual(by_header["Outcome"], "Repeat_Required")
         self.assertTrue(by_header["Updated_At"])
 
+    def test_mark_not_pregnant_dry_run_does_not_write(self):
+        with patch.object(mating_service, "get_all_values", return_value=[HEADERS, mating_row()]), \
+             patch.object(mating_service, "update_row_by_first_column_match") as update_row, \
+             patch.object(mating_service, "_write_movement_if_needed") as move:
+
+            result = mating_service.mark_not_pregnant("MAT-1", "", "Tester", dry_run=True)
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertFalse(result["movement_logged"])
+        self.assertEqual(result["planned_updates"]["Pregnancy_Check_Result"], "Not_Pregnant")
+        self.assertEqual(result["planned_updates"]["Mating_Status"], "Repeat_Service")
+        self.assertEqual(result["planned_updates"]["Outcome"], "Repeat_Required")
+        update_row.assert_not_called()
+        move.assert_not_called()
+
+    def test_mark_not_pregnant_dry_run_reports_planned_movement_without_writing(self):
+        with patch.object(mating_service, "get_all_values", return_value=[HEADERS, mating_row()]), \
+             patch.object(mating_service, "update_row_by_first_column_match") as update_row, \
+             patch.object(
+                 mating_service,
+                 "_get_pen_lookup",
+                 return_value={"PEN-SERVICE": {"pen_id": "PEN-SERVICE", "pen_type": "Sow"}},
+             ), \
+             patch.object(
+                 mating_service,
+                 "_get_pig_lookup",
+                 return_value={"PIG-SOW-1": {"Current_Pen_ID": "PEN-FARROW"}},
+             ), \
+             patch.object(mating_service, "_write_movement_if_needed") as move:
+
+            result = mating_service.mark_not_pregnant("MAT-1", "PEN-SERVICE", "Tester", dry_run=True)
+
+        self.assertTrue(result["dry_run"])
+        self.assertTrue(result["movement_planned"])
+        self.assertEqual(result["current_pen_id"], "PEN-FARROW")
+        self.assertEqual(result["target_pen_id"], "PEN-SERVICE")
+        update_row.assert_not_called()
+        move.assert_not_called()
+
     def test_mark_not_pregnant_blocks_non_confirmed_mating(self):
         with patch.object(
             mating_service,

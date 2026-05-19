@@ -559,8 +559,9 @@ Test steps:
 13. Confirm opening `/matings` does not write to Google Sheets.
 14. For an eligible open mating, confirm `Move to Farrowing / Assume Pregnant` opens an inline form, optionally moves to a farrowing pen, and updates the mating only after confirmation.
 15. For an eligible `Confirmed_Pregnant` mating with no linked litter and no actual farrowing date, confirm `Mark Not Pregnant / Repeat Service` opens an inline form.
-16. Confirm `Mark Not Pregnant / Repeat Service` can optionally move the sow to a non-farrowing pen and writes `MATING_LOG` as `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`.
-17. Confirm the repeat-service action is not shown or is blocked for matings with a linked litter, actual farrowing date, or non-`Confirmed_Pregnant` status.
+16. For real active farm records, first test the backend endpoint with `dry_run: true` and confirm it returns planned updates without changing `MATING_LOG` or `LOCATION_HISTORY`.
+17. Confirm `Mark Not Pregnant / Repeat Service` can optionally move the sow to a non-farrowing pen and writes `MATING_LOG` as `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`.
+18. Confirm the repeat-service action is not shown or is blocked for matings with a linked litter, actual farrowing date, or non-`Confirmed_Pregnant` status.
 
 ## Google Sheets Checks
 

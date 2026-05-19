@@ -1922,9 +1922,10 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - Optionally moves sow back to a non-farrowing service/holding/sow/gilt pen and writes `LOCATION_HISTORY` with reason `Moved for repeat service`.
 - Available only for `Confirmed_Pregnant` matings with no litter and no actual farrowing date.
 - Blocks non-confirmed matings, linked litters, actual farrowing dates, missing target pens, and farrowing target pens.
+- Supports `dry_run: true` so live real matings can be validated without writing to `MATING_LOG` or `LOCATION_HISTORY`.
 - `/matings` Breeding Board shows a `Mark Not Pregnant / Repeat Service` button on eligible confirmed-pregnant cards. Clicking opens an inline form with a non-farrowing pen dropdown. On confirm, POSTs to the endpoint and reloads the board.
 - Focused service/route tests, full local unittest suite, and JavaScript syntax check passed.
-- Live verification after deploy is still required before this is marked closed.
+- Live verification after deploy should use `dry_run: true` first because current eligible matings are real active farm records.
 
 ## Phase 9: Pig, Weight, And Reporting Improvements - Not Started
 

@@ -29,6 +29,31 @@ class MatingRoutesTests(unittest.TestCase):
             mating_id="MAT-1",
             target_pen_id="PEN-1",
             moved_by="Tester",
+            dry_run=False,
+        )
+
+    def test_mark_not_pregnant_route_passes_dry_run(self):
+        service_result = {
+            "success": True,
+            "dry_run": True,
+            "message": "Dry run passed. No mating or movement rows were changed.",
+            "mating_id": "MAT-1",
+            "movement_logged": False,
+        }
+
+        with patch("modules.pig_weights.mating_routes.mark_not_pregnant", return_value=service_result) as service:
+            response = self.client.post(
+                "/api/pig-weights/master/matings/MAT-1/mark-not-pregnant",
+                json={"target_pen_id": "PEN-1", "moved_by": "Tester", "dry_run": True},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["dry_run"])
+        service.assert_called_once_with(
+            mating_id="MAT-1",
+            target_pen_id="PEN-1",
+            moved_by="Tester",
+            dry_run=True,
         )
 
     def test_mark_not_pregnant_route_returns_400_for_service_guard(self):

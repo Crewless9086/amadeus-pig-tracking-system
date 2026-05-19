@@ -407,7 +407,7 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
     raise ValueError(f"Mating_ID '{mating_id}' not found in MATING_LOG.")
 
 
-def mark_not_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
+def mark_not_pregnant(mating_id: str, target_pen_id: str, moved_by: str, dry_run: bool = False):
     mating_id = str(mating_id).strip()
     target_pen_id = to_clean_string(target_pen_id)
     moved_by = to_clean_string(moved_by) or "WebApp"
@@ -461,29 +461,52 @@ def mark_not_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
             if target_pen.get("pen_type") == "Farrowing":
                 raise ValueError("Target pen must not be a Farrowing pen.")
 
-        padded_row[header_index["Pregnancy_Check_Date"]] = today_str
-        padded_row[header_index["Pregnancy_Check_Result"]] = "Not_Pregnant"
-        padded_row[header_index["Mating_Status"]] = "Repeat_Service"
-        padded_row[header_index["Outcome"]] = "Repeat_Required"
-        padded_row[header_index["Updated_At"]] = today_str
+        planned_updates = {
+            "Pregnancy_Check_Date": today_str,
+            "Pregnancy_Check_Result": "Not_Pregnant",
+            "Mating_Status": "Repeat_Service",
+            "Outcome": "Repeat_Required",
+            "Updated_At": today_str,
+        }
+
+        for field, value in planned_updates.items():
+            padded_row[header_index[field]] = value
+
+        sow_pig_id = to_clean_string(padded_row[header_index["Sow_Pig_ID"]])
+        movement_planned = False
+        current_pen_id = ""
+        if target_pen_id and sow_pig_id:
+            pig_lookup = _get_pig_lookup()
+            sow_row = pig_lookup.get(sow_pig_id, {})
+            current_pen_id = to_clean_string(sow_row.get("Current_Pen_ID", ""))
+            movement_planned = current_pen_id != target_pen_id
+
+        if dry_run:
+            return {
+                "success": True,
+                "dry_run": True,
+                "message": "Dry run passed. No mating or movement rows were changed.",
+                "mating_id": mating_id,
+                "planned_updates": planned_updates,
+                "movement_planned": movement_planned,
+                "movement_logged": False,
+                "sow_pig_id": sow_pig_id,
+                "current_pen_id": current_pen_id,
+                "target_pen_id": target_pen_id,
+            }
 
         update_row_by_first_column_match(MATING_LOG_SHEET, mating_id, padded_row)
 
         movement_logged = False
-        if target_pen_id:
-            sow_pig_id = to_clean_string(padded_row[header_index["Sow_Pig_ID"]])
-            if sow_pig_id:
-                pig_lookup = _get_pig_lookup()
-                sow_row = pig_lookup.get(sow_pig_id, {})
-                current_pen_id = to_clean_string(sow_row.get("Current_Pen_ID", ""))
-                movement_logged = _write_movement_if_needed(
-                    pig_id=sow_pig_id,
-                    current_pen_id=current_pen_id,
-                    target_pen_id=target_pen_id,
-                    move_date=datetime.now().date(),
-                    reason="Moved for repeat service",
-                    moved_by=moved_by,
-                )
+        if target_pen_id and sow_pig_id:
+            movement_logged = _write_movement_if_needed(
+                pig_id=sow_pig_id,
+                current_pen_id=current_pen_id,
+                target_pen_id=target_pen_id,
+                move_date=datetime.now().date(),
+                reason="Moved for repeat service",
+                moved_by=moved_by,
+            )
 
         message = "Mating updated to Repeat_Service."
         if movement_logged:

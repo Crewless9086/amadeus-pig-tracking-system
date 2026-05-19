@@ -90,6 +90,7 @@ def mark_not_pregnant_route(mating_id):
             mating_id=mating_id,
             target_pen_id=validation["cleaned_data"]["target_pen_id"],
             moved_by=validation["cleaned_data"]["moved_by"],
+            dry_run=validation["cleaned_data"]["dry_run"],
         )
         return jsonify(result), 200
     except ValueError as exc:
