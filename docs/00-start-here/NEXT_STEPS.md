@@ -2140,6 +2140,9 @@ Recommended next:
 - 2026-05-19 live recovery completed: owner manually uploaded the cleaned GateKeeper workflow and replaced the Telegram Trigger node; `Hi` routed through GateKeeper to `2.0`, and Oom Sakkie replied.
 - Repo export refreshed from live n8n GateKeeper workflow `s8QaxmqT69Z5mhvE`, so the current trigger node is preserved in `docs/04-n8n/workflows/2 - The GateKeeper/workflow.json`.
 - Recovery checklist retained for future incidents: `docs/04-n8n/OOM_SAKKIE_MANUAL_RECOVERY_CHECKLIST.md`.
+- 2026-05-19 quote-send prepare test reached `2.4.4`, displayed Telegram buttons, and `Cancel` routed through GateKeeper to `2.4.5` successfully. No customer document was sent.
+- Known polish item: prepare currently creates two operator Telegram messages because `2.4.4` sends the button message directly and then `2.0` sends the tool acknowledgement.
+- Safety fix added locally after test: backend now blocks quote-send prepare and confirmed-send for terminal orders (`Cancelled`, `Completed`, or rejected approval state). Deploy backend before testing the real `Send quote to customer` button.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

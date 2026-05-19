@@ -631,6 +631,10 @@ Open planning question:
 - `2.0 - OOM SAKKIE - Amadeus Assistant Agent` has been imported/updated through the n8n UI.
 - GateKeeper first live message test passed on 2026-05-19: `Hi` routed through GateKeeper to `2.0`, and Oom Sakkie replied.
 - If routing fails again, Test 0 is Telegram `getWebhookInfo`; it must show GateKeeper's webhook URL, not an empty URL and not the old `2.4.2` webhook ID.
+- Quote-send preparation test on 2026-05-19 reached `2.4.4`, called the backend prepare endpoint, and displayed Telegram confirmation buttons.
+- `Cancel` button test passed on 2026-05-19: GateKeeper routed the callback to `2.4.5`, which returned `Quote send cancelled`; backend document status remained `Generated` with blank sent fields.
+- Known polish item: prepare currently sends two operator Telegram messages because `2.4.4` sends the button message directly and then returns a normal tool response through `2.0`.
+- Safety issue found during the cancelled-order test: backend prepare allowed a quote-send button for terminal order `ORD-2026-3E46B8`. Local backend guard now blocks terminal orders for both prepare and confirmed-send; deploy backend before any live `Send quote to customer` test.
 - Test exact `order_id` lookup.
 - Test phone/name multiple-match handling.
 - Test document list lookup.

@@ -629,6 +629,7 @@ Rules:
 - A customer destination conversation must be confirmed.
 - If `conversation_id` is provided, it is used as the explicit operator destination.
 - If `conversation_id` is not provided, the endpoint may use `ORDER_MASTER.ConversationId` as the confirmed destination.
+- Terminal orders cannot be prepared for quote sending (`Cancelled`, `Completed`, or rejected approval state).
 - Latest quote must exist.
 - Latest quote must have `Document_Type = Quote`.
 - Voided and superseded quotes cannot be prepared for sending.
@@ -669,7 +670,7 @@ Response:
 
 **HTTP status codes:**
 - `200` — send context prepared; no document sent
-- `400` — missing order, missing confirmed destination, missing quote, voided/superseded quote, or invalid document type
+- `400` — missing order, terminal order, missing confirmed destination, missing quote, voided/superseded quote, or invalid document type
 
 Planned next endpoint:
 
@@ -694,6 +695,7 @@ Rules:
 - `document_id` is required.
 - `conversation_id` is required.
 - Order must exist.
+- Terminal orders cannot send quotes (`Cancelled`, `Completed`, or rejected approval state).
 - Latest quote must exist.
 - The selected `document_id` must still be the latest sendable quote for the order.
 - Latest document must have `Document_Type = Quote`.
@@ -703,7 +705,7 @@ Rules:
 
 **HTTP status codes:**
 - `200` — send confirmed by backend/document delivery path or recently-sent duplicate skipped safely
-- `400` — missing input, missing order, missing quote, stale document selection, voided/superseded quote, or invalid document type
+- `400` — missing input, missing order, terminal order, missing quote, stale document selection, voided/superseded quote, or invalid document type
 - `502` — backend attempted delivery but the delivery workflow did not confirm send
 
 ### `POST /api/order-documents/<document_id>/send`

@@ -457,6 +457,30 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertEqual(superseded.status_code, 400)
         self.assertIn("Superseded quotes cannot be sent", superseded.get_json()["errors"][0])
 
+    def test_prepare_latest_quote_send_route_blocks_terminal_order(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "customer_name": "Charl N",
+                "conversation_id": "1774",
+                "order_status": "Cancelled",
+                "approval_status": "Not_Required",
+            },
+            "lines": [],
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote") as latest_quote, \
+             patch.object(order_routes, "send_order_document") as send_document:
+            response = self.client.post("/api/orders/ORD-1/quote/prepare-send")
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertFalse(payload["send_ready"])
+        self.assertIn("order is Cancelled", payload["errors"][0])
+        latest_quote.assert_not_called()
+        send_document.assert_not_called()
+
     def test_send_latest_quote_confirmed_route_rechecks_and_sends_matching_latest_quote(self):
         detail = {
             "order": {
@@ -535,6 +559,33 @@ class OrderRoutesTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("no longer the latest", response.get_json()["errors"][0])
+        send_document.assert_not_called()
+
+    def test_send_latest_quote_confirmed_route_blocks_terminal_order(self):
+        detail = {
+            "order": {
+                "order_id": "ORD-1",
+                "conversation_id": "1774",
+                "order_status": "Cancelled",
+                "approval_status": "Not_Required",
+            },
+            "lines": [],
+        }
+
+        with patch.object(order_routes, "get_order_detail", return_value=detail), \
+             patch.object(order_routes, "get_latest_non_voided_quote") as latest_quote, \
+             patch.object(order_routes, "send_order_document") as send_document:
+            response = self.client.post(
+                "/api/orders/ORD-1/quote/send-latest-confirmed",
+                json={
+                    "document_id": "DOC-1",
+                    "conversation_id": "1774",
+                },
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("order is Cancelled", response.get_json()["errors"][0])
+        latest_quote.assert_not_called()
         send_document.assert_not_called()
 
     def test_send_latest_quote_confirmed_route_requires_document_and_conversation(self):

@@ -771,6 +771,7 @@ def _prepare_latest_quote_send_context(order_id, conversation_id="", requested_b
         raise ValueError("Order not found.")
 
     order = detail.get("order") or {}
+    _ensure_order_allows_quote_send(order)
     order_conversation_id = str(order.get("conversation_id", "")).strip()
     destination_conversation_id = str(conversation_id or "").strip() or order_conversation_id
     destination_source = "operator_input" if str(conversation_id or "").strip() else "order_record"
@@ -859,6 +860,7 @@ def _send_latest_quote_confirmed(
     detail = get_order_detail(order_id)
     if not detail:
         raise ValueError("Order not found.")
+    _ensure_order_allows_quote_send(detail.get("order") or {})
 
     quote = get_latest_non_voided_quote(order_id)
     if not quote:
@@ -890,6 +892,17 @@ def _send_latest_quote_confirmed(
     result["confirmation_source"] = str(confirmation_source or "").strip()
     result["telegram_user_id"] = str(telegram_user_id or "").strip()
     return result
+
+
+def _ensure_order_allows_quote_send(order):
+    order_status = str(order.get("order_status", order.get("Order_Status", ""))).strip()
+    approval_status = str(order.get("approval_status", order.get("Approval_Status", ""))).strip()
+    terminal_statuses = {"Cancelled", "Completed", "Rejected"}
+
+    if order_status in terminal_statuses:
+        raise ValueError(f"Quote cannot be sent because order is {order_status}.")
+    if approval_status == "Rejected":
+        raise ValueError("Quote cannot be sent because order approval was rejected.")
 
 
 def _truthy(value):
