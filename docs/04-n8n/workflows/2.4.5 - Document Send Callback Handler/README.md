@@ -5,7 +5,7 @@
 Dedicated document-send callback worker for Oom Sakkie quote-send buttons.
 
 Workflow ID: `8b14lAqmyrD0LYZz`  
-Status: created in n8n but inactive; local callback router wiring pending backend deploy/import  
+Status: active in n8n; called by `2 - The GateKeeper` for quote-send/cancel callbacks  
 Created for docs: 2026-05-18
 
 ## Why This Is Separate
@@ -15,14 +15,19 @@ This workflow owns the document-send button result path, but it does not create 
 Reason:
 
 - Only one workflow should own normal Telegram callback updates for the Oom Sakkie bot.
-- Approval button callbacks are already handled by `2.4.2 - Orders Approval Callback Handler`.
+- Approval and document button callbacks are now received and authorized by `2 - The GateKeeper`.
 - Running two active `callback_query` triggers on the same bot can create the same routing conflict we saw with normal Telegram messages.
 
-Recommended final routing:
+Live routing:
 
-1. `2.4.2` remains the Telegram `callback_query` entry point.
-2. `2.4.2` routes approval callbacks to `2.4`.
-3. `2.4.2` routes quote-send callbacks to this workflow.
+1. `2 - The GateKeeper` receives Telegram `message` and `callback_query` updates.
+2. GateKeeper authorizes the Telegram user against `ASSISTANT_USERS`.
+3. GateKeeper routes approval callbacks to `2.4`.
+4. GateKeeper routes quote-send/cancel callbacks to this workflow.
+
+Retired path:
+
+- `2.4.2 - Orders Approval Callback Handler` is historical only and must not be reactivated.
 
 ## Callback Data
 

@@ -23,7 +23,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
-| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified | Plan 7.3D document-send guard before any send behavior is added. |
+| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D routing restored and first live message test passed | Continue 7.3D live verification: quote-send prepare, Cancel button, then guarded Send only after destination confirmation. |
 | Phase 8: Breeding Board Improvements | Mostly Complete; 8D not built | 8D remains future work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | Not Started | Future. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
@@ -1845,7 +1845,7 @@ Recommended direction:
 - Telegram routing fix applied:
   - disabled `2.4`'s normal-message approval trigger because it intercepted general Oom Sakkie messages and dropped non-approval text
   - refreshed `2 - The GateKeeper` activation so it owns normal Telegram messages
-  - kept `2.4.2` active for approval button callbacks
+  - superseded by the 2026-05-19 Path A recovery: GateKeeper now owns both normal messages and approval/document callbacks; `2.4.2` is retired from the live path
 - Exact Oom Sakkie smoke passed:
   - `Hi` routed through the GateKeeper and received a normal assistant reply.
   - `Show me order ORD-2026-3E46B8` returned the expected cancelled order summary and quote reference.
@@ -2089,11 +2089,11 @@ Recently completed:
 - Phase 5.8 automatic quote readiness — complete and live-verified 2026-05-13: backend `auto_quote` after create/update/sync, quote fingerprint duplicate skip, `1.2` propagation, `1.0` steward context/wording guidance, and Chatwoot wording confirmed.
 - Phase 7.0 backend verification and service-boundary cleanup — complete 2026-05-18: order service modules extracted, cleanup done, Google Sheets quota cache/retry deployed, and production create-with-lines checkpoint passed.
 - Phase 7.1 intake and payload hygiene — complete 2026-05-18: handoff contracts, slim context shapes, Chatwoot lifecycle/write policy, workflow validation tests, and n8n `1.0` upload/readback completed.
-- Phase 7.2 database scaling review — planning complete 2026-05-18: future Postgres direction, owner decisions, draft schema, formula replacement strategy, import rules, Sheet retirement rules, and rollback gates captured in `docs/02-backend/DATABASE_SCALING_PLAN.md`.
+- Phase 7.2 database scaling review — planning complete 2026-05-18: future Postgres direction, owner decisions, draft schema, formula replacement strategy, import rules, Sheet retirement rules, rollback gates, and Supabase Pro signup captured in `docs/02-backend/DATABASE_SCALING_PLAN.md`.
 
 Recommended next:
 
-1. **Phase 7.3D Oom Sakkie Document-Send Guard** - plan first; do not add send behavior until confirmation, destination, document eligibility, and backend endpoint rules are approved.
+1. **Phase 7.3D Oom Sakkie Document-Send Guard** - backend guard endpoints and callback workflows are deployed; GateKeeper routing is restored and first live Telegram message test passed.
 
 7.3D planning note:
 
@@ -2106,9 +2106,9 @@ Recommended next:
 - Backend must re-check the latest/non-voided quote, order, confirmed destination conversation, and stale/replaced document state at click time.
 - Existing backend send endpoints already exist, but they require explicit `conversation_id` and should not be called directly by Oom Sakkie without a prepare/confirm guard.
 - Recommended first implementation plan:
-  - add backend `prepare_latest_quote_send` contract that returns safe button context but sends nothing - Done locally
-  - add backend `send_latest_quote_confirmed` contract for button callbacks that re-checks safety, then calls existing send logic - Done locally
-  - add a separate document-send callback worker workflow, likely `2.4.5`, and route to it from the existing callback entry point so there is not a second active Telegram callback trigger - Local export created
+  - add backend `prepare_latest_quote_send` contract that returns safe button context but sends nothing - Done and deployed
+  - add backend `send_latest_quote_confirmed` contract for button callbacks that re-checks safety, then calls existing send logic - Done and deployed
+  - add a separate document-send callback worker workflow, `2.4.5`, and route to it from the existing callback entry point so there is not a second active Telegram callback trigger - Done and deployed
   - keep `1.5 - Outbound Document Delivery` unchanged as the backend-owned Chatwoot attachment delivery path
 - Invoice sending remains future-only unless explicitly approved.
 
@@ -2127,13 +2127,19 @@ Recommended next:
 - Calls existing `send_order_document` only after checks pass.
 - Focused route tests passed.
 
-7.3D workflow local exports:
+7.3D workflow state:
 
 - `2.0` local export passes Telegram chat/user context into `Orders_Info_Tool`.
-- `2.4.4` local export adds `prepare_latest_quote_send`, calls the backend prepare endpoint, and sends operator-only Telegram confirmation buttons.
-- `2.4.5 - Document Send Callback Handler` created in n8n as inactive workflow `8b14lAqmyrD0LYZz`.
-- `2.4.2` local export now routes `quote_send|...` and `quote_cancel|...` callbacks to `2.4.5`.
-- Do not import these workflow changes live until the backend endpoints are deployed.
+- `2.4.4` is active in n8n and adds `prepare_latest_quote_send`, calls the backend prepare endpoint, and sends operator-only Telegram confirmation buttons.
+- `2.4.5 - Document Send Callback Handler` is active in n8n as workflow `8b14lAqmyrD0LYZz`.
+- `2.4.2` is retired from the live path because its active Telegram callback trigger can take over the Oom Sakkie bot webhook. GateKeeper now owns both `message` and `callback_query` updates and routes quote callbacks to `2.4.5`.
+- `2.0 - OOM SAKKIE - Amadeus Assistant Agent` was manually imported/updated through the n8n UI by the owner on 2026-05-18.
+- n8n API verification confirms live `2.0` now passes `telegram_chat_id` and `telegram_user_id` into `Orders_Info_Tool`.
+- n8n API verification confirms `2.4.5 - Document Send Callback Handler` exists as workflow `8b14lAqmyrD0LYZz` and is active.
+- Claude review accepted Path A: keep callback routing in GateKeeper, do not move callbacks into `2.0`, add authorization coverage to GateKeeper's callback branch, use diagnostic-first webhook reset, preserve `2.0` as the normal-message AI/tool workflow, and retire/archive `2.4.2`. Revised plan: `docs/04-n8n/OOM_SAKKIE_ROUTING_ARCHITECTURE_PLAN.md`.
+- 2026-05-19 live recovery completed: owner manually uploaded the cleaned GateKeeper workflow and replaced the Telegram Trigger node; `Hi` routed through GateKeeper to `2.0`, and Oom Sakkie replied.
+- Repo export refreshed from live n8n GateKeeper workflow `s8QaxmqT69Z5mhvE`, so the current trigger node is preserved in `docs/04-n8n/workflows/2 - The GateKeeper/workflow.json`.
+- Recovery checklist retained for future incidents: `docs/04-n8n/OOM_SAKKIE_MANUAL_RECOVERY_CHECKLIST.md`.
 2. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.

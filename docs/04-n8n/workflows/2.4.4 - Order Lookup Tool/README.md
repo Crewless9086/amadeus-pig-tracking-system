@@ -5,7 +5,7 @@
 Read-only Oom Sakkie order lookup tool.
 
 Workflow ID: `1VNdetSbgP0ffNyH`  
-Live status: active for read-only lookup; local 7.3D quote-send preparation changes pending backend deploy/import  
+Live status: active for read-only lookup and guarded quote-send preparation  
 Created for docs: 2026-05-18
 
 ## Why This Is Separate From `2.4`

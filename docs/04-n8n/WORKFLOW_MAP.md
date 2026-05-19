@@ -34,6 +34,22 @@ flowchart TD
   wf20 --> telegramAlert
 ```
 
+## Oom Sakkie Workflow Aliases
+
+Workflow names in n8n should not be renamed during this cleanup because Execute Workflow nodes cache workflow names and IDs. These aliases are documentation-only.
+
+| ID | Alias | Role |
+| --- | --- | --- |
+| `2 - The GateKeeper` | Gateway | Telegram entry, authorization, update-type routing, and callback-prefix routing. |
+| `2.0 - OOM SAKKIE` | Orchestrator | AI assistant and tool dispatch for normal authorized messages. |
+| `2.1 - Amadeus Weather Sub-Agent` | Weather Tool | Weather questions. |
+| `2.1.1 - Amadeus Forecast Tool` | Forecast Worker | Forecast utility. |
+| `2.2 - Amadeus Sunsynk Sub-Agent` | Solar Tool | Sunsynk and power questions. |
+| `2.4 - Amadeus Orders Sub Agent` | Approval Worker | Approval request and approval decision worker. |
+| `2.4.3 - Order Approval Request Webhook` | Approval Request Webhook | Backend inbound approval-request trigger. |
+| `2.4.4 - Order Lookup Tool` | Order Lookup Tool | Read-only order lookup and quote-send preparation. |
+| `2.4.5 - Document Send Callback Handler` | Quote-Send Worker | Confirmed quote-send and cancel callbacks. |
+
 ## `1.0 - SAM - Sales Agent - Chatwoot`
 
 Role: customer-facing sales hub.

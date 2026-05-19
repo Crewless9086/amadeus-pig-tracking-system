@@ -1,10 +1,10 @@
 ﻿{
-    "updatedAt":  "2026-05-18T13:11:42.422Z",
+    "updatedAt":  "2026-05-18T13:22:28.270Z",
     "createdAt":  "2026-05-18T13:11:42.422Z",
     "id":  "8b14lAqmyrD0LYZz",
     "name":  "2.4.5 - Document Send Callback Handler",
     "description":  null,
-    "active":  false,
+    "active":  true,
     "isArchived":  false,
     "nodes":  [
                   {
@@ -449,8 +449,8 @@
     "meta":  null,
     "pinData":  null,
     "versionId":  "901c0f67-ef33-432a-9fb0-d0b25f7aec31",
-    "activeVersionId":  null,
-    "versionCounter":  1,
+    "activeVersionId":  "901c0f67-ef33-432a-9fb0-d0b25f7aec31",
+    "versionCounter":  4,
     "triggerCount":  0,
     "shared":  [
                    {
@@ -474,6 +474,460 @@
     "tags":  [
 
              ],
-    "parentFolder":  null,
-    "activeVersion":  null
+    "activeVersion":  {
+                          "updatedAt":  "2026-05-18T13:11:42.425Z",
+                          "createdAt":  "2026-05-18T13:11:42.425Z",
+                          "versionId":  "901c0f67-ef33-432a-9fb0-d0b25f7aec31",
+                          "workflowId":  "8b14lAqmyrD0LYZz",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "workflowInputs":  {
+                                                                                      "values":  [
+                                                                                                     {
+                                                                                                         "name":  "callback_data"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "chat_id"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "callback_query_id"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "clicked_by"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "telegram_user_id"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "action"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "order_id"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "document_id"
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "name":  "conversation_id"
+                                                                                                     }
+                                                                                                 ]
+                                                                                  }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflowTrigger",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -720,
+                                                             0
+                                                         ],
+                                            "id":  "a1065dde-f3f2-4e96-87c0-9c4261457923",
+                                            "name":  "When Executed by Another Workflow"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const input = $json || {};\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst rawData = clean(input.callback_data);\nconst parts = rawData.split(\"|\");\nlet action = clean(input.action);\nlet orderId = clean(input.order_id).toUpperCase();\nlet documentId = clean(input.document_id);\nlet conversationId = clean(input.conversation_id);\n\nif (parts.length \u003e= 1 \u0026\u0026 parts[0]) {\n  if (parts[0] === \"quote_send\") action = \"send_latest_quote_confirmed\";\n  if (parts[0] === \"quote_cancel\") action = \"cancel_quote_send\";\n}\nif (!orderId \u0026\u0026 parts[1]) orderId = clean(parts[1]).toUpperCase();\nif (!documentId \u0026\u0026 parts[2]) documentId = clean(parts[2]);\nif (!conversationId \u0026\u0026 parts[3]) conversationId = clean(parts[3]);\n\nlet validationError = \"\";\nif (action === \"send_latest_quote_confirmed\") {\n  if (!orderId || !documentId || !conversationId) {\n    validationError = \"Missing order, document, or conversation data for quote send.\";\n    action = \"invalid_document_send_callback\";\n  }\n} else if (action === \"cancel_quote_send\") {\n  if (!orderId || !documentId) {\n    validationError = \"Missing order or document data for quote send cancellation.\";\n    action = \"invalid_document_send_callback\";\n  }\n} else {\n  validationError = \"Unsupported document-send callback.\";\n  action = \"invalid_document_send_callback\";\n}\n\nreturn [{\n  json: {\n    action,\n    validation_error: validationError,\n    callback_data: rawData,\n    order_id: orderId,\n    document_id: documentId,\n    conversation_id: conversationId,\n    chat_id: clean(input.chat_id),\n    callback_query_id: clean(input.callback_query_id),\n    clicked_by: clean(input.clicked_by) || \"Oom Sakkie\",\n    telegram_user_id: clean(input.telegram_user_id),\n    send_url: orderId ? `https://amadeus-pig-tracking-system.onrender.com/api/orders/${encodeURIComponent(orderId)}/quote/send-latest-confirmed` : \"\",\n    send_body: {\n      document_id: documentId,\n      conversation_id: conversationId,\n      sent_by: clean(input.clicked_by) || \"Oom Sakkie\",\n      confirmation_source: \"telegram_button\",\n      telegram_user_id: clean(input.telegram_user_id),\n    },\n  },\n}];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -480,
+                                                             0
+                                                         ],
+                                            "id":  "d025839c-618b-4aa9-8cf4-47576ea8c253",
+                                            "name":  "Code - Normalize Document Send Callback"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rules":  {
+                                                                             "values":  [
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.action}}",
+                                                                                                                                          "rightValue":  "send_latest_quote_confirmed",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "726d25a6-26ba-47b1-9ad1-f4767f333f2b"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Send Latest Quote Confirmed"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.action}}",
+                                                                                                                                          "rightValue":  "cancel_quote_send",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "ef55f7bc-919c-407a-8571-ce7d5db1940c"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Cancel Quote Send"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.action}}",
+                                                                                                                                          "rightValue":  "invalid_document_send_callback",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "23a198be-8741-47a1-bd91-335d217ef3d1"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Invalid Callback"
+                                                                                            }
+                                                                                        ]
+                                                                         },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.switch",
+                                            "typeVersion":  3.2,
+                                            "position":  [
+                                                             -240,
+                                                             0
+                                                         ],
+                                            "id":  "6f8ab499-def1-4e12-9d69-d6ecd60b4fb6",
+                                            "name":  "Switch - Route Document Send Callback"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "resource":  "callback",
+                                                               "queryId":  "={{$json.callback_query_id}}",
+                                                               "additionalFields":  {
+                                                                                        "text":  "Processing quote action..."
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             -240,
+                                                             -220
+                                                         ],
+                                            "id":  "83d1955d-cba8-405b-a2f8-0d1e3c36275c",
+                                            "name":  "Answer Callback - Processing",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "Telegram - Oom Sakkie"
+                                                                                }
+                                                            },
+                                            "webhookId":  "56211d00-0c1c-4ddb-895f-9b234046febe"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "={{$json.send_url}}",
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={{$json.send_body}}",
+                                                               "options":  {
+                                                                               "response":  {
+                                                                                                "response":  {
+                                                                                                                 "responseFormat":  "json"
+                                                                                                             }
+                                                                                            },
+                                                                               "neverError":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.3,
+                                            "position":  [
+                                                             40,
+                                                             -140
+                                                         ],
+                                            "id":  "0e45f361-d928-4669-996c-86d2f10e60c1",
+                                            "name":  "HTTP - Send Latest Quote Confirmed",
+                                            "continueOnFail":  true
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const item = $json || {};\nconst ok = item.success === true;\nconst ref = item.document_ref || item.document_id || \"the quote\";\nconst msg = ok\n  ? `Quote sent successfully.\\n\\nDocument: ${ref}\\nOrder: ${item.order_id || \"\"}`\n  : `Quote was not sent.\\n\\n${Array.isArray(item.errors) ? item.errors.join(\"; \") : (item.message || item.error || \"The backend did not confirm delivery.\")}`;\nreturn [{ json: { chat_id: item.chat_id || $node[\"Code - Normalize Document Send Callback\"].json.chat_id, message: msg } }];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             280,
+                                                             -140
+                                                         ],
+                                            "id":  "fdb6c323-c3d1-4f8b-b92d-527edeb4cc93",
+                                            "name":  "Code - Format Send Result"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "return [{\n  json: {\n    chat_id: $json.chat_id,\n    message: `Quote send cancelled.\\n\\nOrder: ${$json.order_id}\\nDocument: ${$json.document_id}`,\n  },\n}];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             40,
+                                                             80
+                                                         ],
+                                            "id":  "a4afe2d6-ce65-45ef-83c8-f040d1fb3a8e",
+                                            "name":  "Code - Format Cancel Result"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "return [{\n  json: {\n    chat_id: $json.chat_id,\n    message: $json.validation_error || \"Invalid quote send button data. No document was sent.\",\n  },\n}];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             40,
+                                                             300
+                                                         ],
+                                            "id":  "58f05b2a-e876-4202-977b-cbd0fb608162",
+                                            "name":  "Code - Format Invalid Callback"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "chatId":  "={{$json.chat_id}}",
+                                                               "text":  "={{$json.message}}",
+                                                               "additionalFields":  {
+                                                                                        "appendAttribution":  false
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             520,
+                                                             -140
+                                                         ],
+                                            "id":  "6e70c502-efb8-4a0f-8f90-7429a0b6563b",
+                                            "name":  "Telegram - Send Quote Result",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "Telegram - Oom Sakkie"
+                                                                                }
+                                                            },
+                                            "webhookId":  "d837d958-0e6e-46e7-8d33-c9015b136cb6"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "chatId":  "={{$json.chat_id}}",
+                                                               "text":  "={{$json.message}}",
+                                                               "additionalFields":  {
+                                                                                        "appendAttribution":  false
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             280,
+                                                             80
+                                                         ],
+                                            "id":  "5579dfd6-37f5-45be-a810-6f7f531e6d0a",
+                                            "name":  "Telegram - Send Cancel Result",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "Telegram - Oom Sakkie"
+                                                                                }
+                                                            },
+                                            "webhookId":  "e543e774-c7d5-48c1-a699-406f8e3797d8"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "chatId":  "={{$json.chat_id}}",
+                                                               "text":  "={{$json.message}}",
+                                                               "additionalFields":  {
+                                                                                        "appendAttribution":  false
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             280,
+                                                             300
+                                                         ],
+                                            "id":  "ff67d7ce-3dcc-42bd-8eae-1baf53faa84b",
+                                            "name":  "Telegram - Send Invalid Result",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "Telegram - Oom Sakkie"
+                                                                                }
+                                                            },
+                                            "webhookId":  "83655aa8-1013-412a-8e6e-83a34faa9e43"
+                                        }
+                                    ],
+                          "connections":  {
+                                              "When Executed by Another Workflow":  {
+                                                                                        "main":  [
+                                                                                                     [
+                                                                                                         {
+                                                                                                             "node":  "Code - Normalize Document Send Callback",
+                                                                                                             "type":  "main",
+                                                                                                             "index":  0
+                                                                                                         }
+                                                                                                     ]
+                                                                                                 ]
+                                                                                    },
+                                              "Code - Normalize Document Send Callback":  {
+                                                                                              "main":  [
+                                                                                                           [
+                                                                                                               {
+                                                                                                                   "node":  "Switch - Route Document Send Callback",
+                                                                                                                   "type":  "main",
+                                                                                                                   "index":  0
+                                                                                                               },
+                                                                                                               {
+                                                                                                                   "node":  "Answer Callback - Processing",
+                                                                                                                   "type":  "main",
+                                                                                                                   "index":  0
+                                                                                                               }
+                                                                                                           ]
+                                                                                                       ]
+                                                                                          },
+                                              "Switch - Route Document Send Callback":  {
+                                                                                            "main":  [
+                                                                                                         [
+                                                                                                             {
+                                                                                                                 "node":  "HTTP - Send Latest Quote Confirmed",
+                                                                                                                 "type":  "main",
+                                                                                                                 "index":  0
+                                                                                                             }
+                                                                                                         ],
+                                                                                                         [
+                                                                                                             {
+                                                                                                                 "node":  "Code - Format Cancel Result",
+                                                                                                                 "type":  "main",
+                                                                                                                 "index":  0
+                                                                                                             }
+                                                                                                         ],
+                                                                                                         [
+                                                                                                             {
+                                                                                                                 "node":  "Code - Format Invalid Callback",
+                                                                                                                 "type":  "main",
+                                                                                                                 "index":  0
+                                                                                                             }
+                                                                                                         ]
+                                                                                                     ]
+                                                                                        },
+                                              "HTTP - Send Latest Quote Confirmed":  {
+                                                                                         "main":  [
+                                                                                                      [
+                                                                                                          {
+                                                                                                              "node":  "Code - Format Send Result",
+                                                                                                              "type":  "main",
+                                                                                                              "index":  0
+                                                                                                          }
+                                                                                                      ]
+                                                                                                  ]
+                                                                                     },
+                                              "Code - Format Send Result":  {
+                                                                                "main":  [
+                                                                                             [
+                                                                                                 {
+                                                                                                     "node":  "Telegram - Send Quote Result",
+                                                                                                     "type":  "main",
+                                                                                                     "index":  0
+                                                                                                 }
+                                                                                             ]
+                                                                                         ]
+                                                                            },
+                                              "Code - Format Cancel Result":  {
+                                                                                  "main":  [
+                                                                                               [
+                                                                                                   {
+                                                                                                       "node":  "Telegram - Send Cancel Result",
+                                                                                                       "type":  "main",
+                                                                                                       "index":  0
+                                                                                                   }
+                                                                                               ]
+                                                                                           ]
+                                                                              },
+                                              "Code - Format Invalid Callback":  {
+                                                                                     "main":  [
+                                                                                                  [
+                                                                                                      {
+                                                                                                          "node":  "Telegram - Send Invalid Result",
+                                                                                                          "type":  "main",
+                                                                                                          "index":  0
+                                                                                                      }
+                                                                                                  ]
+                                                                                              ]
+                                                                                 },
+                                              "Answer Callback - Processing":  {
+                                                                                   "main":  [
+                                                                                                [
+
+                                                                                                ]
+                                                                                            ]
+                                                                               },
+                                              "Telegram - Send Quote Result":  {
+                                                                                   "main":  [
+                                                                                                [
+
+                                                                                                ]
+                                                                                            ]
+                                                                               },
+                                              "Telegram - Send Cancel Result":  {
+                                                                                    "main":  [
+                                                                                                 [
+
+                                                                                                 ]
+                                                                                             ]
+                                                                                },
+                                              "Telegram - Send Invalid Result":  {
+                                                                                     "main":  [
+                                                                                                  [
+
+                                                                                                  ]
+                                                                                              ]
+                                                                                 }
+                                          },
+                          "authors":  "Charl Nieuwendyk",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-05-18T13:22:46.988Z",
+                                                             "id":  760,
+                                                             "workflowId":  "8b14lAqmyrD0LYZz",
+                                                             "versionId":  "901c0f67-ef33-432a-9fb0-d0b25f7aec31",
+                                                             "event":  "activated",
+                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
+                                                         }
+                                                     ]
+                      }
 }

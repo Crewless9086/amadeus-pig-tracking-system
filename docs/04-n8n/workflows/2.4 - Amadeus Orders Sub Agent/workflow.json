@@ -301,128 +301,6 @@
                   },
                   {
                       "parameters":  {
-                                         "updates":  [
-                                                         "message"
-                                                     ],
-                                         "additionalFields":  {
-
-                                                              }
-                                     },
-                      "type":  "n8n-nodes-base.telegramTrigger",
-                      "typeVersion":  1.2,
-                      "position":  [
-                                       -112,
-                                       416
-                                   ],
-                      "id":  "fb254223-fa1f-4419-a823-89015b39f81e",
-                      "name":  "Telegram Trigger - Approval Chat",
-                      "webhookId":  "a2296569-c2b8-4a43-815b-8e541c3b83ed",
-                      "credentials":  {
-                                          "telegramApi":  {
-                                                              "id":  "e5jS1ondryiauRNX",
-                                                              "name":  "Telegram - Oom Sakkie"
-                                                          }
-                                      },
-                      "disabled":  true
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const msg = $json.message || {};\n\nreturn [\n  {\n    json: {\n      message_text: (msg.text || \"\").trim(),\n      chat_id: msg.chat?.id,\n      user_id: msg.from?.id,\n      user_name: msg.from?.first_name || \"Unknown\",\n      message_id: msg.message_id\n    }\n  }\n];"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       64,
-                                       416
-                                   ],
-                      "id":  "88ab0fb2-707d-45b6-a859-1f16163a6b01",
-                      "name":  "Code - Normalize Telegram Approval Update"
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const text = ($json.message_text || \"\").toLowerCase().trim();\n\nlet decision = \"\";\nlet order_id = \"\";\n\nif (text.startsWith(\"approve \")) {\n  decision = \"approve\";\n  order_id = text.replace(\"approve \", \"\").toUpperCase();\n} else if (text.startsWith(\"reject \")) {\n  decision = \"reject\";\n  order_id = text.replace(\"reject \", \"\").toUpperCase();\n}\n\nreturn [\n  {\n    json: {\n      decision,\n      order_id,\n      chat_id: $json.chat_id,\n      user_name: $json.user_name,\n      original_text: $json.message_text\n    }\n  }\n];"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       480,
-                                       400
-                                   ],
-                      "id":  "83658653-331f-42e2-bf4c-2ed60a0e2d82",
-                      "name":  "Code - Parse Approval Command"
-                  },
-                  {
-                      "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "caseSensitive":  true,
-                                                                            "leftValue":  "",
-                                                                            "typeValidation":  "strict",
-                                                                            "version":  3
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "657f6144-7c36-4542-a7a8-213c45fcf426",
-                                                                                   "leftValue":  "={{ $json.decision }}",
-                                                                                   "rightValue":  "",
-                                                                                   "operator":  {
-                                                                                                    "type":  "string",
-                                                                                                    "operation":  "notEmpty",
-                                                                                                    "singleValue":  true
-                                                                                                }
-                                                                               },
-                                                                               {
-                                                                                   "id":  "773e769f-b6c2-48b2-a2d3-1763b47b5981",
-                                                                                   "leftValue":  "={{ $json.order_id }}",
-                                                                                   "rightValue":  "",
-                                                                                   "operator":  {
-                                                                                                    "type":  "string",
-                                                                                                    "operation":  "notEmpty",
-                                                                                                    "singleValue":  true
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2.3,
-                      "position":  [
-                                       688,
-                                       400
-                                   ],
-                      "id":  "24039b06-7a66-4824-bc57-9a7c320b4b9a",
-                      "name":  "IF - Valid Approval Command"
-                  },
-                  {
-                      "parameters":  {
-                                         "chatId":  "={{$node[\"Code - Parse Approval Command\"].json[\"chat_id\"]}}",
-                                         "text":  "=?? Invalid Order Command\n\nPlease use:\napprove ORD-XXXX\nor\nreject ORD-XXXX",
-                                         "additionalFields":  {
-                                                                  "appendAttribution":  false
-                                                              }
-                                     },
-                      "type":  "n8n-nodes-base.telegram",
-                      "typeVersion":  1.2,
-                      "position":  [
-                                       1040,
-                                       544
-                                   ],
-                      "id":  "abd84e47-a1d2-487c-9739-a761bb3625fa",
-                      "name":  "Telegram - Invalid Command Reply",
-                      "webhookId":  "e355373c-5c44-4e31-9c55-fabbabc7fe29",
-                      "credentials":  {
-                                          "telegramApi":  {
-                                                              "id":  "e5jS1ondryiauRNX",
-                                                              "name":  "Telegram - Oom Sakkie"
-                                                          }
-                                      }
-                  },
-                  {
-                      "parameters":  {
                                          "url":  "=https://amadeus-pig-tracking-system.onrender.com/api/orders/{{$node[\"Set - Unified Decision Context\"].json[\"order_id\"]}}",
                                          "options":  {
                                                          "response":  {
@@ -708,42 +586,6 @@
                   },
                   {
                       "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "caseSensitive":  true,
-                                                                            "leftValue":  "",
-                                                                            "typeValidation":  "strict",
-                                                                            "version":  3
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "39c5b5f9-1e16-4c3c-b661-6c9e8e3fca23",
-                                                                                   "leftValue":  "={{$json.message_text.toLowerCase().startsWith(\"approve \") || $json.message_text.toLowerCase().startsWith(\"reject \")}}",
-                                                                                   "rightValue":  "",
-                                                                                   "operator":  {
-                                                                                                    "type":  "boolean",
-                                                                                                    "operation":  "true",
-                                                                                                    "singleValue":  true
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2.3,
-                      "position":  [
-                                       256,
-                                       416
-                                   ],
-                      "id":  "3545bea2-efc5-46ec-9968-749487a1d208",
-                      "name":  "IF - Looks Like Order Command"
-                  },
-                  {
-                      "parameters":  {
                                          "jsCode":  "const input = $json;\n\nfunction clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nreturn [\n  {\n    json: {\n      action: clean(input.action),\n      order_id: clean(input.order_id).toUpperCase(),\n      decision: clean(input.decision).toLowerCase(),\n      changed_by: clean(input.changed_by) || \"System\",\n      trigger_source: clean(input.trigger_source) || \"Unknown\",\n      decision_method: clean(input.decision_method) || (clean(input.trigger_source) === \"Telegram Button\" ? \"Button\" : \"Command\"),\n      notes: clean(input.notes),\n      telegram_chat_id: clean(input.telegram_chat_id || input.chat_id || \"5721652188\"),\n      callback_query_id: clean(input.callback_query_id),\n      clicked_by: clean(input.clicked_by)\n    }\n  }\n];"
                                      },
                       "type":  "n8n-nodes-base.code",
@@ -992,57 +834,6 @@
                                                                                  ]
                                                                              ]
                                                                 },
-                        "Telegram Trigger - Approval Chat":  {
-                                                                 "main":  [
-                                                                              [
-                                                                                  {
-                                                                                      "node":  "Code - Normalize Telegram Approval Update",
-                                                                                      "type":  "main",
-                                                                                      "index":  0
-                                                                                  }
-                                                                              ]
-                                                                          ]
-                                                             },
-                        "Code - Normalize Telegram Approval Update":  {
-                                                                          "main":  [
-                                                                                       [
-                                                                                           {
-                                                                                               "node":  "IF - Looks Like Order Command",
-                                                                                               "type":  "main",
-                                                                                               "index":  0
-                                                                                           }
-                                                                                       ]
-                                                                                   ]
-                                                                      },
-                        "Code - Parse Approval Command":  {
-                                                              "main":  [
-                                                                           [
-                                                                               {
-                                                                                   "node":  "IF - Valid Approval Command",
-                                                                                   "type":  "main",
-                                                                                   "index":  0
-                                                                               }
-                                                                           ]
-                                                                       ]
-                                                          },
-                        "IF - Valid Approval Command":  {
-                                                            "main":  [
-                                                                         [
-                                                                             {
-                                                                                 "node":  "Set - Unified Decision Context",
-                                                                                 "type":  "main",
-                                                                                 "index":  0
-                                                                             }
-                                                                         ],
-                                                                         [
-                                                                             {
-                                                                                 "node":  "Telegram - Invalid Command Reply",
-                                                                                 "type":  "main",
-                                                                                 "index":  0
-                                                                             }
-                                                                         ]
-                                                                     ]
-                                                        },
                         "HTTP - View Order Before Decision":  {
                                                                   "main":  [
                                                                                [
@@ -1148,17 +939,6 @@
                                                                               ]
                                                                           ]
                                                              },
-                        "IF - Looks Like Order Command":  {
-                                                              "main":  [
-                                                                           [
-                                                                               {
-                                                                                   "node":  "Code - Parse Approval Command",
-                                                                                   "type":  "main",
-                                                                                   "index":  0
-                                                                               }
-                                                                           ]
-                                                                       ]
-                                                          },
                         "Code - Normalize Orders Sub Agent Payload":  {
                                                                           "main":  [
                                                                                        [

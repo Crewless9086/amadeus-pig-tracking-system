@@ -14,7 +14,7 @@ Imported for docs: 2026-05-18
 - Handles order approval request actions.
 - Looks up an order through the backend.
 - Builds a Telegram approval message.
-- Handles Telegram approval chat commands/callbacks.
+- Handles approval decisions when called by GateKeeper.
 - Validates that an order is still pending approval before approving or rejecting.
 - Calls backend approve/reject endpoints.
 - Sends Telegram confirmations or failure messages.
@@ -32,10 +32,6 @@ Imported for docs: 2026-05-18
 - `HTTP - View Order`
 - `Code - Build Approval Message`
 - `Send a text message`
-- `Telegram Trigger - Approval Chat`
-- `Code - Normalize Telegram Approval Update`
-- `Code - Parse Approval Command`
-- `IF - Valid Approval Command`
 - `HTTP - View Order Before Decision`
 - `IF - Order Still Pending Approval`
 - `Switch - Approve or Reject`
@@ -87,8 +83,8 @@ Protected approval behavior:
 
 2026-05-18:
 
-- `Telegram Trigger - Approval Chat` was disabled.
+- `Telegram Trigger - Approval Chat` and the old manual `approve ...` / `reject ...` parser branch were removed from the local export.
 - Reason: it was listening for normal `message` updates on the same Oom Sakkie bot as `2 - The GateKeeper`, so general Oom Sakkie messages were being captured by this approval workflow and then dropped when they were not `approve ...` or `reject ...` commands.
-- Approval button callbacks remain handled by `2.4.2 - Orders Approval Callback Handler`.
+- Approval button callbacks are routed by GateKeeper into this workflow.
 - Approval request/send behavior in this workflow remains active through the execute-workflow entry point.
-- Do not re-enable the normal-message Telegram trigger here unless the main GateKeeper routing is redesigned.
+- Do not add or re-enable any Telegram Trigger in this workflow.

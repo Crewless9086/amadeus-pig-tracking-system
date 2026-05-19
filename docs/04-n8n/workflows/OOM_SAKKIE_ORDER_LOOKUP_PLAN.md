@@ -12,7 +12,7 @@ Imported from n8n on 2026-05-18:
 
 | Workflow | ID | Status | Current role |
 | --- | --- | --- | --- |
-| `2 - The GateKeeper` | `yt4qc1kP5riAfLfL` | Active | Telegram access gate for Oom Sakkie. |
+| `2 - The GateKeeper` | `yt4qc1kP5riAfLfL` | Active | Single Telegram entry point for Oom Sakkie messages and button callbacks. |
 | `2.0 - OOM SAKKIE - Amadeus Assistant Agent` | `6UscGE44eTfdLp1A` | Active | Main Oom Sakkie Telegram assistant. |
 | `2.1 - Amadeus Weather Sub-Agent` | `L4c34rFmN0kUJvWc` | Active | Weather sub-agent tool. |
 | `2.1.1 - Amadeus Forecast Tool` | `vx1lV8aFCG28KSIN` | Active | Forecast utility workflow. |
@@ -21,7 +21,7 @@ Imported from n8n on 2026-05-18:
 | `2.3.2 - Run Irrigation Controller` | `f6oPLsaolGH4pMKC` | Inactive | Scheduled irrigation valve controller. |
 | `2.4 - Amadeus Orders Sub Agent` | `T8LLCAtYDLNRPoRx` | Active | Internal order approval sub-agent. |
 | `2.4.1 - Test Caller` | `GwWZueB0iyonpscl` | Inactive | Manual orders sub-agent test caller. |
-| `2.4.2 - Orders Approval Callback Handler` | `wmsgzHNywC6okTuI` | Active | Telegram approval callback handler. |
+| `2.4.2 - Orders Approval Callback Handler` | `wmsgzHNywC6okTuI` | Inactive | Legacy callback handler; callback routing moved into GateKeeper to avoid Telegram webhook conflicts. |
 | `2.4.3 - Order Approval Request Webhook` | `k4XVMoJ1hK09PIvT` | Active | Approval request webhook. |
 | `ALERT - Local Weather Station` | `g0ajlm9gBp7J72Jn` | Inactive | Scheduled weather station alerts. |
 | `ALERT - Sunsynk` | `2LETWzde7lMDlMnl` | Inactive | Scheduled solar/power alerts. |
@@ -356,7 +356,7 @@ n8n upload status:
   - `2.4` then dropped them because they were not manual `approve ...` or `reject ...` commands.
   - Disabled `2.4`'s normal-message Telegram trigger.
   - Refreshed `2 - The GateKeeper` activation so it owns normal Telegram `message` updates.
-  - Left `2.4.2 - Orders Approval Callback Handler` active for approval button `callback_query` updates.
+  - Superseded by the 2026-05-19 Path A recovery: GateKeeper now owns both normal messages and button callbacks; `2.4.2 - Orders Approval Callback Handler` is retired from the live path.
 - Exact order lookup live smoke passed on 2026-05-18:
   - Operator sent `Hi`; Oom Sakkie replied through the GateKeeper -> `2.0` path.
   - Operator sent `Show me order ORD-2026-3E46B8`.
@@ -597,10 +597,16 @@ Callback rules:
 Workflow implementation status:
 
 - Local `2.0` export now passes Telegram chat/user context into `Orders_Info_Tool`.
-- Local `2.4.4` export now supports `prepare_latest_quote_send` and can send operator-only Telegram confirmation buttons.
-- `2.4.5 - Document Send Callback Handler` created in n8n as inactive workflow `8b14lAqmyrD0LYZz`.
-- Local `2.4.2` export now routes `quote_send|...` and `quote_cancel|...` callbacks to `2.4.5`.
-- These workflow changes should not be imported live until the backend endpoints are deployed.
+- `2.4.4` is active in n8n and supports `prepare_latest_quote_send`, calling the backend prepare endpoint and sending operator-only Telegram confirmation buttons.
+- `2.4.5 - Document Send Callback Handler` is active in n8n as workflow `8b14lAqmyrD0LYZz`.
+- `2.4.2` is retired from the live path. GateKeeper now owns `callback_query` updates and routes `quote_send|...` and `quote_cancel|...` callbacks to `2.4.5`.
+- `2.0` was manually imported/updated through the n8n UI by the owner on 2026-05-18.
+- n8n API verification confirms live `2.0` now passes `telegram_chat_id` and `telegram_user_id` into `Orders_Info_Tool`.
+- n8n API verification confirms `2.4.5 - Document Send Callback Handler` exists as workflow `8b14lAqmyrD0LYZz` and is active.
+- Claude review accepted Path A: keep GateKeeper as the single Oom Sakkie Telegram router, do not build Router V2, do not move callbacks into `2.0`, and retire `2.4.2` from the live path. Detailed plan: `docs/04-n8n/OOM_SAKKIE_ROUTING_ARCHITECTURE_PLAN.md`.
+- 2026-05-19 live recovery completed: owner manually uploaded the cleaned GateKeeper workflow and replaced the Telegram Trigger node; `Hi` routed through GateKeeper to `2.0`, and Oom Sakkie replied.
+- Repo export refreshed from live n8n GateKeeper workflow `s8QaxmqT69Z5mhvE`, so the current trigger node is preserved in `docs/04-n8n/workflows/2 - The GateKeeper/workflow.json`.
+- Recovery checklist retained for future incidents: `docs/04-n8n/OOM_SAKKIE_MANUAL_RECOVERY_CHECKLIST.md`.
 
 Open planning question:
 
@@ -622,11 +628,15 @@ Open planning question:
 
 ### 7.3E Live Verification
 
+- `2.0 - OOM SAKKIE - Amadeus Assistant Agent` has been imported/updated through the n8n UI.
+- GateKeeper first live message test passed on 2026-05-19: `Hi` routed through GateKeeper to `2.0`, and Oom Sakkie replied.
+- If routing fails again, Test 0 is Telegram `getWebhookInfo`; it must show GateKeeper's webhook URL, not an empty URL and not the old `2.4.2` webhook ID.
 - Test exact `order_id` lookup.
 - Test phone/name multiple-match handling.
 - Test document list lookup.
 - Test no-match handling.
-- Test document send only if 7.3D is in scope and the destination is confirmed safe.
+- Test quote-send preparation and the `Cancel` button.
+- Test `Send quote to customer` only after the destination conversation/customer is confirmed safe.
 
 ## Open Questions
 

@@ -14,6 +14,22 @@ Status: Phase 7.2 planning accepted. Do not implement a database migration from 
 - Keep n8n, Sam, and future agents behind backend APIs. They must not write directly to Postgres.
 - Preserve Google Sheets operator visibility until the web app has replacement views or Sheets are safely synced as read-only views.
 
+Owner update 2026-05-18:
+
+- Supabase Pro has been created at the USD 25/month tier.
+- This does not change the build gate: do not move production data yet.
+- Treat the Pro project as available infrastructure for the planned migration phase, after repository boundaries, migrations, import rules, backups, and rollback checks are ready.
+
+When setup starts, collect these details step by step:
+
+- Supabase project URL and project reference.
+- Database connection string for backend server use, stored only in Render environment variables.
+- Service-role key only if a backend-admin path truly needs it; never expose it to the browser or n8n unless deliberately approved.
+- Anon key for future frontend read/write paths only if Row Level Security policies are designed first.
+- Region, database password custody, backup/PITR settings, and restore-test plan.
+- Separate development/staging decision before production data is imported.
+- Approved schema migration tool and where migrations will live in this repo.
+
 ## First Migration Boundary
 
 The first migration should focus on sales/order transaction data only:

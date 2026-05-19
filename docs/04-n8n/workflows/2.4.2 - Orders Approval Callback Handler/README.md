@@ -2,45 +2,29 @@
 
 ## Role
 
-Telegram callback handler for order approval actions.
+Retired historical Telegram callback handler for order approval actions.
 
 Workflow ID: `wmsgzHNywC6okTuI`  
-Status at import: active  
+Status: retired / inactive; do not reactivate  
 Imported for docs: 2026-05-18
 
-## What It Does
+## Historical Behavior
 
-- Receives Telegram callback updates.
-- Normalizes the callback payload.
-- Calls `2.4 - Amadeus Orders Sub Agent`.
-- Answers the Telegram callback query.
+- Received Telegram `callback_query` updates.
+- Normalized approval callback payloads.
+- Called `2.4 - Amadeus Orders Sub Agent`.
+- Answered the Telegram callback query.
 
-## Main Nodes
+## Current Live Behavior
 
-- `Telegram Trigger`
-- `Code - Normalize Callback`
-- `Call '2.4A - Amadeus Orders Sub Agent'`
-- `Answer Query a callback`
+- This workflow has no live role.
+- `2 - The GateKeeper` owns all Oom Sakkie Telegram `message` and `callback_query` updates.
+- GateKeeper authorizes callbacks before routing.
+- GateKeeper routes approval callbacks to `2.4 - Amadeus Orders Sub Agent`.
+- GateKeeper routes quote-send/cancel callbacks to `2.4.5 - Document Send Callback Handler`.
 
-## Calls
+## Do Not Reactivate
 
-- Calls workflow `2.4 - Amadeus Orders Sub Agent` (`T8LLCAtYDLNRPoRx`).
+Reactivating this workflow can register a second Telegram callback trigger for the same Oom Sakkie bot. That can overwrite or delete the bot webhook and make GateKeeper stop receiving messages.
 
-## Phase 7.3D Routing Note
-
-This workflow is the existing Telegram `callback_query` entry point for the Oom Sakkie bot.
-
-To avoid another Telegram trigger conflict, quote-send button callbacks should be routed from this callback entry workflow into `2.4.5 - Document Send Callback Handler`, instead of creating a second active `callback_query` trigger on the same bot.
-
-Local 7.3D export status:
-
-- Adds `Switch - Route Callback Type`.
-- Keeps approval callbacks routed to `2.4`.
-- Routes `quote_send|...` and `quote_cancel|...` callbacks to `2.4.5`.
-- Do not import this local router update until the backend 7.3D endpoints are deployed.
-
-## Planning Notes
-
-- This is part of the existing order approval path.
-- Phase 7.3 lookup work should not break callback approval handling.
-- The old `2.4A` cached workflow name should be cleaned up only after a deliberate workflow maintenance pass.
+Keep this README as historical documentation only. If an old copy appears in n8n, keep it inactive/archived.

@@ -1,86 +1,12 @@
 ﻿{
-    "updatedAt":  "2026-03-23T13:26:41.740Z",
-    "createdAt":  "2025-12-29T17:30:56.688Z",
-    "id":  "yt4qc1kP5riAfLfL",
+    "updatedAt":  "2026-05-19T00:49:53.781Z",
+    "createdAt":  "2026-05-18T23:56:24.450Z",
+    "id":  "s8QaxmqT69Z5mhvE",
     "name":  "2 - The GateKeeper",
     "description":  null,
     "active":  true,
     "isArchived":  false,
     "nodes":  [
-                  {
-                      "parameters":  {
-                                         "updates":  [
-                                                         "message"
-                                                     ],
-                                         "additionalFields":  {
-
-                                                              }
-                                     },
-                      "type":  "n8n-nodes-base.telegramTrigger",
-                      "typeVersion":  1.2,
-                      "position":  [
-                                       0,
-                                       0
-                                   ],
-                      "id":  "740e2041-7277-429d-80bf-9616beda71b6",
-                      "name":  "Telegram Trigger",
-                      "webhookId":  "41252191-96ae-4913-b545-af19e8ade5dc",
-                      "credentials":  {
-                                          "telegramApi":  {
-                                                              "id":  "e5jS1ondryiauRNX",
-                                                              "name":  "NIEUAI_Telegram"
-                                                          }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "assignments":  {
-                                                             "assignments":  [
-                                                                                 {
-                                                                                     "id":  "3eec81ed-9d98-4fcb-a60c-3d2bf5adda81",
-                                                                                     "name":  "user_id",
-                                                                                     "value":  "={{ $json.message.from.id }}",
-                                                                                     "type":  "string"
-                                                                                 },
-                                                                                 {
-                                                                                     "id":  "993d3ec7-d695-4430-9a96-42c3c985e6b3",
-                                                                                     "name":  "user_name",
-                                                                                     "value":  "={{ $json.message.from.first_name }}",
-                                                                                     "type":  "string"
-                                                                                 },
-                                                                                 {
-                                                                                     "id":  "62c15e0d-8983-4bc4-bc35-fa91fbf3693b",
-                                                                                     "name":  "message_text",
-                                                                                     "value":  "={{ $json.message.text }}",
-                                                                                     "type":  "string"
-                                                                                 },
-                                                                                 {
-                                                                                     "id":  "1842c30c-b865-4d30-9c66-0193df1b55da",
-                                                                                     "name":  "channel",
-                                                                                     "value":  "TELEGRAM",
-                                                                                     "type":  "string"
-                                                                                 },
-                                                                                 {
-                                                                                     "id":  "a2ec9d6b-0c04-4a84-8622-d7756d32975f",
-                                                                                     "name":  "timestamp",
-                                                                                     "value":  "={{ $now.toISO() }}",
-                                                                                     "type":  "string"
-                                                                                 }
-                                                                             ]
-                                                         },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.set",
-                      "typeVersion":  3.4,
-                      "position":  [
-                                       288,
-                                       -80
-                                   ],
-                      "id":  "57a5a452-9800-4399-bd79-66281dd70aed",
-                      "name":  "Prepare Message"
-                  },
                   {
                       "parameters":  {
                                          "documentId":  {
@@ -101,7 +27,7 @@
                                                            "values":  [
                                                                           {
                                                                               "lookupColumn":  "telegram_id",
-                                                                              "lookupValue":  "={{ $json.message.from.id }}"
+                                                                              "lookupValue":  "={{ $json.user_id }}"
                                                                           }
                                                                       ]
                                                        },
@@ -112,11 +38,12 @@
                       "type":  "n8n-nodes-base.googleSheets",
                       "typeVersion":  4.7,
                       "position":  [
-                                       288,
-                                       96
+                                       -592,
+                                       -32
                                    ],
-                      "id":  "ddf4a804-e909-4fe7-91b1-1e80f6e7d756",
+                      "id":  "ca5600f9-53c8-4b19-bd34-0e14a8ef2238",
                       "name":  "Get User Info",
+                      "alwaysOutputData":  true,
                       "credentials":  {
                                           "googleSheetsOAuth2Api":  {
                                                                         "id":  "DbtelWXdvwe4DuHc",
@@ -126,27 +53,15 @@
                   },
                   {
                       "parameters":  {
-                                         "assignments":  {
-                                                             "assignments":  [
-                                                                                 {
-                                                                                     "id":  "5348d076-8434-42f9-8f3a-b396bb555b81",
-                                                                                     "name":  "is_authorized",
-                                                                                     "value":  "={{ !!$json.telegram_id }}",
-                                                                                     "type":  "string"
-                                                                                 }
-                                                                             ]
-                                                         },
-                                         "options":  {
-
-                                                     }
+                                         "jsCode":  "const userRow = $json || {};\nconst originalItems = $items(\"Code - Normalize Telegram Update\");\nconst original = originalItems?.[0]?.json || {};\nconst isAuthorized = !!userRow.telegram_id;\n\nreturn [\n  {\n    json: {\n      ...original,\n      auth_user: userRow,\n      telegram_id: userRow.telegram_id || \"\",\n      authorized_first_name: userRow.first_name || \"\",\n      authorized_last_name: userRow.last_name || \"\",\n      authorized_username: userRow.username || \"\",\n      authorized_role: userRow.role || \"\",\n      is_authorized: isAuthorized\n    }\n  }\n];"
                                      },
-                      "type":  "n8n-nodes-base.set",
-                      "typeVersion":  3.4,
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
                       "position":  [
-                                       1056,
-                                       0
+                                       -96,
+                                       -128
                                    ],
-                      "id":  "3d4e4bf4-50ce-430c-8f89-75e57477c12d",
+                      "id":  "57b1916e-df6b-41c4-8bdc-1cc45661ceac",
                       "name":  "Normalize Auth Check"
                   },
                   {
@@ -191,7 +106,7 @@
                                                                                                                     "leftValue":  "={{ $json.is_authorized }}",
                                                                                                                     "rightValue":  "=true",
                                                                                                                     "operator":  {
-                                                                                                                                     "type":  "string",
+                                                                                                                                     "type":  "boolean",
                                                                                                                                      "operation":  "equals"
                                                                                                                                  }
                                                                                                                 }
@@ -211,16 +126,16 @@
                       "type":  "n8n-nodes-base.switch",
                       "typeVersion":  3.3,
                       "position":  [
-                                       1296,
-                                       0
+                                       144,
+                                       -128
                                    ],
-                      "id":  "dde5a9f8-905e-4dae-8d88-3dd5cd22542e",
+                      "id":  "69588480-e7cf-400e-a21b-b74ea81e52be",
                       "name":  "Security Check"
                   },
                   {
                       "parameters":  {
-                                         "chatId":  "={{ $(\u0027Merge\u0027).item.json.user_id }}",
-                                         "text":  "=Hi {{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }} 👋 Sorry, you’re not registered for the Amadeus Assistant system. If you believe this is a mistake, please ask Charl to add your Telegram ID.",
+                                         "chatId":  "={{ $json.chat_id || $json.user_id }}",
+                                         "text":  "=Hi {{ $json.user_name }}. Sorry, you are not registered for the Amadeus Assistant system. If you believe this is a mistake, please ask Charl to add your Telegram ID.",
                                          "additionalFields":  {
                                                                   "appendAttribution":  false
                                                               }
@@ -228,16 +143,16 @@
                       "type":  "n8n-nodes-base.telegram",
                       "typeVersion":  1.2,
                       "position":  [
-                                       1600,
-                                       -112
+                                       448,
+                                       -240
                                    ],
-                      "id":  "84d27254-a057-4c0f-b13c-c1686d51d496",
+                      "id":  "db99d642-c77f-4992-97e5-398fdacdfc0a",
                       "name":  "Send Not Authorized",
                       "webhookId":  "3c5edd77-487a-49f0-b7ba-7fd1e47d3587",
                       "credentials":  {
                                           "telegramApi":  {
                                                               "id":  "e5jS1ondryiauRNX",
-                                                              "name":  "NIEUAI_Telegram"
+                                                              "name":  "Telegram - Oom Sakkie"
                                                           }
                                       }
                   },
@@ -248,10 +163,10 @@
                       "type":  "n8n-nodes-base.merge",
                       "typeVersion":  3.2,
                       "position":  [
-                                       560,
-                                       0
+                                       -592,
+                                       -128
                                    ],
-                      "id":  "063adeb5-efb6-4703-811a-871040f48f80",
+                      "id":  "ab749015-d13c-4161-9044-e40ee41c12e3",
                       "name":  "Merge"
                   },
                   {
@@ -261,10 +176,10 @@
                       "type":  "n8n-nodes-base.limit",
                       "typeVersion":  1,
                       "position":  [
-                                       816,
-                                       0
+                                       -336,
+                                       -128
                                    ],
-                      "id":  "59a2cd98-c2a9-4b8b-96db-0a8dd49396cb",
+                      "id":  "7308f914-9386-42fa-9bec-56726ff95f71",
                       "name":  "Limit"
                   },
                   {
@@ -274,16 +189,16 @@
                                                             "value":  "6UscGE44eTfdLp1A",
                                                             "mode":  "list",
                                                             "cachedResultUrl":  "/workflow/6UscGE44eTfdLp1A",
-                                                            "cachedResultName":  "My project — 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
+                                                            "cachedResultName":  "My project - 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
                                                         },
                                          "workflowInputs":  {
                                                                 "mappingMode":  "defineBelow",
                                                                 "value":  {
-                                                                              "timestamp":  "={{ $now.toISO() }}",
-                                                                              "message_text":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.text }}",
-                                                                              "user_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.id }}",
-                                                                              "user_name":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }}",
-                                                                              "message_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.message_id }}"
+                                                                              "timestamp":  "={{ $json.timestamp || $now.toISO() }}",
+                                                                              "message_text":  "={{ $json.message_text }}",
+                                                                              "user_id":  "={{ $json.user_id }}",
+                                                                              "user_name":  "={{ $json.user_name }}",
+                                                                              "message_id":  "={{ $json.message_id }}"
                                                                           },
                                                                 "matchingColumns":  [
 
@@ -350,41 +265,422 @@
                       "type":  "n8n-nodes-base.executeWorkflow",
                       "typeVersion":  1.3,
                       "position":  [
-                                       1600,
-                                       80
+                                       640,
+                                       176
                                    ],
-                      "id":  "ea78da43-0adf-4f41-a2a8-9a114b06e5c0",
+                      "id":  "ac0f1067-7118-400e-adcb-6bcad839c941",
                       "name":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027"
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.update_type}}",
+                                                                                                                    "rightValue":  "callback_query",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "a15e31c8-563c-4945-b7da-83b8a7a5b4d4"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Callback Query"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.update_type}}",
+                                                                                                                    "rightValue":  "message",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "24f18216-0c0f-4aa4-bb72-aefac809e3e2"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Message"
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       384,
+                                       32
+                                   ],
+                      "id":  "1c30ebbd-b3da-493b-8e9e-099f257ca1ee",
+                      "name":  "Switch - Telegram Update Type"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const data = $json.callback_data || \"\";\nconst chat_id = $json.chat_id || \"\";\nconst callback_query_id = $json.callback_query_id || \"\";\nconst clicked_by = $json.user_name || \"Unknown\";\nconst telegram_user_id = $json.user_id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\n      decision_method: \"Button\"\n    }\n  }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       640,
+                                       -80
+                                   ],
+                      "id":  "1e2dd16c-38fe-44ab-8edf-c6e89e5d1ee4",
+                      "name":  "Code - Normalize Telegram Callback"
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "callback",
+                                         "queryId":  "={{ $json.callback_query_id }}",
+                                         "additionalFields":  {
+                                                                  "text":  "Processing..."
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegram",
+                      "typeVersion":  1.2,
+                      "position":  [
+                                       896,
+                                       -224
+                                   ],
+                      "id":  "966fdf85-dca5-4620-a034-d684f0ab6a7f",
+                      "name":  "Answer Telegram Callback",
+                      "webhookId":  "61955a62-74a6-4cda-b919-2d28e1c056dc",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "Telegram - Oom Sakkie"
+                                                          }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.action}}",
+                                                                                                                    "rightValue":  "route_document_send_callback",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "10575d1e-7b30-4980-97a3-eb89df16a08f"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Document Send Callback"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.action}}",
+                                                                                                                    "rightValue":  "process_order_approval_reply",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "7d034fbf-3ed0-470a-ba0d-a811b65faeca"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Approval Callback"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "strict",
+                                                                                                             "version":  3
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{$json.action}}",
+                                                                                                                    "rightValue":  "invalid_callback",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 },
+                                                                                                                    "id":  "16a56865-6f6c-439c-9dd9-ccefe39388d1"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "Invalid Approval Callback"
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       896,
+                                       -32
+                                   ],
+                      "id":  "e7bbbe6c-abeb-4c40-b4fa-7d46faf1a308",
+                      "name":  "Switch - Route Telegram Callback Type"
+                  },
+                  {
+                      "parameters":  {
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "T8LLCAtYDLNRPoRx",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
+                                                            "cachedResultName":  "My project - 2.4A - Amadeus Orders Sub Agent"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+
+                                                                          },
+                                                                "matchingColumns":  [
+
+                                                                                    ],
+                                                                "schema":  [
+
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  true
+                                                            },
+                                         "options":  {
+                                                         "waitForSubWorkflow":  true
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflow",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       1152,
+                                       48
+                                   ],
+                      "id":  "0e2fd324-f1ad-4efb-925c-181abbcf1b61",
+                      "name":  "Call 2.4 - Approval Callback Worker"
+                  },
+                  {
+                      "parameters":  {
+                                         "workflowId":  {
+                                                            "__rl":  true,
+                                                            "value":  "8b14lAqmyrD0LYZz",
+                                                            "mode":  "list",
+                                                            "cachedResultUrl":  "/workflow/8b14lAqmyrD0LYZz",
+                                                            "cachedResultName":  "My project ? 2.4.5 - Document Send Callback Handler"
+                                                        },
+                                         "workflowInputs":  {
+                                                                "mappingMode":  "defineBelow",
+                                                                "value":  {
+                                                                              "callback_data":  "={{$json.callback_data}}",
+                                                                              "chat_id":  "={{$json.chat_id}}",
+                                                                              "callback_query_id":  "={{$json.callback_query_id}}",
+                                                                              "clicked_by":  "={{$json.clicked_by}}",
+                                                                              "telegram_user_id":  "={{$json.telegram_user_id}}",
+                                                                              "order_id":  "={{$json.order_id}}",
+                                                                              "document_id":  "={{$json.document_id}}",
+                                                                              "conversation_id":  "={{$json.conversation_id}}"
+                                                                          },
+                                                                "matchingColumns":  [
+
+                                                                                    ],
+                                                                "schema":  [
+                                                                               {
+                                                                                   "id":  "callback_data",
+                                                                                   "displayName":  "callback_data",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "chat_id",
+                                                                                   "displayName":  "chat_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "callback_query_id",
+                                                                                   "displayName":  "callback_query_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "clicked_by",
+                                                                                   "displayName":  "clicked_by",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "telegram_user_id",
+                                                                                   "displayName":  "telegram_user_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "order_id",
+                                                                                   "displayName":  "order_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "document_id",
+                                                                                   "displayName":  "document_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               },
+                                                                               {
+                                                                                   "id":  "conversation_id",
+                                                                                   "displayName":  "conversation_id",
+                                                                                   "required":  false,
+                                                                                   "defaultMatch":  false,
+                                                                                   "display":  true,
+                                                                                   "canBeUsedToMatch":  true,
+                                                                                   "type":  "string",
+                                                                                   "removed":  false
+                                                                               }
+                                                                           ],
+                                                                "attemptToConvertTypes":  false,
+                                                                "convertFieldsToString":  true
+                                                            },
+                                         "options":  {
+                                                         "waitForSubWorkflow":  false
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.executeWorkflow",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       1152,
+                                       -144
+                                   ],
+                      "id":  "9dc71c31-daec-4148-aa5d-f2fcd0c2f5f9",
+                      "name":  "Call 2.4.5 - Document Send Callback Worker"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const update = $json;\nconst message = update.message || {};\nconst callback = update.callback_query || {};\nconst callbackMessage = callback.message || {};\nconst from = callback.from || message.from || {};\nconst chat = callbackMessage.chat || message.chat || {};\nconst updateType = callback.id ? \"callback_query\" : (message.message_id ? \"message\" : \"unknown\");\n\nreturn [\n  {\n    json: {\n      update_type: updateType,\n      user_id: String(from.id || \"\"),\n      user_name: from.first_name || \"Unknown\",\n      chat_id: String(chat.id || from.id || \"\"),\n      message_text: (message.text || \"\").trim(),\n      message_id: message.message_id || callbackMessage.message_id || \"\",\n      callback_query_id: callback.id || \"\",\n      callback_data: callback.data || \"\",\n      channel: \"TELEGRAM\",\n      timestamp: new Date().toISOString(),\n      raw_update: update\n    }\n  }\n];"
+                                     },
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -864,
+                                       -128
+                                   ],
+                      "id":  "d6b1243e-2c65-4c56-a8ef-2fa6222a4ac7",
+                      "name":  "Code - Normalize Telegram Update"
+                  },
+                  {
+                      "parameters":  {
+                                         "updates":  [
+                                                         "message",
+                                                         "callback_query"
+                                                     ],
+                                         "additionalFields":  {
+
+                                                              }
+                                     },
+                      "type":  "n8n-nodes-base.telegramTrigger",
+                      "typeVersion":  1.3,
+                      "position":  [
+                                       -1088,
+                                       -128
+                                   ],
+                      "id":  "e9c7577f-7247-4900-aa1d-19a3d4ca1498",
+                      "name":  "Telegram Trigger",
+                      "webhookId":  "b419b4e9-adf4-40a3-b582-a3e4ca1f3488",
+                      "credentials":  {
+                                          "telegramApi":  {
+                                                              "id":  "e5jS1ondryiauRNX",
+                                                              "name":  "Telegram - Oom Sakkie"
+                                                          }
+                                      }
                   }
               ],
     "connections":  {
-                        "Telegram Trigger":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Prepare Message",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  },
-                                                                  {
-                                                                      "node":  "Get User Info",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Prepare Message":  {
-                                                "main":  [
-                                                             [
-                                                                 {
-                                                                     "node":  "Merge",
-                                                                     "type":  "main",
-                                                                     "index":  0
-                                                                 }
-                                                             ]
-                                                         ]
-                                            },
+                        "Code - Normalize Telegram Update":  {
+                                                                 "main":  [
+                                                                              [
+                                                                                  {
+                                                                                      "node":  "Merge",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  },
+                                                                                  {
+                                                                                      "node":  "Get User Info",
+                                                                                      "type":  "main",
+                                                                                      "index":  0
+                                                                                  }
+                                                                              ]
+                                                                          ]
+                                                             },
                         "Get User Info":  {
                                               "main":  [
                                                            [
@@ -396,6 +692,28 @@
                                                            ]
                                                        ]
                                           },
+                        "Merge":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Limit",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
+                        "Limit":  {
+                                      "main":  [
+                                                   [
+                                                       {
+                                                           "node":  "Normalize Auth Check",
+                                                           "type":  "main",
+                                                           "index":  0
+                                                       }
+                                                   ]
+                                               ]
+                                  },
                         "Normalize Auth Check":  {
                                                      "main":  [
                                                                   [
@@ -418,82 +736,105 @@
                                                             ],
                                                             [
                                                                 {
-                                                                    "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                    "node":  "Switch - Telegram Update Type",
                                                                     "type":  "main",
                                                                     "index":  0
                                                                 }
                                                             ]
                                                         ]
                                            },
-                        "Merge":  {
-                                      "main":  [
-                                                   [
-                                                       {
-                                                           "node":  "Limit",
-                                                           "type":  "main",
-                                                           "index":  0
-                                                       }
-                                                   ]
-                                               ]
-                                  },
-                        "Limit":  {
-                                      "main":  [
-                                                   [
-                                                       {
-                                                           "node":  "Normalize Auth Check",
-                                                           "type":  "main",
-                                                           "index":  0
-                                                       }
-                                                   ]
-                                               ]
-                                  }
+                        "Switch - Telegram Update Type":  {
+                                                              "main":  [
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Code - Normalize Telegram Callback",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ],
+                                                                           [
+                                                                               {
+                                                                                   "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                                   "type":  "main",
+                                                                                   "index":  0
+                                                                               }
+                                                                           ]
+                                                                       ]
+                                                          },
+                        "Code - Normalize Telegram Callback":  {
+                                                                   "main":  [
+                                                                                [
+                                                                                    {
+                                                                                        "node":  "Switch - Route Telegram Callback Type",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    },
+                                                                                    {
+                                                                                        "node":  "Answer Telegram Callback",
+                                                                                        "type":  "main",
+                                                                                        "index":  0
+                                                                                    }
+                                                                                ]
+                                                                            ]
+                                                               },
+                        "Switch - Route Telegram Callback Type":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Call 2.4.5 - Document Send Callback Worker",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ],
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Call 2.4 - Approval Callback Worker",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ],
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Call 2.4 - Approval Callback Worker",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                        "Telegram Trigger":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Code - Normalize Telegram Update",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             }
                     },
     "settings":  {
-                     "executionOrder":  "v1"
+                     "executionOrder":  "v1",
+                     "binaryMode":  "separate"
                  },
     "staticData":  null,
     "meta":  {
                  "templateCredsSetupCompleted":  true
              },
     "pinData":  {
-                    "Telegram Trigger":  [
-                                             {
-                                                 "json":  {
-                                                              "update_id":  549157700,
-                                                              "message":  {
-                                                                              "message_id":  525,
-                                                                              "from":  {
-                                                                                           "id":  5721652188,
-                                                                                           "is_bot":  false,
-                                                                                           "first_name":  "Charl",
-                                                                                           "last_name":  "Nieuwendyk",
-                                                                                           "username":  "CharlNPersonal",
-                                                                                           "language_code":  "en"
-                                                                                       },
-                                                                              "chat":  {
-                                                                                           "id":  5721652188,
-                                                                                           "first_name":  "Charl",
-                                                                                           "last_name":  "Nieuwendyk",
-                                                                                           "username":  "CharlNPersonal",
-                                                                                           "type":  "private"
-                                                                                       },
-                                                                              "date":  1767030272,
-                                                                              "text":  "Hi"
-                                                                          }
-                                                          }
-                                             }
-                                         ]
+
                 },
-    "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
-    "activeVersionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
-    "versionCounter":  62,
+    "versionId":  "61c74939-dd3d-45bf-a473-516015cccc67",
+    "activeVersionId":  "61c74939-dd3d-45bf-a473-516015cccc67",
+    "versionCounter":  18,
     "triggerCount":  1,
     "shared":  [
                    {
-                       "updatedAt":  "2025-12-29T17:30:56.691Z",
-                       "createdAt":  "2025-12-29T17:30:56.691Z",
+                       "updatedAt":  "2026-05-18T23:56:24.451Z",
+                       "createdAt":  "2026-05-18T23:56:24.451Z",
                        "role":  "workflow:owner",
-                       "workflowId":  "yt4qc1kP5riAfLfL",
+                       "workflowId":  "s8QaxmqT69Z5mhvE",
                        "projectId":  "dUeH9AUxBtKxgNPX",
                        "project":  {
                                        "updatedAt":  "2025-07-13T13:07:42.154Z",
@@ -514,85 +855,11 @@
 
              ],
     "activeVersion":  {
-                          "updatedAt":  "2026-03-23T13:26:41.741Z",
-                          "createdAt":  "2026-03-23T13:26:41.741Z",
-                          "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
-                          "workflowId":  "yt4qc1kP5riAfLfL",
+                          "updatedAt":  "2026-05-19T00:49:55.000Z",
+                          "createdAt":  "2026-05-19T00:49:53.781Z",
+                          "versionId":  "61c74939-dd3d-45bf-a473-516015cccc67",
+                          "workflowId":  "s8QaxmqT69Z5mhvE",
                           "nodes":  [
-                                        {
-                                            "parameters":  {
-                                                               "updates":  [
-                                                                               "message"
-                                                                           ],
-                                                               "additionalFields":  {
-
-                                                                                    }
-                                                           },
-                                            "type":  "n8n-nodes-base.telegramTrigger",
-                                            "typeVersion":  1.2,
-                                            "position":  [
-                                                             0,
-                                                             0
-                                                         ],
-                                            "id":  "740e2041-7277-429d-80bf-9616beda71b6",
-                                            "name":  "Telegram Trigger",
-                                            "webhookId":  "41252191-96ae-4913-b545-af19e8ade5dc",
-                                            "credentials":  {
-                                                                "telegramApi":  {
-                                                                                    "id":  "e5jS1ondryiauRNX",
-                                                                                    "name":  "NIEUAI_Telegram"
-                                                                                }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "assignments":  {
-                                                                                   "assignments":  [
-                                                                                                       {
-                                                                                                           "id":  "3eec81ed-9d98-4fcb-a60c-3d2bf5adda81",
-                                                                                                           "name":  "user_id",
-                                                                                                           "value":  "={{ $json.message.from.id }}",
-                                                                                                           "type":  "string"
-                                                                                                       },
-                                                                                                       {
-                                                                                                           "id":  "993d3ec7-d695-4430-9a96-42c3c985e6b3",
-                                                                                                           "name":  "user_name",
-                                                                                                           "value":  "={{ $json.message.from.first_name }}",
-                                                                                                           "type":  "string"
-                                                                                                       },
-                                                                                                       {
-                                                                                                           "id":  "62c15e0d-8983-4bc4-bc35-fa91fbf3693b",
-                                                                                                           "name":  "message_text",
-                                                                                                           "value":  "={{ $json.message.text }}",
-                                                                                                           "type":  "string"
-                                                                                                       },
-                                                                                                       {
-                                                                                                           "id":  "1842c30c-b865-4d30-9c66-0193df1b55da",
-                                                                                                           "name":  "channel",
-                                                                                                           "value":  "TELEGRAM",
-                                                                                                           "type":  "string"
-                                                                                                       },
-                                                                                                       {
-                                                                                                           "id":  "a2ec9d6b-0c04-4a84-8622-d7756d32975f",
-                                                                                                           "name":  "timestamp",
-                                                                                                           "value":  "={{ $now.toISO() }}",
-                                                                                                           "type":  "string"
-                                                                                                       }
-                                                                                                   ]
-                                                                               },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.set",
-                                            "typeVersion":  3.4,
-                                            "position":  [
-                                                             288,
-                                                             -80
-                                                         ],
-                                            "id":  "57a5a452-9800-4399-bd79-66281dd70aed",
-                                            "name":  "Prepare Message"
-                                        },
                                         {
                                             "parameters":  {
                                                                "documentId":  {
@@ -613,7 +880,7 @@
                                                                                  "values":  [
                                                                                                 {
                                                                                                     "lookupColumn":  "telegram_id",
-                                                                                                    "lookupValue":  "={{ $json.message.from.id }}"
+                                                                                                    "lookupValue":  "={{ $json.user_id }}"
                                                                                                 }
                                                                                             ]
                                                                              },
@@ -624,11 +891,12 @@
                                             "type":  "n8n-nodes-base.googleSheets",
                                             "typeVersion":  4.7,
                                             "position":  [
-                                                             288,
-                                                             96
+                                                             -592,
+                                                             -32
                                                          ],
-                                            "id":  "ddf4a804-e909-4fe7-91b1-1e80f6e7d756",
+                                            "id":  "ca5600f9-53c8-4b19-bd34-0e14a8ef2238",
                                             "name":  "Get User Info",
+                                            "alwaysOutputData":  true,
                                             "credentials":  {
                                                                 "googleSheetsOAuth2Api":  {
                                                                                               "id":  "DbtelWXdvwe4DuHc",
@@ -638,27 +906,15 @@
                                         },
                                         {
                                             "parameters":  {
-                                                               "assignments":  {
-                                                                                   "assignments":  [
-                                                                                                       {
-                                                                                                           "id":  "5348d076-8434-42f9-8f3a-b396bb555b81",
-                                                                                                           "name":  "is_authorized",
-                                                                                                           "value":  "={{ !!$json.telegram_id }}",
-                                                                                                           "type":  "string"
-                                                                                                       }
-                                                                                                   ]
-                                                                               },
-                                                               "options":  {
-
-                                                                           }
+                                                               "jsCode":  "const userRow = $json || {};\nconst originalItems = $items(\"Code - Normalize Telegram Update\");\nconst original = originalItems?.[0]?.json || {};\nconst isAuthorized = !!userRow.telegram_id;\n\nreturn [\n  {\n    json: {\n      ...original,\n      auth_user: userRow,\n      telegram_id: userRow.telegram_id || \"\",\n      authorized_first_name: userRow.first_name || \"\",\n      authorized_last_name: userRow.last_name || \"\",\n      authorized_username: userRow.username || \"\",\n      authorized_role: userRow.role || \"\",\n      is_authorized: isAuthorized\n    }\n  }\n];"
                                                            },
-                                            "type":  "n8n-nodes-base.set",
-                                            "typeVersion":  3.4,
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
                                             "position":  [
-                                                             1056,
-                                                             0
+                                                             -96,
+                                                             -128
                                                          ],
-                                            "id":  "3d4e4bf4-50ce-430c-8f89-75e57477c12d",
+                                            "id":  "57b1916e-df6b-41c4-8bdc-1cc45661ceac",
                                             "name":  "Normalize Auth Check"
                                         },
                                         {
@@ -703,7 +959,7 @@
                                                                                                                                           "leftValue":  "={{ $json.is_authorized }}",
                                                                                                                                           "rightValue":  "=true",
                                                                                                                                           "operator":  {
-                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "type":  "boolean",
                                                                                                                                                            "operation":  "equals"
                                                                                                                                                        }
                                                                                                                                       }
@@ -723,16 +979,16 @@
                                             "type":  "n8n-nodes-base.switch",
                                             "typeVersion":  3.3,
                                             "position":  [
-                                                             1296,
-                                                             0
+                                                             144,
+                                                             -128
                                                          ],
-                                            "id":  "dde5a9f8-905e-4dae-8d88-3dd5cd22542e",
+                                            "id":  "69588480-e7cf-400e-a21b-b74ea81e52be",
                                             "name":  "Security Check"
                                         },
                                         {
                                             "parameters":  {
-                                                               "chatId":  "={{ $(\u0027Merge\u0027).item.json.user_id }}",
-                                                               "text":  "=Hi {{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }} 👋 Sorry, you’re not registered for the Amadeus Assistant system. If you believe this is a mistake, please ask Charl to add your Telegram ID.",
+                                                               "chatId":  "={{ $json.chat_id || $json.user_id }}",
+                                                               "text":  "=Hi {{ $json.user_name }}. Sorry, you are not registered for the Amadeus Assistant system. If you believe this is a mistake, please ask Charl to add your Telegram ID.",
                                                                "additionalFields":  {
                                                                                         "appendAttribution":  false
                                                                                     }
@@ -740,16 +996,16 @@
                                             "type":  "n8n-nodes-base.telegram",
                                             "typeVersion":  1.2,
                                             "position":  [
-                                                             1600,
-                                                             -112
+                                                             448,
+                                                             -240
                                                          ],
-                                            "id":  "84d27254-a057-4c0f-b13c-c1686d51d496",
+                                            "id":  "db99d642-c77f-4992-97e5-398fdacdfc0a",
                                             "name":  "Send Not Authorized",
                                             "webhookId":  "3c5edd77-487a-49f0-b7ba-7fd1e47d3587",
                                             "credentials":  {
                                                                 "telegramApi":  {
                                                                                     "id":  "e5jS1ondryiauRNX",
-                                                                                    "name":  "NIEUAI_Telegram"
+                                                                                    "name":  "Telegram - Oom Sakkie"
                                                                                 }
                                                             }
                                         },
@@ -760,10 +1016,10 @@
                                             "type":  "n8n-nodes-base.merge",
                                             "typeVersion":  3.2,
                                             "position":  [
-                                                             560,
-                                                             0
+                                                             -592,
+                                                             -128
                                                          ],
-                                            "id":  "063adeb5-efb6-4703-811a-871040f48f80",
+                                            "id":  "ab749015-d13c-4161-9044-e40ee41c12e3",
                                             "name":  "Merge"
                                         },
                                         {
@@ -773,10 +1029,10 @@
                                             "type":  "n8n-nodes-base.limit",
                                             "typeVersion":  1,
                                             "position":  [
-                                                             816,
-                                                             0
+                                                             -336,
+                                                             -128
                                                          ],
-                                            "id":  "59a2cd98-c2a9-4b8b-96db-0a8dd49396cb",
+                                            "id":  "7308f914-9386-42fa-9bec-56726ff95f71",
                                             "name":  "Limit"
                                         },
                                         {
@@ -786,16 +1042,16 @@
                                                                                   "value":  "6UscGE44eTfdLp1A",
                                                                                   "mode":  "list",
                                                                                   "cachedResultUrl":  "/workflow/6UscGE44eTfdLp1A",
-                                                                                  "cachedResultName":  "My project — 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
+                                                                                  "cachedResultName":  "My project - 2.0 - OOM SAKKIE - Amadeus Assistant Agent"
                                                                               },
                                                                "workflowInputs":  {
                                                                                       "mappingMode":  "defineBelow",
                                                                                       "value":  {
-                                                                                                    "timestamp":  "={{ $now.toISO() }}",
-                                                                                                    "message_text":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.text }}",
-                                                                                                    "user_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.id }}",
-                                                                                                    "user_name":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.from.first_name }}",
-                                                                                                    "message_id":  "={{ $(\u0027Telegram Trigger\u0027).item.json.message.message_id }}"
+                                                                                                    "timestamp":  "={{ $json.timestamp || $now.toISO() }}",
+                                                                                                    "message_text":  "={{ $json.message_text }}",
+                                                                                                    "user_id":  "={{ $json.user_id }}",
+                                                                                                    "user_name":  "={{ $json.user_name }}",
+                                                                                                    "message_id":  "={{ $json.message_id }}"
                                                                                                 },
                                                                                       "matchingColumns":  [
 
@@ -862,41 +1118,422 @@
                                             "type":  "n8n-nodes-base.executeWorkflow",
                                             "typeVersion":  1.3,
                                             "position":  [
-                                                             1600,
-                                                             80
+                                                             640,
+                                                             176
                                                          ],
-                                            "id":  "ea78da43-0adf-4f41-a2a8-9a114b06e5c0",
+                                            "id":  "ac0f1067-7118-400e-adcb-6bcad839c941",
                                             "name":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rules":  {
+                                                                             "values":  [
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.update_type}}",
+                                                                                                                                          "rightValue":  "callback_query",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "a15e31c8-563c-4945-b7da-83b8a7a5b4d4"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Callback Query"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.update_type}}",
+                                                                                                                                          "rightValue":  "message",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "24f18216-0c0f-4aa4-bb72-aefac809e3e2"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Message"
+                                                                                            }
+                                                                                        ]
+                                                                         },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.switch",
+                                            "typeVersion":  3.2,
+                                            "position":  [
+                                                             384,
+                                                             32
+                                                         ],
+                                            "id":  "1c30ebbd-b3da-493b-8e9e-099f257ca1ee",
+                                            "name":  "Switch - Telegram Update Type"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const data = $json.callback_data || \"\";\nconst chat_id = $json.chat_id || \"\";\nconst callback_query_id = $json.callback_query_id || \"\";\nconst clicked_by = $json.user_name || \"Unknown\";\nconst telegram_user_id = $json.user_id || \"\";\n\nlet action = \"\";\nlet decision = \"\";\nlet order_id = \"\";\nlet document_id = \"\";\nlet conversation_id = \"\";\n\nif (data.startsWith(\"approve_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"approve\";\n  order_id = data.replace(\"approve_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"reject_\")) {\n  action = \"process_order_approval_reply\";\n  decision = \"reject\";\n  order_id = data.replace(\"reject_\", \"\").trim().toUpperCase();\n} else if (data.startsWith(\"quote_send|\") || data.startsWith(\"quote_cancel|\")) {\n  const parts = data.split(\"|\");\n  action = \"route_document_send_callback\";\n  order_id = (parts[1] || \"\").trim().toUpperCase();\n  document_id = (parts[2] || \"\").trim();\n  conversation_id = (parts[3] || \"\").trim();\n}\n\nif (!action) {\n  action = \"invalid_callback\";\n}\n\nreturn [\n  {\n    json: {\n      action,\n      decision,\n      order_id,\n      document_id,\n      conversation_id,\n      callback_data: data,\n      chat_id: String(chat_id),\n      callback_query_id,\n      changed_by: clicked_by,\n      trigger_source: \"Telegram Button\",\n      clicked_by,\n      telegram_user_id: String(telegram_user_id),\n      decision_method: \"Button\"\n    }\n  }\n];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             640,
+                                                             -80
+                                                         ],
+                                            "id":  "1e2dd16c-38fe-44ab-8edf-c6e89e5d1ee4",
+                                            "name":  "Code - Normalize Telegram Callback"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "resource":  "callback",
+                                                               "queryId":  "={{ $json.callback_query_id }}",
+                                                               "additionalFields":  {
+                                                                                        "text":  "Processing..."
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegram",
+                                            "typeVersion":  1.2,
+                                            "position":  [
+                                                             896,
+                                                             -224
+                                                         ],
+                                            "id":  "966fdf85-dca5-4620-a034-d684f0ab6a7f",
+                                            "name":  "Answer Telegram Callback",
+                                            "webhookId":  "61955a62-74a6-4cda-b919-2d28e1c056dc",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "Telegram - Oom Sakkie"
+                                                                                }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rules":  {
+                                                                             "values":  [
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.action}}",
+                                                                                                                                          "rightValue":  "route_document_send_callback",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "10575d1e-7b30-4980-97a3-eb89df16a08f"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Document Send Callback"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.action}}",
+                                                                                                                                          "rightValue":  "process_order_approval_reply",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "7d034fbf-3ed0-470a-ba0d-a811b65faeca"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Approval Callback"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "strict",
+                                                                                                                                   "version":  3
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "leftValue":  "={{$json.action}}",
+                                                                                                                                          "rightValue":  "invalid_callback",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       },
+                                                                                                                                          "id":  "16a56865-6f6c-439c-9dd9-ccefe39388d1"
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "Invalid Approval Callback"
+                                                                                            }
+                                                                                        ]
+                                                                         },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.switch",
+                                            "typeVersion":  3.2,
+                                            "position":  [
+                                                             896,
+                                                             -32
+                                                         ],
+                                            "id":  "e7bbbe6c-abeb-4c40-b4fa-7d46faf1a308",
+                                            "name":  "Switch - Route Telegram Callback Type"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "T8LLCAtYDLNRPoRx",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/T8LLCAtYDLNRPoRx",
+                                                                                  "cachedResultName":  "My project - 2.4A - Amadeus Orders Sub Agent"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+
+                                                                                                },
+                                                                                      "matchingColumns":  [
+
+                                                                                                          ],
+                                                                                      "schema":  [
+
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  false,
+                                                                                      "convertFieldsToString":  true
+                                                                                  },
+                                                               "options":  {
+                                                                               "waitForSubWorkflow":  true
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflow",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             1152,
+                                                             48
+                                                         ],
+                                            "id":  "0e2fd324-f1ad-4efb-925c-181abbcf1b61",
+                                            "name":  "Call 2.4 - Approval Callback Worker"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "workflowId":  {
+                                                                                  "__rl":  true,
+                                                                                  "value":  "8b14lAqmyrD0LYZz",
+                                                                                  "mode":  "list",
+                                                                                  "cachedResultUrl":  "/workflow/8b14lAqmyrD0LYZz",
+                                                                                  "cachedResultName":  "My project ? 2.4.5 - Document Send Callback Handler"
+                                                                              },
+                                                               "workflowInputs":  {
+                                                                                      "mappingMode":  "defineBelow",
+                                                                                      "value":  {
+                                                                                                    "callback_data":  "={{$json.callback_data}}",
+                                                                                                    "chat_id":  "={{$json.chat_id}}",
+                                                                                                    "callback_query_id":  "={{$json.callback_query_id}}",
+                                                                                                    "clicked_by":  "={{$json.clicked_by}}",
+                                                                                                    "telegram_user_id":  "={{$json.telegram_user_id}}",
+                                                                                                    "order_id":  "={{$json.order_id}}",
+                                                                                                    "document_id":  "={{$json.document_id}}",
+                                                                                                    "conversation_id":  "={{$json.conversation_id}}"
+                                                                                                },
+                                                                                      "matchingColumns":  [
+
+                                                                                                          ],
+                                                                                      "schema":  [
+                                                                                                     {
+                                                                                                         "id":  "callback_data",
+                                                                                                         "displayName":  "callback_data",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "chat_id",
+                                                                                                         "displayName":  "chat_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "callback_query_id",
+                                                                                                         "displayName":  "callback_query_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "clicked_by",
+                                                                                                         "displayName":  "clicked_by",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "telegram_user_id",
+                                                                                                         "displayName":  "telegram_user_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "order_id",
+                                                                                                         "displayName":  "order_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "document_id",
+                                                                                                         "displayName":  "document_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     },
+                                                                                                     {
+                                                                                                         "id":  "conversation_id",
+                                                                                                         "displayName":  "conversation_id",
+                                                                                                         "required":  false,
+                                                                                                         "defaultMatch":  false,
+                                                                                                         "display":  true,
+                                                                                                         "canBeUsedToMatch":  true,
+                                                                                                         "type":  "string",
+                                                                                                         "removed":  false
+                                                                                                     }
+                                                                                                 ],
+                                                                                      "attemptToConvertTypes":  false,
+                                                                                      "convertFieldsToString":  true
+                                                                                  },
+                                                               "options":  {
+                                                                               "waitForSubWorkflow":  false
+                                                                           }
+                                                           },
+                                            "type":  "n8n-nodes-base.executeWorkflow",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             1152,
+                                                             -144
+                                                         ],
+                                            "id":  "9dc71c31-daec-4148-aa5d-f2fcd0c2f5f9",
+                                            "name":  "Call 2.4.5 - Document Send Callback Worker"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const update = $json;\nconst message = update.message || {};\nconst callback = update.callback_query || {};\nconst callbackMessage = callback.message || {};\nconst from = callback.from || message.from || {};\nconst chat = callbackMessage.chat || message.chat || {};\nconst updateType = callback.id ? \"callback_query\" : (message.message_id ? \"message\" : \"unknown\");\n\nreturn [\n  {\n    json: {\n      update_type: updateType,\n      user_id: String(from.id || \"\"),\n      user_name: from.first_name || \"Unknown\",\n      chat_id: String(chat.id || from.id || \"\"),\n      message_text: (message.text || \"\").trim(),\n      message_id: message.message_id || callbackMessage.message_id || \"\",\n      callback_query_id: callback.id || \"\",\n      callback_data: callback.data || \"\",\n      channel: \"TELEGRAM\",\n      timestamp: new Date().toISOString(),\n      raw_update: update\n    }\n  }\n];"
+                                                           },
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -864,
+                                                             -128
+                                                         ],
+                                            "id":  "d6b1243e-2c65-4c56-a8ef-2fa6222a4ac7",
+                                            "name":  "Code - Normalize Telegram Update"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "updates":  [
+                                                                               "message",
+                                                                               "callback_query"
+                                                                           ],
+                                                               "additionalFields":  {
+
+                                                                                    }
+                                                           },
+                                            "type":  "n8n-nodes-base.telegramTrigger",
+                                            "typeVersion":  1.3,
+                                            "position":  [
+                                                             -1088,
+                                                             -128
+                                                         ],
+                                            "id":  "e9c7577f-7247-4900-aa1d-19a3d4ca1498",
+                                            "name":  "Telegram Trigger",
+                                            "webhookId":  "b419b4e9-adf4-40a3-b582-a3e4ca1f3488",
+                                            "credentials":  {
+                                                                "telegramApi":  {
+                                                                                    "id":  "e5jS1ondryiauRNX",
+                                                                                    "name":  "Telegram - Oom Sakkie"
+                                                                                }
+                                                            }
                                         }
                                     ],
                           "connections":  {
-                                              "Telegram Trigger":  {
-                                                                       "main":  [
-                                                                                    [
-                                                                                        {
-                                                                                            "node":  "Prepare Message",
-                                                                                            "type":  "main",
-                                                                                            "index":  0
-                                                                                        },
-                                                                                        {
-                                                                                            "node":  "Get User Info",
-                                                                                            "type":  "main",
-                                                                                            "index":  0
-                                                                                        }
-                                                                                    ]
-                                                                                ]
-                                                                   },
-                                              "Prepare Message":  {
-                                                                      "main":  [
-                                                                                   [
-                                                                                       {
-                                                                                           "node":  "Merge",
-                                                                                           "type":  "main",
-                                                                                           "index":  0
-                                                                                       }
-                                                                                   ]
-                                                                               ]
-                                                                  },
+                                              "Code - Normalize Telegram Update":  {
+                                                                                       "main":  [
+                                                                                                    [
+                                                                                                        {
+                                                                                                            "node":  "Merge",
+                                                                                                            "type":  "main",
+                                                                                                            "index":  0
+                                                                                                        },
+                                                                                                        {
+                                                                                                            "node":  "Get User Info",
+                                                                                                            "type":  "main",
+                                                                                                            "index":  0
+                                                                                                        }
+                                                                                                    ]
+                                                                                                ]
+                                                                                   },
                                               "Get User Info":  {
                                                                     "main":  [
                                                                                  [
@@ -908,6 +1545,28 @@
                                                                                  ]
                                                                              ]
                                                                 },
+                                              "Merge":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Limit",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
+                                              "Limit":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "Normalize Auth Check",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
                                               "Normalize Auth Check":  {
                                                                            "main":  [
                                                                                         [
@@ -930,63 +1589,95 @@
                                                                                   ],
                                                                                   [
                                                                                       {
-                                                                                          "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                                          "node":  "Switch - Telegram Update Type",
                                                                                           "type":  "main",
                                                                                           "index":  0
                                                                                       }
                                                                                   ]
                                                                               ]
                                                                  },
-                                              "Merge":  {
-                                                            "main":  [
-                                                                         [
-                                                                             {
-                                                                                 "node":  "Limit",
-                                                                                 "type":  "main",
-                                                                                 "index":  0
-                                                                             }
-                                                                         ]
-                                                                     ]
-                                                        },
-                                              "Limit":  {
-                                                            "main":  [
-                                                                         [
-                                                                             {
-                                                                                 "node":  "Normalize Auth Check",
-                                                                                 "type":  "main",
-                                                                                 "index":  0
-                                                                             }
-                                                                         ]
-                                                                     ]
-                                                        }
+                                              "Switch - Telegram Update Type":  {
+                                                                                    "main":  [
+                                                                                                 [
+                                                                                                     {
+                                                                                                         "node":  "Code - Normalize Telegram Callback",
+                                                                                                         "type":  "main",
+                                                                                                         "index":  0
+                                                                                                     }
+                                                                                                 ],
+                                                                                                 [
+                                                                                                     {
+                                                                                                         "node":  "Call \u00272.0 - OOM SAKKIE - Amadeus Assistant Agent\u0027",
+                                                                                                         "type":  "main",
+                                                                                                         "index":  0
+                                                                                                     }
+                                                                                                 ]
+                                                                                             ]
+                                                                                },
+                                              "Code - Normalize Telegram Callback":  {
+                                                                                         "main":  [
+                                                                                                      [
+                                                                                                          {
+                                                                                                              "node":  "Switch - Route Telegram Callback Type",
+                                                                                                              "type":  "main",
+                                                                                                              "index":  0
+                                                                                                          },
+                                                                                                          {
+                                                                                                              "node":  "Answer Telegram Callback",
+                                                                                                              "type":  "main",
+                                                                                                              "index":  0
+                                                                                                          }
+                                                                                                      ]
+                                                                                                  ]
+                                                                                     },
+                                              "Switch - Route Telegram Callback Type":  {
+                                                                                            "main":  [
+                                                                                                         [
+                                                                                                             {
+                                                                                                                 "node":  "Call 2.4.5 - Document Send Callback Worker",
+                                                                                                                 "type":  "main",
+                                                                                                                 "index":  0
+                                                                                                             }
+                                                                                                         ],
+                                                                                                         [
+                                                                                                             {
+                                                                                                                 "node":  "Call 2.4 - Approval Callback Worker",
+                                                                                                                 "type":  "main",
+                                                                                                                 "index":  0
+                                                                                                             }
+                                                                                                         ],
+                                                                                                         [
+                                                                                                             {
+                                                                                                                 "node":  "Call 2.4 - Approval Callback Worker",
+                                                                                                                 "type":  "main",
+                                                                                                                 "index":  0
+                                                                                                             }
+                                                                                                         ]
+                                                                                                     ]
+                                                                                        },
+                                              "Telegram Trigger":  {
+                                                                       "main":  [
+                                                                                    [
+                                                                                        {
+                                                                                            "node":  "Code - Normalize Telegram Update",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        }
+                                                                                    ]
+                                                                                ]
+                                                                   }
                                           },
                           "authors":  "Charl Nieuwendyk",
-                          "name":  null,
-                          "description":  null,
+                          "name":  "Version 61c74939",
+                          "description":  "",
                           "autosaved":  false,
                           "workflowPublishHistory":  [
                                                          {
-                                                             "createdAt":  "2026-03-23T13:26:41.992Z",
-                                                             "id":  142,
-                                                             "workflowId":  "yt4qc1kP5riAfLfL",
-                                                             "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
+                                                             "createdAt":  "2026-05-19T00:49:55.685Z",
+                                                             "id":  778,
+                                                             "workflowId":  "s8QaxmqT69Z5mhvE",
+                                                             "versionId":  "61c74939-dd3d-45bf-a473-516015cccc67",
                                                              "event":  "activated",
-                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
-                                                         },
-                                                         {
-                                                             "createdAt":  "2026-05-18T07:30:29.860Z",
-                                                             "id":  754,
-                                                             "workflowId":  "yt4qc1kP5riAfLfL",
-                                                             "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
-                                                             "event":  "activated",
-                                                             "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
-                                                         },
-                                                         {
-                                                             "createdAt":  "2026-05-18T07:30:29.446Z",
-                                                             "id":  753,
-                                                             "workflowId":  "yt4qc1kP5riAfLfL",
-                                                             "versionId":  "26edaa20-30c0-4aa2-a171-a64e49fbd259",
-                                                             "event":  "deactivated",
                                                              "userId":  "8691148d-2442-4b8d-b051-2cffc74988b1"
                                                          }
                                                      ]
