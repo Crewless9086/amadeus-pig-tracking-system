@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B Implemented Locally | Deploy/browser-check Phase 9.4 weight report. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Implemented Locally | Deploy/browser-check Phase 9.4 weight report. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2053,7 +2053,7 @@ Required outcome:
 - Full local unittest suite passed: 117 tests.
 - Deployed and owner-verified on `/pig-weights` on 2026-05-20.
 
-### 9.4 Weight Report — 9.4A/B Implemented Locally
+### 9.4 Weight Report — 9.4A/B/C1 Implemented Locally
 
 Required outcome:
 
@@ -2093,6 +2093,58 @@ Verification state:
 - Local route smoke passed: `/weight-report` returned `200`.
 - Local API smoke passed: valid report returned `200`, invalid date returned `400`.
 - Deploy/browser verification is next.
+
+9.4C report usability refinements - owner review captured:
+
+- Duplicate same-day pig weights:
+  - The report should detect when one pig has more than one weight entry on the same date.
+  - Duplicate/same-day entries should be highlighted with a clear symbol or visual marker.
+  - Open question: should duplicate entries be treated as a warning only, or should the latest entry become the "official" one for reporting?
+- Delete/edit weight entries:
+  - This needs planning before implementation because `WEIGHT_LOG` is a historical log and currently append-only.
+  - Preferred direction: add explicit edit/delete actions with audit protection, not silent row changes.
+  - Open question: should delete mean hard delete from `WEIGHT_LOG`, or safer soft-void/cancel so the original entry remains traceable?
+- Table readability:
+  - Add light row separators or zebra-style row treatment.
+  - Increase column spacing/padding in the bottom tables.
+  - Remove `Condition Notes` from the first detail table layout unless a better expandable/detail pattern is added.
+  - Show pen name only in the report tables; hide `Pen_ID` to save space.
+- Interactive rows:
+  - Desired future behavior: clicking a weight row opens that weight entry for review/edit.
+  - Align this with the weight form so the report table and weight form use the same interaction pattern.
+  - This should be a separate edit-history slice because it changes write behavior.
+- Loss flags:
+  - Add a dedicated `Loss Flagged` table or section so pigs with negative weight change are easy to find.
+- Summary usefulness:
+  - Average weight can mislead when different ages, pens, stages, and groups are mixed.
+  - Improve summary cards toward decision-useful signals, for example: pigs weighed, pigs not weighed in selected group, gainers, loss flags, no-previous-weight count, average gain by pen/stage, and largest losses.
+  - Open question: which summary signals should replace or reduce plain average weight in the first refinement?
+- Date column:
+  - If the report date range is a single date, the detail table may hide the repeated date column to reduce wasted space.
+  - If the report covers multiple dates, keep the date column.
+- Active/off-farm display:
+  - Owner preference changed from "active only" to possibly showing all weighed pigs, with inactive/off-farm rows greyed and struck through.
+  - Open question: should the API default include all weighed pigs with status metadata, or keep active-only as default and add an `include_inactive=true` toggle?
+
+Recommended 9.4C split:
+
+1. **9.4C1 Visual/read-only refinements** - duplicate marker, loss-flag section, better table spacing, remove notes, pen name only, hide date on single-day reports, and improve summary cards. No writes. Implemented locally 2026-05-20.
+2. **9.4C2 Weight entry edit/delete planning** - design safe audit behavior for editing, deleting, or voiding weight-log rows.
+3. **9.4C3 Interactive row implementation** - only after 9.4C2 is agreed.
+
+9.4C1 implementation state:
+
+- Backend now marks duplicate same-day pig weights with `duplicate_same_day` and `duplicate_entry_count`.
+- Backend now returns a dedicated `loss_flags` list.
+- Summary includes gain count, loss flag count, no-previous-weight count, and duplicate same-day count.
+- Weight report page now has a dedicated `Loss Flags` table.
+- Detail table removes `Condition Notes` from the visible columns.
+- Report tables use light row separators/zebra treatment and wider column padding.
+- Pen display shows pen name only where available, not `Pen_ID`.
+- Single-day reports hide the repeated date column; date remains visible for multi-day reports.
+- Edit/delete and clickable row behavior remain parked under 9.4C2/9.4C3.
+- `node --check static/js/weightReport.js` passed.
+- Focused report service tests passed.
 
 ### 9.5 Dashboard Sold This Month Audit — Planned
 
@@ -2256,7 +2308,7 @@ Recently completed:
 - Phase 9.1B litter attention dashboard — deployed and browser-verified 2026-05-19.
 - Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
 - Phase 9.3 weight form context — deployed and owner-verified 2026-05-20: current-pen helper added beside optional move pen, save payload unchanged, syntax/focused tests and full unittest suite passed.
-- Phase 9.4A/B weight report — implemented locally 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, and browser print support; focused tests and local route/API smoke passed.
+- Phase 9.4A/B/C1 weight report — implemented locally 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, browser print support, duplicate markers, loss flags, improved table spacing, pen-name-only display, and single-day date hiding; focused tests and local route/API smoke passed.
 
 Recommended next:
 

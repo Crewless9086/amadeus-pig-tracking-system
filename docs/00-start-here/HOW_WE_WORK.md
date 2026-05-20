@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.4** - Weight Report |
-| **Status** | Phase 9.4A/B implemented locally; Phase 8D, 9.1A, 9.1B, 9.2A, and 9.3 live/browser verified |
+| **Status** | Phase 9.4A/B/C1 implemented locally; Phase 8D, 9.1A, 9.1B, 9.2A, and 9.3 live/browser verified |
 | **Current focus** | Deploy/browser-check Phase 9.4 weight report |
-| **Current last verified** | **2026-05-20** - Phase 9.4 local route/API smoke and focused tests passed |
+| **Current last verified** | **2026-05-20** - Phase 9.4C1 local syntax and focused tests passed |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

@@ -641,6 +641,11 @@ Phase 9.4:
 10. Confirm invalid date ranges return a user-safe error.
 11. Confirm `Print` opens browser print flow and the printed layout hides filters/buttons.
 12. Confirm running the report does not write to Google Sheets.
+13. Confirm duplicate same-day pig weights show a clear marker.
+14. Confirm weight-loss rows appear in the dedicated `Loss Flags` section.
+15. Confirm pen tables show pen names without pen IDs where names exist.
+16. Confirm the date column hides on single-day reports and appears on multi-day reports.
+17. Confirm notes are not shown in the detail table.
 
 ## Google Sheets Checks
 

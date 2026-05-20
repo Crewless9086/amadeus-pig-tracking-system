@@ -813,6 +813,47 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.report-table th,
+.report-table td {
+  border-bottom: 1px solid #ded7ca;
+  padding-left: 18px;
+  padding-right: 18px;
+}
+
+.report-table tbody tr:nth-child(even) {
+  background: #f8f5ef;
+}
+
+.report-table tbody tr:hover {
+  background: #f1ece3;
+}
+
+.report-alert-row {
+  background: #f8ebe8;
+}
+
+.report-warning-row {
+  background: #fff9e8;
+}
+
+.duplicate-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #b68b3c;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hidden-column {
+  display: none;
+}
+
 .print-only {
   display: none;
 }

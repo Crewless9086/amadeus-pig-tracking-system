@@ -985,6 +985,12 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
     for pig_weights in weights_by_pig.values():
         pig_weights.sort(key=lambda item: item["weight_date"])
 
+    same_day_counts = {}
+    for pig_id, pig_weights in weights_by_pig.items():
+        for item in pig_weights:
+            key = (pig_id, item["weight_date"].isoformat())
+            same_day_counts[key] = same_day_counts.get(key, 0) + 1
+
     entries = []
     for pig_id, pig_weights in weights_by_pig.items():
         pig_meta = pig_lookup.get(pig_id, {})
@@ -1015,6 +1021,7 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
                 if days_since_previous > 0:
                     growth_rate_kg_day = round(difference_kg / days_since_previous, 3)
 
+            duplicate_entry_count = same_day_counts.get((pig_id, item["weight_date"].isoformat()), 0)
             entries.append({
                 "weight_log_id": item["weight_log_id"],
                 "pig_id": pig_id,
@@ -1032,6 +1039,8 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
                 "weight_band": pig_meta.get("weight_band", ""),
                 "weighed_by": item["weighed_by"],
                 "condition_notes": item["condition_notes"],
+                "duplicate_same_day": duplicate_entry_count > 1,
+                "duplicate_entry_count": duplicate_entry_count,
             })
 
     entries.sort(key=lambda item: (
@@ -1076,6 +1085,11 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
     unique_pig_ids = {entry["pig_id"] for entry in entries}
     differences = [entry["difference_kg"] for entry in entries]
     growth_rates = [entry["growth_rate_kg_day"] for entry in entries]
+    loss_flags = [
+        entry for entry in entries
+        if entry["difference_kg"] is not None and entry["difference_kg"] < 0
+    ]
+    duplicate_same_day_count = len([entry for entry in entries if entry["duplicate_same_day"]])
 
     return {
         "success": True,
@@ -1088,12 +1102,19 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
             "average_weight_kg": _average([entry["weight_kg"] for entry in entries]),
             "average_difference_kg": _average(differences),
             "average_growth_rate_kg_day": _average(growth_rates),
-            "weight_loss_count": len([
+            "weight_loss_count": len(loss_flags),
+            "weight_gain_count": len([
                 entry for entry in entries
-                if entry["difference_kg"] is not None and entry["difference_kg"] < 0
+                if entry["difference_kg"] is not None and entry["difference_kg"] > 0
             ]),
+            "no_previous_weight_count": len([
+                entry for entry in entries
+                if entry["previous_weight_kg"] is None
+            ]),
+            "duplicate_same_day_count": duplicate_same_day_count,
         },
         "pen_summary": pen_summary,
+        "loss_flags": loss_flags,
         "entries": entries,
     }
 

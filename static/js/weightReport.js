@@ -6,6 +6,7 @@ const todayButton = document.getElementById("today_button");
 const printButton = document.getElementById("print_report_button");
 const messageBox = document.getElementById("weight_report_message");
 const summaryEl = document.getElementById("weight_report_summary");
+const lossFlagsBody = document.getElementById("loss_flags_body");
 const penSummaryBody = document.getElementById("pen_summary_body");
 const detailBody = document.getElementById("weight_detail_body");
 const printRangeEl = document.getElementById("print_report_range");
@@ -64,10 +65,17 @@ function valueClass(value) {
 }
 
 function formatPen(item) {
-  const name = item.current_pen_name || item.pen_name || "";
-  const id = item.current_pen_id || item.pen_id || "";
-  if (name && id) return `${name} (${id})`;
-  return name || id || "-";
+  return item.current_pen_name || item.pen_name || item.current_pen_id || item.pen_id || "-";
+}
+
+function isSingleDayReport(data) {
+  return data.date_from && data.date_to && data.date_from === data.date_to;
+}
+
+function setDateColumnVisibility(singleDay) {
+  document.querySelectorAll(".date-column").forEach((cell) => {
+    cell.classList.toggle("hidden-column", singleDay);
+  });
 }
 
 function setMessage(message, type = "error") {
@@ -86,10 +94,10 @@ function renderSummary(summary) {
   const items = [
     ["Entries", summary.total_entries ?? 0],
     ["Pigs Weighed", summary.unique_pigs ?? 0],
-    ["Avg Weight", formatKg(summary.average_weight_kg)],
-    ["Avg Change", formatSignedKg(summary.average_difference_kg)],
-    ["Avg Growth/day", formatGrowth(summary.average_growth_rate_kg_day)],
+    ["Gainers", summary.weight_gain_count ?? 0],
     ["Loss Flags", summary.weight_loss_count ?? 0],
+    ["No Previous", summary.no_previous_weight_count ?? 0],
+    ["Duplicate Day", summary.duplicate_same_day_count ?? 0],
   ];
 
   summaryEl.innerHTML = items.map(([label, value]) => `
@@ -97,6 +105,25 @@ function renderSummary(summary) {
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
     </div>
+  `).join("");
+}
+
+function renderLossFlags(rows, singleDay) {
+  if (!rows.length) {
+    lossFlagsBody.innerHTML = `<tr><td colspan="${singleDay ? 6 : 7}" class="table-empty">No weight-loss flags for this date range.</td></tr>`;
+    return;
+  }
+
+  lossFlagsBody.innerHTML = rows.map((item) => `
+    <tr class="report-alert-row">
+      <td class="date-column ${singleDay ? "hidden-column" : ""}">${escapeHtml(item.weight_date || "-")}</td>
+      <td>${escapeHtml(item.tag_number || item.pig_id || "-")}</td>
+      <td>${escapeHtml(formatPen(item))}</td>
+      <td>${escapeHtml(formatKg(item.weight_kg))}</td>
+      <td>${escapeHtml(formatKg(item.previous_weight_kg))}</td>
+      <td class="bad-text">${escapeHtml(formatSignedKg(item.difference_kg))}</td>
+      <td class="bad-text">${escapeHtml(formatGrowth(item.growth_rate_kg_day))}</td>
+    </tr>
   `).join("");
 }
 
@@ -118,23 +145,27 @@ function renderPenSummary(rows) {
   `).join("");
 }
 
-function renderDetails(rows) {
+function duplicateMarker(item) {
+  if (!item.duplicate_same_day) return "";
+  return `<span class="duplicate-marker" title="Multiple weights for this pig on this date">!</span>`;
+}
+
+function renderDetails(rows, singleDay) {
   if (!rows.length) {
-    detailBody.innerHTML = `<tr><td colspan="9" class="table-empty">No active on-farm pig weights found for this date range.</td></tr>`;
+    detailBody.innerHTML = `<tr><td colspan="${singleDay ? 7 : 8}" class="table-empty">No active on-farm pig weights found for this date range.</td></tr>`;
     return;
   }
 
   detailBody.innerHTML = rows.map((item) => `
-    <tr>
-      <td>${escapeHtml(item.weight_date || "-")}</td>
-      <td>${escapeHtml(item.tag_number || item.pig_id || "-")}</td>
+    <tr class="${item.duplicate_same_day ? "report-warning-row" : ""}">
+      <td class="date-column ${singleDay ? "hidden-column" : ""}">${escapeHtml(item.weight_date || "-")}</td>
+      <td>${duplicateMarker(item)}${escapeHtml(item.tag_number || item.pig_id || "-")}</td>
       <td>${escapeHtml(formatPen(item))}</td>
       <td>${escapeHtml(formatKg(item.weight_kg))}</td>
       <td>${escapeHtml(formatKg(item.previous_weight_kg))}</td>
       <td class="${valueClass(item.difference_kg)}">${escapeHtml(formatSignedKg(item.difference_kg))}</td>
       <td class="${valueClass(item.growth_rate_kg_day)}">${escapeHtml(formatGrowth(item.growth_rate_kg_day))}</td>
       <td>${escapeHtml(item.calculated_stage || item.weight_band || "-")}</td>
-      <td>${escapeHtml(item.condition_notes || "-")}</td>
     </tr>
   `).join("");
 }
@@ -170,10 +201,13 @@ async function loadReport() {
       throw new Error(errorMessage);
     }
 
-    printRangeEl.textContent = `${data.date_from} to ${data.date_to}`;
+    const singleDay = isSingleDayReport(data);
+    printRangeEl.textContent = singleDay ? data.date_from : `${data.date_from} to ${data.date_to}`;
+    setDateColumnVisibility(singleDay);
     renderSummary(data.summary || {});
+    renderLossFlags(data.loss_flags || [], singleDay);
     renderPenSummary(data.pen_summary || []);
-    renderDetails(data.entries || []);
+    renderDetails(data.entries || [], singleDay);
   } catch (error) {
     console.error("Weight report error:", error);
     setMessage(error.message || "Something went wrong while loading the weight report.");

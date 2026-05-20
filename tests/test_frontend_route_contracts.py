@@ -31,6 +31,17 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Current pen:", js)
         self.assertIn('moved_to_pen_id: movedToPenSelect.value || ""', js)
 
+    def test_weight_report_has_read_only_refinement_sections(self):
+        template = Path("templates/weight-report.html").read_text(encoding="utf-8")
+        js = Path("static/js/weightReport.js").read_text(encoding="utf-8")
+
+        self.assertIn("Loss Flags", template)
+        self.assertIn('id="loss_flags_body"', template)
+        self.assertNotIn("<th>Notes</th>", template)
+        self.assertIn("duplicate-marker", js)
+        self.assertIn("duplicate_same_day", js)
+        self.assertIn("setDateColumnVisibility", js)
+
 
 if __name__ == "__main__":
     unittest.main()
