@@ -566,7 +566,7 @@ Test steps:
 Live result:
 
 - 2026-05-20: Passed on real farm data. Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
-- 2026-05-20: New Baby/Prince mating `MAT-2026-9EFC4E` was created open and linked to the correct animals in `Kraam Saal 05`. A backend parser gap was found for formula dates with full month names; local fix verified expected check `2026-06-09` and expected farrowing `2026-09-10`, pending deploy.
+- 2026-05-20: New Baby/Prince mating `MAT-2026-9EFC4E` was created open and linked to the correct animals in `Kraam Saal 05`. The full-month formula date parser fix was deployed and live-verified: the API returns expected check `2026-06-09` and expected farrowing `2026-09-10`.
 
 ## Litter Creation Tests
 
@@ -607,6 +607,19 @@ Phase 9.2A:
 6. Confirm numeric-only tag numbers display as three slots, for example `001`, `010`, `099`, `120`.
 7. Confirm dropdown order follows the tag/name display order rather than `PIG_ID`.
 8. Confirm form submissions still send `pig_id` values, not display labels.
+
+## Weight Form Context Tests
+
+Phase 9.3:
+
+1. Open `/pig-weights`.
+2. Confirm the helper below `Moved To Pen (Optional)` says to select a pig first before a pig is selected.
+3. Select a pig with a current pen.
+4. Confirm the helper shows the selected pig's current pen name and pen ID.
+5. Change the selected pig and confirm the helper updates.
+6. Use the pen filter and confirm the helper remains correct for the selected pig or resets when the selected pig is no longer available.
+7. Save a weight with no movement and confirm no movement is logged.
+8. Save a weight with a target pen only when intentionally testing movement; confirm the payload still sends `moved_to_pen_id` and not the display helper text.
 
 ## Google Sheets Checks
 

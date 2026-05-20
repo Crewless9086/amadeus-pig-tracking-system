@@ -172,6 +172,8 @@ Current position:
 - Phase 7.3D is complete and live-verified.
 - Phase 7.3E weather was triaged; weather is working, while Sunsynk is deferred to a dedicated backend/data/Supabase review.
 - Phase 8D is live-verified: Baby's real mating was safely marked `Not_Pregnant` / `Repeat_Service` on 2026-05-20 and remained in Kraam Saal 05.
+- Phase 8D follow-up is deployed and live-verified: Baby's new mating `MAT-2026-9EFC4E` now shows formula-derived expected dates correctly in the live API.
 - Phase 9.1A is live-verified: real litters `LIT-2026-9E4A` and `LIT-2026-EB92` generated the expected piglet rows with `Purpose = Unknown`.
 - Phase 9.1B is deployed and browser-verified: dashboard litter attention reads `LITTER_OVERVIEW`, and litter tiles open the litter detail page.
 - Phase 9.2A is deployed and owner-verified: pig dropdown APIs and labels now include current pen context and three-slot numeric tag display.
+- Phase 9.3 is implemented locally: the weight form shows the selected pig's current pen beside `Moved To Pen (Optional)` without changing the save payload; deploy/browser verification is next.

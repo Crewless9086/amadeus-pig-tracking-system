@@ -1,6 +1,7 @@
 const penFilterSelect = document.getElementById("pen_filter");
 const pigSelect = document.getElementById("pig_id");
 const movedToPenSelect = document.getElementById("moved_to_pen_id");
+const currentPenHelper = document.getElementById("current_pen_helper");
 
 const weightDateInput = document.getElementById("weight_date");
 const weightKgInput = document.getElementById("weight_kg");
@@ -231,6 +232,34 @@ function buildPigLabel(pig) {
   return pen ? `${tag} - ${pen}${idPart}` : `${tag}${idPart}`;
 }
 
+function formatPenLabel(penName, penId) {
+  if (penName && penId) return `${penName} (${penId})`;
+  return penName || penId || "";
+}
+
+function getSelectedPig() {
+  const selectedPigId = pigSelect.value || "";
+  if (!selectedPigId) return null;
+  return allPigs.find((pig) => pig.pig_id === selectedPigId) || null;
+}
+
+function updateCurrentPenHelper() {
+  if (!currentPenHelper) return;
+
+  const selectedPig = getSelectedPig();
+  if (!selectedPig) {
+    currentPenHelper.textContent = "Current pen: select a pig first";
+    currentPenHelper.classList.add("neutral-text");
+    return;
+  }
+
+  const penLabel = formatPenLabel(selectedPig.current_pen_name, selectedPig.current_pen_id);
+  currentPenHelper.textContent = penLabel
+    ? `Current pen: ${penLabel}`
+    : "Current pen: not recorded";
+  currentPenHelper.classList.add("neutral-text");
+}
+
 function formatTagNumber(value) {
   const raw = String(value || "").trim();
   return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
@@ -296,6 +325,8 @@ function populatePigSelect() {
     pigSelect.value = "";
     resetPreview();
   }
+
+  updateCurrentPenHelper();
 }
 
 async function loadPigs() {
@@ -365,12 +396,14 @@ async function refreshReferenceTable() {
 
 pigSelect.addEventListener("change", async (event) => {
   clearMessage();
+  updateCurrentPenHelper();
   await loadLatestWeight(event.target.value);
   await refreshReferenceTable();
 });
 
 penFilterSelect.addEventListener("change", async () => {
   populatePigSelect();
+  updateCurrentPenHelper();
   await refreshReferenceTable();
 });
 

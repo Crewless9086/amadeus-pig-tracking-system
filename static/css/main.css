@@ -118,6 +118,13 @@ label {
   color: var(--text-main);
 }
 
+.field-helper {
+  min-height: 18px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 select,
 input,
 textarea {

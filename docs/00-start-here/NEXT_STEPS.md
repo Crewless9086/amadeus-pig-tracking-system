@@ -23,9 +23,9 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 4: Requested Item Sync Stabilization | 4.1, 4.2, and 4.3 Complete; 4.0 deferred | Move to Phase 5 unless a Phase 4 regression appears. |
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
-| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Choose the next Phase 7 slice deliberately before workflow edits. |
-| Phase 8: Breeding Board Improvements | 8D Live-Verified | Continue with small breeding-board improvements only when needed. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified | Plan Phase 9.3 weight form context. |
+| Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
+| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Implemented Locally | Deploy/browser-check Phase 9.3 weight form current-pen helper. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1929,7 +1929,55 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
 - Live write verification passed on 2026-05-20: Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified
+### 8E Breeding Board Sorting - Planned
+
+Source note moved from `planning/ToDoList.md`.
+
+Required outcome:
+
+- Make `/matings` tile order more useful and predictable within each status section.
+- `Needs Action Now` should sort from most urgent to least urgent.
+- `Closed / Farrowed` should sort latest to oldest, preferably by real `actual_farrowing_date` where available, then fallback dates.
+- Other sections should use the date that best matches the action the user needs to take, not just raw creation order.
+- Keep this as a focused frontend/backend sorting slice before adding larger breeding analytics.
+
+Questions to answer when planning:
+
+- Which exact section names should be treated as operational priority sections?
+- For `Closed / Farrowed`, should `Farrowed`, `Repeat_Service`, `Cancelled`, and other closed outcomes be mixed together or grouped separately?
+- Should overdue pregnancy checks sort ahead of overdue farrowing checks when both appear in the same section?
+
+### 8F Fertility, Bloodline, And Breeding Suggestions - Discovery Captured
+
+Source note moved from `planning/ToDoList.md`.
+
+Goal:
+
+- Build useful breeding analytics that compare fertility and litter performance across breeding males and females, then eventually support suggested matings.
+
+Potential future outcomes:
+
+- Track fertility rounds per sow and boar: matings, confirmed pregnancies, repeat services, farrowed litters, litter size, survival, and weaning outcomes.
+- Compare breeding animals in a way that is easy to understand on a web-app page.
+- Help decide whether to keep or remove breeding animals based on repeat-service rate, litter size, piglet survival, growth, and owner-defined rules.
+- Avoid close-family matings by using parent, litter, and bloodline data.
+- Suggest best mating options using fertility, relatedness, litter history, and business goals.
+- Keep suggestions operator-approved; the system should explain why a mating is suggested or blocked.
+
+Planning notes:
+
+- This needs careful data modelling before implementation because it will become part of the breeding strategy and bloodline optimization.
+- It likely needs new derived metrics from `MATING_LOG`, `MATING_OVERVIEW`, `LITTERS`, `LITTER_OVERVIEW`, `PIG_MASTER`, and parent relationships.
+- It should not be squeezed into the existing `/matings` board as a quick visual tweak.
+
+Questions to answer when planning:
+
+- Which breeding KPIs matter most first: conception rate, repeat-service count, litter size, born alive, weaned count, survival rate, average growth, or profitability?
+- What data do we already have reliably, and what needs to start being captured before the analytics can be trusted?
+- How strict should family/bloodline avoidance be, and how many generations should be checked?
+- Should the first version be a read-only analytics page before any automated mating suggestions?
+
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -1994,6 +2042,16 @@ Required outcome:
 
 - beside `Move to Pen (Optional)`, show the current pen as read-only helper context
 
+9.3 implementation state:
+
+- The weight form now shows a `Current pen: ...` helper line below `Moved To Pen (Optional)`.
+- The helper updates when the selected pig changes and uses the selected pig's `current_pen_name` plus `current_pen_id` where available.
+- If no pig is selected, the helper says to select a pig first; if the selected pig has no current pen, it says the current pen is not recorded.
+- Form submission remains unchanged and still sends `moved_to_pen_id` only when a target pen is selected.
+- `node --check static/js/pigWeights.form.js` passed.
+- Focused local tests passed: `tests.test_frontend_route_contracts`, `tests.test_pig_weights_dropdown_options`, and `tests.test_pig_weights_utils`.
+- Deploy/browser verification is next.
+
 ### 9.4 Weight Report
 
 Required outcome:
@@ -2023,6 +2081,19 @@ Required outcome:
 - support laptop and phone browser printing with print-friendly CSS, with save-to-PDF as a natural browser option
 - read from existing system truth only during print generation; do not write to Google Sheets when creating a printable sheet
 - keep this separate from Phase 9.4: printable sheets are for handwritten field capture before weights are entered, while weight reports summarize data after weights are entered
+
+Printing and printer-connection discovery:
+
+- Source note moved from `planning/ToDoList.md`.
+- The first implementation should use the browser's normal print flow (`window.print()` / print stylesheet), which supports installed Wi-Fi, network, USB, and save-to-PDF printers through the device/browser.
+- Direct silent printing from the web app to a printer is usually restricted by browsers for security and should not be assumed for the first slice.
+- If true one-click/direct printer sending is needed later, plan a separate local print-agent or device-specific integration after the printable pages are useful.
+
+Questions to answer when planning:
+
+- Which devices will print most often: farm laptop, office PC, or phone?
+- Is the printer already installed on those devices over Wi-Fi/network?
+- Is browser print acceptable for the first version, or is unattended/direct printing a hard requirement?
 
 Follow-up idea:
 
@@ -2074,6 +2145,21 @@ Required outcome:
 - document backend module boundaries for orders, pig operations, farm worker tasks, weather logging, solar data, reporting, and notifications
 - add logging and audit expectations for customer actions, worker actions, web-app actions, backend actions, weather imports, and solar imports
 - make the web app the visible control panel where possible so operators can understand system state without jumping between platforms
+
+Farm home/dashboard idea:
+
+- Source note moved from `planning/ToDoList.md`.
+- After login, the web app should eventually open on a useful farm home page that brings the wider operating system together.
+- Desired first-viewport signals: current weather, short forecast, power/solar state, and navigation into pig system, weather, power, irrigation, orders, and other modules as they mature.
+- The page may include farm photos as a quiet rotating background/screensaver element, but operational information must remain readable and useful.
+- Treat this as an operating dashboard, not a marketing landing page.
+- This belongs in Phase 10 because it depends on weather, solar, irrigation, pig records, and order modules having stable documented contracts.
+
+Questions to answer when planning:
+
+- Which widgets are essential for the first version: weather now, forecast, power status, irrigation status, breeding alerts, litter attention, order attention, or farm photos?
+- Should the home page replace the current first screen after login or be a separate `/home` route first?
+- What information is safe to show on a shared farm screen without exposing customer/order details?
 
 ## Phase 11: Pork Sales Business Module - Discovery Source Captured
 
@@ -2131,15 +2217,16 @@ Recently completed:
 - Phase 7.1 intake and payload hygiene — complete 2026-05-18: handoff contracts, slim context shapes, Chatwoot lifecycle/write policy, workflow validation tests, and n8n `1.0` upload/readback completed.
 - Phase 7.2 database scaling review — planning complete 2026-05-18: future Postgres direction, owner decisions, draft schema, formula replacement strategy, import rules, Sheet retirement rules, rollback gates, and Supabase Pro signup captured in `docs/02-backend/DATABASE_SCALING_PLAN.md`.
 - Phase 8D repeat-service action — live-verified 2026-05-20: Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
-- Phase 8D follow-up fix — implemented locally 2026-05-20: date parsing now accepts full month names from Google Sheet formulas, for example `9 June 2026` and `10 September 2026`, so new mating expected dates display correctly after deploy.
+- Phase 8D follow-up fix — deployed and live-verified 2026-05-20: date parsing now accepts full month names from Google Sheet formulas, for example `9 June 2026` and `10 September 2026`; Baby's new mating `MAT-2026-9EFC4E` now shows expected check `2026-06-09` and expected farrowing `2026-09-10` from the live API.
 - Phase 9.1A new litter defaults — live-verified 2026-05-20: Lolly's `LIT-2026-9E4A` created 11 piglets and Shupe's `LIT-2026-EB92` created 8 piglets; generated rows have `Purpose = Unknown` and `Source = Born_on_Farm`.
 - Phase 9.1B litter attention dashboard — deployed and browser-verified 2026-05-19.
 - Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
+- Phase 9.3 weight form context — implemented locally 2026-05-20: current-pen helper added beside optional move pen, with syntax and focused contract tests passing.
 
 Recommended next:
 
-1. **Deploy date parser fix** - deploy the full-month Google Sheet date parser fix, then re-check `MAT-2026-9EFC4E` shows expected check `2026-06-09` and expected farrowing `2026-09-10` from the live API.
-2. **Phase 9.3 planning** - weight form context: show the current pen beside `Move to Pen (Optional)` before any weight entry move.
+1. **Deploy/browser-check Phase 9.3** - confirm `/pig-weights` shows the selected pig's current pen beside `Moved To Pen (Optional)` and that save behavior is unchanged.
+2. **Phase 8E planning** - breeding-board tile sorting if the matings board becomes the next priority.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:
@@ -2208,6 +2295,21 @@ Pick the next item deliberately before implementation so docs, workflow exports,
 - 2026-05-19 diagnosis: recent `2.1` executions `45114`, `45118`, and `45120` failed at `Weather Router (JSON Plan)` because model `chatgpt-4o-latest` was rejected. Later executions `45121`, `45123`, and `45125` failed at the same node because OpenAI received `input[1].content[0].text = null`.
 - Execution `45125` confirmed the weather station sheet data was fresh (`2026-05-19 5:10:18`) and the failure was not weather data availability. The trigger payload into `2.1` was `{ "input": null }`.
 - Prepared fix: `2.0` `Weather_Info_Tool` now uses n8n `$fromAI('weather_question', ...)` for the sub-workflow input with a safe fallback, and `2.1` `Weather Router (JSON Plan)` uses `gpt-5.5` plus a non-null prompt fallback (`current weather at the farm`).
+
+7.3F Oom Sakkie Navigation Buttons - Planned UX Enhancement:
+
+- Source note moved from `planning/ToDoList.md`.
+- Add Telegram buttons where they make Oom Sakkie easier for farm users, especially when the user sends a greeting or a broad prompt rather than a specific question.
+- First button row idea: `Weather`, `Solar`, `Orders`; later add modules as they become stable.
+- Weather flow idea after tapping `Weather`: show a short useful summary and offer buttons such as `Now`, `Today`, and `Forecast` if those options prove helpful.
+- Buttons should complement natural language, not replace it. Users must still be able to ask normal questions and get the same results.
+- Keep one Telegram trigger through GateKeeper. Button callbacks must be deterministic and authorized before reaching tool workflows.
+
+Questions to answer when planning:
+
+- Should greeting buttons be shown only on `Hi`/empty broad prompts, or also after every Oom Sakkie response?
+- Which first buttons are genuinely useful enough for daily use: `Weather`, `Solar`, `Orders`, `Irrigation`, or `Pig System`?
+- Should each button immediately call a tool, or first ask a smaller choice such as `Now` / `Today` / `Forecast`?
 - Regression coverage added in `tests/test_workflow_contracts.py`: `2.0` weather tool must use AI-supplied input, and `2.1` must not reference `chatgpt-4o-latest` or send a nullable router prompt.
 - Follow-up check requested for `2.2 - Amadeus Sunsynk Sub-Agent` and `2.1.1 - Amadeus Forecast Tool` because these features had also stopped responding reliably.
 - 2026-05-19 `2.2` diagnosis: recent execution `45137` was called with valid input (`What's the power like now?`) but was cancelled after about three minutes. The run reached `Sunsynk Current Overview` but did not return a final agent answer. Prepared workflow hardening (`$fromAI('sunsynk_question', ...)`, prompt fallback, `maxIterations = 4`, no-repeat-tool instruction) was not enough; owner retest still ran too long. Decision: stop quick workflow tweaking and defer `2.2` to a dedicated Sunsynk data/backend/Supabase architecture review.

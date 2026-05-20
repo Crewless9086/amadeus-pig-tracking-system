@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.2** - Pig Dropdown Usability |
-| **Status** | Phase 9.1A live-verified; Phase 9.1B deployed and browser-verified; Phase 9.2A deployed and owner-verified |
-| **Current focus** | Close Phase 9.2A docs, then plan the next Phase 9 slice |
-| **Current last verified** | **2026-05-20** - live litter creation and repeat-service checks passed for Lolly, Shupe, and Baby |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.3** - Weight Form Context |
+| **Status** | Phase 8D, 9.1A, 9.1B, and 9.2A live/browser verified; ToDo scratch notes moved into canonical phases |
+| **Current focus** | Deploy/browser-check Phase 9.3 weight form current-pen helper |
+| **Current last verified** | **2026-05-20** - Phase 9.3 local syntax and focused contract tests passed |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
