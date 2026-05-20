@@ -1435,6 +1435,29 @@ def save_new_litter(cleaned_data: dict):
 
 def save_weight_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    target_date = cleaned_data["weight_date"]
+
+    if not cleaned_data.get("allow_duplicate", False):
+        weight_rows = get_all_records(sheet_name)
+        for row in weight_rows:
+            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+            row_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+
+            if row_pig_id == cleaned_data["pig_id"] and row_date == target_date:
+                return {
+                    "success": False,
+                    "duplicate_weight": True,
+                    "message": "This pig already has a weight entry for this date.",
+                    "existing": {
+                        "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+                        "pig_id": row_pig_id,
+                        "weight_date": format_date_for_json(row.get(columns["weight_date"], "")),
+                        "weight_kg": to_float(row.get(columns["weight_kg"], "")),
+                        "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
+                        "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
+                    },
+                }
 
     row_values = [
         generate_weight_log_id(),
@@ -1472,7 +1495,11 @@ def save_weight_entry_with_optional_move(cleaned_data: dict):
         "weight_kg": cleaned_data["weight_kg"],
         "condition_notes": cleaned_data["condition_notes"],
         "weighed_by": cleaned_data["weighed_by"],
+        "allow_duplicate": cleaned_data.get("allow_duplicate", False),
     })
+
+    if not weight_result.get("success"):
+        return weight_result
 
     moved_to_pen_id = to_clean_string(cleaned_data.get("moved_to_pen_id", ""))
     movement_logged = False

@@ -42,6 +42,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("duplicate_same_day", js)
         self.assertIn("setDateColumnVisibility", js)
 
+    def test_weight_form_confirms_before_saving_duplicate_weight(self):
+        js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")
+
+        self.assertIn("response.status === 409", js)
+        self.assertIn("data.duplicate_weight", js)
+        self.assertIn("window.confirm", js)
+        self.assertIn("allow_duplicate: true", js)
+
 
 if __name__ == "__main__":
     unittest.main()

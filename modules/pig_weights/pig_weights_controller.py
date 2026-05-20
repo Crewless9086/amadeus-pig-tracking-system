@@ -244,7 +244,7 @@ def create_weight_entry(payload: dict):
         }, 400
 
     result = save_weight_entry(validation["cleaned_data"])
-    return result, 201
+    return result, 409 if result.get("duplicate_weight") else 201
 
 
 def create_weight_entry_with_optional_move(payload: dict):
@@ -257,7 +257,7 @@ def create_weight_entry_with_optional_move(payload: dict):
         }, 400
 
     result = save_weight_entry_with_optional_move(validation["cleaned_data"])
-    return result, 201
+    return result, 409 if result.get("duplicate_weight") else 201
 
 
 def create_treatment_entry(payload: dict):

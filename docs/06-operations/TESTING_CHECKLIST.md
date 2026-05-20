@@ -647,6 +647,19 @@ Phase 9.4:
 16. Confirm the date column hides on single-day reports and appears on multi-day reports.
 17. Confirm notes are not shown in the detail table.
 
+Live result:
+
+- 2026-05-20: Deployed and owner-confirmed on `/weight-report`; owner confirmed the 9.4C1 refined report is usable.
+
+Phase 9.4C2 duplicate prevention:
+
+1. Select a pig and date with no existing weight and confirm save works normally.
+2. Try saving another weight for the same pig and same date.
+3. Confirm the backend blocks the first duplicate save with a duplicate warning.
+4. Confirm the web app asks for explicit confirmation before adding another same-day weight.
+5. Cancel the confirmation and confirm no new row is written.
+6. Confirm the duplicate intentionally only in a controlled test case, not on live farm data unless needed.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

@@ -177,4 +177,4 @@ Current position:
 - Phase 9.1B is deployed and browser-verified: dashboard litter attention reads `LITTER_OVERVIEW`, and litter tiles open the litter detail page.
 - Phase 9.2A is deployed and owner-verified: pig dropdown APIs and labels now include current pen context and three-slot numeric tag display.
 - Phase 9.3 is deployed and owner-verified: the weight form shows the selected pig's current pen beside `Moved To Pen (Optional)` without changing the save payload.
-- Phase 9.4A/B/C1 is implemented locally: read-only weight report endpoint and `/weight-report` page include visual usability refinements and are ready for deploy/browser verification.
+- Phase 9.4A/B/C1 is deployed and owner-verified: read-only weight report endpoint and `/weight-report` page include visual usability refinements. Phase 9.4C2 duplicate prevention is implemented locally; full edit/delete/void audit is deferred to Supabase.

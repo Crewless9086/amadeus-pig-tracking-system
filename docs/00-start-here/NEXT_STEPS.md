@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Implemented Locally | Deploy/browser-check Phase 9.4 weight report. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Implemented Locally; 9.4C3/D Planned | Deploy/browser-check 9.4C2 duplicate prevention. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Implemented Locally; 9.4C3/D Planned
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2053,7 +2053,7 @@ Required outcome:
 - Full local unittest suite passed: 117 tests.
 - Deployed and owner-verified on `/pig-weights` on 2026-05-20.
 
-### 9.4 Weight Report — 9.4A/B/C1 Implemented Locally
+### 9.4 Weight Report — 9.4A/B/C1 Owner-Verified; 9.4C2 Implemented Locally; 9.4C3/D Planned
 
 Required outcome:
 
@@ -2092,7 +2092,7 @@ Verification state:
 - Focused service and frontend route tests passed.
 - Local route smoke passed: `/weight-report` returned `200`.
 - Local API smoke passed: valid report returned `200`, invalid date returned `400`.
-- Deploy/browser verification is next.
+- Deployed and owner-verified on 2026-05-20; owner confirmed the report is usable after 9.4C1 refinements.
 
 9.4C report usability refinements - owner review captured:
 
@@ -2129,8 +2129,8 @@ Verification state:
 Recommended 9.4C split:
 
 1. **9.4C1 Visual/read-only refinements** - duplicate marker, loss-flag section, better table spacing, remove notes, pen name only, hide date on single-day reports, and improve summary cards. No writes. Implemented locally 2026-05-20.
-2. **9.4C2 Weight entry edit/delete planning** - design safe audit behavior for editing, deleting, or voiding weight-log rows.
-3. **9.4C3 Interactive row implementation** - only after 9.4C2 is agreed.
+2. **9.4C2 Weight duplicate prevention now / edit-delete later** - near-term Google Sheets solution is duplicate prevention with explicit `Add anyway` confirmation; full edit/delete/void audit is deferred to Supabase. Implemented locally 2026-05-20.
+3. **9.4C3 Interactive row implementation** - only after 9.4C2 is agreed. Planned, not started.
 
 9.4C1 implementation state:
 
@@ -2145,6 +2145,48 @@ Recommended 9.4C split:
 - Edit/delete and clickable row behavior remain parked under 9.4C2/9.4C3.
 - `node --check static/js/weightReport.js` passed.
 - Focused report service tests passed.
+- Full local unittest suite passed: 121 tests.
+- Deployed and owner-verified on 2026-05-20.
+
+9.4D future feed guidance / pen performance planning:
+
+- Source note from owner after 9.4C1 live review.
+- Future idea: use pen-level weight performance to guide feeding decisions.
+- If a pen is below a target growth rate, for example below `0.300 kg/day` or another owner-defined target, the system could flag that pen for feed review.
+- Longer-term goal: calculate suggested feed amounts from what is in each pen, current growth performance, target growth, pig count, stage/weight, and available feed strategy.
+- The system should support worker-ready feeding lists once rules are mature.
+- The feeding recommendation should also account for waste: if pigs start wasting feed, the system should recommend holding back rather than blindly increasing.
+- This connects to future land-grown feed planning because more available farm-grown feed may allow higher-volume feeding strategies.
+- Keep this as planning for now; do not auto-change feed rules from weight data until targets, feed types, pen groups, and waste checks are defined.
+
+Questions to answer when planning:
+
+- What target growth rates should apply by stage/weight band/purpose?
+- Should targets be per pen, per pig stage, per purpose, or per feed type?
+- What feed types and amounts are currently used, and what feed types may come from the land later?
+- How should feed waste be recorded: worker note, daily feed log, or pen-level observation?
+- Should first implementation be read-only guidance before any worker feeding list changes?
+
+9.4C2 duplicate prevention decision:
+
+- Do not build full edit/delete on Google Sheets.
+- Do not hard-delete weight entries.
+- Defer true edit/void/replace with audit trail until Supabase, where history and permissions can be handled properly.
+- Near-term Google Sheets behavior:
+  - When saving a weight, backend checks whether the same `Pig_ID` already has a `WEIGHT_LOG` entry for the selected `Weight_Date`.
+  - If no entry exists, save normally.
+  - If an entry exists, block the first save and return the existing entry metadata.
+  - The web app must ask for explicit confirmation before adding a second same-day entry.
+  - If the user confirms, save with an explicit duplicate override.
+  - This prevents accidental duplicates while still allowing intentional repeat weights.
+- Implementation state:
+  - Backend returns HTTP `409` with `duplicate_weight = true` when an unconfirmed duplicate is detected.
+  - Frontend shows an explicit confirmation before resubmitting with `allow_duplicate = true`.
+  - No edit/delete/void behavior was added.
+  - `node --check static/js/pigWeights.form.js` passed.
+  - Focused duplicate and frontend contract tests passed.
+  - Full local unittest suite passed: 124 tests.
+  - Deploy/browser verification is next.
 
 ### 9.5 Dashboard Sold This Month Audit — Planned
 
@@ -2308,11 +2350,12 @@ Recently completed:
 - Phase 9.1B litter attention dashboard — deployed and browser-verified 2026-05-19.
 - Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
 - Phase 9.3 weight form context — deployed and owner-verified 2026-05-20: current-pen helper added beside optional move pen, save payload unchanged, syntax/focused tests and full unittest suite passed.
-- Phase 9.4A/B/C1 weight report — implemented locally 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, browser print support, duplicate markers, loss flags, improved table spacing, pen-name-only display, and single-day date hiding; focused tests and local route/API smoke passed.
+- Phase 9.4A/B/C1 weight report — owner-verified 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, browser print support, duplicate markers, loss flags, improved table spacing, pen-name-only display, and single-day date hiding; focused tests, full local unittest suite, local route/API smoke, deploy, and browser review passed.
+- Phase 9.4C2 duplicate prevention — implemented locally 2026-05-20: duplicate same-pig/same-date weight saves return `409` until explicitly confirmed; true edit/delete/void audit remains deferred to Supabase.
 
 Recommended next:
 
-1. **Deploy/browser-check Phase 9.4** - confirm `/weight-report` loads, defaults to Today, filters by pen, shows empty state or rows correctly, and browser print preview is usable.
+1. **Deploy/browser-check 9.4C2** - test duplicate prevention on `/pig-weights` before moving on.
 2. **Phase 8E planning** - breeding-board tile sorting if the matings board becomes the next priority.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 

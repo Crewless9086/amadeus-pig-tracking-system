@@ -414,19 +414,7 @@ weightDateInput.addEventListener("change", async () => {
   await refreshReferenceTable();
 });
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  clearMessage();
-
-  const payload = {
-    pig_id: pigSelect.value,
-    weight_date: weightDateInput.value,
-    weight_kg: parseFloat(weightKgInput.value),
-    condition_notes: conditionNotesInput.value.trim(),
-    weighed_by: "WebApp",
-    moved_to_pen_id: movedToPenSelect.value || ""
-  };
-
+async function submitWeight(payload) {
   submitButton.disabled = true;
   submitButton.textContent = "Saving...";
 
@@ -440,6 +428,23 @@ form.addEventListener("submit", async (event) => {
     });
 
     const data = await response.json();
+
+    if (response.status === 409 && data.duplicate_weight) {
+      const existing = data.existing || {};
+      const existingText = existing.weight_kg !== null && existing.weight_kg !== undefined
+        ? `${existing.weight_kg} kg`
+        : "unknown weight";
+      const shouldAddAnyway = window.confirm(
+        `This pig already has a weight for ${existing.weight_date || payload.weight_date} (${existingText}). Add another weight entry anyway?`
+      );
+
+      if (shouldAddAnyway) {
+        await submitWeight({ ...payload, allow_duplicate: true });
+      } else {
+        showMessage("Duplicate weight entry was not saved.", "error");
+      }
+      return;
+    }
 
     if (!response.ok || !data.success) {
       const errorMessage = data.errors ? data.errors.join(" ") : "Failed to save weight.";
@@ -465,6 +470,22 @@ form.addEventListener("submit", async (event) => {
     submitButton.disabled = false;
     submitButton.textContent = "Save Weight";
   }
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  clearMessage();
+
+  const payload = {
+    pig_id: pigSelect.value,
+    weight_date: weightDateInput.value,
+    weight_kg: parseFloat(weightKgInput.value),
+    condition_notes: conditionNotesInput.value.trim(),
+    weighed_by: "WebApp",
+    moved_to_pen_id: movedToPenSelect.value || ""
+  };
+
+  await submitWeight(payload);
 });
 
 setTodayDate();

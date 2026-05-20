@@ -9,6 +9,7 @@ def validate_weight_payload(payload: dict):
     weight_kg = payload.get("weight_kg", "")
     condition_notes = str(payload.get("condition_notes", "")).strip()
     weighed_by = str(payload.get("weighed_by", "")).strip()
+    allow_duplicate = bool(payload.get("allow_duplicate", False))
 
     if not pig_id:
         errors.append("Pig_ID is required.")
@@ -32,6 +33,7 @@ def validate_weight_payload(payload: dict):
             "weight_kg": parsed_weight,
             "condition_notes": condition_notes,
             "weighed_by": weighed_by,
+            "allow_duplicate": allow_duplicate,
         }
     }
 
@@ -44,6 +46,7 @@ def validate_weight_with_optional_move_payload(payload: dict):
     condition_notes = str(payload.get("condition_notes", "")).strip()
     weighed_by = str(payload.get("weighed_by", "")).strip()
     moved_to_pen_id = str(payload.get("moved_to_pen_id", "")).strip()
+    allow_duplicate = bool(payload.get("allow_duplicate", False))
 
     if not pig_id:
         errors.append("Pig_ID is required.")
@@ -68,6 +71,7 @@ def validate_weight_with_optional_move_payload(payload: dict):
             "condition_notes": condition_notes,
             "weighed_by": weighed_by or "WebApp",
             "moved_to_pen_id": moved_to_pen_id,
+            "allow_duplicate": allow_duplicate,
         }
     }
 
