@@ -127,6 +127,58 @@ class WeightReportServiceTests(unittest.TestCase):
         self.assertEqual(report["entries"][0]["pig_id"], "PIG-2")
         self.assertEqual(report["pen_summary"][0]["pen_id"], "PEN-2")
 
+    def test_weight_report_sorts_numeric_tags_by_padded_value_within_pen(self):
+        def sheet_records(sheet_name):
+            data = {
+                "WEIGHT_LOG": [
+                    {
+                        "Weight_Log_ID": "WGT-10",
+                        "Pig_ID": "PIG-10",
+                        "Weight_Date": "20 May 2026",
+                        "Weight_Kg": "30",
+                        "Weighed_By": "Tester",
+                        "Condition_Notes": "",
+                    },
+                    {
+                        "Weight_Log_ID": "WGT-2",
+                        "Pig_ID": "PIG-2",
+                        "Weight_Date": "20 May 2026",
+                        "Weight_Kg": "28",
+                        "Weighed_By": "Tester",
+                        "Condition_Notes": "",
+                    },
+                ],
+                "PIG_OVERVIEW": [
+                    {
+                        "Pig_ID": "PIG-10",
+                        "Tag_Number": "10",
+                        "Status": "Active",
+                        "On_Farm": "Yes",
+                        "Current_Pen_ID": "PEN-1",
+                        "Calculated_Stage": "Grower",
+                        "Weight_Band": "30_to_34_Kg",
+                    },
+                    {
+                        "Pig_ID": "PIG-2",
+                        "Tag_Number": "2",
+                        "Status": "Active",
+                        "On_Farm": "Yes",
+                        "Current_Pen_ID": "PEN-1",
+                        "Calculated_Stage": "Grower",
+                        "Weight_Band": "25_to_29_Kg",
+                    },
+                ],
+                "PEN_REGISTER": [
+                    {"Pen_ID": "PEN-1", "Pen_Name": "Camp 1", "Pen_Type": "Grower"},
+                ],
+            }
+            return data[sheet_name]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=sheet_records):
+            report = pig_weights_service.get_weight_report("2026-05-20", "2026-05-20")
+
+        self.assertEqual([entry["pig_id"] for entry in report["entries"]], ["PIG-2", "PIG-10"])
+
     def test_weight_report_rejects_invalid_date_range(self):
         with self.assertRaisesRegex(ValueError, "date_from"):
             pig_weights_service.get_weight_report("2026-05-21", "2026-05-20")

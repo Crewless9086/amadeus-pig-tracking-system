@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Implemented Locally; 9.4C3/D Planned | Deploy/browser-check 9.4C2 duplicate prevention. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Owner-Verified; 9.4C3/D Planned | Deploy/browser-check 9.4 report tag formatting fix. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Implemented Locally; 9.4C3/D Planned
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Owner-Verified; 9.4C3/D Planned
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2053,7 +2053,7 @@ Required outcome:
 - Full local unittest suite passed: 117 tests.
 - Deployed and owner-verified on `/pig-weights` on 2026-05-20.
 
-### 9.4 Weight Report — 9.4A/B/C1 Owner-Verified; 9.4C2 Implemented Locally; 9.4C3/D Planned
+### 9.4 Weight Report — 9.4A/B/C1 Owner-Verified; 9.4C2 Owner-Verified; 9.4C3/D Planned
 
 Required outcome:
 
@@ -2141,6 +2141,7 @@ Recommended 9.4C split:
 - Detail table removes `Condition Notes` from the visible columns.
 - Report tables use light row separators/zebra treatment and wider column padding.
 - Pen display shows pen name only where available, not `Pen_ID`.
+- Numeric pig tags on `/weight-report` must display as three digits, matching the pig weight dropdowns, and report rows should sort by numeric tag order within each pen.
 - Single-day reports hide the repeated date column; date remains visible for multi-day reports.
 - Edit/delete and clickable row behavior remain parked under 9.4C2/9.4C3.
 - `node --check static/js/weightReport.js` passed.
@@ -2186,7 +2187,14 @@ Questions to answer when planning:
   - `node --check static/js/pigWeights.form.js` passed.
   - Focused duplicate and frontend contract tests passed.
   - Full local unittest suite passed: 124 tests.
-  - Deploy/browser verification is next.
+  - Deployed and owner-verified on 2026-05-20.
+
+9.4 report tag formatting follow-up:
+
+- Source note from owner after 9.4C2 live verification: `/weight-report` table tags were still showing raw unpadded numeric values.
+- Implemented local fix on 2026-05-20 so report tables display numeric pig tags as three digits and backend report rows sort with a numeric-aware tag key.
+- Verification passed: `node --check static/js/weightReport.js`, focused report/frontend tests, and full local unittest suite at 125 tests.
+- Deploy/browser verification is next.
 
 ### 9.5 Dashboard Sold This Month Audit — Planned
 
@@ -2351,11 +2359,12 @@ Recently completed:
 - Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
 - Phase 9.3 weight form context — deployed and owner-verified 2026-05-20: current-pen helper added beside optional move pen, save payload unchanged, syntax/focused tests and full unittest suite passed.
 - Phase 9.4A/B/C1 weight report — owner-verified 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, browser print support, duplicate markers, loss flags, improved table spacing, pen-name-only display, and single-day date hiding; focused tests, full local unittest suite, local route/API smoke, deploy, and browser review passed.
-- Phase 9.4C2 duplicate prevention — implemented locally 2026-05-20: duplicate same-pig/same-date weight saves return `409` until explicitly confirmed; true edit/delete/void audit remains deferred to Supabase.
+- Phase 9.4C2 duplicate prevention — deployed and owner-verified 2026-05-20: duplicate same-pig/same-date weight saves return `409` until explicitly confirmed; true edit/delete/void audit remains deferred to Supabase.
+- Phase 9.4 report tag formatting — implemented locally 2026-05-20: `/weight-report` numeric pig tags display as three digits and rows sort by numeric-aware tag order within each pen; focused checks and full local suite passed.
 
 Recommended next:
 
-1. **Deploy/browser-check 9.4C2** - test duplicate prevention on `/pig-weights` before moving on.
+1. **Deploy/browser-check 9.4 report tag formatting** - confirm `/weight-report` shows numeric pig tags as three digits and in the correct order.
 2. **Phase 8E planning** - breeding-board tile sorting if the matings board becomes the next priority.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 

@@ -14,6 +14,7 @@ class FrontendRouteContractTests(unittest.TestCase):
             Path("static/js/addLitter.js"),
             Path("static/js/addMating.js"),
             Path("static/js/pigWeights.form.js"),
+            Path("static/js/weightReport.js"),
         ]
 
         for path in paths:

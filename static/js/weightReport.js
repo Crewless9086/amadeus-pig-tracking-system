@@ -68,6 +68,15 @@ function formatPen(item) {
   return item.current_pen_name || item.pen_name || item.current_pen_id || item.pen_id || "-";
 }
 
+function formatTagNumber(value) {
+  const raw = String(value || "").trim();
+  return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
+}
+
+function formatPigLabel(item) {
+  return formatTagNumber(item.tag_number || item.pig_id || "-");
+}
+
 function isSingleDayReport(data) {
   return data.date_from && data.date_to && data.date_from === data.date_to;
 }
@@ -117,7 +126,7 @@ function renderLossFlags(rows, singleDay) {
   lossFlagsBody.innerHTML = rows.map((item) => `
     <tr class="report-alert-row">
       <td class="date-column ${singleDay ? "hidden-column" : ""}">${escapeHtml(item.weight_date || "-")}</td>
-      <td>${escapeHtml(item.tag_number || item.pig_id || "-")}</td>
+      <td>${escapeHtml(formatPigLabel(item))}</td>
       <td>${escapeHtml(formatPen(item))}</td>
       <td>${escapeHtml(formatKg(item.weight_kg))}</td>
       <td>${escapeHtml(formatKg(item.previous_weight_kg))}</td>
@@ -159,7 +168,7 @@ function renderDetails(rows, singleDay) {
   detailBody.innerHTML = rows.map((item) => `
     <tr class="${item.duplicate_same_day ? "report-warning-row" : ""}">
       <td class="date-column ${singleDay ? "hidden-column" : ""}">${escapeHtml(item.weight_date || "-")}</td>
-      <td>${duplicateMarker(item)}${escapeHtml(item.tag_number || item.pig_id || "-")}</td>
+      <td>${duplicateMarker(item)}${escapeHtml(formatPigLabel(item))}</td>
       <td>${escapeHtml(formatPen(item))}</td>
       <td>${escapeHtml(formatKg(item.weight_kg))}</td>
       <td>${escapeHtml(formatKg(item.previous_weight_kg))}</td>

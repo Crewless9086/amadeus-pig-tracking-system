@@ -646,10 +646,13 @@ Phase 9.4:
 15. Confirm pen tables show pen names without pen IDs where names exist.
 16. Confirm the date column hides on single-day reports and appears on multi-day reports.
 17. Confirm notes are not shown in the detail table.
+18. Confirm numeric pig tags in report tables display as three digits, for example `001`, `010`, `099`.
+19. Confirm report rows are ordered by pen and then numeric pig tag order.
 
 Live result:
 
 - 2026-05-20: Deployed and owner-confirmed on `/weight-report`; owner confirmed the 9.4C1 refined report is usable.
+- 2026-05-20: 9.4C2 duplicate prevention deployed and owner-tested working; report tag formatting follow-up implemented locally and local tests passed.
 
 Phase 9.4C2 duplicate prevention:
 

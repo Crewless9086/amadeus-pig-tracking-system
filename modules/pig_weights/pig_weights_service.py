@@ -917,6 +917,13 @@ def _average(values):
     return round(sum(clean_values) / len(clean_values), 2)
 
 
+def _tag_sort_key(tag_number, pig_id):
+    raw = to_clean_string(tag_number or pig_id)
+    if raw.isdigit():
+        return raw.zfill(8)
+    return raw.lower()
+
+
 def _build_weight_report_pig_lookup(overview_rows, columns, pen_lookup):
     lookup = {}
 
@@ -1045,7 +1052,8 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
 
     entries.sort(key=lambda item: (
         item["current_pen_name"] or item["current_pen_id"],
-        item["tag_number"] or item["pig_id"],
+        _tag_sort_key(item["tag_number"], item["pig_id"]),
+        item["pig_id"],
         item["weight_date"],
     ))
 
