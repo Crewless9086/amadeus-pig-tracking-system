@@ -122,7 +122,10 @@ async function loadDashboard() {
         ${renderSummaryCard("Available For Sale", summary.available_for_sale_pigs)}
         ${renderSummaryCard("Reserved", summary.reserved_pigs)}
         ${renderSummaryCard("Withdrawal Hold", summary.withdrawal_hold_pigs)}
-        ${renderSummaryCard("Sold This Month", summary.sold_this_month)}
+        ${renderSummaryCard("Sales This Month", summary.sold_this_month)}
+        ${renderSummaryCard("Livestock", summary.livestock_sold_this_month ?? 0)}
+        ${renderSummaryCard("Slaughter", summary.slaughter_sold_this_month ?? 0)}
+        ${renderSummaryCard("Meat", summary.meat_sold_this_month ?? 0)}
       </div>
     `;
   } catch (error) {

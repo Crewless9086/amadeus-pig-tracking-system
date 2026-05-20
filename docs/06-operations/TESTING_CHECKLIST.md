@@ -648,11 +648,13 @@ Phase 9.4:
 17. Confirm notes are not shown in the detail table.
 18. Confirm numeric pig tags in report tables display as three digits, for example `001`, `010`, `099`.
 19. Confirm report rows are ordered by pen and then numeric pig tag order.
+20. Future sortable-header check: when implemented, confirm `Pig`/tag and `Pen` headers toggle ascending/descending order while the default remains pen-grouped.
 
 Live result:
 
 - 2026-05-20: Deployed and owner-confirmed on `/weight-report`; owner confirmed the 9.4C1 refined report is usable.
 - 2026-05-20: 9.4C2 duplicate prevention deployed and owner-tested working; report tag formatting follow-up implemented locally and local tests passed.
+- 2026-05-20: Report tag formatting deployed and owner-confirmed; numeric pig tags display correctly on `/weight-report`.
 
 Phase 9.4C2 duplicate prevention:
 
@@ -662,6 +664,22 @@ Phase 9.4C2 duplicate prevention:
 4. Confirm the web app asks for explicit confirmation before adding another same-day weight.
 5. Cancel the confirmation and confirm no new row is written.
 6. Confirm the duplicate intentionally only in a controlled test case, not on live farm data unless needed.
+
+## Dashboard Monthly Sales Tests
+
+Phase 9.5:
+
+1. Open the dashboard.
+2. Confirm the Sales section shows `Sales This Month`, `Livestock`, `Slaughter`, and `Meat`.
+3. Confirm `Sales This Month` equals the combined livestock + slaughter + meat monthly exit count.
+4. Confirm completed live pig orders still count under `Livestock`.
+5. Confirm pigs with `Status = Slaughtered` or abattoir/slaughter exit reasons count under `Slaughter`.
+6. Confirm future meat sale exits can be counted under `Meat` without building the full meat-sales workflow yet.
+7. Confirm old months do not leak into the current-month dashboard count.
+
+Local result:
+
+- 2026-05-20: Implemented locally and verified with dashboard/frontend focused tests plus full 127-test suite.
 
 ## Google Sheets Checks
 

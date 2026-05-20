@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Owner-Verified; 9.4C3/D Planned | Deploy/browser-check 9.4 report tag formatting fix. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.4C3/C4/D Planned; 9.5 Implemented Locally | Deploy/browser-check Phase 9.5 dashboard monthly sales stream breakdown. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B/C1 Owner-Verified; 9.4C2 Owner-Verified; 9.4C3/D Planned
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.4C3/C4/D Planned; 9.5 Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2053,7 +2053,7 @@ Required outcome:
 - Full local unittest suite passed: 117 tests.
 - Deployed and owner-verified on `/pig-weights` on 2026-05-20.
 
-### 9.4 Weight Report — 9.4A/B/C1 Owner-Verified; 9.4C2 Owner-Verified; 9.4C3/D Planned
+### 9.4 Weight Report — Current Slice Complete; 9.4C3/C4/D Planned
 
 Required outcome:
 
@@ -2109,6 +2109,10 @@ Verification state:
   - Increase column spacing/padding in the bottom tables.
   - Remove `Condition Notes` from the first detail table layout unless a better expandable/detail pattern is added.
   - Show pen name only in the report tables; hide `Pen_ID` to save space.
+- Sortable report columns:
+  - Default report order should remain grouped by pen, because it matches the farm workflow.
+  - Future enhancement: make the `Pig`/tag and `Pen` table headers clickable so the user can switch ascending/descending order without changing the default.
+  - Sorting should keep numeric tags human-friendly, for example `001`, `002`, `010`, not text order.
 - Interactive rows:
   - Desired future behavior: clicking a weight row opens that weight entry for review/edit.
   - Align this with the weight form so the report table and weight form use the same interaction pattern.
@@ -2131,6 +2135,7 @@ Recommended 9.4C split:
 1. **9.4C1 Visual/read-only refinements** - duplicate marker, loss-flag section, better table spacing, remove notes, pen name only, hide date on single-day reports, and improve summary cards. No writes. Implemented locally 2026-05-20.
 2. **9.4C2 Weight duplicate prevention now / edit-delete later** - near-term Google Sheets solution is duplicate prevention with explicit `Add anyway` confirmation; full edit/delete/void audit is deferred to Supabase. Implemented locally 2026-05-20.
 3. **9.4C3 Interactive row implementation** - only after 9.4C2 is agreed. Planned, not started.
+4. **9.4C4 Sortable report headers** - planned enhancement: keep default pen grouping, then allow clickable `Pig`/tag and `Pen` headers to toggle ascending/descending order.
 
 9.4C1 implementation state:
 
@@ -2193,15 +2198,45 @@ Questions to answer when planning:
 
 - Source note from owner after 9.4C2 live verification: `/weight-report` table tags were still showing raw unpadded numeric values.
 - Implemented local fix on 2026-05-20 so report tables display numeric pig tags as three digits and backend report rows sort with a numeric-aware tag key.
+- Owner clarified the default pen-grouped order is acceptable and should remain the default; clickable sortable `Pig`/tag and `Pen` headers are logged as a later usability option.
 - Verification passed: `node --check static/js/weightReport.js`, focused report/frontend tests, and full local unittest suite at 125 tests.
-- Deploy/browser verification is next.
+- Deployed and owner-verified on 2026-05-20; owner confirmed tags display correctly on `/weight-report`.
 
-### 9.5 Dashboard Sold This Month Audit — Planned
+### 9.5 Dashboard Sold This Month Audit — Implemented Locally
 
 Required outcome:
 
 - verify how `SOLD THIS MONTH` is calculated
 - reconcile the April mismatch where the dashboard showed 20 but the expected sold count was 40
+- reshape the dashboard metric so it can support three sales streams:
+  - `Livestock`: the current order-driven live pig sales flow.
+  - `Slaughter`: pigs taken to slaughter/abattoir as an intermediate sale channel.
+  - `Meat`: future direct pork/carcass/meat sales from the business plan.
+
+Decision:
+
+- Use `PIG_MASTER` exits as the near-term source of truth because all streams eventually mean a pig left the farm.
+- Keep current completed livestock orders as `Exit_Reason = Sold`.
+- Count abattoir/intermediate slaughter exits separately from livestock where `Exit_Reason` or `Status` indicates slaughter/abattoir.
+- Add a future-ready meat stream count, but do not build the full meat order model here.
+- Plan the deeper meat-sales workflow under Phase 11, not Phase 9.5.
+
+Planned approach:
+
+- Inspect the current dashboard count source in backend code and the sheet columns/views it reads.
+- Define the intended business rule for `SOLD THIS MONTH`, including whether it should count pigs, order lines, completed sales, exit records, or another source of truth.
+- Compare the dashboard result against the expected April count and the current month using read-only checks first.
+- Fix only after the source-of-truth rule is clear.
+- Add a focused test so future dashboard work does not reintroduce the mismatch.
+
+Implementation state:
+
+- Backend now returns `sold_this_month` as total monthly sales exits.
+- Backend also returns `livestock_sold_this_month`, `slaughter_sold_this_month`, and `meat_sold_this_month`.
+- Dashboard now displays `Sales This Month` plus the three stream counts.
+- Focused tests added for monthly sales stream classification and dashboard labels.
+- Verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite at 127 tests.
+- Deploy/browser verification is next.
 
 ### 9.6 Printable Farm Operation Sheets — Planned
 
@@ -2362,9 +2397,13 @@ Recently completed:
 - Phase 9.4C2 duplicate prevention — deployed and owner-verified 2026-05-20: duplicate same-pig/same-date weight saves return `409` until explicitly confirmed; true edit/delete/void audit remains deferred to Supabase.
 - Phase 9.4 report tag formatting — implemented locally 2026-05-20: `/weight-report` numeric pig tags display as three digits and rows sort by numeric-aware tag order within each pen; focused checks and full local suite passed.
 
+Additional verification:
+
+- Phase 9.4 report tag formatting deploy check - owner-verified 2026-05-20: deployed `/weight-report` displays numeric pig tags correctly; default pen grouping remains accepted.
+
 Recommended next:
 
-1. **Deploy/browser-check 9.4 report tag formatting** - confirm `/weight-report` shows numeric pig tags as three digits and in the correct order.
+1. **Deploy/browser-check Phase 9.5** - confirm dashboard Sales section shows total monthly sales plus Livestock, Slaughter, and Meat stream counts.
 2. **Phase 8E planning** - breeding-board tile sorting if the matings board becomes the next priority.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 

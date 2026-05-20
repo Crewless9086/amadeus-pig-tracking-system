@@ -66,6 +66,41 @@ def _pen_name_for_id(pen_lookup, pen_id):
     return to_clean_string(pen.get("pen_name", ""))
 
 
+def _sale_stream_for_exit(row):
+    status = to_clean_string(row.get("Status", "")).lower()
+    exit_reason = to_clean_string(row.get("Exit_Reason", "")).lower().replace("-", "_").replace(" ", "_")
+
+    slaughter_reasons = {
+        "slaughter",
+        "slaughtered",
+        "abattoir",
+        "abattoir_sale",
+        "sold_to_abattoir",
+    }
+    meat_reasons = {
+        "meat",
+        "meat_sale",
+        "carcass",
+        "carcass_sale",
+        "pork_sale",
+        "processed_meat_sale",
+    }
+    livestock_reasons = {
+        "sold",
+        "livestock",
+        "livestock_sale",
+        "live_sale",
+    }
+
+    if exit_reason in meat_reasons:
+        return "meat"
+    if exit_reason in slaughter_reasons or status == "slaughtered":
+        return "slaughter"
+    if exit_reason in livestock_reasons or status == "sold":
+        return "livestock"
+    return ""
+
+
 def get_dashboard_summary():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -120,15 +155,22 @@ def get_dashboard_summary():
             available_for_sale_count += 1
 
     now = datetime.now()
-    sold_this_month = 0
+    sales_this_month = {
+        "livestock": 0,
+        "slaughter": 0,
+        "meat": 0,
+    }
 
     for row in pig_master_rows:
-        exit_reason = to_clean_string(row.get("Exit_Reason", ""))
-        if exit_reason != "Sold":
-            continue
         exit_date = parse_sheet_date(row.get("Exit_Date", ""))
-        if exit_date and exit_date.year == now.year and exit_date.month == now.month:
-            sold_this_month += 1
+        if not exit_date or exit_date.year != now.year or exit_date.month != now.month:
+            continue
+
+        sale_stream = _sale_stream_for_exit(row)
+        if sale_stream:
+            sales_this_month[sale_stream] += 1
+
+    sold_this_month = sum(sales_this_month.values())
 
     return {
         "on_farm_pigs": on_farm_pigs,
@@ -140,6 +182,9 @@ def get_dashboard_summary():
         "growers": growers,
         "finishers": finishers,
         "sold_this_month": sold_this_month,
+        "livestock_sold_this_month": sales_this_month["livestock"],
+        "slaughter_sold_this_month": sales_this_month["slaughter"],
+        "meat_sold_this_month": sales_this_month["meat"],
         "available_for_sale_pigs": available_for_sale_count,
         "reserved_pigs": reserved_count,
         "withdrawal_hold_pigs": withdrawal_hold_count,

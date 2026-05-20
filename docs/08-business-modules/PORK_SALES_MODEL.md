@@ -12,14 +12,22 @@ Use this file for owner edits, assumptions, pricing changes, operating notes, an
 
 ## Strategic Direction
 
-Amadeus Farm is moving from only selling live pigs into a dual sales model:
+Amadeus Farm is moving from only selling live pigs into a multi-stream pork sales model:
 
-1. Live slaughter-ready pig sales.
-2. Pre-ordered full or half carcass meat sales through legal slaughter and butchery facilities.
+1. Livestock sales: the current live pig order flow.
+2. Slaughter/abattoir sales: pigs grown to weight and sold through the intermediate slaughter/abattoir channel.
+3. Meat sales: future pre-ordered full or half carcass meat sales through legal slaughter and butchery facilities.
 
 The goal is to increase profit per pig, reduce waste, build a premium sustainable pork brand, and create trusted customer relationships.
 
 The operating model must remain simple, legal, traceable, and scalable.
+
+Dashboard/planning note:
+
+- Near-term dashboard reporting should treat `PIG_MASTER` exits as the shared source of truth for all three streams because all of them represent pigs leaving the farm.
+- Livestock can continue to use the current order flow.
+- Slaughter/abattoir sales may be logged as a simpler exit/sale event first, then formalized later if it needs invoices, customers, or recurring buyer tracking.
+- Meat sales require the fuller Phase 11 planning model because they add deposits, legal slaughter booking, butchery, packaging, delivery, customer communication, traceability, and cold-chain requirements.
 
 ## Core Principle
 

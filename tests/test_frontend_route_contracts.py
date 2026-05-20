@@ -51,6 +51,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("window.confirm", js)
         self.assertIn("allow_duplicate: true", js)
 
+    def test_dashboard_shows_monthly_sales_stream_breakdown(self):
+        js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
+
+        self.assertIn("Sales This Month", js)
+        self.assertIn("livestock_sold_this_month", js)
+        self.assertIn("slaughter_sold_this_month", js)
+        self.assertIn("meat_sold_this_month", js)
+
 
 if __name__ == "__main__":
     unittest.main()
