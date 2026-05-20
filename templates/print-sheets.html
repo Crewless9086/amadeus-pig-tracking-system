@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Printable Operation Sheets</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card print-sheet-page">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Printable Operation Sheets</h1>
+          <p>Print worker-ready capture sheets from current farm records.</p>
+        </div>
+        <a href="/" class="secondary-link">Back to Dashboard</a>
+      </div>
+
+      <div id="print_sheets_message" class="message-box hidden"></div>
+
+      <form id="print_sheet_filters" class="weight-form no-print">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="sheet_date">Weighing Date</label>
+            <input type="date" id="sheet_date" name="sheet_date" required />
+          </div>
+          <div class="form-group">
+            <label for="pen_filter">Pens (Optional)</label>
+            <select id="pen_filter" name="pen_filter" multiple size="5"></select>
+            <small class="field-help">Leave empty for all active pigs.</small>
+          </div>
+        </div>
+
+        <div class="form-actions compact-actions">
+          <button type="button" id="clear_pens_button" class="button-link button-link-secondary">All Pens</button>
+          <button type="button" id="print_sheet_button">Print</button>
+        </div>
+      </form>
+
+      <div class="report-print-header">
+        <h1>Weekly Weight Capture Sheet</h1>
+        <p id="print_sheet_meta">Loading active pigs...</p>
+      </div>
+
+      <div class="simple-table-wrap printable-sheet-wrap">
+        <table class="simple-table printable-sheet-table">
+          <thead>
+            <tr>
+              <th>Tag Number</th>
+              <th>Previous Weight Date</th>
+              <th>Previous Weight</th>
+              <th>New Weight</th>
+              <th>Current Pen</th>
+              <th>New Pen</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="print_sheet_body">
+            <tr><td colspan="7" class="table-empty">Loading active pigs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/printSheets.js') }}"></script>
+</body>
+</html>

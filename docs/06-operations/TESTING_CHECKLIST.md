@@ -676,10 +676,35 @@ Phase 9.5:
 5. Confirm pigs with `Status = Slaughtered` or abattoir/slaughter exit reasons count under `Slaughter`.
 6. Confirm future meat sale exits can be counted under `Meat` without building the full meat-sales workflow yet.
 7. Confirm old months do not leak into the current-month dashboard count.
+8. Future 9.5B check: confirm the Sales section shows sales count and Rand value separately for total sales, livestock, slaughter, and meat.
+9. Future 9.5B check: confirm Rand totals come from explicit sales/order/exit value fields and are not inferred from pig count alone.
 
 Local result:
 
 - 2026-05-20: Implemented locally and verified with dashboard/frontend focused tests plus full 127-test suite.
+- 2026-05-20: Deployed/browser-visible; owner confirmed the stream cards are present and requested later count/value planning.
+
+## Printable Farm Operation Sheet Tests
+
+Phase 9.6A:
+
+1. Open `/print-sheets`.
+2. Confirm the first available sheet is a weekly weight capture sheet.
+3. Confirm the page is read-only and does not write to Google Sheets when opened or printed.
+4. Confirm worker-facing print columns include `Tag Number`, `Vorige Gewig Datum`, `Vorige Gewig`, blank `Nuwe Gewig`, current `Kamp`, blank `Nuwe Kamp`, and blank `Notas`.
+5. Confirm internal `Pig_ID` is not shown on the printed sheet.
+6. Confirm rows default to active/on-farm pigs only.
+7. Confirm rows are sorted by current pen/camp and then numeric tag number.
+8. Confirm total row count and selected/default weighing date appear at the top.
+9. Confirm browser print hides app navigation, filters, and buttons.
+10. Confirm the printed layout is usable from laptop/desktop browser print and save-to-PDF.
+11. Confirm labels are English.
+12. Confirm the default shows all active/on-farm pigs and pen filtering can narrow to one or multiple pens.
+13. Future 9.6B check: optional columns such as sex, stage, and purpose can be added only when selected.
+
+Local result:
+
+- 2026-05-20: Implemented locally and verified with `node --check static/js/printSheets.js`, focused route/frontend tests, and full 129-test suite.
 
 ## Google Sheets Checks
 

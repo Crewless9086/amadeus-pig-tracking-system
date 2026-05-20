@@ -126,6 +126,11 @@ def weight_report_page():
     return render_template("weight-report.html")
 
 
+@app.route("/print-sheets")
+def print_sheets_page():
+    return render_template("print-sheets.html")
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200

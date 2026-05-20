@@ -28,6 +28,11 @@ Dashboard/planning note:
 - Livestock can continue to use the current order flow.
 - Slaughter/abattoir sales may be logged as a simpler exit/sale event first, then formalized later if it needs invoices, customers, or recurring buyer tracking.
 - Meat sales require the fuller Phase 11 planning model because they add deposits, legal slaughter booking, butchery, packaging, delivery, customer communication, traceability, and cold-chain requirements.
+- Dashboard reporting should eventually show both quantity and money:
+  - sales transaction count per stream
+  - pig/item count per stream
+  - Rand value per stream
+- Rand values must come from explicit order, sale, invoice, or exit-value fields. They should not be inferred from pig count alone.
 
 ## Core Principle
 

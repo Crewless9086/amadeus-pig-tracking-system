@@ -59,6 +59,24 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("slaughter_sold_this_month", js)
         self.assertIn("meat_sold_this_month", js)
 
+    def test_print_sheets_page_is_read_only_weight_capture_sheet(self):
+        template = Path("templates/print-sheets.html").read_text(encoding="utf-8")
+        js = Path("static/js/printSheets.js").read_text(encoding="utf-8")
+
+        self.assertIn("Weekly Weight Capture Sheet", template)
+        self.assertIn("Previous Weight Date", template)
+        self.assertIn("Previous Weight", template)
+        self.assertIn("New Weight", template)
+        self.assertIn("Current Pen", template)
+        self.assertIn("New Pen", template)
+        self.assertIn("Notes", template)
+        self.assertNotIn("Pig_ID", template)
+        self.assertIn('fetch("/api/pig-weights/pigs")', js)
+        self.assertIn('fetch("/api/pig-weights/pens")', js)
+        self.assertNotIn("method: \"POST\"", js)
+        self.assertIn("window.print", js)
+        self.assertIn("multiple", template)
+
 
 if __name__ == "__main__":
     unittest.main()

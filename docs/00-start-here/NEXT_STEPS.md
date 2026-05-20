@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.4C3/C4/D Planned; 9.5 Implemented Locally | Deploy/browser-check Phase 9.5 dashboard monthly sales stream breakdown. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Implemented Locally | Deploy/browser-check Phase 9.6A printable weight capture sheet. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.4C3/C4/D Planned; 9.5 Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2202,7 +2202,7 @@ Questions to answer when planning:
 - Verification passed: `node --check static/js/weightReport.js`, focused report/frontend tests, and full local unittest suite at 125 tests.
 - Deployed and owner-verified on 2026-05-20; owner confirmed tags display correctly on `/weight-report`.
 
-### 9.5 Dashboard Sold This Month Audit — Implemented Locally
+### 9.5 Dashboard Sold This Month Audit — Implemented Locally; 9.5B Planned
 
 Required outcome:
 
@@ -2236,9 +2236,26 @@ Implementation state:
 - Dashboard now displays `Sales This Month` plus the three stream counts.
 - Focused tests added for monthly sales stream classification and dashboard labels.
 - Verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite at 127 tests.
-- Deploy/browser verification is next.
+- Deployed/browser-visible on 2026-05-20; owner confirmed the three stream cards are in place.
 
-### 9.6 Printable Farm Operation Sheets — Planned
+9.5B follow-up planning - sales stream counts and Rand values:
+
+- Owner note: the three stream cards are useful as a start, but the sales/income streams need clearer planning later.
+- Current month can show `0` if no livestock/meat exits were logged; the known slaughter item was not logged yet, so it cannot be counted until the exit/sale event exists in the data.
+- Future dashboard should separate:
+  - `Sales count`: number of sale transactions per stream.
+  - `Item/pig count`: number of pigs/items sold per stream.
+  - `Sales value`: Rand total per stream.
+- Suggested display shape:
+  - top sales line/card: total sales count and total Rand value, similar visual weight to the Herd total
+  - underneath: `Livestock`, `Slaughter`, and `Meat`, each with count and Rand value
+- Data-source questions before implementation:
+  - For livestock, should Rand value come from completed `ORDER_MASTER`/latest invoice, collected `ORDER_LINES`, or pig exit records linked by `Exit_Order_ID`?
+  - For slaughter/abattoir sales, where should the sale transaction and Rand value be logged if there is no customer order?
+  - For meat sales, should value come only from the future meat order/deposit/invoice flow under Phase 11?
+- Do not fake currency totals from pig count only. Implement Rand values only once the sale value source is explicit.
+
+### 9.6 Printable Farm Operation Sheets — 9.6A Implemented Locally
 
 Required outcome:
 
@@ -2269,6 +2286,44 @@ Questions to answer when planning:
 Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
+
+Recommended 9.6 split:
+
+1. **9.6A Printable weight capture sheet** - build `/print-sheets` with the first printable weekly weight sheet only.
+2. **9.6B Sheet filters and polish** - add useful filters after 9.6A works: all active pigs, by pen/camp, by purpose, for-sale animals, grow-out/sale animals.
+3. **9.6C Bulk weight entry idea** - future planning only; use the same row order as the printed sheet to speed up data entry later.
+
+9.6A first-slice assumptions:
+
+- Use normal browser printing only (`window.print()` and print CSS).
+- Do not write to Google Sheets when generating the printable sheet.
+- Use current active/on-farm pig truth from existing pig endpoints or a new read-only backend endpoint if the existing data shape is not enough.
+- Default row order: current pen/camp, then numeric tag number.
+- Hide internal `Pig_ID` from the printed worker-facing sheet.
+- Include blank columns for `Nuwe Gewig`, `Nuwe Kamp`, and `Notas`.
+- Include previous weight/date and current camp so the worker can write against the latest known context.
+
+Open planning questions before implementation:
+
+- Printed labels: English only for consistency across the app.
+- Default selection: all active/on-farm pigs, with option to narrow to one or multiple pens.
+- Optional columns: park for later. Sex and purpose may be useful sometimes, but should become selectable optional columns rather than always visible.
+
+9.6A implementation state:
+
+- Added `/print-sheets`.
+- Added first printable sheet: `Weekly Weight Capture Sheet`.
+- Uses existing read-only `GET /api/pig-weights/pigs` and `GET /api/pig-weights/pens`.
+- Does not write to Google Sheets.
+- Defaults to all active/on-farm pigs.
+- Supports one or multiple pen filters.
+- Uses English labels.
+- Prints through normal browser print.
+- Hides internal `Pig_ID` from the worker-facing sheet.
+- Rows sort by current pen/camp and numeric tag number.
+- Future optional columns such as sex, stage, and purpose are parked under 9.6B.
+- Verification passed: `node --check static/js/printSheets.js`, focused frontend/route tests, and full local unittest suite at 129 tests.
+- Deploy/browser verification is next.
 
 ### 9.7 Business Scenario Calculator — Future Planning
 
