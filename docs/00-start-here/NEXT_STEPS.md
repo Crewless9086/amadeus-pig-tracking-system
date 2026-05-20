@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Implemented Locally | Deploy/browser-check Phase 9.3 weight form current-pen helper. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B Implemented Locally | Deploy/browser-check Phase 9.4 weight report. |
 | Phase 10: Farm Operating System Integration | Not Started | Future. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,11 +1977,11 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4A/B Implemented Locally
 
 Only after live order stability unless the operational need becomes urgent.
 
-### 9.1 New Litter Defaults And Weaning Reminder — 9.1A Live-Verified; 9.1B Browser-Verified
+### 9.1 New Litter Defaults And Weaning Reminder — Complete / Live-Verified
 
 Required outcome:
 
@@ -2018,7 +2018,7 @@ Future direction:
 - Tile link issue fixed: `litterDetail.js` now calls the existing `GET /api/pig-weights/litter/<litter_id>` route instead of the obsolete `/detail` path.
 - Owner confirmed dashboard tile opens the litter detail page after deploy.
 
-### 9.2 Pig Dropdown Usability
+### 9.2 Pig Dropdown Usability — Complete / Owner-Verified
 
 Required outcome:
 
@@ -2036,7 +2036,7 @@ Required outcome:
 - Focused backend tests and JavaScript syntax checks passed locally.
 - Deployed and owner-verified in the browser: Add Litter, Add Mating, and Weight Entry dropdown labels display correctly.
 
-### 9.3 Weight Form Context
+### 9.3 Weight Form Context — Complete / Owner-Verified
 
 Required outcome:
 
@@ -2050,9 +2050,10 @@ Required outcome:
 - Form submission remains unchanged and still sends `moved_to_pen_id` only when a target pen is selected.
 - `node --check static/js/pigWeights.form.js` passed.
 - Focused local tests passed: `tests.test_frontend_route_contracts`, `tests.test_pig_weights_dropdown_options`, and `tests.test_pig_weights_utils`.
-- Deploy/browser verification is next.
+- Full local unittest suite passed: 117 tests.
+- Deployed and owner-verified on `/pig-weights` on 2026-05-20.
 
-### 9.4 Weight Report
+### 9.4 Weight Report — 9.4A/B Implemented Locally
 
 Required outcome:
 
@@ -2060,14 +2061,47 @@ Required outcome:
 - include summaries, grouped totals, pen counts, and useful decision-making commentary
 - this covers post-entry reporting only; pre-weighing handwritten capture is the separate Phase 9.6 printable sheet
 
-### 9.5 Dashboard Sold This Month Audit
+Owner decisions:
+
+- Default view: `Today`.
+- First report scope: active/on-farm pigs only.
+- Condition notes: include them in the detail table for the first slice, then review whether they are useful or too noisy.
+- Print support: reports should support normal browser printing. This does not replace Phase 9.6 printable field capture sheets.
+
+9.4A backend report contract:
+
+- Added read-only `GET /api/pig-weights/weight-report?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&pen_id=PEN-...`.
+- Reads from `WEIGHT_LOG`, `PIG_OVERVIEW`, and `PEN_REGISTER`.
+- Filters out inactive/off-farm pigs.
+- Returns summary totals, pen summary, and detailed weight rows.
+- Calculates previous weight, change, days since previous, and growth per day where previous data exists.
+- Does not write to Google Sheets.
+
+9.4B web app page:
+
+- Added `/weight-report`.
+- Defaults date range to today.
+- Includes date range controls, optional pen filter, `Today`, `Run Report`, and `Print` actions.
+- Shows summary cards, pen summary table, and detailed active-pig weight rows.
+- Added dashboard links to `Weight Report`.
+- Uses normal browser print flow with print CSS.
+
+Verification state:
+
+- `node --check static/js/weightReport.js` passed.
+- Focused service and frontend route tests passed.
+- Local route smoke passed: `/weight-report` returned `200`.
+- Local API smoke passed: valid report returned `200`, invalid date returned `400`.
+- Deploy/browser verification is next.
+
+### 9.5 Dashboard Sold This Month Audit — Planned
 
 Required outcome:
 
 - verify how `SOLD THIS MONTH` is calculated
 - reconcile the April mismatch where the dashboard showed 20 but the expected sold count was 40
 
-### 9.6 Printable Farm Operation Sheets
+### 9.6 Printable Farm Operation Sheets — Planned
 
 Required outcome:
 
@@ -2099,7 +2133,7 @@ Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
 
-### 9.7 Business Scenario Calculator - Future Planning
+### 9.7 Business Scenario Calculator — Future Planning
 
 Goal:
 
@@ -2221,11 +2255,12 @@ Recently completed:
 - Phase 9.1A new litter defaults — live-verified 2026-05-20: Lolly's `LIT-2026-9E4A` created 11 piglets and Shupe's `LIT-2026-EB92` created 8 piglets; generated rows have `Purpose = Unknown` and `Source = Born_on_Farm`.
 - Phase 9.1B litter attention dashboard — deployed and browser-verified 2026-05-19.
 - Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
-- Phase 9.3 weight form context — implemented locally 2026-05-20: current-pen helper added beside optional move pen, with syntax and focused contract tests passing.
+- Phase 9.3 weight form context — deployed and owner-verified 2026-05-20: current-pen helper added beside optional move pen, save payload unchanged, syntax/focused tests and full unittest suite passed.
+- Phase 9.4A/B weight report — implemented locally 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, and browser print support; focused tests and local route/API smoke passed.
 
 Recommended next:
 
-1. **Deploy/browser-check Phase 9.3** - confirm `/pig-weights` shows the selected pig's current pen beside `Moved To Pen (Optional)` and that save behavior is unchanged.
+1. **Deploy/browser-check Phase 9.4** - confirm `/weight-report` loads, defaults to Today, filters by pen, shows empty state or rows correctly, and browser print preview is usable.
 2. **Phase 8E planning** - breeding-board tile sorting if the matings board becomes the next priority.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 

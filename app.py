@@ -121,6 +121,11 @@ def pig_weights_page():
     return render_template("pig-weights.html")
 
 
+@app.route("/weight-report")
+def weight_report_page():
+    return render_template("weight-report.html")
+
+
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200

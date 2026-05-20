@@ -805,6 +805,18 @@ button:disabled {
   text-align: center;
 }
 
+.report-section {
+  margin-top: 24px;
+}
+
+.report-actions {
+  justify-content: flex-end;
+}
+
+.print-only {
+  display: none;
+}
+
 /* Radio pill controls */
 .radio-pill-group {
   display: flex;
@@ -968,4 +980,53 @@ button:disabled {
   font-weight: 700;
   color: var(--text-main);
   word-break: break-word;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .page-shell {
+    min-height: auto;
+    padding: 0;
+    display: block;
+  }
+
+  .page-card {
+    max-width: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .no-print,
+  .page-header-with-link,
+  .message-box {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  .simple-table-wrap {
+    border: none;
+    overflow: visible;
+  }
+
+  .simple-table {
+    font-size: 11px;
+  }
+
+  .simple-table th,
+  .simple-table td {
+    padding: 6px;
+    white-space: normal;
+  }
+
+  .summary-metric-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }

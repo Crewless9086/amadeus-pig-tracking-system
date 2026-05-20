@@ -15,6 +15,7 @@ from modules.pig_weights.pig_weights_service import (
     get_movement_history_for_pig,
     get_weight_history_for_pig,
     get_weight_entries_by_date,
+    get_weight_report,
     get_latest_weight_for_pig,
     save_new_pig,
     save_new_product,
@@ -185,6 +186,16 @@ def get_weights_by_date(weight_date: str):
         "count": history["count"],
         "history": history["history"],
     }, 200
+
+
+def get_weight_report_data(date_from: str = "", date_to: str = "", pen_id: str = ""):
+    try:
+        return get_weight_report(date_from=date_from, date_to=date_to, pen_id=pen_id), 200
+    except ValueError as exc:
+        return {
+            "success": False,
+            "errors": [str(exc)],
+        }, 400
 
 
 def get_latest_weight(pig_id: str):

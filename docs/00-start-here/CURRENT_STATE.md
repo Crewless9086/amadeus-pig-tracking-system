@@ -176,4 +176,5 @@ Current position:
 - Phase 9.1A is live-verified: real litters `LIT-2026-9E4A` and `LIT-2026-EB92` generated the expected piglet rows with `Purpose = Unknown`.
 - Phase 9.1B is deployed and browser-verified: dashboard litter attention reads `LITTER_OVERVIEW`, and litter tiles open the litter detail page.
 - Phase 9.2A is deployed and owner-verified: pig dropdown APIs and labels now include current pen context and three-slot numeric tag display.
-- Phase 9.3 is implemented locally: the weight form shows the selected pig's current pen beside `Moved To Pen (Optional)` without changing the save payload; deploy/browser verification is next.
+- Phase 9.3 is deployed and owner-verified: the weight form shows the selected pig's current pen beside `Moved To Pen (Optional)` without changing the save payload.
+- Phase 9.4A/B is implemented locally: read-only weight report endpoint and `/weight-report` page are ready for deploy/browser verification.

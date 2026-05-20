@@ -16,6 +16,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_pig_movement_history,
     get_pig_weight_history,
     get_weights_by_date,
+    get_weight_report_data,
     get_latest_weight,
     create_new_pig,
     create_new_product,
@@ -92,6 +93,16 @@ def pig_weights(pig_id):
 def weights_by_date():
     weight_date = request.args.get("weight_date", "")
     result, status_code = get_weights_by_date(weight_date)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/weight-report", methods=["GET"])
+def weight_report():
+    result, status_code = get_weight_report_data(
+        date_from=request.args.get("date_from", ""),
+        date_to=request.args.get("date_to", ""),
+        pen_id=request.args.get("pen_id", ""),
+    )
     return jsonify(result), status_code
 
 

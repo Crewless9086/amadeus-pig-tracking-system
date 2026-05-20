@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weight Report</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Weight Report</h1>
+          <p>Review weights captured after weighing, grouped for farm decisions.</p>
+        </div>
+        <a href="/" class="secondary-link">Back to Dashboard</a>
+      </div>
+
+      <div id="weight_report_message" class="message-box hidden"></div>
+
+      <form id="weight_report_filters" class="weight-form no-print">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="date_from">From</label>
+            <input type="date" id="date_from" name="date_from" required />
+          </div>
+          <div class="form-group">
+            <label for="date_to">To</label>
+            <input type="date" id="date_to" name="date_to" required />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="pen_filter">Pen (Optional)</label>
+            <select id="pen_filter" name="pen_filter">
+              <option value="">All pens</option>
+            </select>
+          </div>
+          <div class="form-group report-actions">
+            <label>Actions</label>
+            <div class="form-actions compact-actions">
+              <button type="button" id="today_button" class="button-link button-link-secondary">Today</button>
+              <button type="submit" id="run_report_button">Run Report</button>
+              <button type="button" id="print_report_button" class="button-link button-link-secondary">Print</button>
+            </div>
+          </div>
+        </div>
+      </form>
+
+      <div class="report-print-header print-only">
+        <h1>Amadeus Farm Weight Report</h1>
+        <p id="print_report_range"></p>
+      </div>
+
+      <div id="weight_report_summary" class="summary-metric-grid report-section"></div>
+
+      <div class="section-title-row report-section">
+        <div>
+          <h2>Pen Summary</h2>
+          <p>Grouped totals for the selected date range.</p>
+        </div>
+      </div>
+      <div class="simple-table-wrap report-table-wrap">
+        <table class="simple-table">
+          <thead>
+            <tr>
+              <th>Pen</th>
+              <th>Entries</th>
+              <th>Pigs</th>
+              <th>Avg Weight</th>
+              <th>Avg Change</th>
+              <th>Loss Flags</th>
+            </tr>
+          </thead>
+          <tbody id="pen_summary_body">
+            <tr><td colspan="6" class="table-empty">Run the report to view pen totals.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-title-row report-section">
+        <div>
+          <h2>Weight Details</h2>
+          <p>Active on-farm pigs weighed in the selected range.</p>
+        </div>
+      </div>
+      <div class="simple-table-wrap report-table-wrap">
+        <table class="simple-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Pig</th>
+              <th>Pen</th>
+              <th>Weight</th>
+              <th>Previous</th>
+              <th>Change</th>
+              <th>Growth/day</th>
+              <th>Stage</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="weight_detail_body">
+            <tr><td colspan="9" class="table-empty">Run the report to view weight details.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/weightReport.js') }}"></script>
+</body>
+</html>

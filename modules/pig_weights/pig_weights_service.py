@@ -909,6 +909,194 @@ def get_weight_entries_by_date(weight_date: str):
         "history": history,
     }
 
+
+def _average(values):
+    clean_values = [value for value in values if value is not None]
+    if not clean_values:
+        return None
+    return round(sum(clean_values) / len(clean_values), 2)
+
+
+def _build_weight_report_pig_lookup(overview_rows, columns, pen_lookup):
+    lookup = {}
+
+    for row in overview_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+
+        current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+        lookup[pig_id] = {
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "status": to_clean_string(row.get(columns["status"], "")),
+            "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
+            "current_pen_id": current_pen_id,
+            "current_pen_name": _pen_name_for_id(pen_lookup, current_pen_id),
+            "calculated_stage": to_clean_string(row.get(columns["calculated_stage"], "")),
+            "weight_band": to_clean_string(row.get(columns["weight_band"], "")),
+        }
+
+    return lookup
+
+
+def _is_active_on_farm_pig(pig_meta):
+    return (
+        to_clean_string(pig_meta.get("status", "")).lower() == "active"
+        and to_clean_string(pig_meta.get("on_farm", "")).lower() == "yes"
+    )
+
+
+def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
+    parsed_from = parse_sheet_date(date_from) if date_from else datetime.now().date()
+    parsed_to = parse_sheet_date(date_to) if date_to else parsed_from
+
+    if not parsed_from or not parsed_to:
+        raise ValueError("date_from and date_to must be valid dates.")
+
+    if parsed_from > parsed_to:
+        raise ValueError("date_from must be on or before date_to.")
+
+    selected_pen_id = to_clean_string(pen_id)
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    pen_lookup = _build_pen_lookup()
+    pig_lookup = _build_weight_report_pig_lookup(overview_rows, columns, pen_lookup)
+
+    weights_by_pig = {}
+    for row in weight_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        weight_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+        weight_kg = to_float(row.get(columns["weight_kg"], ""))
+
+        if not pig_id or not weight_date or weight_kg is None:
+            continue
+
+        weights_by_pig.setdefault(pig_id, []).append({
+            "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+            "pig_id": pig_id,
+            "weight_date": weight_date,
+            "weight_kg": weight_kg,
+            "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
+            "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
+        })
+
+    for pig_weights in weights_by_pig.values():
+        pig_weights.sort(key=lambda item: item["weight_date"])
+
+    entries = []
+    for pig_id, pig_weights in weights_by_pig.items():
+        pig_meta = pig_lookup.get(pig_id, {})
+        if not _is_active_on_farm_pig(pig_meta):
+            continue
+
+        if selected_pen_id and pig_meta.get("current_pen_id") != selected_pen_id:
+            continue
+
+        for index, item in enumerate(pig_weights):
+            if item["weight_date"] < parsed_from or item["weight_date"] > parsed_to:
+                continue
+
+            previous_entry = None
+            for previous_index in range(index - 1, -1, -1):
+                candidate = pig_weights[previous_index]
+                if candidate["weight_date"] < item["weight_date"]:
+                    previous_entry = candidate
+                    break
+
+            difference_kg = None
+            days_since_previous = None
+            growth_rate_kg_day = None
+
+            if previous_entry:
+                difference_kg = round(item["weight_kg"] - previous_entry["weight_kg"], 2)
+                days_since_previous = (item["weight_date"] - previous_entry["weight_date"]).days
+                if days_since_previous > 0:
+                    growth_rate_kg_day = round(difference_kg / days_since_previous, 3)
+
+            entries.append({
+                "weight_log_id": item["weight_log_id"],
+                "pig_id": pig_id,
+                "tag_number": pig_meta.get("tag_number", ""),
+                "weight_date": item["weight_date"].isoformat(),
+                "weight_kg": item["weight_kg"],
+                "previous_weight_kg": previous_entry["weight_kg"] if previous_entry else None,
+                "previous_weight_date": previous_entry["weight_date"].isoformat() if previous_entry else "",
+                "difference_kg": difference_kg,
+                "days_since_previous": days_since_previous,
+                "growth_rate_kg_day": growth_rate_kg_day,
+                "current_pen_id": pig_meta.get("current_pen_id", ""),
+                "current_pen_name": pig_meta.get("current_pen_name", ""),
+                "calculated_stage": pig_meta.get("calculated_stage", ""),
+                "weight_band": pig_meta.get("weight_band", ""),
+                "weighed_by": item["weighed_by"],
+                "condition_notes": item["condition_notes"],
+            })
+
+    entries.sort(key=lambda item: (
+        item["current_pen_name"] or item["current_pen_id"],
+        item["tag_number"] or item["pig_id"],
+        item["weight_date"],
+    ))
+
+    pen_groups = {}
+    for entry in entries:
+        group_key = entry["current_pen_id"] or "Unknown"
+        group = pen_groups.setdefault(group_key, {
+            "pen_id": entry["current_pen_id"],
+            "pen_name": entry["current_pen_name"],
+            "entry_count": 0,
+            "pig_ids": set(),
+            "weights": [],
+            "differences": [],
+            "weight_loss_count": 0,
+        })
+        group["entry_count"] += 1
+        group["pig_ids"].add(entry["pig_id"])
+        group["weights"].append(entry["weight_kg"])
+        group["differences"].append(entry["difference_kg"])
+        if entry["difference_kg"] is not None and entry["difference_kg"] < 0:
+            group["weight_loss_count"] += 1
+
+    pen_summary = []
+    for group in pen_groups.values():
+        pen_summary.append({
+            "pen_id": group["pen_id"],
+            "pen_name": group["pen_name"],
+            "entry_count": group["entry_count"],
+            "unique_pigs": len(group["pig_ids"]),
+            "average_weight_kg": _average(group["weights"]),
+            "average_difference_kg": _average(group["differences"]),
+            "weight_loss_count": group["weight_loss_count"],
+        })
+
+    pen_summary.sort(key=lambda item: (item["pen_name"] or item["pen_id"] or ""))
+
+    unique_pig_ids = {entry["pig_id"] for entry in entries}
+    differences = [entry["difference_kg"] for entry in entries]
+    growth_rates = [entry["growth_rate_kg_day"] for entry in entries]
+
+    return {
+        "success": True,
+        "date_from": parsed_from.isoformat(),
+        "date_to": parsed_to.isoformat(),
+        "pen_id": selected_pen_id,
+        "summary": {
+            "total_entries": len(entries),
+            "unique_pigs": len(unique_pig_ids),
+            "average_weight_kg": _average([entry["weight_kg"] for entry in entries]),
+            "average_difference_kg": _average(differences),
+            "average_growth_rate_kg_day": _average(growth_rates),
+            "weight_loss_count": len([
+                entry for entry in entries
+                if entry["difference_kg"] is not None and entry["difference_kg"] < 0
+            ]),
+        },
+        "pen_summary": pen_summary,
+        "entries": entries,
+    }
+
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
 

@@ -621,6 +621,27 @@ Phase 9.3:
 7. Save a weight with no movement and confirm no movement is logged.
 8. Save a weight with a target pen only when intentionally testing movement; confirm the payload still sends `moved_to_pen_id` and not the display helper text.
 
+Live result:
+
+- 2026-05-20: Deployed and owner-confirmed on `/pig-weights`; current-pen helper displays correctly beside `Moved To Pen (Optional)`.
+
+## Weight Report Tests
+
+Phase 9.4:
+
+1. Open `/weight-report`.
+2. Confirm the report defaults to today's date for both `From` and `To`.
+3. Confirm the page loads with either today's rows or a clear empty state.
+4. Select a date range with known weight entries and run the report.
+5. Confirm summary cards show total entries, unique pigs, average weight, average change, average growth/day, and loss flags.
+6. Confirm pen summary groups rows by current pen.
+7. Confirm detail rows show active/on-farm pigs only.
+8. Confirm inactive/off-farm pigs are not included.
+9. Confirm optional pen filter narrows the report.
+10. Confirm invalid date ranges return a user-safe error.
+11. Confirm `Print` opens browser print flow and the printed layout hides filters/buttons.
+12. Confirm running the report does not write to Google Sheets.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:
