@@ -1156,6 +1156,31 @@ Deploy checks:
 6. Cancel the synthetic row after testing.
 7. Do not update real `S10` payment/final amount until the synthetic update check passes.
 
+Owner-pending note:
+
+- 2026-05-21: Owner decided to park the payment/final amount test until the real JC Slaghuis value is known.
+- Return to this checklist when the butcher payment/final amount is available.
+
+## Phase 10.2L3 Slaughter Form UX Polish Checks
+
+Local result:
+
+- 2026-05-21: Added top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills to `/sales/slaughter`.
+- 2026-05-21: `node --check static/js/slaughterSale.js` passed.
+- 2026-05-21: Frontend contract tests passed at 10 tests.
+- 2026-05-21: Local page smoke for `/sales/slaughter` returned `200`.
+- 2026-05-21: Full local unittest suite passed at 200 tests.
+
+Deploy checks:
+
+1. Open `/sales/slaughter`.
+2. Confirm the top save button is visible after selecting sale date and pig.
+3. Confirm transaction search filters recent rows by sale ID, buyer, status, payment, amount, or date.
+4. Confirm sale-status and payment-status filters work.
+5. Confirm `Clear Filters` resets the table.
+6. Confirm create/cancel/update payment buttons still appear only where expected.
+7. Confirm no multi-pig/batch behavior was introduced in this slice.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

@@ -254,4 +254,11 @@ Current position:
 - Phase 10.2L2 payment/final amount update is implemented locally: `PATCH /api/sales-transactions/<sale_id>/payment` updates non-cancelled slaughter transaction amount, payment status, sale status, payment method, optional carcass weight, and appends an audit note.
 - `/sales/slaughter` now has an `Update Payment` action for non-cancelled rows.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused sales/frontend tests passed at 23 tests, local missing-config update route smoke returned safe `503`, and full local unittest suite passed at 200 tests.
-- Next step is deploying 10.2L/10.2L2, testing update on a synthetic row, then letting the owner log real `S10` and later update payment/final amount from the web app.
+- 10.2L2 real-value test is parked by owner decision on 2026-05-21 until the real JC Slaghuis sale value is known.
+- This is not blocked implementation work; return to it when the butcher payment/final amount is available.
+- Next step is continuing with the next selected Phase 10 slice while keeping S10/payment completion as an owner-pending follow-up.
+- Slaughter form refinement notes are captured in `NEXT_STEPS.md`: improve save-button reachability, align the bottom table with the agreed table/filter layout, plan multi-pig slaughter batches, add payment date handling, and consider estimated carcass weight from latest live weight.
+- Shared page template/layout standard is captured in `NEXT_STEPS.md` so new pages stop drifting into different patterns.
+- Phase 10.2L3 slaughter form UX polish is implemented locally: `/sales/slaughter` now has a top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
+- Multi-pig slaughter batch entry is still intentionally not implemented; it should be planned as 10.2L4 before changing transaction/item logic.

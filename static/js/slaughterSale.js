@@ -12,10 +12,16 @@ const createdByInput = document.getElementById("created_by");
 const unitPriceInput = document.getElementById("unit_price");
 const carcassWeightInput = document.getElementById("carcass_weight_kg");
 const notesInput = document.getElementById("notes");
-const submitButton = document.getElementById("submit_slaughter_sale");
+const submitButtons = Array.from(document.querySelectorAll(".submit-button"));
 const transactionsBody = document.getElementById("slaughter_transactions_body");
+const transactionCount = document.getElementById("slaughter_transactions_count");
+const transactionSearch = document.getElementById("slaughter_search");
+const transactionStatusFilter = document.getElementById("slaughter_status_filter");
+const transactionPaymentFilter = document.getElementById("slaughter_payment_filter");
+const clearFiltersButton = document.getElementById("clear_slaughter_filters_button");
 
 let allPigs = [];
+let allTransactions = [];
 
 function setTodayDate() {
   const today = new Date();
@@ -69,6 +75,13 @@ function clearMessage() {
   messageBox.classList.remove("message-success", "message-error");
 }
 
+function setSubmitting(isSubmitting) {
+  submitButtons.forEach((button) => {
+    button.disabled = isSubmitting;
+    button.textContent = isSubmitting ? "Saving..." : "Save Slaughter Sale";
+  });
+}
+
 function money(value) {
   if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
     return "R0.00";
@@ -113,11 +126,42 @@ async function loadPigs() {
   }
 }
 
+function applyTransactionFilters() {
+  const query = transactionSearch.value.trim().toLowerCase();
+  const status = transactionStatusFilter.value;
+  const payment = transactionPaymentFilter.value;
+
+  const filtered = allTransactions.filter((item) => {
+    const searchable = [
+      item.sale_id,
+      item.buyer_name,
+      item.destination,
+      item.sale_status,
+      item.payment_status,
+      item.net_total,
+      item.sale_date,
+    ].join(" ").toLowerCase();
+
+    return (
+      (!query || searchable.includes(query))
+      && (!status || item.sale_status === status)
+      && (!payment || item.payment_status === payment)
+    );
+  });
+
+  renderTransactions(filtered);
+}
+
 function renderTransactions(rows) {
   if (!rows.length) {
     transactionsBody.innerHTML = '<tr><td colspan="8" class="table-empty">No slaughter transactions found.</td></tr>';
+    transactionCount.textContent = allTransactions.length
+      ? "No transactions match the selected filters."
+      : "No slaughter transactions recorded yet.";
     return;
   }
+
+  transactionCount.textContent = `Showing ${rows.length} of ${allTransactions.length} slaughter transactions.`;
 
   transactionsBody.innerHTML = rows.map((item) => {
     const isCancelled = item.sale_status === "Cancelled";
@@ -130,13 +174,14 @@ function renderTransactions(rows) {
         </div>
       `;
     const rowClass = isCancelled ? ' class="muted-row"' : "";
+    const statusClass = isCancelled ? "status-pill status-pill-muted" : "status-pill";
     return `
       <tr${rowClass}>
         <td>${formatDate(item.sale_date)}</td>
         <td>${item.sale_id || "-"}</td>
         <td>${item.buyer_name || "-"}</td>
-        <td>${item.sale_status || "-"}</td>
-        <td>${item.payment_status || "-"}</td>
+        <td><span class="${statusClass}">${item.sale_status || "-"}</span></td>
+        <td><span class="${statusClass}">${item.payment_status || "-"}</span></td>
         <td>${money(item.net_total)}</td>
         <td>${item.item_count ?? "-"}</td>
         <td>${action}</td>
@@ -157,7 +202,8 @@ async function loadTransactions() {
     if (!response.ok || !data.success) {
       throw new Error(data.message || "Could not load transactions.");
     }
-    renderTransactions(data.sales_transactions || []);
+    allTransactions = data.sales_transactions || [];
+    applyTransactionFilters();
   } catch (error) {
     transactionsBody.innerHTML = '<tr><td colspan="8" class="table-empty">Could not load slaughter transactions.</td></tr>';
   }
@@ -204,8 +250,7 @@ async function submitForm(event) {
     return;
   }
 
-  submitButton.disabled = true;
-  submitButton.textContent = "Saving...";
+  setSubmitting(true);
 
   try {
     const response = await fetch("/api/sales-transactions", {
@@ -234,8 +279,7 @@ async function submitForm(event) {
   } catch (error) {
     showMessage(error.message || "Could not save slaughter sale.", "error");
   } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = "Save Slaughter Sale";
+    setSubmitting(false);
   }
 }
 
@@ -337,6 +381,15 @@ transactionsBody.addEventListener("click", (event) => {
 
 pigSelect.addEventListener("change", updatePigHelper);
 form.addEventListener("submit", submitForm);
+transactionSearch.addEventListener("input", applyTransactionFilters);
+transactionStatusFilter.addEventListener("change", applyTransactionFilters);
+transactionPaymentFilter.addEventListener("change", applyTransactionFilters);
+clearFiltersButton.addEventListener("click", () => {
+  transactionSearch.value = "";
+  transactionStatusFilter.value = "";
+  transactionPaymentFilter.value = "";
+  applyTransactionFilters();
+});
 
 setTodayDate();
 loadPigs();

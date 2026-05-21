@@ -633,6 +633,13 @@ Implementation state:
 - Local verification passed on 2026-05-21: focused sales/frontend tests passed at 23 tests.
 - Full local unittest suite passed on 2026-05-21 at 200 tests.
 - Next deployed test should update a synthetic non-cancelled transaction before using this for real `S10` payment completion.
+- Owner decision on 2026-05-21: park the real-value test until the actual JC Slaghuis sale amount/payment details are known.
+- Keep S10/payment completion as an owner-pending follow-up, not as a blocker for the next planning slice.
+- 10.2L3 slaughter form UX polish is implemented locally and not yet deployed.
+- `/sales/slaughter` now has a top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills.
+- 10.2L3 does not change the database model, create endpoint, cancel endpoint, payment update endpoint, or single-pig transaction behavior.
+- Local verification passed on 2026-05-21: frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
+- Next planning slice should be 10.2L4 multi-pig slaughter batch entry.
 
 Open questions before implementation:
 

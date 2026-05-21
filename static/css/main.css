@@ -234,6 +234,36 @@ textarea {
   gap: 8px;
 }
 
+.slaughter-filters-grid {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+
+.slaughter-filter-actions {
+  justify-content: flex-end;
+}
+
+.slaughter-count-helper {
+  margin: 8px 0 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.status-pill-muted {
+  background: #ece7df;
+  color: var(--text-soft);
+}
+
 .info-grid,
 .detail-grid,
 .history-summary-grid {

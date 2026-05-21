@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Local | Deploy slaughter form/payment update, then test with synthetic row before S10. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local | Deploy slaughter UX polish, then plan multi-pig slaughter batches. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2644,7 +2644,13 @@ Recommendation:
 - Phase 10.2L2 payment/final amount update implemented locally: `PATCH /api/sales-transactions/<sale_id>/payment` updates a non-cancelled slaughter transaction amount, payment status, sale status, payment method, optional carcass weight, and appends an audit note.
 - `/sales/slaughter` now has an `Update Payment` action for non-cancelled rows.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused sales/frontend tests passed at 23 tests, local missing-config update route smoke returned safe `503`, and full local unittest suite passed at 200 tests.
-- Next step: deploy 10.2L/10.2L2, test update on a synthetic row, then owner can log real `S10` and later update payment/final amount from the web app.
+- 10.2L2 real-value test is parked by owner decision on 2026-05-21 until the real JC Slaghuis sale value is known.
+- Do not treat this as blocked implementation work; return to it when the butcher payment/final amount is available.
+- Next step: continue with the next selected Phase 10 slice while keeping S10/payment completion as an owner-pending follow-up.
+- Phase 10.2L3 slaughter form UX polish implemented locally: added a top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills.
+- 10.2L3 intentionally keeps the form single-pig only; multi-pig/batch slaughter remains a planned follow-up.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
+- Next step: deploy 10.2L3 and owner-check `/sales/slaughter`, then plan 10.2L4 multi-pig slaughter batch entry before changing the data logic.
 
 Farm home/dashboard idea:
 
@@ -2657,6 +2663,19 @@ Farm home/dashboard idea:
 - Broader app layout note moved from `planning/ToDoList.md`: the desktop app should use available screen width better, with a consistent page template so information is not unnecessarily squeezed into the middle.
 - Mobile/PWA note moved from `planning/ToDoList.md`: investigate whether the app should support installable mobile behavior, for example a Progressive Web App pattern, so phone use feels closer to an app while still running through the browser.
 - UX rule: do not redesign every page separately. Establish shared layout conventions for page width, filters, tabs, tables, action placement, mobile behavior, and desktop density.
+- Shared template/layout follow-up moved from `planning/ToDoList.md`: define a reusable page template for new pages so forms, tables, filters, action buttons, and page width stay consistent.
+
+Slaughter form refinement notes:
+
+- Source note moved from `planning/ToDoList.md` after first `/sales/slaughter` owner use.
+- The save action should be easier to reach without unnecessary scrolling, likely by adding a top action row or sticky action behavior consistent with the weight form.
+- The bottom transaction table should use the agreed table layout pattern with filters and clearer spacing.
+- The slaughter form needs a planned multi-pig workflow because more than one pig may go to slaughter at a time.
+- Multi-pig planning needs to decide whether each pig has its own amount/weight line or whether the batch has one total with per-pig item details.
+- Payment date is separate from slaughter date and should be captured once the butcher pays.
+- The real amount may arrive later than slaughter date, so payment/final amount update needs a payment date field before financial reporting.
+- Consider estimating carcass weight from latest live weight, but keep it clearly marked as an estimate until actual carcass weight is supplied.
+- Do not expand the current single-pig form into a multi-pig financial workflow without a short planning slice first.
 
 Questions to answer when planning:
 
@@ -2665,6 +2684,9 @@ Questions to answer when planning:
 - What information is safe to show on a shared farm screen without exposing customer/order details?
 - Should mobile/PWA work be a small app-shell enhancement first, or wait until Supabase-backed modules settle?
 - What desktop max-width/layout pattern should be used for operational pages: full-width tables, constrained forms, two-column detail pages, or module-specific templates?
+- For `/sales/slaughter`, should the next refinement be UX/table polish first, or multi-pig batch entry first?
+- For slaughter batches, should amount be captured per pig, as one batch total split across pigs, or both?
+- Should payment date be required only when `payment_status = Paid`, or optional for all payment updates?
 
 ## Phase 11: Pork Sales Business Module - Discovery Source Captured
 

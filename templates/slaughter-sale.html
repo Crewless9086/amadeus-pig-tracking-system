@@ -35,6 +35,10 @@
           </div>
         </div>
 
+        <div class="form-actions form-actions-primary">
+          <button type="submit" id="submit_slaughter_sale_top" class="submit-button">Save Slaughter Sale</button>
+        </div>
+
         <div class="form-grid">
           <div class="form-group">
             <label for="buyer_name">Buyer / Butcher</label>
@@ -112,6 +116,41 @@
           <p>Cancelled rows remain visible for audit history.</p>
         </div>
       </div>
+
+      <div class="sales-filters-grid slaughter-filters-grid">
+        <div class="form-group">
+          <label for="slaughter_search">Search</label>
+          <input type="text" id="slaughter_search" placeholder="Search sale, buyer, status..." />
+        </div>
+
+        <div class="form-group">
+          <label for="slaughter_status_filter">Sale Status</label>
+          <select id="slaughter_status_filter">
+            <option value="">All statuses</option>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Completed">Completed</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="slaughter_payment_filter">Payment Status</label>
+          <select id="slaughter_payment_filter">
+            <option value="">All payments</option>
+            <option value="Unpaid">Unpaid</option>
+            <option value="Part_Paid">Part Paid</option>
+            <option value="Paid">Paid</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <div class="form-group slaughter-filter-actions">
+          <label>&nbsp;</label>
+          <button type="button" id="clear_slaughter_filters_button" class="button-link button-link-secondary">Clear Filters</button>
+        </div>
+      </div>
+
+      <div id="slaughter_transactions_count" class="field-helper slaughter-count-helper"></div>
 
       <div class="simple-table-wrap">
         <table class="simple-table">
