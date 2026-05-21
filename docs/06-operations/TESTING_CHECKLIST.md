@@ -1101,11 +1101,38 @@ Deploy result:
 
 Phase 10.2K3 deployed cancellation checks:
 
-1. Cancel synthetic transaction `SALE-2026-F17E16` using `POST /api/sales-transactions/SALE-2026-F17E16/cancel`.
-2. Confirm response returns `status = cancelled`, `sale_status = Cancelled`, `payment_status = Cancelled`, and `writes_to_supabase = true`.
-3. Confirm `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` shows `SALE-2026-F17E16` as cancelled.
-4. Confirm a new synthetic transaction can reuse `PIG-TEST-102K2-20260521` after cancellation.
-5. Confirm no real `S10` transaction is written until all cancellation checks pass.
+1. Cancel synthetic transaction `SALE-2026-F17E16` using `POST /api/sales-transactions/SALE-2026-F17E16/cancel`. Passed 2026-05-21.
+2. Confirm response returns `status = cancelled`, `sale_status = Cancelled`, `payment_status = Cancelled`, and `writes_to_supabase = true`. Passed 2026-05-21.
+3. Confirm `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` shows `SALE-2026-F17E16` as cancelled. Passed 2026-05-21.
+4. Confirm a new synthetic transaction can reuse `PIG-TEST-102K2-20260521` after cancellation. Passed 2026-05-21 with `SALE-2026-28EF1B`.
+5. Cancel cleanup synthetic transaction `SALE-2026-28EF1B`. Passed 2026-05-21.
+6. Confirm no real `S10` transaction is written until all cancellation checks pass. Passed 2026-05-21.
+
+Deploy result:
+
+- 2026-05-21: 10.2K3 deployed cancellation checks passed.
+- 2026-05-21: Final readback shows synthetic slaughter transactions `SALE-2026-F17E16` and `SALE-2026-28EF1B` are both cancelled.
+- No real `S10` transaction has been written.
+
+## Phase 10.2L Internal Slaughter Sale Form Checks
+
+Local result:
+
+- 2026-05-21: Internal slaughter sale form implemented locally at `/sales/slaughter`.
+- 2026-05-21: `node --check static/js/slaughterSale.js` passed.
+- 2026-05-21: Focused frontend/sales tests passed at 27 tests.
+- 2026-05-21: Local page smoke returned `200` and included `slaughterSale.js`.
+- 2026-05-21: Full local unittest suite passed at 192 tests.
+
+Deploy checks:
+
+1. Open `/sales/slaughter`.
+2. Confirm active pigs load in the pig dropdown.
+3. Confirm recent slaughter transactions load and show cancelled synthetic rows.
+4. Confirm defaults are `JC Slaghuis`, `Bartelsfontein`, `Unpaid`, `Confirmed`, and `EFT`.
+5. Owner can then log real `S10` from the form when ready.
+6. Confirm real `S10` appears in recent slaughter transactions after save.
+7. Confirm Google Sheets are not written by the form.
 
 ## Google Sheets Checks
 

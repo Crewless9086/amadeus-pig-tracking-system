@@ -88,6 +88,28 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("slaughter_sold_this_month", js)
         self.assertIn("meat_sold_this_month", js)
 
+    def test_slaughter_sale_form_uses_supabase_sales_transaction_endpoints(self):
+        template = Path("templates/slaughter-sale.html").read_text(encoding="utf-8")
+        js = Path("static/js/slaughterSale.js").read_text(encoding="utf-8")
+        dashboard = Path("templates/dashboard.html").read_text(encoding="utf-8")
+
+        self.assertIn("Record Slaughter Sale", template)
+        self.assertIn('id="slaughter_sale_form"', template)
+        self.assertIn('value="JC Slaghuis"', template)
+        self.assertIn('value="Bartelsfontein"', template)
+        self.assertIn('value="Unpaid"', template)
+        self.assertIn('value="Confirmed"', template)
+        self.assertIn("formatTagNumber", js)
+        self.assertIn("padStart(3", js)
+        self.assertIn('fetch("/api/pig-weights/pigs")', js)
+        self.assertIn('fetch("/api/sales-transactions"', js)
+        self.assertIn('method: "POST"', js)
+        self.assertIn('"/api/sales-transactions?sale_stream=Slaughter&limit=25"', js)
+        self.assertIn("/cancel", js)
+        self.assertNotIn("/api/pig-weights/weights", js)
+        self.assertNotIn("/api/master/pigs", js)
+        self.assertIn("/sales/slaughter", dashboard)
+
     def test_print_sheets_page_is_read_only_weight_capture_sheet(self):
         template = Path("templates/print-sheets.html").read_text(encoding="utf-8")
         js = Path("static/js/printSheets.js").read_text(encoding="utf-8")

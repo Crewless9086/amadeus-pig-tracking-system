@@ -59,6 +59,11 @@ body {
   margin-bottom: 28px;
 }
 
+.section-header-compact {
+  margin-top: 30px;
+  margin-bottom: 14px;
+}
+
 .page-header-with-link {
   display: flex;
   justify-content: space-between;
@@ -161,6 +166,66 @@ textarea:focus,
 textarea {
   resize: vertical;
   min-height: 110px;
+}
+
+.simple-table-wrap {
+  margin-top: 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.simple-table thead {
+  background: var(--bg-soft);
+}
+
+.simple-table th,
+.simple-table td {
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid #e7e0d5;
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.simple-table tbody tr:hover {
+  background: #faf7f2;
+}
+
+.table-empty {
+  padding: 1rem;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+}
+
+.muted-row {
+  color: var(--text-soft);
+  background: #f6f3ee;
+}
+
+.muted-text {
+  color: var(--text-soft);
+}
+
+.small-action-button {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--green-dark);
+  padding: 8px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.small-action-button:hover {
+  border-color: var(--green-main);
 }
 
 .info-grid,

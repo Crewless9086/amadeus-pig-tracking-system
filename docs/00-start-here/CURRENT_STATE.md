@@ -245,5 +245,10 @@ Current position:
 - No real `S10` transaction has been written.
 - Phase 10.2K3 cancellation/void flow is implemented locally: `POST /api/sales-transactions/<sale_id>/cancel` requires `cancelled_by` and `cancel_reason`, marks `sale_status = Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests, local missing-config cancel route smoke returned safe `503`, and full local unittest suite passed at 191 tests.
-- Next step is deploying 10.2K3, cancelling synthetic transaction `SALE-2026-F17E16`, and confirming the same synthetic pig ID can be reused after cancellation.
-- No real `S10` transaction should be written until cancel is deployed and verified.
+- Deployed 10.2K3 verification passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was cancelled, duplicate release was proven by creating `SALE-2026-28EF1B` with the same synthetic pig ID, and the second synthetic transaction was also cancelled.
+- Final readback shows both synthetic slaughter transactions are cancelled.
+- No real `S10` transaction has been written.
+- Phase 10.2L internal slaughter sale form is implemented locally at `/sales/slaughter`.
+- The form defaults to the current real workflow values, loads active pigs, creates slaughter transactions through the verified Supabase endpoint, lists recent slaughter transactions, and can cancel non-cancelled rows.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 192 tests.
+- Next step is deploying 10.2L, opening `/sales/slaughter`, and letting the owner log real `S10` from the web app when ready.

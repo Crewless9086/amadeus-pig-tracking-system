@@ -39,6 +39,11 @@ def sales_dashboard_page():
     return render_template("sales-dashboard.html")
 
 
+@app.route("/sales/slaughter")
+def slaughter_sale_page():
+    return render_template("slaughter-sale.html")
+
+
 @app.route("/orders")
 def orders_page():
     return render_template("orders.html")

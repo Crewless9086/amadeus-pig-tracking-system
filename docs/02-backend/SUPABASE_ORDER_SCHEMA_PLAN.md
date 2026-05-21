@@ -587,8 +587,8 @@ Recommended implementation split:
 
 1. **10.2K1 backend create service and route** - implemented locally 2026-05-21: `POST /api/sales-transactions` supports `Slaughter` only, validates payloads, requires `created_by`, writes header/items atomically to Supabase, blocks duplicate pig IDs, and does not write to Google Sheets.
 2. **10.2K2 deployed write test with safe synthetic pig IDs** - verified 2026-05-21 with synthetic pig `PIG-TEST-102K2-20260521` and transaction `SALE-2026-F17E16`.
-3. **10.2K3 cancellation/void flow** - implemented locally 2026-05-21: `POST /api/sales-transactions/<sale_id>/cancel` marks the transaction `Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
-4. **10.2L internal slaughter sale form** - web UI only after backend create/cancel behavior is proven.
+3. **10.2K3 cancellation/void flow** - deployed and verified 2026-05-21: `POST /api/sales-transactions/<sale_id>/cancel` marks the transaction `Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
+4. **10.2L internal slaughter sale form** - implemented locally 2026-05-21 at `/sales/slaughter`; it uses the verified sales transaction create/cancel endpoints and does not write Google Sheets.
 5. **10.2M dashboard Rand totals** - only after real transactions exist and cancellation behavior is defined.
 
 Implementation state:
@@ -603,7 +603,7 @@ Implementation state:
 - Deployed readback passed: `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` returned the synthetic transaction with `payment_status = Unpaid`, `sale_status = Confirmed`, `gross_total = 1200`, and `writes_to_supabase = false`.
 - Deployed duplicate guard passed: second create attempt for `PIG-TEST-102K2-20260521` returned `409 duplicate_pig` and `writes_to_supabase = false`.
 - No real `S10` transaction has been written.
-- 10.2K3 is implemented locally and not yet deployed.
+- 10.2K3 is deployed and verified.
 - New route: `POST /api/sales-transactions/<sale_id>/cancel`.
 - Cancel requires `cancelled_by` and `cancel_reason`.
 - Cancel writes only to Supabase, never deletes rows, and never writes Google Sheets.
@@ -611,8 +611,20 @@ Implementation state:
 - Local missing-config route smoke returned safe `503` with no Supabase write.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests.
 - Full local unittest suite passed on 2026-05-21 at 191 tests.
-- Next deployed test should cancel synthetic transaction `SALE-2026-F17E16`, then confirm the same synthetic pig ID can be used again in a new test transaction.
-- No real `S10` transaction should be written until cancel is deployed and verified.
+- Deployed cancellation passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was cancelled with `sale_status = Cancelled`, `payment_status = Cancelled`, and an audit note.
+- Reuse check passed: after cancelling `SALE-2026-F17E16`, the same synthetic pig ID `PIG-TEST-102K2-20260521` was accepted in new synthetic transaction `SALE-2026-28EF1B`.
+- Cleanup passed: synthetic reuse transaction `SALE-2026-28EF1B` was cancelled.
+- Final readback shows both synthetic slaughter transactions are cancelled and no active synthetic slaughter transaction remains.
+- No real `S10` transaction has been written.
+- 10.2L is implemented locally and not yet deployed.
+- New page route: `/sales/slaughter`.
+- New template/script: `templates/slaughter-sale.html` and `static/js/slaughterSale.js`.
+- The form defaults to `JC Slaghuis`, `Bartelsfontein`, `payment_status = Unpaid`, `sale_status = Confirmed`, and `payment_method = EFT`.
+- The form loads active pigs from `GET /api/pig-weights/pigs`, creates slaughter transactions through `POST /api/sales-transactions`, lists recent slaughter transactions through `GET /api/sales-transactions?sale_stream=Slaughter`, and can cancel non-cancelled rows through `POST /api/sales-transactions/<sale_id>/cancel`.
+- Local page smoke passed for `/sales/slaughter`.
+- Local verification passed on 2026-05-21: focused frontend/sales tests passed at 27 tests.
+- Full local unittest suite passed on 2026-05-21 at 192 tests.
+- Next deployed test should open `/sales/slaughter`, confirm the page loads active pigs and recent cancelled synthetic transactions, then owner can enter real `S10` when ready.
 
 Open questions before implementation:
 

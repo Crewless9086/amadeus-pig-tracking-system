@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2 Verified; 10.2K3 Local | Deploy and verify cancellation before any real slaughter transaction. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local | Deploy slaughter form, then owner can log S10 from the web app. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2635,8 +2635,13 @@ Recommendation:
 - No real `S10` transaction has been written.
 - Phase 10.2K3 cancellation/void flow implemented locally: `POST /api/sales-transactions/<sale_id>/cancel` requires `cancelled_by` and `cancel_reason`, marks `sale_status = Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests, local missing-config cancel route smoke returned safe `503`, and full local unittest suite passed at 191 tests.
-- Next deployed test: cancel synthetic transaction `SALE-2026-F17E16`, then confirm the same synthetic pig ID can be reused in another synthetic test transaction.
-- No real `S10` transaction should be written until cancel is deployed and verified.
+- Phase 10.2K3 deployed verification passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was cancelled, duplicate release was proven by creating `SALE-2026-28EF1B` with the same synthetic pig ID, and the second synthetic transaction was also cancelled.
+- Final readback shows both synthetic slaughter transactions are cancelled.
+- No real `S10` transaction has been written.
+- Phase 10.2L internal slaughter sale form implemented locally at `/sales/slaughter`.
+- The form defaults to `JC Slaghuis`, `Bartelsfontein`, `Unpaid`, `Confirmed`, and `EFT`; it loads active pigs, creates slaughter transactions, shows recent slaughter transactions, and can cancel non-cancelled transaction rows.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 192 tests.
+- Next step: deploy 10.2L, open `/sales/slaughter`, confirm active pigs and recent transactions load, then owner can log real `S10` from the web app.
 
 Farm home/dashboard idea:
 
