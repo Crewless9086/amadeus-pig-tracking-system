@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local | Deploy slaughter UX polish, then plan multi-pig slaughter batches. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4A Local | Deploy/run payment_date migration, then continue multi-pig backend support. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2651,6 +2651,15 @@ Recommendation:
 - 10.2L3 intentionally keeps the form single-pig only; multi-pig/batch slaughter remains a planned follow-up.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
 - Next step: deploy 10.2L3 and owner-check `/sales/slaughter`, then plan 10.2L4 multi-pig slaughter batch entry before changing the data logic.
+- Phase 10.2L4 multi-pig slaughter batch plan added: one slaughter batch should be one `sales_transactions` row with multiple `sales_transaction_items` rows.
+- 10.2L4 plan confirms batch/header holds slaughter date, buyer, abattoir, payment status, sale status, payment method, and batch total; item rows hold each pig, optional weights, optional per-pig amount, and notes.
+- Recommended amount approach: support both batch total and optional per-pig amounts, but do not auto-split a batch total across pigs until allocation rules are approved.
+- Planned implementation sequence: add `payment_date`, extend backend multi-item create, build multi-pig selector, update payment with batch total/payment date, then run a synthetic two-pig batch test.
+- Open decisions remain before implementation: per-pig amount UI from start or later, payment-date requirement rule, carcass-weight estimate rule, and paid-batch correction rule.
+- Phase 10.2L4A payment-date schema migration implemented locally: `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql`.
+- Backend verifier added locally: `GET /health/database/sales-payment-date-schema`.
+- Local verification passed on 2026-05-21: focused database tests passed at 15 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 203 tests.
+- Next step: deploy backend, run the 10.2L4A SQL in Supabase SQL Editor, verify `/health/database/sales-payment-date-schema`, then continue with 10.2L4B backend multi-item create support.
 
 Farm home/dashboard idea:
 

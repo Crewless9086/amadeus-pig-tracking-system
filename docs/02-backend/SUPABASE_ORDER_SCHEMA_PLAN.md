@@ -641,6 +641,74 @@ Implementation state:
 - Local verification passed on 2026-05-21: frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
 - Next planning slice should be 10.2L4 multi-pig slaughter batch entry.
 
+## 10.2L4 Multi-Pig Slaughter Batch Entry Plan
+
+Decision:
+
+- A slaughter event should be one `sales_transactions` row with multiple `sales_transaction_items` rows.
+- This matches the real process: multiple pigs may be selected and transported to Bartelsfontein together, and JC Slaghuis may pay one combined amount later.
+- Do not create one separate transaction per pig when the pigs were part of the same slaughter event.
+
+Batch/header responsibility:
+
+- `sale_date` = slaughter/abattoir delivery date.
+- `sale_stream = Slaughter`.
+- `buyer_name` = `JC Slaghuis` by default.
+- `destination` = `Bartelsfontein` by default.
+- `payment_status` starts as `Unpaid` unless payment has already arrived.
+- `sale_status` starts as `Confirmed` unless payment has already arrived.
+- `payment_method` defaults to `EFT`.
+- `gross_total` / `net_total` are the batch total.
+- Future field needed before financial reporting: `payment_date`, because payment can happen weeks after slaughter.
+
+Item/pig responsibility:
+
+- One item row per pig.
+- Each item stores `pig_id`, `tag_number`, optional `live_weight_kg`, optional `carcass_weight_kg`, optional `line_total`, and notes.
+- The current schema can already store multiple item rows, but the current form and update service are single-pig/single-item.
+- Estimated carcass weight may be shown from latest live weight later, but it must be clearly marked as an estimate until replaced by actual butcher/abattoir data.
+
+Amount handling options:
+
+1. **Batch total only** - simplest for real JC Slaghuis payment, but weak per-pig reporting.
+2. **Per-pig amount only** - good per-pig reporting, but awkward if the butcher pays one total.
+3. **Recommended: both** - capture batch total on the header and allow per-pig line totals when known. If only the batch total is known, leave item line totals blank/zero until allocation rules are defined.
+
+Implementation sequence:
+
+1. **10.2L4A payment date schema update** - implemented locally 2026-05-21: add nullable `payment_date` to `sales_transactions` before treating final payment as accounting-ready.
+2. **10.2L4B backend multi-item create support** - extend create behavior/tests to accept multiple pig items from the form while preserving duplicate-pig protection across all submitted pigs.
+3. **10.2L4C form multi-pig selector** - let owner add/remove pig rows, each with optional live weight, carcass weight, per-pig amount, and note.
+4. **10.2L4D payment update with batch total/payment date** - update final batch amount, payment date, payment status, and optional per-pig line values.
+5. **10.2L4E deployed synthetic batch test** - create a two-pig synthetic batch, update payment, cancel it, and verify duplicate-pig release.
+
+Must not do in 10.2L4:
+
+- Do not update Google Sheets.
+- Do not update pig status automatically.
+- Do not connect dashboard Rand totals yet.
+- Do not calculate VAT reporting yet.
+- Do not auto-split batch totals across pigs until allocation rules are approved.
+- Do not hide cancelled batch rows.
+
+Open decisions before implementation:
+
+- Should the first multi-pig UI allow only one shared batch total, or also optional per-pig amounts from the start?
+- Should `payment_date` be required when `payment_status = Paid`, or optional but strongly encouraged?
+- Should estimated carcass weight use a simple percentage of latest live weight, or should the first version only display latest live weight and leave estimate blank?
+- Should a paid batch be editable, or should changes after payment require cancel-and-recreate/a future adjustment record?
+
+10.2L4A implementation state:
+
+- Local migration file: `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql`.
+- Migration adds nullable `payment_date date` to `public.sales_transactions`.
+- Backend verifier route added: `GET /health/database/sales-payment-date-schema`.
+- Verifier checks both the `payment_date` column and migration log ID `202605210004_add_sales_transaction_payment_date`.
+- Local missing-config verifier smoke returned safe `503`.
+- Local verification passed on 2026-05-21: focused database tests passed at 15 tests.
+- Full local unittest suite passed on 2026-05-21 at 203 tests.
+- Next step: deploy backend, run the SQL in Supabase SQL Editor, then verify `/health/database/sales-payment-date-schema`.
+
 Open questions before implementation:
 
 - Should the first deployed write test use synthetic `PIG-TEST-*` IDs only, or should we use real slaughter candidate `S10` after the write/cancel behavior is proven?

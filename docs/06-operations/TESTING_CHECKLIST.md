@@ -1181,6 +1181,42 @@ Deploy checks:
 6. Confirm create/cancel/update payment buttons still appear only where expected.
 7. Confirm no multi-pig/batch behavior was introduced in this slice.
 
+## Phase 10.2L4 Multi-Pig Slaughter Batch Planning Checks
+
+Planning result:
+
+- 2026-05-21: Multi-pig slaughter batch plan added to `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`.
+- Batch model: one `sales_transactions` row per slaughter event, multiple `sales_transaction_items` rows for pigs.
+- Payment date is required as a planned schema addition before final payment reporting.
+- Batch total and optional per-pig amount support is recommended, but no automatic allocation rule has been approved.
+
+Checks before implementation:
+
+1. Confirm `payment_date` migration should be 10.2L4A.
+2. Confirm whether the first multi-pig UI should include optional per-pig amounts or only a batch total.
+3. Confirm payment date should be required when `payment_status = Paid`.
+4. Confirm carcass-weight estimate behavior before showing any estimate in the UI.
+5. Confirm paid-batch correction rule before allowing edits after payment.
+6. Confirm synthetic two-pig batch test IDs before deployed testing.
+
+## Phase 10.2L4A Payment Date Schema Checks
+
+Local result:
+
+- 2026-05-21: Migration `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql` created locally.
+- 2026-05-21: Backend verifier `GET /health/database/sales-payment-date-schema` created locally.
+- 2026-05-21: Focused database tests passed at 15 tests.
+- 2026-05-21: Local missing-config verifier smoke returned safe `503`.
+- 2026-05-21: Full local unittest suite passed at 203 tests.
+
+Deploy checks:
+
+1. Deploy backend containing `/health/database/sales-payment-date-schema`.
+2. Run `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql` in Supabase SQL Editor.
+3. Open `/health/database/sales-payment-date-schema`.
+4. Confirm `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, and `payment_date_column_found = true`.
+5. Do not start 10.2L4B multi-item write testing until this verifier passes.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

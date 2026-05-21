@@ -17,6 +17,7 @@ SALES_TRANSACTION_SCHEMA_TABLES = [
     "sales_transactions",
     "sales_transaction_items",
 ]
+SALES_PAYMENT_DATE_MIGRATION_ID = "202605210004_add_sales_transaction_payment_date"
 
 
 def check_database_health():
@@ -279,5 +280,77 @@ def check_sales_transaction_schema():
             "configured": True,
             "status": "sales_transaction_schema_check_failed",
             "message": "Sales transaction schema check failed.",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+
+def check_sales_transaction_payment_date_schema():
+    database_url = os.getenv(DATABASE_URL_ENV, "").strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": "DATABASE_URL is not configured.",
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+        }, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=5) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select column_name
+                    from information_schema.columns
+                    where table_schema = 'public'
+                    and table_name = 'sales_transactions'
+                    and column_name = 'payment_date'
+                    """
+                )
+                column_row = cursor.fetchone()
+
+                cursor.execute(
+                    """
+                    select migration_id, applied_at
+                    from app_private.migration_log
+                    where migration_id = %s
+                    """,
+                    (SALES_PAYMENT_DATE_MIGRATION_ID,),
+                )
+                migration_row = cursor.fetchone()
+
+        if not column_row or not migration_row:
+            return {
+                "success": False,
+                "configured": True,
+                "status": "sales_payment_date_schema_missing",
+                "migration_id": SALES_PAYMENT_DATE_MIGRATION_ID,
+                "migration_applied": bool(migration_row),
+                "payment_date_column_found": bool(column_row),
+            }, 503
+
+        return {
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "migration_id": migration_row[0],
+            "applied_at": migration_row[1].isoformat(),
+            "payment_date_column_found": True,
+        }, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_payment_date_schema_check_failed",
+            "message": "Sales payment date schema check failed.",
             "error_type": exc.__class__.__name__,
         }, 503

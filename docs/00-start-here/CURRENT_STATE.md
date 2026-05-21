@@ -262,3 +262,9 @@ Current position:
 - Phase 10.2L3 slaughter form UX polish is implemented locally: `/sales/slaughter` now has a top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
 - Multi-pig slaughter batch entry is still intentionally not implemented; it should be planned as 10.2L4 before changing transaction/item logic.
+- Phase 10.2L4 planning is captured in `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`: use one transaction header per slaughter batch and multiple item rows for pigs.
+- 10.2L4 should start with payment-date schema planning before multi-pig form implementation, because payment can happen later than slaughter.
+- Phase 10.2L4A payment-date schema migration is implemented locally: `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql` adds nullable `payment_date` to `sales_transactions`.
+- Backend verifier `GET /health/database/sales-payment-date-schema` is implemented locally.
+- Local verification passed on 2026-05-21: focused database tests passed at 15 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 203 tests.
+- Next step is deploying backend, running the SQL in Supabase SQL Editor, verifying the payment-date schema endpoint, then continuing with 10.2L4B backend multi-item create support.

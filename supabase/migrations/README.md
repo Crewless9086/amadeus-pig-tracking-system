@@ -21,6 +21,8 @@ Current state:
 - `202605210003_create_sales_transaction_tables.sql` is the empty sales transaction extension migration.
 - It creates only `sales_transactions` and `sales_transaction_items`.
 - It imports no data and does not change live backend order/dashboard reads/writes.
+- `202605210004_add_sales_transaction_payment_date.sql` adds nullable `payment_date` to `sales_transactions`.
+- It imports no data and does not change live backend order/dashboard reads/writes.
 
 Manual run process for Phase 10.1B:
 
@@ -50,3 +52,13 @@ Manual run process for Phase 10.2H:
 5. Run it once.
 6. Open `/health/database/sales-transaction-schema` on the deployed backend.
 7. Confirm it returns `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, and no missing tables.
+
+Manual run process for Phase 10.2L4A:
+
+1. Deploy the backend containing `/health/database/sales-payment-date-schema`.
+2. Open Supabase SQL Editor.
+3. Open `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql` from this repo.
+4. Paste the full SQL into Supabase SQL Editor.
+5. Run it once.
+6. Open `/health/database/sales-payment-date-schema` on the deployed backend.
+7. Confirm it returns `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, and `payment_date_column_found = true`.
