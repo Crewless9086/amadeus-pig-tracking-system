@@ -1134,6 +1134,28 @@ Deploy checks:
 6. Confirm real `S10` appears in recent slaughter transactions after save.
 7. Confirm Google Sheets are not written by the form.
 
+## Phase 10.2L2 Slaughter Payment / Final Amount Update Checks
+
+Local result:
+
+- 2026-05-21: Payment/final amount update implemented locally.
+- 2026-05-21: New route is `PATCH /api/sales-transactions/<sale_id>/payment`.
+- 2026-05-21: `/sales/slaughter` now shows `Update Payment` for non-cancelled rows.
+- 2026-05-21: `node --check static/js/slaughterSale.js` passed.
+- 2026-05-21: Focused sales/frontend tests passed at 23 tests.
+- 2026-05-21: Local missing-config update route smoke returned safe `503` with `writes_to_supabase = false`.
+- 2026-05-21: Full local unittest suite passed at 200 tests.
+
+Deploy checks:
+
+1. Create a new synthetic slaughter transaction from `/sales/slaughter`.
+2. Click `Update Payment` on the synthetic row.
+3. Update final amount, payment status, sale status, and optional carcass weight.
+4. Confirm the row reloads with the updated total and status.
+5. Confirm update appends an audit note in Supabase.
+6. Cancel the synthetic row after testing.
+7. Do not update real `S10` payment/final amount until the synthetic update check passes.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

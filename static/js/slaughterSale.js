@@ -123,7 +123,12 @@ function renderTransactions(rows) {
     const isCancelled = item.sale_status === "Cancelled";
     const action = isCancelled
       ? '<span class="muted-text">Cancelled</span>'
-      : `<button type="button" class="small-action-button" data-cancel-sale-id="${item.sale_id}">Cancel</button>`;
+      : `
+        <div class="inline-action-group">
+          <button type="button" class="small-action-button" data-update-sale-id="${item.sale_id}" data-current-total="${item.net_total ?? ""}">Update Payment</button>
+          <button type="button" class="small-action-button" data-cancel-sale-id="${item.sale_id}">Cancel</button>
+        </div>
+      `;
     const rowClass = isCancelled ? ' class="muted-row"' : "";
     return `
       <tr${rowClass}>
@@ -261,7 +266,70 @@ async function cancelTransaction(saleId) {
   }
 }
 
+async function updatePayment(saleId, currentTotal) {
+  const amount = window.prompt(`Final amount for ${saleId}?`, currentTotal || "");
+  if (amount === null) return;
+
+  const cleanAmount = Number(amount);
+  if (Number.isNaN(cleanAmount) || cleanAmount < 0) {
+    showMessage("Final amount must be a valid number.", "error");
+    return;
+  }
+
+  const paymentStatus = window.prompt("Payment status: Unpaid, Part_Paid, or Paid", "Paid");
+  if (paymentStatus === null) return;
+
+  const saleStatus = window.prompt("Sale status: Confirmed or Completed", paymentStatus === "Paid" ? "Completed" : "Confirmed");
+  if (saleStatus === null) return;
+
+  const carcassWeight = window.prompt("Carcass weight in kg, if known. Leave blank if unknown.", "");
+  if (carcassWeight === null) return;
+
+  const reason = window.prompt("Reason / note for this update", "Butcher payment updated");
+  if (!reason) return;
+
+  const payload = {
+    updated_by: createdByInput.value.trim() || "Charl",
+    update_reason: reason,
+    line_total: cleanAmount,
+    payment_status: paymentStatus.trim(),
+    payment_method: "EFT",
+    sale_status: saleStatus.trim(),
+    carcass_weight_kg: carcassWeight.trim() ? Number(carcassWeight) : null,
+  };
+
+  if (payload.carcass_weight_kg !== null && Number.isNaN(payload.carcass_weight_kg)) {
+    showMessage("Carcass weight must be a valid number or blank.", "error");
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/payment`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      const message = data.errors ? data.errors.join(" ") : (data.message || "Could not update payment.");
+      throw new Error(message);
+    }
+
+    showMessage(`Payment updated: ${saleId}`, "success");
+    await loadTransactions();
+  } catch (error) {
+    showMessage(error.message || "Could not update payment.", "error");
+  }
+}
+
 transactionsBody.addEventListener("click", (event) => {
+  const updateButton = event.target.closest("[data-update-sale-id]");
+  if (updateButton) {
+    updatePayment(updateButton.dataset.updateSaleId, updateButton.dataset.currentTotal);
+    return;
+  }
+
   const button = event.target.closest("[data-cancel-sale-id]");
   if (!button) return;
   cancelTransaction(button.dataset.cancelSaleId);

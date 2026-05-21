@@ -228,6 +228,12 @@ textarea {
   border-color: var(--green-main);
 }
 
+.inline-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .info-grid,
 .detail-grid,
 .history-summary-grid {

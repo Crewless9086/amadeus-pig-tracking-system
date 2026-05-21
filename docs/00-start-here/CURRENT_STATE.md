@@ -251,4 +251,7 @@ Current position:
 - Phase 10.2L internal slaughter sale form is implemented locally at `/sales/slaughter`.
 - The form defaults to the current real workflow values, loads active pigs, creates slaughter transactions through the verified Supabase endpoint, lists recent slaughter transactions, and can cancel non-cancelled rows.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 192 tests.
-- Next step is deploying 10.2L, opening `/sales/slaughter`, and letting the owner log real `S10` from the web app when ready.
+- Phase 10.2L2 payment/final amount update is implemented locally: `PATCH /api/sales-transactions/<sale_id>/payment` updates non-cancelled slaughter transaction amount, payment status, sale status, payment method, optional carcass weight, and appends an audit note.
+- `/sales/slaughter` now has an `Update Payment` action for non-cancelled rows.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused sales/frontend tests passed at 23 tests, local missing-config update route smoke returned safe `503`, and full local unittest suite passed at 200 tests.
+- Next step is deploying 10.2L/10.2L2, testing update on a synthetic row, then letting the owner log real `S10` and later update payment/final amount from the web app.

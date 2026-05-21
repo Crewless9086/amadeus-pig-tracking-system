@@ -4,6 +4,7 @@ from modules.sales.sales_transaction_cancel import cancel_sales_transaction
 from modules.sales.sales_transaction_create import create_sales_transaction
 from modules.sales.sales_transaction_dry_run import dry_run_sales_transaction
 from modules.sales.sales_transaction_read import list_sales_transactions
+from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 
 
 sales_bp = Blueprint("sales", __name__)
@@ -40,6 +41,13 @@ def sales_transaction_create():
 def sales_transaction_cancel(sale_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = cancel_sales_transaction(sale_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales-transactions/<sale_id>/payment", methods=["PATCH"])
+def sales_transaction_payment_update(sale_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = update_slaughter_sale_payment(sale_id, payload)
     return jsonify(result), status_code
 
 

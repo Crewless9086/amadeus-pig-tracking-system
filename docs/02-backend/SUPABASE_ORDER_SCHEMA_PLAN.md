@@ -625,6 +625,14 @@ Implementation state:
 - Local verification passed on 2026-05-21: focused frontend/sales tests passed at 27 tests.
 - Full local unittest suite passed on 2026-05-21 at 192 tests.
 - Next deployed test should open `/sales/slaughter`, confirm the page loads active pigs and recent cancelled synthetic transactions, then owner can enter real `S10` when ready.
+- 10.2L2 payment/final amount update is implemented locally and not yet deployed.
+- New route: `PATCH /api/sales-transactions/<sale_id>/payment`.
+- The update route is for `Slaughter` transactions only, refuses cancelled rows, requires `updated_by`, `update_reason`, amount, payment status, and sale status, updates header totals/payment/status, updates the first item amount and optional carcass weight, and appends an audit note.
+- The `/sales/slaughter` page now shows `Update Payment` for non-cancelled rows.
+- Local missing-config route smoke returned safe `503` with no Supabase write.
+- Local verification passed on 2026-05-21: focused sales/frontend tests passed at 23 tests.
+- Full local unittest suite passed on 2026-05-21 at 200 tests.
+- Next deployed test should update a synthetic non-cancelled transaction before using this for real `S10` payment completion.
 
 Open questions before implementation:
 

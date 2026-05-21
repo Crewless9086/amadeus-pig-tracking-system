@@ -125,6 +125,32 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         cancel_transaction.assert_called_once()
 
+    def test_sales_transaction_payment_update_route_calls_update_service(self):
+        service_result = {
+            "success": True,
+            "status": "updated",
+            "sale_id": "SALE-1",
+            "source": {
+                "source": "supabase",
+                "writes_to_sheets": False,
+                "writes_to_supabase": True,
+            },
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "update_slaughter_sale_payment",
+            return_value=(service_result, 200),
+        ) as update_transaction:
+            response = self.client.patch("/api/sales-transactions/SALE-1/payment", json={
+                "updated_by": "Charl",
+                "line_total": 1500,
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        update_transaction.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
