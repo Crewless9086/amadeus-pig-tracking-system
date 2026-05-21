@@ -27,7 +27,7 @@ It documents:
 | `2.0 - OOM SAKKIE - Amadeus Assistant Agent` | `workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/` | Active | Main internal Telegram assistant. |
 | `2.1 - Amadeus Weather Sub-Agent` | `workflows/2.1 - Amadeus Weather Sub-Agent/` | Active | Weather sub-agent called by Oom Sakkie. |
 | `2.1.1 - Amadeus Forecast Tool` | `workflows/2.1.1 - Amadeus Forecast Tool/` | Active | Focused Open-Meteo forecast utility. |
-| `2.2 - Amadeus Sunsynk Sub-Agent` | `workflows/2.2 - Amadeus Sunsynk Sub-Agent/` | Active | Solar and power sub-agent called by Oom Sakkie. |
+| `2.2 - Amadeus Sunsynk Sub-Agent` | `workflows/2.2 - Amadeus Sunsynk Sub-Agent/` | Active | Solar and power worker called by Oom Sakkie; reads backend current-power endpoint. |
 | `2.3.1 - Build Daily Irrigation Plan` | `workflows/2.3.1 - Build Daily Irrigation Plan/` | Active | Scheduled daily irrigation planning. |
 | `2.3.2 - Run Irrigation Controller` | `workflows/2.3.2 - Run Irrigation Controller/` | Inactive | Scheduled irrigation valve controller. |
 | `2.4 - Amadeus Orders Sub Agent` | `workflows/2.4 - Amadeus Orders Sub Agent/` | Active | Internal order approval sub-agent. |

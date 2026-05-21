@@ -11,31 +11,28 @@ Imported for docs: 2026-05-18
 ## What It Does
 
 - Runs when called by Oom Sakkie.
-- Uses a LangChain agent for Sunsynk questions.
-- Reads Sunsynk data through Google Sheets tools.
-- Answers questions about current system state, daily summary, last 24 hours, and five-minute interval data.
+- Calls the backend current-power endpoint.
+- Formats a complete operator-ready power answer.
+- Answers current/live power state questions: battery, solar/PV, load, grid, generator, and data freshness.
+- Does not use a LangChain agent loop or Google Sheets tools anymore.
 
 ## Main Data Sources
 
-- `Amadeus_Sunsynk_Log`
-- `Sunsynk_Current_Overview`
-- `Sunsynk_Daily_Summary`
-- `Sunsynk_Last24h_Hourly`
-- `Sunsynk_5min_Intervals`
+- Backend endpoint: `GET /api/telemetry/power/current`
+- Backend source: Supabase `power_latest_state`
+- Logger source: Render cron `amadeus-sunsynk-logger`
 
 ## Main Nodes
 
 - `When Executed by Another Workflow`
-- `AI Sunsynk Agent`
-- `OpenAI Chat Model`
-- `Sunsynk Current Overview`
-- `Sunsynk Daily Summary`
-- `Sunsynk Last24h Hourly`
-- `Sunsynk 5min Intervals`
+- `HTTP - Get Current Power State`
+- `Code - Format Current Power Answer`
 
 ## Planning Notes
 
-- This is already a sub-agent pattern similar to what the orders lookup tool should become.
+- This workflow is now a deterministic backend-read worker, not an LLM sub-agent.
+- Current-state power questions are supported first.
+- Daily totals, kWh, last-24h trends, and interval analysis need later backend read models before they are re-enabled in Oom Sakkie.
 - Keep solar/power data ownership separate from orders.
 
 ## Known Issue Log
@@ -49,3 +46,4 @@ Imported for docs: 2026-05-18
 - Owner retest after hardening still ran too long and was manually cancelled.
 - Decision: do not keep tweaking the agent loop now. Defer to a dedicated Sunsynk data/backend/Supabase architecture review.
 - Follow-up review must inventory the Sunsynk Google Sheets tabs, any backend modules/scripts, `ALERT - Sunsynk`, data volume, current read patterns, and whether a small backend API backed by Supabase/Postgres should replace direct agent reads from large Sheets.
+- 2026-05-22: Rebuilt `2.2` to call `GET /api/telemetry/power/current` and format the backend payload directly. Removed the Google Sheets tools and LangChain agent loop from the workflow export.

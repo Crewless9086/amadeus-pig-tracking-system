@@ -1,682 +1,263 @@
-﻿{
-    "updatedAt":  "2025-12-27T16:40:32.000Z",
-    "createdAt":  "2025-12-27T15:31:52.879Z",
-    "id":  "tKVKoCcxhT7CAydT",
-    "name":  "2.2 - Amadeus Sunsynk Sub-Agent",
-    "description":  null,
-    "active":  true,
-    "isArchived":  false,
-    "nodes":  [
-                  {
-                      "parameters":  {
-                                         "model":  {
-                                                       "__rl":  true,
-                                                       "mode":  "list",
-                                                       "value":  "gpt-4.1-mini"
-                                                   },
-                                         "builtInTools":  {
-
-                                                          },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-                      "typeVersion":  1.3,
-                      "position":  [
-                                       -384,
-                                       304
-                                   ],
-                      "id":  "0a6e1d88-36d4-4560-a5b1-7d4aafb99475",
-                      "name":  "OpenAI Chat Model",
-                      "credentials":  {
-                                          "openAiApi":  {
-                                                            "id":  "Lp7Z2HFOXfBCGvVg",
-                                                            "name":  "OpenAi_Sales Agent"
-                                                        }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "workflowInputs":  {
-                                                                "values":  [
-                                                                               {
-                                                                                   "name":  "input"
-                                                                               }
-                                                                           ]
-                                                            }
-                                     },
-                      "type":  "n8n-nodes-base.executeWorkflowTrigger",
-                      "typeVersion":  1.1,
-                      "position":  [
-                                       -416,
-                                       16
-                                   ],
-                      "id":  "393340ce-0902-4141-83c9-e2d7c09d42a7",
-                      "name":  "When Executed by Another Workflow"
-                  },
-                  {
-                      "parameters":  {
-                                         "content":  "TOOLS",
-                                         "height":  224,
-                                         "width":  640,
-                                         "color":  4
-                                     },
-                      "type":  "n8n-nodes-base.stickyNote",
-                      "position":  [
-                                       -48,
-                                       272
-                                   ],
-                      "typeVersion":  1,
-                      "id":  "e75897a3-18b5-45ff-b71e-5ffe203aacbd",
-                      "name":  "Sticky Note"
-                  },
-                  {
-                      "parameters":  {
-                                         "promptType":  "define",
-                                         "text":  "={{ $json.input || \u0027current power status at the farm\u0027 }}",
-                                         "options":  {
-                                                         "systemMessage":  "=Today’s date at Amadeus Farm (local time) is:\n{{$now.toFormat(\u0027dd LLLL yyyy\u0027)}}\n\nCurrent date-time (Africa/Johannesburg) is:\n{{$now.toISO()}}\n\nYou are Amadeus Sunsynk Sub-Agent, the electricity, solar, battery, and grid expert for Amadeus Farm.\n\n────────────────────────────────\nDATA SOURCES (TOOLS)\n────────────────────────────────\n\nYou do NOT guess.\nYou ONLY answer using the provided Google Sheets tools.\n\nAvailable tools:\n\n• Sunsynk_Current_Overview  \n  → Single source of truth for NOW / current status\n\n• Sunsynk_Last24h_Hourly  \n  → Hour-by-hour breakdown for the last 24 hours\n\n• Sunsynk_Daily_Summary  \n  → Today’s totals and daily statistics\n\n• Sunsynk_5min_Intervals  \n  → Detailed short-interval drill-down (recent history)\n\n────────────────────────────────\nTOOL SELECTION RULES (MANDATORY)\n────────────────────────────────\n\nYou MUST use exactly ONE primary tool per question unless the user explicitly asks for comparison.\nAfter the tool returns data, produce the answer immediately. Do not call the same tool again for the same question.\n\nTool selection rules:\n\n• If the user asks “now”, “current”, “nou”, “currently”, “status now”  \n  → Use Sunsynk_Current_Overview\n\n• If the user asks “today”, “vandág”, “how much today”, “totals today”  \n  → Use Sunsynk_Daily_Summary\n\n• If the user asks “last 24 hours”, “trend”, “pattern”, “yesterday to now”  \n  → Use Sunsynk_Last24h_Hourly\n\n• If the user asks “what happened around X time”, “last 2 hours”, “detail”, “exact readings”  \n  → Use Sunsynk_5min_Intervals\n\nYou MAY NOT combine data from multiple tabs unless the user explicitly asks for comparison.\n\n────────────────────────────────\nFRESHNESS \u0026 HONESTY RULES\n────────────────────────────────\n\nYou MUST ALWAYS state:\n\n• Which sheet was used  \n• The exact timestamp of the latest reading used\n\nWhen mentioning time, write in this format:\n“27 December 2025 at 11:10”\n\nIf data is stale or older than expected, you MUST say:\n“Latest logged reading is from …”\n\nIf a question cannot be answered with the available sheets:\n• Say exactly what is missing\n• Say which sheet or data would be required\n\nYou NEVER invent values.\nYou NEVER estimate.\nYou NEVER average unless the sheet already provides it.\n\n────────────────────────────────\nOUTPUT STYLE (CLEAR + PRACTICAL)\n────────────────────────────────\n\nEvery answer MUST include:\n\n1️⃣ A short “state of affairs” summary:\n• Battery SOC (%)\n• Battery power (W) + charging or discharging\n• PV power (W) — include PV1 / PV2 if available\n• Load power (W)\n• Grid power (W) + grid active status\n• Generator power (W) + generator active status\n\n2️⃣ A short interpretation in plain language, for example:\n• “Running on solar with battery support”\n• “Battery supplying load”\n• “Grid assisting due to low PV”\n\n────────────────────────────────\nLANGUAGE\n────────────────────────────────\n\nAnswer in the SAME language as the user.\n\n• English → English  \n• Afrikaans → Afrikaans  \n\nDefault language is English.\n",
-                                                         "maxIterations":  4
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.agent",
-                      "typeVersion":  3,
-                      "position":  [
-                                       -80,
-                                       16
-                                   ],
-                      "id":  "ca852d53-3d3f-4cbb-a940-8c9019b7a7fb",
-                      "name":  "AI Sunsynk Agent",
-                      "alwaysOutputData":  false
-                  },
-                  {
-                      "parameters":  {
-                                         "descriptionType":  "manual",
-                                         "toolDescription":  "Use for ‘now/current status’. Always prefer this tool for current battery/grid/solar/load state.",
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  1334521254,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "Sunsynk_Current_Overview",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=1334521254"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheetsTool",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       -16,
-                                       336
-                                   ],
-                      "id":  "18ea5b3d-4258-4a35-b512-5ef885839c2f",
-                      "name":  "Sunsynk Current Overview",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "descriptionType":  "manual",
-                                         "toolDescription":  "Use for ‘today so far’, totals, daily stats, min/max/avg SOC, grid minutes, gen minutes.",
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  222410590,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "Sunsynk_Daily_Summary",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=222410590"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheetsTool",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       112,
-                                       336
-                                   ],
-                      "id":  "a38e6bb3-5b5c-4700-a79a-05bee09bd36d",
-                      "name":  "Sunsynk Daily Summary",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "descriptionType":  "manual",
-                                         "toolDescription":  "Use for last 24h trend analysis and hourly breakdown.",
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  153317080,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "Sunsynk_Last24h_Hourly",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=153317080"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheetsTool",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       240,
-                                       336
-                                   ],
-                      "id":  "fe6fcb23-0b72-49d5-b090-8fd58ab2f7f2",
-                      "name":  "Sunsynk Last24h Hourly",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "descriptionType":  "manual",
-                                         "toolDescription":  "Use for drill-down questions (recent history, what happened around a time, short interval analysis",
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  556968570,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "Sunsynk_5min_Intervals",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=556968570"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheetsTool",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       368,
-                                       336
-                                   ],
-                      "id":  "63bccd85-e3a3-426a-ae96-a81bf2d9a2ed",
-                      "name":  "Sunsynk 5min Intervals",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  }
-              ],
-    "connections":  {
-                        "OpenAI Chat Model":  {
-                                                  "ai_languageModel":  [
-                                                                           [
-                                                                               {
-                                                                                   "node":  "AI Sunsynk Agent",
-                                                                                   "type":  "ai_languageModel",
-                                                                                   "index":  0
-                                                                               }
-                                                                           ]
-                                                                       ]
-                                              },
-                        "When Executed by Another Workflow":  {
-                                                                  "main":  [
-                                                                               [
-                                                                                   {
-                                                                                       "node":  "AI Sunsynk Agent",
-                                                                                       "type":  "main",
-                                                                                       "index":  0
-                                                                                   }
-                                                                               ]
-                                                                           ]
-                                                              },
-                        "AI Sunsynk Agent":  {
-                                                 "main":  [
-                                                              [
-
-                                                              ]
-                                                          ]
-                                             },
-                        "Sunsynk Current Overview":  {
-                                                         "ai_tool":  [
-                                                                         [
-                                                                             {
-                                                                                 "node":  "AI Sunsynk Agent",
-                                                                                 "type":  "ai_tool",
-                                                                                 "index":  0
-                                                                             }
-                                                                         ]
-                                                                     ]
-                                                     },
-                        "Sunsynk Daily Summary":  {
-                                                      "ai_tool":  [
-                                                                      [
-                                                                          {
-                                                                              "node":  "AI Sunsynk Agent",
-                                                                              "type":  "ai_tool",
-                                                                              "index":  0
-                                                                          }
-                                                                      ]
-                                                                  ]
-                                                  },
-                        "Sunsynk Last24h Hourly":  {
-                                                       "ai_tool":  [
-                                                                       [
-                                                                           {
-                                                                               "node":  "AI Sunsynk Agent",
-                                                                               "type":  "ai_tool",
-                                                                               "index":  0
-                                                                           }
-                                                                       ]
-                                                                   ]
-                                                   },
-                        "Sunsynk 5min Intervals":  {
-                                                       "ai_tool":  [
-                                                                       [
-                                                                           {
-                                                                               "node":  "AI Sunsynk Agent",
-                                                                               "type":  "ai_tool",
-                                                                               "index":  0
-                                                                           }
-                                                                       ]
-                                                                   ]
-                                                   }
-                    },
-    "settings":  {
-                     "executionOrder":  "v1"
-                 },
-    "staticData":  null,
-    "meta":  {
-                 "templateCredsSetupCompleted":  true
-             },
-    "pinData":  {
-                    "When Executed by Another Workflow":  [
-                                                              {
-                                                                  "json":  {
-                                                                               "input":  "Give me the last 24h trend."
-                                                                           }
-                                                              }
-                                                          ]
-                },
-    "versionId":  "41e614fd-0554-4042-8d1c-552654a4c0b5",
-    "activeVersionId":  "41e614fd-0554-4042-8d1c-552654a4c0b5",
-    "versionCounter":  128,
-    "triggerCount":  0,
-    "shared":  [
-                   {
-                       "updatedAt":  "2025-12-27T15:31:52.882Z",
-                       "createdAt":  "2025-12-27T15:31:52.882Z",
-                       "role":  "workflow:owner",
-                       "workflowId":  "tKVKoCcxhT7CAydT",
-                       "projectId":  "dUeH9AUxBtKxgNPX",
-                       "project":  {
-                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
-                                       "createdAt":  "2025-07-13T13:07:42.154Z",
-                                       "id":  "dUeH9AUxBtKxgNPX",
-                                       "name":  "My project",
-                                       "type":  "team",
-                                       "icon":  {
-                                                    "type":  "icon",
-                                                    "value":  "layer-group"
-                                                },
-                                       "description":  null,
-                                       "creatorId":  null
-                                   }
-                   }
-               ],
-    "tags":  [
-
-             ],
-    "activeVersion":  {
-                          "updatedAt":  "2025-12-27T16:40:32.089Z",
-                          "createdAt":  "2025-12-27T16:40:32.089Z",
-                          "versionId":  "41e614fd-0554-4042-8d1c-552654a4c0b5",
-                          "workflowId":  "tKVKoCcxhT7CAydT",
-                          "nodes":  [
-                                        {
-                                            "parameters":  {
-                                                               "model":  {
-                                                                             "__rl":  true,
-                                                                             "mode":  "list",
-                                                                             "value":  "gpt-4.1-mini"
-                                                                         },
-                                                               "builtInTools":  {
-
-                                                                                },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "@n8n/n8n-nodes-langchain.lmChatOpenAi",
-                                            "typeVersion":  1.3,
-                                            "position":  [
-                                                             -384,
-                                                             304
-                                                         ],
-                                            "id":  "0a6e1d88-36d4-4560-a5b1-7d4aafb99475",
-                                            "name":  "OpenAI Chat Model",
-                                            "credentials":  {
-                                                                "openAiApi":  {
-                                                                                  "id":  "Lp7Z2HFOXfBCGvVg",
-                                                                                  "name":  "OpenAi_Sales Agent"
-                                                                              }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "workflowInputs":  {
-                                                                                      "values":  [
-                                                                                                     {
-                                                                                                         "name":  "input"
-                                                                                                     }
-                                                                                                 ]
-                                                                                  }
-                                                           },
-                                            "type":  "n8n-nodes-base.executeWorkflowTrigger",
-                                            "typeVersion":  1.1,
-                                            "position":  [
-                                                             -416,
-                                                             16
-                                                         ],
-                                            "id":  "393340ce-0902-4141-83c9-e2d7c09d42a7",
-                                            "name":  "When Executed by Another Workflow"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "content":  "TOOLS",
-                                                               "height":  224,
-                                                               "width":  640,
-                                                               "color":  4
-                                                           },
-                                            "type":  "n8n-nodes-base.stickyNote",
-                                            "position":  [
-                                                             -48,
-                                                             272
-                                                         ],
-                                            "typeVersion":  1,
-                                            "id":  "e75897a3-18b5-45ff-b71e-5ffe203aacbd",
-                                            "name":  "Sticky Note"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "promptType":  "define",
-                                                               "text":  "={{ $json.input }}",
-                                                               "options":  {
-                                                                               "systemMessage":  "=Today’s date at Amadeus Farm (local time) is:\n{{$now.toFormat(\u0027dd LLLL yyyy\u0027)}}\n\nCurrent date-time (Africa/Johannesburg) is:\n{{$now.toISO()}}\n\nYou are Amadeus Sunsynk Sub-Agent, the electricity, solar, battery, and grid expert for Amadeus Farm.\n\n────────────────────────────────\nDATA SOURCES (TOOLS)\n────────────────────────────────\n\nYou do NOT guess.\nYou ONLY answer using the provided Google Sheets tools.\n\nAvailable tools:\n\n• Sunsynk_Current_Overview  \n  → Single source of truth for NOW / current status\n\n• Sunsynk_Last24h_Hourly  \n  → Hour-by-hour breakdown for the last 24 hours\n\n• Sunsynk_Daily_Summary  \n  → Today’s totals and daily statistics\n\n• Sunsynk_5min_Intervals  \n  → Detailed short-interval drill-down (recent history)\n\n────────────────────────────────\nTOOL SELECTION RULES (MANDATORY)\n────────────────────────────────\n\nYou MUST use exactly ONE primary tool per question unless the user explicitly asks for comparison.\n\nTool selection rules:\n\n• If the user asks “now”, “current”, “nou”, “currently”, “status now”  \n  → Use Sunsynk_Current_Overview\n\n• If the user asks “today”, “vandág”, “how much today”, “totals today”  \n  → Use Sunsynk_Daily_Summary\n\n• If the user asks “last 24 hours”, “trend”, “pattern”, “yesterday to now”  \n  → Use Sunsynk_Last24h_Hourly\n\n• If the user asks “what happened around X time”, “last 2 hours”, “detail”, “exact readings”  \n  → Use Sunsynk_5min_Intervals\n\nYou MAY NOT combine data from multiple tabs unless the user explicitly asks for comparison.\n\n────────────────────────────────\nFRESHNESS \u0026 HONESTY RULES\n────────────────────────────────\n\nYou MUST ALWAYS state:\n\n• Which sheet was used  \n• The exact timestamp of the latest reading used\n\nWhen mentioning time, write in this format:\n“27 December 2025 at 11:10”\n\nIf data is stale or older than expected, you MUST say:\n“Latest logged reading is from …”\n\nIf a question cannot be answered with the available sheets:\n• Say exactly what is missing\n• Say which sheet or data would be required\n\nYou NEVER invent values.\nYou NEVER estimate.\nYou NEVER average unless the sheet already provides it.\n\n────────────────────────────────\nOUTPUT STYLE (CLEAR + PRACTICAL)\n────────────────────────────────\n\nEvery answer MUST include:\n\n1️⃣ A short “state of affairs” summary:\n• Battery SOC (%)\n• Battery power (W) + charging or discharging\n• PV power (W) — include PV1 / PV2 if available\n• Load power (W)\n• Grid power (W) + grid active status\n• Generator power (W) + generator active status\n\n2️⃣ A short interpretation in plain language, for example:\n• “Running on solar with battery support”\n• “Battery supplying load”\n• “Grid assisting due to low PV”\n\n────────────────────────────────\nLANGUAGE\n────────────────────────────────\n\nAnswer in the SAME language as the user.\n\n• English → English  \n• Afrikaans → Afrikaans  \n\nDefault language is English.\n"
-                                                                           }
-                                                           },
-                                            "type":  "@n8n/n8n-nodes-langchain.agent",
-                                            "typeVersion":  3,
-                                            "position":  [
-                                                             -80,
-                                                             16
-                                                         ],
-                                            "id":  "ca852d53-3d3f-4cbb-a940-8c9019b7a7fb",
-                                            "name":  "AI Sunsynk Agent",
-                                            "alwaysOutputData":  false
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "descriptionType":  "manual",
-                                                               "toolDescription":  "Use for ‘now/current status’. Always prefer this tool for current battery/grid/solar/load state.",
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  1334521254,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "Sunsynk_Current_Overview",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=1334521254"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheetsTool",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             -16,
-                                                             336
-                                                         ],
-                                            "id":  "18ea5b3d-4258-4a35-b512-5ef885839c2f",
-                                            "name":  "Sunsynk Current Overview",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "descriptionType":  "manual",
-                                                               "toolDescription":  "Use for ‘today so far’, totals, daily stats, min/max/avg SOC, grid minutes, gen minutes.",
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  222410590,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "Sunsynk_Daily_Summary",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=222410590"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheetsTool",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             112,
-                                                             336
-                                                         ],
-                                            "id":  "a38e6bb3-5b5c-4700-a79a-05bee09bd36d",
-                                            "name":  "Sunsynk Daily Summary",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "descriptionType":  "manual",
-                                                               "toolDescription":  "Use for last 24h trend analysis and hourly breakdown.",
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  153317080,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "Sunsynk_Last24h_Hourly",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=153317080"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheetsTool",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             240,
-                                                             336
-                                                         ],
-                                            "id":  "fe6fcb23-0b72-49d5-b090-8fd58ab2f7f2",
-                                            "name":  "Sunsynk Last24h Hourly",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "descriptionType":  "manual",
-                                                               "toolDescription":  "Use for drill-down questions (recent history, what happened around a time, short interval analysis",
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Sunsynk_Log",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  556968570,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "Sunsynk_5min_Intervals",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1y0lV78bIH0Cx3BS7IbM3H-iwLjP8tXT2hwp-IZAkKCg/edit#gid=556968570"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheetsTool",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             368,
-                                                             336
-                                                         ],
-                                            "id":  "63bccd85-e3a3-426a-ae96-a81bf2d9a2ed",
-                                            "name":  "Sunsynk 5min Intervals",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        }
-                                    ],
-                          "connections":  {
-                                              "OpenAI Chat Model":  {
-                                                                        "ai_languageModel":  [
-                                                                                                 [
-                                                                                                     {
-                                                                                                         "node":  "AI Sunsynk Agent",
-                                                                                                         "type":  "ai_languageModel",
-                                                                                                         "index":  0
-                                                                                                     }
-                                                                                                 ]
-                                                                                             ]
-                                                                    },
-                                              "When Executed by Another Workflow":  {
-                                                                                        "main":  [
-                                                                                                     [
-                                                                                                         {
-                                                                                                             "node":  "AI Sunsynk Agent",
-                                                                                                             "type":  "main",
-                                                                                                             "index":  0
-                                                                                                         }
-                                                                                                     ]
-                                                                                                 ]
-                                                                                    },
-                                              "AI Sunsynk Agent":  {
-                                                                       "main":  [
-                                                                                    [
-
-                                                                                    ]
-                                                                                ]
-                                                                   },
-                                              "Sunsynk Current Overview":  {
-                                                                               "ai_tool":  [
-                                                                                               [
-                                                                                                   {
-                                                                                                       "node":  "AI Sunsynk Agent",
-                                                                                                       "type":  "ai_tool",
-                                                                                                       "index":  0
-                                                                                                   }
-                                                                                               ]
-                                                                                           ]
-                                                                           },
-                                              "Sunsynk Daily Summary":  {
-                                                                            "ai_tool":  [
-                                                                                            [
-                                                                                                {
-                                                                                                    "node":  "AI Sunsynk Agent",
-                                                                                                    "type":  "ai_tool",
-                                                                                                    "index":  0
-                                                                                                }
-                                                                                            ]
-                                                                                        ]
-                                                                        },
-                                              "Sunsynk Last24h Hourly":  {
-                                                                             "ai_tool":  [
-                                                                                             [
-                                                                                                 {
-                                                                                                     "node":  "AI Sunsynk Agent",
-                                                                                                     "type":  "ai_tool",
-                                                                                                     "index":  0
-                                                                                                 }
-                                                                                             ]
-                                                                                         ]
-                                                                         },
-                                              "Sunsynk 5min Intervals":  {
-                                                                             "ai_tool":  [
-                                                                                             [
-                                                                                                 {
-                                                                                                     "node":  "AI Sunsynk Agent",
-                                                                                                     "type":  "ai_tool",
-                                                                                                     "index":  0
-                                                                                                 }
-                                                                                             ]
-                                                                                         ]
-                                                                         }
-                                          },
-                          "authors":  "Charl Nieuwendyk",
-                          "name":  null,
-                          "description":  null,
-                          "autosaved":  false,
-                          "workflowPublishHistory":  [
-
-                                                     ]
-                      }
+{
+  "updatedAt": "2025-12-27T16:40:32.000Z",
+  "createdAt": "2025-12-27T15:31:52.879Z",
+  "id": "tKVKoCcxhT7CAydT",
+  "name": "2.2 - Amadeus Sunsynk Sub-Agent",
+  "description": "Deterministic Sunsynk current-power tool. Reads backend /api/telemetry/power/current instead of Google Sheets.",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "input"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -520,
+        0
+      ],
+      "id": "393340ce-0902-4141-83c9-e2d7c09d42a7",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -260,
+        0
+      ],
+      "id": "7f9db6f2-61b4-4b2e-a56d-9080c65e1735",
+      "name": "HTTP - Get Current Power State"
+    },
+    {
+      "parameters": {
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtKw(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${(n / 1000).toFixed(1)} kW`;\n}\n\nfunction fmtW(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} W`;\n}\n\nfunction fmtPct(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)}%`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst inputItem = $(\"When Executed by Another Workflow\").first()?.json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current power status at the farm\");\nconst data = $json || {};\nconst source = data.source || {};\nconst current = data.current || {};\nconst flags = data.flags || {};\nconst summary = data.summary || {};\n\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || summary.headline || \"The current power state is not available yet.\");\n  answer = `I could not read the current power state. ${reason}`;\n} else {\n  const lines = [];\n  const stale = source.is_stale === true;\n  const statusWord = stale ? \"latest available\" : \"current\";\n  const headline = sentence(summary.headline || \"Power state is available.\");\n\n  lines.push(`Power status (${statusWord}): ${headline}`);\n  lines.push(\"\");\n  lines.push(`Battery: ${fmtPct(current.battery_soc_pct)} (${sentence(current.battery_state || \"state unknown\")})`);\n  lines.push(`Solar: ${fmtKw(current.solar_power_w)} (PV1 ${fmtW(current.pv1_power_w)}, PV2 ${fmtW(current.pv2_power_w)})`);\n  lines.push(`Load: ${fmtKw(current.load_power_w)}`);\n  lines.push(`Grid: ${sentence(current.grid_state || \"unknown\")} (${fmtW(current.grid_power_w)})`);\n  lines.push(`Generator: ${sentence(current.generator_state || \"unknown\")} (${fmtW(current.generator_power_w)})`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (stale) {\n    lines.push(\"Warning: this reading is stale, so treat it as the last known state rather than live power status.\");\n  }\n\n  if (flags.low_battery === true) lines.push(\"Warning: battery is low.\");\n  if (flags.high_load === true) lines.push(\"Warning: load is high.\");\n  if (flags.no_solar === true) lines.push(\"Note: no solar production is showing right now.\");\n\n  if (/\\b(today|daily|kwh|units|last\\s*24|24h|trend|history|yesterday)\\b/i.test(question)) {\n    lines.push(\"\");\n    lines.push(\"This tool currently answers the live/current power state only. Daily totals, kWh, and last-24h trends are planned for the next telemetry read model.\");\n  }\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    answer,\n    output: answer,\n    sunsynk_response: answer,\n    source,\n    current,\n    flags,\n    summary,\n    telemetry_source: \"backend_supabase_current_power\",\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20,
+        0
+      ],
+      "id": "c7d8d5d6-86c2-4ba1-82a7-bebec6a3b7d8",
+      "name": "Code - Format Current Power Answer"
+    },
+    {
+      "parameters": {
+        "content": "Phase 10.3F/10.3G: deterministic backend current-power read. No Google Sheets or LangChain agent loop in this workflow.",
+        "height": 180,
+        "width": 420,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -520,
+        -260
+      ],
+      "typeVersion": 1,
+      "id": "e75897a3-18b5-45ff-b71e-5ffe203aacbd",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Current Power State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Current Power State": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Current Power Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Current Power Answer": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "input": "What's the power like now?"
+        }
+      }
+    ]
+  },
+  "versionId": "41e614fd-0554-4042-8d1c-552654a4c0b5",
+  "activeVersionId": "41e614fd-0554-4042-8d1c-552654a4c0b5",
+  "versionCounter": 128,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2025-12-27T15:31:52.882Z",
+      "createdAt": "2025-12-27T15:31:52.882Z",
+      "role": "workflow:owner",
+      "workflowId": "tKVKoCcxhT7CAydT",
+      "projectId": "dUeH9AUxBtKxgNPX",
+      "project": {
+        "updatedAt": "2025-07-13T13:07:42.154Z",
+        "createdAt": "2025-07-13T13:07:42.154Z",
+        "id": "dUeH9AUxBtKxgNPX",
+        "name": "My project",
+        "type": "team",
+        "icon": {
+          "type": "icon",
+          "value": "layer-group"
+        },
+        "description": null,
+        "creatorId": null
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2025-12-27T16:40:32.089Z",
+    "createdAt": "2025-12-27T16:40:32.089Z",
+    "versionId": "41e614fd-0554-4042-8d1c-552654a4c0b5",
+    "workflowId": "tKVKoCcxhT7CAydT",
+    "nodes": [
+      {
+        "parameters": {
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "input"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -520,
+          0
+        ],
+        "id": "393340ce-0902-4141-83c9-e2d7c09d42a7",
+        "name": "When Executed by Another Workflow"
+      },
+      {
+        "parameters": {
+          "url": "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            },
+            "neverError": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -260,
+          0
+        ],
+        "id": "7f9db6f2-61b4-4b2e-a56d-9080c65e1735",
+        "name": "HTTP - Get Current Power State"
+      },
+      {
+        "parameters": {
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtKw(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${(n / 1000).toFixed(1)} kW`;\n}\n\nfunction fmtW(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} W`;\n}\n\nfunction fmtPct(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)}%`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst inputItem = $(\"When Executed by Another Workflow\").first()?.json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current power status at the farm\");\nconst data = $json || {};\nconst source = data.source || {};\nconst current = data.current || {};\nconst flags = data.flags || {};\nconst summary = data.summary || {};\n\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || summary.headline || \"The current power state is not available yet.\");\n  answer = `I could not read the current power state. ${reason}`;\n} else {\n  const lines = [];\n  const stale = source.is_stale === true;\n  const statusWord = stale ? \"latest available\" : \"current\";\n  const headline = sentence(summary.headline || \"Power state is available.\");\n\n  lines.push(`Power status (${statusWord}): ${headline}`);\n  lines.push(\"\");\n  lines.push(`Battery: ${fmtPct(current.battery_soc_pct)} (${sentence(current.battery_state || \"state unknown\")})`);\n  lines.push(`Solar: ${fmtKw(current.solar_power_w)} (PV1 ${fmtW(current.pv1_power_w)}, PV2 ${fmtW(current.pv2_power_w)})`);\n  lines.push(`Load: ${fmtKw(current.load_power_w)}`);\n  lines.push(`Grid: ${sentence(current.grid_state || \"unknown\")} (${fmtW(current.grid_power_w)})`);\n  lines.push(`Generator: ${sentence(current.generator_state || \"unknown\")} (${fmtW(current.generator_power_w)})`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (stale) {\n    lines.push(\"Warning: this reading is stale, so treat it as the last known state rather than live power status.\");\n  }\n\n  if (flags.low_battery === true) lines.push(\"Warning: battery is low.\");\n  if (flags.high_load === true) lines.push(\"Warning: load is high.\");\n  if (flags.no_solar === true) lines.push(\"Note: no solar production is showing right now.\");\n\n  if (/\\b(today|daily|kwh|units|last\\s*24|24h|trend|history|yesterday)\\b/i.test(question)) {\n    lines.push(\"\");\n    lines.push(\"This tool currently answers the live/current power state only. Daily totals, kWh, and last-24h trends are planned for the next telemetry read model.\");\n  }\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    answer,\n    output: answer,\n    sunsynk_response: answer,\n    source,\n    current,\n    flags,\n    summary,\n    telemetry_source: \"backend_supabase_current_power\",\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          20,
+          0
+        ],
+        "id": "c7d8d5d6-86c2-4ba1-82a7-bebec6a3b7d8",
+        "name": "Code - Format Current Power Answer"
+      },
+      {
+        "parameters": {
+          "content": "Phase 10.3F/10.3G: deterministic backend current-power read. No Google Sheets or LangChain agent loop in this workflow.",
+          "height": 180,
+          "width": 420,
+          "color": 4
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "position": [
+          -520,
+          -260
+        ],
+        "typeVersion": 1,
+        "id": "e75897a3-18b5-45ff-b71e-5ffe203aacbd",
+        "name": "Sticky Note"
+      }
+    ],
+    "connections": {
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "HTTP - Get Current Power State",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP - Get Current Power State": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Current Power Answer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Format Current Power Answer": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "authors": "Charl Nieuwendyk",
+    "name": null,
+    "description": "Deterministic Sunsynk current-power tool. Reads backend /api/telemetry/power/current instead of Google Sheets.",
+    "autosaved": false,
+    "workflowPublishHistory": []
+  }
 }

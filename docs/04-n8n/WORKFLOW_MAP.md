@@ -44,7 +44,7 @@ Workflow names in n8n should not be renamed during this cleanup because Execute 
 | `2.0 - OOM SAKKIE` | Orchestrator | AI assistant and tool dispatch for normal authorized messages. |
 | `2.1 - Amadeus Weather Sub-Agent` | Weather Tool | Weather questions. |
 | `2.1.1 - Amadeus Forecast Tool` | Forecast Worker | Forecast utility. |
-| `2.2 - Amadeus Sunsynk Sub-Agent` | Solar Tool | Sunsynk and power questions. |
+| `2.2 - Amadeus Sunsynk Sub-Agent` | Solar Tool | Current Sunsynk/power questions via backend `/api/telemetry/power/current`. |
 | `2.4 - Amadeus Orders Sub Agent` | Approval Worker | Approval request and approval decision worker. |
 | `2.4.3 - Order Approval Request Webhook` | Approval Request Webhook | Backend inbound approval-request trigger. |
 | `2.4.4 - Order Lookup Tool` | Order Lookup Tool | Read-only order lookup and quote-send preparation. |

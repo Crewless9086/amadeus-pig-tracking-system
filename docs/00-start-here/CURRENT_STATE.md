@@ -314,5 +314,12 @@ Current position:
 - Logger README added with required Render cron env vars.
 - First Render cron recovery test failed in the Google Sheets mirror path with `gspread` 404. The deployed current-state endpoint still showed the old synthetic test reading, so the real logger had not yet refreshed Supabase.
 - Logger is now hardened locally so a successful backend ingest is not failed by a Google Sheets mirror error. Recommended next recovery test is to deploy the hardened logger with `GOOGLE_SHEETS_ENABLED=false`, then verify `/api/telemetry/power/current` returns a fresh real reading.
+- Render cron source has been moved to the main `amadeus-pig-tracking-system` repo with root directory `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger`; a trailing-space root directory issue was corrected.
+- Phase 10.3F deployed verification passed on 2026-05-22: Render cron printed `backend_ingest_enabled = true`, `backend_ingest_success = true`, reading ID `PWR-49F0F62E4F21`, `google_sheets_written = true`, and timestamp `2026-05-22T00:28:20+02:00`.
+- `/api/telemetry/power/current` read back the real fresh state with `data_age_minutes = 0`, `is_stale = false`, battery `47%`, battery state `discharging`, load `872 W`, no solar, no grid, and no generator.
 - Local syntax verification passed with `python -m py_compile`.
-- Next step is redeploying the hardened Render Sunsynk logger, confirming backend ingest succeeds with a fresh reading, then updating Oom Sakkie power tool.
+- Next step is updating Oom Sakkie `2.2` to use the backend current power endpoint instead of Google Sheets.
+- 10.3G local workflow update is prepared: `2.2 - Amadeus Sunsynk Sub-Agent` now calls `GET /api/telemetry/power/current` and formats the backend payload directly, with no LangChain agent loop and no Sunsynk Google Sheets tools.
+- `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description now describes the backend/Supabase current-power tool and limits this slice to current/live power state.
+- Local JSON parse verification passed for both updated workflow exports.
+- Next step is importing `2.2` and `2.0` into n8n and live-testing Oom Sakkie power questions.

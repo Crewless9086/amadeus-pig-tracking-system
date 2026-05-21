@@ -1359,6 +1359,9 @@ Local result:
 - 2026-05-21: Logger README added with required Render cron env vars.
 - 2026-05-21: First Render cron recovery test failed in the Google Sheets mirror path with `gspread` 404; `/api/telemetry/power/current` still showed the old synthetic reading.
 - 2026-05-21: Logger hardened locally so a successful backend ingest is not failed by a Google Sheets mirror error.
+- 2026-05-22: Render cron source moved to the main `amadeus-pig-tracking-system` repo with root directory `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger`; trailing-space root directory issue corrected.
+- 2026-05-22: Render cron printed `backend_ingest_enabled = true`, `backend_ingest_success = true`, reading ID `PWR-49F0F62E4F21`, `google_sheets_written = true`, and `google_sheets_error = null`.
+- 2026-05-22: `/api/telemetry/power/current` returned real fresh data with `data_age_minutes = 0`, `is_stale = false`, battery `47%`, battery state `discharging`, load `872 W`, no solar, no grid, and no generator.
 - 2026-05-21: Syntax verification passed with `python -m py_compile`.
 
 Deploy checks:
@@ -1371,6 +1374,31 @@ Deploy checks:
 6. Confirm Render cron log reports `backend_ingest_enabled = true`, `backend_ingest_success = true`, and either `google_sheets_enabled = false` or `google_sheets_written = true`.
 7. Confirm `/api/telemetry/power/current` returns a fresh reading with low `data_age_minutes`.
 8. Do not update Oom Sakkie `2.2` until this deployed logger check passes.
+
+Verified result:
+
+- 2026-05-22: Passed. Oom Sakkie `2.2` can now be updated to use the backend current power endpoint.
+
+## Phase 10.3G Oom Sakkie Power Tool Checks
+
+Local result:
+
+- 2026-05-22: `2.2 - Amadeus Sunsynk Sub-Agent` rebuilt as a deterministic backend current-power worker.
+- 2026-05-22: `2.2` no longer contains `AI Sunsynk Agent`, `OpenAI Chat Model`, or Sunsynk Google Sheets tool nodes.
+- 2026-05-22: `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description updated to point to the backend/Supabase current-power path.
+- 2026-05-22: Updated workflow JSON files parse successfully.
+- 2026-05-22: Backend current-power endpoint returned fresh data before workflow import.
+
+Live import/test checks:
+
+1. Import `docs/04-n8n/workflows/2.2 - Amadeus Sunsynk Sub-Agent/workflow.json`.
+2. Import `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json`.
+3. In Telegram, ask Oom Sakkie: `What's the power like now?`
+4. Confirm the answer returns quickly and includes battery, solar, load, grid, generator, and latest reading freshness.
+5. Confirm the answer does not mention Google Sheets or workflows.
+6. Ask a daily/last-24h power question.
+7. Confirm the answer does not hang and clearly says daily/kWh/trend read models are not available in this slice yet.
+8. If the answer works, mark 10.3G imported and live-verified.
 
 ## Google Sheets Checks
 

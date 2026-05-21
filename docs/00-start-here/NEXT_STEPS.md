@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Local Recovery Patch | Redeploy hardened Sunsynk logger with `GOOGLE_SHEETS_ENABLED=false`, verify fresh Supabase reading, then update Oom Sakkie power tool. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Local | Import `2.2` and `2.0`, then live-test Oom Sakkie current power questions. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2711,8 +2711,18 @@ Recommendation:
 - Logger README added with required Render cron env vars.
 - First Render cron recovery test failed in the Google Sheets mirror path with `gspread` 404, and `/api/telemetry/power/current` still showed the old synthetic reading.
 - Logger hardened locally so a successful backend ingest is not failed by a Google Sheets mirror error.
+- Render cron source was moved to the main `amadeus-pig-tracking-system` repo with root directory `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger`; a trailing-space root directory issue was corrected.
+- Phase 10.3F deployed verification passed on 2026-05-22: Render cron printed `backend_ingest_enabled = true`, `backend_ingest_success = true`, reading ID `PWR-49F0F62E4F21`, `google_sheets_written = true`, and timestamp `2026-05-22T00:28:20+02:00`.
+- `/api/telemetry/power/current` read back the real fresh state with `data_age_minutes = 0`, `is_stale = false`, battery `47%`, battery state `discharging`, load `872 W`, no solar, no grid, and no generator.
 - Local syntax verification passed with `python -m py_compile`.
-- Next step: redeploy the hardened Render Sunsynk logger with `GOOGLE_SHEETS_ENABLED=false`, confirm backend ingest succeeds with a fresh reading, then update Oom Sakkie power tool.
+- Next step: update Oom Sakkie `2.2` to call `/api/telemetry/power/current` instead of scanning Sunsynk Google Sheets.
+- 10.3G local workflow update prepared on 2026-05-22:
+  - `2.2 - Amadeus Sunsynk Sub-Agent` is now a deterministic backend current-power worker: `When Executed by Another Workflow` -> `HTTP - Get Current Power State` -> `Code - Format Current Power Answer`.
+  - Removed the `AI Sunsynk Agent`, `OpenAI Chat Model`, and all Sunsynk Google Sheets tool nodes from `2.2`.
+  - `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description now points to the backend/Supabase current-power endpoint and states that daily totals/kWh/last-24h trends are planned for later read models.
+  - Local JSON parse verification passed for both workflow exports.
+  - Backend endpoint readback before import showed fresh data with `data_age_minutes = 2`, `is_stale = false`, battery `47%`, load `785 W`, no solar, no grid, and no generator.
+- Next step: import `docs/04-n8n/workflows/2.2 - Amadeus Sunsynk Sub-Agent/workflow.json` and `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json` into n8n, then ask Oom Sakkie a current power question.
 
 Farm home/dashboard idea:
 

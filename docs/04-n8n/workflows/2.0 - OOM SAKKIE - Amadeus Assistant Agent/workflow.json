@@ -272,7 +272,7 @@
     },
     {
       "parameters": {
-        "description": "Use this tool whenever the user asks anything related to electricity on Amadeus Farm, this is the only place you get true data related to Amadeus farms electricity. The Sunsynk inverter is used to help log and track data that we then put in to the google sheet where you get the info from. \n",
+        "description": "Use this tool whenever the user asks about current electricity or power status on Amadeus Farm: battery/SOC, solar/PV, grid/Eskom, generator, inverter/load, charging or discharging. The tool reads the backend Supabase current-power endpoint and returns a complete user-ready answer. It currently answers live/current state only; daily totals, kWh, and last-24h trends are planned for a later telemetry read model.",
         "workflowId": {
           "__rl": true,
           "value": "tKVKoCcxhT7CAydT",
@@ -941,7 +941,7 @@
       },
       {
         "parameters": {
-          "description": "Use this tool whenever the user asks anything related to electricity on Amadeus Farm, this is the only place you get true data related to Amadeus farms electricity. The Sunsynk inverter is used to help log and track data that we then put in to the google sheet where you get the info from. \n",
+          "description": "Use this tool whenever the user asks about current electricity or power status on Amadeus Farm: battery/SOC, solar/PV, grid/Eskom, generator, inverter/load, charging or discharging. The tool reads the backend Supabase current-power endpoint and returns a complete user-ready answer. It currently answers live/current state only; daily totals, kWh, and last-24h trends are planned for a later telemetry read model.",
           "workflowId": {
             "__rl": true,
             "value": "tKVKoCcxhT7CAydT",

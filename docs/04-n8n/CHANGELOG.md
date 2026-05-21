@@ -15,6 +15,20 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-22 - Phase 10.3G Oom Sakkie power tool backend read
+
+Type: `REFACTOR`
+
+**Behavior:** `2.2 - Amadeus Sunsynk Sub-Agent` no longer uses a LangChain agent loop or Google Sheets tools for current power questions. It now calls `GET /api/telemetry/power/current` and formats the backend/Supabase payload into a user-ready answer with battery, solar, load, grid, generator, and data freshness.
+
+**Scope:** This slice supports current/live power status only. Daily totals, kWh, last-24h trend, and interval analysis remain planned for later backend read models.
+
+**Docs:** Updated the `2.2` README, `2.0` `Sunsynk_Info_Tool` description, workflow map, telemetry plan, testing checklist, and phase roadmap.
+
+**Verification:** Updated `2.2` and `2.0` workflow JSON exports parse successfully. Backend `/api/telemetry/power/current` returned fresh real Sunsynk data before import.
+
+**Live test still required:** Import `2.2` and `2.0`, then ask Oom Sakkie `What's the power like now?` and a daily/last-24h power question.
+
 ### 2026-05-19 - Phase 7.3D Oom Sakkie quote-send guard verified
 
 Type: `ADD`

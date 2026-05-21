@@ -700,6 +700,10 @@ Local implementation result:
 - Logger can later disable the sheet mirror with `GOOGLE_SHEETS_ENABLED=false`, but only after Supabase ingest has been stable.
 - Render cron test on 2026-05-21 failed in the Google Sheets mirror path with `gspread.exceptions.APIError: APIError: [404]: Requested entity was not found.` The deployed `/api/telemetry/power/current` readback still showed the old synthetic reading, so a fresh real Sunsynk reading had not yet landed in Supabase.
 - Logger was hardened locally after that test: if backend ingest succeeds but the Google Sheets mirror fails, the cron records `google_sheets_error` and exits successfully instead of losing the run. If the backend ingest does not succeed, a Google Sheets failure still fails the cron.
+- Render cron source was changed from the separate `amadeus-sunsynk-logger` repo to the main `amadeus-pig-tracking-system` repo, with root directory `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger`.
+- A trailing-space typo in the Render root directory caused path confusion during setup; remove any trailing spaces from the root directory field.
+- Deployed verification passed on 2026-05-22: Render cron printed `backend_ingest_enabled = true`, `backend_ingest_success = true`, reading ID `PWR-49F0F62E4F21`, `google_sheets_written = true`, `google_sheets_error = null`, and timestamp `2026-05-22T00:28:20+02:00`.
+- Backend readback from `/api/telemetry/power/current` returned a real fresh state with `data_age_minutes = 0`, `is_stale = false`, battery `47%`, battery state `discharging`, load `872 W`, solar `0 W`, grid `0 W`, and generator `0 W`.
 - Local syntax verification passed with `python -m py_compile`.
 
 Render cron env vars to add:
@@ -708,7 +712,7 @@ Render cron env vars to add:
 | --- | --- |
 | `AMADEUS_BACKEND_URL` | `https://amadeus-pig-tracking-system.onrender.com` |
 | `TELEMETRY_INGEST_API_KEY` | Same rotated value configured on the backend. |
-| `GOOGLE_SHEETS_ENABLED` | `false` for the next recovery test unless the Google Sheets mirror name/access is fixed first. |
+| `GOOGLE_SHEETS_ENABLED` | Currently allowed as `true` because the verified cron run wrote both backend and Google Sheets successfully. Set to `false` later when the mirror is no longer needed. |
 
 Deploy/test gate:
 
@@ -720,6 +724,45 @@ Deploy/test gate:
   - `google_sheets_written = false` and `google_sheets_enabled = false` if the mirror is disabled for recovery, or `google_sheets_written = true` if the sheet mirror is fixed and enabled
 - Confirm `GET /api/telemetry/power/current` returns a fresh reading with `is_stale = false` or a small `data_age_minutes`.
 - Only then move to updating Oom Sakkie `2.2`.
+
+Status:
+
+- Complete and deployed-verified on 2026-05-22.
+- Next implementation slice: update Oom Sakkie `2.2` so power questions call `/api/telemetry/power/current` instead of reading Sunsynk Google Sheets.
+
+## 10.3G Oom Sakkie Power Tool Update
+
+Goal:
+
+- Replace the slow `2.2` Google Sheets/LangChain agent path with a deterministic backend current-power worker.
+- Keep this slice limited to current/live power status.
+- Do not re-enable daily totals, kWh, last-24h trends, or interval analysis until backend read models exist for those shapes.
+
+Local implementation result:
+
+- Updated `docs/04-n8n/workflows/2.2 - Amadeus Sunsynk Sub-Agent/workflow.json`.
+- `2.2` now has only:
+  - `When Executed by Another Workflow`
+  - `HTTP - Get Current Power State`
+  - `Code - Format Current Power Answer`
+  - a sticky note
+- Removed the `AI Sunsynk Agent`, `OpenAI Chat Model`, and all Sunsynk Google Sheets tool nodes from the `2.2` export.
+- Updated `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description so the main assistant treats this as a backend/Supabase current-power tool.
+- Updated n8n workflow docs and workflow map.
+
+Local verification:
+
+- Both updated workflow JSON files parse successfully.
+- Backend endpoint readback before import returned fresh data with `is_stale = false` and low `data_age_minutes`.
+
+Import/test gate:
+
+- Import `docs/04-n8n/workflows/2.2 - Amadeus Sunsynk Sub-Agent/workflow.json` into n8n.
+- Import `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json` into n8n so the tool description matches the new behavior.
+- Ask Oom Sakkie: `What's the power like now?`
+- Expected result: one timely Telegram answer with battery, solar, load, grid, generator, latest reading time, and no Google Sheets delay.
+- Ask Oom Sakkie a daily/last-24h power question.
+- Expected result for now: the answer should state that this tool currently supports current/live power state only and that daily/kWh/trend read models are planned later.
 
 ## Must Not Do In 10.3 Planning
 
