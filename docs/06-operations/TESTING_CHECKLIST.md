@@ -623,7 +623,7 @@ Local result:
 - 2026-05-21: `node --check static/js/pigList.js` passed.
 - 2026-05-21: Focused frontend contract tests passed.
 - 2026-05-21: Full local unittest suite passed at 166 tests.
-- Deploy/browser verification is pending.
+- 2026-05-21: Deployed and owner-confirmed; `/pigs` tag display is much better.
 
 ## Weight Form Context Tests
 
@@ -656,7 +656,7 @@ Local result:
 - 2026-05-21: `node --check static/js/pigWeights.form.js` passed.
 - 2026-05-21: Focused frontend contract tests passed.
 - 2026-05-21: Full local unittest suite passed at 165 tests.
-- Deploy/browser verification is pending.
+- 2026-05-21: Deployed and owner-confirmed; weight form UX looks better.
 
 ## Weight Report Tests
 
@@ -703,19 +703,22 @@ Phase 9.4C2 duplicate prevention:
 Phase 9.5:
 
 1. Open the dashboard.
-2. Confirm the Sales section shows `Sales This Month`, `Livestock`, `Slaughter`, and `Meat`.
-3. Confirm `Sales This Month` equals the combined livestock + slaughter + meat monthly exit count.
-4. Confirm completed live pig orders still count under `Livestock`.
-5. Confirm pigs with `Status = Slaughtered` or abattoir/slaughter exit reasons count under `Slaughter`.
-6. Confirm future meat sale exits can be counted under `Meat` without building the full meat-sales workflow yet.
+2. Confirm the Sales section shows `Sales Exits This Month`, `Livestock Exits`, `Slaughter Exits`, and `Meat Exits`.
+3. Confirm `Sales Exits This Month` equals the combined livestock + slaughter + meat monthly exit count.
+4. Confirm completed live pig orders still count under `Livestock Exits`.
+5. Confirm pigs with `Status = Slaughtered` or abattoir/slaughter exit reasons count under `Slaughter Exits`.
+6. Confirm future meat sale exits can be counted under `Meat Exits` without building the full meat-sales workflow yet.
 7. Confirm old months do not leak into the current-month dashboard count.
-8. Future 9.5B check: confirm the Sales section shows sales count and Rand value separately for total sales, livestock, slaughter, and meat.
-9. Future 9.5B check: confirm Rand totals come from explicit sales/order/exit value fields and are not inferred from pig count alone.
+8. Future 9.5B check: confirm the Sales section shows transaction count, pig/item count, and Rand value separately for total sales, livestock, slaughter, and meat once a transaction/value source exists.
+9. Future 9.5B check: confirm Rand totals come from explicit sales/order/transaction value fields and are not inferred from pig count alone.
+10. Future 9.5B check: confirm slaughter/abattoir sales have a clear sale record before Rand totals are shown.
 
 Local result:
 
 - 2026-05-20: Implemented locally and verified with dashboard/frontend focused tests plus full 127-test suite.
 - 2026-05-20: Deployed/browser-visible; owner confirmed the stream cards are present and requested later count/value planning.
+- 2026-05-21: 9.5B planning updated; Rand values remain blocked until explicit transaction/value source is defined.
+- 2026-05-21: 9.5B1 wording cleanup implemented locally. `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite passed at 166 tests. Deploy/browser verification is pending.
 
 ## Printable Farm Operation Sheet Tests
 

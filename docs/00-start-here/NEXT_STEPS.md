@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified | Choose the next Supabase slice deliberately before any route cutover. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2054,7 +2054,7 @@ Required outcome:
 - Focused backend tests and JavaScript syntax checks passed locally.
 - Deployed and owner-verified in the browser: Add Litter, Add Mating, and Weight Entry dropdown labels display correctly.
 
-9.2B pig list tag formatting - implemented locally; deploy verification pending:
+9.2B pig list tag formatting - owner-verified:
 
 - Source note moved from `planning/ToDoList.md`.
 - `/pigs` should display numeric pig tags in the same three-digit format used elsewhere: `001`, `010`, `099`, `120`.
@@ -2067,12 +2067,14 @@ Required outcome:
   - Search matches raw tags, padded tags, and `PIG_ID`.
   - Pig profile links still use the unchanged `pig_id`.
   - Verification passed: `node --check static/js/pigList.js`, focused frontend contract tests, and full local unittest suite at 166 tests.
+  - Deployed and owner-verified on 2026-05-21; owner confirmed `/pigs` tag display is much better.
 
-Deploy/browser check:
+Browser check result:
 
 - Open `/pigs` after deploy and confirm numeric tags show as `001`, `010`, `099`, `120`.
 - Confirm the default order is useful for scanning and detail links still open the correct pig profile.
 - Confirm search works with both raw and padded tag input.
+- Owner confirmed the display is improved and usable.
 
 ### 9.3 Weight Form Context — Complete / Owner-Verified
 
@@ -2091,7 +2093,7 @@ Required outcome:
 - Full local unittest suite passed: 117 tests.
 - Deployed and owner-verified on `/pig-weights` on 2026-05-20.
 
-9.3B weight form UX refinements - implemented locally; deploy verification pending:
+9.3B weight form UX refinements - owner-verified:
 
 - Source notes moved from `planning/ToDoList.md`.
 - Remove or neutralize the browser up/down spinner behavior on the weight input so accidental mouse-wheel scrolling does not change the entered weight.
@@ -2105,10 +2107,12 @@ Required outcome:
   - Both buttons share the same submit flow and disabled/saving state.
   - Save payload is unchanged.
   - Verification passed: `node --check static/js/pigWeights.form.js`, focused frontend contract tests, and full local unittest suite at 165 tests.
+  - Deployed and owner-verified on 2026-05-21; owner confirmed the weight form looks better.
 
-Questions to answer when planning:
+Browser check result:
 
 - Deploy/browser check: confirm mouse-wheel scrolling over the weight input does not change the value, and confirm the top save button is visible and saves correctly.
+- Owner confirmed the updated form is better and moved on to the next slice.
 
 ### 9.4 Weight Report — Current Slice Complete; 9.4C3/C4/D Planned
 
@@ -2311,6 +2315,46 @@ Implementation state:
   - For slaughter/abattoir sales, where should the sale transaction and Rand value be logged if there is no customer order?
   - For meat sales, should value come only from the future meat order/deposit/invoice flow under Phase 11?
 - Do not fake currency totals from pig count only. Implement Rand values only once the sale value source is explicit.
+
+Recommended 9.5B split:
+
+1. **9.5B1 Display wording cleanup** - keep the current dashboard count behavior, but label it clearly as pig/item exits for now so it is not confused with Rand income. Implemented locally 2026-05-21.
+2. **9.5B2 Slaughter sale logging decision** - define where a slaughter/abattoir sale is recorded when there is no normal customer order. This likely needs either:
+   - a lightweight sale transaction record linked to `PIG_MASTER.Exit_Reason = Sold to Abattoir`; or
+   - a future Supabase-backed `sales_transactions` table covering livestock, slaughter, and meat streams.
+3. **9.5B3 Livestock value source** - use completed `ORDER_MASTER.Final_Total` as the livestock Rand source only when the completed order is trusted and not a test order. Avoid summing pig exit rows because one order can contain many pigs.
+4. **9.5B4 Dashboard value cards** - once value sources exist, show:
+   - total sales transactions this month
+   - total Rand value this month
+   - per-stream transaction count, pig/item count, and Rand value
+5. **9.5B5 Supabase alignment** - because orders/sales are already being shadow-imported to Supabase, avoid building a complex Google Sheets-only transaction model unless needed immediately.
+
+Recommended near-term decision:
+
+- Do not implement Rand values yet.
+- First, add or define the source-of-truth logging shape for slaughter/abattoir sales.
+- Treat livestock sales as order transactions, not pig-count transactions.
+- Treat slaughter and meat as future transaction streams that need their own sale record before the dashboard can show honest Rand totals.
+
+Questions to answer before implementation:
+
+- For the recent slaughter/abattoir sale that was not logged, what facts do we need to record: date, pig IDs/count, abattoir/customer, weight, price per kg, total amount, transport/fee deductions, and payment status?
+- Should slaughter sales be entered through a simple web form, or first captured manually in a sheet/table until the workflow is clearer?
+- Should the future common table be named generically, for example `sales_transactions`, so it can cover livestock, slaughter, and meat?
+- Should livestock completed orders eventually create a linked sale transaction automatically when an order is completed?
+- Should the dashboard show `Sales Exits This Month` now, and reserve `Sales Value This Month` until the transaction model exists?
+
+9.5B1 implementation state:
+
+- Dashboard sales cards now use exit wording:
+  - `Sales Exits This Month`
+  - `Livestock Exits`
+  - `Slaughter Exits`
+  - `Meat Exits`
+- Backend values are unchanged and still come from current monthly `PIG_MASTER` exit counts.
+- No Rand values or transaction calculations were added.
+- Verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite at 166 tests.
+- Deploy/browser verification pending.
 
 ### 9.6 Printable Farm Operation Sheets — 9.6A Browser-Verified
 

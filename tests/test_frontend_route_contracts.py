@@ -76,10 +76,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("event.preventDefault()", js)
         self.assertIn("submitButtons.forEach", js)
 
-    def test_dashboard_shows_monthly_sales_stream_breakdown(self):
+    def test_dashboard_labels_monthly_sales_as_exits_not_income(self):
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
 
-        self.assertIn("Sales This Month", js)
+        self.assertIn("Sales Exits This Month", js)
+        self.assertIn("Livestock Exits", js)
+        self.assertIn("Slaughter Exits", js)
+        self.assertIn("Meat Exits", js)
+        self.assertNotIn('"Sales This Month"', js)
         self.assertIn("livestock_sold_this_month", js)
         self.assertIn("slaughter_sold_this_month", js)
         self.assertIn("meat_sold_this_month", js)
