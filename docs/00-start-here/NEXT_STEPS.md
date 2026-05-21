@@ -2419,8 +2419,15 @@ Recommendation:
 - Deployed verification passed on 2026-05-21: Render `DATABASE_URL` connects successfully to Supabase and `/health/database` returns `success = true`, `status = ok`, `configured = true`, `database = postgres`, and harmless UTC database time.
 - Phase 10.1B local baseline added: `supabase/migrations/202605210001_foundation_migration_log.sql` creates only internal `app_private.migration_log`, and backend `GET /health/database/foundation` verifies that baseline. No business tables or imports.
 - Local verification passed on 2026-05-21: focused database tests passed at 6 tests, full local unittest suite passed at 135 tests, and migration contract test confirms no business tables are created.
+- Deployed verification passed on 2026-05-21: owner ran the baseline SQL in Supabase SQL Editor and `/health/database/foundation` returned `success = true`, `status = ok`, migration ID `202605210001_foundation_migration_log`, and applied timestamp `2026-05-21T01:19:31.638474+00:00`.
 - No Supabase schema migration, data import, or production cutover has started.
-- Next step: test locally, deploy backend, manually run the baseline SQL in Supabase SQL Editor, then verify `/health/database/foundation`.
+- Phase 10.2 planning source created: `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`.
+- Owner accepted 10.2 recommended defaults on 2026-05-21.
+- Phase 10.2A empty-table migration prepared: `supabase/migrations/202605210002_create_order_sales_tables.sql`.
+- Backend schema verifier prepared: `GET /health/database/order-schema`.
+- Local verification passed on 2026-05-21: focused database tests passed at 9 tests and full local unittest suite passed at 138 tests.
+- No import script, backend read/write cutover, or Google Sheet retirement has started.
+- Next step: backend deploy, manual SQL execution in Supabase SQL Editor, then deployed `/health/database/order-schema` verification.
 
 Farm home/dashboard idea:
 

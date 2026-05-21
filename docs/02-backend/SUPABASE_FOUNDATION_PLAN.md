@@ -236,6 +236,16 @@ Use the Phase 7.2 order/sales boundary unless deliberately changed:
 - `ORDER_STATUS_LOG` -> `order_status_logs`
 - `SALES_PRICING` -> `sales_pricing`
 
+Detailed Phase 10.2 planning source:
+
+- `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`
+
+Phase 10.2A implementation state:
+
+- Empty order/sales table migration prepared in `supabase/migrations/202605210002_create_order_sales_tables.sql`.
+- Backend schema verifier prepared at `GET /health/database/order-schema`.
+- No data import and no backend read/write cutover.
+
 Do not migrate these in the first order boundary unless a separate decision is made:
 
 - `PIG_MASTER`
@@ -380,6 +390,7 @@ Implementation state:
 - Deployed verification passed on 2026-05-21: `/health/database` returned `success = true`, `status = ok`, `configured = true`, `database = postgres`, and harmless database UTC time.
 - Phase 10.1B local baseline added: internal migration SQL plus backend `GET /health/database/foundation` verification endpoint. SQL has not yet been run in Supabase.
 - Phase 10.1B local verification passed on 2026-05-21: focused database tests passed at 6 tests, full local unittest suite passed at 135 tests, and migration contract test confirms no business tables are created.
+- Phase 10.1B deployed verification passed on 2026-05-21: owner ran the baseline SQL in Supabase SQL Editor and `/health/database/foundation` returned `success = true`, `status = ok`, migration ID `202605210001_foundation_migration_log`, and applied timestamp `2026-05-21T01:19:31.638474+00:00`.
 
 ## Setup Checklist
 
@@ -398,7 +409,8 @@ Before any code connects to Supabase:
 
 Before any production data import:
 
-- [ ] Empty tables created by migrations.
+- [x] Baseline internal migration table created by manual SQL migration.
+- [ ] Empty business tables created by future migrations.
 - [ ] Import script can run in dry-run mode.
 - [ ] Test-data exclusion rules are documented.
 - [ ] Backup/restore plan is accepted.

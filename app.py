@@ -3,7 +3,11 @@ from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
 from modules.orders.order_routes import orders_bp
 from modules.reports.report_routes import reports_bp
-from services.database_service import check_database_foundation, check_database_health
+from services.database_service import (
+    check_database_foundation,
+    check_database_health,
+    check_order_schema,
+)
 
 app = Flask(__name__)
 app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
@@ -146,6 +150,12 @@ def database_health():
 @app.route("/health/database/foundation")
 def database_foundation_health():
     body, status_code = check_database_foundation()
+    return body, status_code
+
+
+@app.route("/health/database/order-schema")
+def database_order_schema_health():
+    body, status_code = check_order_schema()
     return body, status_code
 
 

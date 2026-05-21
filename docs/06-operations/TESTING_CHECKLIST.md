@@ -771,6 +771,36 @@ Local result:
 - 2026-05-21: Full local unittest suite passed at 135 tests.
 - 2026-05-21: Migration contract test confirms the baseline SQL creates only the internal migration log and no business tables.
 
+Deployed result:
+
+- 2026-05-21: Owner ran the baseline SQL in Supabase SQL Editor.
+- 2026-05-21: `/health/database/foundation` returned `success = true`, `status = ok`, migration ID `202605210001_foundation_migration_log`, and applied timestamp `2026-05-21T01:19:31.638474+00:00`.
+
+## Phase 10.2 Order/Sales Schema Planning Checks
+
+Before creating business tables:
+
+1. Confirm `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md` has been reviewed.
+2. Confirm the first boundary remains seven tables: `orders`, `order_lines`, `order_intakes`, `order_intake_items`, `order_documents`, `order_status_logs`, and `sales_pricing`.
+3. Confirm pig, weight, breeding, weather, Sunsynk, irrigation, and `SALES_AVAILABILITY` remain outside the first boundary.
+4. Confirm import remains dry-run/shadow first; no production cutover.
+5. Confirm test-data exclusion rules before import planning.
+6. Confirm open questions in the schema plan before writing the first business-table SQL migration.
+
+Phase 10.2A empty schema checks:
+
+1. Confirm `supabase/migrations/202605210002_create_order_sales_tables.sql` creates exactly the seven 10.2 boundary tables.
+2. Confirm it does not create pig, weight, breeding, weather, Sunsynk, irrigation, `SALES_AVAILABILITY`, or import tables outside the approved boundary.
+3. Confirm it inserts migration ID `202605210002_create_order_sales_tables` into `app_private.migration_log`.
+4. Confirm backend route `GET /health/database/order-schema` exists.
+5. After SQL is applied, confirm `/health/database/order-schema` returns `success = true`, `status = ok`, migration ID `202605210002_create_order_sales_tables`, and no missing tables.
+6. Confirm current order routes still use Google Sheets until a later read/write cutover phase is approved.
+
+Local result:
+
+- 2026-05-21: Focused database tests passed at 9 tests.
+- 2026-05-21: Full local unittest suite passed at 138 tests.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:
