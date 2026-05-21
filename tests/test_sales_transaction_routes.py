@@ -49,6 +49,31 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(payload["source"]["writes_to_sheets"])
         self.assertFalse(payload["source"]["writes_to_supabase"])
 
+    def test_sales_transaction_dry_run_route_never_writes(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "mode": "dry_run",
+            "source": {
+                "source": "validation_only",
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            },
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "dry_run_sales_transaction",
+            return_value=(service_result, 200),
+        ) as dry_run:
+            response = self.client.post("/api/sales-transactions/dry-run", json={
+                "sale_stream": "Slaughter",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        dry_run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

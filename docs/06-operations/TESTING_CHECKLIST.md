@@ -1033,6 +1033,27 @@ Local result:
 - 2026-05-21: Focused sales transaction/database tests passed at 17 tests.
 - 2026-05-21: Local route smoke without `DATABASE_URL` returned safe `503` / `not_configured`.
 - 2026-05-21: Full local unittest suite passed at 174 tests.
+
+Deploy result:
+
+- 2026-05-21: `GET /api/sales-transactions` returned `success = true`, `status = ok`, `count = 0`, empty `sales_transactions`, and read-only source flags.
+- No records, write form, dashboard Rand totals, or order automation were added.
+
+Phase 10.2J sales transaction dry-run validator checks:
+
+1. Confirm endpoint is `POST /api/sales-transactions/dry-run`.
+2. Confirm a valid slaughter payload returns `success = true`, `status = ok`, and `mode = dry_run`.
+3. Confirm the response calculates `gross_total`, `deductions_total`, `net_total`, `item_count`, and `pig_count`.
+4. Confirm response source has `writes_to_sheets = false` and `writes_to_supabase = false`.
+5. Confirm invalid payloads return `400` with validation errors.
+6. Confirm no real create endpoint exists yet.
+7. Confirm Supabase row count remains unchanged after dry-run tests.
+
+Local result:
+
+- 2026-05-21: Focused sales transaction tests passed at 8 tests.
+- 2026-05-21: Local dry-run route smoke passed with a valid slaughter payload.
+- 2026-05-21: Full local unittest suite passed at 177 tests.
 - Deploy verification is pending.
 
 ## Google Sheets Checks

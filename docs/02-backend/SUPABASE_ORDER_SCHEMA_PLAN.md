@@ -17,7 +17,8 @@ This plan has moved through the first shadow-import slice. It does not approve l
 - Phase 10.2F read-only shadow comparison endpoint is deployed and verified.
 - Phase 10.2G sales transaction extension is being planned; no SQL migration has been approved yet.
 - Phase 10.2H sales transaction empty-table migration is deployed and verified.
-- Phase 10.2I read-only sales transaction API is implemented locally; deploy verification is pending.
+- Phase 10.2I read-only sales transaction API is deployed and verified.
+- Phase 10.2J sales transaction dry-run validator is implemented locally; deploy verification is pending.
 - Supabase now contains the internal migration log plus the first order/sales boundary tables.
 - Supabase contains shadow order/sales data only for the approved completed-order batch.
 - No pig, customer, telemetry, or broader business tables have been created.
@@ -426,6 +427,57 @@ Implementation state:
 - Local missing-config route smoke returns safe `503` / `not_configured`.
 - Local verification passed on 2026-05-21: focused sales transaction/database tests passed at 17 tests.
 - Full local unittest suite passed on 2026-05-21 at 174 tests.
+- Deployed verification passed on 2026-05-21: `GET /api/sales-transactions` returned `success = true`, `status = ok`, `count = 0`, empty `sales_transactions`, and read-only source flags.
+- No records, write form, dashboard Rand totals, or order automation were added.
+
+## 10.2J Sales Transaction Dry-Run Validator
+
+Purpose:
+
+- validate the first slaughter/abattoir transaction payload shape without writing any data
+- calculate gross, deductions, net total, item count, and pig count from submitted payload
+- prove the contract before enabling a real create endpoint
+
+Endpoint:
+
+- `POST /api/sales-transactions/dry-run`
+
+Required minimum payload:
+
+```json
+{
+  "sale_date": "2026-05-21",
+  "sale_stream": "Slaughter",
+  "buyer_name": "Abattoir",
+  "items": [
+    {
+      "item_type": "Pig",
+      "pig_id": "PIG-...",
+      "quantity": 1,
+      "unit_price": 1200,
+      "pricing_basis": "Per_Pig"
+    }
+  ]
+}
+```
+
+Safety rules:
+
+- Does not connect to Supabase.
+- Writes nothing to Supabase.
+- Writes nothing to Google Sheets.
+- Does not create sale IDs.
+- Does not change pig/order/dashboard state.
+- Returns `mode = dry_run` and `source.writes_to_supabase = false`.
+
+Implementation state:
+
+- Validation added in `modules/sales/sales_transaction_validation.py`.
+- Dry-run service added in `modules/sales/sales_transaction_dry_run.py`.
+- Route added: `POST /api/sales-transactions/dry-run`.
+- Local route smoke passed with a valid slaughter payload.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 8 tests.
+- Full local unittest suite passed on 2026-05-21 at 177 tests.
 - Deploy verification is pending.
 
 ## Import Rules

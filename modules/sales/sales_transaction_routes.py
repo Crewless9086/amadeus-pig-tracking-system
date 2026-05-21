@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 
+from modules.sales.sales_transaction_dry_run import dry_run_sales_transaction
 from modules.sales.sales_transaction_read import list_sales_transactions
 
 
@@ -24,3 +25,10 @@ def sales_transaction_list():
                 "writes_to_supabase": False,
             },
         }), 400
+
+
+@sales_bp.route("/sales-transactions/dry-run", methods=["POST"])
+def sales_transaction_dry_run():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = dry_run_sales_transaction(payload)
+    return jsonify(result), status_code

@@ -226,7 +226,11 @@ Current position:
 - Local verification passed on 2026-05-21: focused database tests passed at 12 tests and full local unittest suite passed at 169 tests.
 - Deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/sales-transaction-schema` returned `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, both expected tables found, and `missing_tables = []`.
 - No backend/dashboard/order behavior changed.
-- Phase 10.2I is implemented locally: `GET /api/sales-transactions` reads Supabase sales transaction headers only, supports optional stream filtering, and reports `writes_to_sheets = false` / `writes_to_supabase = false`.
+- Phase 10.2I is deployed and verified: `GET /api/sales-transactions` reads Supabase sales transaction headers only, supports optional stream filtering, and reports `writes_to_sheets = false` / `writes_to_supabase = false`.
 - Local verification passed on 2026-05-21: focused sales transaction/database tests passed at 17 tests, local missing-config route smoke returned safe `503`, and full local unittest suite passed at 174 tests.
+- Deployed verification passed on 2026-05-21: `GET /api/sales-transactions` returned `success = true`, `status = ok`, `count = 0`, empty `sales_transactions`, and read-only source flags.
 - No records, write form, dashboard Rand totals, or order automation were added.
-- Next step is deploy backend and verify `GET /api/sales-transactions` against Supabase.
+- Phase 10.2J is implemented locally: `POST /api/sales-transactions/dry-run` validates a sales transaction payload and calculates gross, deductions, net total, item count, and pig count without connecting to Supabase.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 8 tests, local dry-run route smoke passed, and full local unittest suite passed at 177 tests.
+- No real create endpoint, sale IDs, dashboard Rand totals, order automation, or pig status changes were added.
+- Next step is deploy backend and verify the dry-run endpoint with a safe sample slaughter payload.
