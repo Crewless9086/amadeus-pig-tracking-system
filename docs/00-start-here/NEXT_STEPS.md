@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified | Choose the next Supabase slice deliberately before any route cutover. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Local | Deploy backend, apply sales transaction SQL, then verify. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2318,7 +2318,7 @@ Implementation state:
 
 Recommended 9.5B split:
 
-1. **9.5B1 Display wording cleanup** - keep the current dashboard count behavior, but label it clearly as pig/item exits for now so it is not confused with Rand income. Implemented locally 2026-05-21.
+1. **9.5B1 Display wording cleanup** - keep the current dashboard count behavior, but label it clearly as pig/item exits for now so it is not confused with Rand income. Deployed and owner-verified 2026-05-21.
 2. **9.5B2 Slaughter sale logging decision** - define where a slaughter/abattoir sale is recorded when there is no normal customer order. This likely needs either:
    - a lightweight sale transaction record linked to `PIG_MASTER.Exit_Reason = Sold to Abattoir`; or
    - a future Supabase-backed `sales_transactions` table covering livestock, slaughter, and meat streams.
@@ -2354,7 +2354,41 @@ Questions to answer before implementation:
 - Backend values are unchanged and still come from current monthly `PIG_MASTER` exit counts.
 - No Rand values or transaction calculations were added.
 - Verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite at 166 tests.
-- Deploy/browser verification pending.
+- Deployed and owner-verified on 2026-05-21; owner confirmed the wording change is done.
+
+9.5B2 slaughter/abattoir sale logging decision - planning:
+
+- Problem:
+  - A slaughter/abattoir sale can happen without a normal customer order.
+  - `PIG_MASTER` can tell us a pig left the farm, but it is not enough to calculate honest Rand income.
+  - Dashboard Rand totals need a transaction/value source, not a pig-count guess.
+- Recommended data shape for the future sale record:
+  - `Sale_ID`
+  - `Sale_Date`
+  - `Sale_Stream` (`Livestock`, `Slaughter`, `Meat`)
+  - `Buyer_Name` or `Destination`
+  - `Linked_Order_ID` where applicable
+  - `Pig_Count`
+  - linked `Pig_ID` values or a child table for sale animals
+  - `Live_Weight_Kg` where known
+  - `Carcass_Weight_Kg` where known
+  - `Price_Per_Kg` or `Unit_Price`
+  - `Gross_Total`
+  - `Deductions` such as transport, slaughter, processing, or commission
+  - `Net_Total`
+  - `Payment_Status`
+  - `Notes`
+- Recommended implementation direction:
+  - Do not create a Google Sheets-only patch unless a slaughter sale must be logged before the Supabase sales model is ready.
+  - Prefer a Supabase-backed `sales_transactions` table later, with child rows for linked pigs/items.
+  - Completed livestock orders can later auto-create or link to a `sales_transactions` row.
+  - Slaughter/abattoir sales can later be entered through a small internal form and linked to the pigs that exited.
+  - Future meat/carcass sales should use the same transaction family rather than a separate one-off model.
+- Minimum manual logging rule until built:
+  - If a slaughter/abattoir sale happens now, record at least the sale date, pig count, pig IDs/tags, buyer/destination, total amount, and payment status in a temporary note/source so it can be backfilled later.
+- Decision needed before build:
+  - Should `sales_transactions` be introduced in Supabase before dashboard Rand values, or should we create a temporary Google Sheets sale log first?
+  - Should slaughter sale entry be a simple internal web form, or should it wait for the broader Phase 11 pork/meat business module?
 
 ### 9.6 Printable Farm Operation Sheets — 9.6A Browser-Verified
 
@@ -2561,7 +2595,16 @@ Recommendation:
 - Local API smoke passed for `ORD-2026-0B29D7`: HTTP 200, `success = true`, `status = ok`, and `mismatch_count = 0`.
 - Deployed verification passed on 2026-05-21 for `ORD-2026-0B29D7`: `success = true`, `status = ok`, `mismatch_count = 0`, `writes_to_sheets = false`, and `writes_to_supabase = false`.
 - No backend read/write cutover, UI change, n8n change, or Google Sheet retirement has started.
-- Next step: choose the next Supabase slice deliberately before any route cutover.
+- Phase 10.2G sales transaction extension planning added to `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`.
+- 10.2G proposed tables: `sales_transactions` and `sales_transaction_items`.
+- 10.2G purpose: support honest Rand values for livestock, slaughter/abattoir, and future meat/carcass sales without inferring income from pig exit counts.
+- 10.2G is planning only: no SQL migration, backend route, dashboard Rand value, order cutover, or pig migration has started.
+- Owner decisions captured: use constrained values now, create tables and verifier before a form, automate completed livestock transaction links later, keep deductions as a single total for now with a future child-table option, and keep buyer phone fields.
+- Phase 10.2H sales transaction empty-table migration prepared locally: `supabase/migrations/202605210003_create_sales_transaction_tables.sql`.
+- Phase 10.2H backend verifier prepared locally: `GET /health/database/sales-transaction-schema`.
+- Local verification passed on 2026-05-21: focused database tests passed at 12 tests and full local unittest suite passed at 169 tests.
+- No SQL has been applied in Supabase yet, and no backend/dashboard/order behavior has changed.
+- Next step: deploy backend, run the SQL migration in Supabase SQL Editor, then verify `/health/database/sales-transaction-schema`.
 
 Farm home/dashboard idea:
 

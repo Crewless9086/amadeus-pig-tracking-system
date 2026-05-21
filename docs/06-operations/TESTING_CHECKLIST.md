@@ -718,7 +718,9 @@ Local result:
 - 2026-05-20: Implemented locally and verified with dashboard/frontend focused tests plus full 127-test suite.
 - 2026-05-20: Deployed/browser-visible; owner confirmed the stream cards are present and requested later count/value planning.
 - 2026-05-21: 9.5B planning updated; Rand values remain blocked until explicit transaction/value source is defined.
-- 2026-05-21: 9.5B1 wording cleanup implemented locally. `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite passed at 166 tests. Deploy/browser verification is pending.
+- 2026-05-21: 9.5B1 wording cleanup implemented locally. `node --check static/js/dashboard.js`, focused dashboard/frontend tests, and full local unittest suite passed at 166 tests.
+- 2026-05-21: 9.5B1 deployed and owner-confirmed; dashboard now uses `Exits` wording for sales stream counts.
+- 2026-05-21: 9.5B2 planning captured; slaughter/abattoir Rand totals remain blocked until a transaction/value source exists.
 
 ## Printable Farm Operation Sheet Tests
 
@@ -979,6 +981,37 @@ Deploy result:
 - 2026-05-21: Deployed endpoint check passed for `GET /api/shadow/orders/ORD-2026-0B29D7/compare`.
 - Response returned `success = true`, `status = ok`, `mismatch_count = 0`, `writes_to_sheets = false`, and `writes_to_supabase = false`.
 - No backend route cutover has started.
+
+Phase 10.2G sales transaction extension planning checks:
+
+1. Confirm `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md` contains a `10.2G Sales Transaction Extension Plan`.
+2. Confirm the proposed future tables are `sales_transactions` and `sales_transaction_items`.
+3. Confirm the model covers `Livestock`, `Slaughter`, and `Meat` streams without inferring Rand values from pig counts.
+4. Confirm `sales_transactions` owns sale header, buyer/destination, money, payment, status, and audit fields.
+5. Confirm `sales_transaction_items` owns linked pigs/items, weights, unit price, pricing basis, and line totals.
+6. Confirm 10.2G is planning only: no SQL migration, backend route, dashboard Rand value, order cutover, or pig migration has started.
+7. Confirm open decisions are reviewed before creating any SQL migration.
+
+Planning result:
+
+- 2026-05-21: 10.2G planning added to the Supabase schema plan.
+- 2026-05-21: Current recommendation is to review fields first, then decide whether the next implementation slice is empty transaction tables plus a verifier.
+
+Phase 10.2H sales transaction empty schema checks:
+
+1. Confirm `supabase/migrations/202605210003_create_sales_transaction_tables.sql` creates exactly `sales_transactions` and `sales_transaction_items`.
+2. Confirm it does not create pig, customer, weight, breeding, telemetry, deduction child, or dashboard tables.
+3. Confirm constrained values exist for sale stream, sale status, payment status, item type, and pricing basis.
+4. Confirm it inserts migration ID `202605210003_create_sales_transaction_tables` into `app_private.migration_log`.
+5. Confirm backend route `GET /health/database/sales-transaction-schema` exists.
+6. After SQL is applied, confirm `/health/database/sales-transaction-schema` returns `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, and no missing tables.
+7. Confirm current order/dashboard routes still use existing data sources until a later cutover phase is approved.
+
+Local result:
+
+- 2026-05-21: Focused database tests passed at 12 tests.
+- 2026-05-21: Full local unittest suite passed at 169 tests.
+- Deploy and Supabase SQL application are pending.
 
 ## Google Sheets Checks
 

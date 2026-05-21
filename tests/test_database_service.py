@@ -5,9 +5,11 @@ from unittest.mock import Mock, patch
 
 from services.database_service import (
     ORDER_SCHEMA_TABLES,
+    SALES_TRANSACTION_SCHEMA_TABLES,
     check_database_foundation,
     check_database_health,
     check_order_schema,
+    check_sales_transaction_schema,
 )
 
 
@@ -31,6 +33,8 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertIn("check_database_foundation()", app_source)
         self.assertIn('@app.route("/health/database/order-schema")', app_source)
         self.assertIn("check_order_schema()", app_source)
+        self.assertIn('@app.route("/health/database/sales-transaction-schema")', app_source)
+        self.assertIn("check_sales_transaction_schema()", app_source)
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_database_health_does_not_return_connection_string_on_failure(self):
@@ -95,6 +99,16 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertEqual(body["status"], "not_configured")
         self.assertNotIn("DATABASE_URL=", str(body))
 
+    def test_sales_transaction_schema_health_reports_missing_database_url_without_importing_driver(self):
+        with patch.dict(os.environ, {}, clear=True):
+            body, status_code = check_sales_transaction_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertFalse(body["configured"])
+        self.assertEqual(body["status"], "not_configured")
+        self.assertNotIn("DATABASE_URL=", str(body))
+
     def test_order_sales_migration_creates_only_expected_boundary_tables(self):
         migration = Path("supabase/migrations/202605210002_create_order_sales_tables.sql").read_text(
             encoding="utf-8"
@@ -128,6 +142,41 @@ class DatabaseServiceHealthTests(unittest.TestCase):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, migration_lower)
 
+    def test_sales_transaction_migration_creates_only_expected_extension_tables(self):
+        migration = Path("supabase/migrations/202605210003_create_sales_transaction_tables.sql").read_text(
+            encoding="utf-8"
+        )
+        migration_lower = migration.lower()
+
+        for table in SALES_TRANSACTION_SCHEMA_TABLES:
+            with self.subTest(table=table):
+                self.assertIn(f"create table if not exists public.{table}", migration_lower)
+
+        self.assertIn("202605210003_create_sales_transaction_tables", migration)
+        self.assertIn("app_private.migration_log", migration)
+        self.assertIn("sale_stream in ('Livestock', 'Slaughter', 'Meat')", migration)
+        self.assertIn("buyer_phone_raw", migration)
+        self.assertIn("buyer_phone_normalized", migration)
+        self.assertIn("linked_order_id text references public.orders(order_id)", migration)
+        self.assertIn("order_line_id text references public.order_lines(order_line_id)", migration)
+        self.assertIn("deductions_total numeric(12, 2)", migration)
+
+        forbidden_tables = [
+            "create table if not exists public.pigs",
+            "create table if not exists public.pig_master",
+            "create table if not exists public.weight_log",
+            "create table if not exists public.mating_log",
+            "create table if not exists public.litters",
+            "create table if not exists public.weather",
+            "create table if not exists public.sunsynk",
+            "create table if not exists public.irrigation",
+            "create table if not exists public.customers",
+            "create table if not exists public.sales_transaction_deductions",
+        ]
+        for forbidden in forbidden_tables:
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, migration_lower)
+
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_order_schema_health_does_not_return_connection_string_on_failure(self):
         with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
@@ -136,6 +185,17 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
         self.assertEqual(body["status"], "order_schema_check_failed")
+        self.assertNotIn("secret", str(body))
+        self.assertNotIn("example", str(body))
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_sales_transaction_schema_health_does_not_return_connection_string_on_failure(self):
+        with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
+            body, status_code = check_sales_transaction_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertEqual(body["status"], "sales_transaction_schema_check_failed")
         self.assertNotIn("secret", str(body))
         self.assertNotIn("example", str(body))
 

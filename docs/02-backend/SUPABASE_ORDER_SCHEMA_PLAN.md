@@ -15,6 +15,8 @@ This plan has moved through the first shadow-import slice. It does not approve l
 - Phase 10.2A order/sales tables are created and verified.
 - Phase 10.2D completed-order shadow import is applied and verified.
 - Phase 10.2F read-only shadow comparison endpoint is deployed and verified.
+- Phase 10.2G sales transaction extension is being planned; no SQL migration has been approved yet.
+- Phase 10.2H sales transaction empty-table migration is prepared locally; it has not been applied in Supabase yet.
 - Supabase now contains the internal migration log plus the first order/sales boundary tables.
 - Supabase contains shadow order/sales data only for the approved completed-order batch.
 - No pig, customer, telemetry, or broader business tables have been created.
@@ -32,6 +34,11 @@ First business schema boundary:
 5. `order_documents`
 6. `order_status_logs`
 7. `sales_pricing`
+
+Planned extension after the first boundary:
+
+8. `sales_transactions`
+9. `sales_transaction_items`
 
 Do not include yet:
 
@@ -199,6 +206,180 @@ Pricing selection rule:
 4. Use the newest price where `effective_from <= order/quote date`.
 5. Ignore prices where `effective_to` is set and before the order/quote date.
 6. Copy `unit_price` and `pricing_id` to the order line.
+
+## 10.2G Sales Transaction Extension Plan
+
+Purpose:
+
+- create a proper source of truth for sales transactions and Rand values
+- support livestock, slaughter/abattoir, and future meat/carcass sales with one transaction model
+- avoid calculating income from pig exit counts
+- keep dashboard Rand totals blocked until explicit transaction/value records exist
+
+Reason:
+
+- `PIG_MASTER` exits are useful for counting pigs/items that left the farm.
+- `PIG_MASTER` exits are not a reliable income ledger.
+- Completed livestock orders can have one order total covering many pigs.
+- Slaughter/abattoir sales may happen without a normal customer order.
+- Future meat/carcass sales need weights, products, deductions, delivery, and payment state.
+
+Recommended tables:
+
+1. `sales_transactions`
+2. `sales_transaction_items`
+
+### `sales_transactions`
+
+Owns the sale header and money fields.
+
+Recommended fields:
+
+| Field | Type direction | Notes |
+| --- | --- | --- |
+| `sale_id` | text primary key | Public stable ID, for example `SALE-2026-...`. |
+| `sale_date` | timestamptz/date | Business sale date. |
+| `sale_stream` | text | `Livestock`, `Slaughter`, or `Meat`. |
+| `buyer_name` | text | Customer, abattoir, butcher, or destination name. |
+| `buyer_phone_raw` | text | Optional. |
+| `buyer_phone_normalized` | text | Optional lookup field. |
+| `destination` | text | Useful for abattoir/butcher/collection destination. |
+| `linked_order_id` | text nullable FK to `orders.order_id` | Used for livestock orders and future order-backed meat sales. |
+| `pig_count` | integer | Snapshot count for quick dashboard reads. |
+| `gross_total` | numeric(12,2) | Sale value before deductions. |
+| `deductions_total` | numeric(12,2) | Transport, slaughter, processing, commission, or similar. |
+| `net_total` | numeric(12,2) | Income after deductions. |
+| `currency` | text | Default `ZAR`. |
+| `payment_status` | text | Example: `Unpaid`, `Deposit_Paid`, `Paid`, `Part_Paid`, `Cancelled`. |
+| `payment_method` | text | Cash, EFT, account, etc. |
+| `sale_status` | text | Example: `Draft`, `Confirmed`, `Completed`, `Cancelled`. |
+| `notes` | text | Operator notes. |
+| `created_by` | text | Actor/operator. |
+| `created_at` | timestamptz | Default `now()`. |
+| `updated_at` | timestamptz | Default `now()`. |
+| `source_sheet_row` | integer | Only if imported from a temporary sheet later. |
+| `import_batch_id` | text | Import traceability. |
+
+Important rules:
+
+- Do not infer `gross_total`, `deductions_total`, or `net_total` from pig count.
+- A completed livestock order may later create or link one `sales_transactions` row using the trusted order total.
+- A slaughter/abattoir sale should be entered as its own transaction even when there is no customer order.
+- Meat/carcass sales should use the same transaction family, not a separate one-off table.
+
+### `sales_transaction_items`
+
+Owns the animals/products/weights attached to one sale.
+
+Recommended fields:
+
+| Field | Type direction | Notes |
+| --- | --- | --- |
+| `sale_item_id` | text primary key | Public stable ID. |
+| `sale_id` | text FK to `sales_transactions.sale_id` | Parent transaction. |
+| `item_type` | text | `Pig`, `Carcass`, `Cut`, `Box`, `Other`. |
+| `pig_id` | text nullable | Links to the pig where applicable. Keep as text until pig master is migrated. |
+| `tag_number` | text | Snapshot for operator readability. |
+| `order_line_id` | text nullable FK to `order_lines.order_line_id` | Useful for livestock order links. |
+| `description` | text | Product/animal description. |
+| `quantity` | numeric | Usually 1 for pig, variable for meat items. |
+| `live_weight_kg` | numeric(10,3) | Where known. |
+| `carcass_weight_kg` | numeric(10,3) | Where known. |
+| `packed_weight_kg` | numeric(10,3) | Future meat/carcass use. |
+| `unit_price` | numeric(12,2) | Per pig, per kg, or per item depending on pricing basis. |
+| `pricing_basis` | text | `Per_Pig`, `Per_Kg_Live`, `Per_Kg_Carcass`, `Per_Item`, etc. |
+| `line_total` | numeric(12,2) | Snapshot total for this item. |
+| `notes` | text | Item-level notes. |
+| `created_at` | timestamptz | Default `now()`. |
+| `updated_at` | timestamptz | Default `now()`. |
+
+Important rules:
+
+- Item rows preserve historical sale details even if pig status, pricing, or product definitions change later.
+- `pig_id` should remain nullable because future meat boxes/cuts may not map cleanly to one pig.
+- The sum of item `line_total` values should reconcile to transaction `gross_total`, allowing explicit rounding/adjustment where needed.
+
+First use case:
+
+- Slaughter/abattoir transaction logging.
+- Minimum fields for a useful first record:
+  - sale date
+  - stream = `Slaughter`
+  - buyer/destination
+  - pig IDs/tags
+  - pig count
+  - total amount
+  - payment status
+  - notes
+
+Later use cases:
+
+- Auto-link completed livestock orders to a transaction row.
+- Add carcass/meat sales under Phase 11.
+- Add dashboard Rand totals once transaction records exist.
+- Add payment tracking and deductions reporting.
+
+Non-goals for 10.2G:
+
+- Do not change the live dashboard Rand values yet.
+- Do not cut over order reads/writes to Supabase.
+- Do not migrate `PIG_MASTER` yet.
+- Do not build the Phase 11 pork/meat sales workflow here.
+- Do not create temporary Google Sheets-only transaction logic unless a real sale must be captured before Supabase entry is ready.
+
+Owner decisions and guided defaults before SQL migration:
+
+- Use constrained values now for `sale_stream`, `payment_status`, `sale_status`, `item_type`, and `pricing_basis`.
+- Create tables and backend verification first. Build the slaughter sale form after the schema is safely applied and verified.
+- Later, completed livestock orders should automatically create or link a `sales_transactions` row where applicable, but do not add automation in the empty-table migration.
+- Keep deductions as a single `deductions_total` on the first table. Plan a future child table such as `sales_transaction_deductions` when detailed deductions are needed.
+- Include `buyer_phone_raw` and `buyer_phone_normalized` now.
+- Add a future customer table to the roadmap before deeper customer/payment reporting.
+
+## 10.2H Sales Transaction Empty-Table Migration
+
+Purpose:
+
+- create only the approved empty sales transaction tables
+- add a backend health verifier for the new tables
+- keep current app behavior unchanged
+
+Migration:
+
+- `supabase/migrations/202605210003_create_sales_transaction_tables.sql`
+
+Creates:
+
+1. `sales_transactions`
+2. `sales_transaction_items`
+
+Does not create:
+
+- pig tables
+- customer tables
+- deduction child tables
+- dashboard Rand values
+- live order cutover
+- slaughter sale form
+
+Backend verifier:
+
+- `GET /health/database/sales-transaction-schema`
+
+Expected deployed result after SQL is applied:
+
+- `success = true`
+- `status = ok`
+- `migration_id = 202605210003_create_sales_transaction_tables`
+- `missing_tables = []`
+
+Implementation state:
+
+- SQL migration prepared locally.
+- Backend verifier route prepared locally.
+- Local verification passed on 2026-05-21: focused database tests passed at 12 tests.
+- Full local unittest suite passed on 2026-05-21 at 169 tests.
+- Deploy and Supabase SQL application are pending.
 
 ## Import Rules
 

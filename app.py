@@ -7,6 +7,7 @@ from services.database_service import (
     check_database_foundation,
     check_database_health,
     check_order_schema,
+    check_sales_transaction_schema,
 )
 
 app = Flask(__name__)
@@ -156,6 +157,12 @@ def database_foundation_health():
 @app.route("/health/database/order-schema")
 def database_order_schema_health():
     body, status_code = check_order_schema()
+    return body, status_code
+
+
+@app.route("/health/database/sales-transaction-schema")
+def database_sales_transaction_schema_health():
+    body, status_code = check_sales_transaction_schema()
     return body, status_code
 
 

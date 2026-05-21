@@ -18,6 +18,9 @@ Current state:
 - `202605210002_create_order_sales_tables.sql` is the first empty business-table migration.
 - It creates only the seven Phase 10.2 order/sales boundary tables.
 - It imports no data and does not change live backend order reads/writes.
+- `202605210003_create_sales_transaction_tables.sql` is the empty sales transaction extension migration.
+- It creates only `sales_transactions` and `sales_transaction_items`.
+- It imports no data and does not change live backend order/dashboard reads/writes.
 
 Manual run process for Phase 10.1B:
 
@@ -37,3 +40,13 @@ Manual run process for Phase 10.2A:
 5. Run it once.
 6. Open `/health/database/order-schema` on the deployed backend.
 7. Confirm it returns `success = true`, `status = ok`, and all seven expected tables.
+
+Manual run process for Phase 10.2H:
+
+1. Deploy the backend containing `/health/database/sales-transaction-schema`.
+2. Open Supabase SQL Editor.
+3. Open `supabase/migrations/202605210003_create_sales_transaction_tables.sql` from this repo.
+4. Paste the full SQL into Supabase SQL Editor.
+5. Run it once.
+6. Open `/health/database/sales-transaction-schema` on the deployed backend.
+7. Confirm it returns `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, and no missing tables.
