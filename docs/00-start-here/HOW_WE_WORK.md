@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.2A schema verified; Phase 10.2B complete; Phase 10.2C payload mapping complete |
-| **Current focus** | Rerun 10.2C dry-run with completed-only import rule |
-| **Current last verified** | **2026-05-21** - `/health/database/order-schema` verified seven empty order/sales tables |
+| **Status** | Phase 9 parked for now; Phase 10.2L4A deployed verified; Phase 10.2L4B, 10.2L4C, and 10.2L4D implemented locally |
+| **Current focus** | Deploy and run Phase 10.2L4E synthetic batch test |
+| **Current last verified** | **2026-05-21** - 10.2L4D JS check, focused update/route/frontend tests at 25 tests, local page smoke `200`, and full local suite at 208 tests |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

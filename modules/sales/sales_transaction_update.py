@@ -1,8 +1,8 @@
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from modules.pig_weights.pig_weights_utils import to_float
+from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_float
 from modules.sales.sales_transaction_validation import (
     ALLOWED_PAYMENT_STATUSES,
     ALLOWED_SALE_STATUSES,
@@ -21,6 +21,7 @@ def update_slaughter_sale_payment(sale_id, payload=None, database_url=None):
     payment_method = str(payload.get("payment_method", "")).strip()
     line_total = _parse_money(payload.get("line_total", payload.get("unit_price", "")))
     carcass_weight_kg = _parse_optional_number(payload.get("carcass_weight_kg", ""))
+    payment_date = _parse_optional_date(payload.get("payment_date", ""))
 
     errors = []
     if not sale_id:
@@ -39,6 +40,10 @@ def update_slaughter_sale_payment(sale_id, payload=None, database_url=None):
         errors.append("line_total is required and must be a number.")
     elif line_total < 0:
         errors.append("line_total cannot be negative.")
+    if payment_date == "invalid":
+        errors.append("payment_date must be a valid date.")
+    if payment_status == "Paid" and not payment_date:
+        errors.append("payment_date is required when payment_status is Paid.")
     if carcass_weight_kg is not None and carcass_weight_kg < 0:
         errors.append("carcass_weight_kg cannot be negative.")
     if errors:
@@ -89,8 +94,8 @@ def update_slaughter_sale_payment(sale_id, payload=None, database_url=None):
                         "source": _source_metadata(writes_to_supabase=False),
                     }, 409
 
-                item = _fetch_first_item_for_update(cursor, sale_id)
-                if not item:
+                items = _fetch_items_for_update(cursor, sale_id)
+                if not items:
                     return {
                         "success": False,
                         "configured": True,
@@ -101,15 +106,16 @@ def update_slaughter_sale_payment(sale_id, payload=None, database_url=None):
                     }, 404
 
                 note = _build_update_note(
-                    current[4],
+                    current[5],
                     updated_by,
                     update_reason,
-                    current_line_total=item[1],
+                    current_line_total=current[4],
                     new_line_total=line_total,
                     current_payment_status=current[3],
                     new_payment_status=payment_status,
                     current_sale_status=current[2],
                     new_sale_status=sale_status,
+                    payment_date=payment_date,
                 )
                 updated_header = _update_transaction_header(
                     cursor,
@@ -118,14 +124,17 @@ def update_slaughter_sale_payment(sale_id, payload=None, database_url=None):
                     payment_method,
                     sale_status,
                     line_total,
+                    payment_date,
                     note,
                 )
-                updated_item = _update_first_item(
-                    cursor,
-                    item[0],
-                    line_total,
-                    carcass_weight_kg,
-                )
+                updated_item = None
+                if len(items) == 1:
+                    updated_item = _update_first_item(
+                        cursor,
+                        items[0][0],
+                        line_total,
+                        carcass_weight_kg,
+                    )
     except Exception as exc:
         return {
             "success": False,
@@ -142,7 +151,8 @@ def update_slaughter_sale_payment(sale_id, payload=None, database_url=None):
         "status": "updated",
         "sale_id": sale_id,
         "sales_transaction": _row_to_transaction(updated_header),
-        "item": _row_to_item(updated_item),
+        "item": _row_to_item(updated_item) if updated_item else None,
+        "items_updated": 1 if updated_item else 0,
         "source": _source_metadata(writes_to_supabase=True),
     }, 200
 
@@ -155,6 +165,7 @@ def _fetch_slaughter_transaction_for_update(cursor, sale_id):
             sale_stream,
             sale_status,
             payment_status,
+            gross_total,
             notes
         from public.sales_transactions
         where sale_id = %s
@@ -166,7 +177,7 @@ def _fetch_slaughter_transaction_for_update(cursor, sale_id):
     return cursor.fetchone()
 
 
-def _fetch_first_item_for_update(cursor, sale_id):
+def _fetch_items_for_update(cursor, sale_id):
     cursor.execute(
         """
         select
@@ -176,15 +187,14 @@ def _fetch_first_item_for_update(cursor, sale_id):
         from public.sales_transaction_items
         where sale_id = %s
         order by created_at asc, sale_item_id asc
-        limit 1
         for update
         """,
         (sale_id,),
     )
-    return cursor.fetchone()
+    return cursor.fetchall()
 
 
-def _update_transaction_header(cursor, sale_id, payment_status, payment_method, sale_status, line_total, note):
+def _update_transaction_header(cursor, sale_id, payment_status, payment_method, sale_status, line_total, payment_date, note):
     cursor.execute(
         """
         update public.sales_transactions
@@ -193,6 +203,7 @@ def _update_transaction_header(cursor, sale_id, payment_status, payment_method, 
             net_total = %s,
             payment_status = %s,
             payment_method = %s,
+            payment_date = %s,
             sale_status = %s,
             notes = %s,
             updated_at = now()
@@ -203,6 +214,7 @@ def _update_transaction_header(cursor, sale_id, payment_status, payment_method, 
             net_total,
             payment_status,
             payment_method,
+            payment_date,
             sale_status,
             notes,
             updated_at
@@ -212,6 +224,7 @@ def _update_transaction_header(cursor, sale_id, payment_status, payment_method, 
             line_total,
             payment_status,
             payment_method,
+            payment_date,
             sale_status,
             note,
             sale_id,
@@ -257,13 +270,15 @@ def _build_update_note(
     new_payment_status,
     current_sale_status,
     new_sale_status,
+    payment_date,
 ):
     timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     audit_note = (
         f"Payment update {timestamp} by {updated_by}: {update_reason}. "
         f"Amount {current_line_total} -> {new_line_total}; "
         f"payment {current_payment_status} -> {new_payment_status}; "
-        f"status {current_sale_status} -> {new_sale_status}."
+        f"status {current_sale_status} -> {new_sale_status}; "
+        f"payment date {payment_date or 'not set'}."
     )
     existing_notes = str(existing_notes or "").strip()
     if not existing_notes:
@@ -284,6 +299,25 @@ def _parse_optional_number(value):
     return to_float(value)
 
 
+def _parse_optional_date(value):
+    if value in (None, ""):
+        return None
+    parsed = parse_sheet_date(value)
+    if not parsed:
+        return "invalid"
+    return _date_iso(parsed)
+
+
+def _date_iso(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
 def _row_to_transaction(row):
     return _json_safe_row({
         "sale_id": row[0],
@@ -291,9 +325,10 @@ def _row_to_transaction(row):
         "net_total": row[2],
         "payment_status": row[3],
         "payment_method": row[4],
-        "sale_status": row[5],
-        "notes": row[6],
-        "updated_at": row[7],
+        "payment_date": row[5],
+        "sale_status": row[6],
+        "notes": row[7],
+        "updated_at": row[8],
     })
 
 

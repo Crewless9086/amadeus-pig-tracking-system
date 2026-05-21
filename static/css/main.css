@@ -247,6 +247,57 @@ textarea {
   margin: 8px 0 0;
 }
 
+.slaughter-items-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.slaughter-items-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.slaughter-items-header h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.slaughter-pig-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.slaughter-pig-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: #fffdf9;
+}
+
+.slaughter-row-actions {
+  justify-content: flex-end;
+  margin-bottom: 0;
+}
+
+.readonly-total {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: var(--bg-soft);
+  color: var(--text-main);
+  font-size: 18px;
+  font-weight: 700;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -1093,7 +1144,8 @@ button:disabled {
   }
 
   .summary-hero,
-  .compact-record-main {
+  .compact-record-main,
+  .slaughter-items-header {
     flex-direction: column;
     padding-right: 0;
   }

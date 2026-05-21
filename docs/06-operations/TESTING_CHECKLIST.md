@@ -1217,6 +1217,71 @@ Deploy checks:
 4. Confirm `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, and `payment_date_column_found = true`.
 5. Do not start 10.2L4B multi-item write testing until this verifier passes.
 
+Deploy result:
+
+- 2026-05-21: Owner ran the SQL migration in Supabase SQL Editor.
+- 2026-05-21: `/health/database/sales-payment-date-schema` returned `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, applied timestamp `2026-05-21T15:45:04.636332+00:00`, and `payment_date_column_found = true`.
+
+## Phase 10.2L4B Backend Multi-Item Create Checks
+
+Local result:
+
+- 2026-05-21: Backend create path verified for one slaughter transaction header with multiple pig item rows.
+- 2026-05-21: Validation now rejects duplicate `pig_id` values inside the same submitted batch before any database write.
+- 2026-05-21: Existing Supabase duplicate-pig check remains in place for pigs already linked to non-cancelled sales transactions.
+- 2026-05-21: Focused sales transaction create/dry-run/route tests passed at 17 tests.
+- 2026-05-21: Full local unittest suite passed at 206 tests.
+
+Deploy checks:
+
+1. Deploy backend containing the 10.2L4B validation and create tests.
+2. Confirm existing single-pig `/sales/slaughter` create behavior still works before using the multi-pig UI.
+3. Confirm duplicate submitted pigs are rejected by dry-run/create before writing to Supabase.
+4. Do not create a real multi-pig slaughter batch until 10.2L4C form support and 10.2L4E synthetic batch testing are complete.
+
+## Phase 10.2L4C Form Multi-Pig Selector Checks
+
+Local result:
+
+- 2026-05-21: `/sales/slaughter` form changed from one fixed pig selector to repeatable pig rows under one slaughter batch.
+- 2026-05-21: Each pig row captures pig, per-pig amount, optional carcass weight, and optional pig note.
+- 2026-05-21: The form shows a calculated batch total from the pig rows and blocks duplicate selected pigs before submit.
+- 2026-05-21: `node --check static/js/slaughterSale.js` passed.
+- 2026-05-21: Focused frontend/sales tests passed at 27 tests.
+- 2026-05-21: Local `/sales/slaughter` page smoke returned `200`.
+- 2026-05-21: Full local unittest suite passed at 206 tests.
+
+Deploy checks:
+
+1. Deploy frontend/backend together.
+2. Open `/sales/slaughter` and confirm one pig row appears by default.
+3. Add a second pig row, choose two different synthetic/test pigs, and confirm the batch total updates.
+4. Try selecting the same pig twice and confirm the form blocks submit before writing.
+5. Do not use a real multi-pig slaughter batch until 10.2L4D payment update and 10.2L4E synthetic batch testing are complete.
+
+## Phase 10.2L4D Payment Update With Batch Total/Payment Date Checks
+
+Local result:
+
+- 2026-05-21: Payment update accepts `payment_date` and requires it when `payment_status = Paid`.
+- 2026-05-21: Header totals/payment/date/status update together.
+- 2026-05-21: Single-pig updates still update the one item amount and optional carcass weight.
+- 2026-05-21: Multi-pig batch updates do not auto-reallocate final batch totals across item rows.
+- 2026-05-21: `/sales/slaughter` payment prompt now asks for final batch amount and payment date when marking Paid.
+- 2026-05-21: `node --check static/js/slaughterSale.js` passed.
+- 2026-05-21: Focused update/route/frontend tests passed at 25 tests.
+- 2026-05-21: Local `/sales/slaughter` page smoke returned `200`.
+- 2026-05-21: Full local unittest suite passed at 208 tests.
+
+Deploy checks:
+
+1. Deploy frontend/backend together.
+2. Create only a synthetic two-pig slaughter batch in 10.2L4E.
+3. Update the synthetic batch payment to `Paid` with a payment date.
+4. Confirm the transaction header shows the final batch amount and paid status.
+5. Confirm item rows were not silently reallocated.
+6. Cancel the synthetic batch and confirm duplicate-pig protection releases those synthetic pigs after cancellation.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

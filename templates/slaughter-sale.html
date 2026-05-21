@@ -27,16 +27,25 @@
           </div>
 
           <div class="form-group">
-            <label for="pig_id">Pig</label>
-            <select id="pig_id" name="pig_id" required>
-              <option value="">Loading pigs...</option>
-            </select>
-            <div id="pig_helper" class="field-helper">Select the pig that went to slaughter.</div>
+            <label for="created_by">Recorded By</label>
+            <input type="text" id="created_by" name="created_by" value="Charl" required />
           </div>
         </div>
 
         <div class="form-actions form-actions-primary">
           <button type="submit" id="submit_slaughter_sale_top" class="submit-button">Save Slaughter Sale</button>
+        </div>
+
+        <div class="slaughter-items-section">
+          <div class="slaughter-items-header">
+            <div>
+              <h2>Pigs In This Batch</h2>
+              <div id="batch_total_helper" class="field-helper">Add each pig taken to slaughter. The batch total is calculated from the pig rows.</div>
+            </div>
+            <button type="button" id="add_slaughter_pig_button" class="button-link">Add Pig</button>
+          </div>
+
+          <div id="slaughter_pig_rows" class="slaughter-pig-rows"></div>
         </div>
 
         <div class="form-grid">
@@ -82,21 +91,9 @@
           </div>
 
           <div class="form-group">
-            <label for="created_by">Recorded By</label>
-            <input type="text" id="created_by" name="created_by" value="Charl" required />
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="unit_price">Sale Amount</label>
-            <input type="number" step="0.01" inputmode="decimal" id="unit_price" name="unit_price" class="no-spinner" required />
-            <div class="field-helper">Use the amount expected or paid by the butcher. VAT handling is still being finalized.</div>
-          </div>
-
-          <div class="form-group">
-            <label for="carcass_weight_kg">Carcass Weight (Optional)</label>
-            <input type="number" step="0.001" inputmode="decimal" id="carcass_weight_kg" name="carcass_weight_kg" class="no-spinner" />
+            <label>Batch Total</label>
+            <div id="slaughter_batch_total" class="readonly-total">R0.00</div>
+            <div class="field-helper">Calculated from the pig row amounts. VAT handling is still being finalized.</div>
           </div>
         </div>
 

@@ -267,4 +267,11 @@ Current position:
 - Phase 10.2L4A payment-date schema migration is implemented locally: `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql` adds nullable `payment_date` to `sales_transactions`.
 - Backend verifier `GET /health/database/sales-payment-date-schema` is implemented locally.
 - Local verification passed on 2026-05-21: focused database tests passed at 15 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 203 tests.
-- Next step is deploying backend, running the SQL in Supabase SQL Editor, verifying the payment-date schema endpoint, then continuing with 10.2L4B backend multi-item create support.
+- Phase 10.2L4A deployed verification passed on 2026-05-21: `/health/database/sales-payment-date-schema` returned `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, applied timestamp `2026-05-21T15:45:04.636332+00:00`, and `payment_date_column_found = true`.
+- Phase 10.2L4B backend multi-item create support is implemented locally: one sale header can carry multiple pig item rows, and duplicate `pig_id` values inside the submitted batch are blocked during validation before any database write.
+- Local verification passed on 2026-05-21: focused sales transaction create/dry-run/route tests passed at 17 tests and full local unittest suite passed at 206 tests.
+- Phase 10.2L4C form multi-pig selector is implemented locally: `/sales/slaughter` now supports add/remove pig rows, per-pig amount, optional carcass weight, optional pig note, calculated batch total, and duplicate-selection blocking.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 206 tests.
+- Phase 10.2L4D payment update with batch total/payment date is implemented locally: payment update requires `payment_date` when marking Paid, updates header totals/payment/date/status, keeps single-pig item update behavior, and does not auto-reallocate final batch totals across multiple pig item rows.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused update/route/frontend tests passed at 25 tests, local page smoke returned `200`, and full local unittest suite passed at 208 tests.
+- Next step is deploying and running 10.2L4E synthetic batch test.

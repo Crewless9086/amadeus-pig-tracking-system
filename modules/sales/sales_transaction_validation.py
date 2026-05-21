@@ -53,6 +53,14 @@ def validate_sales_transaction_payload(payload):
         if cleaned_item["line_total"] is not None:
             gross_total += cleaned_item["line_total"]
 
+    duplicate_pig_ids = _duplicate_pig_ids(cleaned_items)
+    if duplicate_pig_ids:
+        errors.append(
+            "items contain duplicate pig_id values: "
+            + ", ".join(duplicate_pig_ids)
+            + "."
+        )
+
     deductions_total = deductions_total if deductions_total is not None else 0.0
     net_total = gross_total - deductions_total
     if net_total < 0:
@@ -140,6 +148,22 @@ def _validate_item(item, index, errors):
         "line_total": _round_optional(line_total, 2),
         "notes": notes,
     }
+
+
+def _duplicate_pig_ids(items):
+    seen = set()
+    duplicates = []
+
+    for item in items:
+        if item["item_type"] != "Pig" or not item.get("pig_id"):
+            continue
+
+        pig_id = item["pig_id"]
+        if pig_id in seen and pig_id not in duplicates:
+            duplicates.append(pig_id)
+        seen.add(pig_id)
+
+    return duplicates
 
 
 def _parse_optional_number(value, field_name, errors):

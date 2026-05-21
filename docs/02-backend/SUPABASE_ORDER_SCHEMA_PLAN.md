@@ -677,9 +677,9 @@ Amount handling options:
 Implementation sequence:
 
 1. **10.2L4A payment date schema update** - implemented locally 2026-05-21: add nullable `payment_date` to `sales_transactions` before treating final payment as accounting-ready.
-2. **10.2L4B backend multi-item create support** - extend create behavior/tests to accept multiple pig items from the form while preserving duplicate-pig protection across all submitted pigs.
-3. **10.2L4C form multi-pig selector** - let owner add/remove pig rows, each with optional live weight, carcass weight, per-pig amount, and note.
-4. **10.2L4D payment update with batch total/payment date** - update final batch amount, payment date, payment status, and optional per-pig line values.
+2. **10.2L4B backend multi-item create support** - implemented locally 2026-05-21: create accepts multiple pig items under one slaughter batch and validation rejects duplicate submitted `pig_id` values before any database write.
+3. **10.2L4C form multi-pig selector** - implemented locally 2026-05-21: owner can add/remove pig rows with per-pig amount, optional carcass weight, optional note, calculated batch total, and duplicate-selection blocking.
+4. **10.2L4D payment update with batch total/payment date** - implemented locally 2026-05-21: update final batch amount, payment date, payment status, and sale status on the header without auto-reallocating multi-pig item rows.
 5. **10.2L4E deployed synthetic batch test** - create a two-pig synthetic batch, update payment, cancel it, and verify duplicate-pig release.
 
 Must not do in 10.2L4:
@@ -707,7 +707,38 @@ Open decisions before implementation:
 - Local missing-config verifier smoke returned safe `503`.
 - Local verification passed on 2026-05-21: focused database tests passed at 15 tests.
 - Full local unittest suite passed on 2026-05-21 at 203 tests.
-- Next step: deploy backend, run the SQL in Supabase SQL Editor, then verify `/health/database/sales-payment-date-schema`.
+- Deployed verification passed on 2026-05-21: `/health/database/sales-payment-date-schema` returned `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, applied timestamp `2026-05-21T15:45:04.636332+00:00`, and `payment_date_column_found = true`.
+
+10.2L4B implementation state:
+
+- Backend create path supports multiple `sales_transaction_items` rows under one `sales_transactions` header.
+- Existing duplicate-pig protection still checks Supabase for any submitted pig already linked to a non-cancelled sales transaction.
+- Validation now also blocks duplicate `pig_id` values inside the same submitted payload, so dry-run and create fail before database writes if the same pig is listed twice.
+- This slice does not add the multi-pig form yet and does not auto-split batch totals across pigs.
+- Local verification passed on 2026-05-21: focused sales transaction create/dry-run/route tests passed at 17 tests.
+- Full local unittest suite passed on 2026-05-21 at 206 tests.
+
+10.2L4C implementation state:
+
+- `/sales/slaughter` now uses one transaction header and repeatable pig item rows.
+- Each row captures pig, amount, optional carcass weight, and optional pig note.
+- The form shows a calculated batch total from row amounts before submit.
+- The UI blocks duplicate selected pigs before submit; backend validation remains the final guard.
+- The form still writes only through `POST /api/sales-transactions` and still does not update Google Sheets or pig status.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, and local page smoke returned `200`.
+- Full local unittest suite passed on 2026-05-21 at 206 tests.
+
+10.2L4D implementation state:
+
+- Payment update now accepts `payment_date`.
+- `payment_date` is required when `payment_status = Paid`.
+- Header `gross_total`, `net_total`, `payment_status`, `payment_method`, `payment_date`, and `sale_status` are updated together.
+- Single-pig updates still update the one item amount and optional carcass weight for backward compatibility.
+- Multi-pig batch updates do not auto-reallocate the final batch total across item rows; item allocation remains a future approved rule.
+- The `/sales/slaughter` payment prompt asks for final batch amount and payment date when marking Paid.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused update/route/frontend tests passed at 25 tests, and local page smoke returned `200`.
+- Full local unittest suite passed on 2026-05-21 at 208 tests.
+- Next step: deploy and run 10.2L4E synthetic batch test.
 
 Open questions before implementation:
 

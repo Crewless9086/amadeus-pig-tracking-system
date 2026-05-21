@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4A Local | Deploy/run payment_date migration, then continue multi-pig backend support. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4A Verified; 10.2L4B Local; 10.2L4C Local; 10.2L4D Local | Deploy and run 10.2L4E synthetic batch test. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2659,7 +2659,17 @@ Recommendation:
 - Phase 10.2L4A payment-date schema migration implemented locally: `supabase/migrations/202605210004_add_sales_transaction_payment_date.sql`.
 - Backend verifier added locally: `GET /health/database/sales-payment-date-schema`.
 - Local verification passed on 2026-05-21: focused database tests passed at 15 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 203 tests.
-- Next step: deploy backend, run the 10.2L4A SQL in Supabase SQL Editor, verify `/health/database/sales-payment-date-schema`, then continue with 10.2L4B backend multi-item create support.
+- Phase 10.2L4A deployed verification passed on 2026-05-21: `/health/database/sales-payment-date-schema` returned `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, applied timestamp `2026-05-21T15:45:04.636332+00:00`, and `payment_date_column_found = true`.
+- Phase 10.2L4B backend multi-item create support implemented locally: create already writes multiple item rows under one sale header; validation now blocks duplicate `pig_id` values inside the submitted batch before any database write.
+- 10.2L4B keeps scope narrow: no Google Sheets writes, no pig status changes, no auto batch-total split, and no form change yet.
+- Local verification passed on 2026-05-21: focused sales transaction create/dry-run/route tests passed at 17 tests and full local unittest suite passed at 206 tests.
+- Phase 10.2L4C form multi-pig selector implemented locally: `/sales/slaughter` now has one batch header with add/remove pig rows, per-pig amount, optional carcass weight, optional pig note, calculated batch total, duplicate-selection blocking, and the same Supabase create endpoint.
+- 10.2L4C still does not update Google Sheets or pig status, and it does not solve final delayed payment handling yet.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 206 tests.
+- Phase 10.2L4D payment update with batch total/payment date implemented locally: payment update now requires `payment_date` when marking a transaction Paid, updates header totals/payment/date/status, and does not silently reallocate a final batch total across multiple pig item rows.
+- Single-pig payment updates still update that one item amount and optional carcass weight; multi-pig batch payment updates leave item rows unchanged until allocation rules are approved.
+- Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused update/route/frontend tests passed at 25 tests, local page smoke returned `200`, and full local unittest suite passed at 208 tests.
+- Next step: deploy and run 10.2L4E synthetic batch test.
 
 Farm home/dashboard idea:
 

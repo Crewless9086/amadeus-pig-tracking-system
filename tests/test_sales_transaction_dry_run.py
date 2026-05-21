@@ -63,6 +63,37 @@ class SalesTransactionDryRunTests(unittest.TestCase):
         self.assertFalse(result["source"]["writes_to_sheets"])
         self.assertFalse(result["source"]["writes_to_supabase"])
 
+    def test_dry_run_rejects_duplicate_pig_inside_same_payload(self):
+        result, status_code = dry_run_sales_transaction({
+            "sale_date": "2026-05-21",
+            "sale_stream": "Slaughter",
+            "payment_status": "Unpaid",
+            "sale_status": "Confirmed",
+            "items": [
+                {
+                    "item_type": "Pig",
+                    "pig_id": "PIG-1",
+                    "quantity": 1,
+                    "line_total": 1200,
+                    "pricing_basis": "Per_Pig",
+                },
+                {
+                    "item_type": "Pig",
+                    "pig_id": "PIG-1",
+                    "quantity": 1,
+                    "line_total": 1300,
+                    "pricing_basis": "Per_Pig",
+                },
+            ],
+        })
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "validation_failed")
+        self.assertIn("items contain duplicate pig_id values: PIG-1.", result["errors"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        self.assertFalse(result["source"]["writes_to_supabase"])
+
 
 if __name__ == "__main__":
     unittest.main()

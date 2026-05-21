@@ -88,6 +88,81 @@ class SalesTransactionCreateTests(unittest.TestCase):
         connection.cursor.assert_called_once()
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_create_accepts_multi_pig_slaughter_batch(self):
+        payload = dict(VALID_PAYLOAD)
+        payload["items"] = [
+            {
+                "item_type": "Pig",
+                "pig_id": "PIG-TEST-1",
+                "tag_number": "S10",
+                "quantity": 1,
+                "line_total": 1200,
+                "pricing_basis": "Per_Pig",
+            },
+            {
+                "item_type": "Pig",
+                "pig_id": "PIG-TEST-2",
+                "tag_number": "S11",
+                "quantity": 1,
+                "line_total": 1300,
+                "pricing_basis": "Per_Pig",
+            },
+        ]
+        cursor = Mock()
+        cursor.fetchall.return_value = []
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}), \
+             patch.object(sales_transaction_create, "generate_sale_id", return_value="SALE-2026-BATCH1"), \
+             patch.object(
+                 sales_transaction_create,
+                 "generate_sale_item_id",
+                 side_effect=["SALEITEM-2026-B1A", "SALEITEM-2026-B1B"],
+             ):
+            result, status_code = create_sales_transaction(payload)
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["created_counts"]["sales_transaction_items"], 2)
+        self.assertEqual(result["sales_transaction"]["pig_count"], 2)
+        self.assertEqual(result["sales_transaction"]["gross_total"], 2500.0)
+        self.assertEqual(result["sales_transaction"]["net_total"], 2500.0)
+        self.assertEqual(
+            [item["pig_id"] for item in result["items"]],
+            ["PIG-TEST-1", "PIG-TEST-2"],
+        )
+        self.assertEqual(cursor.execute.call_count, 4)
+
+    def test_create_rejects_duplicate_pig_inside_same_payload_before_database(self):
+        payload = dict(VALID_PAYLOAD)
+        payload["items"] = [
+            {
+                "item_type": "Pig",
+                "pig_id": "PIG-TEST-1",
+                "tag_number": "S10",
+                "quantity": 1,
+                "line_total": 1200,
+                "pricing_basis": "Per_Pig",
+            },
+            {
+                "item_type": "Pig",
+                "pig_id": "PIG-TEST-1",
+                "tag_number": "S10",
+                "quantity": 1,
+                "line_total": 1300,
+                "pricing_basis": "Per_Pig",
+            },
+        ]
+
+        result, status_code = create_sales_transaction(payload, database_url="postgresql://example")
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "validation_failed")
+        self.assertIn("items contain duplicate pig_id values: PIG-TEST-1.", result["errors"])
+        self.assertFalse(result["source"]["writes_to_supabase"])
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_create_blocks_duplicate_pig_before_insert(self):
         cursor = Mock()
         cursor.fetchall.return_value = [("PIG-TEST-1", "SALE-OLD")]
