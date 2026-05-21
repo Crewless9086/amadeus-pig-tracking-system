@@ -753,6 +753,24 @@ Phase 10.1A deployed checks, after Render env vars are added:
 3. Render does not expose Supabase anon key to the browser.
 4. `GET /health/database` returns `200`, `success = true`, `status = ok`, and harmless database timing/name fields only.
 
+Deployed result:
+
+- 2026-05-21: Owner verified `/health/database` returned `configured = true`, `database = postgres`, `status = ok`, `success = true`, and database UTC time.
+
+Phase 10.1B baseline migration checks:
+
+1. Confirm `supabase/migrations/202605210001_foundation_migration_log.sql` creates only `app_private.migration_log`.
+2. Confirm it does not create orders, pigs, weights, matings, litters, weather, Sunsynk, irrigation, or customer tables.
+3. Confirm backend route `GET /health/database/foundation` exists.
+4. Before SQL is applied, the foundation route should fail safely.
+5. After SQL is applied in Supabase SQL Editor, the foundation route should return `success = true`, `status = ok`, and migration ID `202605210001_foundation_migration_log`.
+
+Local result:
+
+- 2026-05-21: Focused database tests passed at 6 tests.
+- 2026-05-21: Full local unittest suite passed at 135 tests.
+- 2026-05-21: Migration contract test confirms the baseline SQL creates only the internal migration log and no business tables.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10A drafted; Phase 10.1 guided defaults captured; first DB health slice implemented locally |
-| **Current focus** | Test Phase 10.1 database health slice, then configure Render env vars for deployed verification |
-| **Current last verified** | **2026-05-20** - Phase 9.6A `/print-sheets` browser-tested and good for now |
+| **Status** | Phase 9 parked for now; Phase 10A drafted; Phase 10.1A verified; Phase 10.1B baseline migration local |
+| **Current focus** | Test/deploy Phase 10.1B baseline migration verification before any business tables |
+| **Current last verified** | **2026-05-21** - `/health/database` deployed check reached Supabase successfully |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

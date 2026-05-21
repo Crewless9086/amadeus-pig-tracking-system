@@ -12,5 +12,15 @@ Rules:
 
 Current state:
 
-- No schema migrations have been added yet.
-- Phase 10.1 uses this folder only to establish the migration location.
+- `202605210001_foundation_migration_log.sql` is the first baseline migration.
+- It creates only the internal `app_private.migration_log` table.
+- It does not create order, pig, weight, breeding, weather, Sunsynk, irrigation, or customer business tables.
+
+Manual run process for Phase 10.1B:
+
+1. Open Supabase SQL Editor.
+2. Open `supabase/migrations/202605210001_foundation_migration_log.sql` from this repo.
+3. Paste the full SQL into Supabase SQL Editor.
+4. Run it once.
+5. Open `/health/database/foundation` on the deployed backend.
+6. Confirm it returns `success = true`, `status = ok`, and migration ID `202605210001_foundation_migration_log`.

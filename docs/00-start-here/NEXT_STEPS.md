@@ -2416,8 +2416,11 @@ Recommendation:
 - Render env var plan and local `.env` guidance are captured.
 - First foundation implementation slice added locally: `supabase/migrations/` marker, backend `GET /health/database`, and tests proving missing config is safe and no connection string is returned on failure.
 - Local verification passed on 2026-05-21: focused database tests passed, full unittest suite passed at 132 tests, and `/health/database` returns safe `503` / `not_configured` before `DATABASE_URL` is added.
+- Deployed verification passed on 2026-05-21: Render `DATABASE_URL` connects successfully to Supabase and `/health/database` returns `success = true`, `status = ok`, `configured = true`, `database = postgres`, and harmless UTC database time.
+- Phase 10.1B local baseline added: `supabase/migrations/202605210001_foundation_migration_log.sql` creates only internal `app_private.migration_log`, and backend `GET /health/database/foundation` verifies that baseline. No business tables or imports.
+- Local verification passed on 2026-05-21: focused database tests passed at 6 tests, full local unittest suite passed at 135 tests, and migration contract test confirms no business tables are created.
 - No Supabase schema migration, data import, or production cutover has started.
-- Next step: owner adds `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_PROJECT_REF` to Render for deployed `/health/database` verification.
+- Next step: test locally, deploy backend, manually run the baseline SQL in Supabase SQL Editor, then verify `/health/database/foundation`.
 
 Farm home/dashboard idea:
 

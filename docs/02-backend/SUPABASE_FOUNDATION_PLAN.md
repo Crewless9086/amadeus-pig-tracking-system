@@ -156,6 +156,55 @@ Owner note captured:
 
 - Owner has not used these tools before and wants the safest practical default. Current default is therefore plain SQL first, guided step by step.
 
+## Phase 10.1B Baseline Migration
+
+Purpose:
+
+- prove checked-in SQL migration review and execution before creating any business tables
+- give the backend a harmless table to verify that the baseline SQL was applied
+- avoid touching orders, pigs, weights, breeding, weather, Sunsynk, irrigation, or customer data
+
+Migration file:
+
+- `supabase/migrations/202605210001_foundation_migration_log.sql`
+
+What it creates:
+
+- schema: `app_private`
+- internal table: `app_private.migration_log`
+- one row with migration ID `202605210001_foundation_migration_log`
+
+What it does not create:
+
+- no order tables
+- no pig tables
+- no weight tables
+- no breeding/litter tables
+- no telemetry tables
+- no customer-facing tables
+- no data import
+
+Manual run process:
+
+1. Open Supabase SQL Editor.
+2. Paste the full SQL from `supabase/migrations/202605210001_foundation_migration_log.sql`.
+3. Run it once.
+4. Deploy the backend that includes `GET /health/database/foundation`.
+5. Test `/health/database/foundation`.
+
+Expected result after SQL is applied:
+
+```json
+{
+  "success": true,
+  "configured": true,
+  "status": "ok",
+  "migration_id": "202605210001_foundation_migration_log"
+}
+```
+
+Before the SQL is applied, `/health/database/foundation` should fail safely with `status = foundation_missing` or `foundation_check_failed`.
+
 ## Backend Pattern
 
 Current backend code is tightly coupled to Google Sheets service calls.
@@ -328,6 +377,9 @@ Implementation state:
 - If configured and reachable, the route returns success plus harmless database status fields.
 - The route must never return the connection string, password, service-role key, anon key, table data, customer data, or pig data.
 - Local verification passed on 2026-05-21: focused database tests passed, full local unittest suite passed at 132 tests, and `/health/database` returned safe `503` / `not_configured` with no `DATABASE_URL`.
+- Deployed verification passed on 2026-05-21: `/health/database` returned `success = true`, `status = ok`, `configured = true`, `database = postgres`, and harmless database UTC time.
+- Phase 10.1B local baseline added: internal migration SQL plus backend `GET /health/database/foundation` verification endpoint. SQL has not yet been run in Supabase.
+- Phase 10.1B local verification passed on 2026-05-21: focused database tests passed at 6 tests, full local unittest suite passed at 135 tests, and migration contract test confirms no business tables are created.
 
 ## Setup Checklist
 
@@ -342,6 +394,7 @@ Before any code connects to Supabase:
 - [x] Add local `.env` guidance without committing secrets.
 - [x] Add backend database connection smoke test.
 - [x] Confirm no frontend or n8n direct DB access.
+- [x] Deployed backend can connect to Supabase through Render `DATABASE_URL`.
 
 Before any production data import:
 
