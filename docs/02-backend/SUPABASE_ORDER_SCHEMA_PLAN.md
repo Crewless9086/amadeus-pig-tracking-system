@@ -202,11 +202,12 @@ Initial rules carried forward from Phase 7.2:
 
 - Exclude test customer name `Charl N`.
 - Exclude obvious dry-run/test orders.
-- Import real active, pending, approved, completed, and useful historical orders.
-- Import real cancelled orders only when they have business/audit value, such as documents, payment notes, delivery notes, or meaningful customer history.
+- First import should include completed real orders only, to start Supabase with a small clean historical set.
+- Exclude draft, pending, approved, rejected, and cancelled orders from the first import even if they have documents/history, unless the owner manually approves a specific exception later.
 - Preserve original public IDs.
 - Add `source_sheet_row` and `import_batch_id` to imported records.
 - Dry-run report must show included rows, excluded rows, and exclusion reason.
+- Unlinked test/status-log data should be excluded from the Supabase import if it is not linked to an included main order. Do not clean/delete Sheets rows as part of this migration step.
 
 Do not manually decide row by row during import. The exclusion logic must be documented and repeatable.
 
@@ -224,6 +225,355 @@ Recommended sequence:
 8. Compare Supabase read models against current Sheet-backed backend outputs.
 9. Move selected reads behind a feature flag only after shadow checks pass.
 10. Move writes only after backup, rollback, and operator views are accepted.
+
+## 10.2B Import Dry-Run Plan
+
+Purpose:
+
+- inspect current Google Sheets order/sales rows before any import
+- produce repeatable include/exclude decisions
+- expose missing links and likely cleanup needs
+- write nothing to Supabase
+
+Dry-run script:
+
+- `scripts/order_sales_import_dry_run.py`
+
+Command:
+
+```powershell
+.\venv\Scripts\python.exe scripts\order_sales_import_dry_run.py --summary-only
+```
+
+Safety rules:
+
+- The script reads Google Sheets only.
+- The script does not connect to Supabase.
+- The script does not write files by default.
+- The script prints JSON to the terminal.
+- The script reports `writes_to_supabase = false`.
+
+Current decision rules:
+
+| Data | Include | Exclude |
+| --- | --- | --- |
+| Orders | Real completed orders with usable order ID | Missing order ID, customer `Charl N`, test markers, any order not `Completed` |
+| Order lines | Parent order is included | Missing line ID, missing parent order, parent order excluded |
+| Documents | Parent order is included | Missing document ID, missing parent order, parent order excluded |
+| Status logs | Parent order is included | Missing log ID, missing parent order, parent order excluded |
+| Intakes | Non-test intake linked to an included draft/main order | Missing intake ID, `Charl N`, test marker, missing/excluded linked draft order, or no linked order |
+| Intake items | Parent intake is included | Missing item ID, missing/excluded parent intake |
+| Pricing | Sale category, weight band, and price are present | Missing category, weight band, or price |
+
+Known limitation:
+
+- This dry-run classifies rows for review. It does not transform rows into final Supabase insert payloads yet.
+- Date/number normalization and final field mapping belong to a later import-mapping slice.
+
+Pass condition:
+
+- Local tests pass.
+- Dry-run report runs against live Sheets.
+- Owner reviews summary counts and link issues.
+- No Supabase rows are inserted.
+
+Implementation state:
+
+- Dry-run script prepared: `scripts/order_sales_import_dry_run.py`.
+- Local verification passed on 2026-05-21: focused dry-run tests passed at 5 tests and full local unittest suite passed at 143 tests.
+- Live summary-only dry-run ran on 2026-05-21 and reported `writes_to_supabase = false`.
+
+Live dry-run summary on 2026-05-21:
+
+| Sheet | Total | Included | Excluded | Main exclusions |
+| --- | ---: | ---: | ---: | --- |
+| `ORDER_MASTER` | 82 | 26 | 56 | `test_customer_charl_n = 56` |
+| `ORDER_LINES` | 171 | 103 | 68 | `parent_order_excluded = 68` |
+| `ORDER_INTAKE_STATE` | 73 | 27 | 46 | `test_customer_charl_n = 44`, `test_marker = 2` |
+| `ORDER_INTAKE_ITEMS` | 50 | 7 | 43 | `parent_intake_excluded = 43` |
+| `ORDER_DOCUMENTS` | 34 | 6 | 28 | `parent_order_excluded = 28` |
+| `ORDER_STATUS_LOG` | 330 | 62 | 268 | `missing_parent_order = 157`, `parent_order_excluded = 111` |
+| `SALES_PRICING` | 21 | 21 | 0 | none |
+
+Dry-run finding:
+
+- `ORDER_STATUS_LOG` needs a focused review before import mapping. It has 157 rows where `Order_ID` does not match `ORDER_MASTER`, plus 111 rows linked to excluded test orders.
+- This may be historical setup/test data, blank/malformed order IDs, or a status-log format mismatch.
+- Do not import status logs until the mismatch is understood.
+- Owner decision: test data can stay in Sheets, but if it is not linked to an included main order it should be excluded from Supabase import.
+
+Status-log diagnostic:
+
+- Script: `scripts/order_status_log_diagnostic.py`
+- Purpose: classify `ORDER_STATUS_LOG` rows as included candidates, missing order ID, missing parent order, or linked to a test parent order.
+- Safety: reads `ORDER_MASTER` and `ORDER_STATUS_LOG` only; writes nothing to Sheets or Supabase.
+- Local verification passed on 2026-05-21: focused diagnostic/dry-run tests passed at 7 tests and full local unittest suite passed at 145 tests.
+- Live diagnostic ran on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`.
+
+Live status-log diagnostic result:
+
+| Classification | Count | Import decision |
+| --- | ---: | --- |
+| `included_candidate` | 62 | Include in future dry-run/import mapping. |
+| `missing_parent_order` | 157 | Exclude unless owner explicitly identifies a specific row/order as business history. |
+| `test_parent_order` | 111 | Exclude by default. |
+| `missing_order_id` | 0 | No action needed. |
+
+Decision:
+
+- For import mapping, include only `included_candidate` status logs by default.
+- Missing-parent and test-parent status logs can stay in Sheets, but should not move to Supabase unless manually approved later.
+
+## 10.2C Import Mapping Dry-Run Payload Shape
+
+Purpose:
+
+- transform included dry-run rows into Supabase-shaped payloads for review
+- catch field, date, phone, number, and JSON mapping issues before any insert
+- keep the process read-only
+
+Command:
+
+```powershell
+.\venv\Scripts\python.exe scripts\order_sales_import_dry_run.py --summary-only --payload-samples 2
+```
+
+Safety rules:
+
+- The mapper still reads Google Sheets only.
+- The mapper does not connect to Supabase.
+- The mapper does not write files by default.
+- The mapper prints JSON only.
+- The report must keep `writes_to_supabase = false` and `writes_to_sheets = false`.
+
+Payload behavior:
+
+- Included rows are mapped to the seven target table names.
+- Excluded rows are not mapped into payload samples.
+- `source_sheet_row` and `import_batch_id = DRY_RUN_ONLY` are added for traceability.
+- Phone values map to both raw and normalized fields.
+- Money values map to numeric values.
+- Boolean-like fields map from values such as `Yes`, `true`, or `1`.
+- List-like fields map to JSON-style arrays.
+- `sales_pricing` receives deterministic dry-run `pricing_id` values and `currency = ZAR`.
+- Unlinked intake rows are excluded from this first import boundary unless manually approved later.
+
+Known limitations:
+
+- Date parsing currently uses the existing project date parser and may drop time precision for some Sheet formats.
+- `order_lines.pricing_id` is not linked yet; that belongs in a later pricing reconciliation step.
+- The dry-run payload is a review shape, not an approved insert script.
+
+Implementation state:
+
+- Payload mapping added to `scripts/order_sales_import_dry_run.py`.
+- Owner rule applied: unlinked intake rows are excluded from the first import boundary.
+- Local verification passed on 2026-05-21: focused payload/dry-run tests passed at 7 tests and full local unittest suite passed at 147 tests.
+- Live payload sample report ran on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`.
+
+Live mapped payload counts on 2026-05-21:
+
+| Target table | Rows mapped | Notes |
+| --- | ---: | --- |
+| `orders` | 26 | Included non-`Charl N` orders only. |
+| `order_lines` | 103 | Linked to included orders. |
+| `order_intakes` | 0 | All current included-looking intakes were unlinked; excluded by owner rule. |
+| `order_intake_items` | 0 | Parent intakes excluded. |
+| `order_documents` | 6 | Linked to included orders. |
+| `order_status_logs` | 62 | Only included-candidate logs linked to included orders. |
+| `sales_pricing` | 21 | All current pricing rows mapped with deterministic dry-run IDs. |
+
+Owner decision update:
+
+- First actual import should include only completed real orders. This keeps Supabase clean and small at the start.
+- Pricing remains importable as reference data.
+- Draft/pending/approved/cancelled/rejected history can stay in Sheets and be considered later only if explicitly needed.
+
+Completed-only dry-run result:
+
+- Ran on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- This is the current approved first-import boundary.
+
+| Target table | Rows mapped | Notes |
+| --- | ---: | --- |
+| `orders` | 3 | Real completed orders only; excludes `Charl N` and all non-completed orders. |
+| `order_lines` | 53 | Linked to the 3 included completed orders. |
+| `order_intakes` | 0 | No intakes linked to the completed-order import boundary. |
+| `order_intake_items` | 0 | Parent intakes excluded. |
+| `order_documents` | 0 | Current documents are linked to excluded/non-completed orders. |
+| `order_status_logs` | 11 | Linked to the 3 included completed orders. |
+| `sales_pricing` | 21 | Reference pricing remains importable. |
+
+Completed-only source summary:
+
+| Sheet | Total | Included | Excluded | Main exclusions |
+| --- | ---: | ---: | ---: | --- |
+| `ORDER_MASTER` | 82 | 3 | 79 | `test_customer_charl_n = 56`, `not_completed_order = 23` |
+| `ORDER_LINES` | 171 | 53 | 118 | `parent_order_excluded = 118` |
+| `ORDER_INTAKE_STATE` | 73 | 0 | 73 | `test_customer_charl_n = 44`, `unlinked_intake_without_order = 27`, `test_marker = 2` |
+| `ORDER_INTAKE_ITEMS` | 50 | 0 | 50 | `parent_intake_excluded = 50` |
+| `ORDER_DOCUMENTS` | 34 | 0 | 34 | `parent_order_excluded = 34` |
+| `ORDER_STATUS_LOG` | 330 | 11 | 319 | `parent_order_excluded = 162`, `missing_parent_order = 157` |
+| `SALES_PRICING` | 21 | 21 | 0 | none |
+
+## 10.2D Completed-Only Shadow Import Script
+
+Purpose:
+
+- insert the approved completed-order boundary into Supabase as shadow data only
+- keep Google Sheets as the live source of truth
+- make the import repeatable and idempotent for the same batch
+- avoid importing draft, pending, approved, cancelled, rejected, test, or unlinked rows
+
+Script:
+
+- `scripts/order_sales_shadow_import.py`
+
+Plan-only command:
+
+```powershell
+.\venv\Scripts\python.exe scripts\order_sales_shadow_import.py --payload-samples 1
+```
+
+Apply command, only after explicit approval:
+
+```powershell
+.\venv\Scripts\python.exe scripts\order_sales_shadow_import.py --apply
+```
+
+Safety rules:
+
+- Default mode is `plan_only`; it writes nothing.
+- Apply mode requires `--apply`.
+- Apply mode requires `DATABASE_URL`.
+- Apply mode writes only to Supabase and never writes to Google Sheets.
+- Rows are inserted/upserted under import batch `IMPORT-20260521-COMPLETED-ORDERS-V1`.
+- Insert order respects foreign keys: `sales_pricing`, `orders`, `order_lines`, `order_intakes`, `order_intake_items`, `order_documents`, `order_status_logs`.
+- The current approved boundary remains 3 completed orders, 53 linked lines, 11 linked status logs, and 21 pricing rows.
+
+Implementation state:
+
+- Shadow import script prepared on 2026-05-21.
+- Apply attempt with missing local `DATABASE_URL` failed safely before writing anything.
+- First real apply attempt hit a `NotNullViolation`; the transaction rolled back and no Supabase rows were written.
+- Import payload timestamp normalization was added before retrying.
+- Local verification passed on 2026-05-21: focused shadow-import/dry-run tests passed at 14 tests and full local unittest suite passed at 154 tests after the timestamp fix.
+- Live plan-only run passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Live plan-only payload counts matched the approved completed-only boundary.
+- Shadow import `--apply` passed on 2026-05-21.
+- Apply result inserted/upserted: 3 orders, 53 order lines, 11 order status logs, and 21 sales pricing rows. Intakes, intake items, and documents remained 0.
+- Verification script `scripts/order_sales_shadow_import_verify.py` confirms Supabase row counts for batch `IMPORT-20260521-COMPLETED-ORDERS-V1`.
+- No backend order route has been changed to read or write Supabase.
+
+Verified Supabase counts:
+
+| Target table | Rows in batch |
+| --- | ---: |
+| `orders` | 3 |
+| `order_lines` | 53 |
+| `order_intakes` | 0 |
+| `order_intake_items` | 0 |
+| `order_documents` | 0 |
+| `order_status_logs` | 11 |
+| `sales_pricing` | 21 |
+
+Next step:
+
+- Phase 10.2E should compare Supabase shadow reads against the current Sheet-backed backend outputs before any read cutover is considered.
+
+## 10.2E Shadow Read Comparison
+
+Purpose:
+
+- prove the Supabase shadow batch matches the current Google Sheets source mapping
+- keep the app routes unchanged
+- identify count, missing-row, extra-row, and selected field mismatches before any cutover
+
+Script:
+
+- `scripts/order_sales_shadow_compare.py`
+
+Command:
+
+```powershell
+.\venv\Scripts\python.exe scripts\order_sales_shadow_compare.py
+```
+
+Safety rules:
+
+- Reads Google Sheets.
+- Reads Supabase.
+- Writes nothing to Google Sheets.
+- Writes nothing to Supabase.
+- Does not change backend route behavior.
+
+Comparison result:
+
+- Ran on 2026-05-21.
+- `success = true`
+- `status = ok`
+- `mismatch_count = 0`
+
+Verified matching tables:
+
+| Target table | Expected | Actual | Mismatches |
+| --- | ---: | ---: | ---: |
+| `orders` | 3 | 3 | 0 |
+| `order_lines` | 53 | 53 | 0 |
+| `order_intakes` | 0 | 0 | 0 |
+| `order_intake_items` | 0 | 0 | 0 |
+| `order_documents` | 0 | 0 | 0 |
+| `order_status_logs` | 11 | 11 | 0 |
+| `sales_pricing` | 21 | 21 | 0 |
+
+Decision:
+
+- Phase 10.2E is complete for the completed-order shadow batch.
+- This does not approve backend read cutover.
+- Next phase should plan a read-only Supabase endpoint or service comparison behind an explicit feature boundary.
+
+## 10.2F Read-Only Shadow Endpoint
+
+Purpose:
+
+- expose a controlled backend comparison path for a single imported order
+- keep the live `/api/orders/<order_id>` route on Google Sheets
+- avoid any app UI or workflow cutover
+- make Supabase comparison testable through the Flask app boundary
+
+Endpoint:
+
+```text
+GET /api/shadow/orders/<order_id>/compare
+```
+
+Safety rules:
+
+- Read-only.
+- Reads the current Google Sheets order detail.
+- Reads the imported Supabase shadow order detail for batch `IMPORT-20260521-COMPLETED-ORDERS-V1`.
+- Writes nothing to Google Sheets.
+- Writes nothing to Supabase.
+- Does not alter `/api/orders/<order_id>`.
+- Does not alter any order create/update/cancel/approval/write path.
+
+Implementation state:
+
+- Service added: `modules/orders/order_shadow_read.py`.
+- Route added: `GET /api/shadow/orders/<order_id>/compare`.
+- Local verification passed on 2026-05-21: focused shadow route/service tests passed at 32 tests and full local unittest suite passed at 164 tests.
+- Local API smoke passed for `ORD-2026-0B29D7`: HTTP 200, `success = true`, `status = ok`, `mismatch_count = 0`, `writes_to_sheets = false`, and `writes_to_supabase = false`.
+
+Not approved:
+
+- No route cutover.
+- No UI change.
+- No n8n workflow change.
+- No Supabase write path for live orders.
+
+Next step:
+
+- Deploy backend, then verify the deployed endpoint against one imported order before considering any broader read model work.
 
 ## 10.2A Recommended First Slice
 
@@ -251,6 +601,7 @@ Implementation state:
 - No data import script has been created yet.
 - No backend order route has been changed to read or write Supabase.
 - Local verification passed on 2026-05-21: focused database tests passed at 9 tests and full local unittest suite passed at 138 tests.
+- Deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/order-schema` returned `success = true`, `status = ok`, migration ID `202605210002_create_order_sales_tables`, all seven expected tables found, and no missing tables.
 
 Expected verification response after migration is applied:
 
@@ -299,7 +650,7 @@ Owner decision:
 
 ## Not Yet Approved
 
-- Empty order/sales business table migration has been approved for 10.2A only.
-- No import script has been approved yet.
+- Empty order/sales business table migration has been approved, run, and verified for 10.2A only.
+- Import dry-run script is allowed for 10.2B reporting only; no real import script has been approved yet.
 - No backend read/write cutover has been approved yet.
 - No Google Sheet retirement has been approved yet.

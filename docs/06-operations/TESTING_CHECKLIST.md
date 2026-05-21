@@ -801,6 +801,147 @@ Local result:
 - 2026-05-21: Focused database tests passed at 9 tests.
 - 2026-05-21: Full local unittest suite passed at 138 tests.
 
+Deployed result:
+
+- 2026-05-21: Owner ran the SQL migration in Supabase SQL Editor.
+- 2026-05-21: `/health/database/order-schema` returned `success = true`, `status = ok`, migration ID `202605210002_create_order_sales_tables`, all seven expected tables found, and `missing_tables = []`.
+
+Phase 10.2B import dry-run checks:
+
+1. Confirm `scripts/order_sales_import_dry_run.py` reads Google Sheets only.
+2. Confirm the dry-run report contains `writes_to_supabase = false`.
+3. Confirm test customer `Charl N` is excluded.
+4. Confirm child rows with excluded/missing parents are excluded and counted as link issues.
+5. Confirm pricing rows require sale category, weight band, and price.
+6. Confirm the live dry-run is run with `--summary-only` first.
+7. Confirm no Supabase inserts or updates are performed.
+
+Local result:
+
+- 2026-05-21: Focused dry-run tests passed at 5 tests.
+- 2026-05-21: Full local unittest suite passed at 143 tests.
+
+Live dry-run result:
+
+- 2026-05-21: Summary-only dry-run completed with `writes_to_supabase = false`.
+- Included rows: `ORDER_MASTER = 26`, `ORDER_LINES = 103`, `ORDER_INTAKE_STATE = 27`, `ORDER_INTAKE_ITEMS = 7`, `ORDER_DOCUMENTS = 6`, `ORDER_STATUS_LOG = 62`, `SALES_PRICING = 21`.
+- Main follow-up: `ORDER_STATUS_LOG` has 157 `missing_parent_order` rows and 111 `parent_order_excluded` rows; investigate before import mapping.
+
+Phase 10.2B status-log diagnostic checks:
+
+1. Confirm `scripts/order_status_log_diagnostic.py` reads only `ORDER_MASTER` and `ORDER_STATUS_LOG`.
+2. Confirm it reports `writes_to_supabase = false` and `writes_to_sheets = false`.
+3. Confirm it classifies logs into included candidate, missing order ID, missing parent order, and test parent order.
+4. Confirm unlinked/test status logs are excluded from import unless the owner explicitly identifies specific rows as business history.
+
+Local result:
+
+- 2026-05-21: Focused diagnostic/dry-run tests passed at 7 tests.
+- 2026-05-21: Full local unittest suite passed at 145 tests.
+
+Live diagnostic result:
+
+- 2026-05-21: Status-log diagnostic completed with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Classification counts: `included_candidate = 62`, `missing_parent_order = 157`, `test_parent_order = 111`, `missing_order_id = 0`.
+- Import mapping rule: include only the 62 included-candidate status logs by default; exclude missing-parent/test-parent logs unless owner manually approves exceptions later.
+
+Phase 10.2C payload mapping checks:
+
+1. Confirm payload mapping still reports `writes_to_supabase = false` and `writes_to_sheets = false`.
+2. Confirm only included rows are mapped to payload samples.
+3. Confirm payloads include `source_sheet_row` and `import_batch_id = DRY_RUN_ONLY`.
+4. Confirm phone raw/normalized, money, booleans, and JSON/list fields are represented.
+5. Confirm payload samples are reviewed before any real insert script is built.
+
+Local result:
+
+- 2026-05-21: Focused payload/dry-run tests passed at 7 tests.
+- 2026-05-21: Full local unittest suite passed at 147 tests.
+
+Live payload sample result:
+
+- 2026-05-21: Payload sample report completed with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Mapped rows: `orders = 26`, `order_lines = 103`, `order_intakes = 0`, `order_intake_items = 0`, `order_documents = 6`, `order_status_logs = 62`, `sales_pricing = 21`.
+- Review finding: some mapped orders are cancelled historical customer orders; review included order quality before building a real insert script.
+- Owner decision update: first import should include completed real orders only, plus pricing reference data. Draft/pending/approved/cancelled/rejected history stays in Sheets unless manually approved later.
+
+Completed-only payload result:
+
+- 2026-05-21: Completed-only payload dry-run completed with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Mapped rows: `orders = 3`, `order_lines = 53`, `order_intakes = 0`, `order_intake_items = 0`, `order_documents = 0`, `order_status_logs = 11`, `sales_pricing = 21`.
+- Source exclusions: `not_completed_order = 23`, `test_customer_charl_n = 56`, `parent_order_excluded = 118` for order lines, and `missing_parent_order = 157` for status logs.
+- Current pass condition: first real import script, if approved, must target this completed-only boundary and remain shadow-only until compared against Sheet-backed reads.
+
+Phase 10.2D shadow import checks:
+
+1. Confirm `scripts/order_sales_shadow_import.py` defaults to plan-only.
+2. Confirm plan-only reports `writes_to_supabase = false` and `writes_to_sheets = false`.
+3. Confirm apply mode requires explicit `--apply`.
+4. Confirm apply mode requires `DATABASE_URL`.
+5. Confirm apply mode uses import batch `IMPORT-20260521-COMPLETED-ORDERS-V1`.
+6. Confirm insert/upsert order respects foreign keys: pricing, orders, lines, intakes, intake items, documents, status logs.
+7. Confirm first apply, if approved, imports only the completed-order boundary.
+
+Local result:
+
+- 2026-05-21: Focused shadow-import/dry-run tests passed at 12 tests.
+- 2026-05-21: Full local unittest suite passed at 152 tests.
+
+Live plan-only result:
+
+- 2026-05-21: Plan-only shadow import run completed with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Payload counts matched the approved boundary: `orders = 3`, `order_lines = 53`, `order_intakes = 0`, `order_intake_items = 0`, `order_documents = 0`, `order_status_logs = 11`, `sales_pricing = 21`.
+
+Apply result:
+
+- 2026-05-21: Missing local `DATABASE_URL` attempt failed safely with `writes_to_supabase = false`.
+- 2026-05-21: First real apply attempt failed safely with `NotNullViolation`; transaction rolled back.
+- 2026-05-21: Timestamp normalization fix added and retested.
+- 2026-05-21: Shadow import `--apply` succeeded with `writes_to_supabase = true` and `writes_to_sheets = false`.
+- Imported/upserted counts: `orders = 3`, `order_lines = 53`, `order_intakes = 0`, `order_intake_items = 0`, `order_documents = 0`, `order_status_logs = 11`, `sales_pricing = 21`.
+
+Verification result:
+
+- 2026-05-21: `scripts/order_sales_shadow_import_verify.py` confirmed Supabase batch counts for `IMPORT-20260521-COMPLETED-ORDERS-V1`.
+- Verified counts: `orders = 3`, `order_lines = 53`, `order_intakes = 0`, `order_intake_items = 0`, `order_documents = 0`, `order_status_logs = 11`, `sales_pricing = 21`.
+- No backend read/write cutover has started.
+
+Phase 10.2E shadow read comparison checks:
+
+1. Confirm `scripts/order_sales_shadow_compare.py` reads Google Sheets and Supabase only.
+2. Confirm it writes nothing to Google Sheets or Supabase.
+3. Confirm it compares row counts, missing IDs, extra IDs, and selected business fields.
+4. Confirm it returns `mismatch_count = 0` before any backend read cutover is discussed.
+
+Local result:
+
+- 2026-05-21: Focused compare/import tests passed at 19 tests.
+- 2026-05-21: Full local unittest suite passed at 159 tests.
+
+Live comparison result:
+
+- 2026-05-21: `scripts/order_sales_shadow_compare.py` completed with `success = true`, `status = ok`, and `mismatch_count = 0`.
+- Matched counts: `orders = 3`, `order_lines = 53`, `order_intakes = 0`, `order_intake_items = 0`, `order_documents = 0`, `order_status_logs = 11`, `sales_pricing = 21`.
+- No backend read/write cutover has started.
+
+Phase 10.2F read-only shadow endpoint checks:
+
+1. Confirm endpoint is `GET /api/shadow/orders/<order_id>/compare`.
+2. Confirm `/api/orders/<order_id>` is unchanged and still Sheet-backed.
+3. Confirm response includes `writes_to_sheets = false` and `writes_to_supabase = false`.
+4. Confirm an imported order returns `success = true`, `status = ok`, and `mismatch_count = 0`.
+5. Confirm a missing shadow order returns a safe `404`, not a live-route fallback.
+
+Local result:
+
+- 2026-05-21: Focused shadow route/service tests passed at 32 tests.
+- 2026-05-21: Full local unittest suite passed at 164 tests.
+- 2026-05-21: Local API smoke for `GET /api/shadow/orders/ORD-2026-0B29D7/compare` returned HTTP 200, `success = true`, `status = ok`, and `mismatch_count = 0`.
+
+Deploy result:
+
+- Pending backend deploy and deployed endpoint check.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

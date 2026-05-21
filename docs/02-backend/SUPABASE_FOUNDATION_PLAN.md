@@ -244,6 +244,7 @@ Phase 10.2A implementation state:
 
 - Empty order/sales table migration prepared in `supabase/migrations/202605210002_create_order_sales_tables.sql`.
 - Backend schema verifier prepared at `GET /health/database/order-schema`.
+- Deployed verification passed on 2026-05-21: `/health/database/order-schema` confirmed all seven expected order/sales tables and no missing tables.
 - No data import and no backend read/write cutover.
 
 Do not migrate these in the first order boundary unless a separate decision is made:

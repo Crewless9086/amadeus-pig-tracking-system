@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | Planning In Progress | Phase 10A map drafted; Phase 10.1 Supabase guided defaults captured; next step is guided foundation setup when owner approves. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Local Complete | Deploy and verify the read-only shadow compare endpoint before any route cutover. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2426,8 +2426,40 @@ Recommendation:
 - Phase 10.2A empty-table migration prepared: `supabase/migrations/202605210002_create_order_sales_tables.sql`.
 - Backend schema verifier prepared: `GET /health/database/order-schema`.
 - Local verification passed on 2026-05-21: focused database tests passed at 9 tests and full local unittest suite passed at 138 tests.
-- No import script, backend read/write cutover, or Google Sheet retirement has started.
-- Next step: backend deploy, manual SQL execution in Supabase SQL Editor, then deployed `/health/database/order-schema` verification.
+- Deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/order-schema` confirmed all seven expected order/sales tables with `missing_tables = []`.
+- Phase 10.2B import dry-run script prepared: `scripts/order_sales_import_dry_run.py`.
+- Dry-run reads Google Sheets only, writes nothing to Supabase, and reports `writes_to_supabase = false`.
+- Local verification passed on 2026-05-21: focused dry-run tests passed at 5 tests and full local unittest suite passed at 143 tests.
+- Live summary-only dry-run passed on 2026-05-21 with `writes_to_supabase = false`.
+- Dry-run counts: 26 included orders, 103 included order lines, 27 included intakes, 7 included intake items, 6 included documents, 62 included status logs, and 21 included pricing rows.
+- Follow-up needed before import mapping: `ORDER_STATUS_LOG` has 157 rows with missing parent order links and 111 rows linked to excluded test orders.
+- Owner decision: unlinked test/status-log data can stay in Sheets but should be excluded from Supabase import if it is not linked to an included main order.
+- Status-log diagnostic prepared: `scripts/order_status_log_diagnostic.py`; reads `ORDER_MASTER` and `ORDER_STATUS_LOG` only and writes nothing.
+- Local verification passed on 2026-05-21: focused diagnostic/dry-run tests passed at 7 tests and full local unittest suite passed at 145 tests.
+- Live status-log diagnostic passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`: 62 included candidates, 157 missing-parent logs, 111 test-parent logs, and 0 missing-order-id logs.
+- Import mapping rule: include only the 62 included-candidate status logs by default; exclude missing-parent/test-parent logs unless owner manually approves exceptions later.
+- Phase 10.2C payload mapping added to the dry-run script. It maps included rows to Supabase-shaped payload samples, still with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Owner rule applied: unlinked intake rows are excluded from the first import boundary.
+- Local verification passed on 2026-05-21: focused payload/dry-run tests passed at 7 tests and full local unittest suite passed at 147 tests.
+- Live payload sample report passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`.
+- Live mapped payload counts: 26 orders, 103 order lines, 0 order intakes, 0 order intake items, 6 order documents, 62 order status logs, and 21 sales pricing rows.
+- Review finding before real import: some mapped orders are cancelled historical customer orders; owner should review whether all 26 included orders are worth importing before any actual insert.
+- Owner decision update: first import should include completed real orders only, plus pricing reference data. Draft/pending/approved/cancelled/rejected history stays in Sheets unless manually approved later.
+- Completed-only dry-run passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`: 3 completed orders, 53 linked order lines, 0 intakes, 0 intake items, 0 documents, 11 linked status logs, and 21 pricing rows.
+- Phase 10.2D shadow import script prepared: `scripts/order_sales_shadow_import.py`.
+- Default mode is plan-only; `--apply` is required before any Supabase write.
+- Local verification passed on 2026-05-21: focused shadow-import/dry-run tests passed at 12 tests and full local unittest suite passed at 152 tests.
+- Live plan-only run passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`; counts matched the approved completed-only boundary.
+- Apply attempt with missing local `DATABASE_URL` failed safely before writing anything.
+- First real apply attempt hit a `NotNullViolation`; the transaction rolled back and no Supabase rows were written.
+- Timestamp normalization fix added, then shadow import `--apply` passed on 2026-05-21.
+- Supabase verification confirms batch `IMPORT-20260521-COMPLETED-ORDERS-V1`: 3 orders, 53 order lines, 0 intakes, 0 intake items, 0 documents, 11 status logs, and 21 pricing rows.
+- Phase 10.2E shadow read comparison passed on 2026-05-21: Google Sheets source mapping and Supabase batch `IMPORT-20260521-COMPLETED-ORDERS-V1` matched with `mismatch_count = 0`.
+- Phase 10.2F read-only shadow endpoint implemented locally: `GET /api/shadow/orders/<order_id>/compare`.
+- Local verification passed on 2026-05-21: focused shadow route/service tests passed at 32 tests and full local unittest suite passed at 164 tests.
+- Local API smoke passed for `ORD-2026-0B29D7`: HTTP 200, `success = true`, `status = ok`, and `mismatch_count = 0`.
+- No backend read/write cutover, UI change, n8n change, or Google Sheet retirement has started.
+- Next step: backend deploy and deployed verification of the read-only shadow endpoint.
 
 Farm home/dashboard idea:
 
@@ -2516,8 +2548,8 @@ Additional verification:
 
 Recommended next:
 
-1. **Phase 10.1A guided setup preparation** - confirm the Supabase guided defaults, backup/PITR expectation, Render env var names, and local `.env` handling before any code connects.
-2. **Phase 10.1B foundation implementation** - add migrations folder, backend connection pattern, and `/health/database` smoke check only after setup details are confirmed.
+1. **Phase 10.2F deployed verification** - deploy backend and verify `/api/shadow/orders/ORD-2026-0B29D7/compare` returns zero mismatches.
+2. **Phase 10.3 telemetry review** - inventory weather, Sunsynk, irrigation, and alert data after the first database path remains stable.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:

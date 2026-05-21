@@ -46,6 +46,25 @@ class OrderRoutesTests(unittest.TestCase):
         self.assertEqual(cleaned["requested_quantity"], 1.0)
         self.assertEqual(cleaned["created_by"], "Tester")
 
+    def test_shadow_order_compare_route_is_read_only_boundary(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "mode": "shadow_compare",
+            "source": {
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            },
+        }
+
+        with patch.object(order_routes, "compare_shadow_order", return_value=(service_result, 200)) as compare:
+            response = self.client.get("/api/shadow/orders/ORD-1/compare")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        compare.assert_called_once()
+        self.assertEqual(compare.call_args.args[0], "ORD-1")
+
     def test_create_order_route_returns_400_for_validation_errors(self):
         response = self.client.post("/api/master/orders", json={"customer_name": "Sam"})
 

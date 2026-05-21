@@ -192,5 +192,27 @@ Current position:
 - Owner accepted the 10.2 recommended defaults on 2026-05-21.
 - Phase 10.2A empty-table migration is prepared in `supabase/migrations/202605210002_create_order_sales_tables.sql`, with backend verifier `GET /health/database/order-schema`.
 - Local verification passed on 2026-05-21: focused database tests passed at 9 tests and full local unittest suite passed at 138 tests.
-- No import script, backend read/write cutover, or Google Sheet retirement has started.
-- Next step is backend deploy, manual SQL execution in Supabase SQL Editor, then deployed `/health/database/order-schema` verification.
+- Phase 10.2A deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/order-schema` confirmed all seven expected order/sales tables with `missing_tables = []`.
+- Phase 10.2B import dry-run script is prepared in `scripts/order_sales_import_dry_run.py`; it reads Google Sheets only, writes nothing to Supabase, and reports `writes_to_supabase = false`.
+- Phase 10.2B live summary-only dry-run passed on 2026-05-21 with `writes_to_supabase = false`: 26 included orders, 103 included order lines, 27 included intakes, 7 included intake items, 6 included documents, 62 included status logs, and 21 included pricing rows.
+- Dry-run follow-up: `ORDER_STATUS_LOG` has 157 rows with missing parent order links and 111 rows linked to excluded test orders; investigate before import mapping.
+- Owner decision: unlinked test/status-log data can stay in Sheets but should be excluded from Supabase import if it is not linked to an included main order.
+- Status-log diagnostic is prepared in `scripts/order_status_log_diagnostic.py`; it reads `ORDER_MASTER` and `ORDER_STATUS_LOG` only and writes nothing.
+- Phase 10.2B status-log diagnostic passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`: 62 included candidates, 157 missing-parent logs, 111 test-parent logs, and 0 missing-order-id logs.
+- Import mapping rule: include only the 62 included-candidate status logs by default; exclude missing-parent/test-parent logs unless owner manually approves exceptions later.
+- Phase 10.2C payload mapping is added to the dry-run script; it maps included rows to Supabase-shaped payload samples while still writing nothing to Supabase or Sheets.
+- Owner rule applied: unlinked intake rows are excluded from the first import boundary.
+- Phase 10.2C live payload sample report passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`: 26 orders, 103 order lines, 0 order intakes, 0 order intake items, 6 order documents, 62 order status logs, and 21 sales pricing rows mapped.
+- Review finding before real import: some mapped orders are cancelled historical customer orders; owner should review whether all 26 included orders are worth importing before any actual insert.
+- Owner decision update: first import should include completed real orders only, plus pricing reference data. Draft/pending/approved/cancelled/rejected history stays in Sheets unless manually approved later.
+- Completed-only dry-run passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`: 3 completed orders, 53 linked order lines, 0 intakes, 0 intake items, 0 documents, 11 linked status logs, and 21 pricing rows mapped.
+- Phase 10.2D shadow import script is prepared in `scripts/order_sales_shadow_import.py`; default mode is plan-only and `--apply` is required before any Supabase write.
+- Phase 10.2D local verification passed on 2026-05-21: focused shadow-import/dry-run tests passed at 12 tests and full local unittest suite passed at 152 tests.
+- Phase 10.2D live plan-only run passed on 2026-05-21 with `writes_to_supabase = false` and `writes_to_sheets = false`; counts matched the approved completed-only boundary.
+- Phase 10.2D apply passed on 2026-05-21 after one safe rolled-back `NotNullViolation` attempt and timestamp normalization fix.
+- Supabase verification confirms batch `IMPORT-20260521-COMPLETED-ORDERS-V1` contains 3 orders, 53 order lines, 0 intakes, 0 intake items, 0 documents, 11 status logs, and 21 pricing rows.
+- Phase 10.2E shadow read comparison passed on 2026-05-21: `scripts/order_sales_shadow_compare.py` compared Google Sheets source mapping to Supabase batch `IMPORT-20260521-COMPLETED-ORDERS-V1` with `mismatch_count = 0`.
+- Phase 10.2F read-only shadow endpoint is implemented locally: `GET /api/shadow/orders/<order_id>/compare` compares Google Sheets order detail to Supabase shadow order detail and writes nothing.
+- Phase 10.2F local verification passed on 2026-05-21: focused shadow route/service tests passed at 32 tests, full local unittest suite passed at 164 tests, and local API smoke for `ORD-2026-0B29D7` returned `mismatch_count = 0`.
+- No backend read/write cutover, UI change, n8n change, or Google Sheet retirement has started.
+- Next step is backend deploy and deployed verification of the read-only shadow endpoint.

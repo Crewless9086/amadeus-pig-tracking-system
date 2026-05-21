@@ -48,6 +48,7 @@ from modules.orders.order_validation import (
     validate_update_order_line_payload,
     validate_sync_order_lines_payload,
 )
+from modules.orders.order_shadow_read import compare_shadow_order
 
 orders_bp = Blueprint("orders", __name__)
 logger = logging.getLogger(__name__)
@@ -170,6 +171,22 @@ def order_detail(order_id):
         "lines": detail["lines"],
         "documents": _serialize_order_documents(get_order_documents(order_id)),
     })
+
+
+@orders_bp.route("/shadow/orders/<order_id>/compare", methods=["GET"])
+def shadow_order_compare(order_id):
+    try:
+        result, status_code = compare_shadow_order(
+            order_id,
+            import_batch_id=request.args.get("import_batch_id", "").strip() or None,
+        )
+        return jsonify(result), status_code
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "status": "invalid_request",
+            "errors": [str(exc)],
+        }), 400
 
 
 @orders_bp.route("/orders/<order_id>/operator-summary", methods=["GET"])
