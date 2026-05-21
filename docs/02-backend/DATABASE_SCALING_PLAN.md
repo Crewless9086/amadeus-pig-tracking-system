@@ -6,6 +6,10 @@ Phase 7.2 planning for moving transactional order data away from Google Sheets w
 
 Status: Phase 7.2 planning accepted. Do not implement a database migration from this document until a future database implementation phase is deliberately opened.
 
+Phase 10.1 foundation planning source:
+
+- `docs/02-backend/SUPABASE_FOUNDATION_PLAN.md`
+
 ## Current Decision
 
 - Keep Google Sheets as the operational source of truth for now.

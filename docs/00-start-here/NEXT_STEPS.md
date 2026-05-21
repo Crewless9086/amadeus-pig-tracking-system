@@ -25,8 +25,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Implemented Locally | Deploy/browser-check Phase 9.6A printable weight capture sheet. |
-| Phase 10: Farm Operating System Integration | Not Started | Future. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
+| Phase 10: Farm Operating System Integration | Planning In Progress | Phase 10A map drafted; Phase 10.1 Supabase guided defaults captured; next step is guided foundation setup when owner approves. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -1977,7 +1977,7 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Implemented Locally
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2255,7 +2255,7 @@ Implementation state:
   - For meat sales, should value come only from the future meat order/deposit/invoice flow under Phase 11?
 - Do not fake currency totals from pig count only. Implement Rand values only once the sale value source is explicit.
 
-### 9.6 Printable Farm Operation Sheets — 9.6A Implemented Locally
+### 9.6 Printable Farm Operation Sheets — 9.6A Browser-Verified
 
 Required outcome:
 
@@ -2323,7 +2323,7 @@ Open planning questions before implementation:
 - Rows sort by current pen/camp and numeric tag number.
 - Future optional columns such as sex, stage, and purpose are parked under 9.6B.
 - Verification passed: `node --check static/js/printSheets.js`, focused frontend/route tests, and full local unittest suite at 129 tests.
-- Deploy/browser verification is next.
+- Deployed and owner-verified on 2026-05-20; owner confirmed `/print-sheets` is good for now.
 
 ### 9.7 Business Scenario Calculator — Future Planning
 
@@ -2347,13 +2347,16 @@ Clarification to confirm when this phase starts:
 
 - Which first scenarios, cost lines, and target-profit fields should be included in the first calculator version.
 
-## Phase 10: Farm Operating System Integration - Not Started
+## Phase 10: Farm Operating System Integration - Planning Next
 
 Goal: bring Sam, Oom Sakkie, the web app, backend modules, weather logging, Synsynk solar data, n8n workflows, and Google Sheets into one documented operating-system structure. WE can use teh n8n API to get these workflows in but we need to confirm them before we just bring them in and then start the file and documentation for them. 
 
 Timing rule:
 
-- do not start this umbrella integration until Sam/order behavior is stable enough that expanding the system will not hide existing sales bugs
+- Sam/order behavior is stable enough to start planning Phase 10.
+- Do not build new cross-system integrations directly on Google Sheets if those integrations are likely to move to Supabase/Postgres soon.
+- Do not attempt a full database migration before the operating-system map is clear.
+- Recommended sequence: plan the operating-system architecture first, set up Supabase foundations second, then integrate modules behind backend APIs.
 
 Required outcome:
 
@@ -2371,6 +2374,50 @@ Required outcome:
 - document backend module boundaries for orders, pig operations, farm worker tasks, weather logging, solar data, reporting, and notifications
 - add logging and audit expectations for customer actions, worker actions, web-app actions, backend actions, weather imports, and solar imports
 - make the web app the visible control panel where possible so operators can understand system state without jumping between platforms
+
+Recommended Phase 10 sequence:
+
+1. **10.0 Operating system map and data ownership** - document every module, workflow, sheet/table, backend endpoint, trigger, owner, risk level, and read/write direction. This is planning/documentation only.
+2. **10.1 Supabase foundation** - set up environment secrets, migration tooling, backup/restore expectations, dev/prod decision, connection tests, and a repository/data-access pattern. No production cutover yet.
+3. **10.2 First migration boundary: orders/sales transactions** - migrate the Phase 7.2 candidate tables first: orders, order lines, intakes, documents, status logs, and pricing. Keep backend APIs as the only write path.
+4. **10.3 Farm telemetry review** - inventory weather, Sunsynk, irrigation, and alert data. Decide whether telemetry should move to Supabase before rebuilding Oom Sakkie solar/power answers.
+5. **10.4 Operating dashboard / farm home** - only after the core data contracts are clear, build the web app home/dashboard that brings orders, piggery, weather, power, irrigation, and alerts together.
+6. **10.5 Workflow integration cleanup** - update n8n workflows to call backend APIs/Supabase-backed endpoints instead of direct sheet reads/writes where appropriate.
+
+Recommendation:
+
+- Do **not** choose "Supabase first" as a full migration before Phase 10 planning.
+- Do **not** choose "Phase 10 integrations first" on top of the current Google Sheets layout.
+- Choose a hybrid: **Phase 10A architecture map first, then Supabase foundation, then one bounded migration/integration slice at a time**.
+- Reason: Phase 10 needs a clear system map to avoid moving the wrong data, while Supabase is needed before deeper integration so we do not build new features around a data layer we plan to retire.
+
+10A working source:
+
+- `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`
+
+10A implementation state:
+
+- Created first operating-system map.
+- Captured module ownership for sales/orders, documents, pig records, weights, breeding, pork/meat planning, weather, Sunsynk, irrigation, and farm dashboard.
+- Captured integration boundaries for Sam, Oom Sakkie, backend, Google Sheets, Supabase, and n8n alerts.
+- Captured first data ownership register and migration priority.
+- Confirmed recommended sequence: operating map first, Supabase foundation second, bounded migration/integration slices after that.
+- Planning review with owner is next.
+
+10.1 Supabase foundation working source:
+
+- `docs/02-backend/SUPABASE_FOUNDATION_PLAN.md`
+
+10.1 planning state:
+
+- Created first Supabase foundation plan.
+- Captured owner-required setup details, proposed env vars, security rules, migration tooling options, backend repository pattern, first migration boundary, telemetry/Sunsynk handling, n8n access rules, LLM-friendly read-model direction, folder strategy, setup checklist, and open decisions.
+- Owner review comments captured and converted into guided defaults: use existing Supabase Pro project as foundation/staging first, plain SQL migrations in `supabase/migrations/`, backend-only Supabase access, `/health/database` smoke test, orders/sales first, telemetry after the first database path is proven, and Google Sheets visible until database-backed views are proven.
+- Render env var plan and local `.env` guidance are captured.
+- First foundation implementation slice added locally: `supabase/migrations/` marker, backend `GET /health/database`, and tests proving missing config is safe and no connection string is returned on failure.
+- Local verification passed on 2026-05-21: focused database tests passed, full unittest suite passed at 132 tests, and `/health/database` returns safe `503` / `not_configured` before `DATABASE_URL` is added.
+- No Supabase schema migration, data import, or production cutover has started.
+- Next step: owner adds `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_PROJECT_REF` to Render for deployed `/health/database` verification.
 
 Farm home/dashboard idea:
 
@@ -2455,11 +2502,12 @@ Recently completed:
 Additional verification:
 
 - Phase 9.4 report tag formatting deploy check - owner-verified 2026-05-20: deployed `/weight-report` displays numeric pig tags correctly; default pen grouping remains accepted.
+- Phase 9.6A printable weight capture sheet - deployed and browser-verified 2026-05-20: `/print-sheets` shows the read-only weekly weight capture sheet with English labels, all-active default, multi-pen filtering, browser print support, and no Google Sheets writes.
 
 Recommended next:
 
-1. **Deploy/browser-check Phase 9.5** - confirm dashboard Sales section shows total monthly sales plus Livestock, Slaughter, and Meat stream counts.
-2. **Phase 8E planning** - breeding-board tile sorting if the matings board becomes the next priority.
+1. **Phase 10.1A guided setup preparation** - confirm the Supabase guided defaults, backup/PITR expectation, Render env var names, and local `.env` handling before any code connects.
+2. **Phase 10.1B foundation implementation** - add migrations folder, backend connection pattern, and `/health/database` smoke check only after setup details are confirmed.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:

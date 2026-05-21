@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.6** - Printable Farm Operation Sheets |
-| **Status** | Phase 9.4 current slice complete and owner-verified; Phase 9.5 visible; 9.5B planned for stream counts/values; Phase 9.6A implemented locally |
-| **Current focus** | Deploy/browser-check Phase 9.6A printable weight capture sheet |
-| **Current last verified** | **2026-05-20** - Phase 9.6A local syntax, focused tests, and full 129-test suite passed |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
+| **Status** | Phase 9 parked for now; Phase 10A drafted; Phase 10.1 guided defaults captured; first DB health slice implemented locally |
+| **Current focus** | Test Phase 10.1 database health slice, then configure Render env vars for deployed verification |
+| **Current last verified** | **2026-05-20** - Phase 9.6A `/print-sheets` browser-tested and good for now |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

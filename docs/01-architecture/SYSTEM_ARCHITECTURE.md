@@ -167,3 +167,13 @@ Field mappings
 Workflow decisions
 
 Those are defined in other documents.
+
+---
+
+## Phase 10 Operating-System Map
+
+The broader farm operating-system planning source is:
+
+- `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`
+
+Use that document before Supabase migration or cross-system integration work. It defines module ownership, integration boundaries, data ownership, and migration sequencing.

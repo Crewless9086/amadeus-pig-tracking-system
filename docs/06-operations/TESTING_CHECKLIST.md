@@ -705,6 +705,53 @@ Phase 9.6A:
 Local result:
 
 - 2026-05-20: Implemented locally and verified with `node --check static/js/printSheets.js`, focused route/frontend tests, and full 129-test suite.
+- 2026-05-20: Deployed and owner-tested on `/print-sheets`; owner confirmed it is good for now.
+
+## Phase 10A Planning Checks
+
+Before starting Supabase setup or new integrations:
+
+1. Confirm `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md` lists all major modules.
+2. Confirm each module has a current data owner and target data owner.
+3. Confirm first migration boundary is still orders/sales transactions unless owner deliberately changes it.
+4. Confirm telemetry is treated separately from first order migration.
+5. Confirm n8n direct sheet writes are identified before replacing them with backend APIs.
+6. Confirm Supabase foundation requirements are understood before collecting secrets or importing data.
+
+## Phase 10.1 Supabase Foundation Planning Checks
+
+Before adding database dependencies, env vars, migrations, or connection code:
+
+1. Confirm `docs/02-backend/SUPABASE_FOUNDATION_PLAN.md` has been reviewed.
+2. Confirm first migration boundary is orders/sales transaction data unless owner deliberately changes it.
+3. Confirm telemetry/Sunsynk remains a separate review boundary.
+4. Confirm backend is the only writer for the first database phase.
+5. Confirm no browser Supabase anon key will be used before RLS policies exist.
+6. Confirm n8n will call backend APIs rather than direct Supabase writes.
+7. Confirm guided default: existing Supabase Pro project is used as foundation/staging first, with no production cutover.
+8. Confirm guided default: plain SQL migrations live in `supabase/migrations/`.
+9. Confirm guided default: add a harmless backend `/health/database` smoke endpoint.
+10. Confirm backup/restore expectation before production data import.
+
+Phase 10.1A local checks:
+
+1. `GET /health/database` returns `503` and `status = not_configured` when `DATABASE_URL` is missing.
+2. Failure responses do not include the connection string, database password, Supabase service-role key, anon key, customer data, or pig data.
+3. `supabase/migrations/README.md` exists and confirms that no schema migration has started yet.
+4. `requirements.txt` includes a Postgres driver for deployed Supabase connection tests.
+
+Local result:
+
+- 2026-05-21: Focused database tests passed.
+- 2026-05-21: Full local unittest suite passed at 132 tests.
+- 2026-05-21: Direct `/health/database` smoke returned `503` with `status = not_configured` and no secret data before `DATABASE_URL` is configured.
+
+Phase 10.1A deployed checks, after Render env vars are added:
+
+1. Render has `DATABASE_URL`, `SUPABASE_URL`, and `SUPABASE_PROJECT_REF`.
+2. Render does not have `SUPABASE_SERVICE_ROLE_KEY` unless a later backend-admin feature requires it.
+3. Render does not expose Supabase anon key to the browser.
+4. `GET /health/database` returns `200`, `success = true`, `status = ok`, and harmless database timing/name fields only.
 
 ## Google Sheets Checks
 

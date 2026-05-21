@@ -3,6 +3,7 @@ from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
 from modules.orders.order_routes import orders_bp
 from modules.reports.report_routes import reports_bp
+from services.database_service import check_database_health
 
 app = Flask(__name__)
 app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
@@ -134,6 +135,12 @@ def print_sheets_page():
 @app.route("/health")
 def health():
     return {"status": "ok"}, 200
+
+
+@app.route("/health/database")
+def database_health():
+    body, status_code = check_database_health()
+    return body, status_code
 
 
 if __name__ == "__main__":
