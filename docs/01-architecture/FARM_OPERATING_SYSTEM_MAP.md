@@ -129,3 +129,13 @@ Staging answer:
 
 - Use the existing Supabase Pro project as the foundation/staging workspace first because no live cutover happens during setup.
 - Before importing real production data or switching live writes, decide whether that project stays production or a fresh production project is created.
+
+## Phase 10.3 Telemetry Review
+
+Detailed telemetry plan:
+
+- `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`
+
+10.3 has now been selected after the first Supabase order/sales path was proven and 10.2L4 was deployed-verified.
+
+The priority is to inventory Sunsynk, weather, forecast, irrigation, and alert data before changing workflows. The slow `2.2 - Amadeus Sunsynk Sub-Agent` should be fixed by moving toward backend-prepared telemetry payloads, not by making the n8n agent scan more Google Sheets data.

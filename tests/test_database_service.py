@@ -7,11 +7,14 @@ from services.database_service import (
     ORDER_SCHEMA_TABLES,
     SALES_PAYMENT_DATE_MIGRATION_ID,
     SALES_TRANSACTION_SCHEMA_TABLES,
+    TELEMETRY_POWER_SCHEMA_MIGRATION_ID,
+    TELEMETRY_POWER_SCHEMA_TABLES,
     check_database_foundation,
     check_database_health,
     check_order_schema,
     check_sales_transaction_payment_date_schema,
     check_sales_transaction_schema,
+    check_telemetry_power_schema,
 )
 
 
@@ -39,6 +42,8 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertIn("check_sales_transaction_schema()", app_source)
         self.assertIn('@app.route("/health/database/sales-payment-date-schema")', app_source)
         self.assertIn("check_sales_transaction_payment_date_schema()", app_source)
+        self.assertIn('@app.route("/health/database/telemetry-power-schema")', app_source)
+        self.assertIn("check_telemetry_power_schema()", app_source)
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_database_health_does_not_return_connection_string_on_failure(self):
@@ -116,6 +121,16 @@ class DatabaseServiceHealthTests(unittest.TestCase):
     def test_sales_payment_date_schema_health_reports_missing_database_url_without_importing_driver(self):
         with patch.dict(os.environ, {}, clear=True):
             body, status_code = check_sales_transaction_payment_date_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertFalse(body["configured"])
+        self.assertEqual(body["status"], "not_configured")
+        self.assertNotIn("DATABASE_URL=", str(body))
+
+    def test_telemetry_power_schema_health_reports_missing_database_url_without_importing_driver(self):
+        with patch.dict(os.environ, {}, clear=True):
+            body, status_code = check_telemetry_power_schema()
 
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
@@ -205,6 +220,36 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertNotIn("drop table", migration_lower)
         self.assertNotIn("delete from", migration_lower)
 
+    def test_telemetry_power_migration_creates_only_expected_first_tables(self):
+        migration = Path(
+            "supabase/migrations/202605210005_create_telemetry_power_tables.sql"
+        ).read_text(encoding="utf-8")
+        migration_lower = migration.lower()
+
+        for table in TELEMETRY_POWER_SCHEMA_TABLES:
+            with self.subTest(table=table):
+                self.assertIn(f"create table if not exists public.{table}", migration_lower)
+
+        self.assertIn(TELEMETRY_POWER_SCHEMA_MIGRATION_ID, migration)
+        self.assertIn("app_private.migration_log", migration)
+        self.assertIn("sunsynk-main-inverter", migration)
+        self.assertIn("stale_after_minutes", migration)
+        self.assertIn("battery_soc_pct", migration)
+        self.assertIn("summary_headline", migration)
+
+        forbidden_tables = [
+            "create table if not exists public.weather_latest_state",
+            "create table if not exists public.weather_forecast_snapshots",
+            "create table if not exists public.irrigation_actions",
+            "create table if not exists public.power_hourly_rollups",
+            "create table if not exists public.power_daily_rollups",
+            "create table if not exists public.power_monthly_rollups",
+            "create table if not exists public.power_yearly_rollups",
+        ]
+        for forbidden in forbidden_tables:
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, migration_lower)
+
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_order_schema_health_does_not_return_connection_string_on_failure(self):
         with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
@@ -235,6 +280,17 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
         self.assertEqual(body["status"], "sales_payment_date_schema_check_failed")
+        self.assertNotIn("secret", str(body))
+        self.assertNotIn("example", str(body))
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_telemetry_power_schema_health_does_not_return_connection_string_on_failure(self):
+        with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
+            body, status_code = check_telemetry_power_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertEqual(body["status"], "telemetry_power_schema_check_failed")
         self.assertNotIn("secret", str(body))
         self.assertNotIn("example", str(body))
 

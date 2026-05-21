@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Privacy Policy | Amadeus Farm</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-color: #f6f1e9;
+      color: #2d2a24;
+      line-height: 1.6;
+      margin: 0;
+      padding: 1.5rem;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: #fffaf3;
+      border-radius: 16px;
+      border: 1px solid #e0d4c2;
+      padding: 1.5rem 1.75rem 2rem;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+      white-space: pre-wrap; /* keep line breaks from the txt file */
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 0.75rem;
+      color: #4e6a43;
+    }
+    .meta {
+      font-size: 0.85rem;
+      color: #8a8174;
+      margin-bottom: 1.25rem;
+    }
+    .topbar {
+      max-width: 800px;
+      margin: 0 auto 0.75rem;
+      display: flex;
+      justify-content: flex-start;
+    }
+    .back {
+      font-size: 0.9rem;
+      color: #4e6a43;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .back:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <a class="back" href="index.html">← Back to Home</a>
+  </div>
+
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p class="meta">Amadeus Farm – Western Cape, South Africa</p>
+
+    <div id="policy-content">
+      Loading privacy policy…
+    </div>
+  </div>
+
+  <script>
+    // Load text from privacy.txt and insert into the page
+    fetch('privacy.txt')
+      .then(function (response) { return response.text(); })
+      .then(function (text) {
+        document.getElementById('policy-content').textContent = text;
+      })
+      .catch(function () {
+        document.getElementById('policy-content').textContent =
+          'Privacy policy could not be loaded. Please try again later.';
+      });
+  </script>
+</body>
+</html>

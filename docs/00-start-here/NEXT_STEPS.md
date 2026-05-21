@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4A Verified; 10.2L4B Local; 10.2L4C Local; 10.2L4D Local | Deploy and run 10.2L4E synthetic batch test. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Local | Deploy backend, run telemetry power SQL, then verify `/health/database/telemetry-power-schema`. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2669,7 +2669,36 @@ Recommendation:
 - Phase 10.2L4D payment update with batch total/payment date implemented locally: payment update now requires `payment_date` when marking a transaction Paid, updates header totals/payment/date/status, and does not silently reallocate a final batch total across multiple pig item rows.
 - Single-pig payment updates still update that one item amount and optional carcass weight; multi-pig batch payment updates leave item rows unchanged until allocation rules are approved.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused update/route/frontend tests passed at 25 tests, local page smoke returned `200`, and full local unittest suite passed at 208 tests.
-- Next step: deploy and run 10.2L4E synthetic batch test.
+- Phase 10.2L4E deployed synthetic batch test passed on 2026-05-21: created two-pig synthetic batch `SALE-2026-17736A`, confirmed active duplicate create was blocked with `409`, updated payment to `Paid` with `payment_date = 2026-05-21`, cancelled the batch, then confirmed duplicate-pig release by creating reuse batch `SALE-2026-0C9DE0` and cancelling it.
+- 10.2L4E deployed page smoke passed: `/sales/slaughter` loaded and included the multi-pig row container and batch total UI.
+- Synthetic test pig IDs used: `PIG-TEST-L4E-A-20260521180640` and `PIG-TEST-L4E-B-20260521180640`; both synthetic transactions were cancelled.
+- Phase 10.2L4 closed on 2026-05-21 after deployed synthetic verification; manual UI owner smoke is optional, not a blocker.
+- S10 / real JC Slaghuis payment completion remains owner-pending until the real amount is known.
+- Phase 10.3 telemetry review selected as the next Phase 10 slice.
+- Phase 10.3 working source created: `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`.
+- 10.3 plan scope: inventory weather, Sunsynk, forecast, irrigation, and alert data; design compact backend read models for Oom Sakkie and dashboard use; keep working weather stable; fix the slow Sunsynk path by moving toward backend/Supabase prepared payloads rather than more agent-over-sheet loops.
+- 10.3 initial repo inventory result: no backend telemetry modules or local telemetry ingestion scripts were found in this repo; current telemetry knowledge is in n8n workflow exports/docs, so external logger/cron/script locations still need owner confirmation.
+- External source folders imported and filed under `external_sources/`: Sunsynk logger, local weather station logger, forecast logger, and non-telemetry landing-page source. One forecast `.env` file is present but ignored by git.
+- 10.3A partial inventory now captures each logger's env vars, external API, sheet write target, and likely role.
+- 10.3 planned sequence: inventory first, design Sunsynk current-state read model, propose telemetry schema, decide ingestion path, build one read-only backend endpoint, update `2.2`, then align weather/forecast and irrigation command boundaries.
+- Owner confirmed telemetry loggers run as Render cron services; irrigation appears to be n8n-run.
+- Owner confirmed production spreadsheets for Sunsynk, Weather, and Irrigation.
+- Local Google Sheets inventory is blocked until the three telemetry spreadsheets are shared with service account `amadeuspigtrackersystem@amadeus-farm-weather-bot.iam.gserviceaccount.com`.
+- Owner proposed retention/rollup direction: keep current state, roll 5-minute readings into daily summaries, then monthly/yearly summaries, and avoid keeping unnecessary raw bulk forever.
+- Recommendation captured: keep raw 5-minute data only for a short tested retention window first, keep daily/monthly/yearly rollups long-term, and do not delete raw data until rollup jobs and backup/export rules are proven.
+- Service account access confirmed for the three telemetry sheets.
+- Weather and irrigation tab/header/formula inventory succeeded.
+- Sunsynk metadata inventory succeeded, but values reads timed out even on tiny ranges, confirming the current Sunsynk sheet is not a good live answer source for Oom Sakkie.
+- 10.3A conclusion: keep weather stable for now, treat irrigation as a later hardware-control/audit design, and prioritize Sunsynk current-state backend/Supabase read model first.
+- 10.3B Sunsynk current-state read model planned in `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`: first endpoint should be `GET /api/telemetry/power/current` with source freshness, current battery/solar/load/grid/generator state, deterministic flags, backend-prepared summary, and explicit stale/unavailable behavior.
+- Owner agreed the 10.3B payload direction.
+- 10.3C telemetry schema proposal added to `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`: first migration should be power-first with `telemetry_sources`, `power_readings_5min`, `power_latest_state`, and `telemetry_alerts`; rollups wait until calculation rules are confirmed.
+- Owner agreed to implement 10.3C.
+- Phase 10.3C first telemetry power schema migration implemented locally: `supabase/migrations/202605210005_create_telemetry_power_tables.sql`.
+- Backend verifier implemented locally: `GET /health/database/telemetry-power-schema`.
+- Migration creates `telemetry_sources`, `power_readings_5min`, `power_latest_state`, and `telemetry_alerts`, and seeds `sunsynk-main-inverter`; it imports no telemetry readings, changes no Render logger, and changes no n8n workflows.
+- Local verification passed on 2026-05-21: focused database tests passed at 18 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 211 tests.
+- Next step: deploy backend, run `202605210005_create_telemetry_power_tables.sql` in Supabase SQL Editor, then verify `/health/database/telemetry-power-schema`.
 
 Farm home/dashboard idea:
 
@@ -2779,8 +2808,8 @@ Additional verification:
 
 Recommended next:
 
-1. **Next Supabase decision point** - choose between feature-flagged read model planning, broader completed-order import/reimport process, or Phase 10.3 telemetry review.
-2. **Phase 10.3 telemetry review** - inventory weather, Sunsynk, irrigation, and alert data after the first database path remains stable.
+1. **Phase 10.3 telemetry review** - selected as the next Phase 10 slice after 10.2L4 was closed. Inventory weather, Sunsynk, irrigation, and alert data before changing the slow Oom Sakkie power path.
+2. **Next Supabase order decision point** - later choose between feature-flagged order read model planning or broader completed-order import/reimport process.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 
 7.3D planning note:

@@ -680,7 +680,7 @@ Implementation sequence:
 2. **10.2L4B backend multi-item create support** - implemented locally 2026-05-21: create accepts multiple pig items under one slaughter batch and validation rejects duplicate submitted `pig_id` values before any database write.
 3. **10.2L4C form multi-pig selector** - implemented locally 2026-05-21: owner can add/remove pig rows with per-pig amount, optional carcass weight, optional note, calculated batch total, and duplicate-selection blocking.
 4. **10.2L4D payment update with batch total/payment date** - implemented locally 2026-05-21: update final batch amount, payment date, payment status, and sale status on the header without auto-reallocating multi-pig item rows.
-5. **10.2L4E deployed synthetic batch test** - create a two-pig synthetic batch, update payment, cancel it, and verify duplicate-pig release.
+5. **10.2L4E deployed synthetic batch test** - verified 2026-05-21: created a two-pig synthetic batch, blocked active duplicate create, updated payment with payment date, cancelled it, verified duplicate-pig release, and cancelled the reuse batch.
 
 Must not do in 10.2L4:
 
@@ -738,7 +738,22 @@ Open decisions before implementation:
 - The `/sales/slaughter` payment prompt asks for final batch amount and payment date when marking Paid.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused update/route/frontend tests passed at 25 tests, and local page smoke returned `200`.
 - Full local unittest suite passed on 2026-05-21 at 208 tests.
-- Next step: deploy and run 10.2L4E synthetic batch test.
+
+10.2L4E deployed verification state:
+
+- Deployed API synthetic batch test passed on 2026-05-21.
+- Synthetic pig IDs: `PIG-TEST-L4E-A-20260521180640` and `PIG-TEST-L4E-B-20260521180640`.
+- Created two-pig batch `SALE-2026-17736A` with two item rows.
+- Repeating the same active payload was blocked with `409 duplicate_pig`.
+- Payment update succeeded with final batch amount `2700`, `payment_status = Paid`, and `payment_date = 2026-05-21`.
+- Multi-pig update returned `items_updated = 0`, confirming the final batch total was not auto-reallocated across item rows.
+- Cancelled `SALE-2026-17736A`.
+- Reused the same synthetic pig IDs to create `SALE-2026-0C9DE0`, proving cancelled transactions release duplicate-pig protection.
+- Cancelled `SALE-2026-0C9DE0`.
+- Deployed `/sales/slaughter` page smoke passed and included the multi-pig row container plus batch total UI.
+- Phase 10.2L4 is closed after deployed synthetic verification; manual UI owner smoke is optional, not a blocker.
+- S10 / real JC Slaghuis payment completion remains owner-pending until the real amount is known.
+- Next step: select the next Phase 10 slice.
 
 Open questions before implementation:
 

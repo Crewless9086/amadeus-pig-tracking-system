@@ -23,6 +23,8 @@ Current state:
 - It imports no data and does not change live backend order/dashboard reads/writes.
 - `202605210004_add_sales_transaction_payment_date.sql` adds nullable `payment_date` to `sales_transactions`.
 - It imports no data and does not change live backend order/dashboard reads/writes.
+- `202605210005_create_telemetry_power_tables.sql` creates the first empty telemetry power tables and seeds the Sunsynk source registry row.
+- It imports no telemetry readings, changes no Render logger, and does not change live n8n workflows.
 
 Manual run process for Phase 10.1B:
 
@@ -62,3 +64,13 @@ Manual run process for Phase 10.2L4A:
 5. Run it once.
 6. Open `/health/database/sales-payment-date-schema` on the deployed backend.
 7. Confirm it returns `success = true`, `status = ok`, migration ID `202605210004_add_sales_transaction_payment_date`, and `payment_date_column_found = true`.
+
+Manual run process for Phase 10.3C:
+
+1. Deploy the backend containing `/health/database/telemetry-power-schema`.
+2. Open Supabase SQL Editor.
+3. Open `supabase/migrations/202605210005_create_telemetry_power_tables.sql` from this repo.
+4. Paste the full SQL into Supabase SQL Editor.
+5. Run it once.
+6. Open `/health/database/telemetry-power-schema` on the deployed backend.
+7. Confirm it returns `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, no missing tables, and `sunsynk_source.source_id = sunsynk-main-inverter`.

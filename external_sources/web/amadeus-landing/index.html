@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Amadeus Farm | Family-run sustainable farm in the Western Cape</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Amadeus Farm is a small, family-run farm near Riversdale in the Western Cape. We focus on animal care, land improvement, and building sustainable, farm-based feeding systems over time." />
+
+  <style>
+    :root {
+      --bg: #f6f1e9;
+      --card: #fffaf3;
+      --accent: #6b8b5c;
+      --accent-dark: #4e6a43;
+      --text: #2d2a24;
+      --muted: #8a8174;
+      --border: #e0d4c2;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent-dark); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 3rem;
+    }
+
+    /* HEADER / HERO */
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      align-items: center;
+      margin-bottom: 2.5rem;
+      padding: 1.5rem 1.5rem 1.75rem;
+      background: linear-gradient(135deg, #f9f4eb, #efe1cf);
+      border-radius: 18px;
+      border: 1px solid var(--border);
+    }
+
+    .logo-wrap {
+      flex: 0 0 90px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .logo-wrap img {
+      max-width: 90px;
+      height: auto;
+      border-radius: 12px;
+      object-fit: contain;
+    }
+
+    .hero-text {
+      flex: 1 1 220px;
+      min-width: 0;
+    }
+
+    .hero-title {
+      font-size: 1.9rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--accent-dark);
+      margin-bottom: 0.4rem;
+    }
+
+    .hero-tagline {
+      font-size: 0.95rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .hero-body {
+      font-size: 0.98rem;
+      margin-bottom: 1.2rem;
+    }
+
+    .hero-cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.7rem 1.4rem;
+      background-color: var(--accent);
+      color: #fff;
+      border-radius: 999px;
+      font-size: 0.95rem;
+      font-weight: 650;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.08);
+      transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
+      white-space: nowrap;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--accent-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.11);
+      text-decoration: none;
+    }
+
+    .btn-primary span.icon { font-size: 1.1rem; }
+
+    .hero-note {
+      font-size: 0.82rem;
+      color: var(--muted);
+      flex-basis: 100%;
+      line-height: 1.45;
+    }
+
+    /* SECTIONS */
+    .section { margin-bottom: 2.5rem; }
+    .section-header { margin-bottom: 1rem; }
+
+    .section-title {
+      font-size: 1.35rem;
+      font-weight: 650;
+      margin-bottom: 0.15rem;
+    }
+
+    .section-subtitle {
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    /* TILES */
+    .tiles-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 1rem;
+    }
+
+    .tile {
+      position: relative;
+      background-color: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      min-height: 260px;
+      box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+      transform: translateY(0);
+      transition: transform 0.14s ease, box-shadow 0.14s ease;
+    }
+
+    .tile:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: 0 12px 26px rgba(0,0,0,0.12);
+    }
+
+    .tile-image-wrap { height: 140px; overflow: hidden; }
+
+    .tile-image-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .tile-content {
+      padding: 0.85rem 0.95rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      flex: 1;
+    }
+
+    .tile-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+
+    .tile-title { font-size: 1.02rem; font-weight: 650; }
+    .tile-tagline { font-size: 0.9rem; color: var(--muted); }
+
+    .tile-arrow {
+      margin-top: auto;
+      font-size: 0.85rem;
+      color: var(--accent-dark);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .tile-arrow span.icon { font-size: 1rem; }
+
+    .tile.future {
+      cursor: default;
+      background: #f1ece4;
+      border-style: dashed;
+      border-color: #d9cbb6;
+      opacity: 0.85;
+    }
+
+    .tile.future:hover {
+      transform: none;
+      box-shadow: 0 5px 14px rgba(0,0,0,0.06);
+    }
+
+    .tile.future .tile-image-wrap img {
+      filter: grayscale(100%);
+      opacity: 0.7;
+    }
+
+    .tile.future .tile-arrow { color: var(--muted); }
+
+    /* ABOUT + CONTACT */
+    .about-card, .contact-card {
+      background-color: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 1.25rem 1.2rem;
+      box-shadow: 0 5px 14px rgba(0,0,0,0.04);
+    }
+
+    .about-card p + p { margin-top: 0.6rem; }
+
+    .about-list {
+      margin-top: 0.7rem;
+      padding-left: 1.1rem;
+      font-size: 0.95rem;
+    }
+
+    .about-list li { margin-bottom: 0.25rem; }
+
+    .contact-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+      gap: 1.2rem;
+      align-items: flex-start;
+    }
+
+    .contact-details p {
+      font-size: 0.95rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .contact-details span.label {
+      font-weight: 600;
+      color: var(--muted);
+      display: inline-block;
+      width: 90px;
+    }
+
+    .contact-social { font-size: 0.9rem; color: var(--muted); }
+    .contact-social a { font-weight: 600; }
+
+    .compliance-note {
+      margin-top: 0.85rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    /* MODAL */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(24, 20, 15, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+
+    .modal-backdrop.active { display: flex; }
+
+    .modal {
+      max-width: 520px;
+      width: 100%;
+      background-color: #fdf8f1;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      padding: 0.9rem 1rem 0.5rem;
+      border-bottom: 1px solid #e6d7c3;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .modal-title { font-size: 1.05rem; font-weight: 650; }
+
+    .modal-close {
+      border: none;
+      background: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .modal-body { padding: 0.9rem 1rem 1rem; font-size: 0.95rem; }
+    .modal-body p + p { margin-top: 0.5rem; }
+
+    .modal-footer {
+      padding: 0.7rem 1rem 0.95rem;
+      border-top: 1px solid #e6d7c3;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .btn-outline {
+      padding: 0.5rem 1.05rem;
+      border-radius: 999px;
+      border: 1px solid var(--accent-dark);
+      font-size: 0.9rem;
+      font-weight: 650;
+      background-color: #fff;
+      color: var(--accent-dark);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      text-decoration: none;
+      transition: background-color 0.12s ease, color 0.12s ease;
+      white-space: nowrap;
+    }
+
+    .btn-outline:hover {
+      background-color: var(--accent-dark);
+      color: #fff;
+      text-decoration: none;
+    }
+
+    /* FOOTER */
+    footer {
+      margin-top: 2rem;
+      border-top: 1px solid var(--border);
+      padding-top: 1rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    footer a {
+      color: var(--accent-dark);
+      font-weight: 500;
+      text-decoration: none;
+    }
+
+    footer a:hover { text-decoration: underline; }
+
+    .bot-note {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 720px) {
+      header { padding: 1.1rem 1.1rem 1.3rem; }
+      .hero-title { font-size: 1.55rem; }
+      .hero-tagline { font-size: 0.78rem; }
+      .contact-grid { grid-template-columns: 1fr; }
+      .page { padding-inline: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="page">
+
+    <!-- HERO -->
+    <header>
+      <div class="logo-wrap">
+        <img src="images/logo.png" alt="Amadeus Farm logo">
+      </div>
+
+      <div class="hero-text">
+        <div class="hero-tagline">FAMILY-RUN • WESTERN CAPE • GROWING WITH NATURE</div>
+        <h1 class="hero-title">Amadeus Farm</h1>
+
+        <div class="hero-body">
+          We’re a small, family-run farm near Riversdale in the Western Cape. Our focus is simple:
+          <strong>animal care, clean shelters, and steady land improvement</strong> as we build farm-based feeding systems over time.
+          We currently support our animals with high-quality purchased feed while expanding our gardens, pastures, and natural inputs.
+        </div>
+
+        <div class="hero-cta">
+          <button class="btn-primary" type="button" data-open-chatwoot>
+            <span class="icon">💬</span>
+            <span>Chat with Amadeus Farm</span>
+          </button>
+
+          <div class="hero-note">
+            Use the website chat for general enquiries and support. If you’d like a human, just say so — we can assist directly.
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- PROGRAMS -->
+    <section class="section" id="programs">
+      <div class="section-header">
+        <h2 class="section-title">Our Farm Programs</h2>
+        <p class="section-subtitle">
+          A simple overview of what we do today, and what we’re building towards — focused on care, sustainability, and honest progress.
+        </p>
+      </div>
+
+      <div class="tiles-grid">
+        <!-- Tile 1 -->
+        <article class="tile" data-modal="modal-program">
+          <div class="tile-image-wrap">
+            <img src="images/farm-program.jpg" alt="Amadeus Farm program overview">
+          </div>
+          <div class="tile-content">
+            <div class="tile-label">Program</div>
+            <div class="tile-title">Livestock & Land Stewardship</div>
+            <div class="tile-tagline">
+              How we care for animals, improve the land, and build practical systems that get better each season.
+            </div>
+            <div class="tile-arrow">
+              <span>Learn more</span><span class="icon">→</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tile 2 -->
+        <article class="tile" data-modal="modal-feed">
+          <div class="tile-image-wrap">
+            <img src="images/soil-gardens.jpg" alt="Soil and garden systems at Amadeus Farm">
+          </div>
+          <div class="tile-content">
+            <div class="tile-label">In practice</div>
+            <div class="tile-title">Gardens, Soil & Natural Inputs</div>
+            <div class="tile-tagline">
+              We grow more from the land over time, using our own natural liquid fertiliser and LAB cultures.
+            </div>
+            <div class="tile-arrow">
+              <span>Learn more</span><span class="icon">→</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tile 3 -->
+        <article class="tile" data-modal="modal-care">
+          <div class="tile-image-wrap">
+            <img src="images/animal-care.jpg" alt="Clean shelters and animal care on the farm">
+          </div>
+          <div class="tile-content">
+            <div class="tile-label">Standards</div>
+            <div class="tile-title">Animal Care & Clean Shelters</div>
+            <div class="tile-tagline">
+              Daily care, clean bedding, good airflow, and practical handling that keeps animals calm and healthy.
+            </div>
+            <div class="tile-arrow">
+              <span>Learn more</span><span class="icon">→</span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tile 4 (future) -->
+        <article class="tile future">
+          <div class="tile-image-wrap">
+            <img src="images/future-projects.jpg" alt="Future farm projects at Amadeus Farm">
+          </div>
+          <div class="tile-content">
+            <div class="tile-label">Planned</div>
+            <div class="tile-title">Future Projects</div>
+            <div class="tile-tagline">
+              As the farm grows, we plan to add more experiences and farm improvements in a careful, sustainable way.
+            </div>
+            <div class="tile-arrow">
+              <span>Coming later</span><span class="icon">⏳</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section class="section" id="about">
+      <div class="section-header">
+        <h2 class="section-title">About Amadeus Farm</h2>
+        <p class="section-subtitle">
+          Family-run • Western Cape • Long-term sustainability focus
+        </p>
+      </div>
+
+      <div class="about-card">
+        <p>
+          Amadeus Farm is our family’s long-term project: improve the land, care for animals properly, and build systems
+          that reduce waste and strengthen resilience over time.
+        </p>
+
+        <p>
+          We’re honest about where we are today — we still use purchased feed while we expand gardens and pasture development.
+          What we grow on the farm is produced without synthetic chemical inputs, using our own natural liquid fertiliser and LAB cultures.
+        </p>
+
+        <p>Our focus stays consistent:</p>
+        <ul class="about-list">
+          <li>Prioritise animal well-being and calm handling.</li>
+          <li>Improve the land steadily, season by season.</li>
+          <li>Reduce waste and build practical, low-impact systems.</li>
+          <li>Communicate clearly and transparently.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CONTACT -->
+    <section class="section" id="contact">
+      <div class="section-header">
+        <h2 class="section-title">Contact & Location</h2>
+        <p class="section-subtitle">
+          For enquiries and support, use the website chat or email us directly.
+        </p>
+      </div>
+
+      <div class="contact-card">
+        <div class="contact-grid">
+          <div class="contact-details">
+            <p><span class="label">Website:</span> <button type="button" class="btn-outline" data-open-chatwoot>Open Website Chat</button></p>
+            <p><span class="label">Email:</span> <a href="mailto:sales@amadeusfarm.co.za">sales@amadeusfarm.co.za</a></p>
+            <p><span class="label">Location:</span> Western Cape, near Riversdale, South Africa</p>
+
+            <p class="compliance-note">
+              Messaging is used for general enquiries and customer support. We do not operate an automated marketplace or public catalog for live animals via messaging.
+            </p>
+          </div>
+
+          <div class="contact-social">
+            <p>Facebook Page:</p>
+            <p>
+              <a href="https://www.facebook.com" target="_blank" rel="noopener">
+                Amadeus Farm – Sustainable piglets and products
+              </a>
+              <!-- TODO: Replace with your actual Facebook page URL -->
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer>
+      © <span id="year"></span> Amadeus Farm • Family-run, growing with nature.
+      <br>
+      <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
+      &nbsp;•&nbsp;
+      <a href="terms.html" target="_blank" rel="noopener">Terms of Service</a>
+      <br>
+      <span class="bot-note">
+        Note: Some responses may be automated via our virtual sales agent. A human team member is available on request.
+      </span>
+    </footer>
+
+  </div>
+
+  <!-- MODALS (EDUCATIONAL ONLY — NO SALES LANGUAGE) -->
+
+  <div class="modal-backdrop" id="modal-program">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Livestock & Land Stewardship</div>
+        <button class="modal-close" data-close="modal-program" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Our approach is practical and step-by-step: animal care first, then steady land improvement.
+          We focus on clean shelters, calm handling, and building systems that reduce waste over time.
+        </p>
+        <p>
+          If you have questions about the farm, our practices, or general enquiries, start a chat and we’ll help.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" type="button" data-open-chatwoot>
+          <span>Chat with us</span><span class="icon">💬</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-feed">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Gardens, Soil & Natural Inputs</div>
+        <button class="modal-close" data-close="modal-feed" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>
+          We’re growing more from the land over time. What we do on-farm is supported with natural practices,
+          including our own natural liquid fertiliser and LAB cultures.
+        </p>
+        <p>
+          The goal is to improve soil health and increase what the farm can sustainably produce, season by season.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" type="button" data-open-chatwoot>
+          <span>Chat with us</span><span class="icon">💬</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modal-care">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Animal Care & Clean Shelters</div>
+        <button class="modal-close" data-close="modal-care" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p>
+          Day-to-day animal care is the foundation: clean bedding, dry shelters, good airflow, and practical routines.
+          We aim for calm animals and consistent standards.
+        </p>
+        <p>
+          If you’re contacting us about the farm, start the website chat and we’ll assist.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-outline" type="button" data-open-chatwoot>
+          <span>Chat with us</span><span class="icon">💬</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Footer year
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    // Tile click -> open matching modal
+    document.querySelectorAll(".tile[data-modal]").forEach(function (tile) {
+      tile.addEventListener("click", function () {
+        var id = tile.getAttribute("data-modal");
+        var backdrop = document.getElementById(id);
+        if (backdrop) backdrop.classList.add("active");
+      });
+    });
+
+    // Close buttons
+    document.querySelectorAll(".modal-close").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-close");
+        var backdrop = document.getElementById(id);
+        if (backdrop) backdrop.classList.remove("active");
+      });
+    });
+
+    // Click outside modal to close
+    document.querySelectorAll(".modal-backdrop").forEach(function (backdrop) {
+      backdrop.addEventListener("click", function (e) {
+        if (e.target === backdrop) {
+          backdrop.classList.remove("active");
+        }
+      });
+    });
+
+    // Escape key closes any open modal
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") {
+        document.querySelectorAll(".modal-backdrop.active").forEach(function (backdrop) {
+          backdrop.classList.remove("active");
+        });
+      }
+    });
+
+    // Chatwoot open handling (reliable even if SDK loads later)
+    var __openChatwootWhenReady = false;
+
+    function openChatwoot() {
+      if (window.$chatwoot && typeof window.$chatwoot.toggle === "function") {
+        window.$chatwoot.toggle("open");
+        __openChatwootWhenReady = false;
+        return;
+      }
+      __openChatwootWhenReady = true;
+    }
+
+    document.querySelectorAll("[data-open-chatwoot]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        openChatwoot();
+      });
+    });
+
+    window.addEventListener("chatwoot:ready", function () {
+      if (__openChatwootWhenReady && window.$chatwoot && typeof window.$chatwoot.toggle === "function") {
+        window.$chatwoot.toggle("open");
+        __openChatwootWhenReady = false;
+      }
+    });
+  </script>
+
+  <!-- Chatwoot -->
+  <script>
+    (function(d,t) {
+      var BASE_URL="https://app.chatwoot.com";
+      var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+      g.src=BASE_URL+"/packs/js/sdk.js";
+      g.async = true;
+      s.parentNode.insertBefore(g,s);
+      g.onload=function(){
+        window.chatwootSDK.run({
+          websiteToken: '8DMpkjTFZqdV6ZSdhevZKgnc',
+          baseUrl: BASE_URL
+        })
+      }
+    })(document,"script");
+  </script>
+
+</body>
+</html>

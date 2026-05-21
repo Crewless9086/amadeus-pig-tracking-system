@@ -1,4 +1,10 @@
 .env
+external_sources/**/.env
+external_sources/**/*secret*
+external_sources/**/*credential*
+external_sources/**/*token*
+external_sources/**/*key*
+external_sources/**/*service_account*.json
 service_account.json
 __pycache__/
 *.pyc

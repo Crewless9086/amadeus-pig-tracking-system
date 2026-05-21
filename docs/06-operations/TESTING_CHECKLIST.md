@@ -1282,6 +1282,39 @@ Deploy checks:
 5. Confirm item rows were not silently reallocated.
 6. Cancel the synthetic batch and confirm duplicate-pig protection releases those synthetic pigs after cancellation.
 
+Deploy result:
+
+- 2026-05-21: Deployed synthetic API test created two-pig batch `SALE-2026-17736A` using `PIG-TEST-L4E-A-20260521180640` and `PIG-TEST-L4E-B-20260521180640`.
+- 2026-05-21: Active duplicate create was blocked with `409 duplicate_pig`.
+- 2026-05-21: Payment update succeeded with final batch amount `2700`, `payment_status = Paid`, and `payment_date = 2026-05-21`.
+- 2026-05-21: Multi-pig payment update returned `items_updated = 0`, confirming no automatic item reallocation.
+- 2026-05-21: Synthetic batch `SALE-2026-17736A` was cancelled.
+- 2026-05-21: Reuse batch `SALE-2026-0C9DE0` using the same synthetic pig IDs was created successfully after cancellation, proving duplicate-pig release.
+- 2026-05-21: Reuse batch `SALE-2026-0C9DE0` was cancelled.
+- 2026-05-21: Deployed `/sales/slaughter` page smoke passed and included the multi-pig row container plus batch total UI.
+
+## Phase 10.3C Telemetry Power Schema Checks
+
+Local result:
+
+- 2026-05-21: First telemetry power migration added locally at `supabase/migrations/202605210005_create_telemetry_power_tables.sql`.
+- 2026-05-21: Migration creates `telemetry_sources`, `power_readings_5min`, `power_latest_state`, and `telemetry_alerts`.
+- 2026-05-21: Migration seeds source row `sunsynk-main-inverter`.
+- 2026-05-21: Migration imports no telemetry readings and changes no Render logger or n8n workflow.
+- 2026-05-21: Backend verifier added locally at `GET /health/database/telemetry-power-schema`.
+- 2026-05-21: Focused database tests passed at 18 tests.
+- 2026-05-21: Local missing-config verifier smoke returned safe `503`.
+- 2026-05-21: Full local unittest suite passed at 211 tests.
+
+Deploy checks:
+
+1. Deploy backend containing `/health/database/telemetry-power-schema`.
+2. Run `supabase/migrations/202605210005_create_telemetry_power_tables.sql` in Supabase SQL Editor.
+3. Open `/health/database/telemetry-power-schema`.
+4. Confirm `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, and `missing_tables = []`.
+5. Confirm `sunsynk_source.source_id = sunsynk-main-inverter`.
+6. Do not change the Sunsynk Render logger or n8n `2.2` until this verifier passes.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

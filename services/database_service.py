@@ -18,6 +18,13 @@ SALES_TRANSACTION_SCHEMA_TABLES = [
     "sales_transaction_items",
 ]
 SALES_PAYMENT_DATE_MIGRATION_ID = "202605210004_add_sales_transaction_payment_date"
+TELEMETRY_POWER_SCHEMA_MIGRATION_ID = "202605210005_create_telemetry_power_tables"
+TELEMETRY_POWER_SCHEMA_TABLES = [
+    "telemetry_sources",
+    "power_readings_5min",
+    "power_latest_state",
+    "telemetry_alerts",
+]
 
 
 def check_database_health():
@@ -352,5 +359,100 @@ def check_sales_transaction_payment_date_schema():
             "configured": True,
             "status": "sales_payment_date_schema_check_failed",
             "message": "Sales payment date schema check failed.",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+
+def check_telemetry_power_schema():
+    database_url = os.getenv(DATABASE_URL_ENV, "").strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": "DATABASE_URL is not configured.",
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+        }, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=5) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select table_name
+                    from information_schema.tables
+                    where table_schema = 'public'
+                    and table_name = any(%s)
+                    """,
+                    (TELEMETRY_POWER_SCHEMA_TABLES,),
+                )
+                found_tables = sorted(row[0] for row in cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    select migration_id, applied_at
+                    from app_private.migration_log
+                    where migration_id = %s
+                    """,
+                    (TELEMETRY_POWER_SCHEMA_MIGRATION_ID,),
+                )
+                migration_row = cursor.fetchone()
+
+                cursor.execute(
+                    """
+                    select source_id, source_type, provider, stale_after_minutes
+                    from public.telemetry_sources
+                    where source_id = 'sunsynk-main-inverter'
+                    """
+                )
+                source_row = cursor.fetchone()
+
+        expected_tables = sorted(TELEMETRY_POWER_SCHEMA_TABLES)
+        missing_tables = [table for table in expected_tables if table not in found_tables]
+
+        if missing_tables or not migration_row or not source_row:
+            return {
+                "success": False,
+                "configured": True,
+                "status": "telemetry_power_schema_missing",
+                "migration_id": TELEMETRY_POWER_SCHEMA_MIGRATION_ID,
+                "migration_applied": bool(migration_row),
+                "expected_tables": expected_tables,
+                "found_tables": found_tables,
+                "missing_tables": missing_tables,
+                "sunsynk_source_found": bool(source_row),
+            }, 503
+
+        return {
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "migration_id": migration_row[0],
+            "applied_at": migration_row[1].isoformat(),
+            "expected_tables": expected_tables,
+            "found_tables": found_tables,
+            "missing_tables": [],
+            "sunsynk_source": {
+                "source_id": source_row[0],
+                "source_type": source_row[1],
+                "provider": source_row[2],
+                "stale_after_minutes": source_row[3],
+            },
+        }, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "telemetry_power_schema_check_failed",
+            "message": "Telemetry power schema check failed.",
             "error_type": exc.__class__.__name__,
         }, 503

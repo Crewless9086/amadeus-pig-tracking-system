@@ -274,4 +274,31 @@ Current position:
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 206 tests.
 - Phase 10.2L4D payment update with batch total/payment date is implemented locally: payment update requires `payment_date` when marking Paid, updates header totals/payment/date/status, keeps single-pig item update behavior, and does not auto-reallocate final batch totals across multiple pig item rows.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused update/route/frontend tests passed at 25 tests, local page smoke returned `200`, and full local unittest suite passed at 208 tests.
-- Next step is deploying and running 10.2L4E synthetic batch test.
+- Phase 10.2L4E deployed synthetic batch test passed on 2026-05-21: two-pig synthetic batch `SALE-2026-17736A` was created, active duplicate create was blocked with `409`, payment update to `Paid` with `payment_date = 2026-05-21` succeeded, the batch was cancelled, reuse batch `SALE-2026-0C9DE0` proved duplicate-pig release, and the reuse batch was cancelled.
+- Deployed `/sales/slaughter` page smoke passed and included the multi-pig row container plus batch total UI.
+- Synthetic test pig IDs were `PIG-TEST-L4E-A-20260521180640` and `PIG-TEST-L4E-B-20260521180640`; both synthetic transactions are cancelled.
+- Phase 10.2L4 is closed after deployed synthetic verification; manual UI owner smoke is optional, not a blocker.
+- S10 / real JC Slaghuis payment completion remains owner-pending until the real amount is known.
+- Phase 10.3 telemetry review is selected as the next Phase 10 slice.
+- Phase 10.3 working source is created in `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`.
+- 10.3 scope is planning-first: inventory weather, Sunsynk, forecast, irrigation, and alert data; design compact backend read models for Oom Sakkie and dashboard use; keep working weather stable; and fix the slow Sunsynk path by moving toward backend/Supabase prepared payloads instead of more agent-over-sheet loops.
+- Initial repo inventory found no backend telemetry modules or local telemetry ingestion scripts in this repo; current telemetry knowledge is in n8n workflow exports/docs, so external logger/cron/script locations still need owner confirmation.
+- External source folders have been imported and filed under `external_sources/`: Sunsynk logger, local weather station logger, forecast logger, and non-telemetry landing-page source. One forecast `.env` file is present but ignored by git.
+- 10.3A partial inventory now captures each logger's env vars, external API, sheet write target, and likely role.
+- Owner confirmed telemetry loggers run as Render cron services; irrigation appears to be n8n-run.
+- Owner confirmed production spreadsheets for Sunsynk, Weather, and Irrigation.
+- Local Google Sheets inventory is blocked until the three telemetry spreadsheets are shared with service account `amadeuspigtrackersystem@amadeus-farm-weather-bot.iam.gserviceaccount.com`.
+- Retention/rollup direction is captured: current state plus short raw retention, then daily/monthly/yearly rollups for long-term useful data.
+- Service account access is now confirmed for the three telemetry sheets.
+- Weather and irrigation tab/header/formula inventory succeeded.
+- Sunsynk metadata inventory succeeded, but values reads timed out even on tiny ranges, confirming the current Sunsynk sheet is not a good live answer source for Oom Sakkie.
+- 10.3A conclusion: keep weather stable for now, treat irrigation as a later hardware-control/audit design, and prioritize Sunsynk current-state backend/Supabase read model first.
+- 10.3B Sunsynk current-state read model is planned: first endpoint should be `GET /api/telemetry/power/current`, returning source freshness, current battery/solar/load/grid/generator state, deterministic flags, backend-prepared summary wording, and explicit stale/unavailable behavior.
+- Owner agreed the 10.3B payload direction.
+- 10.3C telemetry schema proposal is documented: first migration should be power-first with `telemetry_sources`, `power_readings_5min`, `power_latest_state`, and `telemetry_alerts`; hourly/daily/monthly/yearly rollups wait until energy calculation rules are confirmed.
+- Owner agreed to implement 10.3C.
+- Phase 10.3C first telemetry power schema migration is implemented locally: `supabase/migrations/202605210005_create_telemetry_power_tables.sql`.
+- Backend verifier `GET /health/database/telemetry-power-schema` is implemented locally.
+- Migration creates `telemetry_sources`, `power_readings_5min`, `power_latest_state`, and `telemetry_alerts`, and seeds `sunsynk-main-inverter`; it imports no telemetry readings, changes no Render logger, and changes no n8n workflows.
+- Local verification passed on 2026-05-21: focused database tests passed at 18 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 211 tests.
+- Next step is deploying the backend, running `202605210005_create_telemetry_power_tables.sql` in Supabase SQL Editor, then verifying `/health/database/telemetry-power-schema`.

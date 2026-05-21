@@ -10,6 +10,7 @@ from services.database_service import (
     check_order_schema,
     check_sales_transaction_payment_date_schema,
     check_sales_transaction_schema,
+    check_telemetry_power_schema,
 )
 
 app = Flask(__name__)
@@ -177,6 +178,12 @@ def database_sales_transaction_schema_health():
 @app.route("/health/database/sales-payment-date-schema")
 def database_sales_payment_date_schema_health():
     body, status_code = check_sales_transaction_payment_date_schema()
+    return body, status_code
+
+
+@app.route("/health/database/telemetry-power-schema")
+def database_telemetry_power_schema_health():
+    body, status_code = check_telemetry_power_schema()
     return body, status_code
 
 
