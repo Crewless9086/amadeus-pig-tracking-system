@@ -9,6 +9,7 @@ Rules:
 - Review every migration before running it in Supabase.
 - Do not store database passwords, connection strings, service-role keys, or anon keys in this folder.
 - Do not run production imports until the backup, shadow-read, comparison, and rollback gates are accepted.
+- Codex may run reviewed SQL migrations directly against Supabase when `DATABASE_URL` is available locally and network/database command approval is granted. Run one reviewed migration file at a time and verify with the matching backend health endpoint immediately after.
 
 Current state:
 

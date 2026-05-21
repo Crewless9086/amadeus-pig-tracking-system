@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Local | Deploy backend, run telemetry power SQL, then verify `/health/database/telemetry-power-schema`. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D Decided; 10.3E Local | Add `TELEMETRY_INGEST_API_KEY`, deploy backend, test telemetry ingest/current endpoints. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2698,7 +2698,12 @@ Recommendation:
 - Backend verifier implemented locally: `GET /health/database/telemetry-power-schema`.
 - Migration creates `telemetry_sources`, `power_readings_5min`, `power_latest_state`, and `telemetry_alerts`, and seeds `sunsynk-main-inverter`; it imports no telemetry readings, changes no Render logger, and changes no n8n workflows.
 - Local verification passed on 2026-05-21: focused database tests passed at 18 tests, local missing-config verifier smoke returned safe `503`, and full local unittest suite passed at 211 tests.
-- Next step: deploy backend, run `202605210005_create_telemetry_power_tables.sql` in Supabase SQL Editor, then verify `/health/database/telemetry-power-schema`.
+- Phase 10.3C deployed verification passed on 2026-05-21: `/health/database/telemetry-power-schema` returned `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, all four expected tables found, `missing_tables = []`, and `sunsynk_source.source_id = sunsynk-main-inverter` with `stale_after_minutes = 15`.
+- Future Supabase migrations can be run directly from the local workspace when `DATABASE_URL` is available locally and network/database command approval is granted; still inspect SQL first, run exactly one migration file, then verify through the matching backend health endpoint.
+- 10.3D ingestion decision: existing Render Sunsynk logger should call the Flask backend, not write directly to Supabase. Backend owns validation, raw/latest writes, summary flags, and Oom Sakkie read model.
+- 10.3E backend endpoints implemented locally: `POST /api/telemetry/power/ingest` protected by `TELEMETRY_INGEST_API_KEY`, and `GET /api/telemetry/power/current` for Oom Sakkie/dashboard current-state reads.
+- Local verification passed on 2026-05-21: focused telemetry tests passed at 8 tests, local route smokes returned safe config failures, and full local unittest suite passed at 219 tests.
+- Next step: add `TELEMETRY_INGEST_API_KEY` to Render backend env, deploy backend, run a safe synthetic ingest test, then read back `/api/telemetry/power/current`.
 
 Farm home/dashboard idea:
 

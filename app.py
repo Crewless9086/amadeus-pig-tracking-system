@@ -4,6 +4,7 @@ from modules.pig_weights.mating_routes import mating_bp
 from modules.orders.order_routes import orders_bp
 from modules.reports.report_routes import reports_bp
 from modules.sales.sales_transaction_routes import sales_bp
+from modules.telemetry.telemetry_routes import telemetry_bp
 from services.database_service import (
     check_database_foundation,
     check_database_health,
@@ -19,6 +20,7 @@ app.register_blueprint(mating_bp, url_prefix="/api/pig-weights")
 app.register_blueprint(orders_bp, url_prefix="/api")
 app.register_blueprint(reports_bp, url_prefix="/api")
 app.register_blueprint(sales_bp, url_prefix="/api")
+app.register_blueprint(telemetry_bp, url_prefix="/api")
 
 
 @app.route("/")

@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A telemetry inventory captured; 10.3B agreed; 10.3C implemented locally |
-| **Current focus** | Deploy backend, run `202605210005_create_telemetry_power_tables.sql`, then verify `/health/database/telemetry-power-schema` |
-| **Current last verified** | **2026-05-21** - 10.3C focused database tests at 18 tests, local missing-config verifier smoke `503`, and full local suite at 211 tests |
+| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A telemetry inventory captured; 10.3B agreed; 10.3C applied and verified; 10.3D decided; 10.3E local |
+| **Current focus** | Add `TELEMETRY_INGEST_API_KEY`, deploy backend, then test telemetry ingest/current endpoints |
+| **Current last verified** | **2026-05-21** - 10.3E focused telemetry tests at 8 tests, safe config route smokes, and full local suite at 219 tests |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

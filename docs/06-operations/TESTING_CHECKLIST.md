@@ -1315,6 +1315,34 @@ Deploy checks:
 5. Confirm `sunsynk_source.source_id = sunsynk-main-inverter`.
 6. Do not change the Sunsynk Render logger or n8n `2.2` until this verifier passes.
 
+Deploy result:
+
+- 2026-05-21: `/health/database/telemetry-power-schema` returned `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, all four expected tables found, and `missing_tables = []`.
+- 2026-05-21: Seed source confirmed as `sunsynk-main-inverter`, `provider = sunsynk`, `source_type = power`, `stale_after_minutes = 15`.
+
+## Phase 10.3D/10.3E Telemetry Ingest And Current Endpoint Checks
+
+Local result:
+
+- 2026-05-21: Ingestion decision documented: Render Sunsynk logger should call the Flask backend instead of writing directly to Supabase.
+- 2026-05-21: `POST /api/telemetry/power/ingest` implemented locally and protected by `TELEMETRY_INGEST_API_KEY`.
+- 2026-05-21: `GET /api/telemetry/power/current` implemented locally.
+- 2026-05-21: Current endpoint missing-config smoke returned safe `503` with `status = not_configured`.
+- 2026-05-21: Ingest endpoint missing-key smoke returned safe `503` with `status = ingest_key_not_configured`.
+- 2026-05-21: Focused telemetry tests passed at 8 tests.
+- 2026-05-21: Full local unittest suite passed at 219 tests.
+
+Deploy checks:
+
+1. Add `TELEMETRY_INGEST_API_KEY` to the Render backend environment.
+2. Deploy backend containing the telemetry endpoints.
+3. Open `GET /api/telemetry/power/current`; before first ingest it may return `status = unavailable`.
+4. Send one safe synthetic Sunsynk payload to `POST /api/telemetry/power/ingest` with header `X-Amadeus-Telemetry-Key`.
+5. Confirm ingest returns `success = true` and `source.writes_to_supabase = true`.
+6. Re-open `GET /api/telemetry/power/current`.
+7. Confirm it returns the latest synthetic state with source freshness and deterministic flags.
+8. Do not update the Render Sunsynk logger until this deployed test passes.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

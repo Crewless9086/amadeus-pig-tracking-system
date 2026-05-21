@@ -585,6 +585,13 @@ Deploy/apply gate:
 - Run `supabase/migrations/202605210005_create_telemetry_power_tables.sql` in Supabase SQL Editor.
 - Confirm `/health/database/telemetry-power-schema` returns `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, `missing_tables = []`, and `sunsynk_source.source_id = sunsynk-main-inverter`.
 
+10.3C deployed verification result:
+
+- Passed on 2026-05-21.
+- `/health/database/telemetry-power-schema` returned `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, all four expected tables found, and `missing_tables = []`.
+- Seed source confirmed: `sunsynk_source.source_id = sunsynk-main-inverter`, `provider = sunsynk`, `source_type = power`, `stale_after_minutes = 15`.
+- Direct-run note for future migrations: Codex can apply SQL directly to Supabase from the local workspace when `DATABASE_URL` is available locally and network/database command approval is granted. The safe rule is to inspect the SQL first, run exactly one reviewed migration file, then verify through the matching backend health endpoint.
+
 ## Implementation Sequence
 
 1. **10.3A telemetry inventory** - document current sheets, workflow IDs, cron jobs, backend/laptop scripts, external APIs, row counts, update frequency, and direct writes.
@@ -595,6 +602,69 @@ Deploy/apply gate:
 6. **10.3F Oom Sakkie power tool update** - update `2.2` to call the backend read model instead of reading multiple sheets through an agent loop.
 7. **10.3G weather/forecast alignment** - decide whether weather stays sheet-backed for now or gets the same backend read-model treatment.
 8. **10.3H irrigation command boundary** - plan backend-owned command/audit endpoints before any new Telegram irrigation controls.
+
+## 10.3D Ingestion Decision
+
+Decision:
+
+- The existing Render Sunsynk logger should call the Flask backend.
+- The backend should validate the reading, normalize fields, write `power_readings_5min`, update `power_latest_state`, and later serve Oom Sakkie from `GET /api/telemetry/power/current`.
+- The logger should not write directly to Supabase for the preferred path.
+- The logger may continue writing to Google Sheets temporarily as a visible mirror during transition, but Google Sheets must not be Oom Sakkie's current-state source.
+
+Reasoning:
+
+- Backend-owned ingest keeps validation, stale/read-model rules, and future audit behavior in one place.
+- It prevents the logger from needing database credentials.
+- It lets Render cron fail safely through one controlled API contract.
+- It avoids putting direct Supabase write credentials into n8n or logger code if not needed.
+
+Required secret:
+
+- Backend and logger need a shared secret called `TELEMETRY_INGEST_API_KEY`.
+- The logger sends it as `X-Amadeus-Telemetry-Key`.
+- The backend rejects missing/invalid keys before touching Supabase.
+- Do not store this key in docs, workflow JSON, or source files.
+
+10.3D local implementation result:
+
+- `POST /api/telemetry/power/ingest` is implemented locally.
+- It accepts the current Sunsynk logger fields such as `timestamp_za`, `soc`, `batt_power`, `pv_total`, `pv1`, `pv2`, `load_power`, `grid_power`, `gen_power`, `inv_pac`, `grid_active`, `gen_active`, `battery_charging`, and `battery_discharging`.
+- It derives battery/grid/generator states, deterministic flags, and backend summary wording.
+- It writes/upserts one raw 5-minute row and one latest-state row.
+- It is protected by `TELEMETRY_INGEST_API_KEY`.
+
+## 10.3E Current Power Backend Endpoint
+
+Endpoint:
+
+- `GET /api/telemetry/power/current`
+
+Purpose:
+
+- Return the 10.3B agreed current-state payload from Supabase `power_latest_state`.
+- Include source freshness, stale flag, deterministic current state, flags, backend-prepared summary, and units.
+- Return `success = false`, `status = unavailable` with HTTP `200` if the schema exists but no latest reading has been ingested yet.
+
+Local implementation result:
+
+- `GET /api/telemetry/power/current` is implemented locally.
+- `POST /api/telemetry/power/ingest` is implemented locally because the selected ingestion path requires it.
+- Local route smoke without required env/config returned safe failures:
+  - current endpoint: `503`, `status = not_configured` when `DATABASE_URL` is missing
+  - ingest endpoint: `503`, `status = ingest_key_not_configured` when `TELEMETRY_INGEST_API_KEY` is missing
+- Focused telemetry tests passed locally at 8 tests.
+- Full local unittest suite passed at 219 tests.
+
+Deploy/test gate:
+
+- Add `TELEMETRY_INGEST_API_KEY` to Render backend environment.
+- Deploy the backend.
+- Confirm `GET /api/telemetry/power/current` returns either current data or `status = unavailable` before the first ingest.
+- Send one safe synthetic/test Sunsynk payload to `POST /api/telemetry/power/ingest` with `X-Amadeus-Telemetry-Key`.
+- Confirm the ingest returns `success = true`, `writes_to_supabase = true`.
+- Confirm `GET /api/telemetry/power/current` returns that latest state.
+- Only after this test should the Render Sunsynk logger be updated.
 
 ## Must Not Do In 10.3 Planning
 
