@@ -13,6 +13,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         paths = [
             Path("static/js/addLitter.js"),
             Path("static/js/addMating.js"),
+            Path("static/js/pigList.js"),
             Path("static/js/pigWeights.form.js"),
             Path("static/js/weightReport.js"),
         ]
@@ -22,6 +23,16 @@ class FrontendRouteContractTests(unittest.TestCase):
             with self.subTest(path=str(path)):
                 self.assertIn("padStart(3", js)
                 self.assertIn("formatTagNumber", js)
+
+    def test_pig_list_uses_numeric_aware_display_order_and_search(self):
+        js = Path("static/js/pigList.js").read_text(encoding="utf-8")
+
+        self.assertIn("pigSortKey", js)
+        self.assertIn("sortPigsForDisplay", js)
+        self.assertIn("sortPigsForDisplay(data.pigs || [])", js)
+        self.assertIn("formattedTagNumber", js)
+        self.assertIn("formatTagNumber(pig.tag_number || pig.pig_id)", js)
+        self.assertIn("card.href = `/pig/${encodeURIComponent(pig.pig_id)}`", js)
 
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")

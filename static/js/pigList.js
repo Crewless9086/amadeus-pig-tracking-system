@@ -4,6 +4,22 @@ const pigListMessage = document.getElementById("pig_list_message");
 
 let allPigs = [];
 
+function formatTagNumber(value) {
+  const raw = String(value || "").trim();
+  return /^\d+$/.test(raw) ? raw.padStart(3, "0") : raw;
+}
+
+function pigSortKey(pig) {
+  const rawTag = String(pig.tag_number || pig.pig_id || "").trim();
+  const tagKey = /^\d+$/.test(rawTag) ? rawTag.padStart(8, "0") : rawTag.toLowerCase();
+  const penKey = String(pig.current_pen_name || pig.current_pen_id || "").toLowerCase();
+  return `${tagKey}|${penKey}|${pig.pig_id || ""}`;
+}
+
+function sortPigsForDisplay(pigs) {
+  return [...pigs].sort((a, b) => pigSortKey(a).localeCompare(pigSortKey(b)));
+}
+
 function showListMessage(message, type = "error") {
   pigListMessage.classList.remove("hidden", "message-success", "message-error");
   pigListMessage.classList.add(type === "success" ? "message-success" : "message-error");
@@ -26,11 +42,11 @@ function buildPigCard(pig) {
 
   const tag = document.createElement("div");
   tag.className = "pig-list-tag";
-  tag.textContent = pig.tag_number || pig.pig_id;
+  tag.textContent = formatTagNumber(pig.tag_number || pig.pig_id);
 
   const action = document.createElement("div");
   action.className = "pig-list-action";
-  action.textContent = "Open Profile →";
+  action.textContent = "Open Profile ->";
 
   topRow.appendChild(tag);
   topRow.appendChild(action);
@@ -82,7 +98,8 @@ function filterPigs() {
   const filtered = allPigs.filter((pig) => {
     const pigId = String(pig.pig_id || "").toLowerCase();
     const tagNumber = String(pig.tag_number || "").toLowerCase();
-    return pigId.includes(query) || tagNumber.includes(query);
+    const formattedTagNumber = formatTagNumber(pig.tag_number || "").toLowerCase();
+    return pigId.includes(query) || tagNumber.includes(query) || formattedTagNumber.includes(query);
   });
 
   renderPigList(filtered);
@@ -95,7 +112,7 @@ async function loadPigList() {
     const response = await fetch("/api/pig-weights/pigs");
     const data = await response.json();
 
-    allPigs = data.pigs || [];
+    allPigs = sortPigsForDisplay(data.pigs || []);
     renderPigList(allPigs);
   } catch (error) {
     showListMessage("Could not load pig list.", "error");

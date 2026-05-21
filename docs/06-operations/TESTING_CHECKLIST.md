@@ -608,6 +608,23 @@ Phase 9.2A:
 7. Confirm dropdown order follows the tag/name display order rather than `PIG_ID`.
 8. Confirm form submissions still send `pig_id` values, not display labels.
 
+Phase 9.2B:
+
+1. Open `/pigs`.
+2. Confirm numeric-only pig tags display as three slots, for example `001`, `010`, `099`, `120`.
+3. Confirm the list order is numeric-aware and useful for farm scanning.
+4. Search for a raw tag such as `1` and confirm the matching padded tag appears.
+5. Search for a padded tag such as `001` and confirm the same pig appears.
+6. Search by `PIG_ID` and confirm the matching pig appears.
+7. Click a pig card and confirm it opens the correct pig profile.
+
+Local result:
+
+- 2026-05-21: `node --check static/js/pigList.js` passed.
+- 2026-05-21: Focused frontend contract tests passed.
+- 2026-05-21: Full local unittest suite passed at 166 tests.
+- Deploy/browser verification is pending.
+
 ## Weight Form Context Tests
 
 Phase 9.3:

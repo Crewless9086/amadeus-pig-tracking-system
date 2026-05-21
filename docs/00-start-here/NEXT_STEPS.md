@@ -2054,17 +2054,25 @@ Required outcome:
 - Focused backend tests and JavaScript syntax checks passed locally.
 - Deployed and owner-verified in the browser: Add Litter, Add Mating, and Weight Entry dropdown labels display correctly.
 
-9.2B pig list tag formatting - planned:
+9.2B pig list tag formatting - implemented locally; deploy verification pending:
 
 - Source note moved from `planning/ToDoList.md`.
 - `/pigs` should display numeric pig tags in the same three-digit format used elsewhere: `001`, `010`, `099`, `120`.
 - Pig list sorting should be predictable and numeric-aware, not text order and not raw `PIG_ID` order.
-- Desired default: tags ordered in a way that is useful for farm scanning, with clear handling for named pigs or non-numeric tags.
+- Default: numeric-only tags sort low-to-high by padded tag number; named or non-numeric tags sort predictably by their display text.
 - Keep this as a small visual/read-only consistency slice.
+- Implementation state:
+  - `/pigs` now formats numeric-only tag numbers with three slots.
+  - The pig list uses numeric-aware display ordering before rendering.
+  - Search matches raw tags, padded tags, and `PIG_ID`.
+  - Pig profile links still use the unchanged `pig_id`.
+  - Verification passed: `node --check static/js/pigList.js`, focused frontend contract tests, and full local unittest suite at 166 tests.
 
-Question to answer when planning:
+Deploy/browser check:
 
-- Should `/pigs` default to low-to-high tag order, high-to-low tag order, or grouped by pen/status first and then tag order?
+- Open `/pigs` after deploy and confirm numeric tags show as `001`, `010`, `099`, `120`.
+- Confirm the default order is useful for scanning and detail links still open the correct pig profile.
+- Confirm search works with both raw and padded tag input.
 
 ### 9.3 Weight Form Context — Complete / Owner-Verified
 
