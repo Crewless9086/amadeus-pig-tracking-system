@@ -586,21 +586,33 @@ Failure contract:
 Recommended implementation split:
 
 1. **10.2K1 backend create service and route** - implemented locally 2026-05-21: `POST /api/sales-transactions` supports `Slaughter` only, validates payloads, requires `created_by`, writes header/items atomically to Supabase, blocks duplicate pig IDs, and does not write to Google Sheets.
-2. **10.2K2 deployed write test with safe synthetic pig IDs** - insert a clearly marked test transaction, verify it appears in `GET /api/sales-transactions`, then cancel/void behavior must be planned before live use.
-3. **10.2K3 cancellation/void planning** - define how to cancel a mistaken transaction without hard delete.
+2. **10.2K2 deployed write test with safe synthetic pig IDs** - verified 2026-05-21 with synthetic pig `PIG-TEST-102K2-20260521` and transaction `SALE-2026-F17E16`.
+3. **10.2K3 cancellation/void flow** - implemented locally 2026-05-21: `POST /api/sales-transactions/<sale_id>/cancel` marks the transaction `Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
 4. **10.2L internal slaughter sale form** - web UI only after backend create/cancel behavior is proven.
 5. **10.2M dashboard Rand totals** - only after real transactions exist and cancellation behavior is defined.
 
 Implementation state:
 
-- 10.2K1 is local only and not yet deployed.
+- 10.2K1 is deployed and verified.
 - New backend module: `modules/sales/sales_transaction_create.py`.
 - New route: `POST /api/sales-transactions`.
 - Local missing-config route smoke returned safe `503` with no Supabase write.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 15 tests.
 - Full local unittest suite passed on 2026-05-21 at 184 tests.
-- No deployed write test has been run.
+- Deployed 10.2K2 write test passed on 2026-05-21: `POST /api/sales-transactions` created synthetic transaction `SALE-2026-F17E16` for `PIG-TEST-102K2-20260521`.
+- Deployed readback passed: `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` returned the synthetic transaction with `payment_status = Unpaid`, `sale_status = Confirmed`, `gross_total = 1200`, and `writes_to_supabase = false`.
+- Deployed duplicate guard passed: second create attempt for `PIG-TEST-102K2-20260521` returned `409 duplicate_pig` and `writes_to_supabase = false`.
 - No real `S10` transaction has been written.
+- 10.2K3 is implemented locally and not yet deployed.
+- New route: `POST /api/sales-transactions/<sale_id>/cancel`.
+- Cancel requires `cancelled_by` and `cancel_reason`.
+- Cancel writes only to Supabase, never deletes rows, and never writes Google Sheets.
+- Cancelled transactions are excluded from duplicate-pig blocking because duplicate protection already checks parent `sale_status <> 'Cancelled'`.
+- Local missing-config route smoke returned safe `503` with no Supabase write.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests.
+- Full local unittest suite passed on 2026-05-21 at 191 tests.
+- Next deployed test should cancel synthetic transaction `SALE-2026-F17E16`, then confirm the same synthetic pig ID can be used again in a new test transaction.
+- No real `S10` transaction should be written until cancel is deployed and verified.
 
 Open questions before implementation:
 

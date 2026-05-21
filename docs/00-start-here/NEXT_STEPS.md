@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1 Local | Deploy 10.2K1, then run only a safe synthetic write test. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2 Verified; 10.2K3 Local | Deploy and verify cancellation before any real slaughter transaction. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2630,8 +2630,13 @@ Recommendation:
 - VAT handling is now an explicit planning point: before dashboard financial reporting, decide/add structured VAT fields rather than hiding VAT permanently in notes.
 - Phase 10.2K1 backend create service implemented locally: `POST /api/sales-transactions` supports `Slaughter` only, requires `created_by`, writes Supabase header/items atomically, blocks duplicate pig IDs, and writes nothing to Google Sheets.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 15 tests, local missing-config route smoke returned safe `503`, and full local unittest suite passed at 184 tests.
-- No deployed write test has been run and no real `S10` transaction has been written.
-- Next step: deploy 10.2K1, then run one safe synthetic Supabase write test before considering any real slaughter transaction.
+- Phase 10.2K1/10.2K2 deployed verification passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was created for `PIG-TEST-102K2-20260521`, read back through `GET /api/sales-transactions`, and duplicate-pig protection returned `409 duplicate_pig` on a second create attempt.
+- The synthetic test row remains in Supabase as a clear test transaction. It is not linked to a real pig/order.
+- No real `S10` transaction has been written.
+- Phase 10.2K3 cancellation/void flow implemented locally: `POST /api/sales-transactions/<sale_id>/cancel` requires `cancelled_by` and `cancel_reason`, marks `sale_status = Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests, local missing-config cancel route smoke returned safe `503`, and full local unittest suite passed at 191 tests.
+- Next deployed test: cancel synthetic transaction `SALE-2026-F17E16`, then confirm the same synthetic pig ID can be reused in another synthetic test transaction.
+- No real `S10` transaction should be written until cancel is deployed and verified.
 
 Farm home/dashboard idea:
 

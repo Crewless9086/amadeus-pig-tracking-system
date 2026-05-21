@@ -240,5 +240,10 @@ Current position:
 - Pig `S10` was reported on 2026-05-21 as recently slaughtered and has been marked slaughtered in Google Sheets; it is a possible later real transaction candidate after write/cancel behavior is proven.
 - Phase 10.2K1 is implemented locally: `POST /api/sales-transactions` supports `Slaughter` only, requires `created_by`, writes Supabase header/items atomically, blocks duplicate pig IDs, and writes nothing to Google Sheets.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 15 tests, local missing-config route smoke returned safe `503`, and full local unittest suite passed at 184 tests.
-- No deployed 10.2K write test has been run yet and no real `S10` transaction has been written.
-- Next step is deploying 10.2K1 and running one safe synthetic Supabase write test before any real slaughter transaction.
+- Deployed 10.2K1/10.2K2 verification passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was created for `PIG-TEST-102K2-20260521`, read back successfully, and duplicate-pig protection returned `409 duplicate_pig` on a second create attempt.
+- The synthetic test transaction remains in Supabase and is clearly marked as test data. It is not linked to a real pig/order.
+- No real `S10` transaction has been written.
+- Phase 10.2K3 cancellation/void flow is implemented locally: `POST /api/sales-transactions/<sale_id>/cancel` requires `cancelled_by` and `cancel_reason`, marks `sale_status = Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests, local missing-config cancel route smoke returned safe `503`, and full local unittest suite passed at 191 tests.
+- Next step is deploying 10.2K3, cancelling synthetic transaction `SALE-2026-F17E16`, and confirming the same synthetic pig ID can be reused after cancellation.
+- No real `S10` transaction should be written until cancel is deployed and verified.

@@ -1086,8 +1086,26 @@ Local result:
 - 2026-05-21: Focused sales transaction tests passed at 15 tests.
 - 2026-05-21: Local missing-config route smoke returned safe `503` with `writes_to_supabase = false`.
 - 2026-05-21: Full local unittest suite passed at 184 tests.
-- No deployed write test has been run yet.
+
+Deploy result:
+
+- 2026-05-21: 10.2K1 deployed.
+- 2026-05-21: 10.2K2 synthetic write test created `SALE-2026-F17E16` for `PIG-TEST-102K2-20260521`.
+- 2026-05-21: Readback through `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` returned the synthetic transaction.
+- 2026-05-21: Duplicate-pig protection returned `409 duplicate_pig` on a second create attempt for `PIG-TEST-102K2-20260521`.
 - No real `S10` transaction has been written.
+- 2026-05-21: 10.2K3 cancellation/void flow implemented locally.
+- 2026-05-21: Focused sales transaction tests passed at 20 tests.
+- 2026-05-21: Local missing-config cancel route smoke returned safe `503` with `writes_to_supabase = false`.
+- 2026-05-21: Full local unittest suite passed at 191 tests.
+
+Phase 10.2K3 deployed cancellation checks:
+
+1. Cancel synthetic transaction `SALE-2026-F17E16` using `POST /api/sales-transactions/SALE-2026-F17E16/cancel`.
+2. Confirm response returns `status = cancelled`, `sale_status = Cancelled`, `payment_status = Cancelled`, and `writes_to_supabase = true`.
+3. Confirm `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` shows `SALE-2026-F17E16` as cancelled.
+4. Confirm a new synthetic transaction can reuse `PIG-TEST-102K2-20260521` after cancellation.
+5. Confirm no real `S10` transaction is written until all cancellation checks pass.
 
 ## Google Sheets Checks
 
