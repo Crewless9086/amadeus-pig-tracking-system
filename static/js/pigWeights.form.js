@@ -14,7 +14,7 @@ const growthRateEl = document.getElementById("growth_rate");
 const growthStatusEl = document.getElementById("growth_status");
 
 const form = document.getElementById("pig-weight-form");
-const submitButton = document.getElementById("submit_button");
+const submitButtons = Array.from(document.querySelectorAll(".submit-button"));
 const messageBox = document.getElementById("message_box");
 const weightsReferenceBody = document.getElementById("weights_reference_body");
 
@@ -408,6 +408,9 @@ penFilterSelect.addEventListener("change", async () => {
 });
 
 weightKgInput.addEventListener("input", updateGrowthPreview);
+weightKgInput.addEventListener("wheel", (event) => {
+  event.preventDefault();
+}, { passive: false });
 
 weightDateInput.addEventListener("change", async () => {
   updateGrowthPreview();
@@ -415,8 +418,10 @@ weightDateInput.addEventListener("change", async () => {
 });
 
 async function submitWeight(payload) {
-  submitButton.disabled = true;
-  submitButton.textContent = "Saving...";
+  submitButtons.forEach((button) => {
+    button.disabled = true;
+    button.textContent = "Saving...";
+  });
 
   try {
     const response = await fetch("/api/pig-weights/weights-with-optional-move", {
@@ -467,8 +472,10 @@ async function submitWeight(payload) {
     console.error("save weight error:", error);
     showMessage("Something went wrong while saving.", "error");
   } finally {
-    submitButton.disabled = false;
-    submitButton.textContent = "Save Weight";
+    submitButtons.forEach((button) => {
+      button.disabled = false;
+      button.textContent = "Save Weight";
+    });
   }
 }
 

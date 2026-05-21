@@ -6,14 +6,18 @@ Phase 10.2 planning document.
 
 This document turns the Phase 7.2 database scaling draft into a first implementation boundary for orders/sales data in Supabase/Postgres.
 
-This is still planning. Do not create business tables until this plan is accepted.
+This plan has moved through the first shadow-import slice. It does not approve live route cutover.
 
 ## Current Status
 
 - Phase 10.1A database connection is deployed and verified.
 - Phase 10.1B baseline migration is deployed and verified.
-- Supabase currently has only the internal `app_private.migration_log` baseline table from this project.
-- No order, pig, customer, document, pricing, telemetry, or business tables have been created.
+- Phase 10.2A order/sales tables are created and verified.
+- Phase 10.2D completed-order shadow import is applied and verified.
+- Phase 10.2F read-only shadow comparison endpoint is deployed and verified.
+- Supabase now contains the internal migration log plus the first order/sales boundary tables.
+- Supabase contains shadow order/sales data only for the approved completed-order batch.
+- No pig, customer, telemetry, or broader business tables have been created.
 - Google Sheets remains the live source of truth.
 - Owner reviewed and accepted this plan on 2026-05-21.
 
@@ -563,6 +567,7 @@ Implementation state:
 - Route added: `GET /api/shadow/orders/<order_id>/compare`.
 - Local verification passed on 2026-05-21: focused shadow route/service tests passed at 32 tests and full local unittest suite passed at 164 tests.
 - Local API smoke passed for `ORD-2026-0B29D7`: HTTP 200, `success = true`, `status = ok`, `mismatch_count = 0`, `writes_to_sheets = false`, and `writes_to_supabase = false`.
+- Deployed verification passed on 2026-05-21 for `ORD-2026-0B29D7`: HTTP response returned `success = true`, `status = ok`, `mismatch_count = 0`, and read-only flags `writes_to_sheets = false`, `writes_to_supabase = false`.
 
 Not approved:
 
@@ -573,7 +578,7 @@ Not approved:
 
 Next step:
 
-- Deploy backend, then verify the deployed endpoint against one imported order before considering any broader read model work.
+- Plan the next Supabase slice deliberately. Options are a feature-flagged read model, a broader completed-order import/reimport process, or moving to Phase 10.3 telemetry review.
 
 ## 10.2A Recommended First Slice
 
@@ -648,9 +653,10 @@ Owner decision:
 
 - Owner accepted the recommended defaults on 2026-05-21.
 
-## Not Yet Approved
+## Still Not Approved
 
 - Empty order/sales business table migration has been approved, run, and verified for 10.2A only.
-- Import dry-run script is allowed for 10.2B reporting only; no real import script has been approved yet.
-- No backend read/write cutover has been approved yet.
+- Completed-order shadow import for batch `IMPORT-20260521-COMPLETED-ORDERS-V1` has been approved, applied, and verified only as shadow data.
+- Read-only shadow comparison endpoint has been approved and verified only for comparison.
+- No live backend order read/write cutover has been approved yet.
 - No Google Sheet retirement has been approved yet.

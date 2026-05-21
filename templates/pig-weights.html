@@ -115,8 +115,12 @@
 
           <div class="form-group">
             <label for="weight_kg">New Weight (kg)</label>
-            <input type="number" step="0.01" id="weight_kg" name="weight_kg" required />
+            <input type="number" step="0.01" inputmode="decimal" id="weight_kg" name="weight_kg" class="no-spinner" required />
           </div>
+        </div>
+
+        <div class="form-actions form-actions-primary">
+          <button type="submit" id="submit_button" class="submit-button">Save Weight</button>
         </div>
 
         <div class="form-grid">
@@ -142,7 +146,7 @@
         </div>
 
         <div class="form-actions">
-          <button type="submit" id="submit_button">Save Weight</button>
+          <button type="submit" id="submit_button_bottom" class="submit-button">Save Weight</button>
         </div>
 
         <div id="message_box" class="message-box hidden"></div>

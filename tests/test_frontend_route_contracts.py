@@ -51,6 +51,20 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("window.confirm", js)
         self.assertIn("allow_duplicate: true", js)
 
+    def test_weight_form_has_top_save_action_and_blocks_weight_wheel(self):
+        template = Path("templates/pig-weights.html").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+        js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")
+
+        self.assertIn('class="form-actions form-actions-primary"', template)
+        self.assertIn('id="submit_button"', template)
+        self.assertIn('id="submit_button_bottom"', template)
+        self.assertIn('class="no-spinner"', template)
+        self.assertIn("input.no-spinner::-webkit-inner-spin-button", css)
+        self.assertIn('weightKgInput.addEventListener("wheel"', js)
+        self.assertIn("event.preventDefault()", js)
+        self.assertIn("submitButtons.forEach", js)
+
     def test_dashboard_shows_monthly_sales_stream_breakdown(self):
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
 

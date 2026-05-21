@@ -138,6 +138,17 @@ textarea {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+input.no-spinner::-webkit-outer-spin-button,
+input.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input.no-spinner[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 select:focus,
 input:focus,
 textarea:focus,
@@ -227,6 +238,11 @@ textarea {
   margin-top: 8px;
   margin-bottom: 18px;
   flex-wrap: wrap;
+}
+
+.form-actions-primary {
+  margin-top: -4px;
+  margin-bottom: 4px;
 }
 
 .compact-actions {

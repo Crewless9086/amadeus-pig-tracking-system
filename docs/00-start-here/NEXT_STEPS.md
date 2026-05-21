@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A Owner-Verified; 9.3 Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Local Complete | Deploy and verify the read-only shadow compare endpoint before any route cutover. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified | Choose the next Supabase slice deliberately before any route cutover. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2018,6 +2018,24 @@ Future direction:
 - Tile link issue fixed: `litterDetail.js` now calls the existing `GET /api/pig-weights/litter/<litter_id>` route instead of the obsolete `/detail` path.
 - Owner confirmed dashboard tile opens the litter detail page after deploy.
 
+9.1C litter attention and weaning workflow - planned:
+
+- Source notes moved from `planning/ToDoList.md`.
+- Review how `LITTER_OVERVIEW.Needs_Attention` is calculated and make the reason visible to the user. If a litter tile says it needs attention, the app should explain what action is needed.
+- Clarify when litter-level tracking should stop or change after weaning. Litter data should remain useful historically, but post-weaning growth and outcomes should move to individual pig records where appropriate.
+- Add a litter tile/detail action to mark a litter as weaned.
+- Marking a litter as weaned should ask for the weaning date.
+- On confirmation, apply the weaning date to the related live/active piglets and update the litter state in a controlled backend-owned write.
+- Dead, sold, or off-farm piglets should not distort active litter age/growth/average metrics after their exit state is known.
+- Weaning should feed the future purpose-classification workflow: breeding candidate, grow-out, sale, and later slaughter/meat stream eligibility.
+
+Questions to answer when planning:
+
+- What exact sheet/formula currently drives `Needs_Attention`, and which reasons should be shown in the UI?
+- Should weaned litters disappear from the dashboard attention list once every active piglet has a purpose?
+- Which fields should be updated when marking a litter as weaned: `LITTERS`, generated `PIG_MASTER` rows, both, or a future Supabase table?
+- Should the first weaning action be Google Sheets-backed, or should it wait for the pig/litter Supabase migration?
+
 ### 9.2 Pig Dropdown Usability — Complete / Owner-Verified
 
 Required outcome:
@@ -2036,6 +2054,18 @@ Required outcome:
 - Focused backend tests and JavaScript syntax checks passed locally.
 - Deployed and owner-verified in the browser: Add Litter, Add Mating, and Weight Entry dropdown labels display correctly.
 
+9.2B pig list tag formatting - planned:
+
+- Source note moved from `planning/ToDoList.md`.
+- `/pigs` should display numeric pig tags in the same three-digit format used elsewhere: `001`, `010`, `099`, `120`.
+- Pig list sorting should be predictable and numeric-aware, not text order and not raw `PIG_ID` order.
+- Desired default: tags ordered in a way that is useful for farm scanning, with clear handling for named pigs or non-numeric tags.
+- Keep this as a small visual/read-only consistency slice.
+
+Question to answer when planning:
+
+- Should `/pigs` default to low-to-high tag order, high-to-low tag order, or grouped by pen/status first and then tag order?
+
 ### 9.3 Weight Form Context — Complete / Owner-Verified
 
 Required outcome:
@@ -2052,6 +2082,25 @@ Required outcome:
 - Focused local tests passed: `tests.test_frontend_route_contracts`, `tests.test_pig_weights_dropdown_options`, and `tests.test_pig_weights_utils`.
 - Full local unittest suite passed: 117 tests.
 - Deployed and owner-verified on `/pig-weights` on 2026-05-20.
+
+9.3B weight form UX refinements - implemented locally; deploy verification pending:
+
+- Source notes moved from `planning/ToDoList.md`.
+- Remove or neutralize the browser up/down spinner behavior on the weight input so accidental mouse-wheel scrolling does not change the entered weight.
+- Improve `/pig-weights` layout so the primary save action is visible in the first section without unnecessary scrolling.
+- Keep the form efficient for live farm use, especially on mobile or while entering many weights.
+- This should remain a frontend usability slice unless backend validation needs tightening.
+- Implementation state:
+  - `New Weight (kg)` now uses spinner-hiding styling and blocks mouse-wheel value changes.
+  - A primary `Save Weight` button appears directly after the required weight/date inputs.
+  - A second `Save Weight` button remains after optional notes for users who complete the whole form.
+  - Both buttons share the same submit flow and disabled/saving state.
+  - Save payload is unchanged.
+  - Verification passed: `node --check static/js/pigWeights.form.js`, focused frontend contract tests, and full local unittest suite at 165 tests.
+
+Questions to answer when planning:
+
+- Deploy/browser check: confirm mouse-wheel scrolling over the weight input does not change the value, and confirm the top save button is visible and saves correctly.
 
 ### 9.4 Weight Report — Current Slice Complete; 9.4C3/C4/D Planned
 
@@ -2458,8 +2507,9 @@ Recommendation:
 - Phase 10.2F read-only shadow endpoint implemented locally: `GET /api/shadow/orders/<order_id>/compare`.
 - Local verification passed on 2026-05-21: focused shadow route/service tests passed at 32 tests and full local unittest suite passed at 164 tests.
 - Local API smoke passed for `ORD-2026-0B29D7`: HTTP 200, `success = true`, `status = ok`, and `mismatch_count = 0`.
+- Deployed verification passed on 2026-05-21 for `ORD-2026-0B29D7`: `success = true`, `status = ok`, `mismatch_count = 0`, `writes_to_sheets = false`, and `writes_to_supabase = false`.
 - No backend read/write cutover, UI change, n8n change, or Google Sheet retirement has started.
-- Next step: backend deploy and deployed verification of the read-only shadow endpoint.
+- Next step: choose the next Supabase slice deliberately before any route cutover.
 
 Farm home/dashboard idea:
 
@@ -2469,12 +2519,17 @@ Farm home/dashboard idea:
 - The page may include farm photos as a quiet rotating background/screensaver element, but operational information must remain readable and useful.
 - Treat this as an operating dashboard, not a marketing landing page.
 - This belongs in Phase 10 because it depends on weather, solar, irrigation, pig records, and order modules having stable documented contracts.
+- Broader app layout note moved from `planning/ToDoList.md`: the desktop app should use available screen width better, with a consistent page template so information is not unnecessarily squeezed into the middle.
+- Mobile/PWA note moved from `planning/ToDoList.md`: investigate whether the app should support installable mobile behavior, for example a Progressive Web App pattern, so phone use feels closer to an app while still running through the browser.
+- UX rule: do not redesign every page separately. Establish shared layout conventions for page width, filters, tabs, tables, action placement, mobile behavior, and desktop density.
 
 Questions to answer when planning:
 
 - Which widgets are essential for the first version: weather now, forecast, power status, irrigation status, breeding alerts, litter attention, order attention, or farm photos?
 - Should the home page replace the current first screen after login or be a separate `/home` route first?
 - What information is safe to show on a shared farm screen without exposing customer/order details?
+- Should mobile/PWA work be a small app-shell enhancement first, or wait until Supabase-backed modules settle?
+- What desktop max-width/layout pattern should be used for operational pages: full-width tables, constrained forms, two-column detail pages, or module-specific templates?
 
 ## Phase 11: Pork Sales Business Module - Discovery Source Captured
 
@@ -2548,7 +2603,7 @@ Additional verification:
 
 Recommended next:
 
-1. **Phase 10.2F deployed verification** - deploy backend and verify `/api/shadow/orders/ORD-2026-0B29D7/compare` returns zero mismatches.
+1. **Next Supabase decision point** - choose between feature-flagged read model planning, broader completed-order import/reimport process, or Phase 10.3 telemetry review.
 2. **Phase 10.3 telemetry review** - inventory weather, Sunsynk, irrigation, and alert data after the first database path remains stable.
 3. **Pork Sales Business Module discovery** - continue refining `docs/08-business-modules/PORK_SALES_MODEL.md` in parallel as owner notes become available; do not implement yet.
 

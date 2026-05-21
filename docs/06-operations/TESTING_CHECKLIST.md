@@ -625,6 +625,22 @@ Live result:
 
 - 2026-05-20: Deployed and owner-confirmed on `/pig-weights`; current-pen helper displays correctly beside `Moved To Pen (Optional)`.
 
+Phase 9.3B weight form UX:
+
+1. Open `/pig-weights`.
+2. Confirm `New Weight (kg)` no longer shows browser spinner controls where the browser supports hiding them.
+3. Focus the `New Weight (kg)` field, scroll the mouse wheel over it, and confirm the value does not change accidentally.
+4. Confirm a `Save Weight` button appears directly after the required weight/date section.
+5. Confirm the lower `Save Weight` button still appears after optional notes.
+6. Save a normal weight and confirm both buttons use the same saving/disabled behavior and the payload is unchanged.
+
+Local result:
+
+- 2026-05-21: `node --check static/js/pigWeights.form.js` passed.
+- 2026-05-21: Focused frontend contract tests passed.
+- 2026-05-21: Full local unittest suite passed at 165 tests.
+- Deploy/browser verification is pending.
+
 ## Weight Report Tests
 
 Phase 9.4:
@@ -940,7 +956,9 @@ Local result:
 
 Deploy result:
 
-- Pending backend deploy and deployed endpoint check.
+- 2026-05-21: Deployed endpoint check passed for `GET /api/shadow/orders/ORD-2026-0B29D7/compare`.
+- Response returned `success = true`, `status = ok`, `mismatch_count = 0`, `writes_to_sheets = false`, and `writes_to_supabase = false`.
+- No backend route cutover has started.
 
 ## Google Sheets Checks
 
