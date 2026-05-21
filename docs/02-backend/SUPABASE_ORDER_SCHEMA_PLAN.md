@@ -18,7 +18,8 @@ This plan has moved through the first shadow-import slice. It does not approve l
 - Phase 10.2G sales transaction extension is being planned; no SQL migration has been approved yet.
 - Phase 10.2H sales transaction empty-table migration is deployed and verified.
 - Phase 10.2I read-only sales transaction API is deployed and verified.
-- Phase 10.2J sales transaction dry-run validator is implemented locally; deploy verification is pending.
+- Phase 10.2J sales transaction dry-run validator is deployed and verified.
+- Phase 10.2K real create flow is planned only; no write endpoint has been added.
 - Supabase now contains the internal migration log plus the first order/sales boundary tables.
 - Supabase contains shadow order/sales data only for the approved completed-order batch.
 - No pig, customer, telemetry, or broader business tables have been created.
@@ -478,7 +479,135 @@ Implementation state:
 - Local route smoke passed with a valid slaughter payload.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 8 tests.
 - Full local unittest suite passed on 2026-05-21 at 177 tests.
-- Deploy verification is pending.
+- Deployed verification passed on 2026-05-21: dry-run slaughter payload returned `success = true`, `mode = dry_run`, `gross_total = 1200`, `deductions_total = 100`, `net_total = 1100`, and both write flags remained false.
+- No real create endpoint, sale IDs, dashboard Rand totals, order automation, or pig status changes were added.
+
+## 10.2K Controlled Sales Transaction Create Flow Plan
+
+Purpose:
+
+- enable the first real Supabase write for sales transactions
+- start with a narrow slaughter/abattoir use case
+- keep the write atomic, auditable, and isolated from existing Google Sheets behavior
+
+First write endpoint:
+
+- `POST /api/sales-transactions`
+
+Initial scope:
+
+- `sale_stream = Slaughter` only.
+- Internal/operator use only.
+- Supabase write only.
+- No Google Sheets writes.
+
+Current real slaughter workflow:
+
+- Buyer/butcher is currently `JC Slaghuis`.
+- Pigs are selected on farm, then transported to `Bartelsfontein` abattoir.
+- Carcass weight may be supplied by the abattoir/butcher, but this is not guaranteed.
+- Payment normally arrives roughly two weeks later from the butcher.
+- Payment method is bank transfer/EFT and the sale must be treated as VAT-relevant.
+- Recent real candidate: pig `S10` was reported on 2026-05-21 as recently slaughtered and has been marked as slaughtered in Google Sheets. Use it later only after the create/cancel flow is proven.
+
+Recommended status handling for this workflow:
+
+- When pigs are delivered/slaughtered but payment has not arrived, create the transaction as `sale_status = Confirmed` and `payment_status = Unpaid`.
+- When JC Slaghuis pays by bank transfer, update later to `sale_status = Completed` and `payment_status = Paid`.
+- Carcass weight should be optional in the first slaughter write flow.
+- Until VAT-specific fields are added, `gross_total` and `net_total` should be treated as the actual Rand amounts recorded for the transaction. Before dashboard financial reporting, add/confirm VAT handling fields such as VAT-inclusive/exclusive basis, VAT rate, and VAT amount.
+
+Required fields:
+
+- `sale_date`
+- `sale_stream = Slaughter`
+- `buyer_name` or `destination`
+- at least one item
+- every `Pig` item must have `pig_id`
+- each item must have either:
+  - `line_total`, or
+  - `quantity` plus `unit_price`
+- `payment_status`
+
+Backend-generated fields:
+
+- `sale_id`, for example `SALE-2026-...`
+- `sale_item_id` values
+- `pig_count`
+- `gross_total`
+- `deductions_total`
+- `net_total`
+- `currency = ZAR`
+- `created_at` / `updated_at`
+
+Write behavior:
+
+- Insert one `sales_transactions` row.
+- Insert one or more `sales_transaction_items` rows.
+- Use one database transaction: header and items must succeed together or roll back together.
+- Return `writes_to_supabase = true`.
+- Return `writes_to_sheets = false`.
+
+Duplicate protection:
+
+- Block if any submitted `pig_id` already appears in a non-cancelled sales transaction item.
+- Non-cancelled means parent `sales_transactions.sale_status` is not `Cancelled`.
+- No override behavior in the first write slice.
+- If an accidental transaction must be reversed, add a cancel/void flow later rather than deleting rows.
+
+Must not do in first write slice:
+
+- Do not update `PIG_MASTER`.
+- Do not change `PIG_OVERVIEW`.
+- Do not connect dashboard Rand totals.
+- Do not auto-create transactions from completed livestock orders.
+- Do not build the web form yet.
+- Do not support `Livestock` or `Meat` writes yet.
+- Do not create deduction child rows.
+
+Response contract:
+
+- `success`
+- `status`
+- `sale_id`
+- `created_counts`
+- `sales_transaction`
+- `items`
+- `source.writes_to_supabase = true`
+- `source.writes_to_sheets = false`
+
+Failure contract:
+
+- Validation errors return `400`.
+- Duplicate pig use returns `409`.
+- Database failures return safe `503` with no connection string or secrets.
+- Failed writes must roll back.
+
+Recommended implementation split:
+
+1. **10.2K1 backend create service and route** - implemented locally 2026-05-21: `POST /api/sales-transactions` supports `Slaughter` only, validates payloads, requires `created_by`, writes header/items atomically to Supabase, blocks duplicate pig IDs, and does not write to Google Sheets.
+2. **10.2K2 deployed write test with safe synthetic pig IDs** - insert a clearly marked test transaction, verify it appears in `GET /api/sales-transactions`, then cancel/void behavior must be planned before live use.
+3. **10.2K3 cancellation/void planning** - define how to cancel a mistaken transaction without hard delete.
+4. **10.2L internal slaughter sale form** - web UI only after backend create/cancel behavior is proven.
+5. **10.2M dashboard Rand totals** - only after real transactions exist and cancellation behavior is defined.
+
+Implementation state:
+
+- 10.2K1 is local only and not yet deployed.
+- New backend module: `modules/sales/sales_transaction_create.py`.
+- New route: `POST /api/sales-transactions`.
+- Local missing-config route smoke returned safe `503` with no Supabase write.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 15 tests.
+- Full local unittest suite passed on 2026-05-21 at 184 tests.
+- No deployed write test has been run.
+- No real `S10` transaction has been written.
+
+Open questions before implementation:
+
+- Should the first deployed write test use synthetic `PIG-TEST-*` IDs only, or should we use real slaughter candidate `S10` after the write/cancel behavior is proven?
+- Should `created_by` be required for every write? Recommended: yes.
+- Should a transaction be editable after creation, or should correction be cancel-and-recreate only? Recommended: cancel-and-recreate until audit rules are mature.
+- Should VAT fields be added before the first real JC Slaghuis transaction, or can the first slice store VAT context in `notes` and add structured VAT fields before dashboard financial reporting?
 
 ## Import Rules
 

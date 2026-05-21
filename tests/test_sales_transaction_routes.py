@@ -74,6 +74,31 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         dry_run.assert_called_once()
 
+    def test_sales_transaction_create_route_calls_create_service(self):
+        service_result = {
+            "success": True,
+            "status": "created",
+            "sale_id": "SALE-1",
+            "source": {
+                "source": "supabase",
+                "writes_to_sheets": False,
+                "writes_to_supabase": True,
+            },
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "create_sales_transaction",
+            return_value=(service_result, 201),
+        ) as create_transaction:
+            response = self.client.post("/api/sales-transactions", json={
+                "sale_stream": "Slaughter",
+            })
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        create_transaction.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

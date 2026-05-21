@@ -1054,7 +1054,40 @@ Local result:
 - 2026-05-21: Focused sales transaction tests passed at 8 tests.
 - 2026-05-21: Local dry-run route smoke passed with a valid slaughter payload.
 - 2026-05-21: Full local unittest suite passed at 177 tests.
-- Deploy verification is pending.
+
+Deploy result:
+
+- 2026-05-21: Dry-run slaughter payload returned `success = true`, `mode = dry_run`, `gross_total = 1200`, `deductions_total = 100`, `net_total = 1100`, and both write flags remained false.
+- No real create endpoint, sale IDs, dashboard Rand totals, order automation, or pig status changes were added.
+
+Phase 10.2K controlled sales transaction create-flow planning checks:
+
+1. Confirm first real write endpoint is planned as `POST /api/sales-transactions`.
+2. Confirm first write scope is `Slaughter` only.
+3. Confirm writes go to Supabase only and never to Google Sheets.
+4. Confirm backend must generate `sale_id`, `sale_item_id`, `pig_count`, `gross_total`, `deductions_total`, and `net_total`.
+5. Confirm header and items must write atomically in one database transaction.
+6. Confirm duplicate pig protection blocks any `pig_id` already used in a non-cancelled sales transaction.
+7. Confirm first write slice does not update `PIG_MASTER`, dashboard Rand totals, livestock order automation, meat sales, or a web form.
+8. Confirm cancellation/void behavior is planned before live operational use.
+9. Confirm real slaughter workflow is represented: `JC Slaghuis` as buyer/butcher, `Bartelsfontein` as abattoir/destination, optional carcass weight, bank transfer/EFT payment normally about two weeks later.
+10. Confirm unpaid slaughter entries use `sale_status = Confirmed` and `payment_status = Unpaid`, then move to `Completed` / `Paid` only after payment is received.
+11. Confirm VAT handling is not forgotten; structured VAT fields or a clear VAT basis must be decided before dashboard financial totals are treated as accounting-ready.
+12. Confirm pig `S10` is not written as a real Supabase transaction until create/cancel behavior is proven and owner approves live use.
+
+Planning result:
+
+- 2026-05-21: 10.2K create-flow plan added to `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`.
+- 2026-05-21: Real JC Slaghuis/Bartelsfontein slaughter workflow and S10 candidate note captured for 10.2K.
+
+Local result:
+
+- 2026-05-21: 10.2K1 backend create service and route implemented locally.
+- 2026-05-21: Focused sales transaction tests passed at 15 tests.
+- 2026-05-21: Local missing-config route smoke returned safe `503` with `writes_to_supabase = false`.
+- 2026-05-21: Full local unittest suite passed at 184 tests.
+- No deployed write test has been run yet.
+- No real `S10` transaction has been written.
 
 ## Google Sheets Checks
 

@@ -232,5 +232,13 @@ Current position:
 - No records, write form, dashboard Rand totals, or order automation were added.
 - Phase 10.2J is implemented locally: `POST /api/sales-transactions/dry-run` validates a sales transaction payload and calculates gross, deductions, net total, item count, and pig count without connecting to Supabase.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 8 tests, local dry-run route smoke passed, and full local unittest suite passed at 177 tests.
+- Deployed verification passed on 2026-05-21: dry-run slaughter payload returned `success = true`, `mode = dry_run`, `gross_total = 1200`, `deductions_total = 100`, `net_total = 1100`, and both write flags remained false.
 - No real create endpoint, sale IDs, dashboard Rand totals, order automation, or pig status changes were added.
-- Next step is deploy backend and verify the dry-run endpoint with a safe sample slaughter payload.
+- Phase 10.2K controlled sales transaction create-flow plan is captured in `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`: first real write should be `POST /api/sales-transactions` for `Slaughter` only, with atomic Supabase inserts, duplicate pig protection, no Google Sheets writes, no dashboard Rand totals, and no pig/order status changes.
+- Real slaughter workflow is captured for 10.2K: pigs are taken to `Bartelsfontein` abattoir for buyer/butcher `JC Slaghuis`; carcass weight is optional because it is not always supplied; payment is normally received about two weeks later by bank transfer/EFT; VAT handling must be treated deliberately.
+- Planned slaughter status rule: use `sale_status = Confirmed` and `payment_status = Unpaid` while waiting for butcher payment, then update to `sale_status = Completed` and `payment_status = Paid` once the EFT is received.
+- Pig `S10` was reported on 2026-05-21 as recently slaughtered and has been marked slaughtered in Google Sheets; it is a possible later real transaction candidate after write/cancel behavior is proven.
+- Phase 10.2K1 is implemented locally: `POST /api/sales-transactions` supports `Slaughter` only, requires `created_by`, writes Supabase header/items atomically, blocks duplicate pig IDs, and writes nothing to Google Sheets.
+- Local verification passed on 2026-05-21: focused sales transaction tests passed at 15 tests, local missing-config route smoke returned safe `503`, and full local unittest suite passed at 184 tests.
+- No deployed 10.2K write test has been run yet and no real `S10` transaction has been written.
+- Next step is deploying 10.2K1 and running one safe synthetic Supabase write test before any real slaughter transaction.
