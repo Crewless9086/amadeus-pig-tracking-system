@@ -1343,6 +1343,35 @@ Deploy checks:
 7. Confirm it returns the latest synthetic state with source freshness and deterministic flags.
 8. Do not update the Render Sunsynk logger until this deployed test passes.
 
+Deploy result:
+
+- 2026-05-21: Synthetic ingest returned `success = true`, `status = ok`, `source_id = sunsynk-main-inverter`, `reading_id = PWR-FEC6256BECB7`, and `source.writes_to_supabase = true`.
+- 2026-05-21: `/api/telemetry/power/current` read back the synthetic state with battery `82%`, battery state `charging`, solar `3120 W`, load `1240 W`, grid state `not_using_grid`, generator state `off`, deterministic flags, and stale summary.
+- 2026-05-21: Stale summary was expected because the synthetic timestamp was intentionally older than the 15-minute threshold.
+- Rotate `TELEMETRY_INGEST_API_KEY` before wiring the real Render Sunsynk logger if the current test key was pasted into chat or logs.
+
+## Phase 10.3F Sunsynk Logger Update Checks
+
+Local result:
+
+- 2026-05-21: Sunsynk logger updated locally to POST normalized readings to backend ingest when `AMADEUS_BACKEND_URL` and `TELEMETRY_INGEST_API_KEY` are set.
+- 2026-05-21: Logger keeps Google Sheets as a transition mirror unless `GOOGLE_SHEETS_ENABLED=false`.
+- 2026-05-21: Logger README added with required Render cron env vars.
+- 2026-05-21: First Render cron recovery test failed in the Google Sheets mirror path with `gspread` 404; `/api/telemetry/power/current` still showed the old synthetic reading.
+- 2026-05-21: Logger hardened locally so a successful backend ingest is not failed by a Google Sheets mirror error.
+- 2026-05-21: Syntax verification passed with `python -m py_compile`.
+
+Deploy checks:
+
+1. Update the Render cron service code for `amadeus-sunsynk-logger`.
+2. Add Render cron env var `AMADEUS_BACKEND_URL=https://amadeus-pig-tracking-system.onrender.com`.
+3. Add Render cron env var `TELEMETRY_INGEST_API_KEY` with the same rotated value used on the backend.
+4. Set `GOOGLE_SHEETS_ENABLED=false` for the next recovery test unless the Google Sheets mirror name/access is fixed first.
+5. Run/wait for one cron execution.
+6. Confirm Render cron log reports `backend_ingest_enabled = true`, `backend_ingest_success = true`, and either `google_sheets_enabled = false` or `google_sheets_written = true`.
+7. Confirm `/api/telemetry/power/current` returns a fresh reading with low `data_age_minutes`.
+8. Do not update Oom Sakkie `2.2` until this deployed logger check passes.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

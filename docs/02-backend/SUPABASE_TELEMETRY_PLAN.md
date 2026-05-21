@@ -666,6 +666,61 @@ Deploy/test gate:
 - Confirm `GET /api/telemetry/power/current` returns that latest state.
 - Only after this test should the Render Sunsynk logger be updated.
 
+10.3D/10.3E deployed verification result:
+
+- Passed on 2026-05-21.
+- Synthetic ingest to `POST /api/telemetry/power/ingest` returned `success = true`, `status = ok`, `source_id = sunsynk-main-inverter`, `reading_id = PWR-FEC6256BECB7`, and `source.writes_to_supabase = true`.
+- Readback from `GET /api/telemetry/power/current` returned the synthetic state from Supabase:
+  - battery SOC `82%`
+  - battery state `charging`
+  - solar `3120 W`
+  - load `1240 W`
+  - grid state `not_using_grid`
+  - generator state `off`
+  - deterministic flags present
+  - summary status `stale`, because the synthetic test timestamp was intentionally older than the 15-minute stale threshold
+- Security note: rotate `TELEMETRY_INGEST_API_KEY` before wiring the real Render Sunsynk logger if the current test key was pasted into chat or logs.
+
+## 10.3F Sunsynk Logger Update
+
+Goal:
+
+- Update the Render Sunsynk cron logger to feed the new backend ingest endpoint.
+- Keep Google Sheets as a temporary mirror while the Supabase path is proven.
+- Do not update Oom Sakkie `2.2` until the real logger has produced a fresh Supabase reading.
+
+Local implementation result:
+
+- Updated `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/main.py`.
+- Added logger README at `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/README.md`.
+- Logger now posts the same normalized Sunsynk reading to `POST /api/telemetry/power/ingest` when both env vars are present:
+  - `AMADEUS_BACKEND_URL`
+  - `TELEMETRY_INGEST_API_KEY`
+- Logger still writes to Google Sheets by default while `GOOGLE_SHEETS_ENABLED` is not `false`.
+- Logger can later disable the sheet mirror with `GOOGLE_SHEETS_ENABLED=false`, but only after Supabase ingest has been stable.
+- Render cron test on 2026-05-21 failed in the Google Sheets mirror path with `gspread.exceptions.APIError: APIError: [404]: Requested entity was not found.` The deployed `/api/telemetry/power/current` readback still showed the old synthetic reading, so a fresh real Sunsynk reading had not yet landed in Supabase.
+- Logger was hardened locally after that test: if backend ingest succeeds but the Google Sheets mirror fails, the cron records `google_sheets_error` and exits successfully instead of losing the run. If the backend ingest does not succeed, a Google Sheets failure still fails the cron.
+- Local syntax verification passed with `python -m py_compile`.
+
+Render cron env vars to add:
+
+| Env Var | Value |
+| --- | --- |
+| `AMADEUS_BACKEND_URL` | `https://amadeus-pig-tracking-system.onrender.com` |
+| `TELEMETRY_INGEST_API_KEY` | Same rotated value configured on the backend. |
+| `GOOGLE_SHEETS_ENABLED` | `false` for the next recovery test unless the Google Sheets mirror name/access is fixed first. |
+
+Deploy/test gate:
+
+- Deploy the updated Sunsynk logger code to the Render cron service.
+- Run/wait for one cron execution.
+- Confirm Render cron logs show:
+  - `backend_ingest_enabled = true`
+  - `backend_ingest_success = true`
+  - `google_sheets_written = false` and `google_sheets_enabled = false` if the mirror is disabled for recovery, or `google_sheets_written = true` if the sheet mirror is fixed and enabled
+- Confirm `GET /api/telemetry/power/current` returns a fresh reading with `is_stale = false` or a small `data_age_minutes`.
+- Only then move to updating Oom Sakkie `2.2`.
+
 ## Must Not Do In 10.3 Planning
 
 - Do not change live n8n workflows yet.

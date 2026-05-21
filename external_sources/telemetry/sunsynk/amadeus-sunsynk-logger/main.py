@@ -97,6 +97,17 @@ def append_row(sheet_name, tab_name, row):
     ws.append_row(row, value_input_option="USER_ENTERED")
 
 
+def post_power_ingest(backend_url, ingest_key, payload):
+    url = f"{backend_url.rstrip('/')}/api/telemetry/power/ingest"
+    headers = {
+        "content-type": "application/json",
+        "X-Amadeus-Telemetry-Key": ingest_key,
+    }
+    resp = requests.post(url, json=payload, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def get_json(url, headers, timeout=30):
     r = requests.get(url, headers=headers, timeout=timeout)
     r.raise_for_status()
@@ -109,8 +120,13 @@ def main():
     username = os.environ["SUNSYNK_USERNAME"]
     password = os.environ["SUNSYNK_PASSWORD"]
 
-    sheet_name = os.environ["GOOGLE_SHEET_NAME"]
+    sheet_name = os.getenv("GOOGLE_SHEET_NAME")
     tab_name = os.getenv("GOOGLE_SHEET_TAB", "Sunsynk_Log")
+    google_sheets_enabled = os.getenv("GOOGLE_SHEETS_ENABLED", "true").strip().lower() != "false"
+
+    backend_url = os.getenv("AMADEUS_BACKEND_URL", "").strip()
+    telemetry_ingest_key = os.getenv("TELEMETRY_INGEST_API_KEY", "").strip()
+    backend_ingest_enabled = bool(backend_url and telemetry_ingest_key)
 
     inverter_sn = os.environ.get("SUNSYNK_INVERTER_SN", "2111244718")
 
@@ -183,28 +199,71 @@ def main():
         except Exception:
             pv_total = ""
 
-    append_row(sheet_name, tab_name, [
-        timestamp_za,
-        date_za,
-        time_za,
-        soc,
-        batt_power,
-        pv_total,
-        pv1,
-        pv2,
-        load_power,
-        grid_power,
-        gen_power,
-        inv_pinv,
-        inv_pac,
-        grid_active,
-        gen_active,
-        battery_charging,
-        battery_discharging,
-        raw_json,
-    ])
+    ingest_payload = {
+        "source_id": "sunsynk-main-inverter",
+        "timestamp_za": timestamp_za,
+        "soc": soc,
+        "batt_power": batt_power,
+        "pv_total": pv_total,
+        "pv1": pv1,
+        "pv2": pv2,
+        "load_power": load_power,
+        "grid_power": grid_power,
+        "gen_power": gen_power,
+        "inv_pac": inv_pac,
+        "grid_active": grid_active,
+        "gen_active": gen_active,
+        "battery_charging": battery_charging,
+        "battery_discharging": battery_discharging,
+        "raw_payload": {"flow": flow, "output": output},
+    }
 
-    print("OK: Logged Sunsynk flow + output (ZA time + fixed battery/grid flags).")
+    backend_result = None
+    if backend_ingest_enabled:
+        backend_result = post_power_ingest(backend_url, telemetry_ingest_key, ingest_payload)
+
+    sheets_written = False
+    sheets_error = None
+    if google_sheets_enabled:
+        if not sheet_name:
+            raise RuntimeError("GOOGLE_SHEET_NAME is required when GOOGLE_SHEETS_ENABLED is true.")
+        try:
+            append_row(sheet_name, tab_name, [
+                timestamp_za,
+                date_za,
+                time_za,
+                soc,
+                batt_power,
+                pv_total,
+                pv1,
+                pv2,
+                load_power,
+                grid_power,
+                gen_power,
+                inv_pinv,
+                inv_pac,
+                grid_active,
+                gen_active,
+                battery_charging,
+                battery_discharging,
+                raw_json,
+            ])
+            sheets_written = True
+        except Exception as exc:
+            sheets_error = str(exc)
+            if not backend_result or not backend_result.get("success"):
+                raise
+
+    print(json.dumps({
+        "success": True,
+        "backend_ingest_enabled": backend_ingest_enabled,
+        "backend_ingest_success": bool(backend_result and backend_result.get("success")),
+        "backend_reading_id": (backend_result or {}).get("reading_id"),
+        "google_sheets_enabled": google_sheets_enabled,
+        "google_sheets_written": sheets_written,
+        "google_sheets_error": sheets_error,
+        "timestamp_za": timestamp_za,
+    }, separators=(",", ":")))
 
 
 if __name__ == "__main__":

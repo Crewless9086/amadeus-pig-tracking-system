@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D Decided; 10.3E Local | Add `TELEMETRY_INGEST_API_KEY`, deploy backend, test telemetry ingest/current endpoints. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Local Recovery Patch | Redeploy hardened Sunsynk logger with `GOOGLE_SHEETS_ENABLED=false`, verify fresh Supabase reading, then update Oom Sakkie power tool. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2703,7 +2703,16 @@ Recommendation:
 - 10.3D ingestion decision: existing Render Sunsynk logger should call the Flask backend, not write directly to Supabase. Backend owns validation, raw/latest writes, summary flags, and Oom Sakkie read model.
 - 10.3E backend endpoints implemented locally: `POST /api/telemetry/power/ingest` protected by `TELEMETRY_INGEST_API_KEY`, and `GET /api/telemetry/power/current` for Oom Sakkie/dashboard current-state reads.
 - Local verification passed on 2026-05-21: focused telemetry tests passed at 8 tests, local route smokes returned safe config failures, and full local unittest suite passed at 219 tests.
-- Next step: add `TELEMETRY_INGEST_API_KEY` to Render backend env, deploy backend, run a safe synthetic ingest test, then read back `/api/telemetry/power/current`.
+- 10.3D/10.3E deployed verification passed on 2026-05-21: synthetic ingest returned `success = true`, `status = ok`, `source_id = sunsynk-main-inverter`, `reading_id = PWR-FEC6256BECB7`, and `source.writes_to_supabase = true`.
+- Deployed current-state readback passed: `/api/telemetry/power/current` returned battery `82%`, battery state `charging`, solar `3120 W`, load `1240 W`, grid state `not_using_grid`, generator `off`, deterministic flags, and stale summary because the synthetic timestamp was intentionally old.
+- Security note: rotate `TELEMETRY_INGEST_API_KEY` before wiring the real Render Sunsynk logger if the current test key was pasted into chat or logs.
+- 10.3F Sunsynk logger update implemented locally in `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/main.py`.
+- Logger now posts to backend ingest when `AMADEUS_BACKEND_URL` and `TELEMETRY_INGEST_API_KEY` are set, while keeping Google Sheets as a transition mirror unless `GOOGLE_SHEETS_ENABLED=false`.
+- Logger README added with required Render cron env vars.
+- First Render cron recovery test failed in the Google Sheets mirror path with `gspread` 404, and `/api/telemetry/power/current` still showed the old synthetic reading.
+- Logger hardened locally so a successful backend ingest is not failed by a Google Sheets mirror error.
+- Local syntax verification passed with `python -m py_compile`.
+- Next step: redeploy the hardened Render Sunsynk logger with `GOOGLE_SHEETS_ENABLED=false`, confirm backend ingest succeeds with a fresh reading, then update Oom Sakkie power tool.
 
 Farm home/dashboard idea:
 

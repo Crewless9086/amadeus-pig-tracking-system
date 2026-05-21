@@ -306,4 +306,13 @@ Current position:
 - 10.3D ingestion decision is documented: existing Render Sunsynk logger should call the Flask backend, not write directly to Supabase. Backend owns validation, raw/latest writes, summary flags, and Oom Sakkie read model.
 - 10.3E backend endpoints are implemented locally: `POST /api/telemetry/power/ingest` protected by `TELEMETRY_INGEST_API_KEY`, and `GET /api/telemetry/power/current` for Oom Sakkie/dashboard current-state reads.
 - Local verification passed on 2026-05-21: focused telemetry tests passed at 8 tests, local route smokes returned safe config failures, and full local unittest suite passed at 219 tests.
-- Next step is adding `TELEMETRY_INGEST_API_KEY` to Render backend env, deploying backend, running a safe synthetic ingest test, then reading back `/api/telemetry/power/current`.
+- 10.3D/10.3E deployed verification passed on 2026-05-21: synthetic ingest returned `success = true`, `status = ok`, `source_id = sunsynk-main-inverter`, `reading_id = PWR-FEC6256BECB7`, and `source.writes_to_supabase = true`.
+- Deployed current-state readback passed: `/api/telemetry/power/current` returned battery `82%`, battery state `charging`, solar `3120 W`, load `1240 W`, grid state `not_using_grid`, generator `off`, deterministic flags, and stale summary because the synthetic timestamp was intentionally old.
+- Security note: rotate `TELEMETRY_INGEST_API_KEY` before wiring the real Render Sunsynk logger if the current test key was pasted into chat or logs.
+- 10.3F Sunsynk logger update is implemented locally in `external_sources/telemetry/sunsynk/amadeus-sunsynk-logger/main.py`.
+- Logger now posts to backend ingest when `AMADEUS_BACKEND_URL` and `TELEMETRY_INGEST_API_KEY` are set, while keeping Google Sheets as a transition mirror unless `GOOGLE_SHEETS_ENABLED=false`.
+- Logger README added with required Render cron env vars.
+- First Render cron recovery test failed in the Google Sheets mirror path with `gspread` 404. The deployed current-state endpoint still showed the old synthetic test reading, so the real logger had not yet refreshed Supabase.
+- Logger is now hardened locally so a successful backend ingest is not failed by a Google Sheets mirror error. Recommended next recovery test is to deploy the hardened logger with `GOOGLE_SHEETS_ENABLED=false`, then verify `/api/telemetry/power/current` returns a fresh real reading.
+- Local syntax verification passed with `python -m py_compile`.
+- Next step is redeploying the hardened Render Sunsynk logger, confirming backend ingest succeeds with a fresh reading, then updating Oom Sakkie power tool.
