@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Local | Deploy backend, apply sales transaction SQL, then verify. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Local | Deploy and verify read-only sales transaction endpoint. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2603,8 +2603,15 @@ Recommendation:
 - Phase 10.2H sales transaction empty-table migration prepared locally: `supabase/migrations/202605210003_create_sales_transaction_tables.sql`.
 - Phase 10.2H backend verifier prepared locally: `GET /health/database/sales-transaction-schema`.
 - Local verification passed on 2026-05-21: focused database tests passed at 12 tests and full local unittest suite passed at 169 tests.
-- No SQL has been applied in Supabase yet, and no backend/dashboard/order behavior has changed.
-- Next step: deploy backend, run the SQL migration in Supabase SQL Editor, then verify `/health/database/sales-transaction-schema`.
+- Phase 10.2H deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/sales-transaction-schema` returned `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, both expected tables found, and `missing_tables = []`.
+- No backend/dashboard/order behavior changed.
+- Phase 10.2I read-only sales transaction API implemented locally: `GET /api/sales-transactions`.
+- 10.2I reads Supabase only and returns `writes_to_sheets = false` and `writes_to_supabase = false`.
+- 10.2I supports optional `sale_stream = Livestock|Slaughter|Meat` and `limit`.
+- Local route smoke without `DATABASE_URL` returned safe `503` / `not_configured`.
+- Local verification passed on 2026-05-21: focused sales transaction/database tests passed at 17 tests and full local unittest suite passed at 174 tests.
+- No records, write form, dashboard Rand totals, or order automation were added.
+- Next step: deploy backend and verify `GET /api/sales-transactions` returns `success = true`, `status = ok`, and an empty list if no transactions have been entered yet.
 
 Farm home/dashboard idea:
 

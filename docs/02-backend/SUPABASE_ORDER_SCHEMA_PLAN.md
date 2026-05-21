@@ -16,7 +16,8 @@ This plan has moved through the first shadow-import slice. It does not approve l
 - Phase 10.2D completed-order shadow import is applied and verified.
 - Phase 10.2F read-only shadow comparison endpoint is deployed and verified.
 - Phase 10.2G sales transaction extension is being planned; no SQL migration has been approved yet.
-- Phase 10.2H sales transaction empty-table migration is prepared locally; it has not been applied in Supabase yet.
+- Phase 10.2H sales transaction empty-table migration is deployed and verified.
+- Phase 10.2I read-only sales transaction API is implemented locally; deploy verification is pending.
 - Supabase now contains the internal migration log plus the first order/sales boundary tables.
 - Supabase contains shadow order/sales data only for the approved completed-order batch.
 - No pig, customer, telemetry, or broader business tables have been created.
@@ -379,7 +380,53 @@ Implementation state:
 - Backend verifier route prepared locally.
 - Local verification passed on 2026-05-21: focused database tests passed at 12 tests.
 - Full local unittest suite passed on 2026-05-21 at 169 tests.
-- Deploy and Supabase SQL application are pending.
+- Deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/sales-transaction-schema` returned `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, both expected tables found, and `missing_tables = []`.
+- No backend/dashboard/order behavior changed.
+
+## 10.2I Read-Only Sales Transaction API
+
+Purpose:
+
+- prove the backend can read the new sales transaction tables
+- expose a safe backend-only API contract before any write form exists
+- keep all dashboard/order behavior unchanged
+
+Endpoint:
+
+- `GET /api/sales-transactions`
+
+Query parameters:
+
+- `sale_stream` optional: `Livestock`, `Slaughter`, or `Meat`
+- `limit` optional: defaults to `50`, maximum `100`
+
+Response shape:
+
+- `success`
+- `status`
+- `count`
+- `limit`
+- `sale_stream`
+- `sales_transactions`
+- `source`
+
+Safety rules:
+
+- Reads Supabase only.
+- Writes nothing to Supabase.
+- Writes nothing to Google Sheets.
+- Does not power any dashboard Rand totals yet.
+- Does not create livestock transactions automatically.
+- Does not create slaughter sale records yet.
+
+Implementation state:
+
+- Read service added: `modules/sales/sales_transaction_read.py`.
+- Route added: `GET /api/sales-transactions`.
+- Local missing-config route smoke returns safe `503` / `not_configured`.
+- Local verification passed on 2026-05-21: focused sales transaction/database tests passed at 17 tests.
+- Full local unittest suite passed on 2026-05-21 at 174 tests.
+- Deploy verification is pending.
 
 ## Import Rules
 

@@ -222,7 +222,11 @@ Current position:
 - Phase 10.2F deployed verification passed on 2026-05-21 for `ORD-2026-0B29D7`: response returned `success = true`, `status = ok`, `mismatch_count = 0`, and read-only flags remained false.
 - No backend read/write cutover, UI change, n8n change, or Google Sheet retirement has started.
 - Phase 10.2G sales transaction extension planning is captured in `docs/02-backend/SUPABASE_ORDER_SCHEMA_PLAN.md`: proposed future tables are `sales_transactions` and `sales_transaction_items` to support honest Rand values for livestock, slaughter/abattoir, and future meat/carcass sales.
-- Phase 10.2H is implemented locally: `supabase/migrations/202605210003_create_sales_transaction_tables.sql` creates empty `sales_transactions` and `sales_transaction_items` tables, and `GET /health/database/sales-transaction-schema` verifies them.
+- Phase 10.2H is deployed and verified: `supabase/migrations/202605210003_create_sales_transaction_tables.sql` creates empty `sales_transactions` and `sales_transaction_items` tables, and `GET /health/database/sales-transaction-schema` verifies them.
 - Local verification passed on 2026-05-21: focused database tests passed at 12 tests and full local unittest suite passed at 169 tests.
-- No 10.2H SQL has been applied in Supabase yet, and no backend/dashboard/order behavior has changed.
-- Next step is deploy backend, apply the 10.2H SQL in Supabase SQL Editor, then verify `/health/database/sales-transaction-schema`.
+- Deployed verification passed on 2026-05-21: owner ran the SQL migration and `/health/database/sales-transaction-schema` returned `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, both expected tables found, and `missing_tables = []`.
+- No backend/dashboard/order behavior changed.
+- Phase 10.2I is implemented locally: `GET /api/sales-transactions` reads Supabase sales transaction headers only, supports optional stream filtering, and reports `writes_to_sheets = false` / `writes_to_supabase = false`.
+- Local verification passed on 2026-05-21: focused sales transaction/database tests passed at 17 tests, local missing-config route smoke returned safe `503`, and full local unittest suite passed at 174 tests.
+- No records, write form, dashboard Rand totals, or order automation were added.
+- Next step is deploy backend and verify `GET /api/sales-transactions` against Supabase.

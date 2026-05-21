@@ -1011,7 +1011,29 @@ Local result:
 
 - 2026-05-21: Focused database tests passed at 12 tests.
 - 2026-05-21: Full local unittest suite passed at 169 tests.
-- Deploy and Supabase SQL application are pending.
+
+Deploy result:
+
+- 2026-05-21: Owner ran the SQL migration in Supabase SQL Editor.
+- 2026-05-21: `/health/database/sales-transaction-schema` returned `success = true`, `status = ok`, migration ID `202605210003_create_sales_transaction_tables`, both expected tables found, and `missing_tables = []`.
+- No backend/dashboard/order behavior changed.
+
+Phase 10.2I read-only sales transaction API checks:
+
+1. Confirm endpoint is `GET /api/sales-transactions`.
+2. Confirm it reads Supabase only.
+3. Confirm it returns `writes_to_sheets = false` and `writes_to_supabase = false`.
+4. Confirm it supports optional `sale_stream = Livestock`, `Slaughter`, or `Meat`.
+5. Confirm invalid `sale_stream` returns `400`.
+6. Confirm no write/create/update/delete endpoint exists yet for sales transactions.
+7. Confirm dashboard Rand totals are still not connected.
+
+Local result:
+
+- 2026-05-21: Focused sales transaction/database tests passed at 17 tests.
+- 2026-05-21: Local route smoke without `DATABASE_URL` returned safe `503` / `not_configured`.
+- 2026-05-21: Full local unittest suite passed at 174 tests.
+- Deploy verification is pending.
 
 ## Google Sheets Checks
 
