@@ -47,3 +47,4 @@ Imported for docs: 2026-05-18
 - Decision: do not keep tweaking the agent loop now. Defer to a dedicated Sunsynk data/backend/Supabase architecture review.
 - Follow-up review must inventory the Sunsynk Google Sheets tabs, any backend modules/scripts, `ALERT - Sunsynk`, data volume, current read patterns, and whether a small backend API backed by Supabase/Postgres should replace direct agent reads from large Sheets.
 - 2026-05-22: Rebuilt `2.2` to call `GET /api/telemetry/power/current` and format the backend payload directly. Removed the Google Sheets tools and LangChain agent loop from the workflow export.
+- 2026-05-22: Live Telegram test passed after import. `What's the power like now?` returned quickly with current backend/Supabase data: battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid, generator off, and latest reading `22 May 2026, 00:40` at `4 minutes old`.

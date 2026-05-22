@@ -322,4 +322,11 @@ Current position:
 - 10.3G local workflow update is prepared: `2.2 - Amadeus Sunsynk Sub-Agent` now calls `GET /api/telemetry/power/current` and formats the backend payload directly, with no LangChain agent loop and no Sunsynk Google Sheets tools.
 - `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description now describes the backend/Supabase current-power tool and limits this slice to current/live power state.
 - Local JSON parse verification passed for both updated workflow exports.
-- Next step is importing `2.2` and `2.0` into n8n and live-testing Oom Sakkie power questions.
+- 10.3G live verification passed on 2026-05-22 after importing `2.2` and `2.0` into n8n.
+- Telegram test `What's the power like now?` returned quickly with current backend/Supabase data: battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid `0 W`, generator off `0 W`, latest reading `22 May 2026, 00:40`, and data age `4 minutes`.
+- This confirms Oom Sakkie current power questions no longer depend on slow Sunsynk Google Sheets reads.
+- Next decision is whether to continue telemetry with daily/last-24h power read models, weather/forecast backend alignment, or pause Phase 10.3.
+- 10.3H local backend slice is prepared: `GET /api/telemetry/power/recent?hours=24` summarizes recent Supabase `power_readings_5min` rows without claiming kWh/cost totals.
+- The recent-power endpoint returns sample-based battery range, average/max solar/load, grid/generator active sample counts, approximate active minutes, hourly buckets, and coverage percentage.
+- Focused telemetry/workflow tests pass at 11 tests, and the full local test suite passes at 221 tests.
+- Next step is backend deploy and Render verification of `/api/telemetry/power/recent?hours=24`.

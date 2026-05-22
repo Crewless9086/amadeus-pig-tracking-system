@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 from modules.telemetry.power_service import (
     get_current_power_state,
+    get_recent_power_profile,
     ingest_power_reading,
 )
 
@@ -142,11 +143,79 @@ class PowerTelemetryTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "unavailable")
 
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_recent_power_profile_returns_sample_based_summary(self):
+        cursor = Mock()
+        cursor.fetchall.return_value = [
+            (
+                datetime(2026, 5, 22, 0, 0, tzinfo=timezone.utc),
+                Decimal("46"),
+                Decimal("800"),
+                Decimal("0"),
+                Decimal("0"),
+                Decimal("0"),
+                Decimal("1000"),
+                Decimal("0"),
+                Decimal("0"),
+                Decimal("1000"),
+                False,
+                False,
+                False,
+                True,
+            ),
+            (
+                datetime(2026, 5, 22, 0, 5, tzinfo=timezone.utc),
+                Decimal("45"),
+                Decimal("850"),
+                Decimal("100"),
+                Decimal("40"),
+                Decimal("60"),
+                Decimal("1100"),
+                Decimal("120"),
+                Decimal("0"),
+                Decimal("1100"),
+                True,
+                False,
+                False,
+                True,
+            ),
+        ]
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_recent_power_profile(hours=24)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["window"]["requested_hours"], 24)
+        self.assertEqual(result["window"]["row_count"], 2)
+        self.assertEqual(result["battery"]["min_soc_pct"], 45.0)
+        self.assertEqual(result["battery"]["latest_soc_pct"], 45.0)
+        self.assertEqual(result["activity"]["grid_active_samples"], 1)
+        self.assertEqual(result["activity"]["grid_active_approx_minutes"], 5)
+        self.assertIn("does not report kWh", " ".join(result["limitations"]))
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_recent_power_profile_no_rows_returns_unavailable(self):
+        cursor = Mock()
+        cursor.fetchall.return_value = []
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_recent_power_profile(hours=24)
+
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["window"]["row_count"], 0)
+
     def test_telemetry_routes_are_registered(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
+        route_source = Path("modules/telemetry/telemetry_routes.py").read_text(encoding="utf-8")
 
         self.assertIn("telemetry_bp", app_source)
         self.assertIn("app.register_blueprint(telemetry_bp, url_prefix=\"/api\")", app_source)
+        self.assertIn("/telemetry/power/recent", route_source)
 
 
 def _mock_psycopg_connection(cursor):

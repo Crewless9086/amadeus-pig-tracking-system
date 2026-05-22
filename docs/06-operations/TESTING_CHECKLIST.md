@@ -1400,6 +1400,32 @@ Live import/test checks:
 7. Confirm the answer does not hang and clearly says daily/kWh/trend read models are not available in this slice yet.
 8. If the answer works, mark 10.3G imported and live-verified.
 
+Verified result:
+
+- 2026-05-22: Current power test passed after importing `2.2` and `2.0`.
+- Telegram answer returned quickly and included battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid, generator off, and latest reading `22 May 2026, 00:40` at `4 minutes old`.
+- Current-status path is live-verified. Daily/kWh/last-24h read models remain future work.
+
+## Phase 10.3H Recent Power Profile Checks
+
+Local result:
+
+- 2026-05-22: Added read-only `GET /api/telemetry/power/recent?hours=24`.
+- 2026-05-22: Endpoint summarizes recent `power_readings_5min` rows with sample-based battery, load, solar, grid, generator, hourly, and coverage fields.
+- 2026-05-22: Endpoint explicitly does not report kWh, cost, import, or export totals.
+- 2026-05-22: Focused telemetry/workflow tests pass at 11 tests.
+- 2026-05-22: Full local test suite passes at 221 tests.
+
+Deploy checks:
+
+1. Deploy backend.
+2. Open `/api/telemetry/power/recent?hours=24`.
+3. Confirm `success = true`.
+4. Confirm `window.row_count` is greater than zero after the cron has run for a while.
+5. Confirm `battery`, `power`, `activity`, and `hourly` sections are present.
+6. Confirm `limitations` says kWh/cost/import/export totals are not reported yet.
+7. Only after this passes, plan the `2.2` workflow update for last-24h trend questions.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

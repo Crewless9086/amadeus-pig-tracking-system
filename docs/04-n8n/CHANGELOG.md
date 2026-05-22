@@ -27,7 +27,7 @@ Type: `REFACTOR`
 
 **Verification:** Updated `2.2` and `2.0` workflow JSON exports parse successfully. Backend `/api/telemetry/power/current` returned fresh real Sunsynk data before import.
 
-**Live test still required:** Import `2.2` and `2.0`, then ask Oom Sakkie `What's the power like now?` and a daily/last-24h power question.
+**Live verification:** After importing `2.2` and `2.0`, Telegram test `What's the power like now?` returned quickly with backend/Supabase current data: battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid, generator off, and latest reading `22 May 2026, 00:40` at `4 minutes old`. Current-status power path is live-verified. Daily/last-24h power read models remain future work.
 
 ### 2026-05-19 - Phase 7.3D Oom Sakkie quote-send guard verified
 

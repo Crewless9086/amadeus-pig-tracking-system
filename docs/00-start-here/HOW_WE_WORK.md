@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G local |
-| **Current focus** | Import updated Oom Sakkie `2.2`/`2.0` workflows, then live-test current power questions |
-| **Current last verified** | **2026-05-22** - Sunsynk Render cron writes fresh data to Supabase and `/api/telemetry/power/current` reads it back |
+| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G live-verified; 10.3H local |
+| **Current focus** | Deploy and verify backend recent-power endpoint `/api/telemetry/power/recent?hours=24` |
+| **Current last verified** | **2026-05-22** - Oom Sakkie current power question returned quickly from backend/Supabase via updated `2.2`; 10.3H full local test suite passes at 221 tests |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

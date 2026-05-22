@@ -293,6 +293,83 @@ def get_current_power_state(database_url=None):
     return _format_current_power_response(row), 200
 
 
+def get_recent_power_profile(hours=24, database_url=None):
+    hours = _bounded_hours(hours)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": f"{DATABASE_URL_ENV} is not configured.",
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        reading_at,
+                        battery_soc_pct,
+                        battery_power_w,
+                        solar_power_w,
+                        pv1_power_w,
+                        pv2_power_w,
+                        load_power_w,
+                        grid_power_w,
+                        generator_power_w,
+                        inverter_output_w,
+                        grid_active,
+                        generator_active,
+                        battery_charging,
+                        battery_discharging
+                    from public.power_readings_5min
+                    where source_id = %s
+                      and reading_at >= now() - (%s * interval '1 hour')
+                    order by reading_at asc
+                    """,
+                    (DEFAULT_POWER_SOURCE_ID, hours),
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "power_recent_read_failed",
+            "message": "Recent power telemetry read failed.",
+            "error_type": exc.__class__.__name__,
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 503
+
+    if not rows:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "unavailable",
+            "message": "No recent power telemetry readings are available yet.",
+            "source": _source_metadata(writes_to_supabase=False),
+            "window": {
+                "requested_hours": hours,
+                "row_count": 0,
+            },
+        }, 200
+
+    return _format_recent_power_profile(rows, hours), 200
+
+
 def _normalize_power_payload(payload):
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object.")
@@ -441,6 +518,165 @@ def _format_current_power_response(row):
     }
 
 
+def _format_recent_power_profile(rows, hours):
+    normalized = [_normalize_recent_row(row) for row in rows]
+    expected_samples = max(1, hours * 12)
+    row_count = len(normalized)
+    coverage_pct = min(100, round((row_count / expected_samples) * 100, 1))
+    first = normalized[0]
+    latest = normalized[-1]
+
+    battery_values = _numbers(item["battery_soc_pct"] for item in normalized)
+    solar_values = _numbers(item["solar_power_w"] for item in normalized)
+    load_values = _numbers(item["load_power_w"] for item in normalized)
+    grid_values = _numbers(item["grid_power_w"] for item in normalized)
+    generator_values = _numbers(item["generator_power_w"] for item in normalized)
+
+    grid_active_count = _count_truthy(item["grid_active"] for item in normalized)
+    generator_active_count = _count_truthy(item["generator_active"] for item in normalized)
+    battery_charging_count = _count_truthy(item["battery_charging"] for item in normalized)
+    battery_discharging_count = _count_truthy(item["battery_discharging"] for item in normalized)
+    no_solar_count = sum(1 for item in normalized if (item["solar_power_w"] or 0) <= 100)
+
+    hourly = _build_hourly_profile(normalized)
+    status = "ok" if coverage_pct >= 75 else "limited"
+    headline = (
+        f"Recent power profile is available from {row_count} readings."
+        if status == "ok"
+        else f"Recent power profile has limited data: {row_count} readings found."
+    )
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "source": {
+            "source": "supabase",
+            "source_id": DEFAULT_POWER_SOURCE_ID,
+            "provider": "sunsynk",
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        },
+        "window": {
+            "requested_hours": hours,
+            "first_reading_at": first["reading_at"].isoformat(),
+            "last_reading_at": latest["reading_at"].isoformat(),
+            "row_count": row_count,
+            "expected_samples": expected_samples,
+            "coverage_pct": coverage_pct,
+            "sample_interval_minutes_assumed": 5,
+        },
+        "battery": {
+            "latest_soc_pct": _json_value(latest["battery_soc_pct"]),
+            "min_soc_pct": _min_or_none(battery_values),
+            "max_soc_pct": _max_or_none(battery_values),
+            "avg_soc_pct": _avg_or_none(battery_values),
+            "charging_approx_minutes": battery_charging_count * 5,
+            "discharging_approx_minutes": battery_discharging_count * 5,
+        },
+        "power": {
+            "avg_solar_power_w": _avg_or_none(solar_values),
+            "max_solar_power_w": _max_or_none(solar_values),
+            "avg_load_power_w": _avg_or_none(load_values),
+            "max_load_power_w": _max_or_none(load_values),
+            "avg_grid_power_w": _avg_or_none(grid_values),
+            "max_abs_grid_power_w": _max_abs_or_none(grid_values),
+            "avg_generator_power_w": _avg_or_none(generator_values),
+            "max_generator_power_w": _max_or_none(generator_values),
+        },
+        "activity": {
+            "grid_active_samples": grid_active_count,
+            "grid_active_approx_minutes": grid_active_count * 5,
+            "generator_active_samples": generator_active_count,
+            "generator_active_approx_minutes": generator_active_count * 5,
+            "no_solar_samples": no_solar_count,
+            "no_solar_approx_minutes": no_solar_count * 5,
+        },
+        "hourly": hourly,
+        "summary": {
+            "status": status,
+            "headline": headline,
+            "operator_notes": [
+                f"Battery ranged from {_fmt_optional(_min_or_none(battery_values), '%')} to {_fmt_optional(_max_or_none(battery_values), '%')}.",
+                f"Average load was {_fmt_kw_value(_avg_or_none(load_values))}.",
+                f"Maximum solar production was {_fmt_kw_value(_max_or_none(solar_values))}.",
+                "These are sample-based power readings, not confirmed kWh totals.",
+            ],
+        },
+        "units": {
+            "power": "W",
+            "battery_soc": "%",
+            "duration": "minutes",
+        },
+        "limitations": [
+            "This endpoint summarizes 5-minute samples.",
+            "It does not report kWh, cost, import, or export totals until reliable energy counters or approved interval-integration rules are added.",
+        ],
+    }
+
+
+def _normalize_recent_row(row):
+    (
+        reading_at,
+        battery_soc,
+        battery_power,
+        solar_power,
+        pv1_power,
+        pv2_power,
+        load_power,
+        grid_power,
+        generator_power,
+        inverter_output,
+        grid_active,
+        generator_active,
+        battery_charging,
+        battery_discharging,
+    ) = row
+    return {
+        "reading_at": reading_at,
+        "battery_soc_pct": _json_value(battery_soc),
+        "battery_power_w": _json_value(battery_power),
+        "solar_power_w": _json_value(solar_power),
+        "pv1_power_w": _json_value(pv1_power),
+        "pv2_power_w": _json_value(pv2_power),
+        "load_power_w": _json_value(load_power),
+        "grid_power_w": _json_value(grid_power),
+        "generator_power_w": _json_value(generator_power),
+        "inverter_output_w": _json_value(inverter_output),
+        "grid_active": bool(grid_active),
+        "generator_active": bool(generator_active),
+        "battery_charging": bool(battery_charging),
+        "battery_discharging": bool(battery_discharging),
+    }
+
+
+def _build_hourly_profile(rows):
+    buckets = {}
+    for item in rows:
+        hour_start = item["reading_at"].astimezone(ZA_TZ).replace(minute=0, second=0, microsecond=0)
+        key = hour_start.isoformat()
+        buckets.setdefault(key, []).append(item)
+
+    profile = []
+    for hour_start, items in sorted(buckets.items()):
+        solar_values = _numbers(item["solar_power_w"] for item in items)
+        load_values = _numbers(item["load_power_w"] for item in items)
+        battery_values = _numbers(item["battery_soc_pct"] for item in items)
+        profile.append({
+            "hour_start_za": hour_start,
+            "samples": len(items),
+            "avg_solar_power_w": _avg_or_none(solar_values),
+            "max_solar_power_w": _max_or_none(solar_values),
+            "avg_load_power_w": _avg_or_none(load_values),
+            "max_load_power_w": _max_or_none(load_values),
+            "min_battery_soc_pct": _min_or_none(battery_values),
+            "avg_battery_soc_pct": _avg_or_none(battery_values),
+            "grid_active_samples": _count_truthy(item["grid_active"] for item in items),
+            "generator_active_samples": _count_truthy(item["generator_active"] for item in items),
+        })
+    return profile
+
+
 def _parse_reading_at(value):
     if not value:
         raise ValueError("reading_at or timestamp_za is required.")
@@ -524,6 +760,63 @@ def _build_summary(flags, battery_soc, solar_power, load_power):
 
 def _kw(watts):
     return round(float(watts) / 1000, 1)
+
+
+def _bounded_hours(value):
+    try:
+        hours = int(value)
+    except (TypeError, ValueError):
+        hours = 24
+    return max(1, min(hours, 72))
+
+
+def _numbers(values):
+    numbers = []
+    for value in values:
+        if value is None:
+            continue
+        numbers.append(float(value))
+    return numbers
+
+
+def _avg_or_none(values):
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def _min_or_none(values):
+    if not values:
+        return None
+    return round(min(values), 2)
+
+
+def _max_or_none(values):
+    if not values:
+        return None
+    return round(max(values), 2)
+
+
+def _max_abs_or_none(values):
+    if not values:
+        return None
+    return round(max(abs(value) for value in values), 2)
+
+
+def _count_truthy(values):
+    return sum(1 for value in values if value is True)
+
+
+def _fmt_optional(value, suffix=""):
+    if value is None:
+        return "unknown"
+    return f"{value:g}{suffix}"
+
+
+def _fmt_kw_value(value):
+    if value is None:
+        return "unknown"
+    return f"{round(float(value) / 1000, 1)} kW"
 
 
 def _reading_id(source_id, reading_at):

@@ -764,6 +764,57 @@ Import/test gate:
 - Ask Oom Sakkie a daily/last-24h power question.
 - Expected result for now: the answer should state that this tool currently supports current/live power state only and that daily/kWh/trend read models are planned later.
 
+Live verification:
+
+- Passed on 2026-05-22 after importing `2.2` and `2.0` into n8n.
+- Telegram test `What's the power like now?` returned quickly with current backend/Supabase data:
+  - battery `46%`, `discharging`
+  - solar `0.0 kW`, PV1 `0 W`, PV2 `0 W`
+  - load `1.0 kW`
+  - grid `not using grid`, `0 W`
+  - generator `off`, `0 W`
+  - latest reading `22 May 2026, 00:40`, `4 minutes old`
+- Result confirms current power answers no longer depend on slow Sunsynk Google Sheets reads.
+
+## 10.3H Recent Power Profile Endpoint
+
+Goal:
+
+- Add a read-only backend endpoint for recent power profile questions such as "what happened in the last 24 hours?"
+- Keep the first version sample-based and honest.
+- Do not claim kWh, cost, import, or export totals until reliable Sunsynk energy counters or approved interval-integration rules exist.
+
+Endpoint:
+
+`GET /api/telemetry/power/recent?hours=24`
+
+Local implementation result:
+
+- Added `get_recent_power_profile()` in `modules/telemetry/power_service.py`.
+- Added route `GET /api/telemetry/power/recent` in `modules/telemetry/telemetry_routes.py`.
+- The endpoint reads recent rows from `power_readings_5min`.
+- The endpoint returns:
+  - requested window and data coverage
+  - first and last reading timestamps
+  - battery latest/min/max/average SOC
+  - charging/discharging approximate minutes
+  - average/max solar and load power
+  - grid/generator active sample counts and approximate minutes
+  - hourly buckets for trend display
+  - explicit limitations that these are sample-based power readings, not kWh totals
+
+Local verification:
+
+- Focused telemetry/workflow tests pass at 11 tests.
+- Full local test suite passes at 221 tests.
+
+Deploy/test gate:
+
+- Deploy backend.
+- Open `/api/telemetry/power/recent?hours=24`.
+- Confirm it returns `success = true`, a non-zero `row_count`, `coverage_pct`, battery/power/activity sections, and explicit limitations.
+- Only after that should `2.2` be expanded to answer last-24h trend questions from this endpoint.
+
 ## Must Not Do In 10.3 Planning
 
 - Do not change live n8n workflows yet.

@@ -343,17 +343,20 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("sunsynk_question", input_expression)
         self.assertIn("current power status at the farm", input_expression)
 
-    def test_sunsynk_agent_has_input_fallback_and_iteration_cap(self):
+    def test_sunsynk_tool_uses_backend_current_power_endpoint(self):
         workflow = load_workflow(SUNSYNK_WORKFLOW)
-        node = node_by_name(workflow, "AI Sunsynk Agent")
+        node = node_by_name(workflow, "HTTP - Get Current Power State")
+        code_node = node_by_name(workflow, "Code - Format Current Power Answer")
 
         self.assertIsNotNone(node)
+        self.assertIsNotNone(code_node)
         parameters = node.get("parameters", {})
-        options = parameters.get("options", {})
+        self.assertEqual(parameters.get("url"), "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current")
 
-        self.assertIn("current power status at the farm", parameters.get("text", ""))
-        self.assertLessEqual(options.get("maxIterations", 99), 4)
-        self.assertIn("Do not call the same tool again", options.get("systemMessage", ""))
+        node_names = {node.get("name") for node in workflow.get("nodes", [])}
+        self.assertNotIn("AI Sunsynk Agent", node_names)
+        self.assertNotIn("OpenAI Chat Model", node_names)
+        self.assertNotIn("Sunsynk Current Overview", node_names)
 
     def test_forecast_tool_keeps_safe_blank_defaults_for_optional_offsets(self):
         workflow = load_workflow(FORECAST_WORKFLOW)

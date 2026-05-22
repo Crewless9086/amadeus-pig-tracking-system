@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Local | Import `2.2` and `2.0`, then live-test Oom Sakkie current power questions. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Local | Deploy and verify `/api/telemetry/power/recent`, then decide whether Oom Sakkie should use it for last-24h questions. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2723,6 +2723,17 @@ Recommendation:
   - Local JSON parse verification passed for both workflow exports.
   - Backend endpoint readback before import showed fresh data with `data_age_minutes = 2`, `is_stale = false`, battery `47%`, load `785 W`, no solar, no grid, and no generator.
 - Next step: import `docs/04-n8n/workflows/2.2 - Amadeus Sunsynk Sub-Agent/workflow.json` and `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json` into n8n, then ask Oom Sakkie a current power question.
+- 10.3G live verification passed on 2026-05-22 after importing `2.2` and `2.0`.
+- Telegram test `What's the power like now?` returned quickly with current backend/Supabase data: battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid `0 W`, generator off `0 W`, latest reading `22 May 2026, 00:40`, and data age `4 minutes`.
+- This confirms Oom Sakkie power questions no longer depend on slow Sunsynk Google Sheets reads for current status.
+- Remaining future telemetry work: daily totals/kWh/last-24h power read models, weather/forecast backend alignment, and later irrigation/audit modeling.
+- 10.3H local backend slice prepared on 2026-05-22:
+  - Added read-only `GET /api/telemetry/power/recent?hours=24`.
+  - Endpoint summarizes recent `power_readings_5min` rows with sample-based battery range, average/max solar/load, grid/generator active sample counts, approximate active minutes, hourly buckets, data coverage, and explicit limitations.
+  - It deliberately does not report kWh, cost, import, or export totals until reliable Sunsynk energy counters or approved interval-integration rules are added.
+  - Focused telemetry/workflow tests pass at 11 tests after updating the old Sunsynk workflow contract.
+  - Full local test suite passes at 221 tests.
+- Next step: deploy backend, verify `/api/telemetry/power/recent?hours=24` on Render, then decide whether `2.2` should answer last-24h trend questions from this endpoint.
 
 Farm home/dashboard idea:
 
