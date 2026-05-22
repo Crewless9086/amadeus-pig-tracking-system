@@ -2733,7 +2733,10 @@ Recommendation:
   - It deliberately does not report kWh, cost, import, or export totals until reliable Sunsynk energy counters or approved interval-integration rules are added.
   - Focused telemetry/workflow tests pass at 11 tests after updating the old Sunsynk workflow contract.
   - Full local test suite passes at 221 tests.
-- Next step: deploy backend, verify `/api/telemetry/power/recent?hours=24` on Render, then decide whether `2.2` should answer last-24h trend questions from this endpoint.
+- First deployed check returned `success = true` with 24 rows and all expected sections, but the 24-hour window still included the old synthetic test row (`82%`, `3120 W`) because that row had no real cron raw payload.
+- Follow-up local patch excludes rows where `raw_payload is null` from `/api/telemetry/power/recent`, so synthetic/manual test rows do not skew real trend answers.
+- Focused telemetry/workflow tests still pass at 11 tests after the exclusion patch.
+- Next step: redeploy backend, verify `/api/telemetry/power/recent?hours=24` no longer includes the synthetic row, then decide whether `2.2` should answer last-24h trend questions from this endpoint.
 
 Farm home/dashboard idea:
 

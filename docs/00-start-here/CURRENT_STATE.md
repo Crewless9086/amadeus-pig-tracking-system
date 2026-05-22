@@ -329,4 +329,7 @@ Current position:
 - 10.3H local backend slice is prepared: `GET /api/telemetry/power/recent?hours=24` summarizes recent Supabase `power_readings_5min` rows without claiming kWh/cost totals.
 - The recent-power endpoint returns sample-based battery range, average/max solar/load, grid/generator active sample counts, approximate active minutes, hourly buckets, and coverage percentage.
 - Focused telemetry/workflow tests pass at 11 tests, and the full local test suite passes at 221 tests.
-- Next step is backend deploy and Render verification of `/api/telemetry/power/recent?hours=24`.
+- First deployed check returned `success = true` with expected sections, but it still included the old synthetic test row inside the 24-hour window.
+- A local follow-up patch now excludes rows with `raw_payload is null` so synthetic/manual test rows do not skew the recent profile.
+- Focused telemetry/workflow tests still pass at 11 tests after the exclusion patch.
+- Next step is redeploying backend and rechecking `/api/telemetry/power/recent?hours=24`.

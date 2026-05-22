@@ -187,6 +187,7 @@ class PowerTelemetryTests(unittest.TestCase):
 
         self.assertEqual(status_code, 200)
         self.assertTrue(result["success"])
+        self.assertIn("raw_payload is not null", cursor.execute.call_args.args[0])
         self.assertEqual(result["window"]["requested_hours"], 24)
         self.assertEqual(result["window"]["row_count"], 2)
         self.assertEqual(result["battery"]["min_soc_pct"], 45.0)

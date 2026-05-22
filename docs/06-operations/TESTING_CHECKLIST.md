@@ -1424,7 +1424,14 @@ Deploy checks:
 4. Confirm `window.row_count` is greater than zero after the cron has run for a while.
 5. Confirm `battery`, `power`, `activity`, and `hourly` sections are present.
 6. Confirm `limitations` says kWh/cost/import/export totals are not reported yet.
-7. Only after this passes, plan the `2.2` workflow update for last-24h trend questions.
+7. Confirm the profile excludes synthetic/manual test rows by checking the old `82%` / `3120 W` synthetic row is absent once the exclusion patch is deployed.
+8. Only after this passes, plan the `2.2` workflow update for last-24h trend questions.
+
+First deployed check:
+
+- 2026-05-22: Endpoint returned `success = true`, 24 rows, all expected sections, and limitations.
+- 2026-05-22: The old synthetic row was still present in the 24-hour window, so a follow-up local patch now excludes rows where `raw_payload is null`.
+- 2026-05-22: Focused telemetry/workflow tests still pass at 11 tests after the filter patch.
 
 ## Google Sheets Checks
 

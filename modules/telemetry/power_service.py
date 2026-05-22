@@ -339,6 +339,7 @@ def get_recent_power_profile(hours=24, database_url=None):
                     from public.power_readings_5min
                     where source_id = %s
                       and reading_at >= now() - (%s * interval '1 hour')
+                      and raw_payload is not null
                     order by reading_at asc
                     """,
                     (DEFAULT_POWER_SOURCE_ID, hours),

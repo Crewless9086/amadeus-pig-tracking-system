@@ -815,6 +815,14 @@ Deploy/test gate:
 - Confirm it returns `success = true`, a non-zero `row_count`, `coverage_pct`, battery/power/activity sections, and explicit limitations.
 - Only after that should `2.2` be expanded to answer last-24h trend questions from this endpoint.
 
+First deployed check:
+
+- Endpoint returned `success = true`, 24 rows, coverage, battery/power/activity/hourly sections, and limitations.
+- The response still included the old synthetic ingest row (`82%`, `3120 W`) because it was inside the 24-hour window and had no real cron raw payload.
+- Follow-up local patch now filters `raw_payload is not null`, so synthetic/manual test rows are excluded from recent profile summaries.
+- Focused telemetry/workflow tests still pass at 11 tests after the filter patch.
+- Redeploy backend and recheck before wiring Oom Sakkie last-24h questions.
+
 ## Must Not Do In 10.3 Planning
 
 - Do not change live n8n workflows yet.
