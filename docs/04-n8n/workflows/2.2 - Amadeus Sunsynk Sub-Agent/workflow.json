@@ -3,7 +3,7 @@
   "createdAt": "2025-12-27T15:31:52.879Z",
   "id": "tKVKoCcxhT7CAydT",
   "name": "2.2 - Amadeus Sunsynk Sub-Agent",
-  "description": "Deterministic Sunsynk current-power tool. Reads backend /api/telemetry/power/current instead of Google Sheets.",
+  "description": "Deterministic Sunsynk power tool. Routes current and recent power questions to backend Supabase endpoints instead of Google Sheets.",
   "active": true,
   "isArchived": false,
   "nodes": [
@@ -20,7 +20,7 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -520,
+        -700,
         0
       ],
       "id": "393340ce-0902-4141-83c9-e2d7c09d42a7",
@@ -28,7 +28,20 @@
     },
     {
       "parameters": {
-        "url": "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current",
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst inputItem = $json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current power status at the farm\");\nconst q = question.toLowerCase();\n\nconst asksEnergyTotal = /\\b(kwh|kw\\s*h|units?|unit\\s+usage|cost|rand|zar|price|bill|import(ed)?|export(ed)?|total\\s+(solar|pv|grid|load|usage|energy)|how much\\s+(solar|pv|grid|power|electricity|energy))\\b/i.test(q);\nconst asksRecent = /\\b(last\\s*24|24h|24\\s*hours?|trend|history|overnight|last night|yesterday|past|previous|recent|profile|today|this morning|during the night|grid.*last|generator.*last|solar.*last|battery.*last|what happened)\\b/i.test(q);\n\nconst queryType = asksRecent || asksEnergyTotal ? \"recent\" : \"current\";\nconst requestUrl = queryType === \"recent\"\n  ? \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/recent?hours=24\"\n  : \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current\";\n\nreturn [{\n  json: {\n    input: question,\n    query_type: queryType,\n    asks_energy_total: asksEnergyTotal,\n    request_url: requestUrl,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -440,
+        0
+      ],
+      "id": "a6ca4d65-7e99-4e65-a2dd-a187a9728f46",
+      "name": "Code - Route Power Question"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.request_url }}",
         "options": {
           "response": {
             "response": {
@@ -41,35 +54,35 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -260,
+        -170,
         0
       ],
       "id": "7f9db6f2-61b4-4b2e-a56d-9080c65e1735",
-      "name": "HTTP - Get Current Power State"
+      "name": "HTTP - Get Power Data"
     },
     {
       "parameters": {
-        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtKw(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${(n / 1000).toFixed(1)} kW`;\n}\n\nfunction fmtW(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} W`;\n}\n\nfunction fmtPct(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)}%`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst inputItem = $(\"When Executed by Another Workflow\").first()?.json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current power status at the farm\");\nconst data = $json || {};\nconst source = data.source || {};\nconst current = data.current || {};\nconst flags = data.flags || {};\nconst summary = data.summary || {};\n\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || summary.headline || \"The current power state is not available yet.\");\n  answer = `I could not read the current power state. ${reason}`;\n} else {\n  const lines = [];\n  const stale = source.is_stale === true;\n  const statusWord = stale ? \"latest available\" : \"current\";\n  const headline = sentence(summary.headline || \"Power state is available.\");\n\n  lines.push(`Power status (${statusWord}): ${headline}`);\n  lines.push(\"\");\n  lines.push(`Battery: ${fmtPct(current.battery_soc_pct)} (${sentence(current.battery_state || \"state unknown\")})`);\n  lines.push(`Solar: ${fmtKw(current.solar_power_w)} (PV1 ${fmtW(current.pv1_power_w)}, PV2 ${fmtW(current.pv2_power_w)})`);\n  lines.push(`Load: ${fmtKw(current.load_power_w)}`);\n  lines.push(`Grid: ${sentence(current.grid_state || \"unknown\")} (${fmtW(current.grid_power_w)})`);\n  lines.push(`Generator: ${sentence(current.generator_state || \"unknown\")} (${fmtW(current.generator_power_w)})`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (stale) {\n    lines.push(\"Warning: this reading is stale, so treat it as the last known state rather than live power status.\");\n  }\n\n  if (flags.low_battery === true) lines.push(\"Warning: battery is low.\");\n  if (flags.high_load === true) lines.push(\"Warning: load is high.\");\n  if (flags.no_solar === true) lines.push(\"Note: no solar production is showing right now.\");\n\n  if (/\\b(today|daily|kwh|units|last\\s*24|24h|trend|history|yesterday)\\b/i.test(question)) {\n    lines.push(\"\");\n    lines.push(\"This tool currently answers the live/current power state only. Daily totals, kWh, and last-24h trends are planned for the next telemetry read model.\");\n  }\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    answer,\n    output: answer,\n    sunsynk_response: answer,\n    source,\n    current,\n    flags,\n    summary,\n    telemetry_source: \"backend_supabase_current_power\",\n  }\n}];"
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtKw(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${(n / 1000).toFixed(1)} kW`;\n}\n\nfunction fmtW(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} W`;\n}\n\nfunction fmtPct(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)}%`;\n}\n\nfunction fmtMinutes(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} minutes`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst route = $(\"Code - Route Power Question\").first()?.json || {};\nconst question = clean(route.input || \"current power status at the farm\");\nconst queryType = clean(route.query_type || \"current\");\nconst asksEnergyTotal = route.asks_energy_total === true;\nconst data = $json || {};\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || data.summary?.headline || \"The power data is not available yet.\");\n  answer = `I could not read the power data. ${reason}`;\n} else if (queryType === \"recent\") {\n  const window = data.window || {};\n  const battery = data.battery || {};\n  const power = data.power || {};\n  const activity = data.activity || {};\n  const summary = data.summary || {};\n  const notes = Array.isArray(summary.operator_notes) ? summary.operator_notes : [];\n  const lines = [];\n\n  lines.push(\"Last 24h power profile (sample-based):\");\n  lines.push(\"\");\n  lines.push(`Data coverage: ${window.row_count ?? \"unknown\"}/${window.expected_samples ?? \"unknown\"} readings (${window.coverage_pct ?? \"unknown\"}%).`);\n  lines.push(`Window: ${formatDateTime(window.first_reading_at)} to ${formatDateTime(window.last_reading_at)}.`);\n  lines.push(\"\");\n  lines.push(`Battery: latest ${fmtPct(battery.latest_soc_pct)}, range ${fmtPct(battery.min_soc_pct)} to ${fmtPct(battery.max_soc_pct)}.`);\n  lines.push(`Battery activity: charging about ${fmtMinutes(battery.charging_approx_minutes)}, discharging about ${fmtMinutes(battery.discharging_approx_minutes)}.`);\n  lines.push(`Load: average ${fmtKw(power.avg_load_power_w)}, max ${fmtKw(power.max_load_power_w)}.`);\n  lines.push(`Solar: average ${fmtKw(power.avg_solar_power_w)}, max ${fmtKw(power.max_solar_power_w)}.`);\n  lines.push(`Grid use: about ${fmtMinutes(activity.grid_active_approx_minutes)} from ${activity.grid_active_samples ?? 0} samples.`);\n  lines.push(`Generator: about ${fmtMinutes(activity.generator_active_approx_minutes)} from ${activity.generator_active_samples ?? 0} samples.`);\n\n  if (activity.no_solar_approx_minutes !== undefined) {\n    lines.push(`No-solar samples: about ${fmtMinutes(activity.no_solar_approx_minutes)}.`);\n  }\n\n  if (notes.length > 0) {\n    lines.push(\"\");\n    for (const note of notes.slice(0, 4)) lines.push(`- ${sentence(note)}`);\n  }\n\n  lines.push(\"\");\n  if (asksEnergyTotal) {\n    lines.push(\"Important: I cannot confirm kWh, cost, import, or export totals yet. This is based on 5-minute power samples, not approved energy counters.\");\n  } else {\n    lines.push(\"Note: this is based on 5-minute power samples, so it is useful for trends but not confirmed kWh or cost totals yet.\");\n  }\n\n  answer = lines.join(\"\\n\");\n} else {\n  const source = data.source || {};\n  const current = data.current || {};\n  const flags = data.flags || {};\n  const summary = data.summary || {};\n  const lines = [];\n  const stale = source.is_stale === true;\n  const statusWord = stale ? \"latest available\" : \"current\";\n  const headline = sentence(summary.headline || \"Power state is available.\");\n\n  lines.push(`Power status (${statusWord}): ${headline}`);\n  lines.push(\"\");\n  lines.push(`Battery: ${fmtPct(current.battery_soc_pct)} (${sentence(current.battery_state || \"state unknown\")})`);\n  lines.push(`Solar: ${fmtKw(current.solar_power_w)} (PV1 ${fmtW(current.pv1_power_w)}, PV2 ${fmtW(current.pv2_power_w)})`);\n  lines.push(`Load: ${fmtKw(current.load_power_w)}`);\n  lines.push(`Grid: ${sentence(current.grid_state || \"unknown\")} (${fmtW(current.grid_power_w)})`);\n  lines.push(`Generator: ${sentence(current.generator_state || \"unknown\")} (${fmtW(current.generator_power_w)})`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (stale) lines.push(\"Warning: this reading is stale, so treat it as the last known state rather than live power status.\");\n  if (flags.low_battery === true) lines.push(\"Warning: battery is low.\");\n  if (flags.high_load === true) lines.push(\"Warning: load is high.\");\n  if (flags.no_solar === true) lines.push(\"Note: no solar production is showing right now.\");\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    query_type: queryType,\n    asks_energy_total: asksEnergyTotal,\n    answer,\n    output: answer,\n    sunsynk_response: answer,\n    telemetry_source: queryType === \"recent\" ? \"backend_supabase_recent_power\" : \"backend_supabase_current_power\",\n    backend_payload: data,\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        20,
+        100,
         0
       ],
       "id": "c7d8d5d6-86c2-4ba1-82a7-bebec6a3b7d8",
-      "name": "Code - Format Current Power Answer"
+      "name": "Code - Format Power Answer"
     },
     {
       "parameters": {
-        "content": "Phase 10.3F/10.3G: deterministic backend current-power read. No Google Sheets or LangChain agent loop in this workflow.",
+        "content": "Phase 10.3I: deterministic backend power read. Routes current questions to /current and recent/trend questions to /recent. No Google Sheets or LangChain agent loop in this workflow.",
         "height": 180,
-        "width": 420,
+        "width": 520,
         "color": 4
       },
       "type": "n8n-nodes-base.stickyNote",
       "position": [
-        -520,
+        -700,
         -260
       ],
       "typeVersion": 1,
@@ -82,25 +95,36 @@
       "main": [
         [
           {
-            "node": "HTTP - Get Current Power State",
+            "node": "Code - Route Power Question",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "HTTP - Get Current Power State": {
+    "Code - Route Power Question": {
       "main": [
         [
           {
-            "node": "Code - Format Current Power Answer",
+            "node": "HTTP - Get Power Data",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Code - Format Current Power Answer": {
+    "HTTP - Get Power Data": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Power Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Power Answer": {
       "main": [
         []
       ]
@@ -117,7 +141,7 @@
     "When Executed by Another Workflow": [
       {
         "json": {
-          "input": "What's the power like now?"
+          "input": "What happened with the power in the last 24 hours?"
         }
       }
     ]
@@ -168,7 +192,7 @@
         "type": "n8n-nodes-base.executeWorkflowTrigger",
         "typeVersion": 1.1,
         "position": [
-          -520,
+          -700,
           0
         ],
         "id": "393340ce-0902-4141-83c9-e2d7c09d42a7",
@@ -176,7 +200,20 @@
       },
       {
         "parameters": {
-          "url": "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current",
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst inputItem = $json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current power status at the farm\");\nconst q = question.toLowerCase();\n\nconst asksEnergyTotal = /\\b(kwh|kw\\s*h|units?|unit\\s+usage|cost|rand|zar|price|bill|import(ed)?|export(ed)?|total\\s+(solar|pv|grid|load|usage|energy)|how much\\s+(solar|pv|grid|power|electricity|energy))\\b/i.test(q);\nconst asksRecent = /\\b(last\\s*24|24h|24\\s*hours?|trend|history|overnight|last night|yesterday|past|previous|recent|profile|today|this morning|during the night|grid.*last|generator.*last|solar.*last|battery.*last|what happened)\\b/i.test(q);\n\nconst queryType = asksRecent || asksEnergyTotal ? \"recent\" : \"current\";\nconst requestUrl = queryType === \"recent\"\n  ? \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/recent?hours=24\"\n  : \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current\";\n\nreturn [{\n  json: {\n    input: question,\n    query_type: queryType,\n    asks_energy_total: asksEnergyTotal,\n    request_url: requestUrl,\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -440,
+          0
+        ],
+        "id": "a6ca4d65-7e99-4e65-a2dd-a187a9728f46",
+        "name": "Code - Route Power Question"
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.request_url }}",
           "options": {
             "response": {
               "response": {
@@ -189,35 +226,35 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
         "position": [
-          -260,
+          -170,
           0
         ],
         "id": "7f9db6f2-61b4-4b2e-a56d-9080c65e1735",
-        "name": "HTTP - Get Current Power State"
+        "name": "HTTP - Get Power Data"
       },
       {
         "parameters": {
-          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtKw(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${(n / 1000).toFixed(1)} kW`;\n}\n\nfunction fmtW(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} W`;\n}\n\nfunction fmtPct(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)}%`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst inputItem = $(\"When Executed by Another Workflow\").first()?.json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current power status at the farm\");\nconst data = $json || {};\nconst source = data.source || {};\nconst current = data.current || {};\nconst flags = data.flags || {};\nconst summary = data.summary || {};\n\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || summary.headline || \"The current power state is not available yet.\");\n  answer = `I could not read the current power state. ${reason}`;\n} else {\n  const lines = [];\n  const stale = source.is_stale === true;\n  const statusWord = stale ? \"latest available\" : \"current\";\n  const headline = sentence(summary.headline || \"Power state is available.\");\n\n  lines.push(`Power status (${statusWord}): ${headline}`);\n  lines.push(\"\");\n  lines.push(`Battery: ${fmtPct(current.battery_soc_pct)} (${sentence(current.battery_state || \"state unknown\")})`);\n  lines.push(`Solar: ${fmtKw(current.solar_power_w)} (PV1 ${fmtW(current.pv1_power_w)}, PV2 ${fmtW(current.pv2_power_w)})`);\n  lines.push(`Load: ${fmtKw(current.load_power_w)}`);\n  lines.push(`Grid: ${sentence(current.grid_state || \"unknown\")} (${fmtW(current.grid_power_w)})`);\n  lines.push(`Generator: ${sentence(current.generator_state || \"unknown\")} (${fmtW(current.generator_power_w)})`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (stale) {\n    lines.push(\"Warning: this reading is stale, so treat it as the last known state rather than live power status.\");\n  }\n\n  if (flags.low_battery === true) lines.push(\"Warning: battery is low.\");\n  if (flags.high_load === true) lines.push(\"Warning: load is high.\");\n  if (flags.no_solar === true) lines.push(\"Note: no solar production is showing right now.\");\n\n  if (/\\b(today|daily|kwh|units|last\\s*24|24h|trend|history|yesterday)\\b/i.test(question)) {\n    lines.push(\"\");\n    lines.push(\"This tool currently answers the live/current power state only. Daily totals, kWh, and last-24h trends are planned for the next telemetry read model.\");\n  }\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    answer,\n    output: answer,\n    sunsynk_response: answer,\n    source,\n    current,\n    flags,\n    summary,\n    telemetry_source: \"backend_supabase_current_power\",\n  }\n}];"
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtKw(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${(n / 1000).toFixed(1)} kW`;\n}\n\nfunction fmtW(watts) {\n  const n = num(watts);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} W`;\n}\n\nfunction fmtPct(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)}%`;\n}\n\nfunction fmtMinutes(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Math.round(n)} minutes`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst route = $(\"Code - Route Power Question\").first()?.json || {};\nconst question = clean(route.input || \"current power status at the farm\");\nconst queryType = clean(route.query_type || \"current\");\nconst asksEnergyTotal = route.asks_energy_total === true;\nconst data = $json || {};\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || data.summary?.headline || \"The power data is not available yet.\");\n  answer = `I could not read the power data. ${reason}`;\n} else if (queryType === \"recent\") {\n  const window = data.window || {};\n  const battery = data.battery || {};\n  const power = data.power || {};\n  const activity = data.activity || {};\n  const summary = data.summary || {};\n  const notes = Array.isArray(summary.operator_notes) ? summary.operator_notes : [];\n  const lines = [];\n\n  lines.push(\"Last 24h power profile (sample-based):\");\n  lines.push(\"\");\n  lines.push(`Data coverage: ${window.row_count ?? \"unknown\"}/${window.expected_samples ?? \"unknown\"} readings (${window.coverage_pct ?? \"unknown\"}%).`);\n  lines.push(`Window: ${formatDateTime(window.first_reading_at)} to ${formatDateTime(window.last_reading_at)}.`);\n  lines.push(\"\");\n  lines.push(`Battery: latest ${fmtPct(battery.latest_soc_pct)}, range ${fmtPct(battery.min_soc_pct)} to ${fmtPct(battery.max_soc_pct)}.`);\n  lines.push(`Battery activity: charging about ${fmtMinutes(battery.charging_approx_minutes)}, discharging about ${fmtMinutes(battery.discharging_approx_minutes)}.`);\n  lines.push(`Load: average ${fmtKw(power.avg_load_power_w)}, max ${fmtKw(power.max_load_power_w)}.`);\n  lines.push(`Solar: average ${fmtKw(power.avg_solar_power_w)}, max ${fmtKw(power.max_solar_power_w)}.`);\n  lines.push(`Grid use: about ${fmtMinutes(activity.grid_active_approx_minutes)} from ${activity.grid_active_samples ?? 0} samples.`);\n  lines.push(`Generator: about ${fmtMinutes(activity.generator_active_approx_minutes)} from ${activity.generator_active_samples ?? 0} samples.`);\n\n  if (activity.no_solar_approx_minutes !== undefined) {\n    lines.push(`No-solar samples: about ${fmtMinutes(activity.no_solar_approx_minutes)}.`);\n  }\n\n  if (notes.length > 0) {\n    lines.push(\"\");\n    for (const note of notes.slice(0, 4)) lines.push(`- ${sentence(note)}`);\n  }\n\n  lines.push(\"\");\n  if (asksEnergyTotal) {\n    lines.push(\"Important: I cannot confirm kWh, cost, import, or export totals yet. This is based on 5-minute power samples, not approved energy counters.\");\n  } else {\n    lines.push(\"Note: this is based on 5-minute power samples, so it is useful for trends but not confirmed kWh or cost totals yet.\");\n  }\n\n  answer = lines.join(\"\\n\");\n} else {\n  const source = data.source || {};\n  const current = data.current || {};\n  const flags = data.flags || {};\n  const summary = data.summary || {};\n  const lines = [];\n  const stale = source.is_stale === true;\n  const statusWord = stale ? \"latest available\" : \"current\";\n  const headline = sentence(summary.headline || \"Power state is available.\");\n\n  lines.push(`Power status (${statusWord}): ${headline}`);\n  lines.push(\"\");\n  lines.push(`Battery: ${fmtPct(current.battery_soc_pct)} (${sentence(current.battery_state || \"state unknown\")})`);\n  lines.push(`Solar: ${fmtKw(current.solar_power_w)} (PV1 ${fmtW(current.pv1_power_w)}, PV2 ${fmtW(current.pv2_power_w)})`);\n  lines.push(`Load: ${fmtKw(current.load_power_w)}`);\n  lines.push(`Grid: ${sentence(current.grid_state || \"unknown\")} (${fmtW(current.grid_power_w)})`);\n  lines.push(`Generator: ${sentence(current.generator_state || \"unknown\")} (${fmtW(current.generator_power_w)})`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (stale) lines.push(\"Warning: this reading is stale, so treat it as the last known state rather than live power status.\");\n  if (flags.low_battery === true) lines.push(\"Warning: battery is low.\");\n  if (flags.high_load === true) lines.push(\"Warning: load is high.\");\n  if (flags.no_solar === true) lines.push(\"Note: no solar production is showing right now.\");\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    query_type: queryType,\n    asks_energy_total: asksEnergyTotal,\n    answer,\n    output: answer,\n    sunsynk_response: answer,\n    telemetry_source: queryType === \"recent\" ? \"backend_supabase_recent_power\" : \"backend_supabase_current_power\",\n    backend_payload: data,\n  }\n}];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          20,
+          100,
           0
         ],
         "id": "c7d8d5d6-86c2-4ba1-82a7-bebec6a3b7d8",
-        "name": "Code - Format Current Power Answer"
+        "name": "Code - Format Power Answer"
       },
       {
         "parameters": {
-          "content": "Phase 10.3F/10.3G: deterministic backend current-power read. No Google Sheets or LangChain agent loop in this workflow.",
+          "content": "Phase 10.3I: deterministic backend power read. Routes current questions to /current and recent/trend questions to /recent. No Google Sheets or LangChain agent loop in this workflow.",
           "height": 180,
-          "width": 420,
+          "width": 520,
           "color": 4
         },
         "type": "n8n-nodes-base.stickyNote",
         "position": [
-          -520,
+          -700,
           -260
         ],
         "typeVersion": 1,
@@ -230,25 +267,36 @@
         "main": [
           [
             {
-              "node": "HTTP - Get Current Power State",
+              "node": "Code - Route Power Question",
               "type": "main",
               "index": 0
             }
           ]
         ]
       },
-      "HTTP - Get Current Power State": {
+      "Code - Route Power Question": {
         "main": [
           [
             {
-              "node": "Code - Format Current Power Answer",
+              "node": "HTTP - Get Power Data",
               "type": "main",
               "index": 0
             }
           ]
         ]
       },
-      "Code - Format Current Power Answer": {
+      "HTTP - Get Power Data": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Power Answer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Format Power Answer": {
         "main": [
           []
         ]
@@ -256,7 +304,7 @@
     },
     "authors": "Charl Nieuwendyk",
     "name": null,
-    "description": "Deterministic Sunsynk current-power tool. Reads backend /api/telemetry/power/current instead of Google Sheets.",
+    "description": "Deterministic Sunsynk power tool. Routes current and recent power questions to backend Supabase endpoints instead of Google Sheets.",
     "autosaved": false,
     "workflowPublishHistory": []
   }

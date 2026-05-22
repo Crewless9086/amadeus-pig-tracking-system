@@ -11,28 +11,33 @@ Imported for docs: 2026-05-18
 ## What It Does
 
 - Runs when called by Oom Sakkie.
-- Calls the backend current-power endpoint.
+- Routes the operator question to the backend current-power or recent-power endpoint.
 - Formats a complete operator-ready power answer.
 - Answers current/live power state questions: battery, solar/PV, load, grid, generator, and data freshness.
+- Answers recent/last-24h trend questions from sample-based Supabase power readings.
+- Keeps kWh, cost, import, and export totals clearly limited until approved energy counters or interval-integration rules are added.
 - Does not use a LangChain agent loop or Google Sheets tools anymore.
 
 ## Main Data Sources
 
-- Backend endpoint: `GET /api/telemetry/power/current`
-- Backend source: Supabase `power_latest_state`
+- Backend endpoints:
+  - `GET /api/telemetry/power/current`
+  - `GET /api/telemetry/power/recent?hours=24`
+- Backend source: Supabase `power_latest_state` and `power_readings_5min`
 - Logger source: Render cron `amadeus-sunsynk-logger`
 
 ## Main Nodes
 
 - `When Executed by Another Workflow`
-- `HTTP - Get Current Power State`
-- `Code - Format Current Power Answer`
+- `Code - Route Power Question`
+- `HTTP - Get Power Data`
+- `Code - Format Power Answer`
 
 ## Planning Notes
 
 - This workflow is now a deterministic backend-read worker, not an LLM sub-agent.
-- Current-state power questions are supported first.
-- Daily totals, kWh, last-24h trends, and interval analysis need later backend read models before they are re-enabled in Oom Sakkie.
+- Current-state and sample-based recent/last-24h power profile questions are supported.
+- Daily totals, kWh, import/export energy totals, and cost answers need later backend energy-counter or approved interval-integration read models before they are enabled as confirmed totals.
 - Keep solar/power data ownership separate from orders.
 
 ## Known Issue Log
@@ -48,3 +53,5 @@ Imported for docs: 2026-05-18
 - Follow-up review must inventory the Sunsynk Google Sheets tabs, any backend modules/scripts, `ALERT - Sunsynk`, data volume, current read patterns, and whether a small backend API backed by Supabase/Postgres should replace direct agent reads from large Sheets.
 - 2026-05-22: Rebuilt `2.2` to call `GET /api/telemetry/power/current` and format the backend payload directly. Removed the Google Sheets tools and LangChain agent loop from the workflow export.
 - 2026-05-22: Live Telegram test passed after import. `What's the power like now?` returned quickly with current backend/Supabase data: battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid, generator off, and latest reading `22 May 2026, 00:40` at `4 minutes old`.
+- 2026-05-22: Prepared `10.3I` workflow update. `2.2` now routes current questions to `/api/telemetry/power/current` and recent/trend questions to `/api/telemetry/power/recent?hours=24`. Energy-total questions get a clear sample-based limitation instead of invented kWh/cost/import/export totals.
+- 2026-05-22: Live Telegram tests passed after import. Current power, last-24h profile, last-night grid use, and solar-total limitation wording all worked. Minor future polish: recent-profile answers can repeat the sample-based limitation because backend notes and workflow formatting both include it.

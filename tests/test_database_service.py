@@ -9,12 +9,15 @@ from services.database_service import (
     SALES_TRANSACTION_SCHEMA_TABLES,
     TELEMETRY_POWER_SCHEMA_MIGRATION_ID,
     TELEMETRY_POWER_SCHEMA_TABLES,
+    TELEMETRY_WEATHER_SCHEMA_MIGRATION_ID,
+    TELEMETRY_WEATHER_SCHEMA_TABLES,
     check_database_foundation,
     check_database_health,
     check_order_schema,
     check_sales_transaction_payment_date_schema,
     check_sales_transaction_schema,
     check_telemetry_power_schema,
+    check_telemetry_weather_schema,
 )
 
 
@@ -249,6 +252,31 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         for forbidden in forbidden_tables:
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, migration_lower)
+
+    def test_telemetry_weather_migration_creates_only_expected_weather_tables(self):
+        migration = Path(
+            "supabase/migrations/202605220001_create_telemetry_weather_tables.sql"
+        ).read_text(encoding="utf-8")
+        migration_lower = migration.lower()
+
+        for table in TELEMETRY_WEATHER_SCHEMA_TABLES:
+            with self.subTest(table=table):
+                self.assertIn(f"create table if not exists public.{table}", migration_lower)
+
+        self.assertIn(TELEMETRY_WEATHER_SCHEMA_MIGRATION_ID, migration)
+        self.assertIn("weather-station-main", migration)
+        self.assertIn("open-meteo-forecast-main", migration)
+        self.assertIn("app_private.migration_log", migration)
+
+        forbidden = [
+            "create table if not exists public.irrigation_actions",
+            "create table if not exists public.weather_daily_rollups",
+            "drop table",
+            "delete from",
+        ]
+        for text in forbidden:
+            with self.subTest(forbidden=text):
+                self.assertNotIn(text, migration_lower)
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_order_schema_health_does_not_return_connection_string_on_failure(self):

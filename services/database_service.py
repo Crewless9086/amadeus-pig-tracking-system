@@ -25,6 +25,12 @@ TELEMETRY_POWER_SCHEMA_TABLES = [
     "power_latest_state",
     "telemetry_alerts",
 ]
+TELEMETRY_WEATHER_SCHEMA_MIGRATION_ID = "202605220001_create_telemetry_weather_tables"
+TELEMETRY_WEATHER_SCHEMA_TABLES = [
+    "weather_readings",
+    "weather_latest_state",
+    "weather_forecast_snapshots",
+]
 
 
 def check_database_health():
@@ -454,5 +460,111 @@ def check_telemetry_power_schema():
             "configured": True,
             "status": "telemetry_power_schema_check_failed",
             "message": "Telemetry power schema check failed.",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+
+def check_telemetry_weather_schema():
+    database_url = os.getenv(DATABASE_URL_ENV, "").strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": "DATABASE_URL is not configured.",
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+        }, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=5) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select table_name
+                    from information_schema.tables
+                    where table_schema = 'public'
+                    and table_name = any(%s)
+                    """,
+                    (TELEMETRY_WEATHER_SCHEMA_TABLES,),
+                )
+                found_tables = sorted(row[0] for row in cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    select migration_id, applied_at
+                    from app_private.migration_log
+                    where migration_id = %s
+                    """,
+                    (TELEMETRY_WEATHER_SCHEMA_MIGRATION_ID,),
+                )
+                migration_row = cursor.fetchone()
+
+                cursor.execute(
+                    """
+                    select source_id, source_type, provider, stale_after_minutes
+                    from public.telemetry_sources
+                    where source_id in ('weather-station-main', 'open-meteo-forecast-main')
+                    order by source_id
+                    """
+                )
+                source_rows = cursor.fetchall()
+
+        expected_tables = sorted(TELEMETRY_WEATHER_SCHEMA_TABLES)
+        missing_tables = [table for table in expected_tables if table not in found_tables]
+        source_by_id = {row[0]: row for row in source_rows}
+
+        if (
+            missing_tables
+            or not migration_row
+            or "weather-station-main" not in source_by_id
+            or "open-meteo-forecast-main" not in source_by_id
+        ):
+            return {
+                "success": False,
+                "configured": True,
+                "status": "telemetry_weather_schema_missing",
+                "migration_id": TELEMETRY_WEATHER_SCHEMA_MIGRATION_ID,
+                "migration_applied": bool(migration_row),
+                "expected_tables": expected_tables,
+                "found_tables": found_tables,
+                "missing_tables": missing_tables,
+                "weather_source_found": "weather-station-main" in source_by_id,
+                "forecast_source_found": "open-meteo-forecast-main" in source_by_id,
+            }, 503
+
+        return {
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "migration_id": migration_row[0],
+            "applied_at": migration_row[1].isoformat(),
+            "expected_tables": expected_tables,
+            "found_tables": found_tables,
+            "missing_tables": [],
+            "sources": {
+                row[0]: {
+                    "source_id": row[0],
+                    "source_type": row[1],
+                    "provider": row[2],
+                    "stale_after_minutes": row[3],
+                }
+                for row in source_rows
+            },
+        }, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "telemetry_weather_schema_check_failed",
+            "message": "Telemetry weather schema check failed.",
             "error_type": exc.__class__.__name__,
         }, 503

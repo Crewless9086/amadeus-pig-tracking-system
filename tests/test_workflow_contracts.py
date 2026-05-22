@@ -343,15 +343,25 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("sunsynk_question", input_expression)
         self.assertIn("current power status at the farm", input_expression)
 
-    def test_sunsynk_tool_uses_backend_current_power_endpoint(self):
+    def test_sunsynk_tool_uses_backend_power_endpoints(self):
         workflow = load_workflow(SUNSYNK_WORKFLOW)
-        node = node_by_name(workflow, "HTTP - Get Current Power State")
-        code_node = node_by_name(workflow, "Code - Format Current Power Answer")
+        route_node = node_by_name(workflow, "Code - Route Power Question")
+        http_node = node_by_name(workflow, "HTTP - Get Power Data")
+        format_node = node_by_name(workflow, "Code - Format Power Answer")
 
-        self.assertIsNotNone(node)
-        self.assertIsNotNone(code_node)
-        parameters = node.get("parameters", {})
-        self.assertEqual(parameters.get("url"), "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/current")
+        self.assertIsNotNone(route_node)
+        self.assertIsNotNone(http_node)
+        self.assertIsNotNone(format_node)
+        route_content = route_node.get("parameters", {}).get("jsCode", "")
+        format_content = format_node.get("parameters", {}).get("jsCode", "")
+        parameters = http_node.get("parameters", {})
+
+        self.assertEqual(parameters.get("url"), "={{ $json.request_url }}")
+        self.assertIn("/api/telemetry/power/current", route_content)
+        self.assertIn("/api/telemetry/power/recent?hours=24", route_content)
+        self.assertIn("asks_energy_total", route_content)
+        self.assertIn("sample-based", format_content)
+        self.assertIn("cannot confirm kWh", format_content)
 
         node_names = {node.get("name") for node in workflow.get("nodes", [])}
         self.assertNotIn("AI Sunsynk Agent", node_names)

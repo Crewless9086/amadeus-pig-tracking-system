@@ -5,6 +5,12 @@ from modules.telemetry.power_service import (
     get_recent_power_profile,
     ingest_power_reading,
 )
+from modules.telemetry.weather_service import (
+    get_current_weather_state,
+    get_weather_forecast,
+    ingest_weather_forecast,
+    ingest_weather_reading,
+)
 
 
 telemetry_bp = Blueprint("telemetry", __name__)
@@ -32,3 +38,40 @@ def telemetry_power_ingest():
             provided_key = auth_header[7:].strip()
     result, status_code = ingest_power_reading(payload, provided_key)
     return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/weather/current", methods=["GET"])
+def telemetry_weather_current():
+    result, status_code = get_current_weather_state()
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/weather/forecast", methods=["GET"])
+def telemetry_weather_forecast():
+    result, status_code = get_weather_forecast(request.args.get("days", 3))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/weather/ingest", methods=["POST"])
+def telemetry_weather_ingest():
+    payload = request.get_json(silent=True) or {}
+    provided_key = _telemetry_key_from_request()
+    result, status_code = ingest_weather_reading(payload, provided_key)
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/weather/forecast/ingest", methods=["POST"])
+def telemetry_weather_forecast_ingest():
+    payload = request.get_json(silent=True) or {}
+    provided_key = _telemetry_key_from_request()
+    result, status_code = ingest_weather_forecast(payload, provided_key)
+    return jsonify(result), status_code
+
+
+def _telemetry_key_from_request():
+    provided_key = request.headers.get("X-Amadeus-Telemetry-Key", "")
+    if not provided_key:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            provided_key = auth_header[7:].strip()
+    return provided_key

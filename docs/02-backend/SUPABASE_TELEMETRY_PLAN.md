@@ -821,7 +821,406 @@ First deployed check:
 - The response still included the old synthetic ingest row (`82%`, `3120 W`) because it was inside the 24-hour window and had no real cron raw payload.
 - Follow-up local patch now filters `raw_payload is not null`, so synthetic/manual test rows are excluded from recent profile summaries.
 - Focused telemetry/workflow tests still pass at 11 tests after the filter patch.
-- Redeploy backend and recheck before wiring Oom Sakkie last-24h questions.
+
+Deployed verification after filter patch:
+
+- Passed on 2026-05-22.
+- `/api/telemetry/power/recent?hours=24` returned `success = true`.
+- The synthetic `82%` / `3120 W` row was absent.
+- Live response had 24 real cron rows, first reading `2026-05-21T22:28:20+00:00`, last reading `2026-05-22T00:20:21+00:00`, battery range `42%` to `47%`, average load `0.9 kW`, maximum solar `0.0 kW`, and no grid/generator activity.
+- Endpoint is ready as a backend source for `2.2` last-24h trend answers.
+
+## 10.3I Oom Sakkie Recent Power Routing
+
+Local workflow update prepared on 2026-05-22:
+
+- `2.2 - Amadeus Sunsynk Sub-Agent` remains a deterministic backend-read worker.
+- Current/live power questions route to `GET /api/telemetry/power/current`.
+- Recent, last-24h, overnight, and trend questions route to `GET /api/telemetry/power/recent?hours=24`.
+- kWh, cost, import, and export total questions are not guessed. The workflow returns the sample-based recent profile with a clear limitation until confirmed energy counters or approved interval-integration rules are added.
+- `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description has been updated so the main assistant may use this worker for current and sample-based recent power profile questions.
+
+Owner import/test checklist:
+
+1. Import updated `2.2`.
+2. Import updated `2.0`.
+3. Ask Oom Sakkie a current power question.
+4. Ask Oom Sakkie a last-24h power profile question.
+5. Ask a grid/generator recent-use question.
+6. Ask a solar/kWh total question and confirm the response does not invent energy totals.
+
+Live verification:
+
+- Passed on 2026-05-22 after importing updated `2.2` and `2.0`.
+- Current power question returned a fresh reading with battery `41%`, load `0.8 kW`, no solar, no grid, no generator, and latest reading age `0 minutes`.
+- Last-24h power profile returned 34/288 readings with battery range `41%` to `47%`, average load `0.9 kW`, maximum solar `0.0 kW`, and no grid/generator use.
+- Last-night grid question reported about `0 minutes` of grid use from `0` samples.
+- Solar-total question returned the sample-based profile and clearly stated that kWh, cost, import, and export totals are not confirmed yet.
+- Minor wording polish remains optional: avoid repeating the sample-based limitation from both backend operator notes and workflow formatting.
+
+## 10.3J Weather And Forecast Backend Alignment Plan
+
+Started on 2026-05-22 after Sunsynk `10.3I` was live-verified.
+
+Current live shape:
+
+- `2.1 - Amadeus Weather Sub-Agent` is still sheet-backed and LLM-backed.
+- `2.1` reads `LLM_Latest_Reading`, `Forecast_10Day_Current`, and `Daily_Pivot` from `Amadeus_Weather_Logs`.
+- `2.1` uses `Weather Router (JSON Plan)` to decide whether it needs daily pivot and/or forecast data.
+- `2.1` then uses `Weather Answer LLM (JSON only)` to produce the final weather answer.
+- `2.1.1 - Amadeus Forecast Tool` calls Open-Meteo directly, but current notes show `2.1` is not calling it in the normal Oom Sakkie path.
+- `ALERT - Local Weather Station` and `ALERT - Weather Forecast` still read Google Sheets and write alert logs.
+- External logger sources exist:
+  - `external_sources/telemetry/weather/amadeus-local-weatherstation-logger`
+  - `external_sources/telemetry/forecast/amadeus-forecast-logger`
+
+Problem to solve:
+
+- The weather path currently depends on multiple sheet reads and LLM formatting.
+- It works better than the old Sunsynk path, so we should not rip it out in one move.
+- For the farm operating system, Oom Sakkie and the future web dashboard need small, deterministic backend payloads for current weather and forecast.
+- Weather and forecast should eventually use the same pattern as Sunsynk: logger sends data to backend, backend writes Supabase, Oom Sakkie reads backend endpoints.
+
+Recommended sequence:
+
+1. **10.3J1 Weather/forecast read-model contract** - define exact backend response payloads before SQL or workflow edits.
+2. **10.3J2 Weather/forecast schema migration** - add only weather/forecast tables and source rows; do not touch irrigation commands yet.
+3. **10.3J3 Backend ingest endpoints** - add protected ingest endpoints for weather station current readings and forecast snapshots.
+4. **10.3J4 Logger update** - update the weather and forecast Render cron loggers to call backend ingest while optionally keeping Google Sheets as a mirror during transition.
+5. **10.3J5 Backend read endpoints** - expose compact read-only endpoints for Oom Sakkie:
+   - `GET /api/telemetry/weather/current`
+   - `GET /api/telemetry/weather/today`
+   - `GET /api/telemetry/weather/forecast?days=3`
+6. **10.3J6 Oom Sakkie `2.1` update** - only after endpoints are deployed and verified, simplify `2.1` to call backend endpoints and format deterministic answers.
+7. **10.3J7 Alert alignment** - review `ALERT - Local Weather Station` and `ALERT - Weather Forecast` after backend read models exist. Do not move alert workflows first.
+
+Recommended first payloads:
+
+`GET /api/telemetry/weather/current`
+
+- source freshness: source id, provider, last reading time, data age, stale flag
+- current values: temperature, humidity, wind speed, wind gust, wind direction, rain rate, rain today/total, pressure
+- deterministic flags: stale station, raining now, rain today, high wind, gust risk, hot/cold, irrigation caution
+- backend-prepared summary: status, headline, operator notes
+
+`GET /api/telemetry/weather/forecast?days=3`
+
+- source freshness: forecast run time, provider, data age
+- daily periods: date, min/max temp, rain sum, rain probability, wind max, gust max
+- deterministic flags: rain expected, strong wind, heat/cold risk, visit/work caution, irrigation caution
+- backend-prepared summary: status, headline, operator notes
+
+`GET /api/telemetry/weather/today`
+
+- optional first follow-up endpoint if we need daily trend answers.
+- Should summarize current-day readings from Supabase, not force Oom Sakkie to scan raw rows.
+- Useful fields: min/max/avg temp, max wind/gust, rain total, reading count, first/last reading, station coverage.
+
+Recommended table direction:
+
+| Table | Purpose | Notes |
+| --- | --- | --- |
+| `weather_readings` | Raw/current station samples | Keep enough recent data for today/recent summaries and dashboard charts. |
+| `weather_latest_state` | Fast current state | One latest row per weather source, like `power_latest_state`. |
+| `weather_forecast_snapshots` | Forecast run snapshots | Store current forecast periods by run. |
+| `weather_daily_rollups` | Daily weather summaries | Later rollup for long-term trend and dashboard. |
+| `telemetry_alerts` | Shared weather/forecast alerts | Existing table can already support weather area values. |
+
+Guardrails:
+
+- Do not change live `2.1` until backend current/forecast endpoints are deployed and verified.
+- Do not delete Google Sheets weather writes during the first pass.
+- Do not make Oom Sakkie read raw weather rows.
+- Do not merge weather and forecast into Sunsynk logic; keep separate services and endpoints.
+- Do not move irrigation behavior until weather endpoints are stable, because irrigation depends on weather.
+
+Open questions before implementation:
+
+- Should the weather station logger keep Google Sheets mirror writes after Supabase ingest is live? Recommendation: yes for a short transition window.
+- How often does the weather station cron run in production, and do we want the same raw retention window as power or longer?
+- Should `2.1.1` remain a standalone Open-Meteo utility, or should it be retired once the backend forecast endpoint exists? Recommendation: keep it documented for now, but do not use it as the main Oom Sakkie path after backend endpoints exist.
+
+## 10.3J1 Weather/Forecast Read-Model Contract
+
+Agreed direction on 2026-05-22:
+
+- Build weather like Sunsynk: backend prepares compact, deterministic payloads; Oom Sakkie reads endpoints and formats answers.
+- Include `weather/current` and `weather/forecast` in the first weather backend build.
+- Keep `weather/today` as a planned follow-up unless the first implementation shows it is low-risk to include.
+- Keep Google Sheets mirror writes during the transition so the current weather sheets remain visible while Supabase is proven.
+- Keep `2.1` unchanged until the backend endpoints have been deployed and tested directly.
+
+### `GET /api/telemetry/weather/current`
+
+Purpose:
+
+- Answer "what is the weather like now?"
+- Provide the future web dashboard with a compact current weather state.
+- Give irrigation planning a clean weather gate source later, without reading Google Sheets directly.
+
+Success response shape:
+
+```json
+{
+  "success": true,
+  "configured": true,
+  "status": "ok",
+  "source": {
+    "source": "supabase",
+    "source_id": "weather-station-main",
+    "source_name": "Amadeus Local Weather Station",
+    "provider": "weather_com_pws",
+    "last_reading_at": "2026-05-22T03:10:00+02:00",
+    "data_age_minutes": 4,
+    "is_stale": false,
+    "stale_after_minutes": 30,
+    "writes_to_sheets": false,
+    "writes_to_supabase": false
+  },
+  "current": {
+    "temperature_c": 13.4,
+    "humidity_pct": 88,
+    "wind_speed_kmh": 4.2,
+    "wind_gust_kmh": 11.5,
+    "wind_direction_deg": 230,
+    "rain_rate_mm_h": 0,
+    "rain_today_mm": 0.8,
+    "pressure_hpa": 1018.2
+  },
+  "flags": {
+    "station_stale": false,
+    "raining_now": false,
+    "rain_today": true,
+    "high_wind": false,
+    "gust_risk": false,
+    "hot": false,
+    "cold": false,
+    "irrigation_caution": true
+  },
+  "summary": {
+    "status": "ok",
+    "headline": "Weather station data is current.",
+    "operator_notes": [
+      "Temperature is 13.4 C.",
+      "Rain today is 0.8 mm.",
+      "Wind is light at 4.2 km/h.",
+      "Irrigation may need caution because rain was recorded today."
+    ]
+  },
+  "units": {
+    "temperature": "C",
+    "wind": "km/h",
+    "rain": "mm",
+    "rain_rate": "mm/h",
+    "pressure": "hPa",
+    "humidity": "%"
+  }
+}
+```
+
+Unavailable response shape:
+
+```json
+{
+  "success": false,
+  "configured": true,
+  "status": "unavailable",
+  "message": "No current weather reading is available yet.",
+  "source": {
+    "source": "supabase",
+    "writes_to_sheets": false,
+    "writes_to_supabase": false
+  }
+}
+```
+
+Current weather rules:
+
+- `stale_after_minutes`: default `30`.
+- `station_stale`: `true` when data age is greater than `stale_after_minutes`.
+- `raining_now`: `true` when `rain_rate_mm_h > 0`.
+- `rain_today`: `true` when `rain_today_mm > 0`.
+- `high_wind`: `true` when `wind_speed_kmh >= 30`.
+- `gust_risk`: `true` when `wind_gust_kmh >= 40`.
+- `hot`: `true` when `temperature_c >= 32`.
+- `cold`: `true` when `temperature_c <= 5`.
+- `irrigation_caution`: `true` when station is stale, rain is happening now, rain today is meaningful, wind is high, or gust risk is true.
+
+### `GET /api/telemetry/weather/forecast?days=3`
+
+Purpose:
+
+- Answer "will it rain?", "what is the weather tomorrow?", "how does the next few days look?"
+- Provide the future farm dashboard with a short forecast panel.
+- Provide irrigation and work-planning context later.
+
+Success response shape:
+
+```json
+{
+  "success": true,
+  "configured": true,
+  "status": "ok",
+  "source": {
+    "source": "supabase",
+    "source_id": "open-meteo-forecast-main",
+    "source_name": "Amadeus Forecast",
+    "provider": "open_meteo",
+    "last_forecast_run_at": "2026-05-22T03:00:00+02:00",
+    "data_age_minutes": 14,
+    "is_stale": false,
+    "stale_after_minutes": 360,
+    "writes_to_sheets": false,
+    "writes_to_supabase": false
+  },
+  "window": {
+    "requested_days": 3,
+    "returned_days": 3,
+    "timezone": "Africa/Johannesburg"
+  },
+  "days": [
+    {
+      "forecast_date": "2026-05-22",
+      "offset_days": 0,
+      "temp_max_c": 20.4,
+      "temp_min_c": 8.9,
+      "rain_sum_mm": 0.6,
+      "rain_probability_max_pct": 35,
+      "wind_max_kmh": 18.7,
+      "gust_max_kmh": 32.1,
+      "flags": {
+        "rain_expected": true,
+        "strong_wind": false,
+        "gust_risk": false,
+        "hot": false,
+        "cold": false,
+        "irrigation_caution": true,
+        "work_caution": false
+      }
+    }
+  ],
+  "summary": {
+    "status": "caution",
+    "headline": "Light rain is possible in the next 3 days.",
+    "operator_notes": [
+      "Rain is possible today with a maximum probability of 35%.",
+      "No strong wind is forecast in the selected window.",
+      "Use caution with irrigation if rain probability increases."
+    ]
+  },
+  "units": {
+    "temperature": "C",
+    "wind": "km/h",
+    "rain": "mm",
+    "probability": "%"
+  }
+}
+```
+
+Forecast rules:
+
+- `days` parameter is bounded to `1` through `10`.
+- `stale_after_minutes`: default `360` because forecast cron does not need to run every few minutes.
+- `rain_expected`: `true` when `rain_sum_mm > 0` or `rain_probability_max_pct >= 30`.
+- `strong_wind`: `true` when `wind_max_kmh >= 30`.
+- `gust_risk`: `true` when `gust_max_kmh >= 40`.
+- `hot`: `true` when `temp_max_c >= 32`.
+- `cold`: `true` when `temp_min_c <= 5`.
+- `irrigation_caution`: `true` when rain is expected, strong wind, gust risk, or forecast is stale.
+- `work_caution`: `true` when strong wind, gust risk, heat, cold, or meaningful rain is expected.
+
+Unavailable response shape:
+
+```json
+{
+  "success": false,
+  "configured": true,
+  "status": "unavailable",
+  "message": "No forecast snapshot is available yet.",
+  "source": {
+    "source": "supabase",
+    "writes_to_sheets": false,
+    "writes_to_supabase": false
+  },
+  "window": {
+    "requested_days": 3,
+    "returned_days": 0
+  }
+}
+```
+
+### `GET /api/telemetry/weather/today`
+
+Status: planned follow-up unless it is very cheap to include after current/forecast are proven.
+
+Purpose:
+
+- Answer "how much rain have we had today?", "what did the weather do today?", and dashboard daily-summary questions.
+- This endpoint must summarize rows and must not expose raw-row scanning to Oom Sakkie.
+
+Planned response fields:
+
+- source freshness and selected local date
+- reading count and expected/coverage estimate
+- first and last reading time
+- min/max/average temperature
+- max wind and gust
+- total rain and max rain rate
+- summary status/headline/operator notes
+
+### First Build Decision
+
+First implementation should include:
+
+- SQL/schema for current weather and forecast snapshots.
+- Protected ingest endpoints for weather current and forecast snapshot payloads.
+- Read endpoints for `/weather/current` and `/weather/forecast?days=3`.
+- Direct endpoint tests and backend unit tests.
+- No n8n `2.1` import/edit until direct endpoint tests pass.
+
+`/weather/today` should be planned but can wait until current and forecast are live unless the implementation is very small after the schema exists.
+
+## 10.3J2 Weather/Forecast Schema And Backend Endpoints
+
+Local implementation prepared on 2026-05-22:
+
+- Added migration `supabase/migrations/202605220001_create_telemetry_weather_tables.sql`.
+- Added telemetry sources:
+  - `weather-station-main`
+  - `open-meteo-forecast-main`
+- Added tables:
+  - `weather_readings`
+  - `weather_latest_state`
+  - `weather_forecast_snapshots`
+- Added health check:
+  - `GET /health/database/telemetry-weather-schema`
+- Added protected ingest endpoints:
+  - `POST /api/telemetry/weather/ingest`
+  - `POST /api/telemetry/weather/forecast/ingest`
+- Added read endpoints:
+  - `GET /api/telemetry/weather/current`
+  - `GET /api/telemetry/weather/forecast?days=3`
+- Added focused unit tests for ingest auth, current readback, forecast readback, route registration, and migration safety.
+- No n8n workflow changes were made.
+
+Deploy/apply order:
+
+1. Apply the Supabase migration. **Done 2026-05-22.**
+2. Check `/health/database/telemetry-weather-schema`. **Done 2026-05-22: success, no missing tables, both sources present.**
+3. Deploy backend.
+4. Check unavailable responses for `/api/telemetry/weather/current` and `/api/telemetry/weather/forecast?days=3`.
+5. Run synthetic ingest/readback checks once the deployed backend is using the configured ingest key.
+6. Only after deployed readback passes, update weather and forecast Render cron loggers.
+7. Only after logger ingest is proven, plan the `2.1` workflow simplification.
+
+Validation result:
+
+- Syntax compile passed for weather service, telemetry routes, database service, and app wiring.
+- Focused weather/database tests passed, then broader telemetry/database/workflow tests passed at 53 tests.
+- Migration `202605220001_create_telemetry_weather_tables` was applied directly to Supabase from the local workspace.
+- Schema health verified the expected tables and source rows.
+- Direct Supabase read checks returned clean unavailable responses before logger ingest.
+- Local synthetic ingest is waiting on `TELEMETRY_INGEST_API_KEY` in local `.env`; deployed endpoint testing can use the Render environment key.
 
 ## Must Not Do In 10.3 Planning
 

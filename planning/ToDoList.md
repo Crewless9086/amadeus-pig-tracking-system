@@ -30,3 +30,4 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Mobile/PWA and desktop layout notes moved to `NEXT_STEPS.md` Phase 10.4/farm home dashboard planning.
 
 Add new scratch bullets below, then move them into the correct canonical file.
+ - SunSunk Calculations and so on when we get to this I want to use our Eskom rate which is R9,10 per unit for the calculatiosn to see how we have done and how far we have come to pay off the system and what we make in a day and so ons, becuase comparing it to money is always value we like seeing. 

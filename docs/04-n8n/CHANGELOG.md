@@ -15,6 +15,20 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-22 - Phase 10.3I Oom Sakkie recent power profile routing
+
+Type: `IMPROVEMENT`
+
+**Behavior:** `2.2 - Amadeus Sunsynk Sub-Agent` now routes power questions deterministically. Current/live status questions call `GET /api/telemetry/power/current`; recent, last-24h, overnight, and trend questions call `GET /api/telemetry/power/recent?hours=24`.
+
+**Safety:** kWh, cost, import, and export total questions are not guessed. The workflow returns the sample-based recent profile with an explicit limitation until approved energy counters or interval-integration rules are added.
+
+**Docs:** Updated the `2.2` README, `2.0` `Sunsynk_Info_Tool` description, workflow map, telemetry plan, testing checklist, and phase roadmap.
+
+**Verification:** Workflow JSON exports parse locally and contract tests confirm `2.2` has no LangChain agent loop, uses one dynamic backend HTTP node, and contains both `/current` and `/recent` routes.
+
+**Live verification:** After importing updated `2.2` and `2.0`, Telegram checks passed for current power, last-24h profile, last-night grid use, and solar-total limitation wording. Solar-total/kWh questions did not invent energy totals.
+
 ### 2026-05-22 - Phase 10.3G Oom Sakkie power tool backend read
 
 Type: `REFACTOR`

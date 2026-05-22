@@ -325,11 +325,35 @@ Current position:
 - 10.3G live verification passed on 2026-05-22 after importing `2.2` and `2.0` into n8n.
 - Telegram test `What's the power like now?` returned quickly with current backend/Supabase data: battery `46%` discharging, solar `0.0 kW`, load `1.0 kW`, grid not using grid `0 W`, generator off `0 W`, latest reading `22 May 2026, 00:40`, and data age `4 minutes`.
 - This confirms Oom Sakkie current power questions no longer depend on slow Sunsynk Google Sheets reads.
-- Next decision is whether to continue telemetry with daily/last-24h power read models, weather/forecast backend alignment, or pause Phase 10.3.
+- Next selected slice was the recent power profile endpoint.
 - 10.3H local backend slice is prepared: `GET /api/telemetry/power/recent?hours=24` summarizes recent Supabase `power_readings_5min` rows without claiming kWh/cost totals.
 - The recent-power endpoint returns sample-based battery range, average/max solar/load, grid/generator active sample counts, approximate active minutes, hourly buckets, and coverage percentage.
 - Focused telemetry/workflow tests pass at 11 tests, and the full local test suite passes at 221 tests.
 - First deployed check returned `success = true` with expected sections, but it still included the old synthetic test row inside the 24-hour window.
 - A local follow-up patch now excludes rows with `raw_payload is null` so synthetic/manual test rows do not skew the recent profile.
 - Focused telemetry/workflow tests still pass at 11 tests after the exclusion patch.
-- Next step is redeploying backend and rechecking `/api/telemetry/power/recent?hours=24`.
+- 10.3H deployed verification passed after redeploy: `/api/telemetry/power/recent?hours=24` returned `success = true`, 24 real cron rows, first reading `2026-05-21T22:28:20+00:00`, last reading `2026-05-22T00:20:21+00:00`, battery range `42%` to `47%`, average load `0.9 kW`, maximum solar `0.0 kW`, and no grid/generator activity.
+- The synthetic `82%` / `3120 W` row is no longer present in the live response.
+- 10.3I live verification passed on 2026-05-22 after importing updated `2.2` and `2.0`.
+- Oom Sakkie now answers current/live power questions from `/api/telemetry/power/current` and recent/last-24h/trend questions from `/api/telemetry/power/recent?hours=24`.
+- Live Telegram checks passed for current power, last-24h profile, last-night grid use, and solar-total limitation wording.
+- `2.2` remains deterministic with no LangChain agent loop and no Google Sheets tool reads. kWh, cost, import, and export total questions return the sample-based profile with a clear limitation instead of invented totals.
+- Minor polish note: recent-profile answers can repeat the sample-based limitation because the backend operator notes and workflow formatter both include it. This is harmless and can be cleaned up in a later wording pass.
+- 10.3J weather/forecast alignment is now in planning.
+- Current `2.1 - Amadeus Weather Sub-Agent` is sheet-backed and uses an LLM router plus LLM answer formatter. It reads `LLM_Latest_Reading`, `Forecast_10Day_Current`, and `Daily_Pivot`.
+- Current `2.1.1 - Amadeus Forecast Tool` is a standalone Open-Meteo utility, but the normal `2.1` Oom Sakkie weather path does not appear to call it.
+- Recommended direction is the same proven Sunsynk pattern: define backend weather/forecast payload contracts first, then add Supabase schema and ingest/read endpoints, then update `2.1` only after direct backend checks pass.
+- 10.3J1 weather/forecast read-model contract is drafted in `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`.
+- First build contract includes `/api/telemetry/weather/current` and `/api/telemetry/weather/forecast?days=3`.
+- `/api/telemetry/weather/today` is planned as a follow-up unless it is very low-risk to add after current/forecast are proven.
+- The contract defines success/unavailable payloads, units, freshness, deterministic weather/forecast flags, and backend summary wording.
+- 10.3J2 is implemented and the Supabase schema has been applied.
+- Local migration `supabase/migrations/202605220001_create_telemetry_weather_tables.sql` creates `weather_readings`, `weather_latest_state`, and `weather_forecast_snapshots`, and inserts telemetry sources for `weather-station-main` and `open-meteo-forecast-main`.
+- Backend endpoints are prepared for weather current read, forecast read, weather ingest, and forecast ingest.
+- Health endpoint `/health/database/telemetry-weather-schema` is prepared.
+- Local validation passed on 2026-05-22: syntax compile passed, focused weather/database checks passed, and broader telemetry/database/workflow tests passed at 53 tests.
+- The migration was applied directly to Supabase on 2026-05-22 and schema health verified `success = true`, `missing_tables = []`, with both weather/forecast sources present.
+- Direct local Supabase read checks returned clean unavailable responses for `/api/telemetry/weather/current` and `/api/telemetry/weather/forecast?days=3` before logger ingest.
+- Synthetic local ingest is blocked until `TELEMETRY_INGEST_API_KEY` is configured in the local `.env`; Render already has the key for deployed endpoint testing.
+- No n8n weather workflow changes have been made.
+- Next step is deploying the backend, then direct-testing the live weather endpoints before updating weather/forecast Render cron loggers or `2.1`.

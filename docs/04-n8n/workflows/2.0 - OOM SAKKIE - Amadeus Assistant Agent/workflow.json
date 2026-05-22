@@ -272,7 +272,7 @@
     },
     {
       "parameters": {
-        "description": "Use this tool whenever the user asks about current electricity or power status on Amadeus Farm: battery/SOC, solar/PV, grid/Eskom, generator, inverter/load, charging or discharging. The tool reads the backend Supabase current-power endpoint and returns a complete user-ready answer. It currently answers live/current state only; daily totals, kWh, and last-24h trends are planned for a later telemetry read model.",
+        "description": "Use this tool whenever the user asks about electricity or power on Amadeus Farm: battery/SOC, solar/PV, grid/Eskom, generator, inverter/load, charging/discharging, current power status, or recent/last-24h power profile. The tool reads backend Supabase power endpoints and returns a complete user-ready answer. It supports current state and sample-based recent trend/profile answers. It does not yet confirm kWh, cost, import, or export totals until approved energy counters or interval-integration rules are added.",
         "workflowId": {
           "__rl": true,
           "value": "tKVKoCcxhT7CAydT",
@@ -884,7 +884,7 @@
           "workflowInputs": {
             "mappingMode": "defineBelow",
             "value": {
-              "input": "={{ $json.message_text }}"
+              "input": "={{ $fromAI('weather_question', 'The user weather question to answer. Use the exact user request where possible, for example current weather, rain today, wind, tomorrow forecast, or weekend forecast.', 'string') || $json.message_text || 'current weather at the farm' }}"
             },
             "matchingColumns": [
               "input"
@@ -941,7 +941,7 @@
       },
       {
         "parameters": {
-          "description": "Use this tool whenever the user asks about current electricity or power status on Amadeus Farm: battery/SOC, solar/PV, grid/Eskom, generator, inverter/load, charging or discharging. The tool reads the backend Supabase current-power endpoint and returns a complete user-ready answer. It currently answers live/current state only; daily totals, kWh, and last-24h trends are planned for a later telemetry read model.",
+          "description": "Use this tool whenever the user asks about electricity or power on Amadeus Farm: battery/SOC, solar/PV, grid/Eskom, generator, inverter/load, charging/discharging, current power status, or recent/last-24h power profile. The tool reads backend Supabase power endpoints and returns a complete user-ready answer. It supports current state and sample-based recent trend/profile answers. It does not yet confirm kWh, cost, import, or export totals until approved energy counters or interval-integration rules are added.",
           "workflowId": {
             "__rl": true,
             "value": "tKVKoCcxhT7CAydT",
@@ -952,7 +952,7 @@
           "workflowInputs": {
             "mappingMode": "defineBelow",
             "value": {
-              "input": "={{ $json.message_text }}"
+              "input": "={{ $fromAI('sunsynk_question', 'The user electricity, solar, battery, grid, generator, PV, inverter, or power question to answer. Use the exact user request where possible.', 'string') || $json.message_text || 'current power status at the farm' }}"
             },
             "matchingColumns": [
               "input"

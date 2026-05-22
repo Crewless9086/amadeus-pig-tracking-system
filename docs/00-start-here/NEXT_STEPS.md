@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Local | Deploy and verify `/api/telemetry/power/recent`, then decide whether Oom Sakkie should use it for last-24h questions. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Schema Applied | Deploy backend, direct-test live weather endpoints, then update weather/forecast loggers before touching `2.1`. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2736,7 +2736,54 @@ Recommendation:
 - First deployed check returned `success = true` with 24 rows and all expected sections, but the 24-hour window still included the old synthetic test row (`82%`, `3120 W`) because that row had no real cron raw payload.
 - Follow-up local patch excludes rows where `raw_payload is null` from `/api/telemetry/power/recent`, so synthetic/manual test rows do not skew real trend answers.
 - Focused telemetry/workflow tests still pass at 11 tests after the exclusion patch.
-- Next step: redeploy backend, verify `/api/telemetry/power/recent?hours=24` no longer includes the synthetic row, then decide whether `2.2` should answer last-24h trend questions from this endpoint.
+- 10.3H deployed verification passed after the exclusion patch: `/api/telemetry/power/recent?hours=24` returned `success = true`, 24 real cron rows, first reading `2026-05-21T22:28:20+00:00`, last reading `2026-05-22T00:20:21+00:00`, battery range `42%` to `47%`, average load `0.9 kW`, maximum solar `0.0 kW`, and no grid/generator activity.
+- The synthetic `82%` / `3120 W` row is no longer present in the live response.
+- 10.3I local workflow update prepared on 2026-05-22:
+  - `2.2 - Amadeus Sunsynk Sub-Agent` now routes current/live questions to `/api/telemetry/power/current`.
+  - It routes recent, last-24h, overnight, and trend questions to `/api/telemetry/power/recent?hours=24`.
+  - kWh, cost, import, and export total questions are answered with the sample-based recent profile plus a clear limitation, not guessed totals.
+  - `2.0 - OOM SAKKIE` `Sunsynk_Info_Tool` description now tells the main assistant that current state and sample-based recent profiles are supported.
+- 10.3I live verification passed on 2026-05-22 after importing updated `2.2` and `2.0`:
+  - `What's the power like now?` returned current backend/Supabase data with battery `41%`, load `0.8 kW`, no solar, no grid, no generator, and latest reading age `0 minutes`.
+  - `What happened with the power in the last 24 hours?` returned a sample-based recent profile with 34/288 readings, battery range `41%` to `47%`, average load `0.9 kW`, no solar, and no grid/generator use.
+  - `Did we use grid power last night?` correctly reported about `0 minutes` of grid use from `0` samples.
+  - `How much solar did we make today?` did not invent kWh and included the limitation that kWh, cost, import, and export totals are not confirmed yet.
+  - Minor polish note: the recent profile can repeat the sample-based limitation because backend operator notes and workflow formatting both include it. This is harmless and can be cleaned up in a later wording polish pass.
+- Next step: park Sunsynk for now and move to weather/forecast Supabase/backend alignment.
+- 10.3J weather/forecast alignment started on 2026-05-22:
+  - Current `2.1 - Amadeus Weather Sub-Agent` is sheet-backed and uses two LLM calls: router JSON plan and answer JSON.
+  - `2.1` reads `LLM_Latest_Reading`, `Forecast_10Day_Current`, and `Daily_Pivot`.
+  - `2.1.1 - Amadeus Forecast Tool` calls Open-Meteo directly but is not currently the normal Oom Sakkie weather path.
+  - Weather and forecast Render cron logger source folders are present under `external_sources/telemetry/`.
+  - Proposed sequence is now documented in `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`: contract first, then schema, ingest endpoints, logger update, read endpoints, and only then `2.1` workflow simplification.
+- 10.3J1 weather/forecast read-model contract drafted on 2026-05-22:
+  - First build should include `/api/telemetry/weather/current` and `/api/telemetry/weather/forecast?days=3`.
+  - `/api/telemetry/weather/today` is planned as a follow-up unless it is very low-risk to include after current/forecast are proven.
+  - Contracts define success/unavailable payloads, units, source freshness, deterministic flags, and summary wording rules.
+  - Google Sheets mirror writes should remain during the transition.
+  - Do not edit/import `2.1` until backend endpoints are deployed and direct endpoint tests pass.
+- 10.3J2 local implementation prepared on 2026-05-22:
+  - Added migration `supabase/migrations/202605220001_create_telemetry_weather_tables.sql`.
+  - Added source rows for `weather-station-main` and `open-meteo-forecast-main`.
+  - Added tables `weather_readings`, `weather_latest_state`, and `weather_forecast_snapshots`.
+  - Added backend service `modules/telemetry/weather_service.py`.
+  - Added read endpoints:
+    - `GET /api/telemetry/weather/current`
+    - `GET /api/telemetry/weather/forecast?days=3`
+  - Added protected ingest endpoints:
+    - `POST /api/telemetry/weather/ingest`
+    - `POST /api/telemetry/weather/forecast/ingest`
+  - Added health endpoint `/health/database/telemetry-weather-schema`.
+  - Added focused unit tests for weather ingest, forecast ingest, current read, forecast read, route registration, and migration safety.
+  - No n8n workflow changes were made.
+- 10.3J2 validation update on 2026-05-22:
+  - Syntax compile passed for the weather service, telemetry routes, database service, and app wiring.
+  - Focused weather/database tests passed, then broader telemetry/database/workflow tests passed at 53 tests.
+  - Migration `202605220001_create_telemetry_weather_tables` was applied directly to Supabase from the local workspace.
+  - Supabase schema health verified `success = true`, `missing_tables = []`, and sources `weather-station-main` and `open-meteo-forecast-main` were present.
+  - Direct local Supabase read checks returned clean unavailable responses before logger ingest for current weather and forecast.
+  - Synthetic local ingest is blocked until `TELEMETRY_INGEST_API_KEY` is added to the local `.env`; Render already has the key for deployed endpoint testing.
+- Next step: deploy backend, direct-test live weather endpoints, then update weather and forecast Render cron loggers before touching `2.1`.
 
 Farm home/dashboard idea:
 
