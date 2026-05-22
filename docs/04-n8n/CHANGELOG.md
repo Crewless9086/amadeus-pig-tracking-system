@@ -29,6 +29,10 @@ Type: `REFACTOR`
 
 **Live verification:** After importing updated `2.1` and `2.0`, Telegram checks passed for current weather and 3-day forecast. Current weather returned temperature `14 C`, humidity `96%`, wind `4 km/h`, no rain, pressure `1013.9 hPa`, and latest reading age `0 minutes`. Forecast returned 22-24 May 2026 with rain possible on 1 day. Answers did not mention tools, workflows, Google Sheets, or Supabase.
 
+**Follow-up:** After `GET /api/telemetry/weather/today` was deployed-verified, `2.1` was updated locally to route today/daily/rain-today questions to that endpoint. The first live Telegram test still returned current weather, so `2.0` was also hardened to pass the exact Telegram message into `2.1` before the AI-generated fallback.
+
+**Today-summary live verification:** After re-importing hardened `2.0` and `2.1`, Telegram test `What happened with the weather today?` returned the today-summary branch with 30 readings, 34.5% coverage, temperature `14 C` to `15 C`, average `14.4 C`, humidity `94.6%`, rain total `0 mm`, max wind `9 km/h`, max gust `10 km/h`, and measurement window `22 May 2026, 04:49` to `07:10`.
+
 ### 2026-05-22 - Phase 10.3I Oom Sakkie recent power profile routing
 
 Type: `IMPROVEMENT`

@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified; 10.3J3 Logger-Verified; 10.3J4 Live-Verified; 10.3K Local | Deploy and verify `/api/telemetry/weather/today`, then route Oom Sakkie today weather questions to it. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified; 10.3J3 Logger-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L Planned; 10.3L2 Local Dry-Run Verified | Deploy backend and run protected weather alert evaluator dry-run smoke. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2824,7 +2824,44 @@ Recommendation:
   - It excludes synthetic test rows via `raw_payload.test = true` protection.
   - Local live Supabase readback returned real-only data for 2026-05-22: 5 readings, coverage `8.1%`, temperature `14 C`, rain total `0 mm`, and max wind `9 km/h`.
   - Broader telemetry/database/workflow tests pass at 55 tests.
-- Next step: deploy backend, verify `/api/telemetry/weather/today`, then update `2.1` to route today/daily weather questions to this endpoint before moving to alert alignment.
+- 10.3K deployed verification passed on 2026-05-22:
+  - `/api/telemetry/weather/today` returned `success = true`, 25 real readings, coverage `30.5%`, temperature range `14 C` to `15 C`, average temperature `14.24 C`, rain total `0 mm`, max wind `9 km/h`, and max gust `10 km/h`.
+  - `/api/telemetry/weather/today?date=2026-05-22` returned the same result.
+  - The old synthetic `0.4 mm` rain row was excluded.
+- 10.3K `2.1` local routing update prepared on 2026-05-22:
+  - Today/daily/rain-today weather questions now route to `/api/telemetry/weather/today`.
+  - Current weather and forecast routes remain unchanged.
+  - Workflow/weather tests pass at 26 tests.
+- First live Telegram check still returned the current-weather answer, so the local workflow update was hardened:
+  - `2.0` now passes the exact Telegram message into `2.1` before the AI-generated weather-question fallback.
+  - `2.1` now checks additional possible input fields and has a stronger `what happened ... today` matcher.
+- 10.3K live verification passed on 2026-05-22 after importing the hardened `2.0` and `2.1` workflows:
+  - `What happened with the weather today?` returned the today-summary branch.
+  - Result included 30 readings, 34.5% coverage, temperature `14 C` to `15 C`, average `14.4 C`, average humidity `94.6%`, rain total `0 mm`, max rain rate `0 mm/h`, max wind `9 km/h`, max gust `10 km/h`, and measurement window `22 May 2026, 04:49` to `07:10`.
+- 10.3L weather alert alignment planned on 2026-05-22:
+  - Owner agreed to use the backend/Supabase approach rather than Sheets-first alert workflows.
+  - Existing `ALERT - Local Weather Station` and `ALERT - Weather Forecast` remain documented but should not become the source of truth.
+  - Backend should own alert rules, cooldowns, duplicate prevention, and alert history in `telemetry_alerts`.
+  - n8n should later become a thin scheduled caller and Telegram delivery layer.
+  - Proposed backend endpoint: `POST /api/telemetry/weather/alerts/evaluate`.
+  - Optional read endpoint: `GET /api/telemetry/weather/alerts/recent?hours=24`.
+  - First rule group: station stale, raining now, rain today, heavy rain now, sustained wind, high gust, low/high temperature, forecast rain, forecast heavy rain, forecast wind, forecast strong wind.
+  - First safe recipient: Charl only.
+  - Default quiet hours: `21:00` to `06:00` Africa/Johannesburg.
+  - `HIGH` current-condition alerts may send during quiet hours; normal `MED` and `INFO` planning alerts should wait until quiet hours end.
+  - Repeated unresolved alerts resend only after cooldown, or sooner only if severity increases or values worsen materially.
+  - Detailed plan lives in `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`.
+- 10.3L2 backend evaluator implemented locally on 2026-05-22:
+  - Added protected `POST /api/telemetry/weather/alerts/evaluate`.
+  - Uses the existing telemetry ingest key.
+  - Supports `{"dry_run": true}` for safe no-write tests.
+  - Reads `weather_latest_state`, recent `weather_readings`, latest `weather_forecast_snapshots`, and recent `telemetry_alerts`.
+  - Applies backend-owned rule, cooldown, and quiet-hours policy.
+  - Returns `sendable_alerts`, `held_alerts`, and `suppressed_alerts`.
+  - Writes only sendable alerts in apply mode; does not send Telegram messages.
+  - Focused weather tests pass at 13 tests; telemetry/database/workflow suite passes at 57 tests.
+  - Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
+- Next step: deploy backend and run `POST /api/telemetry/weather/alerts/evaluate` with `{"dry_run": true}` against production.
 
 Farm home/dashboard idea:
 

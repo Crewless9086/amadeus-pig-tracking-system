@@ -1616,7 +1616,45 @@ Local result:
 - 2026-05-22: Broader telemetry/database/workflow tests pass at 55 tests.
 - 2026-05-22: Local live Supabase readback returned 5 real readings, coverage `8.1%`, temperature `14 C`, rain total `0 mm`, and max wind `9 km/h`; synthetic test row was excluded.
 
+Deployed result:
+
+- 2026-05-22: `/api/telemetry/weather/today` returned `success = true`.
+- Response had 25 real readings, coverage `30.5%`, temperature range `14 C` to `15 C`, average temperature `14.24 C`, rain total `0 mm`, max wind `9 km/h`, and max gust `10 km/h`.
+- `/api/telemetry/weather/today?date=2026-05-22` returned the same result.
+- The old synthetic `0.4 mm` rain row was excluded.
+
+2.1 today-route checks:
+
+1. Import updated `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json`.
+2. Import updated `docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/workflow.json`.
+3. Ask Oom Sakkie: `What happened with the weather today?`
+4. Confirm answer starts with `Weather today at Amadeus Farm`.
+5. Confirm answer includes reading count/coverage, temperature range, rain total, max wind/gust, and latest day window.
+6. Confirm answer does not mention tools, workflows, Google Sheets, or Supabase.
+7. Then move to weather alert alignment.
+
+Local route result:
+
+- 2026-05-22: Workflow/weather tests pass at 26 tests after adding the today route.
+- 2026-05-22: Live Telegram test still returned current weather, so local workflow files were hardened. `2.0` now passes the exact Telegram message into the weather tool before the AI-generated fallback, and `2.1` now has a stronger today-summary matcher.
+- 2026-05-22: Live Telegram retest passed after importing hardened `2.0` and `2.1`. `What happened with the weather today?` returned the today-summary branch with readings/coverage, temperature range, humidity, rain total, wind/gust, and measurement window.
+
 ## Google Sheets Checks
+
+10.3L2 weather alert evaluator checks:
+
+1. Deploy backend with `POST /api/telemetry/weather/alerts/evaluate`.
+2. Send body `{"dry_run": true}` with the configured `TELEMETRY_INGEST_API_KEY`.
+3. Confirm response has `success = true`, `mode = dry_run`, and no secrets.
+4. Confirm response includes `candidate_count`, `sendable_alerts`, `held_alerts`, and `suppressed_alerts`.
+5. Confirm `source.writes_to_supabase = false` during dry-run.
+6. Only test apply mode after dry-run output is understood.
+
+Local result:
+
+- 2026-05-22: Focused weather telemetry tests pass at 13 tests.
+- 2026-05-22: Telemetry/database/workflow suite passes at 57 tests.
+- 2026-05-22: Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
 
 After any order change, inspect affected sheets/views:
 

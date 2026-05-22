@@ -45,3 +45,6 @@ Imported for docs: 2026-05-18
 
 - The Telegram send node name still says `Send Sunsynk Alert`, but this workflow is for local weather station alerts.
 - This workflow is not directly part of Phase 7.3, but it is part of the Oom Sakkie operational ecosystem.
+- Phase 10.3L decision: do not make this Sheets-first workflow the future alert source of truth.
+- Future direction: backend/Supabase should calculate alert candidates, cooldowns, duplicate prevention, and alert history; n8n should only call the backend evaluator and deliver approved Telegram alert messages.
+- Keep this workflow inactive/documented until the backend alert evaluator is implemented and tested.

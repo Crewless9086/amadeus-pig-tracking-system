@@ -308,6 +308,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("$fromAI", input_expression)
         self.assertIn("weather_question", input_expression)
         self.assertIn("current weather at the farm", input_expression)
+        self.assertLess(input_expression.index("$json.message_text"), input_expression.index("$fromAI"))
 
     def test_weather_workflow_uses_backend_weather_endpoints(self):
         workflow = load_workflow(WEATHER_WORKFLOW)
@@ -331,9 +332,13 @@ class WorkflowContractTests(unittest.TestCase):
 
         self.assertEqual(parameters.get("url"), "={{ $json.request_url }}")
         self.assertIn("/api/telemetry/weather/current", route_content)
+        self.assertIn("/api/telemetry/weather/today", route_content)
         self.assertIn("/api/telemetry/weather/forecast?days=3", route_content)
+        self.assertIn("inputItem.chatInput", route_content)
+        self.assertIn("what happened", route_content)
         self.assertIn("current weather at the farm", route_content)
         self.assertIn("backend_supabase_current_weather", format_content)
+        self.assertIn("backend_supabase_weather_today", format_content)
         self.assertIn("backend_supabase_weather_forecast", format_content)
 
     def test_oom_sakkie_sunsynk_tool_uses_ai_supplied_input(self):

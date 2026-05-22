@@ -1362,14 +1362,165 @@ Deploy/test target:
 3. Confirm `success = true`, real readings are returned, and the old synthetic `14.2 C` / `0.4 mm` row is not included.
 4. After deploy verification, update `2.1` routing so today/daily weather questions call this endpoint.
 
+Deployed verification:
+
+- Passed on 2026-05-22.
+- `/api/telemetry/weather/today` returned `success = true`, date `2026-05-22`, 25 real readings, coverage `30.5%`, first reading `2026-05-22T02:49:30+00:00`, last reading `2026-05-22T04:45:06+00:00`, temperature range `14 C` to `15 C`, average temperature `14.24 C`, rain total `0 mm`, max wind `9 km/h`, and max gust `10 km/h`.
+- `/api/telemetry/weather/today?date=2026-05-22` returned the same result.
+- The synthetic `0.4 mm` rain test row was excluded.
+- Endpoint is ready for `2.1` routing.
+
+`2.1` route update:
+
+- Prepared locally on 2026-05-22.
+- Today/daily/rain-today weather questions route to `/api/telemetry/weather/today`.
+- Current weather and forecast routes remain unchanged.
+- Workflow/weather tests pass at 26 tests.
+- First live test still returned current weather, so `2.0` was hardened to pass the exact Telegram message into `2.1`, and `2.1` was hardened to catch `what happened ... today`.
+- Live verification passed on 2026-05-22:
+  - `What happened with the weather today?` returned the today-summary branch.
+  - Result included 30 readings, 34.5% coverage, temperature `14 C` to `15 C`, average `14.4 C`, humidity `94.6%`, rain total `0 mm`, max wind `9 km/h`, and measurement window `04:49` to `07:10`.
+
 ## Must Not Do In 10.3 Planning
 
 - Do not change live n8n workflows yet.
 - Do not create telemetry SQL migrations before the inventory is complete.
 - Do not move irrigation command execution until secrets and audit are designed.
 - Do not break the currently working weather flow.
+
+## 10.3L Weather Alert Alignment Plan
+
+Agreed direction on 2026-05-22:
+
+- Use the backend/Supabase approach for weather alerts.
+- Keep `ALERT - Local Weather Station` and `ALERT - Weather Forecast` documented but do not rebuild or activate them as the source of truth yet.
+- Alert rules, cooldowns, alert history, and duplicate prevention should live in backend/Supabase, not in Google Sheets workflow code.
+- n8n should eventually become a thin scheduled caller and Telegram delivery layer, not the place where alert truth is calculated.
+
+Current legacy alert shape:
+
+| Workflow | Current state | Current source | Current issue |
+| --- | --- | --- | --- |
+| `ALERT - Local Weather Station` | Inactive/documented | `LLM_Latest_Reading`, `LLM_Today_Readings`, `Weather_Alert_Log` | Reads Sheets, calculates rules in n8n Code nodes, writes Sheets alert history. |
+| `ALERT - Weather Forecast` | Inactive/documented | `Forecast_10Day_Current`, `Weather_Alert_Log` | Reads Sheets, calculates forecast alert rules in n8n Code nodes, writes Sheets alert history. |
+
+Recommended backend contract:
+
+1. Add a backend weather alert evaluator that reads:
+   - `weather_latest_state`
+   - recent `weather_readings`
+   - latest `weather_forecast_snapshots`
+   - `telemetry_alerts`
+2. Keep alert state in `telemetry_alerts` using clear categories:
+   - `area = weather`
+   - `source_id = weather-station-main` or `open-meteo-forecast-main`
+   - `alert_type`
+   - `alert_key`
+   - `severity`
+   - `message`
+   - `cooldown_min`
+   - `last_triggered_at`
+   - `resolved_at`
+   - `metadata`
+3. Expose a protected endpoint for n8n:
+   - `POST /api/telemetry/weather/alerts/evaluate`
+   - Should calculate current candidates, apply cooldowns, write/return new sendable alerts, and not send Telegram itself.
+4. Optional read endpoint for app/Oom Sakkie:
+   - `GET /api/telemetry/weather/alerts/recent?hours=24`
+   - Later useful for dashboards and "did we get weather alerts today?" questions.
+
+First alert rule defaults:
+
+| Alert | Source | Initial threshold | Severity | Cooldown | Quiet-hours behavior | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Station stale | latest station state | latest reading older than 30 minutes | HIGH | 240 min | Send during quiet hours | Align with current `/weather/current` stale behavior. |
+| Raining now | latest station state | rain rate > 0 mm/h | MED | 60 min | Hold during quiet hours unless paired with wind/gust risk | Useful farm operations alert. |
+| Rain today | today summary | rain total >= 2 mm | INFO | 180 min | Hold during quiet hours | Do not spam; mainly useful for irrigation/work planning. |
+| Heavy rain now | latest station state | rain rate >= 10 mm/h | HIGH | 60 min | Send during quiet hours | Adds urgency beyond the normal raining-now alert. |
+| High wind sustained | recent station samples | wind speed > 40 km/h across 2 consecutive readings | HIGH | 120 min | Send during quiet hours | Needs recent sample query, not just latest state. |
+| High gust | latest station state | gust > 60 km/h | HIGH | 120 min | Send during quiet hours | Current legacy rule already uses 60 km/h. |
+| Low temperature | latest station state | temp < 10 C | HIGH | 120 min | Send during quiet hours | Useful for animal care and weather awareness. |
+| High temperature | latest station state | temp > 28 C | MED | 120 min | Hold during quiet hours | Useful for heat stress planning during the working day. |
+| Forecast rain | forecast snapshots | rain probability >= 60% or rain sum >= 3 mm in next 3 days | MED | 720 min | Hold during quiet hours | One useful planning alert per half-day, not repeated every cron run. |
+| Forecast heavy rain | forecast snapshots | rain sum >= 10 mm in next 3 days | HIGH | 720 min | Send during quiet hours only if next 12h | Separate stronger forecast warning. |
+| Forecast wind | forecast snapshots | gust >= 50 km/h or wind max >= 35 km/h in next 3 days | MED | 720 min | Hold during quiet hours | Planning alert for work, structures, and animal comfort. |
+| Forecast strong wind | forecast snapshots | gust >= 65 km/h in next 3 days | HIGH | 720 min | Send during quiet hours only if next 12h | Separate stronger forecast warning. |
+
+First recipient/default delivery decision:
+
+- First live alert recipient should be Charl only.
+- Add farm operators or groups only after the backend evaluator has run safely for a short trial window.
+- Telegram delivery should use the same Oom Sakkie bot credentials, but alert sending remains separate from normal Oom Sakkie Q&A routing.
+
+Quiet hours default:
+
+- Quiet hours: `21:00` to `06:00` Africa/Johannesburg.
+- `HIGH` current-condition alerts may send during quiet hours.
+- `INFO` and normal `MED` planning alerts are held until quiet hours end.
+- Forecast `HIGH` alerts send during quiet hours only when the risk is expected within the next 12 hours.
+
+Repeat/resolution defaults:
+
+- Repeated unresolved alerts may resend only after cooldown.
+- A resend should also be allowed if severity increases or the measured value worsens materially.
+- Alert resolution should be recorded when the triggering condition is no longer true.
+- First implementation may record active/resolved state in `telemetry_alerts.details` if no schema change is needed.
+
+Implementation sequence:
+
+1. **10.3L1 Contract only** - document alert endpoint payloads and rule defaults before code.
+2. **10.3L2 Backend evaluator** - implement current-weather alert evaluation against Supabase and `telemetry_alerts`.
+3. **10.3L3 Forecast evaluator** - add forecast alert candidates from `weather_forecast_snapshots`.
+4. **10.3L4 n8n replacement path** - create or update one alert workflow to call backend evaluate endpoint and send returned Telegram messages.
+5. **10.3L5 Live test** - run with safe thresholds/test mode first, then enable normal thresholds.
+6. **10.3L6 Retire legacy alert paths** - archive old Sheets-first alert workflows only after backend alert path is proven.
+
+Guardrails:
+
+- Do not activate legacy Sheets-first alert workflows while designing the backend path.
+- Do not send customer-facing messages from weather alert workflows.
+- Do not calculate cooldowns separately in n8n and backend; one source of truth only.
+- Do not hard-code secrets in workflows; use environment variables or n8n credentials.
+- Keep Google Sheets weather logs as a mirror during transition, but do not use them as the alert source of truth.
+
+Open decisions before deploy/apply mode:
+
+- Confirm whether the initial thresholds above are acceptable for the first safe trial.
+- Confirm whether Charl-only Telegram delivery should use the same Telegram chat as Oom Sakkie testing.
+- Confirm whether `telemetry_alerts` already has enough fields for active/resolved tracking, or whether a small migration is cleaner.
 - Do not let Oom Sakkie scan raw high-volume telemetry tables.
 - Do not build dashboard widgets until the read models are defined.
+
+### 10.3L2 Backend Evaluator Local Result
+
+Implemented locally on 2026-05-22:
+
+- Added protected `POST /api/telemetry/weather/alerts/evaluate`.
+- Uses the existing `TELEMETRY_INGEST_API_KEY` auth pattern.
+- Supports `{"dry_run": true}` so alert evaluation can be tested without writing alert rows.
+- Reads backend/Supabase weather state:
+  - `weather_latest_state`
+  - recent `weather_readings`
+  - latest `weather_forecast_snapshots`
+  - recent `telemetry_alerts`
+- Builds current-condition and forecast alert candidates from the documented thresholds.
+- Applies backend-owned cooldown and quiet-hours policy.
+- Returns `sendable_alerts`, `held_alerts`, and `suppressed_alerts`.
+- Writes only `sendable_alerts` to `telemetry_alerts` when not in dry-run mode.
+- Does not send Telegram messages. n8n delivery remains a later step.
+
+Local verification:
+
+- Focused weather telemetry tests pass at 13 tests.
+- Telemetry/database/workflow suite passes at 57 tests.
+- Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
+
+Next deploy test:
+
+1. Deploy backend.
+2. Call `POST /api/telemetry/weather/alerts/evaluate` with the telemetry ingest key and body `{"dry_run": true}`.
+3. Confirm `success = true`, no secrets are returned, and no alert rows are written.
+4. Only after dry-run is clean should we test apply mode.
 
 ## 10.3A Inventory Owner Inputs
 

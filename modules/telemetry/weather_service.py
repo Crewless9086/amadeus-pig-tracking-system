@@ -1,7 +1,7 @@
 import hashlib
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -12,6 +12,23 @@ from services.database_service import DATABASE_URL_ENV
 DEFAULT_WEATHER_SOURCE_ID = "weather-station-main"
 DEFAULT_FORECAST_SOURCE_ID = "open-meteo-forecast-main"
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
+WEATHER_ALERT_SOURCE_IDS = (DEFAULT_WEATHER_SOURCE_ID, DEFAULT_FORECAST_SOURCE_ID)
+
+ALERT_STALE_MINUTES = 30
+ALERT_RAIN_TODAY_MM = 2
+ALERT_HEAVY_RAIN_RATE_MM_H = 10
+ALERT_WIND_SUSTAINED_KMH = 40
+ALERT_GUST_HIGH_KMH = 60
+ALERT_TEMP_LOW_C = 10
+ALERT_TEMP_HIGH_C = 28
+ALERT_FORECAST_RAIN_PROBABILITY_PCT = 60
+ALERT_FORECAST_RAIN_MM = 3
+ALERT_FORECAST_HEAVY_RAIN_MM = 10
+ALERT_FORECAST_WIND_KMH = 35
+ALERT_FORECAST_GUST_KMH = 50
+ALERT_FORECAST_STRONG_GUST_KMH = 65
+QUIET_HOURS_START = 21
+QUIET_HOURS_END = 6
 
 
 def ingest_weather_reading(payload, provided_api_key="", database_url=None):
@@ -345,6 +362,69 @@ def get_weather_today_summary(summary_date=None, database_url=None):
         }, 200
 
     return _format_today_weather_response(source_row, summary_row, selected_date, start_za, end_za), 200
+
+
+def evaluate_weather_alerts(payload=None, provided_api_key="", database_url=None):
+    auth_error = _validate_ingest_request(provided_api_key)
+    if auth_error:
+        return auth_error
+
+    database_url = _database_url(database_url)
+    if not database_url:
+        return _not_configured()
+
+    try:
+        import psycopg
+    except ImportError:
+        return _dependency_missing()
+
+    options = payload if isinstance(payload, dict) else {}
+    dry_run = bool(options.get("dry_run", False))
+    now_utc = datetime.now(timezone.utc)
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                context = _read_weather_alert_context(cursor, now_utc)
+                candidates = _build_weather_alert_candidates(context, now_utc)
+                recent_alerts = _read_recent_weather_alerts(cursor)
+                evaluation = _apply_weather_alert_policy(candidates, recent_alerts, now_utc)
+
+                written_alerts = []
+                if not dry_run:
+                    for alert in evaluation["sendable_alerts"]:
+                        _insert_weather_alert(cursor, alert)
+                        written_alerts.append(alert["alert_id"])
+    except Exception as exc:
+        return _service_failed("weather_alert_evaluation_failed", "Weather alert evaluation failed.", exc)
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "dry_run" if dry_run else "apply",
+        "source": {
+            "source": "supabase",
+            "writes_to_sheets": False,
+            "writes_to_supabase": not dry_run,
+        },
+        "evaluated_at": now_utc.isoformat(),
+        "quiet_hours": {
+            "timezone": "Africa/Johannesburg",
+            "start_hour": QUIET_HOURS_START,
+            "end_hour": QUIET_HOURS_END,
+            "active": _is_quiet_hours(now_utc),
+        },
+        "candidate_count": len(candidates),
+        "sendable_count": len(evaluation["sendable_alerts"]),
+        "held_count": len(evaluation["held_alerts"]),
+        "suppressed_count": len(evaluation["suppressed_alerts"]),
+        "written_alert_ids": written_alerts,
+        "sendable_alerts": evaluation["sendable_alerts"],
+        "held_alerts": evaluation["held_alerts"],
+        "suppressed_alerts": evaluation["suppressed_alerts"],
+        "rules": _weather_alert_rule_defaults(),
+    }, 200
 
 
 def _normalize_weather_payload(payload):
@@ -685,6 +765,404 @@ def _today_weather_summary(flags, row, coverage_pct):
     if max_gust is not None:
         notes.append(f"Maximum gust was {_format_number(max_gust)} km/h.")
     return {"status": status, "headline": headline, "operator_notes": notes}
+
+
+def _read_weather_alert_context(cursor, now_utc):
+    cursor.execute(
+        """
+        select
+            wls.source_id, ts.display_name, ts.provider, ts.stale_after_minutes,
+            wls.reading_at, wls.temperature_c, wls.humidity_pct,
+            wls.wind_speed_kmh, wls.wind_gust_kmh, wls.wind_direction_deg,
+            wls.rain_rate_mm_h, wls.rain_today_mm, wls.pressure_hpa
+        from public.weather_latest_state wls
+        join public.telemetry_sources ts on ts.source_id = wls.source_id
+        where wls.source_id = %s
+        """,
+        (DEFAULT_WEATHER_SOURCE_ID,),
+    )
+    latest_row = cursor.fetchone()
+    cursor.execute(
+        """
+        select reading_at, wind_speed_kmh
+        from public.weather_readings
+        where source_id = %s
+          and reading_at >= %s
+          and coalesce(raw_payload->>'test', 'false') <> 'true'
+        order by reading_at desc
+        limit 6
+        """,
+        (DEFAULT_WEATHER_SOURCE_ID, now_utc - timedelta(minutes=45)),
+    )
+    recent_wind_rows = cursor.fetchall()
+    cursor.execute(
+        """
+        select
+            forecast_run_at, forecast_date, offset_days, temp_max_c, temp_min_c,
+            rain_sum_mm, rain_probability_max_pct, wind_max_kmh, gust_max_kmh
+        from public.weather_forecast_snapshots
+        where source_id = %s
+          and forecast_run_at = (
+              select max(forecast_run_at)
+              from public.weather_forecast_snapshots
+              where source_id = %s
+          )
+          and offset_days <= 3
+        order by forecast_date asc
+        """,
+        (DEFAULT_FORECAST_SOURCE_ID, DEFAULT_FORECAST_SOURCE_ID),
+    )
+    forecast_rows = cursor.fetchall()
+    return {
+        "latest": latest_row,
+        "recent_wind_rows": recent_wind_rows,
+        "forecast_rows": forecast_rows,
+    }
+
+
+def _read_recent_weather_alerts(cursor):
+    cursor.execute(
+        """
+        select alert_type, severity, message, event_at, status, details
+        from public.telemetry_alerts
+        where area in ('weather', 'forecast')
+          and event_at >= now() - interval '24 hours'
+        order by event_at desc
+        """,
+    )
+    return cursor.fetchall()
+
+
+def _build_weather_alert_candidates(context, now_utc):
+    candidates = []
+    latest = context.get("latest")
+    if latest:
+        (
+            source_id, source_name, provider, stale_after_minutes, reading_at,
+            temperature, _humidity, wind_speed, wind_gust, _wind_direction,
+            rain_rate, rain_today, _pressure,
+        ) = latest
+        age_minutes = max(0, int((now_utc - reading_at.astimezone(timezone.utc)).total_seconds() // 60))
+        stale_threshold = int(stale_after_minutes or ALERT_STALE_MINUTES)
+
+        if age_minutes > stale_threshold:
+            candidates.append(_weather_alert_candidate(
+                "station_stale",
+                "STATION_STALE",
+                "critical",
+                source_id,
+                source_name,
+                reading_at,
+                240,
+                f"Weather station has not logged for {age_minutes} minutes. Last reading: {_format_alert_time(reading_at)}.",
+                {"age_minutes": age_minutes, "threshold_minutes": stale_threshold, "provider": provider},
+                bypass_quiet_hours=True,
+            ))
+        if _num(rain_rate) > 0:
+            candidates.append(_weather_alert_candidate(
+                "raining_now",
+                "RAINING_NOW",
+                "warning",
+                source_id,
+                source_name,
+                reading_at,
+                60,
+                f"It is raining at Amadeus Farm. Rain rate: {_format_number(rain_rate)} mm/h.",
+                {"rain_rate_mm_h": _json_value(rain_rate)},
+            ))
+        if _num(rain_rate) >= ALERT_HEAVY_RAIN_RATE_MM_H:
+            candidates.append(_weather_alert_candidate(
+                "heavy_rain_now",
+                "HEAVY_RAIN_NOW",
+                "critical",
+                source_id,
+                source_name,
+                reading_at,
+                60,
+                f"Heavy rain is showing now. Rain rate: {_format_number(rain_rate)} mm/h.",
+                {"rain_rate_mm_h": _json_value(rain_rate), "threshold_mm_h": ALERT_HEAVY_RAIN_RATE_MM_H},
+                bypass_quiet_hours=True,
+            ))
+        if _num(rain_today) >= ALERT_RAIN_TODAY_MM:
+            candidates.append(_weather_alert_candidate(
+                "rain_today",
+                "RAIN_TODAY",
+                "info",
+                source_id,
+                source_name,
+                reading_at,
+                180,
+                f"Rain total today is {_format_number(rain_today)} mm.",
+                {"rain_today_mm": _json_value(rain_today), "threshold_mm": ALERT_RAIN_TODAY_MM},
+            ))
+        if _num(wind_gust) > ALERT_GUST_HIGH_KMH:
+            candidates.append(_weather_alert_candidate(
+                "high_gust",
+                "HIGH_GUST",
+                "critical",
+                source_id,
+                source_name,
+                reading_at,
+                120,
+                f"High wind gust detected. Gust: {_format_number(wind_gust)} km/h.",
+                {"wind_gust_kmh": _json_value(wind_gust), "threshold_kmh": ALERT_GUST_HIGH_KMH},
+                bypass_quiet_hours=True,
+            ))
+        if temperature is not None and _num(temperature) < ALERT_TEMP_LOW_C:
+            candidates.append(_weather_alert_candidate(
+                "low_temperature",
+                "LOW_TEMPERATURE",
+                "critical",
+                source_id,
+                source_name,
+                reading_at,
+                120,
+                f"Low temperature detected. Temperature: {_format_number(temperature)} C.",
+                {"temperature_c": _json_value(temperature), "threshold_c": ALERT_TEMP_LOW_C},
+                bypass_quiet_hours=True,
+            ))
+        if temperature is not None and _num(temperature) > ALERT_TEMP_HIGH_C:
+            candidates.append(_weather_alert_candidate(
+                "high_temperature",
+                "HIGH_TEMPERATURE",
+                "warning",
+                source_id,
+                source_name,
+                reading_at,
+                120,
+                f"High temperature detected. Temperature: {_format_number(temperature)} C.",
+                {"temperature_c": _json_value(temperature), "threshold_c": ALERT_TEMP_HIGH_C},
+            ))
+
+    if _has_sustained_wind(context.get("recent_wind_rows", [])):
+        latest_event_at = context["recent_wind_rows"][0][0]
+        candidates.append(_weather_alert_candidate(
+            "high_wind_sustained",
+            "HIGH_WIND_SUSTAINED",
+            "critical",
+            DEFAULT_WEATHER_SOURCE_ID,
+            "Amadeus Local Weather Station",
+            latest_event_at,
+            120,
+            f"Sustained wind above {ALERT_WIND_SUSTAINED_KMH} km/h detected across consecutive readings.",
+            {"threshold_kmh": ALERT_WIND_SUSTAINED_KMH},
+            bypass_quiet_hours=True,
+        ))
+
+    for candidate in _forecast_alert_candidates(context.get("forecast_rows", [])):
+        candidates.append(candidate)
+    return candidates
+
+
+def _forecast_alert_candidates(rows):
+    candidates = []
+    for row in rows:
+        forecast_run_at, forecast_date, offset_days, temp_max, temp_min, rain_sum, rain_prob, wind_max, gust_max = row
+        label = forecast_date.isoformat() if hasattr(forecast_date, "isoformat") else str(forecast_date)
+        next_12h = int(offset_days or 0) == 0
+        if _num(rain_prob) >= ALERT_FORECAST_RAIN_PROBABILITY_PCT or _num(rain_sum) >= ALERT_FORECAST_RAIN_MM:
+            candidates.append(_weather_alert_candidate(
+                f"forecast_rain_{label}",
+                "FORECAST_RAIN",
+                "warning",
+                DEFAULT_FORECAST_SOURCE_ID,
+                "Amadeus Forecast",
+                forecast_run_at,
+                720,
+                f"Forecast rain risk for {label}: {_format_number(rain_sum)} mm, probability {_format_number(rain_prob)}%.",
+                {"forecast_date": label, "rain_sum_mm": _json_value(rain_sum), "rain_probability_max_pct": _json_value(rain_prob)},
+            ))
+        if _num(rain_sum) >= ALERT_FORECAST_HEAVY_RAIN_MM:
+            candidates.append(_weather_alert_candidate(
+                f"forecast_heavy_rain_{label}",
+                "FORECAST_HEAVY_RAIN",
+                "critical",
+                DEFAULT_FORECAST_SOURCE_ID,
+                "Amadeus Forecast",
+                forecast_run_at,
+                720,
+                f"Forecast heavy rain risk for {label}: {_format_number(rain_sum)} mm.",
+                {"forecast_date": label, "rain_sum_mm": _json_value(rain_sum), "threshold_mm": ALERT_FORECAST_HEAVY_RAIN_MM},
+                bypass_quiet_hours=next_12h,
+            ))
+        if _num(gust_max) >= ALERT_FORECAST_GUST_KMH or _num(wind_max) >= ALERT_FORECAST_WIND_KMH:
+            candidates.append(_weather_alert_candidate(
+                f"forecast_wind_{label}",
+                "FORECAST_WIND",
+                "warning",
+                DEFAULT_FORECAST_SOURCE_ID,
+                "Amadeus Forecast",
+                forecast_run_at,
+                720,
+                f"Forecast wind risk for {label}: wind {_format_number(wind_max)} km/h, gust {_format_number(gust_max)} km/h.",
+                {"forecast_date": label, "wind_max_kmh": _json_value(wind_max), "gust_max_kmh": _json_value(gust_max)},
+            ))
+        if _num(gust_max) >= ALERT_FORECAST_STRONG_GUST_KMH:
+            candidates.append(_weather_alert_candidate(
+                f"forecast_strong_wind_{label}",
+                "FORECAST_STRONG_WIND",
+                "critical",
+                DEFAULT_FORECAST_SOURCE_ID,
+                "Amadeus Forecast",
+                forecast_run_at,
+                720,
+                f"Forecast strong wind risk for {label}: gust {_format_number(gust_max)} km/h.",
+                {"forecast_date": label, "gust_max_kmh": _json_value(gust_max), "threshold_kmh": ALERT_FORECAST_STRONG_GUST_KMH},
+                bypass_quiet_hours=next_12h,
+            ))
+    return candidates
+
+
+def _weather_alert_candidate(alert_key, alert_type, severity, source_id, source_name, event_at, cooldown_min, message, details, bypass_quiet_hours=False):
+    event_at = event_at if isinstance(event_at, datetime) else datetime.now(timezone.utc)
+    event_at_utc = event_at.astimezone(timezone.utc)
+    alert = {
+        "alert_id": _hash_id("ALT", alert_key, event_at_utc.isoformat()),
+        "source_id": source_id,
+        "source_name": source_name,
+        "area": "forecast" if source_id == DEFAULT_FORECAST_SOURCE_ID else "weather",
+        "alert_key": alert_key,
+        "alert_type": alert_type,
+        "severity": severity,
+        "message": message,
+        "event_at": event_at_utc.isoformat(),
+        "cooldown_min": cooldown_min,
+        "bypass_quiet_hours": bypass_quiet_hours,
+        "details": {
+            **details,
+            "alert_key": alert_key,
+            "cooldown_min": cooldown_min,
+            "bypass_quiet_hours": bypass_quiet_hours,
+        },
+    }
+    return alert
+
+
+def _apply_weather_alert_policy(candidates, recent_alerts, now_utc):
+    recent_by_key = {}
+    for alert_type, severity, _message, event_at, status, details in recent_alerts:
+        details = _dict_or_empty(details)
+        key = details.get("alert_key") or alert_type
+        if key not in recent_by_key:
+            recent_by_key[key] = {
+                "alert_type": alert_type,
+                "severity": severity,
+                "event_at": event_at,
+                "status": status,
+                "details": details,
+            }
+
+    quiet = _is_quiet_hours(now_utc)
+    sendable = []
+    held = []
+    suppressed = []
+    for candidate in candidates:
+        recent = recent_by_key.get(candidate["alert_key"])
+        if recent and not _cooldown_expired(candidate, recent, now_utc):
+            suppressed.append({**candidate, "suppression_reason": "cooldown_active"})
+            continue
+        if quiet and not candidate["bypass_quiet_hours"]:
+            held.append({**candidate, "hold_reason": "quiet_hours"})
+            continue
+        sendable.append(candidate)
+    return {"sendable_alerts": sendable, "held_alerts": held, "suppressed_alerts": suppressed}
+
+
+def _insert_weather_alert(cursor, alert):
+    cursor.execute(
+        """
+        insert into public.telemetry_alerts (
+            alert_id, source_id, area, alert_type, severity, message, event_at, status, details
+        )
+        values (
+            %(alert_id)s, %(source_id)s, %(area)s, %(alert_type)s, %(severity)s,
+            %(message)s, %(event_at)s, 'Open', %(details)s::jsonb
+        )
+        on conflict (alert_id) do nothing
+        """,
+        {
+            "alert_id": alert["alert_id"],
+            "source_id": alert["source_id"],
+            "area": alert["area"],
+            "alert_type": alert["alert_type"],
+            "severity": alert["severity"],
+            "message": alert["message"],
+            "event_at": alert["event_at"],
+            "details": json.dumps(alert["details"], separators=(",", ":")),
+        },
+    )
+
+
+def _cooldown_expired(candidate, recent, now_utc):
+    event_at = recent.get("event_at")
+    if not isinstance(event_at, datetime):
+        return True
+    elapsed_minutes = (now_utc - event_at.astimezone(timezone.utc)).total_seconds() / 60
+    if elapsed_minutes >= int(candidate["cooldown_min"]):
+        return True
+    severity_rank = {"info": 1, "warning": 2, "critical": 3}
+    return severity_rank.get(candidate["severity"], 0) > severity_rank.get(recent.get("severity"), 0)
+
+
+def _has_sustained_wind(rows):
+    normalized = [
+        (reading_at, _num(wind_speed))
+        for reading_at, wind_speed in rows
+        if reading_at is not None and _num(wind_speed) is not None
+    ]
+    normalized.sort(key=lambda item: item[0], reverse=True)
+    if len(normalized) < 2:
+        return False
+    latest, previous = normalized[0], normalized[1]
+    diff_minutes = abs((latest[0] - previous[0]).total_seconds()) / 60
+    return diff_minutes <= 12 and latest[1] > ALERT_WIND_SUSTAINED_KMH and previous[1] > ALERT_WIND_SUSTAINED_KMH
+
+
+def _is_quiet_hours(now_utc):
+    hour = now_utc.astimezone(ZA_TZ).hour
+    return hour >= QUIET_HOURS_START or hour < QUIET_HOURS_END
+
+
+def _weather_alert_rule_defaults():
+    return {
+        "station_stale_minutes": ALERT_STALE_MINUTES,
+        "rain_today_mm": ALERT_RAIN_TODAY_MM,
+        "heavy_rain_rate_mm_h": ALERT_HEAVY_RAIN_RATE_MM_H,
+        "wind_sustained_kmh": ALERT_WIND_SUSTAINED_KMH,
+        "gust_high_kmh": ALERT_GUST_HIGH_KMH,
+        "temperature_low_c": ALERT_TEMP_LOW_C,
+        "temperature_high_c": ALERT_TEMP_HIGH_C,
+        "forecast_rain_probability_pct": ALERT_FORECAST_RAIN_PROBABILITY_PCT,
+        "forecast_rain_mm": ALERT_FORECAST_RAIN_MM,
+        "forecast_heavy_rain_mm": ALERT_FORECAST_HEAVY_RAIN_MM,
+        "forecast_wind_kmh": ALERT_FORECAST_WIND_KMH,
+        "forecast_gust_kmh": ALERT_FORECAST_GUST_KMH,
+        "forecast_strong_gust_kmh": ALERT_FORECAST_STRONG_GUST_KMH,
+    }
+
+
+def _num(value):
+    if value is None:
+        return 0
+    return float(value)
+
+
+def _format_alert_time(value):
+    if not isinstance(value, datetime):
+        return "unknown"
+    return value.astimezone(ZA_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def _dict_or_empty(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 
 def _validate_ingest_request(provided_api_key):

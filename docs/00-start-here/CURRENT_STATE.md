@@ -383,4 +383,27 @@ Current position:
 - It excludes synthetic test rows where `raw_payload.test = true`, so the earlier synthetic weather ingest does not skew today summaries.
 - Local live Supabase readback returned real-only data for 2026-05-22: 5 readings, first reading `2026-05-22T02:49:30+00:00`, last reading `2026-05-22T03:04:54+00:00`, temperature `14 C`, rain total `0 mm`, max wind `9 km/h`, coverage `8.1%`.
 - Focused and broader telemetry/database/workflow tests pass at 55 tests.
-- Next step is deploying backend and verifying `/api/telemetry/weather/today`, then updating `2.1` to route today/history weather questions to the endpoint.
+- 10.3K deployed verification passed on 2026-05-22.
+- `/api/telemetry/weather/today` returned `success = true`, date `2026-05-22`, 25 real readings, coverage `30.5%`, first reading `2026-05-22T02:49:30+00:00`, last reading `2026-05-22T04:45:06+00:00`, min/max/avg temperature `14 C` / `15 C` / `14.24 C`, rain total `0 mm`, max wind `9 km/h`, and max gust `10 km/h`.
+- Explicit dated check `/api/telemetry/weather/today?date=2026-05-22` returned the same result.
+- The old synthetic `0.4 mm` rain row is excluded.
+- `2.1` local workflow update is prepared so today/daily/rain-today weather questions route to `/api/telemetry/weather/today`.
+- First live Telegram check for `What happened with the weather today?` still returned the current-weather branch. The local workflow files were hardened: `2.0` now passes the exact Telegram message into `2.1`, and `2.1` now checks additional input fields plus `what happened ... today` wording.
+- Workflow/weather tests pass at 26 tests after the route update.
+- 10.3K live verification passed on 2026-05-22 after importing the hardened `2.0` and `2.1` workflows.
+- Telegram test `What happened with the weather today?` returned the today-summary branch: 30 readings, 34.5% coverage, temperature `14 C` to `15 C`, average `14.4 C`, average humidity `94.6%`, rain total `0 mm`, max rain rate `0 mm/h`, max wind `9 km/h`, max gust `10 km/h`, and measurement window `22 May 2026, 04:49` to `07:10`.
+- 10.3L weather alert alignment is planned.
+- Owner agreed alerts should use the backend/Supabase approach rather than the old Sheets-first alert workflows.
+- Backend should own alert rules, cooldowns, duplicate prevention, and alert history in `telemetry_alerts`.
+- n8n should later become a thin scheduled caller and Telegram delivery layer.
+- Existing `ALERT - Local Weather Station` and `ALERT - Weather Forecast` remain documented and should not be activated as the source of truth during this rebuild.
+- Initial alert defaults are documented for station stale, rain, heavy rain, sustained wind, gusts, temperature, forecast rain, and forecast wind.
+- First safe recipient should be Charl only.
+- Default quiet hours are `21:00` to `06:00` Africa/Johannesburg, with `HIGH` current-condition alerts allowed through.
+- 10.3L2 backend evaluator is implemented locally.
+- Added protected `POST /api/telemetry/weather/alerts/evaluate`.
+- Evaluator supports dry-run mode, returns `sendable_alerts`, `held_alerts`, and `suppressed_alerts`, and writes only sendable alerts in apply mode.
+- It does not send Telegram messages.
+- Focused weather tests pass at 13 tests; telemetry/database/workflow suite passes at 57 tests.
+- Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
+- Next step is deploying backend and running the protected dry-run endpoint smoke.

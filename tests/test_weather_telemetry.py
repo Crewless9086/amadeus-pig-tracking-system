@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.telemetry.weather_service import (
+    evaluate_weather_alerts,
     get_current_weather_state,
     get_weather_forecast,
     get_weather_today_summary,
@@ -287,6 +288,90 @@ class WeatherTelemetryTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertEqual(result["window"]["returned_readings"], 0)
 
+    def test_weather_alert_evaluator_dry_run_returns_sendable_candidates(self):
+        cursor = Mock()
+        old_reading = datetime(2026, 5, 21, 0, 0, tzinfo=timezone.utc)
+        cursor.fetchone.return_value = (
+            "weather-station-main",
+            "Amadeus Local Weather Station",
+            "weather_com_pws",
+            30,
+            old_reading,
+            Decimal("9.5"),
+            Decimal("88"),
+            Decimal("4.2"),
+            Decimal("11.5"),
+            Decimal("230"),
+            Decimal("0"),
+            Decimal("0"),
+            Decimal("1018.2"),
+        )
+        cursor.fetchall.side_effect = [
+            [],
+            [],
+            [],
+        ]
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict(
+            os.environ,
+            {"DATABASE_URL": "postgresql://user:secret@example/db", "TELEMETRY_INGEST_API_KEY": "expected"},
+            clear=True,
+        ), patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = evaluate_weather_alerts({"dry_run": True}, provided_api_key="expected")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "dry_run")
+        self.assertGreaterEqual(result["sendable_count"], 1)
+        self.assertEqual(result["written_alert_ids"], [])
+        self.assertIn("station_stale", {alert["alert_key"] for alert in result["sendable_alerts"]})
+        self.assertFalse(result["source"]["writes_to_supabase"])
+
+    def test_weather_alert_evaluator_writes_sendable_alerts(self):
+        cursor = Mock()
+        latest_reading = datetime.now(timezone.utc)
+        cursor.fetchone.return_value = (
+            "weather-station-main",
+            "Amadeus Local Weather Station",
+            "weather_com_pws",
+            30,
+            latest_reading,
+            Decimal("14.5"),
+            Decimal("88"),
+            Decimal("4.2"),
+            Decimal("70.0"),
+            Decimal("230"),
+            Decimal("0"),
+            Decimal("0"),
+            Decimal("1018.2"),
+        )
+        cursor.fetchall.side_effect = [
+            [],
+            [],
+            [],
+        ]
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict(
+            os.environ,
+            {"DATABASE_URL": "postgresql://user:secret@example/db", "TELEMETRY_INGEST_API_KEY": "expected"},
+            clear=True,
+        ), patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = evaluate_weather_alerts({}, provided_api_key="expected")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "apply")
+        self.assertEqual(result["sendable_count"], 1)
+        self.assertEqual(result["sendable_alerts"][0]["alert_key"], "high_gust")
+        self.assertEqual(result["sendable_alerts"][0]["severity"], "critical")
+        self.assertEqual(len(result["written_alert_ids"]), 1)
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        insert_params = cursor.execute.call_args_list[-1].args[1]
+        self.assertEqual(insert_params["area"], "weather")
+        self.assertEqual(insert_params["severity"], "critical")
+
     def test_weather_routes_are_registered(self):
         route_source = Path("modules/telemetry/telemetry_routes.py").read_text(encoding="utf-8")
 
@@ -295,6 +380,7 @@ class WeatherTelemetryTests(unittest.TestCase):
         self.assertIn("/telemetry/weather/forecast", route_source)
         self.assertIn("/telemetry/weather/ingest", route_source)
         self.assertIn("/telemetry/weather/forecast/ingest", route_source)
+        self.assertIn("/telemetry/weather/alerts/evaluate", route_source)
 
 
 def _mock_psycopg_connection(cursor):

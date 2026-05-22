@@ -215,7 +215,7 @@
         "workflowInputs": {
           "mappingMode": "defineBelow",
           "value": {
-            "input": "={{ $fromAI('weather_question', 'The user weather question to answer. Use the exact user request where possible, for example current weather, rain today, wind, tomorrow forecast, or weekend forecast.', 'string') || $json.message_text || 'current weather at the farm' }}"
+            "input": "={{ $json.message_text || $fromAI('weather_question', 'The user weather question to answer. Use the exact user request where possible, for example current weather, rain today, wind, tomorrow forecast, or weekend forecast.', 'string') || 'current weather at the farm' }}"
           },
           "matchingColumns": [
             "input"
@@ -884,7 +884,7 @@
           "workflowInputs": {
             "mappingMode": "defineBelow",
             "value": {
-              "input": "={{ $fromAI('weather_question', 'The user weather question to answer. Use the exact user request where possible, for example current weather, rain today, wind, tomorrow forecast, or weekend forecast.', 'string') || $json.message_text || 'current weather at the farm' }}"
+              "input": "={{ $json.message_text || $fromAI('weather_question', 'The user weather question to answer. Use the exact user request where possible, for example current weather, rain today, wind, tomorrow forecast, or weekend forecast.', 'string') || 'current weather at the farm' }}"
             },
             "matchingColumns": [
               "input"

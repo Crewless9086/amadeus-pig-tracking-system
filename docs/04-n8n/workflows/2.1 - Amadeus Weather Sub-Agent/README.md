@@ -13,6 +13,7 @@ Imported for docs: 2026-05-18
 - Runs when called by Oom Sakkie.
 - Routes the weather question deterministically.
 - Calls the backend current weather endpoint for current/now weather questions.
+- Calls the backend today summary endpoint for today/daily/rain-today weather questions.
 - Calls the backend forecast endpoint for forecast/tomorrow/coming-weather questions.
 - Formats the backend response into a user-ready answer.
 - Returns `answer`, `output`, and `weather_response` for compatibility with Oom Sakkie.
@@ -21,6 +22,7 @@ Imported for docs: 2026-05-18
 ## Main Data Sources
 
 - `GET /api/telemetry/weather/current`
+- `GET /api/telemetry/weather/today`
 - `GET /api/telemetry/weather/forecast?days=3`
 - Backend reads from Supabase weather read models populated by the weather and forecast Render cron loggers.
 
@@ -53,5 +55,6 @@ Imported for docs: 2026-05-18
   - Workflow contract tests now guard both rules.
 - 2026-05-22: Phase 10.3J replaced the old Sheets/LLM-heavy path with a deterministic backend read workflow.
   - Current weather now comes from `/api/telemetry/weather/current`.
+  - Today weather summary now comes from `/api/telemetry/weather/today`.
   - Forecast now comes from `/api/telemetry/weather/forecast?days=3`.
   - Old nodes `Weather Router (JSON Plan)`, `Weather Answer LLM (JSON only)`, `Precheck - Latest Station Row`, `Read Forecast_10Day_Current`, and `Read Daily_Pivot` are intentionally removed from this workflow export.

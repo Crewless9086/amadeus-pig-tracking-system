@@ -6,6 +6,7 @@ from modules.telemetry.power_service import (
     ingest_power_reading,
 )
 from modules.telemetry.weather_service import (
+    evaluate_weather_alerts,
     get_current_weather_state,
     get_weather_today_summary,
     get_weather_forecast,
@@ -72,6 +73,14 @@ def telemetry_weather_forecast_ingest():
     payload = request.get_json(silent=True) or {}
     provided_key = _telemetry_key_from_request()
     result, status_code = ingest_weather_forecast(payload, provided_key)
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/weather/alerts/evaluate", methods=["POST"])
+def telemetry_weather_alerts_evaluate():
+    payload = request.get_json(silent=True) or {}
+    provided_key = _telemetry_key_from_request()
+    result, status_code = evaluate_weather_alerts(payload, provided_key)
     return jsonify(result), status_code
 
 
