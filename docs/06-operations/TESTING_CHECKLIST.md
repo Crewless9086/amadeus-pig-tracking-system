@@ -1545,6 +1545,30 @@ Local validation result:
 - 2026-05-22: Focused weather/database checks passed.
 - 2026-05-22: Broader telemetry/database/workflow checks passed at 53 tests.
 
+Deployed read result:
+
+- 2026-05-22: `/health/database/telemetry-weather-schema` passed with all expected tables and sources.
+- 2026-05-22: `/api/telemetry/weather/current` returned clean unavailable before ingest.
+- 2026-05-22: `/api/telemetry/weather/forecast?days=3` returned clean unavailable before ingest.
+- 2026-05-22: Synthetic ingest returned `401 unauthorized` with the available test key. Confirm the current Render `TELEMETRY_INGEST_API_KEY`, then rerun ingest/readback.
+- 2026-05-22: Synthetic ingest/readback passed after confirming the current ingest key.
+- Current weather ingest wrote reading `WTH-5D66D385B9F5`, and current readback returned `success = true`, temperature `14.2 C`, humidity `86%`, wind `5.4 km/h`, rain today `0.4 mm`, and source `weather-station-main`.
+- Forecast ingest wrote 3 forecast rows, and forecast readback returned `success = true`, `returned_days = 3`, rain expected on 2 days, and source `open-meteo-forecast-main`.
+- Note: these are synthetic test values until real logger ingest overwrites them.
+
+10.3J3 logger checks:
+
+1. Deploy/rebuild weather cron service.
+2. Manually run weather cron.
+3. Confirm Render log includes `"backend_ingest_success": true`.
+4. Confirm `/api/telemetry/weather/current` shows real weather station values and no longer the synthetic `14.2 C` test row.
+5. Deploy/rebuild forecast cron service.
+6. Manually run forecast cron.
+7. Confirm Render log includes `"backend_ingest_success": true`.
+8. Confirm `/api/telemetry/weather/forecast?days=3` shows real Open-Meteo forecast rows.
+9. Keep Google Sheets mirror enabled until Supabase-backed weather has run reliably.
+10. Do not update `2.1` until both real logger readbacks pass.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:

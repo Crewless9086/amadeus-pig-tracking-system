@@ -1222,6 +1222,50 @@ Validation result:
 - Direct Supabase read checks returned clean unavailable responses before logger ingest.
 - Local synthetic ingest is waiting on `TELEMETRY_INGEST_API_KEY` in local `.env`; deployed endpoint testing can use the Render environment key.
 
+Deployed read verification:
+
+- Passed on 2026-05-22 after backend deploy.
+- `/health/database/telemetry-weather-schema` returned `success = true`, `status = ok`, no missing tables, and both weather/forecast sources.
+- `/api/telemetry/weather/current` returned a clean unavailable response before weather logger ingest.
+- `/api/telemetry/weather/forecast?days=3` returned a clean unavailable response before forecast logger ingest.
+- Synthetic deployed ingest returned `401 unauthorized` with the available test key. The endpoint is protected correctly, but the current Render `TELEMETRY_INGEST_API_KEY` value must be confirmed before completing synthetic ingest/readback.
+
+Synthetic deployed ingest/readback:
+
+- Passed on 2026-05-22 after confirming the current ingest key.
+- Current weather ingest accepted the key and wrote reading `WTH-5D66D385B9F5`.
+- Current weather readback returned `success = true`, source `weather-station-main`, temperature `14.2 C`, humidity `86%`, wind `5.4 km/h`, rain today `0.4 mm`, and fresh data.
+- Forecast ingest accepted the key and wrote 3 forecast rows.
+- Forecast readback returned `success = true`, `returned_days = 3`, source `open-meteo-forecast-main`, and rain expected on 2 days in the selected window.
+- These are synthetic test values. The next step is to update the weather and forecast Render cron loggers so real data overwrites them.
+
+## 10.3J3 Weather/Forecast Logger Backend Ingest
+
+Local logger update prepared on 2026-05-22:
+
+- Owner ran the existing weather cron and it logged only the old Sheets output: `Logged Current_Conditions...`.
+- This confirmed the cron was still Sheets-only and had not overwritten the synthetic Supabase value.
+- Weather logger now supports:
+  - `BACKEND_INGEST_ENABLED=true`
+  - `AMADEUS_BACKEND_URL`
+  - `TELEMETRY_INGEST_API_KEY`
+  - `GOOGLE_SHEETS_ENABLED=true` as the transition mirror
+  - JSON Render log output with backend and sheet success/error fields
+- Forecast logger now supports the same backend/mirror pattern and posts forecast snapshots to `/api/telemetry/weather/forecast/ingest`.
+- Local syntax compile passed for both logger scripts.
+
+Render verification target:
+
+1. Deploy/rebuild the weather cron service.
+2. Manually run the weather cron.
+3. Confirm the Render log includes `"backend_ingest_success": true`.
+4. Confirm `/api/telemetry/weather/current` now shows a real station reading instead of the synthetic test row.
+5. Deploy/rebuild the forecast cron service.
+6. Manually run the forecast cron.
+7. Confirm the Render log includes `"backend_ingest_success": true`.
+8. Confirm `/api/telemetry/weather/forecast?days=3` now shows the real Open-Meteo forecast.
+9. Only after these pass, simplify `2.1`.
+
 ## Must Not Do In 10.3 Planning
 
 - Do not change live n8n workflows yet.

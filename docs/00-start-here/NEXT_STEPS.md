@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Schema Applied | Deploy backend, direct-test live weather endpoints, then update weather/forecast loggers before touching `2.1`. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified | Update weather/forecast Render loggers to post real data to backend ingest before touching `2.1`. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2783,7 +2783,24 @@ Recommendation:
   - Supabase schema health verified `success = true`, `missing_tables = []`, and sources `weather-station-main` and `open-meteo-forecast-main` were present.
   - Direct local Supabase read checks returned clean unavailable responses before logger ingest for current weather and forecast.
   - Synthetic local ingest is blocked until `TELEMETRY_INGEST_API_KEY` is added to the local `.env`; Render already has the key for deployed endpoint testing.
-- Next step: deploy backend, direct-test live weather endpoints, then update weather and forecast Render cron loggers before touching `2.1`.
+- 10.3J2 deployed read verification on 2026-05-22:
+  - `/health/database/telemetry-weather-schema` returned `success = true`, `status = ok`, no missing tables, and both weather/forecast telemetry sources.
+  - `/api/telemetry/weather/current` returned a clean unavailable response before logger ingest.
+  - `/api/telemetry/weather/forecast?days=3` returned a clean unavailable response before forecast ingest.
+  - Synthetic deployed ingest returned `401 unauthorized` with the available test key, so the backend is enforcing auth but the current Render `TELEMETRY_INGEST_API_KEY` value must be confirmed before readback can be completed.
+- 10.3J2 synthetic deployed ingest/readback passed on 2026-05-22:
+  - `POST /api/telemetry/weather/ingest` accepted the current ingest key and wrote reading `WTH-5D66D385B9F5`.
+  - `/api/telemetry/weather/current` read back `success = true`, temperature `14.2 C`, humidity `86%`, wind `5.4 km/h`, rain today `0.4 mm`, and source `weather-station-main`.
+  - `POST /api/telemetry/weather/forecast/ingest` wrote 3 forecast rows.
+  - `/api/telemetry/weather/forecast?days=3` read back `success = true`, `returned_days = 3`, rain expected on 2 days, and source `open-meteo-forecast-main`.
+  - Current Supabase weather/forecast values are synthetic test values until the real weather and forecast loggers overwrite them.
+- 10.3J3 local logger update prepared on 2026-05-22:
+  - First owner weather cron run still showed the old Sheets-only output, so the logger code needed the backend-post step.
+  - Weather logger now posts normalized current readings to `POST /api/telemetry/weather/ingest` when `BACKEND_INGEST_ENABLED=true`.
+  - Forecast logger now posts normalized forecast snapshots to `POST /api/telemetry/weather/forecast/ingest` when `BACKEND_INGEST_ENABLED=true`.
+  - Both loggers keep Google Sheets mirror writes enabled through `GOOGLE_SHEETS_ENABLED=true`.
+  - Both loggers print JSON results with `backend_ingest_success`, `google_sheets_written`, and any backend/sheet errors for Render log checking.
+- Next step: deploy/rebuild both Render cron services, manually run weather and forecast, then confirm `backend_ingest_success = true` and live readbacks before changing `2.1`.
 
 Farm home/dashboard idea:
 

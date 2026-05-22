@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G live-verified; 10.3H deployed-verified; 10.3I live-verified; 10.3J1 contract drafted; 10.3J2 schema applied and backend ready for deploy |
-| **Current focus** | Deploy weather backend endpoints and direct-test weather current/forecast before logger or n8n changes |
-| **Current last verified** | **2026-05-22** - Weather/forecast `10.3J2` tests passed, Supabase migration applied, schema health verified, and unavailable reads checked |
+| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G live-verified; 10.3H deployed-verified; 10.3I live-verified; 10.3J1 contract drafted; 10.3J2 deployed-verified |
+| **Current focus** | Update weather and forecast Render cron loggers to post real data to backend ingest before n8n `2.1` changes |
+| **Current last verified** | **2026-05-22** - Weather/forecast `10.3J2` deployed schema, unavailable reads, protected ingest, and Supabase readback all passed |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

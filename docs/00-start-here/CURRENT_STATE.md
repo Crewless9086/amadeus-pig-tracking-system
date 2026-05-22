@@ -355,5 +355,13 @@ Current position:
 - The migration was applied directly to Supabase on 2026-05-22 and schema health verified `success = true`, `missing_tables = []`, with both weather/forecast sources present.
 - Direct local Supabase read checks returned clean unavailable responses for `/api/telemetry/weather/current` and `/api/telemetry/weather/forecast?days=3` before logger ingest.
 - Synthetic local ingest is blocked until `TELEMETRY_INGEST_API_KEY` is configured in the local `.env`; Render already has the key for deployed endpoint testing.
+- Deployed backend verification on 2026-05-22 passed for `/health/database/telemetry-weather-schema`, `/api/telemetry/weather/current`, and `/api/telemetry/weather/forecast?days=3`; both read endpoints return clean unavailable responses before logger ingest.
+- Synthetic deployed ingest is blocked because the available test key returned `401 unauthorized`; use the current Render `TELEMETRY_INGEST_API_KEY` value for the next ingest/readback check.
+- Synthetic deployed ingest/readback passed on 2026-05-22 after confirming the current ingest key.
+- `POST /api/telemetry/weather/ingest` wrote reading `WTH-5D66D385B9F5` to Supabase and `/api/telemetry/weather/current` read it back with temperature `14.2 C`, humidity `86%`, wind `5.4 km/h`, rain today `0.4 mm`, `success = true`, and source `weather-station-main`.
+- `POST /api/telemetry/weather/forecast/ingest` wrote 3 forecast rows and `/api/telemetry/weather/forecast?days=3` read them back with `returned_days = 3`, rain expected on 2 days, and source `open-meteo-forecast-main`.
+- The current weather/forecast values in Supabase are synthetic test values until the real Render weather and forecast loggers overwrite them.
+- First owner weather cron run still showed the old Sheets-only output (`Logged Current_Conditions...`), confirming the logger code had not yet been updated for backend ingest.
+- Local logger updates are prepared: both weather and forecast Render cron scripts now support `BACKEND_INGEST_ENABLED=true`, keep `GOOGLE_SHEETS_ENABLED=true` as a mirror, post to the backend ingest endpoints, and print JSON results including `backend_ingest_success`.
 - No n8n weather workflow changes have been made.
-- Next step is deploying the backend, then direct-testing the live weather endpoints before updating weather/forecast Render cron loggers or `2.1`.
+- Next step is deploying/rebuilding the two Render cron services, manually running each, and confirming `backend_ingest_success = true` before updating `2.1`.
