@@ -309,27 +309,32 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("weather_question", input_expression)
         self.assertIn("current weather at the farm", input_expression)
 
-    def test_weather_workflow_router_has_supported_model_and_input_fallback(self):
+    def test_weather_workflow_uses_backend_weather_endpoints(self):
         workflow = load_workflow(WEATHER_WORKFLOW)
-        router = node_by_name(workflow, "Weather Router (JSON Plan)")
-        answer = node_by_name(workflow, "Weather Answer LLM (JSON only)")
+        route_node = node_by_name(workflow, "Code - Route Weather Question")
+        http_node = node_by_name(workflow, "HTTP - Get Weather Data")
+        format_node = node_by_name(workflow, "Code - Format Weather Answer")
 
-        self.assertIsNotNone(router)
-        self.assertIsNotNone(answer)
+        self.assertIsNotNone(route_node)
+        self.assertIsNotNone(http_node)
+        self.assertIsNotNone(format_node)
         self.assertNotIn("chatgpt-4o-latest", json.dumps(workflow))
+        self.assertNotIn("Weather Router (JSON Plan)", json.dumps(workflow))
+        self.assertNotIn("Weather Answer LLM (JSON only)", json.dumps(workflow))
+        self.assertNotIn("Precheck - Latest Station Row", json.dumps(workflow))
+        self.assertNotIn("Read Forecast_10Day_Current", json.dumps(workflow))
+        self.assertNotIn("Read Daily_Pivot", json.dumps(workflow))
 
-        router_parameters = router.get("parameters", {})
-        router_content = (
-            router_parameters
-            .get("responses", {})
-            .get("values", [{}])[0]
-            .get("content", "")
-        )
+        route_content = route_node.get("parameters", {}).get("jsCode", "")
+        format_content = format_node.get("parameters", {}).get("jsCode", "")
+        parameters = http_node.get("parameters", {})
 
-        self.assertEqual(router_parameters.get("modelId", {}).get("value"), "gpt-5.5")
-        self.assertEqual(answer.get("parameters", {}).get("modelId", {}).get("value"), "gpt-5.5")
-        self.assertIn("$json.input", router_content)
-        self.assertIn("current weather at the farm", router_content)
+        self.assertEqual(parameters.get("url"), "={{ $json.request_url }}")
+        self.assertIn("/api/telemetry/weather/current", route_content)
+        self.assertIn("/api/telemetry/weather/forecast?days=3", route_content)
+        self.assertIn("current weather at the farm", route_content)
+        self.assertIn("backend_supabase_current_weather", format_content)
+        self.assertIn("backend_supabase_weather_forecast", format_content)
 
     def test_oom_sakkie_sunsynk_tool_uses_ai_supplied_input(self):
         workflow = load_workflow(OOM_SAKKIE_WORKFLOW)

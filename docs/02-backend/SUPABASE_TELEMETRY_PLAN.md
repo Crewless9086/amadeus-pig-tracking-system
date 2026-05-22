@@ -1266,6 +1266,102 @@ Render verification target:
 8. Confirm `/api/telemetry/weather/forecast?days=3` now shows the real Open-Meteo forecast.
 9. Only after these pass, simplify `2.1`.
 
+Verification result:
+
+- Passed on 2026-05-22.
+- Weather and forecast Render cron services were updated to use the pig-tracking repo paths and ran successfully.
+- `/api/telemetry/weather/current` returned fresh real weather-station data from Supabase:
+  - temperature `14 C`
+  - humidity `96%`
+  - wind `8 km/h`
+  - rain today `0 mm`
+  - data age `0`
+  - source `weather-station-main`
+- `/api/telemetry/weather/forecast?days=3` returned fresh real Open-Meteo forecast data from Supabase:
+  - `returned_days = 3`
+  - rain possible on 1 day
+  - data age `0`
+  - source `open-meteo-forecast-main`
+- Synthetic test values have been overwritten by real logger data.
+- Next step: simplify `2.1` to read backend current/forecast endpoints.
+
+## 10.3J4 Oom Sakkie Weather Workflow Simplification
+
+Local workflow update prepared on 2026-05-22:
+
+- `2.1 - Amadeus Weather Sub-Agent` now follows the same deterministic backend-read pattern as `2.2`.
+- Current/now weather questions route to `GET /api/telemetry/weather/current`.
+- Forecast, tomorrow, weekend, and coming-weather questions route to `GET /api/telemetry/weather/forecast?days=3`.
+- The workflow formats backend payloads directly and returns `answer`, `output`, and `weather_response`.
+- Removed from `2.1`:
+  - Google Sheets weather reads
+  - `Weather Router (JSON Plan)`
+  - `Weather Answer LLM (JSON only)`
+  - daily pivot reads
+  - forecast sheet reads
+- `2.0 - OOM SAKKIE` `Weather_Info_Tool` description was updated to reflect the backend/Supabase weather worker.
+- Workflow contract tests passed at 15 tests.
+
+Import/test target:
+
+1. Import updated `2.1 - Amadeus Weather Sub-Agent`.
+2. Import updated `2.0 - OOM SAKKIE`.
+3. Ask Oom Sakkie: `What is the weather like now?`
+4. Confirm it returns current backend weather: temperature, humidity, wind, rain now/today, latest reading age.
+5. Ask Oom Sakkie: `What is the weather forecast for the next few days?`
+6. Confirm it returns the 3-day backend forecast and does not mention Google Sheets, workflows, or tools.
+
+Live verification:
+
+- Passed on 2026-05-22 after importing updated `2.1` and `2.0`.
+- `What is the weather like now?` returned current backend weather with temperature `14 C`, humidity `96%`, wind `4 km/h`, gusts `4 km/h`, rain now `0 mm/h`, rain today `0 mm`, pressure `1013.9 hPa`, and latest reading age `0 minutes`.
+- `What is the weather forecast for the next few days?` returned the 3-day backend forecast for 22-24 May 2026, including rain possible on 1 day and forecast age `1 minute`.
+- The answers did not mention tools, workflows, Google Sheets, or Supabase.
+- `2.1` current/forecast backend path is live-verified.
+
+## 10.3K Weather Today Summary Endpoint
+
+Selected next on 2026-05-22 before alert alignment and irrigation/audit planning.
+
+Local backend update:
+
+- Added read-only `GET /api/telemetry/weather/today`.
+- Supports optional `date=YYYY-MM-DD`; defaults to the current Africa/Johannesburg date.
+- Summarizes existing `weather_readings` rows for the selected local farm day.
+- Reports:
+  - reading count
+  - first and last reading time
+  - expected sample count and coverage percentage
+  - min/max/average temperature
+  - average humidity
+  - maximum wind speed and gust
+  - rain total and maximum rain rate
+  - deterministic flags and operator notes
+- Rain total uses the highest station daily rain value seen during the selected day.
+- Synthetic test rows are excluded with `coalesce(raw_payload->>'test', 'false') <> 'true'`.
+- No new tables or migrations are required for this slice.
+
+Local verification:
+
+- Syntax compile passed for `weather_service.py` and `telemetry_routes.py`.
+- Focused weather tests pass at 11 tests.
+- Broader telemetry/database/workflow tests pass at 55 tests.
+- Local live Supabase readback for 2026-05-22 returned real-only data:
+  - 5 readings
+  - first reading `2026-05-22T02:49:30+00:00`
+  - last reading `2026-05-22T03:04:54+00:00`
+  - coverage `8.1%`
+  - temperature `14 C`
+  - rain total `0 mm`
+  - max wind `9 km/h`
+
+Deploy/test target:
+
+1. Deploy backend.
+2. Check `GET /api/telemetry/weather/today`.
+3. Confirm `success = true`, real readings are returned, and the old synthetic `14.2 C` / `0.4 mm` row is not included.
+4. After deploy verification, update `2.1` routing so today/daily weather questions call this endpoint.
+
 ## Must Not Do In 10.3 Planning
 
 - Do not change live n8n workflows yet.

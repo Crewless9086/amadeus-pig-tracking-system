@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 from modules.telemetry.weather_service import (
     get_current_weather_state,
     get_weather_forecast,
+    get_weather_today_summary,
     ingest_weather_forecast,
     ingest_weather_reading,
 )
@@ -212,10 +213,85 @@ class WeatherTelemetryTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertEqual(result["window"]["returned_days"], 0)
 
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_today_weather_summary_returns_sample_aggregates(self):
+        cursor = Mock()
+        cursor.fetchone.side_effect = [
+            (
+                "weather-station-main",
+                "Amadeus Local Weather Station",
+                "weather_com_pws",
+                30,
+            ),
+            (
+                12,
+                datetime(2026, 5, 22, 0, 0, tzinfo=timezone.utc),
+                datetime(2026, 5, 22, 1, 0, tzinfo=timezone.utc),
+                Decimal("10.5"),
+                Decimal("18.2"),
+                Decimal("14.1"),
+                Decimal("88.2"),
+                Decimal("12.4"),
+                Decimal("25.8"),
+                Decimal("0.4"),
+                Decimal("1.2"),
+                True,
+            ),
+        ]
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_weather_today_summary("2026-05-22")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["window"]["date"], "2026-05-22")
+        self.assertEqual(result["window"]["reading_count"], 12)
+        self.assertEqual(result["temperature"]["max_c"], 18.2)
+        self.assertEqual(result["rain"]["total_mm"], 1.2)
+        self.assertTrue(result["flags"]["rain_today"])
+        self.assertIn("Rain total so far is 1.2 mm.", result["summary"]["operator_notes"])
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_today_weather_summary_no_rows_returns_unavailable(self):
+        cursor = Mock()
+        cursor.fetchone.side_effect = [
+            (
+                "weather-station-main",
+                "Amadeus Local Weather Station",
+                "weather_com_pws",
+                30,
+            ),
+            (
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        ]
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_weather_today_summary("2026-05-22")
+
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["window"]["returned_readings"], 0)
+
     def test_weather_routes_are_registered(self):
         route_source = Path("modules/telemetry/telemetry_routes.py").read_text(encoding="utf-8")
 
         self.assertIn("/telemetry/weather/current", route_source)
+        self.assertIn("/telemetry/weather/today", route_source)
         self.assertIn("/telemetry/weather/forecast", route_source)
         self.assertIn("/telemetry/weather/ingest", route_source)
         self.assertIn("/telemetry/weather/forecast/ingest", route_source)

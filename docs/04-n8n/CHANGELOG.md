@@ -15,6 +15,20 @@ Tracks approved n8n workflow documentation and behavior decisions.
 
 ## Current Entries
 
+### 2026-05-22 - Phase 10.3J Oom Sakkie weather backend read
+
+Type: `REFACTOR`
+
+**Behavior:** `2.1 - Amadeus Weather Sub-Agent` no longer uses Google Sheets reads or LangChain/OpenAI nodes for normal weather answers. It now routes current/now questions to `GET /api/telemetry/weather/current` and forecast/tomorrow/coming-weather questions to `GET /api/telemetry/weather/forecast?days=3`, then formats the backend/Supabase payload directly.
+
+**Scope:** Current weather and 3-day forecast questions are supported. Daily weather rollups such as detailed "what happened today" summaries remain a planned backend endpoint.
+
+**Docs:** Updated the `2.1` README, `2.0` `Weather_Info_Tool` description, workflow map, telemetry plan, testing checklist, and phase roadmap.
+
+**Verification:** Workflow JSON exports parse locally and workflow contract tests pass at 15 tests.
+
+**Live verification:** After importing updated `2.1` and `2.0`, Telegram checks passed for current weather and 3-day forecast. Current weather returned temperature `14 C`, humidity `96%`, wind `4 km/h`, no rain, pressure `1013.9 hPa`, and latest reading age `0 minutes`. Forecast returned 22-24 May 2026 with rain possible on 1 day. Answers did not mention tools, workflows, Google Sheets, or Supabase.
+
 ### 2026-05-22 - Phase 10.3I Oom Sakkie recent power profile routing
 
 Type: `IMPROVEMENT`

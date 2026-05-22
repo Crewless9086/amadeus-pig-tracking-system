@@ -7,6 +7,7 @@ from modules.telemetry.power_service import (
 )
 from modules.telemetry.weather_service import (
     get_current_weather_state,
+    get_weather_today_summary,
     get_weather_forecast,
     ingest_weather_forecast,
     ingest_weather_reading,
@@ -49,6 +50,12 @@ def telemetry_weather_current():
 @telemetry_bp.route("/telemetry/weather/forecast", methods=["GET"])
 def telemetry_weather_forecast():
     result, status_code = get_weather_forecast(request.args.get("days", 3))
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/weather/today", methods=["GET"])
+def telemetry_weather_today():
+    result, status_code = get_weather_today_summary(request.args.get("date"))
     return jsonify(result), status_code
 
 

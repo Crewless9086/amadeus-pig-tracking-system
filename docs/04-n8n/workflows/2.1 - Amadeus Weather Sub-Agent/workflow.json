@@ -1,1279 +1,311 @@
-﻿{
-    "updatedAt":  "2025-12-31T14:27:57.000Z",
-    "createdAt":  "2025-11-29T22:22:22.781Z",
-    "id":  "L4c34rFmN0kUJvWc",
-    "name":  "2.1 - Amadeus Weather Sub-Agent",
-    "description":  null,
-    "active":  true,
-    "isArchived":  false,
-    "nodes":  [
-                  {
-                      "parameters":  {
-                                         "workflowInputs":  {
-                                                                "values":  [
-                                                                               {
-                                                                                   "name":  "input"
-                                                                               }
-                                                                           ]
-                                                            }
-                                     },
-                      "type":  "n8n-nodes-base.executeWorkflowTrigger",
-                      "typeVersion":  1.1,
-                      "position":  [
-                                       -464,
-                                       -272
-                                   ],
-                      "id":  "89df68e9-3580-4252-bffa-1c6c3c774209",
-                      "name":  "When Executed by Another Workflow"
-                  },
-                  {
-                      "parameters":  {
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Weather_Logs",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  592616766,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "LLM_Latest_Reading",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=592616766"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheets",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       -272,
-                                       -272
-                                   ],
-                      "id":  "e45d5fe7-c86b-4c34-ae85-c8ac64db72fb",
-                      "name":  "Precheck - Latest Station Row",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "const inputText = $json.input || \"\";\nconst latest = $json || null;\n\n// Try to extract timestamp from your sheet row\nconst ts = latest?.Timestamp || latest?.timestamp || null;\n\nfunction toDate(val) {\n  const d = new Date(val);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nlet status = {\n  ok: false,\n  stale: true,\n  lastTimestamp: ts,\n  reason: \"No station data returned\"\n};\n\nif (ts) {\n  const dt = toDate(ts);\n  if (dt) {\n    const now = new Date();\n    const diffMin = (now.getTime() - dt.getTime()) / 60000;\n    status.ok = diffMin \u003c= 90;\n    status.stale = diffMin \u003e 90;\n    status.reason = status.ok ? \"Station fresh\" : `Station stale (${Math.round(diffMin)} min old)`;\n  } else {\n    status.reason = \"Could not parse station timestamp\";\n  }\n}\n\nreturn [{\n  json: {\n    input: inputText,\n    station_status: status\n  }\n}];\n"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       -80,
-                                       -272
-                                   ],
-                      "id":  "ba71b061-bc1d-489d-9518-4c93083111d4",
-                      "name":  "Precheck - Station Status"
-                  },
-                  {
-                      "parameters":  {
-                                         "modelId":  {
-                                                         "__rl":  true,
-                                                         "value":  "gpt-5.5",
-                                                         "mode":  "list",
-                                                         "cachedResultName":  "GPT-5.5"
-                                                     },
-                                         "responses":  {
-                                                           "values":  [
-                                                                          {
-                                                                              "content":  "={{ $json.input || $(\u0027When Executed by Another Workflow\u0027).item.json.input || \u0027current weather at the farm\u0027 }}"
-                                                                          }
-                                                                      ]
-                                                       },
-                                         "builtInTools":  {
-
-                                                          },
-                                         "options":  {
-                                                         "instructions":  "=You are Weather Router for Amadeus Farm.\nReturn ONLY valid JSON. No text before or after.\n\nToday local time: {{ $now.toISO() }}\n\nYour job:\n- Interpret the user\u0027s question.\n- Decide which datasets are needed:\n  station_latest, daily_pivot, forecast\n- Decide forecast selection:\n  - \"single\": offset_days\n  - \"range\": start_offset, end_offset\n  - \"weekdays_remaining\": from today to Friday\n  - \"weekend\": next Saturday + Sunday\n- Decide analysis mode (optional):\n  - \"none\"\n  - \"rain_days\"\n  - \"wind_threshold\"\n  - \"max_temp_day\"\n- Decide include_links: true only if user explicitly asks for links/online/website/check.\n\nOutput JSON schema:\n{\n  \"need_station\": true/false,\n  \"need_daily_pivot\": true/false,\n  \"need_forecast\": true/false,\n  \"forecast_selector\": \"none|single|range|weekdays_remaining|weekend\",\n  \"offset_days\": 0,\n  \"start_offset\": 0,\n  \"end_offset\": 0,\n  \"analysis\": \"none|rain_days|wind_threshold|max_temp_day\",\n  \"wind_threshold_kmh\": null,\n  \"include_links\": false\n}\n\nRules:\n- If question is now/right now/current: set need_station=true AND need_forecast=true with forecast_selector=\u0027single\u0027 offset_days=0 (forecast acts as fallback if station is stale).\n- If question is \"today\" summary/high/low/rain today: need_daily_pivot=true. If missing -\u003e need_forecast=true for today.\n- If question asks future (tomorrow/weekend/this week/next few days): need_forecast=true only.\n- \"this week\" = weekdays only (Mon–Fri). If today is Wed, return weekdays_remaining.\n- Weekend = Sat+Sun.\n",
-                                                         "textFormat":  {
-                                                                            "textOptions":  {
-                                                                                                "type":  "json_object"
-                                                                                            }
-                                                                        }
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.openAi",
-                      "typeVersion":  2,
-                      "position":  [
-                                       80,
-                                       -272
-                                   ],
-                      "id":  "d5aae249-40da-49b9-b941-004473e30830",
-                      "name":  "Weather Router (JSON Plan)",
-                      "credentials":  {
-                                          "openAiApi":  {
-                                                            "id":  "Lp7Z2HFOXfBCGvVg",
-                                                            "name":  "OpenAi_Sales Agent"
-                                                        }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "caseSensitive":  true,
-                                                                            "leftValue":  "",
-                                                                            "typeValidation":  "strict",
-                                                                            "version":  2
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "5f0f388e-a300-406d-b266-ca2120da0e35",
-                                                                                   "leftValue":  "={{ $json.need_daily_pivot }}",
-                                                                                   "rightValue":  "true",
-                                                                                   "operator":  {
-                                                                                                    "type":  "boolean",
-                                                                                                    "operation":  "true",
-                                                                                                    "singleValue":  true
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2.2,
-                      "position":  [
-                                       576,
-                                       -352
-                                   ],
-                      "id":  "ee0e44d2-30b4-48e1-95b3-98e4d1155a51",
-                      "name":  "Need Daily Pivot?"
-                  },
-                  {
-                      "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "caseSensitive":  true,
-                                                                            "leftValue":  "",
-                                                                            "typeValidation":  "strict",
-                                                                            "version":  2
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "06eb426d-3a2c-4033-8f5c-171773a076ac",
-                                                                                   "leftValue":  "={{ $json.need_forecast }}",
-                                                                                   "rightValue":  "true",
-                                                                                   "operator":  {
-                                                                                                    "type":  "boolean",
-                                                                                                    "operation":  "true",
-                                                                                                    "singleValue":  true
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2.2,
-                      "position":  [
-                                       576,
-                                       -160
-                                   ],
-                      "id":  "2cafc47d-ba32-4547-935a-92e6f482a522",
-                      "name":  "Need Forecast?"
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "function safeItems(nodeName) {\n  try { return $items(nodeName) ?? []; } catch (e) { return []; }\n}\n\n// Router plan (already normalized into top-level keys)\nconst router = safeItems(\"Normalize Router Plan\")[0]?.json ?? {\n  need_forecast: false,\n  forecast_selector: \"none\",\n  offset_days: 0,\n  start_offset: 0,\n  end_offset: 0,\n};\n\n// Forecast rows from Google Sheets (Forecast_10Day_Current)\nconst inputRows = $input.all().map(i =\u003e i.json);\n\n// --- Helpers ---\nfunction parseDateYYYYMMDD(s) {\n  if (!s) return null;\n  const str = String(s).trim();\n  // Expecting \"YYYY-MM-DD\"\n  const d = new Date(str + \"T00:00:00\");\n  return isNaN(d.getTime()) ? null : d;\n}\n\nfunction toYYYYMMDD(d) {\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const day = String(d.getDate()).padStart(2, \"0\");\n  return `${y}-${m}-${day}`;\n}\n\nfunction addDays(d, n) {\n  const x = new Date(d);\n  x.setDate(x.getDate() + n);\n  x.setHours(0,0,0,0);\n  return x;\n}\n\nfunction nextSaturday(from) {\n  const d = new Date(from);\n  d.setHours(0,0,0,0);\n  const dow = d.getDay(); // 0 Sun .. 6 Sat\n  const add = (6 - dow + 7) % 7 || 7; // if already Sat, take next Sat\n  return addDays(d, add);\n}\n\n// Normalize forecast rows using YOUR sheet headers\nconst forecastRows = inputRows\n  .map(r =\u003e {\n    const dateStr =\n      r.forecast_date ?? r.ForecastDate ?? r.forecastDate ??\n      r.date ?? r.Date ?? r.day ?? r.time;\n\n    const d = parseDateYYYYMMDD(dateStr);\n\n    return {\n      ...r,\n      _dateStr: dateStr,\n      _date: d,\n      _offset: Number(r.offset_days ?? r.offsetDays ?? r.OffsetDays ?? 0),\n    };\n  })\n  .filter(r =\u003e r._date); // must have valid date\n\n// Anchor \"today\" to first forecast row (more reliable than server timezone)\nlet today = new Date();\ntoday.setHours(0,0,0,0);\nif (forecastRows.length \u003e 0) {\n  const first = forecastRows.slice().sort((a,b) =\u003e a._date - b._date)[0];\n  today = new Date(first._date);\n  today.setHours(0,0,0,0);\n}\n\nconst selector = String(router.forecast_selector || \"none\").toLowerCase();\nlet selected = [];\n\nif (!router.need_forecast || selector === \"none\") {\n  selected = [];\n\n} else if (selector === \"single\") {\n  const want = Number(router.offset_days ?? 0);\n  selected = forecastRows.filter(r =\u003e r._offset === want);\n\n} else if (selector === \"range\") {\n  const s = Number(router.start_offset ?? 0);\n  const e = Number(router.end_offset ?? 0);\n  selected = forecastRows.filter(r =\u003e r._offset \u003e= s \u0026\u0026 r._offset \u003c= e);\n\n} else if (selector === \"weekend\") {\n  const sat = nextSaturday(today);\n  const sun = addDays(sat, 1);\n  const satStr = toYYYYMMDD(sat);\n  const sunStr = toYYYYMMDD(sun);\n\n  selected = forecastRows.filter(r =\u003e {\n    const ds = toYYYYMMDD(r._date);\n    return ds === satStr || ds === sunStr;\n  });\n\n} else if (selector === \"weekdays_remaining\" || selector === \"this_week\") {\n  // Today -\u003e Friday\n  const start = new Date(today);\n  const dow = start.getDay(); // 0 Sun .. 6 Sat\n  const daysToFri = (5 - dow + 7) % 7; // Fri=5\n  const end = addDays(start, daysToFri);\n\n  selected = forecastRows.filter(r =\u003e r._date \u003e= start \u0026\u0026 r._date \u003c= end);\n\n} else {\n  // fallback: today only\n  selected = forecastRows.filter(r =\u003e r._offset === 0);\n}\n\n// Sort chronologically\nselected.sort((a,b) =\u003e a._date - b._date);\n\nreturn [{\n  json: {\n    router_plan: router,\n    forecast_selected: selected,\n    debug: {\n      selector,\n      today_anchor: toYYYYMMDD(today),\n      input_count: inputRows.length,\n      parsed_count: forecastRows.length,\n      selected_count: selected.length\n    }\n  }\n}];"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       944,
-                                       -176
-                                   ],
-                      "id":  "6ca75bd5-78ff-44b2-8083-ea569b7c14ee",
-                      "name":  "Forecast Filter"
-                  },
-                  {
-                      "parameters":  {
-                                         "modelId":  {
-                                                         "__rl":  true,
-                                                         "value":  "gpt-5.5",
-                                                         "mode":  "list",
-                                                         "cachedResultName":  "GPT-5.5"
-                                                     },
-                                         "responses":  {
-                                                           "values":  [
-                                                                          {
-                                                                              "content":  "=Here is the input JSON:\n{{ JSON.stringify($json) }}"
-                                                                          }
-                                                                      ]
-                                                       },
-                                         "builtInTools":  {
-
-                                                          },
-                                         "options":  {
-                                                         "instructions":  "=You are the Amadeus Weather Sub-Agent.\n\nYou will ALWAYS receive one JSON object as input with these keys:\n- question (string)\n- router_plan (object)\n- station_status (object)\n- latest_station_row (object)\n- daily_pivot_rows (array)\n- forecast_selected (array)\n- now_iso (string)\n\nRules:\n1) Use ONLY the input JSON. Do not guess or invent values.\n2) If router_plan.need_forecast is true, you MUST use forecast_selected to answer. If forecast_selected is empty, say forecast data is not available.\n3) If router_plan.need_station is true:\n   - If station_status.ok is true AND station_status.stale is false: use latest_station_row as “Current (Station)”.\n   - If station_status.stale is true or ok is false: say station is offline/stale and give lastTimestamp.\n4) If router_plan.need_daily_pivot is true: summarize daily_pivot_rows. If empty, say no station day-summary available.\n5) Links:\n   - Only include links if the user explicitly asks for links OR router_plan.include_links is true.\n   - Do not print raw URLs otherwise.\n6) Output must be WhatsApp-friendly and consistent using this exact format:\n\nFORMAT:\n**_{{TITLE}}_**\nIf station offline/stale include:\n**⚠️ Station offline/stale**\n- Last reading: *{{lastTimestamp}}*\n\nThen include only the sections needed:\n**Current (Station):**\n- Temperature: *x°C*\n- Wind: *x km/h* (gust *y km/h*)\n- Rain rate: *x mm/h*\n- Humidity: *x%*\n- Pressure: *x hPa*\n\n**Forecast:**\n- *Sat 03 Jan:* Max *25.3°C* / Min *18.4°C* | Rain *0.5mm* (*16%*) | Wind *18.5 km/h* (gust *45 km/h*)\n(one line per day)\n\nDo not add extra paragraphs. No “Is there anything else you’d like to know?”"
-                                                     }
-                                     },
-                      "type":  "@n8n/n8n-nodes-langchain.openAi",
-                      "typeVersion":  2,
-                      "position":  [
-                                       1680,
-                                       -272
-                                   ],
-                      "id":  "c61411e0-bf68-4757-81fb-8e7fa0e0ed9e",
-                      "name":  "Weather Answer LLM (JSON only)",
-                      "credentials":  {
-                                          "openAiApi":  {
-                                                            "id":  "Lp7Z2HFOXfBCGvVg",
-                                                            "name":  "OpenAi_Sales Agent"
-                                                        }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Weather_Logs",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  1060125627,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "Forecast_10Day_Current",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=1060125627"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheets",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       768,
-                                       -176
-                                   ],
-                      "id":  "ef226e23-3c21-417f-a460-98c3ca859511",
-                      "name":  "Read Forecast_10Day_Current",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
-                                                            "mode":  "list",
-                                                            "cachedResultName":  "Amadeus_Weather_Logs",
-                                                            "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  158343421,
-                                                           "mode":  "list",
-                                                           "cachedResultName":  "Daily_Pivot",
-                                                           "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=158343421"
-                                                       },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.googleSheets",
-                      "typeVersion":  4.7,
-                      "position":  [
-                                       768,
-                                       -528
-                                   ],
-                      "id":  "8fa3d3de-d3bb-4035-b360-6ac3fd95dd8b",
-                      "name":  "Read Daily_Pivot",
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "DbtelWXdvwe4DuHc",
-                                                                        "name":  "Google Sheets - Sales"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "function safeFirst(nodeName) {\n  try {\n    const arr = $items(nodeName);\n    return (arr \u0026\u0026 arr.length) ? arr[0].json : null;\n  } catch (e) {\n    return null;\n  }\n}\n\n// Inputs coming from earlier nodes\nconst questionItem = safeFirst(\"When Executed by Another Workflow\") || $json || {};\nconst question = questionItem.input || questionItem.question || \"\";\n\n// Station status + latest row\nconst stationStatus = safeFirst(\"Precheck - Station Status\")?.station_status\n  ?? safeFirst(\"Precheck - Station Status\")\n  ?? null;\n\nconst latestStationRow = safeFirst(\"Precheck - Latest Station Row\") ?? null;\n\n// Daily pivot (optional)\nconst dailyPivotRows = safeFirst(\"Read Daily_Pivot\")?.data\n  ?? safeFirst(\"Read Daily_Pivot\")   // if node returns array items instead of wrapped data\n  ?? [];\n\n// Forecast selection (IMPORTANT)\nconst forecastNode = safeFirst(\"Forecast Filter\") ?? {};\nconst routerPlan = forecastNode.router_plan || safeFirst(\"Normalize Router Plan\") || {};\nconst forecastSelected = forecastNode.forecast_selected || [];\n\n// Current time\nconst nowIso = new Date().toISOString();\n\nreturn [{\n  json: {\n    question,\n    router_plan: routerPlan,\n    station_status: stationStatus,\n    latest_station_row: latestStationRow,\n    daily_pivot_rows: Array.isArray(dailyPivotRows) ? dailyPivotRows : [],\n    forecast_selected: Array.isArray(forecastSelected) ? forecastSelected : [],\n    now_iso: nowIso,\n  }\n}];"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       1488,
-                                       -272
-                                   ],
-                      "id":  "a6681a3a-7f20-4700-8859-1189983419bd",
-                      "name":  "Assemble Weather Payload"
-                  },
-                  {
-                      "parameters":  {
-                                         "jsCode":  "// Router node returns a wrapper like:\n// { output: [ { content: [ { text: { ...plan } } ] } ] }\n\nconst raw = $json;\n\n// Try to extract the plan object safely\nconst plan =\n  raw?.output?.[0]?.content?.[0]?.text ??\n  raw?.output?.[0]?.content?.[0]?.text?.text ?? // (some node variants nest)\n  null;\n\nif (!plan || typeof plan !== \"object\") {\n  return [{\n    json: {\n      need_station: true,\n      need_daily_pivot: false,\n      need_forecast: true,\n      forecast_selector: \"range\",\n      offset_days: 0,\n      start_offset: 0,\n      end_offset: 3,\n      analysis: \"none\",\n      wind_threshold_kmh: null,\n      include_links: false,\n      _router_error: \"Router output could not be parsed\"\n    }\n  }];\n}\n\nreturn [{ json: plan }];"
-                                     },
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       368,
-                                       -272
-                                   ],
-                      "id":  "a7fd0e8c-3433-4415-8853-6e7cba4a7ce9",
-                      "name":  "Normalize Router Plan"
-                  },
-                  {
-                      "parameters":  {
-                                         "assignments":  {
-                                                             "assignments":  [
-                                                                                 {
-                                                                                     "id":  "e110fe9c-09cd-478b-aace-8fd4c87adf1e",
-                                                                                     "name":  "daily_pivot_rows",
-                                                                                     "value":  "=={{ [] }}",
-                                                                                     "type":  "string"
-                                                                                 }
-                                                                             ]
-                                                         },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.set",
-                      "typeVersion":  3.4,
-                      "position":  [
-                                       768,
-                                       -336
-                                   ],
-                      "id":  "25c996a1-1c71-4782-9392-bd027c7e0768",
-                      "name":  "No Daily Pivot"
-                  },
-                  {
-                      "parameters":  {
-                                         "assignments":  {
-                                                             "assignments":  [
-                                                                                 {
-                                                                                     "id":  "3ad0e151-3392-4928-8a9a-5eb0bda21a45",
-                                                                                     "name":  "forecast_selected",
-                                                                                     "value":  "=={{ [] }}",
-                                                                                     "type":  "string"
-                                                                                 }
-                                                                             ]
-                                                         },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.set",
-                      "typeVersion":  3.4,
-                      "position":  [
-                                       768,
-                                       32
-                                   ],
-                      "id":  "a7f33270-ca53-49a8-90ed-7417fedf5988",
-                      "name":  "No Forecast"
-                  },
-                  {
-                      "parameters":  {
-
-                                     },
-                      "type":  "n8n-nodes-base.merge",
-                      "typeVersion":  3.2,
-                      "position":  [
-                                       1296,
-                                       -272
-                                   ],
-                      "id":  "54e3e38c-6886-4895-a83d-0cd05f12ce35",
-                      "name":  "Merge Branches"
-                  },
-                  {
-                      "parameters":  {
-                                         "assignments":  {
-                                                             "assignments":  [
-                                                                                 {
-                                                                                     "id":  "3ef4d0a5-43ef-4fbb-857a-2e30a1bd72a4",
-                                                                                     "name":  "weather_response",
-                                                                                     "value":  "={{ $json.output[0].content[0].text }}",
-                                                                                     "type":  "string"
-                                                                                 },
-                                                                                 {
-                                                                                     "id":  "b98d8153-161d-4444-af7f-5c396d202628",
-                                                                                     "name":  "input",
-                                                                                     "value":  "={{ $(\u0027Assemble Weather Payload\u0027).item.json.question }}",
-                                                                                     "type":  "string"
-                                                                                 }
-                                                                             ]
-                                                         },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "type":  "n8n-nodes-base.set",
-                      "typeVersion":  3.4,
-                      "position":  [
-                                       2032,
-                                       -272
-                                   ],
-                      "id":  "5bc363e8-f702-4d95-b146-5ce0ecb4caeb",
-                      "name":  "Set Response"
-                  }
-              ],
-    "connections":  {
-                        "When Executed by Another Workflow":  {
-                                                                  "main":  [
-                                                                               [
-                                                                                   {
-                                                                                       "node":  "Precheck - Latest Station Row",
-                                                                                       "type":  "main",
-                                                                                       "index":  0
-                                                                                   }
-                                                                               ]
-                                                                           ]
-                                                              },
-                        "Precheck - Latest Station Row":  {
-                                                              "main":  [
-                                                                           [
-                                                                               {
-                                                                                   "node":  "Precheck - Station Status",
-                                                                                   "type":  "main",
-                                                                                   "index":  0
-                                                                               }
-                                                                           ]
-                                                                       ]
-                                                          },
-                        "Precheck - Station Status":  {
-                                                          "main":  [
-                                                                       [
-                                                                           {
-                                                                               "node":  "Weather Router (JSON Plan)",
-                                                                               "type":  "main",
-                                                                               "index":  0
-                                                                           }
-                                                                       ]
-                                                                   ]
-                                                      },
-                        "Weather Router (JSON Plan)":  {
-                                                           "main":  [
-                                                                        [
-                                                                            {
-                                                                                "node":  "Normalize Router Plan",
-                                                                                "type":  "main",
-                                                                                "index":  0
-                                                                            }
-                                                                        ]
-                                                                    ]
-                                                       },
-                        "Need Forecast?":  {
-                                               "main":  [
-                                                            [
-                                                                {
-                                                                    "node":  "Read Forecast_10Day_Current",
-                                                                    "type":  "main",
-                                                                    "index":  0
-                                                                }
-                                                            ],
-                                                            [
-                                                                {
-                                                                    "node":  "No Forecast",
-                                                                    "type":  "main",
-                                                                    "index":  0
-                                                                }
-                                                            ]
-                                                        ]
-                                           },
-                        "Forecast Filter":  {
-                                                "main":  [
-                                                             [
-                                                                 {
-                                                                     "node":  "Merge Branches",
-                                                                     "type":  "main",
-                                                                     "index":  1
-                                                                 }
-                                                             ]
-                                                         ]
-                                            },
-                        "Need Daily Pivot?":  {
-                                                  "main":  [
-                                                               [
-                                                                   {
-                                                                       "node":  "Read Daily_Pivot",
-                                                                       "type":  "main",
-                                                                       "index":  0
-                                                                   }
-                                                               ],
-                                                               [
-                                                                   {
-                                                                       "node":  "No Daily Pivot",
-                                                                       "type":  "main",
-                                                                       "index":  0
-                                                                   }
-                                                               ]
-                                                           ]
-                                              },
-                        "Read Forecast_10Day_Current":  {
-                                                            "main":  [
-                                                                         [
-                                                                             {
-                                                                                 "node":  "Forecast Filter",
-                                                                                 "type":  "main",
-                                                                                 "index":  0
-                                                                             }
-                                                                         ]
-                                                                     ]
-                                                        },
-                        "Weather Answer LLM (JSON only)":  {
-                                                               "main":  [
-                                                                            [
-                                                                                {
-                                                                                    "node":  "Set Response",
-                                                                                    "type":  "main",
-                                                                                    "index":  0
-                                                                                }
-                                                                            ]
-                                                                        ]
-                                                           },
-                        "Read Daily_Pivot":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "Merge Branches",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "Assemble Weather Payload":  {
-                                                         "main":  [
-                                                                      [
-                                                                          {
-                                                                              "node":  "Weather Answer LLM (JSON only)",
-                                                                              "type":  "main",
-                                                                              "index":  0
-                                                                          }
-                                                                      ]
-                                                                  ]
-                                                     },
-                        "Normalize Router Plan":  {
-                                                      "main":  [
-                                                                   [
-                                                                       {
-                                                                           "node":  "Need Daily Pivot?",
-                                                                           "type":  "main",
-                                                                           "index":  0
-                                                                       },
-                                                                       {
-                                                                           "node":  "Need Forecast?",
-                                                                           "type":  "main",
-                                                                           "index":  0
-                                                                       }
-                                                                   ]
-                                                               ]
-                                                  },
-                        "No Daily Pivot":  {
-                                               "main":  [
-                                                            [
-                                                                {
-                                                                    "node":  "Merge Branches",
-                                                                    "type":  "main",
-                                                                    "index":  0
-                                                                }
-                                                            ]
-                                                        ]
-                                           },
-                        "No Forecast":  {
-                                            "main":  [
-                                                         [
-                                                             {
-                                                                 "node":  "Merge Branches",
-                                                                 "type":  "main",
-                                                                 "index":  1
-                                                             }
-                                                         ]
-                                                     ]
-                                        },
-                        "Merge Branches":  {
-                                               "main":  [
-                                                            [
-                                                                {
-                                                                    "node":  "Assemble Weather Payload",
-                                                                    "type":  "main",
-                                                                    "index":  0
-                                                                }
-                                                            ]
-                                                        ]
-                                           }
-                    },
-    "settings":  {
-                     "executionOrder":  "v1"
-                 },
-    "staticData":  null,
-    "meta":  {
-                 "templateCredsSetupCompleted":  true
-             },
-    "pinData":  {
-
-                },
-    "versionId":  "0b6a4a06-a426-412c-a112-c337a3cbec59",
-    "activeVersionId":  "0b6a4a06-a426-412c-a112-c337a3cbec59",
-    "versionCounter":  216,
-    "triggerCount":  0,
-    "shared":  [
-                   {
-                       "updatedAt":  "2025-11-29T22:22:22.784Z",
-                       "createdAt":  "2025-11-29T22:22:22.784Z",
-                       "role":  "workflow:owner",
-                       "workflowId":  "L4c34rFmN0kUJvWc",
-                       "projectId":  "dUeH9AUxBtKxgNPX",
-                       "project":  {
-                                       "updatedAt":  "2025-07-13T13:07:42.154Z",
-                                       "createdAt":  "2025-07-13T13:07:42.154Z",
-                                       "id":  "dUeH9AUxBtKxgNPX",
-                                       "name":  "My project",
-                                       "type":  "team",
-                                       "icon":  {
-                                                    "type":  "icon",
-                                                    "value":  "layer-group"
-                                                },
-                                       "description":  null,
-                                       "creatorId":  null
-                                   }
-                   }
-               ],
-    "tags":  [
-
-             ],
-    "activeVersion":  {
-                          "updatedAt":  "2025-12-31T14:27:57.039Z",
-                          "createdAt":  "2025-12-31T14:27:57.039Z",
-                          "versionId":  "0b6a4a06-a426-412c-a112-c337a3cbec59",
-                          "workflowId":  "L4c34rFmN0kUJvWc",
-                          "nodes":  [
-                                        {
-                                            "parameters":  {
-                                                               "workflowInputs":  {
-                                                                                      "values":  [
-                                                                                                     {
-                                                                                                         "name":  "input"
-                                                                                                     }
-                                                                                                 ]
-                                                                                  }
-                                                           },
-                                            "type":  "n8n-nodes-base.executeWorkflowTrigger",
-                                            "typeVersion":  1.1,
-                                            "position":  [
-                                                             -464,
-                                                             -272
-                                                         ],
-                                            "id":  "89df68e9-3580-4252-bffa-1c6c3c774209",
-                                            "name":  "When Executed by Another Workflow"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Weather_Logs",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  592616766,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "LLM_Latest_Reading",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=592616766"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheets",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             -272,
-                                                             -272
-                                                         ],
-                                            "id":  "e45d5fe7-c86b-4c34-ae85-c8ac64db72fb",
-                                            "name":  "Precheck - Latest Station Row",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "jsCode":  "const inputText = $json.input || \"\";\nconst latest = $json || null;\n\n// Try to extract timestamp from your sheet row\nconst ts = latest?.Timestamp || latest?.timestamp || null;\n\nfunction toDate(val) {\n  const d = new Date(val);\n  return isNaN(d.getTime()) ? null : d;\n}\n\nlet status = {\n  ok: false,\n  stale: true,\n  lastTimestamp: ts,\n  reason: \"No station data returned\"\n};\n\nif (ts) {\n  const dt = toDate(ts);\n  if (dt) {\n    const now = new Date();\n    const diffMin = (now.getTime() - dt.getTime()) / 60000;\n    status.ok = diffMin \u003c= 90;\n    status.stale = diffMin \u003e 90;\n    status.reason = status.ok ? \"Station fresh\" : `Station stale (${Math.round(diffMin)} min old)`;\n  } else {\n    status.reason = \"Could not parse station timestamp\";\n  }\n}\n\nreturn [{\n  json: {\n    input: inputText,\n    station_status: status\n  }\n}];\n"
-                                                           },
-                                            "type":  "n8n-nodes-base.code",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             -80,
-                                                             -272
-                                                         ],
-                                            "id":  "ba71b061-bc1d-489d-9518-4c93083111d4",
-                                            "name":  "Precheck - Station Status"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "modelId":  {
-                                                                               "__rl":  true,
-                                                                               "value":  "gpt-5.5",
-                                                                               "mode":  "list",
-                                                                               "cachedResultName":  "GPT-5.5"
-                                                                           },
-                                                               "responses":  {
-                                                                                 "values":  [
-                                                                                                {
-                                                                                                    "content":  "={{ $json.input || $(\u0027When Executed by Another Workflow\u0027).item.json.input || \u0027current weather at the farm\u0027 }}"
-                                                                                                }
-                                                                                            ]
-                                                                             },
-                                                               "builtInTools":  {
-
-                                                                                },
-                                                               "options":  {
-                                                                               "instructions":  "=You are Weather Router for Amadeus Farm.\nReturn ONLY valid JSON. No text before or after.\n\nToday local time: {{ $now.toISO() }}\n\nYour job:\n- Interpret the user\u0027s question.\n- Decide which datasets are needed:\n  station_latest, daily_pivot, forecast\n- Decide forecast selection:\n  - \"single\": offset_days\n  - \"range\": start_offset, end_offset\n  - \"weekdays_remaining\": from today to Friday\n  - \"weekend\": next Saturday + Sunday\n- Decide analysis mode (optional):\n  - \"none\"\n  - \"rain_days\"\n  - \"wind_threshold\"\n  - \"max_temp_day\"\n- Decide include_links: true only if user explicitly asks for links/online/website/check.\n\nOutput JSON schema:\n{\n  \"need_station\": true/false,\n  \"need_daily_pivot\": true/false,\n  \"need_forecast\": true/false,\n  \"forecast_selector\": \"none|single|range|weekdays_remaining|weekend\",\n  \"offset_days\": 0,\n  \"start_offset\": 0,\n  \"end_offset\": 0,\n  \"analysis\": \"none|rain_days|wind_threshold|max_temp_day\",\n  \"wind_threshold_kmh\": null,\n  \"include_links\": false\n}\n\nRules:\n- If question is now/right now/current: set need_station=true AND need_forecast=true with forecast_selector=\u0027single\u0027 offset_days=0 (forecast acts as fallback if station is stale).\n- If question is \"today\" summary/high/low/rain today: need_daily_pivot=true. If missing -\u003e need_forecast=true for today.\n- If question asks future (tomorrow/weekend/this week/next few days): need_forecast=true only.\n- \"this week\" = weekdays only (Mon–Fri). If today is Wed, return weekdays_remaining.\n- Weekend = Sat+Sun.\n",
-                                                                               "textFormat":  {
-                                                                                                  "textOptions":  {
-                                                                                                                      "type":  "json_object"
-                                                                                                                  }
-                                                                                              }
-                                                                           }
-                                                           },
-                                            "type":  "@n8n/n8n-nodes-langchain.openAi",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             80,
-                                                             -272
-                                                         ],
-                                            "id":  "d5aae249-40da-49b9-b941-004473e30830",
-                                            "name":  "Weather Router (JSON Plan)",
-                                            "credentials":  {
-                                                                "openAiApi":  {
-                                                                                  "id":  "Lp7Z2HFOXfBCGvVg",
-                                                                                  "name":  "OpenAi_Sales Agent"
-                                                                              }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "conditions":  {
-                                                                                  "options":  {
-                                                                                                  "caseSensitive":  true,
-                                                                                                  "leftValue":  "",
-                                                                                                  "typeValidation":  "strict",
-                                                                                                  "version":  2
-                                                                                              },
-                                                                                  "conditions":  [
-                                                                                                     {
-                                                                                                         "id":  "5f0f388e-a300-406d-b266-ca2120da0e35",
-                                                                                                         "leftValue":  "={{ $json.need_daily_pivot }}",
-                                                                                                         "rightValue":  "true",
-                                                                                                         "operator":  {
-                                                                                                                          "type":  "boolean",
-                                                                                                                          "operation":  "true",
-                                                                                                                          "singleValue":  true
-                                                                                                                      }
-                                                                                                     }
-                                                                                                 ],
-                                                                                  "combinator":  "and"
-                                                                              },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.if",
-                                            "typeVersion":  2.2,
-                                            "position":  [
-                                                             576,
-                                                             -352
-                                                         ],
-                                            "id":  "ee0e44d2-30b4-48e1-95b3-98e4d1155a51",
-                                            "name":  "Need Daily Pivot?"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "conditions":  {
-                                                                                  "options":  {
-                                                                                                  "caseSensitive":  true,
-                                                                                                  "leftValue":  "",
-                                                                                                  "typeValidation":  "strict",
-                                                                                                  "version":  2
-                                                                                              },
-                                                                                  "conditions":  [
-                                                                                                     {
-                                                                                                         "id":  "06eb426d-3a2c-4033-8f5c-171773a076ac",
-                                                                                                         "leftValue":  "={{ $json.need_forecast }}",
-                                                                                                         "rightValue":  "true",
-                                                                                                         "operator":  {
-                                                                                                                          "type":  "boolean",
-                                                                                                                          "operation":  "true",
-                                                                                                                          "singleValue":  true
-                                                                                                                      }
-                                                                                                     }
-                                                                                                 ],
-                                                                                  "combinator":  "and"
-                                                                              },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.if",
-                                            "typeVersion":  2.2,
-                                            "position":  [
-                                                             576,
-                                                             -160
-                                                         ],
-                                            "id":  "2cafc47d-ba32-4547-935a-92e6f482a522",
-                                            "name":  "Need Forecast?"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "jsCode":  "function safeItems(nodeName) {\n  try { return $items(nodeName) ?? []; } catch (e) { return []; }\n}\n\n// Router plan (already normalized into top-level keys)\nconst router = safeItems(\"Normalize Router Plan\")[0]?.json ?? {\n  need_forecast: false,\n  forecast_selector: \"none\",\n  offset_days: 0,\n  start_offset: 0,\n  end_offset: 0,\n};\n\n// Forecast rows from Google Sheets (Forecast_10Day_Current)\nconst inputRows = $input.all().map(i =\u003e i.json);\n\n// --- Helpers ---\nfunction parseDateYYYYMMDD(s) {\n  if (!s) return null;\n  const str = String(s).trim();\n  // Expecting \"YYYY-MM-DD\"\n  const d = new Date(str + \"T00:00:00\");\n  return isNaN(d.getTime()) ? null : d;\n}\n\nfunction toYYYYMMDD(d) {\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, \"0\");\n  const day = String(d.getDate()).padStart(2, \"0\");\n  return `${y}-${m}-${day}`;\n}\n\nfunction addDays(d, n) {\n  const x = new Date(d);\n  x.setDate(x.getDate() + n);\n  x.setHours(0,0,0,0);\n  return x;\n}\n\nfunction nextSaturday(from) {\n  const d = new Date(from);\n  d.setHours(0,0,0,0);\n  const dow = d.getDay(); // 0 Sun .. 6 Sat\n  const add = (6 - dow + 7) % 7 || 7; // if already Sat, take next Sat\n  return addDays(d, add);\n}\n\n// Normalize forecast rows using YOUR sheet headers\nconst forecastRows = inputRows\n  .map(r =\u003e {\n    const dateStr =\n      r.forecast_date ?? r.ForecastDate ?? r.forecastDate ??\n      r.date ?? r.Date ?? r.day ?? r.time;\n\n    const d = parseDateYYYYMMDD(dateStr);\n\n    return {\n      ...r,\n      _dateStr: dateStr,\n      _date: d,\n      _offset: Number(r.offset_days ?? r.offsetDays ?? r.OffsetDays ?? 0),\n    };\n  })\n  .filter(r =\u003e r._date); // must have valid date\n\n// Anchor \"today\" to first forecast row (more reliable than server timezone)\nlet today = new Date();\ntoday.setHours(0,0,0,0);\nif (forecastRows.length \u003e 0) {\n  const first = forecastRows.slice().sort((a,b) =\u003e a._date - b._date)[0];\n  today = new Date(first._date);\n  today.setHours(0,0,0,0);\n}\n\nconst selector = String(router.forecast_selector || \"none\").toLowerCase();\nlet selected = [];\n\nif (!router.need_forecast || selector === \"none\") {\n  selected = [];\n\n} else if (selector === \"single\") {\n  const want = Number(router.offset_days ?? 0);\n  selected = forecastRows.filter(r =\u003e r._offset === want);\n\n} else if (selector === \"range\") {\n  const s = Number(router.start_offset ?? 0);\n  const e = Number(router.end_offset ?? 0);\n  selected = forecastRows.filter(r =\u003e r._offset \u003e= s \u0026\u0026 r._offset \u003c= e);\n\n} else if (selector === \"weekend\") {\n  const sat = nextSaturday(today);\n  const sun = addDays(sat, 1);\n  const satStr = toYYYYMMDD(sat);\n  const sunStr = toYYYYMMDD(sun);\n\n  selected = forecastRows.filter(r =\u003e {\n    const ds = toYYYYMMDD(r._date);\n    return ds === satStr || ds === sunStr;\n  });\n\n} else if (selector === \"weekdays_remaining\" || selector === \"this_week\") {\n  // Today -\u003e Friday\n  const start = new Date(today);\n  const dow = start.getDay(); // 0 Sun .. 6 Sat\n  const daysToFri = (5 - dow + 7) % 7; // Fri=5\n  const end = addDays(start, daysToFri);\n\n  selected = forecastRows.filter(r =\u003e r._date \u003e= start \u0026\u0026 r._date \u003c= end);\n\n} else {\n  // fallback: today only\n  selected = forecastRows.filter(r =\u003e r._offset === 0);\n}\n\n// Sort chronologically\nselected.sort((a,b) =\u003e a._date - b._date);\n\nreturn [{\n  json: {\n    router_plan: router,\n    forecast_selected: selected,\n    debug: {\n      selector,\n      today_anchor: toYYYYMMDD(today),\n      input_count: inputRows.length,\n      parsed_count: forecastRows.length,\n      selected_count: selected.length\n    }\n  }\n}];"
-                                                           },
-                                            "type":  "n8n-nodes-base.code",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             944,
-                                                             -176
-                                                         ],
-                                            "id":  "6ca75bd5-78ff-44b2-8083-ea569b7c14ee",
-                                            "name":  "Forecast Filter"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "modelId":  {
-                                                                               "__rl":  true,
-                                                                               "value":  "gpt-5.5",
-                                                                               "mode":  "list",
-                                                                               "cachedResultName":  "GPT-5.5"
-                                                                           },
-                                                               "responses":  {
-                                                                                 "values":  [
-                                                                                                {
-                                                                                                    "content":  "=Here is the input JSON:\n{{ JSON.stringify($json) }}"
-                                                                                                }
-                                                                                            ]
-                                                                             },
-                                                               "builtInTools":  {
-
-                                                                                },
-                                                               "options":  {
-                                                                               "instructions":  "=You are the Amadeus Weather Sub-Agent.\n\nYou will ALWAYS receive one JSON object as input with these keys:\n- question (string)\n- router_plan (object)\n- station_status (object)\n- latest_station_row (object)\n- daily_pivot_rows (array)\n- forecast_selected (array)\n- now_iso (string)\n\nRules:\n1) Use ONLY the input JSON. Do not guess or invent values.\n2) If router_plan.need_forecast is true, you MUST use forecast_selected to answer. If forecast_selected is empty, say forecast data is not available.\n3) If router_plan.need_station is true:\n   - If station_status.ok is true AND station_status.stale is false: use latest_station_row as “Current (Station)”.\n   - If station_status.stale is true or ok is false: say station is offline/stale and give lastTimestamp.\n4) If router_plan.need_daily_pivot is true: summarize daily_pivot_rows. If empty, say no station day-summary available.\n5) Links:\n   - Only include links if the user explicitly asks for links OR router_plan.include_links is true.\n   - Do not print raw URLs otherwise.\n6) Output must be WhatsApp-friendly and consistent using this exact format:\n\nFORMAT:\n**_{{TITLE}}_**\nIf station offline/stale include:\n**⚠️ Station offline/stale**\n- Last reading: *{{lastTimestamp}}*\n\nThen include only the sections needed:\n**Current (Station):**\n- Temperature: *x°C*\n- Wind: *x km/h* (gust *y km/h*)\n- Rain rate: *x mm/h*\n- Humidity: *x%*\n- Pressure: *x hPa*\n\n**Forecast:**\n- *Sat 03 Jan:* Max *25.3°C* / Min *18.4°C* | Rain *0.5mm* (*16%*) | Wind *18.5 km/h* (gust *45 km/h*)\n(one line per day)\n\nDo not add extra paragraphs. No “Is there anything else you’d like to know?”"
-                                                                           }
-                                                           },
-                                            "type":  "@n8n/n8n-nodes-langchain.openAi",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             1680,
-                                                             -272
-                                                         ],
-                                            "id":  "c61411e0-bf68-4757-81fb-8e7fa0e0ed9e",
-                                            "name":  "Weather Answer LLM (JSON only)",
-                                            "credentials":  {
-                                                                "openAiApi":  {
-                                                                                  "id":  "Lp7Z2HFOXfBCGvVg",
-                                                                                  "name":  "OpenAi_Sales Agent"
-                                                                              }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Weather_Logs",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  1060125627,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "Forecast_10Day_Current",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=1060125627"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheets",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             768,
-                                                             -176
-                                                         ],
-                                            "id":  "ef226e23-3c21-417f-a460-98c3ca859511",
-                                            "name":  "Read Forecast_10Day_Current",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "documentId":  {
-                                                                                  "__rl":  true,
-                                                                                  "value":  "1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8",
-                                                                                  "mode":  "list",
-                                                                                  "cachedResultName":  "Amadeus_Weather_Logs",
-                                                                                  "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit?usp=drivesdk"
-                                                                              },
-                                                               "sheetName":  {
-                                                                                 "__rl":  true,
-                                                                                 "value":  158343421,
-                                                                                 "mode":  "list",
-                                                                                 "cachedResultName":  "Daily_Pivot",
-                                                                                 "cachedResultUrl":  "https://docs.google.com/spreadsheets/d/1nbxVchuN_cJyx6JRuANHxTISCjVXqUw3JJ4rN1w74e8/edit#gid=158343421"
-                                                                             },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.googleSheets",
-                                            "typeVersion":  4.7,
-                                            "position":  [
-                                                             768,
-                                                             -528
-                                                         ],
-                                            "id":  "8fa3d3de-d3bb-4035-b360-6ac3fd95dd8b",
-                                            "name":  "Read Daily_Pivot",
-                                            "credentials":  {
-                                                                "googleSheetsOAuth2Api":  {
-                                                                                              "id":  "DbtelWXdvwe4DuHc",
-                                                                                              "name":  "Google Sheets - Sales"
-                                                                                          }
-                                                            }
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "jsCode":  "function safeFirst(nodeName) {\n  try {\n    const arr = $items(nodeName);\n    return (arr \u0026\u0026 arr.length) ? arr[0].json : null;\n  } catch (e) {\n    return null;\n  }\n}\n\n// Inputs coming from earlier nodes\nconst questionItem = safeFirst(\"When Executed by Another Workflow\") || $json || {};\nconst question = questionItem.input || questionItem.question || \"\";\n\n// Station status + latest row\nconst stationStatus = safeFirst(\"Precheck - Station Status\")?.station_status\n  ?? safeFirst(\"Precheck - Station Status\")\n  ?? null;\n\nconst latestStationRow = safeFirst(\"Precheck - Latest Station Row\") ?? null;\n\n// Daily pivot (optional)\nconst dailyPivotRows = safeFirst(\"Read Daily_Pivot\")?.data\n  ?? safeFirst(\"Read Daily_Pivot\")   // if node returns array items instead of wrapped data\n  ?? [];\n\n// Forecast selection (IMPORTANT)\nconst forecastNode = safeFirst(\"Forecast Filter\") ?? {};\nconst routerPlan = forecastNode.router_plan || safeFirst(\"Normalize Router Plan\") || {};\nconst forecastSelected = forecastNode.forecast_selected || [];\n\n// Current time\nconst nowIso = new Date().toISOString();\n\nreturn [{\n  json: {\n    question,\n    router_plan: routerPlan,\n    station_status: stationStatus,\n    latest_station_row: latestStationRow,\n    daily_pivot_rows: Array.isArray(dailyPivotRows) ? dailyPivotRows : [],\n    forecast_selected: Array.isArray(forecastSelected) ? forecastSelected : [],\n    now_iso: nowIso,\n  }\n}];"
-                                                           },
-                                            "type":  "n8n-nodes-base.code",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             1488,
-                                                             -272
-                                                         ],
-                                            "id":  "a6681a3a-7f20-4700-8859-1189983419bd",
-                                            "name":  "Assemble Weather Payload"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "jsCode":  "// Router node returns a wrapper like:\n// { output: [ { content: [ { text: { ...plan } } ] } ] }\n\nconst raw = $json;\n\n// Try to extract the plan object safely\nconst plan =\n  raw?.output?.[0]?.content?.[0]?.text ??\n  raw?.output?.[0]?.content?.[0]?.text?.text ?? // (some node variants nest)\n  null;\n\nif (!plan || typeof plan !== \"object\") {\n  return [{\n    json: {\n      need_station: true,\n      need_daily_pivot: false,\n      need_forecast: true,\n      forecast_selector: \"range\",\n      offset_days: 0,\n      start_offset: 0,\n      end_offset: 3,\n      analysis: \"none\",\n      wind_threshold_kmh: null,\n      include_links: false,\n      _router_error: \"Router output could not be parsed\"\n    }\n  }];\n}\n\nreturn [{ json: plan }];"
-                                                           },
-                                            "type":  "n8n-nodes-base.code",
-                                            "typeVersion":  2,
-                                            "position":  [
-                                                             368,
-                                                             -272
-                                                         ],
-                                            "id":  "a7fd0e8c-3433-4415-8853-6e7cba4a7ce9",
-                                            "name":  "Normalize Router Plan"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "assignments":  {
-                                                                                   "assignments":  [
-                                                                                                       {
-                                                                                                           "id":  "e110fe9c-09cd-478b-aace-8fd4c87adf1e",
-                                                                                                           "name":  "daily_pivot_rows",
-                                                                                                           "value":  "=={{ [] }}",
-                                                                                                           "type":  "string"
-                                                                                                       }
-                                                                                                   ]
-                                                                               },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.set",
-                                            "typeVersion":  3.4,
-                                            "position":  [
-                                                             768,
-                                                             -336
-                                                         ],
-                                            "id":  "25c996a1-1c71-4782-9392-bd027c7e0768",
-                                            "name":  "No Daily Pivot"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "assignments":  {
-                                                                                   "assignments":  [
-                                                                                                       {
-                                                                                                           "id":  "3ad0e151-3392-4928-8a9a-5eb0bda21a45",
-                                                                                                           "name":  "forecast_selected",
-                                                                                                           "value":  "=={{ [] }}",
-                                                                                                           "type":  "string"
-                                                                                                       }
-                                                                                                   ]
-                                                                               },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.set",
-                                            "typeVersion":  3.4,
-                                            "position":  [
-                                                             768,
-                                                             32
-                                                         ],
-                                            "id":  "a7f33270-ca53-49a8-90ed-7417fedf5988",
-                                            "name":  "No Forecast"
-                                        },
-                                        {
-                                            "parameters":  {
-
-                                                           },
-                                            "type":  "n8n-nodes-base.merge",
-                                            "typeVersion":  3.2,
-                                            "position":  [
-                                                             1296,
-                                                             -272
-                                                         ],
-                                            "id":  "54e3e38c-6886-4895-a83d-0cd05f12ce35",
-                                            "name":  "Merge Branches"
-                                        },
-                                        {
-                                            "parameters":  {
-                                                               "assignments":  {
-                                                                                   "assignments":  [
-                                                                                                       {
-                                                                                                           "id":  "3ef4d0a5-43ef-4fbb-857a-2e30a1bd72a4",
-                                                                                                           "name":  "weather_response",
-                                                                                                           "value":  "={{ $json.output[0].content[0].text }}",
-                                                                                                           "type":  "string"
-                                                                                                       },
-                                                                                                       {
-                                                                                                           "id":  "b98d8153-161d-4444-af7f-5c396d202628",
-                                                                                                           "name":  "input",
-                                                                                                           "value":  "={{ $(\u0027Assemble Weather Payload\u0027).item.json.question }}",
-                                                                                                           "type":  "string"
-                                                                                                       }
-                                                                                                   ]
-                                                                               },
-                                                               "options":  {
-
-                                                                           }
-                                                           },
-                                            "type":  "n8n-nodes-base.set",
-                                            "typeVersion":  3.4,
-                                            "position":  [
-                                                             2032,
-                                                             -272
-                                                         ],
-                                            "id":  "5bc363e8-f702-4d95-b146-5ce0ecb4caeb",
-                                            "name":  "Set Response"
-                                        }
-                                    ],
-                          "connections":  {
-                                              "When Executed by Another Workflow":  {
-                                                                                        "main":  [
-                                                                                                     [
-                                                                                                         {
-                                                                                                             "node":  "Precheck - Latest Station Row",
-                                                                                                             "type":  "main",
-                                                                                                             "index":  0
-                                                                                                         }
-                                                                                                     ]
-                                                                                                 ]
-                                                                                    },
-                                              "Precheck - Latest Station Row":  {
-                                                                                    "main":  [
-                                                                                                 [
-                                                                                                     {
-                                                                                                         "node":  "Precheck - Station Status",
-                                                                                                         "type":  "main",
-                                                                                                         "index":  0
-                                                                                                     }
-                                                                                                 ]
-                                                                                             ]
-                                                                                },
-                                              "Precheck - Station Status":  {
-                                                                                "main":  [
-                                                                                             [
-                                                                                                 {
-                                                                                                     "node":  "Weather Router (JSON Plan)",
-                                                                                                     "type":  "main",
-                                                                                                     "index":  0
-                                                                                                 }
-                                                                                             ]
-                                                                                         ]
-                                                                            },
-                                              "Weather Router (JSON Plan)":  {
-                                                                                 "main":  [
-                                                                                              [
-                                                                                                  {
-                                                                                                      "node":  "Normalize Router Plan",
-                                                                                                      "type":  "main",
-                                                                                                      "index":  0
-                                                                                                  }
-                                                                                              ]
-                                                                                          ]
-                                                                             },
-                                              "Need Forecast?":  {
-                                                                     "main":  [
-                                                                                  [
-                                                                                      {
-                                                                                          "node":  "Read Forecast_10Day_Current",
-                                                                                          "type":  "main",
-                                                                                          "index":  0
-                                                                                      }
-                                                                                  ],
-                                                                                  [
-                                                                                      {
-                                                                                          "node":  "No Forecast",
-                                                                                          "type":  "main",
-                                                                                          "index":  0
-                                                                                      }
-                                                                                  ]
-                                                                              ]
-                                                                 },
-                                              "Forecast Filter":  {
-                                                                      "main":  [
-                                                                                   [
-                                                                                       {
-                                                                                           "node":  "Merge Branches",
-                                                                                           "type":  "main",
-                                                                                           "index":  1
-                                                                                       }
-                                                                                   ]
-                                                                               ]
-                                                                  },
-                                              "Need Daily Pivot?":  {
-                                                                        "main":  [
-                                                                                     [
-                                                                                         {
-                                                                                             "node":  "Read Daily_Pivot",
-                                                                                             "type":  "main",
-                                                                                             "index":  0
-                                                                                         }
-                                                                                     ],
-                                                                                     [
-                                                                                         {
-                                                                                             "node":  "No Daily Pivot",
-                                                                                             "type":  "main",
-                                                                                             "index":  0
-                                                                                         }
-                                                                                     ]
-                                                                                 ]
-                                                                    },
-                                              "Read Forecast_10Day_Current":  {
-                                                                                  "main":  [
-                                                                                               [
-                                                                                                   {
-                                                                                                       "node":  "Forecast Filter",
-                                                                                                       "type":  "main",
-                                                                                                       "index":  0
-                                                                                                   }
-                                                                                               ]
-                                                                                           ]
-                                                                              },
-                                              "Weather Answer LLM (JSON only)":  {
-                                                                                     "main":  [
-                                                                                                  [
-                                                                                                      {
-                                                                                                          "node":  "Set Response",
-                                                                                                          "type":  "main",
-                                                                                                          "index":  0
-                                                                                                      }
-                                                                                                  ]
-                                                                                              ]
-                                                                                 },
-                                              "Read Daily_Pivot":  {
-                                                                       "main":  [
-                                                                                    [
-                                                                                        {
-                                                                                            "node":  "Merge Branches",
-                                                                                            "type":  "main",
-                                                                                            "index":  0
-                                                                                        }
-                                                                                    ]
-                                                                                ]
-                                                                   },
-                                              "Assemble Weather Payload":  {
-                                                                               "main":  [
-                                                                                            [
-                                                                                                {
-                                                                                                    "node":  "Weather Answer LLM (JSON only)",
-                                                                                                    "type":  "main",
-                                                                                                    "index":  0
-                                                                                                }
-                                                                                            ]
-                                                                                        ]
-                                                                           },
-                                              "Normalize Router Plan":  {
-                                                                            "main":  [
-                                                                                         [
-                                                                                             {
-                                                                                                 "node":  "Need Daily Pivot?",
-                                                                                                 "type":  "main",
-                                                                                                 "index":  0
-                                                                                             },
-                                                                                             {
-                                                                                                 "node":  "Need Forecast?",
-                                                                                                 "type":  "main",
-                                                                                                 "index":  0
-                                                                                             }
-                                                                                         ]
-                                                                                     ]
-                                                                        },
-                                              "No Daily Pivot":  {
-                                                                     "main":  [
-                                                                                  [
-                                                                                      {
-                                                                                          "node":  "Merge Branches",
-                                                                                          "type":  "main",
-                                                                                          "index":  0
-                                                                                      }
-                                                                                  ]
-                                                                              ]
-                                                                 },
-                                              "No Forecast":  {
-                                                                  "main":  [
-                                                                               [
-                                                                                   {
-                                                                                       "node":  "Merge Branches",
-                                                                                       "type":  "main",
-                                                                                       "index":  1
-                                                                                   }
-                                                                               ]
-                                                                           ]
-                                                              },
-                                              "Merge Branches":  {
-                                                                     "main":  [
-                                                                                  [
-                                                                                      {
-                                                                                          "node":  "Assemble Weather Payload",
-                                                                                          "type":  "main",
-                                                                                          "index":  0
-                                                                                      }
-                                                                                  ]
-                                                                              ]
-                                                                 }
-                                          },
-                          "authors":  "Charl Nieuwendyk",
-                          "name":  null,
-                          "description":  null,
-                          "autosaved":  false,
-                          "workflowPublishHistory":  [
-
-                                                     ]
-                      }
+{
+  "updatedAt": "2025-12-31T14:27:57.000Z",
+  "createdAt": "2025-11-29T22:22:22.781Z",
+  "id": "L4c34rFmN0kUJvWc",
+  "name": "2.1 - Amadeus Weather Sub-Agent",
+  "description": "Deterministic backend weather worker for Oom Sakkie. Reads Supabase-backed weather current and forecast endpoints.",
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "input"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -420,
+        -40
+      ],
+      "id": "89df68e9-3580-4252-bffa-1c6c3c774209",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst inputItem = $json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current weather at the farm\");\nconst q = question.toLowerCase();\n\nconst asksForecast = /\\b(forecast|tomorrow|morrow|weekend|next\\s+(day|few|week)|next\\s*3|coming|later|will it rain|gaan dit reen|reen later|rain expected|weather ahead|vooruitsig|vooruitsigte)\\b/i.test(q);\nconst asksCurrent = /\\b(now|current|right now|nou|huidig|temperature now|wind now|raining now|is it raining|weather now|weather like now)\\b/i.test(q);\n\nconst queryType = asksForecast && !asksCurrent ? \"forecast\" : \"current\";\nconst requestUrl = queryType === \"forecast\"\n  ? \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/weather/forecast?days=3\"\n  : \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/weather/current\";\n\nreturn [{\n  json: {\n    input: question,\n    query_type: queryType,\n    request_url: requestUrl,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -40
+      ],
+      "id": "b8a62f5f-8f50-4497-a8eb-4e8d9a0d8d91",
+      "name": "Code - Route Weather Question"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.request_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        -40
+      ],
+      "id": "5eebbb79-fbc0-454f-8f95-8df034c5c23b",
+      "name": "HTTP - Get Weather Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmt(value, suffix = \"\") {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Number.isInteger(n) ? n : Number(n.toFixed(1))}${suffix}`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction formatDate(value) {\n  if (!value) return \"unknown date\";\n  const d = new Date(`${value}T12:00:00+02:00`);\n  if (Number.isNaN(d.getTime())) return value;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    weekday: \"short\",\n    month: \"short\",\n    day: \"2-digit\",\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst route = $(\"Code - Route Weather Question\").first()?.json || {};\nconst question = clean(route.input || \"current weather at the farm\");\nconst queryType = clean(route.query_type || \"current\");\nconst data = $json || {};\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || data.summary?.headline || \"The weather data is not available yet.\");\n  answer = `I could not read the weather data. ${reason}`;\n} else if (queryType === \"forecast\") {\n  const source = data.source || {};\n  const summary = data.summary || {};\n  const days = Array.isArray(data.days) ? data.days : [];\n  const lines = [];\n\n  lines.push(\"Weather forecast for Amadeus Farm:\");\n  lines.push(\"\");\n  if (summary.headline) lines.push(sentence(summary.headline));\n\n  for (const day of days) {\n    const flags = day.flags || {};\n    const cautions = [];\n    if (flags.rain_expected === true) cautions.push(\"rain possible\");\n    if (flags.strong_wind === true || flags.gust_risk === true) cautions.push(\"wind caution\");\n    if (flags.hot === true) cautions.push(\"hot\");\n    if (flags.cold === true) cautions.push(\"cold\");\n\n    lines.push(`- ${formatDate(day.forecast_date)}: ${fmt(day.temp_min_c, \" C\")} to ${fmt(day.temp_max_c, \" C\")}, rain ${fmt(day.rain_sum_mm, \" mm\")} (${fmt(day.rain_probability_max_pct, \"%\")}), wind max ${fmt(day.wind_max_kmh, \" km/h\")}, gusts ${fmt(day.gust_max_kmh, \" km/h\")}${cautions.length ? ` - ${cautions.join(\", \")}` : \"\"}.`);\n  }\n\n  lines.push(\"\");\n  lines.push(`Forecast updated: ${formatDateTime(source.last_forecast_run_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n  if (source.is_stale === true) lines.push(\"Warning: this forecast is stale, so treat it as the last known forecast.\");\n\n  answer = lines.join(\"\\n\");\n} else {\n  const source = data.source || {};\n  const current = data.current || {};\n  const flags = data.flags || {};\n  const summary = data.summary || {};\n  const lines = [];\n\n  lines.push(\"Current weather at Amadeus Farm:\");\n  lines.push(\"\");\n  if (summary.headline) lines.push(sentence(summary.headline));\n  lines.push(`Temperature: ${fmt(current.temperature_c, \" C\")}`);\n  lines.push(`Humidity: ${fmt(current.humidity_pct, \"%\")}`);\n  lines.push(`Wind: ${fmt(current.wind_speed_kmh, \" km/h\")} with gusts ${fmt(current.wind_gust_kmh, \" km/h\")}`);\n  lines.push(`Rain now: ${fmt(current.rain_rate_mm_h, \" mm/h\")}`);\n  lines.push(`Rain today: ${fmt(current.rain_today_mm, \" mm\")}`);\n  lines.push(`Pressure: ${fmt(current.pressure_hpa, \" hPa\")}`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (source.is_stale === true || flags.station_stale === true) lines.push(\"Warning: this reading is stale, so treat it as the last known weather state.\");\n  if (flags.raining_now === true) lines.push(\"Note: it is raining now.\");\n  if (flags.rain_today === true && flags.raining_now !== true) lines.push(\"Note: rain has been recorded today.\");\n  if (flags.high_wind === true || flags.gust_risk === true) lines.push(\"Warning: wind caution is showing.\");\n  if (flags.irrigation_caution === true) lines.push(\"Irrigation caution is showing from the weather rules.\");\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    query_type: queryType,\n    answer,\n    output: answer,\n    weather_response: answer,\n    telemetry_source: queryType === \"forecast\" ? \"backend_supabase_weather_forecast\" : \"backend_supabase_current_weather\",\n    backend_payload: data,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        -40
+      ],
+      "id": "54965a8d-5d25-46f1-a87e-0df92a8af803",
+      "name": "Code - Format Weather Answer"
+    },
+    {
+      "parameters": {
+        "content": "Phase 10.3J: deterministic backend weather read. Routes current questions to /weather/current and forecast questions to /weather/forecast?days=3. No Google Sheets or LangChain nodes in this workflow.",
+        "height": 180,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -420,
+        -300
+      ],
+      "id": "93843df4-4d92-4ed7-bd60-239e7f1c90b5",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Code - Route Weather Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Route Weather Question": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Weather Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Weather Data": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Weather Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Weather Answer": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "input": "What is the weather like now?"
+        }
+      }
+    ]
+  },
+  "versionId": "0b6a4a06-a426-412c-a112-c337a3cbec59",
+  "activeVersionId": "0b6a4a06-a426-412c-a112-c337a3cbec59",
+  "versionCounter": 216,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2025-11-29T22:22:22.784Z",
+      "createdAt": "2025-11-29T22:22:22.784Z",
+      "role": "workflow:owner",
+      "workflowId": "L4c34rFmN0kUJvWc",
+      "projectId": "dUeH9AUxBtKxgNPX",
+      "project": {
+        "updatedAt": "2025-07-13T13:07:42.154Z",
+        "createdAt": "2025-07-13T13:07:42.154Z",
+        "id": "dUeH9AUxBtKxgNPX",
+        "name": "My project",
+        "type": "team",
+        "icon": {
+          "type": "icon",
+          "value": "layer-group"
+        },
+        "description": null,
+        "creatorId": null
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2025-12-31T14:27:57.039Z",
+    "createdAt": "2025-12-31T14:27:57.039Z",
+    "versionId": "0b6a4a06-a426-412c-a112-c337a3cbec59",
+    "workflowId": "L4c34rFmN0kUJvWc",
+    "nodes": [
+      {
+        "parameters": {
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "input"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -420,
+          -40
+        ],
+        "id": "89df68e9-3580-4252-bffa-1c6c3c774209",
+        "name": "When Executed by Another Workflow"
+      },
+      {
+        "parameters": {
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst inputItem = $json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || \"current weather at the farm\");\nconst q = question.toLowerCase();\n\nconst asksForecast = /\\b(forecast|tomorrow|morrow|weekend|next\\s+(day|few|week)|next\\s*3|coming|later|will it rain|gaan dit reen|reen later|rain expected|weather ahead|vooruitsig|vooruitsigte)\\b/i.test(q);\nconst asksCurrent = /\\b(now|current|right now|nou|huidig|temperature now|wind now|raining now|is it raining|weather now|weather like now)\\b/i.test(q);\n\nconst queryType = asksForecast && !asksCurrent ? \"forecast\" : \"current\";\nconst requestUrl = queryType === \"forecast\"\n  ? \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/weather/forecast?days=3\"\n  : \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/weather/current\";\n\nreturn [{\n  json: {\n    input: question,\n    query_type: queryType,\n    request_url: requestUrl,\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -160,
+          -40
+        ],
+        "id": "b8a62f5f-8f50-4497-a8eb-4e8d9a0d8d91",
+        "name": "Code - Route Weather Question"
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.request_url }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            },
+            "neverError": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          100,
+          -40
+        ],
+        "id": "5eebbb79-fbc0-454f-8f95-8df034c5c23b",
+        "name": "HTTP - Get Weather Data"
+      },
+      {
+        "parameters": {
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmt(value, suffix = \"\") {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return `${Number.isInteger(n) ? n : Number(n.toFixed(1))}${suffix}`;\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction formatDate(value) {\n  if (!value) return \"unknown date\";\n  const d = new Date(`${value}T12:00:00+02:00`);\n  if (Number.isNaN(d.getTime())) return value;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    weekday: \"short\",\n    month: \"short\",\n    day: \"2-digit\",\n  }).format(d);\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst route = $(\"Code - Route Weather Question\").first()?.json || {};\nconst question = clean(route.input || \"current weather at the farm\");\nconst queryType = clean(route.query_type || \"current\");\nconst data = $json || {};\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || data.summary?.headline || \"The weather data is not available yet.\");\n  answer = `I could not read the weather data. ${reason}`;\n} else if (queryType === \"forecast\") {\n  const source = data.source || {};\n  const summary = data.summary || {};\n  const days = Array.isArray(data.days) ? data.days : [];\n  const lines = [];\n\n  lines.push(\"Weather forecast for Amadeus Farm:\");\n  lines.push(\"\");\n  if (summary.headline) lines.push(sentence(summary.headline));\n\n  for (const day of days) {\n    const flags = day.flags || {};\n    const cautions = [];\n    if (flags.rain_expected === true) cautions.push(\"rain possible\");\n    if (flags.strong_wind === true || flags.gust_risk === true) cautions.push(\"wind caution\");\n    if (flags.hot === true) cautions.push(\"hot\");\n    if (flags.cold === true) cautions.push(\"cold\");\n\n    lines.push(`- ${formatDate(day.forecast_date)}: ${fmt(day.temp_min_c, \" C\")} to ${fmt(day.temp_max_c, \" C\")}, rain ${fmt(day.rain_sum_mm, \" mm\")} (${fmt(day.rain_probability_max_pct, \"%\")}), wind max ${fmt(day.wind_max_kmh, \" km/h\")}, gusts ${fmt(day.gust_max_kmh, \" km/h\")}${cautions.length ? ` - ${cautions.join(\", \")}` : \"\"}.`);\n  }\n\n  lines.push(\"\");\n  lines.push(`Forecast updated: ${formatDateTime(source.last_forecast_run_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n  if (source.is_stale === true) lines.push(\"Warning: this forecast is stale, so treat it as the last known forecast.\");\n\n  answer = lines.join(\"\\n\");\n} else {\n  const source = data.source || {};\n  const current = data.current || {};\n  const flags = data.flags || {};\n  const summary = data.summary || {};\n  const lines = [];\n\n  lines.push(\"Current weather at Amadeus Farm:\");\n  lines.push(\"\");\n  if (summary.headline) lines.push(sentence(summary.headline));\n  lines.push(`Temperature: ${fmt(current.temperature_c, \" C\")}`);\n  lines.push(`Humidity: ${fmt(current.humidity_pct, \"%\")}`);\n  lines.push(`Wind: ${fmt(current.wind_speed_kmh, \" km/h\")} with gusts ${fmt(current.wind_gust_kmh, \" km/h\")}`);\n  lines.push(`Rain now: ${fmt(current.rain_rate_mm_h, \" mm/h\")}`);\n  lines.push(`Rain today: ${fmt(current.rain_today_mm, \" mm\")}`);\n  lines.push(`Pressure: ${fmt(current.pressure_hpa, \" hPa\")}`);\n  lines.push(\"\");\n  lines.push(`Latest reading: ${formatDateTime(source.last_reading_at)} (${source.data_age_minutes ?? \"unknown\"} minutes old).`);\n\n  if (source.is_stale === true || flags.station_stale === true) lines.push(\"Warning: this reading is stale, so treat it as the last known weather state.\");\n  if (flags.raining_now === true) lines.push(\"Note: it is raining now.\");\n  if (flags.rain_today === true && flags.raining_now !== true) lines.push(\"Note: rain has been recorded today.\");\n  if (flags.high_wind === true || flags.gust_risk === true) lines.push(\"Warning: wind caution is showing.\");\n  if (flags.irrigation_caution === true) lines.push(\"Irrigation caution is showing from the weather rules.\");\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    query_type: queryType,\n    answer,\n    output: answer,\n    weather_response: answer,\n    telemetry_source: queryType === \"forecast\" ? \"backend_supabase_weather_forecast\" : \"backend_supabase_current_weather\",\n    backend_payload: data,\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          360,
+          -40
+        ],
+        "id": "54965a8d-5d25-46f1-a87e-0df92a8af803",
+        "name": "Code - Format Weather Answer"
+      },
+      {
+        "parameters": {
+          "content": "Phase 10.3J: deterministic backend weather read. Routes current questions to /weather/current and forecast questions to /weather/forecast?days=3. No Google Sheets or LangChain nodes in this workflow.",
+          "height": 180,
+          "width": 520,
+          "color": 4
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -420,
+          -300
+        ],
+        "id": "93843df4-4d92-4ed7-bd60-239e7f1c90b5",
+        "name": "Sticky Note"
+      }
+    ],
+    "connections": {
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Code - Route Weather Question",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Route Weather Question": {
+        "main": [
+          [
+            {
+              "node": "HTTP - Get Weather Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP - Get Weather Data": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Weather Answer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Format Weather Answer": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "authors": "Charl Nieuwendyk",
+    "name": null,
+    "description": "Deterministic backend weather worker for Oom Sakkie. Reads Supabase-backed weather current and forecast endpoints.",
+    "autosaved": false,
+    "workflowPublishHistory": []
+  }
 }

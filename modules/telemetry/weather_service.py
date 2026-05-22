@@ -275,6 +275,78 @@ def get_weather_forecast(days=3, database_url=None):
     return _format_forecast_response(source_row, rows, days), 200
 
 
+def get_weather_today_summary(summary_date=None, database_url=None):
+    selected_date = _parse_optional_summary_date(summary_date)
+    database_url = _database_url(database_url)
+    if not database_url:
+        return _not_configured()
+
+    try:
+        import psycopg
+    except ImportError:
+        return _dependency_missing()
+
+    start_za = datetime(selected_date.year, selected_date.month, selected_date.day, tzinfo=ZA_TZ)
+    end_za = start_za.replace(hour=23, minute=59, second=59, microsecond=999999)
+    start_utc = start_za.astimezone(timezone.utc)
+    end_utc_exclusive = (start_za.replace(hour=0) + _one_day()).astimezone(timezone.utc)
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select source_id, display_name, provider, stale_after_minutes
+                    from public.telemetry_sources
+                    where source_id = %s
+                    """,
+                    (DEFAULT_WEATHER_SOURCE_ID,),
+                )
+                source_row = cursor.fetchone()
+                cursor.execute(
+                    """
+                    select
+                        count(*)::int as reading_count,
+                        min(reading_at) as first_reading_at,
+                        max(reading_at) as last_reading_at,
+                        min(temperature_c) as min_temperature_c,
+                        max(temperature_c) as max_temperature_c,
+                        avg(temperature_c) as avg_temperature_c,
+                        avg(humidity_pct) as avg_humidity_pct,
+                        max(wind_speed_kmh) as max_wind_speed_kmh,
+                        max(wind_gust_kmh) as max_wind_gust_kmh,
+                        max(rain_rate_mm_h) as max_rain_rate_mm_h,
+                        max(rain_today_mm) as rain_today_total_mm,
+                        bool_or(coalesce(rain_rate_mm_h, 0) > 0) as raining_observed
+                    from public.weather_readings
+                    where source_id = %s
+                      and reading_at >= %s
+                      and reading_at < %s
+                      and coalesce(raw_payload->>'test', 'false') <> 'true'
+                    """,
+                    (DEFAULT_WEATHER_SOURCE_ID, start_utc, end_utc_exclusive),
+                )
+                summary_row = cursor.fetchone()
+    except Exception as exc:
+        return _service_failed("weather_today_read_failed", "Today weather telemetry read failed.", exc)
+
+    if not summary_row or not summary_row[0]:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "unavailable",
+            "message": "No weather readings are available for the selected day.",
+            "source": _source_metadata(writes_to_supabase=False),
+            "window": {
+                "date": selected_date.isoformat(),
+                "timezone": "Africa/Johannesburg",
+                "returned_readings": 0,
+            },
+        }, 200
+
+    return _format_today_weather_response(source_row, summary_row, selected_date, start_za, end_za), 200
+
+
 def _normalize_weather_payload(payload):
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object.")
@@ -436,6 +508,80 @@ def _format_forecast_response(source_row, rows, requested_days):
     }
 
 
+def _format_today_weather_response(source_row, row, selected_date, start_za, end_za):
+    source_id, display_name, provider, stale_after_minutes = source_row or (
+        DEFAULT_WEATHER_SOURCE_ID, "Amadeus Local Weather Station", "weather_com_pws", 30
+    )
+    (
+        reading_count, first_reading_at, last_reading_at, min_temp, max_temp, avg_temp,
+        avg_humidity, max_wind_speed, max_wind_gust, max_rain_rate, rain_total,
+        raining_observed,
+    ) = row
+    now_za = datetime.now(ZA_TZ)
+    is_today = selected_date == now_za.date()
+    expected_until = min(now_za, end_za) if is_today else end_za
+    expected_samples = max(1, int((expected_until - start_za).total_seconds() // (5 * 60)) + 1)
+    coverage_pct = round((reading_count / expected_samples) * 100, 1)
+    flags = {
+        "rain_observed": bool(raining_observed),
+        "rain_today": (rain_total or 0) > 0,
+        "high_wind": (max_wind_speed or 0) >= 30,
+        "gust_risk": (max_wind_gust or 0) >= 40,
+        "hot": max_temp is not None and max_temp >= 32,
+        "cold": min_temp is not None and min_temp <= 5,
+        "irrigation_caution": (rain_total or 0) >= 0.5 or (max_wind_speed or 0) >= 30 or (max_wind_gust or 0) >= 40,
+    }
+    summary = _today_weather_summary(flags, row, coverage_pct)
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "source": {
+            "source": "supabase",
+            "source_id": source_id,
+            "source_name": display_name,
+            "provider": provider,
+            "stale_after_minutes": stale_after_minutes,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        },
+        "window": {
+            "date": selected_date.isoformat(),
+            "timezone": "Africa/Johannesburg",
+            "first_reading_at": first_reading_at.isoformat() if first_reading_at else None,
+            "last_reading_at": last_reading_at.isoformat() if last_reading_at else None,
+            "reading_count": reading_count,
+            "expected_samples": expected_samples,
+            "coverage_pct": coverage_pct,
+            "sample_interval_minutes_assumed": 5,
+        },
+        "temperature": {
+            "min_c": _json_value(min_temp),
+            "max_c": _json_value(max_temp),
+            "avg_c": _rounded_json_value(avg_temp),
+        },
+        "humidity": {
+            "avg_pct": _rounded_json_value(avg_humidity),
+        },
+        "wind": {
+            "max_speed_kmh": _json_value(max_wind_speed),
+            "max_gust_kmh": _json_value(max_wind_gust),
+        },
+        "rain": {
+            "total_mm": _json_value(rain_total),
+            "max_rate_mm_h": _json_value(max_rain_rate),
+            "raining_observed": bool(raining_observed),
+        },
+        "flags": flags,
+        "summary": summary,
+        "units": _weather_units(),
+        "limitations": [
+            "This endpoint summarizes station samples for the selected local day.",
+            "Rain total uses the highest station daily rain value seen in the selected day.",
+        ],
+    }
+
+
 def _weather_flags(reading):
     rain_rate = reading.get("rain_rate_mm_h") or 0
     rain_today = reading.get("rain_today_mm") or 0
@@ -509,6 +655,35 @@ def _forecast_summary(days, is_stale):
         notes.append(f"Wind caution appears on {len(wind_days)} day(s).")
     if not notes:
         notes.append("No major rain or wind warning is showing in the selected window.")
+    return {"status": status, "headline": headline, "operator_notes": notes}
+
+
+def _today_weather_summary(flags, row, coverage_pct):
+    reading_count = row[0]
+    max_temp = row[4]
+    max_wind = row[7]
+    max_gust = row[8]
+    rain_total = row[10]
+    status = "ok"
+    headline = "Weather readings are available for today."
+    if flags["gust_risk"] or flags["high_wind"]:
+        status = "warning"
+        headline = "Wind conditions need attention today."
+    elif flags["rain_today"] or flags["rain_observed"] or flags["irrigation_caution"]:
+        status = "caution"
+        headline = "Rain or irrigation caution is showing today."
+    notes = [
+        f"{reading_count} readings found for the selected day.",
+        f"Coverage is about {coverage_pct:g}% of expected 5-minute samples.",
+    ]
+    if max_temp is not None:
+        notes.append(f"Maximum temperature was {_format_number(max_temp)} C.")
+    if rain_total is not None:
+        notes.append(f"Rain total so far is {_format_number(rain_total)} mm.")
+    if max_wind is not None:
+        notes.append(f"Maximum wind speed was {_format_number(max_wind)} km/h.")
+    if max_gust is not None:
+        notes.append(f"Maximum gust was {_format_number(max_gust)} km/h.")
     return {"status": status, "headline": headline, "operator_notes": notes}
 
 
@@ -604,6 +779,12 @@ def _parse_date(value):
         raise ValueError("forecast_date must be an ISO date.") from exc
 
 
+def _parse_optional_summary_date(value):
+    if not value:
+        return datetime.now(ZA_TZ).date()
+    return _parse_date(value)
+
+
 def _number_or_none(value):
     if value in (None, ""):
         return None
@@ -629,6 +810,26 @@ def _json_value(value):
     if isinstance(value, Decimal):
         return float(value)
     return value
+
+
+def _rounded_json_value(value):
+    value = _json_value(value)
+    if isinstance(value, float):
+        return round(value, 2)
+    return value
+
+
+def _format_number(value):
+    value = _json_value(value)
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def _one_day():
+    from datetime import timedelta
+
+    return timedelta(days=1)
 
 
 def _json_param(value):

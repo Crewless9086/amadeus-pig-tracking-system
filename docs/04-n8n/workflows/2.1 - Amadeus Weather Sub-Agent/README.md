@@ -11,38 +11,32 @@ Imported for docs: 2026-05-18
 ## What It Does
 
 - Runs when called by Oom Sakkie.
-- Reads the latest weather station row.
-- Checks station status.
-- Uses an LLM router to decide whether daily pivot and/or forecast data is needed.
-- Reads weather forecast and daily pivot sheets when needed.
-- Assembles a weather payload.
-- Uses an LLM to produce a JSON-only weather answer.
+- Routes the weather question deterministically.
+- Calls the backend current weather endpoint for current/now weather questions.
+- Calls the backend forecast endpoint for forecast/tomorrow/coming-weather questions.
+- Formats the backend response into a user-ready answer.
+- Returns `answer`, `output`, and `weather_response` for compatibility with Oom Sakkie.
+- Does not use LangChain/OpenAI nodes or Google Sheets reads in this workflow.
 
 ## Main Data Sources
 
-- `Amadeus_Weather_Logs`
-- `LLM_Latest_Reading`
-- `Forecast_10Day_Current`
-- `Daily_Pivot`
+- `GET /api/telemetry/weather/current`
+- `GET /api/telemetry/weather/forecast?days=3`
+- Backend reads from Supabase weather read models populated by the weather and forecast Render cron loggers.
 
 ## Main Nodes
 
 - `When Executed by Another Workflow`
-- `Precheck - Latest Station Row`
-- `Precheck - Station Status`
-- `Weather Router (JSON Plan)`
-- `Need Daily Pivot?`
-- `Need Forecast?`
-- `Read Forecast_10Day_Current`
-- `Read Daily_Pivot`
-- `Assemble Weather Payload`
-- `Weather Answer LLM (JSON only)`
-- `Set Response`
+- `Code - Route Weather Question`
+- `HTTP - Get Weather Data`
+- `Code - Format Weather Answer`
 
 ## Planning Notes
 
 - This is already structured as a sub-agent and should remain separate from order lookup.
 - Oom Sakkie can continue using this as a weather tool while Phase 7.3 adds an orders tool.
+- Phase 10.3J simplified this workflow after the weather and forecast backend endpoints were deployed and logger-verified.
+- Keep Google Sheets weather alert workflows separate until alert alignment is planned.
 
 ## Known Issue Log
 
@@ -57,3 +51,7 @@ Imported for docs: 2026-05-18
   - `2.0` `Weather_Info_Tool` should pass the user question with n8n `$fromAI('weather_question', ...)`.
   - `2.1` `Weather Router (JSON Plan)` should use `gpt-5.5` and a non-null fallback prompt.
   - Workflow contract tests now guard both rules.
+- 2026-05-22: Phase 10.3J replaced the old Sheets/LLM-heavy path with a deterministic backend read workflow.
+  - Current weather now comes from `/api/telemetry/weather/current`.
+  - Forecast now comes from `/api/telemetry/weather/forecast?days=3`.
+  - Old nodes `Weather Router (JSON Plan)`, `Weather Answer LLM (JSON only)`, `Precheck - Latest Station Row`, `Read Forecast_10Day_Current`, and `Read Daily_Pivot` are intentionally removed from this workflow export.

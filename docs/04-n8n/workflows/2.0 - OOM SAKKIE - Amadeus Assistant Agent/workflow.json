@@ -204,7 +204,7 @@
     },
     {
       "parameters": {
-        "description": "Use this tool whenever the user asks anything related to weather at the farm. \nThis includes questions about current weather, rain, wind, temperature, \nstorms, sunshine, forecasts, farming conditions, or how the weather will \naffect visits, piglets, animals, crops, or farm operations. \nReturn the most accurate weather information available from the data source.\n",
+        "description": "Use this tool whenever the user asks anything related to weather at the farm. This includes current weather, rain, wind, temperature, storms, sunshine, forecasts, farming conditions, or how weather will affect visits, piglets, animals, crops, irrigation, or farm operations. The tool reads backend/Supabase current weather and forecast endpoints and returns a complete user-ready answer.",
         "workflowId": {
           "__rl": true,
           "value": "L4c34rFmN0kUJvWc",
@@ -873,7 +873,7 @@
       },
       {
         "parameters": {
-          "description": "Use this tool whenever the user asks anything related to weather at the farm. \nThis includes questions about current weather, rain, wind, temperature, \nstorms, sunshine, forecasts, farming conditions, or how the weather will \naffect visits, piglets, animals, crops, or farm operations. \nReturn the most accurate weather information available from the data source.\n",
+          "description": "Use this tool whenever the user asks anything related to weather at the farm. This includes current weather, rain, wind, temperature, storms, sunshine, forecasts, farming conditions, or how weather will affect visits, piglets, animals, crops, irrigation, or farm operations. The tool reads backend/Supabase current weather and forecast endpoints and returns a complete user-ready answer.",
           "workflowId": {
             "__rl": true,
             "value": "L4c34rFmN0kUJvWc",

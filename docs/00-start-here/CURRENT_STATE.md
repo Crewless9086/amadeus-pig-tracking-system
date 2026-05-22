@@ -363,5 +363,24 @@ Current position:
 - The current weather/forecast values in Supabase are synthetic test values until the real Render weather and forecast loggers overwrite them.
 - First owner weather cron run still showed the old Sheets-only output (`Logged Current_Conditions...`), confirming the logger code had not yet been updated for backend ingest.
 - Local logger updates are prepared: both weather and forecast Render cron scripts now support `BACKEND_INGEST_ENABLED=true`, keep `GOOGLE_SHEETS_ENABLED=true` as a mirror, post to the backend ingest endpoints, and print JSON results including `backend_ingest_success`.
-- No n8n weather workflow changes have been made.
-- Next step is deploying/rebuilding the two Render cron services, manually running each, and confirming `backend_ingest_success = true` before updating `2.1`.
+- 10.3J3 logger verification passed on 2026-05-22.
+- `/api/telemetry/weather/current` now reads fresh real weather-station data from Supabase: temperature `14 C`, humidity `96%`, wind `8 km/h`, rain today `0 mm`, data age `0`, source `weather-station-main`.
+- `/api/telemetry/weather/forecast?days=3` now reads fresh real Open-Meteo forecast data from Supabase: returned 3 days, rain possible on 1 day, data age `0`, source `open-meteo-forecast-main`.
+- This confirms the real weather and forecast Render cron loggers have overwritten the synthetic test values.
+- 10.3J4 local workflow simplification is prepared.
+- `2.1 - Amadeus Weather Sub-Agent` now has only deterministic backend-read nodes: trigger, route weather question, HTTP read, format answer, and sticky note.
+- The old `2.1` Google Sheets and LLM nodes are intentionally removed from the export: `Weather Router (JSON Plan)`, `Weather Answer LLM (JSON only)`, `Precheck - Latest Station Row`, `Read Forecast_10Day_Current`, and `Read Daily_Pivot`.
+- `2.0 - OOM SAKKIE` `Weather_Info_Tool` description now identifies `2.1` as a backend/Supabase current-weather and forecast worker.
+- Workflow contract tests pass at 15 tests after the local workflow export update.
+- 10.3J4 live verification passed on 2026-05-22 after importing updated `2.1` and `2.0`.
+- Telegram test `What is the weather like now?` returned current backend weather: temperature `14 C`, humidity `96%`, wind `4 km/h`, gusts `4 km/h`, rain now `0 mm/h`, rain today `0 mm`, pressure `1013.9 hPa`, and latest reading age `0 minutes`.
+- Telegram test `What is the weather forecast for the next few days?` returned the 3-day backend forecast for 22-24 May 2026, including rain possible on 1 day and forecast age `1 minute`.
+- Oom Sakkie did not mention tools, workflows, Google Sheets, or Supabase in the tested answers.
+- Owner selected the next telemetry order: 1) weather today summary, 2) weather alert alignment, 3) irrigation/audit planning.
+- 10.3K local weather today summary is prepared.
+- Added read-only `GET /api/telemetry/weather/today`, with optional `date=YYYY-MM-DD`.
+- The endpoint summarizes existing Supabase `weather_readings` for the selected local day: reading count, first/last reading, coverage estimate, min/max/average temperature, average humidity, max wind/gust, rain total, max rain rate, flags, and operator notes.
+- It excludes synthetic test rows where `raw_payload.test = true`, so the earlier synthetic weather ingest does not skew today summaries.
+- Local live Supabase readback returned real-only data for 2026-05-22: 5 readings, first reading `2026-05-22T02:49:30+00:00`, last reading `2026-05-22T03:04:54+00:00`, temperature `14 C`, rain total `0 mm`, max wind `9 km/h`, coverage `8.1%`.
+- Focused and broader telemetry/database/workflow tests pass at 55 tests.
+- Next step is deploying backend and verifying `/api/telemetry/weather/today`, then updating `2.1` to route today/history weather questions to the endpoint.

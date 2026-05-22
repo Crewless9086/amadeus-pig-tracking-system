@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified | Update weather/forecast Render loggers to post real data to backend ingest before touching `2.1`. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified; 10.3J3 Logger-Verified; 10.3J4 Live-Verified; 10.3K Local | Deploy and verify `/api/telemetry/weather/today`, then route Oom Sakkie today weather questions to it. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2800,7 +2800,31 @@ Recommendation:
   - Forecast logger now posts normalized forecast snapshots to `POST /api/telemetry/weather/forecast/ingest` when `BACKEND_INGEST_ENABLED=true`.
   - Both loggers keep Google Sheets mirror writes enabled through `GOOGLE_SHEETS_ENABLED=true`.
   - Both loggers print JSON results with `backend_ingest_success`, `google_sheets_written`, and any backend/sheet errors for Render log checking.
-- Next step: deploy/rebuild both Render cron services, manually run weather and forecast, then confirm `backend_ingest_success = true` and live readbacks before changing `2.1`.
+- 10.3J3 logger verification passed on 2026-05-22:
+  - Weather and forecast Render cron services were updated to point at the pig-tracking repo paths and ran successfully.
+  - `/api/telemetry/weather/current` read back fresh real station data: temperature `14 C`, humidity `96%`, wind `8 km/h`, rain today `0 mm`, data age `0`, source `weather-station-main`.
+  - `/api/telemetry/weather/forecast?days=3` read back fresh real Open-Meteo forecast data: 3 returned days, rain possible on 1 day, data age `0`, source `open-meteo-forecast-main`.
+  - Real logger data has overwritten the synthetic test values in Supabase.
+- 10.3J4 local workflow simplification prepared on 2026-05-22:
+  - `2.1 - Amadeus Weather Sub-Agent` now routes weather questions deterministically and reads only backend endpoints.
+  - Current/now questions call `/api/telemetry/weather/current`.
+  - Forecast/tomorrow/coming-weather questions call `/api/telemetry/weather/forecast?days=3`.
+  - Old Google Sheets and LLM nodes are intentionally removed from `2.1`.
+  - `2.0 - OOM SAKKIE` `Weather_Info_Tool` description now describes the backend/Supabase weather worker.
+  - Workflow contract tests pass at 15 tests.
+- 10.3J4 live verification passed on 2026-05-22 after importing updated `2.1` and `2.0`:
+  - `What is the weather like now?` returned current backend weather: temperature `14 C`, humidity `96%`, wind `4 km/h`, gusts `4 km/h`, rain now `0 mm/h`, rain today `0 mm`, pressure `1013.9 hPa`, and latest reading age `0 minutes`.
+  - `What is the weather forecast for the next few days?` returned the 3-day backend forecast for 22-24 May 2026, with rain possible on 1 day and forecast age `1 minute`.
+  - Answers did not mention tools, workflows, Google Sheets, or Supabase.
+- Owner selected the next telemetry order: 1) weather `today`/daily summary, 2) weather alert alignment, 3) irrigation/audit planning.
+- 10.3K local weather today endpoint prepared on 2026-05-22:
+  - Added `GET /api/telemetry/weather/today` with optional `date=YYYY-MM-DD`.
+  - Endpoint summarizes existing Supabase `weather_readings` by local farm day.
+  - It reports reading count, coverage estimate, first/last reading, min/max/average temperature, average humidity, max wind/gust, rain total, max rain rate, flags, summary notes, and limitations.
+  - It excludes synthetic test rows via `raw_payload.test = true` protection.
+  - Local live Supabase readback returned real-only data for 2026-05-22: 5 readings, coverage `8.1%`, temperature `14 C`, rain total `0 mm`, and max wind `9 km/h`.
+  - Broader telemetry/database/workflow tests pass at 55 tests.
+- Next step: deploy backend, verify `/api/telemetry/weather/today`, then update `2.1` to route today/daily weather questions to this endpoint before moving to alert alignment.
 
 Farm home/dashboard idea:
 

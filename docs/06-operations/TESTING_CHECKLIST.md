@@ -1569,6 +1569,53 @@ Deployed read result:
 9. Keep Google Sheets mirror enabled until Supabase-backed weather has run reliably.
 10. Do not update `2.1` until both real logger readbacks pass.
 
+10.3J3 verified result:
+
+- 2026-05-22: Passed.
+- `/api/telemetry/weather/current` returned fresh real station data: temperature `14 C`, humidity `96%`, wind `8 km/h`, rain today `0 mm`, data age `0`, and source `weather-station-main`.
+- `/api/telemetry/weather/forecast?days=3` returned fresh real Open-Meteo forecast data: 3 returned days, rain possible on 1 day, data age `0`, and source `open-meteo-forecast-main`.
+- Synthetic test values have been overwritten.
+
+10.3J4 local workflow result:
+
+- 2026-05-22: `2.1 - Amadeus Weather Sub-Agent` simplified locally.
+- `2.1` now uses backend endpoints only and does not include Google Sheets or LLM weather nodes.
+- `2.0` weather tool description updated for backend/Supabase weather worker.
+- Workflow contract tests passed at 15 tests.
+
+10.3J4 import/live checks:
+
+1. Import updated `docs/04-n8n/workflows/2.1 - Amadeus Weather Sub-Agent/workflow.json`.
+2. Import updated `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json`.
+3. Ask Oom Sakkie: `What is the weather like now?`
+4. Confirm it returns current backend weather with latest reading age.
+5. Ask Oom Sakkie: `What is the weather forecast for the next few days?`
+6. Confirm it returns 3-day backend forecast.
+7. Confirm neither answer mentions tools, workflows, Google Sheets, or Supabase.
+
+10.3J4 verified result:
+
+- 2026-05-22: Passed after importing updated `2.1` and `2.0`.
+- Current weather question returned temperature `14 C`, humidity `96%`, wind `4 km/h`, gusts `4 km/h`, rain now `0 mm/h`, rain today `0 mm`, pressure `1013.9 hPa`, and latest reading age `0 minutes`.
+- Forecast question returned the 3-day backend forecast for 22-24 May 2026, rain possible on 1 day, and forecast age `1 minute`.
+- Tested answers did not mention tools, workflows, Google Sheets, or Supabase.
+
+10.3K weather today endpoint checks:
+
+1. Deploy backend with `GET /api/telemetry/weather/today`.
+2. Open `/api/telemetry/weather/today`.
+3. Confirm `success = true`.
+4. Confirm `window.reading_count` is greater than zero after real logger runs.
+5. Confirm `rain.total_mm` does not include the old synthetic `0.4 mm` row unless the real station reports it.
+6. Confirm response includes temperature, humidity, wind, rain, flags, summary, and limitations.
+7. After endpoint verification, update `2.1` so today/daily weather questions route to this endpoint.
+
+Local result:
+
+- 2026-05-22: Focused weather tests pass at 11 tests.
+- 2026-05-22: Broader telemetry/database/workflow tests pass at 55 tests.
+- 2026-05-22: Local live Supabase readback returned 5 real readings, coverage `8.1%`, temperature `14 C`, rain total `0 mm`, and max wind `9 km/h`; synthetic test row was excluded.
+
 ## Google Sheets Checks
 
 After any order change, inspect affected sheets/views:
