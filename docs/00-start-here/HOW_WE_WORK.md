@@ -11,8 +11,8 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G live-verified; 10.3H deployed-verified; 10.3I live-verified; 10.3J1 contract drafted; 10.3J2 deployed-verified; 10.3J3 logger-verified; 10.3J4 live-verified; 10.3K live-verified; 10.3L planned; 10.3L2 local dry-run verified |
-| **Current focus** | Deploy backend and run protected weather alert evaluator dry-run smoke |
+| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G live-verified; 10.3H deployed-verified; 10.3I live-verified; 10.3J1 contract drafted; 10.3J2 deployed-verified; 10.3J3 logger-verified; 10.3J4 live-verified; 10.3K live-verified; 10.3L planned; 10.3L2 deployed dry-run verified; 10.3L2 audit test local |
+| **Current focus** | Deploy backend and run backend-only weather alert audit apply test |
 | **Current last verified** | **2026-05-22** - Oom Sakkie weather today summary returns readings, coverage, temperature range, humidity, rain, wind, and measurement window from backend/Supabase weather data |
 | **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
 

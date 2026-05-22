@@ -1522,6 +1522,45 @@ Next deploy test:
 3. Confirm `success = true`, no secrets are returned, and no alert rows are written.
 4. Only after dry-run is clean should we test apply mode.
 
+Deployed dry-run verification:
+
+- Passed on 2026-05-22.
+- Production `POST /api/telemetry/weather/alerts/evaluate` with `{"dry_run": true}` returned `success = true`, `status = ok`, `mode = dry_run`.
+- Result had zero candidates, zero sendable alerts, zero held alerts, zero suppressed alerts, quiet hours inactive, and `source.writes_to_supabase = false`.
+- This confirms the deployed route, auth, Supabase read path, and no-write dry-run behavior.
+
+Next decision:
+
+- Either test backend apply mode with a controlled synthetic condition/audit write, or move directly to 10.3L4 n8n delivery planning with dry-run first.
+
+### 10.3L2 Backend Audit Apply Test
+
+Prepared locally on 2026-05-22:
+
+- `POST /api/telemetry/weather/alerts/evaluate` now supports `{"include_test_alert": true}`.
+- This adds one clearly marked backend audit candidate:
+  - `alert_type = BACKEND_AUDIT_TEST`
+  - `alert_key = backend_audit_test`
+  - `severity = info`
+  - `details.test = true`
+  - message states that no Telegram message was sent
+- In dry-run mode this can be inspected without writing.
+- In apply mode this writes one row to `telemetry_alerts`, proving backend write behavior without involving n8n or Telegram.
+- This is not a real weather alert and should not be used by n8n delivery workflows.
+
+Local verification:
+
+- Focused weather telemetry tests pass at 14 tests.
+
+Deploy/apply test:
+
+1. Deploy backend.
+2. First call `POST /api/telemetry/weather/alerts/evaluate` with `{"dry_run": true, "include_test_alert": true}`.
+3. Confirm it returns one `BACKEND_AUDIT_TEST` sendable alert and `writes_to_supabase = false`.
+4. Then call `POST /api/telemetry/weather/alerts/evaluate` with `{"include_test_alert": true}`.
+5. Confirm it returns one written alert ID and `writes_to_supabase = true`.
+6. Do not wire n8n to send `BACKEND_AUDIT_TEST`.
+
 ## 10.3A Inventory Owner Inputs
 
 Confirmed on 2026-05-21:

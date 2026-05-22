@@ -372,6 +372,50 @@ class WeatherTelemetryTests(unittest.TestCase):
         self.assertEqual(insert_params["area"], "weather")
         self.assertEqual(insert_params["severity"], "critical")
 
+    def test_weather_alert_evaluator_can_write_backend_audit_test_alert(self):
+        cursor = Mock()
+        latest_reading = datetime.now(timezone.utc)
+        cursor.fetchone.return_value = (
+            "weather-station-main",
+            "Amadeus Local Weather Station",
+            "weather_com_pws",
+            30,
+            latest_reading,
+            Decimal("14.5"),
+            Decimal("88"),
+            Decimal("4.2"),
+            Decimal("10.0"),
+            Decimal("230"),
+            Decimal("0"),
+            Decimal("0"),
+            Decimal("1018.2"),
+        )
+        cursor.fetchall.side_effect = [
+            [],
+            [],
+            [],
+        ]
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict(
+            os.environ,
+            {"DATABASE_URL": "postgresql://user:secret@example/db", "TELEMETRY_INGEST_API_KEY": "expected"},
+            clear=True,
+        ), patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = evaluate_weather_alerts({"include_test_alert": True}, provided_api_key="expected")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["test_alert_requested"])
+        self.assertEqual(result["sendable_count"], 1)
+        self.assertEqual(result["sendable_alerts"][0]["alert_key"], "backend_audit_test")
+        self.assertEqual(result["sendable_alerts"][0]["alert_type"], "BACKEND_AUDIT_TEST")
+        self.assertEqual(result["sendable_alerts"][0]["severity"], "info")
+        self.assertIn("No Telegram message was sent", result["sendable_alerts"][0]["message"])
+        insert_params = cursor.execute.call_args_list[-1].args[1]
+        self.assertEqual(insert_params["alert_type"], "BACKEND_AUDIT_TEST")
+        self.assertIn('"test":true', insert_params["details"])
+
     def test_weather_routes_are_registered(self):
         route_source = Path("modules/telemetry/telemetry_routes.py").read_text(encoding="utf-8")
 

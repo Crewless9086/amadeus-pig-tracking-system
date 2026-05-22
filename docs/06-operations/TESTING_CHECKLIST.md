@@ -1655,6 +1655,21 @@ Local result:
 - 2026-05-22: Focused weather telemetry tests pass at 13 tests.
 - 2026-05-22: Telemetry/database/workflow suite passes at 57 tests.
 - 2026-05-22: Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
+- 2026-05-22: Production dry-run returned `success = true`, `status = ok`, `mode = dry_run`, zero candidates, zero sendable/held/suppressed alerts, quiet hours inactive, and `source.writes_to_supabase = false`.
+
+10.3L2 backend audit apply checks:
+
+1. Deploy backend with `include_test_alert` support.
+2. Dry-run first with body `{"dry_run": true, "include_test_alert": true}`.
+3. Confirm one `BACKEND_AUDIT_TEST` sendable alert and `source.writes_to_supabase = false`.
+4. Apply second with body `{"include_test_alert": true}`.
+5. Confirm one written alert ID and `source.writes_to_supabase = true`.
+6. Confirm no Telegram message is sent.
+7. Do not wire n8n to deliver `BACKEND_AUDIT_TEST`.
+
+Local result:
+
+- 2026-05-22: Focused weather telemetry tests pass at 14 tests after adding the backend audit test alert path.
 
 After any order change, inspect affected sheets/views:
 

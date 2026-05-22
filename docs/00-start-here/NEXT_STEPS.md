@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified; 10.3J3 Logger-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L Planned; 10.3L2 Local Dry-Run Verified | Deploy backend and run protected weather alert evaluator dry-run smoke. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified; 10.3J3 Logger-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L Planned; 10.3L2 Deployed Dry-Run Verified; 10.3L2 Audit Test Local | Deploy backend and run backend-only audit apply test. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2861,7 +2861,17 @@ Recommendation:
   - Writes only sendable alerts in apply mode; does not send Telegram messages.
   - Focused weather tests pass at 13 tests; telemetry/database/workflow suite passes at 57 tests.
   - Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
-- Next step: deploy backend and run `POST /api/telemetry/weather/alerts/evaluate` with `{"dry_run": true}` against production.
+- 10.3L2 deployed dry-run verification passed on 2026-05-22:
+  - Production `POST /api/telemetry/weather/alerts/evaluate` with `{"dry_run": true}` returned `success = true`, `status = ok`, `mode = dry_run`.
+  - It returned zero candidates, zero sendable/held/suppressed alerts, quiet hours inactive, and `writes_to_supabase = false`.
+- 10.3L2 backend audit test path prepared locally:
+  - `POST /api/telemetry/weather/alerts/evaluate` supports `{"include_test_alert": true}`.
+  - Dry-run can inspect a `BACKEND_AUDIT_TEST` candidate without writing.
+  - Apply mode writes one clearly marked `BACKEND_AUDIT_TEST` row to `telemetry_alerts`.
+  - The message states no Telegram message was sent.
+  - n8n must not deliver `BACKEND_AUDIT_TEST`.
+  - Focused weather tests pass at 14 tests.
+- Next step: deploy backend and run backend-only audit apply test.
 
 Farm home/dashboard idea:
 

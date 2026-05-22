@@ -406,4 +406,10 @@ Current position:
 - It does not send Telegram messages.
 - Focused weather tests pass at 13 tests; telemetry/database/workflow suite passes at 57 tests.
 - Real Supabase dry-run returned `success = true`, `mode = dry_run`, and zero current alert candidates under normal weather conditions.
-- Next step is deploying backend and running the protected dry-run endpoint smoke.
+- 10.3L2 deployed dry-run verification passed on 2026-05-22.
+- Production `POST /api/telemetry/weather/alerts/evaluate` with `{"dry_run": true}` returned `success = true`, `status = ok`, `mode = dry_run`, zero candidates, zero sendable/held/suppressed alerts, and `writes_to_supabase = false`.
+- Backend-only audit test path is prepared locally.
+- `POST /api/telemetry/weather/alerts/evaluate` supports `{"include_test_alert": true}` to create a clearly marked `BACKEND_AUDIT_TEST` candidate.
+- In apply mode this writes one backend audit row to `telemetry_alerts`; it does not send Telegram.
+- Focused weather tests pass at 14 tests.
+- Next step is deploying backend and running the backend-only audit apply test.

@@ -380,6 +380,7 @@ def evaluate_weather_alerts(payload=None, provided_api_key="", database_url=None
 
     options = payload if isinstance(payload, dict) else {}
     dry_run = bool(options.get("dry_run", False))
+    include_test_alert = bool(options.get("include_test_alert", False))
     now_utc = datetime.now(timezone.utc)
 
     try:
@@ -387,6 +388,8 @@ def evaluate_weather_alerts(payload=None, provided_api_key="", database_url=None
             with connection.cursor() as cursor:
                 context = _read_weather_alert_context(cursor, now_utc)
                 candidates = _build_weather_alert_candidates(context, now_utc)
+                if include_test_alert:
+                    candidates.append(_backend_audit_test_alert(now_utc))
                 recent_alerts = _read_recent_weather_alerts(cursor)
                 evaluation = _apply_weather_alert_policy(candidates, recent_alerts, now_utc)
 
@@ -424,6 +427,7 @@ def evaluate_weather_alerts(payload=None, provided_api_key="", database_url=None
         "held_alerts": evaluation["held_alerts"],
         "suppressed_alerts": evaluation["suppressed_alerts"],
         "rules": _weather_alert_rule_defaults(),
+        "test_alert_requested": include_test_alert,
     }, 200
 
 
@@ -1036,6 +1040,25 @@ def _weather_alert_candidate(alert_key, alert_type, severity, source_id, source_
         },
     }
     return alert
+
+
+def _backend_audit_test_alert(now_utc):
+    return _weather_alert_candidate(
+        "backend_audit_test",
+        "BACKEND_AUDIT_TEST",
+        "info",
+        DEFAULT_WEATHER_SOURCE_ID,
+        "Amadeus Local Weather Station",
+        now_utc,
+        0,
+        "Backend weather alert evaluator audit test. No Telegram message was sent.",
+        {
+            "test": True,
+            "purpose": "verify weather alert apply-mode database write",
+            "safe_to_ignore": True,
+        },
+        bypass_quiet_hours=True,
+    )
 
 
 def _apply_weather_alert_policy(candidates, recent_alerts, now_utc):
