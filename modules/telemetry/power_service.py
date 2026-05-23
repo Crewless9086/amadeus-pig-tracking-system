@@ -576,8 +576,8 @@ def _read_power_latest_for_alerts(cursor):
             pls.battery_soc_pct,
             pls.grid_power_w,
             pls.generator_power_w,
-            pls.grid_active,
-            pls.generator_active
+            coalesce((pls.flags->>'grid_active')::boolean, false) as grid_active,
+            coalesce((pls.flags->>'generator_active')::boolean, false) as generator_active
         from public.telemetry_sources ts
         left join public.power_latest_state pls on pls.source_id = ts.source_id
         where ts.source_id = %s
