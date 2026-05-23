@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U Local Ready; 10.3V Applied Locally | Deploy 10.3U/10.3V, then test default sheet source and optional `auto` source. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Auto Verified | Redeploy small recent-event dedupe polish, then decide whether to schedule the daily sync later. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -3399,9 +3399,12 @@ Local live result for `2026-05-23`:
 
 Deployment/test next:
 
-- Deploy backend.
-- Keep default `IRRIGATION_STATUS_SOURCE=google_sheets` first.
-- After deploy, optionally test `IRRIGATION_STATUS_SOURCE=auto`.
+- Backend deployed and default source verified on Render.
+- Default deployed endpoint still uses `source = google_sheets`.
+- Deployed response returned today's two planned zones, latest `STATE`, and read-only safety flags.
+- `IRRIGATION_STATUS_SOURCE=auto` was enabled on Render and verified.
+- Auto response returned `source = supabase`, `today.daily_plan_id = IRRPLAN-2026-05-23`, exactly two current plan rows, and read-only safety flags.
+- Minor follow-up: recent event output showed the same `PLAN_CREATED` event twice because both the historical import and daily sync contain that logical event. Local fix now dedupes recent events for display; redeploy before final closure.
 - Do not schedule the sync until the manual deployed path is proven.
 
 Farm home/dashboard idea:

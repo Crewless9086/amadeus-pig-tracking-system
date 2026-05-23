@@ -250,6 +250,62 @@ class IrrigationTelemetryTests(unittest.TestCase):
         self.assertTrue(result["safety"]["read_only"])
         self.assertFalse(result["safety"]["can_control"])
 
+    @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "supabase", "DATABASE_URL": "postgresql://example"}, clear=True)
+    def test_supabase_recent_events_are_deduplicated_for_display(self):
+        cursor = Mock()
+        duplicate_event = (
+            "2026-05-23T00:06:14.597+02:00",
+            "",
+            "PLAN_CREATED",
+            "Daily plan created for 2026-05-23",
+            120,
+            None,
+            "AUTO",
+            "",
+        )
+        cursor.fetchall.side_effect = [
+            [("ZONE-1", "North Drip", 1)],
+            [(duplicate_event), (duplicate_event)],
+        ]
+        cursor.fetchone.side_effect = [
+            ("IDLE", "", "ZONE-1", "", None, "", "2026-05-23T00:06:13.772+02:00"),
+            ("IRRPLAN-2026-05-23", "2026-05-23", "Planned", 60),
+        ]
+
+        def execute_side_effect(query, params=None):
+            if "from public.irrigation_plan_items" in query:
+                cursor.fetchall.side_effect = [
+                    [
+                        (
+                            "2026-05-23_ZONE-1",
+                            "IRRPLAN-2026-05-23",
+                            "ZONE-1",
+                            None,
+                            60,
+                            None,
+                            None,
+                            "Planned",
+                            5,
+                            "",
+                        )
+                    ],
+                    [duplicate_event, duplicate_event],
+                ]
+
+        cursor.execute.side_effect = execute_side_effect
+        connection = MagicMock()
+        psycopg = Mock()
+        psycopg.connect.return_value = MagicMock()
+        psycopg.connect.return_value.__enter__.return_value = connection
+        connection.cursor.return_value.__enter__.return_value = cursor
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_irrigation_status(today="2026-05-23")
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(len(result["recent_events"]), 1)
+        self.assertEqual(result["recent_events"][0]["event"], "PLAN_CREATED")
+
     def test_irrigation_route_is_registered(self):
         import modules.telemetry.telemetry_routes as routes
 

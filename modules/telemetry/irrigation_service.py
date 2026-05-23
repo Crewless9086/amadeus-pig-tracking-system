@@ -426,8 +426,10 @@ def _load_supabase_recent_events(cursor, limit=10):
     )
     rows = cursor.fetchall()
     rows.reverse()
-    return [
-        {
+    events = []
+    seen = set()
+    for row in rows:
+        event = {
             "timestamp": _clean(row[0]),
             "zone_id": _clean(row[1]),
             "event": _clean(row[2]),
@@ -437,8 +439,20 @@ def _load_supabase_recent_events(cursor, limit=10):
             "actor": _clean(row[6]),
             "plan_id": _clean(row[7]),
         }
-        for row in rows
-    ]
+        dedupe_key = (
+            event["timestamp"],
+            event["zone_id"],
+            event["event"],
+            event["reason"],
+            event["run_minutes_planned"],
+            event["run_minutes_actual"],
+            event["actor"],
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        events.append(event)
+    return events[-limit:]
 
 
 def _read_sheet(spreadsheet_name, tab_name):

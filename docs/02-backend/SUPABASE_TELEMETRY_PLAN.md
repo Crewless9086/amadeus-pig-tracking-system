@@ -2525,6 +2525,9 @@ Safety:
 
 Next:
 
-- Deploy backend.
-- Test default `google_sheets` source first.
-- Then decide whether to set `IRRIGATION_STATUS_SOURCE=auto` on Render for a controlled deployed trial.
+- Backend deployed and default `google_sheets` source tested on Render.
+- Deployed check returned `success = true`, `status = ok`, `source = google_sheets`, today's two planned zones, and read-only safety flags.
+- `IRRIGATION_STATUS_SOURCE=auto` was then enabled on Render for a controlled deployed trial.
+- Auto-source response returned `source = supabase`, `today.daily_plan_id = IRRPLAN-2026-05-23`, today's two plan rows, latest state, and read-only safety flags.
+- Recent events showed one duplicate `PLAN_CREATED` logical event because both the historical import and the daily sync contain the same event. Local read-path polish now dedupes recent events for display.
+- Next: redeploy the dedupe polish, then decide whether and how to schedule `scripts/irrigation_daily_sync.py`.

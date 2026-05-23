@@ -1910,9 +1910,9 @@ Checks:
 6. [Done locally 2026-05-23] Run plan-only against real sheet for `2026-05-23`.
 7. [Done locally 2026-05-23] Apply manual sync to Supabase.
 8. [Done locally 2026-05-23] Verify Supabase status reads today's selected plan only.
-9. [Next] Deploy backend.
-10. [Next] Test deployed default `google_sheets` source.
-11. [Next] Decide whether to test deployed `IRRIGATION_STATUS_SOURCE=auto`.
+9. [Done 2026-05-23] Deploy backend.
+10. [Done 2026-05-23] Test deployed default `google_sheets` source.
+11. [Done 2026-05-23] Test deployed `IRRIGATION_STATUS_SOURCE=auto`.
 
 Local result:
 
@@ -1921,6 +1921,9 @@ Local result:
 - Supabase status read returned `IRRPLAN-2026-05-23` and today's two plan items only.
 - No schedule has been added.
 - No hardware-control behavior changed.
+- Deployed default-source check returned `source = google_sheets`, today's two planned zones, and read-only safety flags.
+- Deployed auto-source check returned `source = supabase`, `IRRPLAN-2026-05-23`, today's two plan rows, and read-only safety flags.
+- [Local polish ready] Recent events are deduped for display to hide duplicate logical events created by historical import plus daily sync overlap.
 
 After any order change, inspect affected sheets/views:
 
