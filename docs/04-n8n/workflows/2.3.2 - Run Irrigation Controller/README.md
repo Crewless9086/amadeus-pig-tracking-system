@@ -49,6 +49,7 @@ Imported for docs: 2026-05-18
 - This workflow can control real irrigation hardware through IFTTT.
 - The imported workflow contains direct IFTTT webhook URL expressions. Treat this export as private and move the key into a protected credential or environment value before wider sharing.
 - Do not activate or edit this workflow casually.
+- Phase 10.3O status: this workflow must remain inactive while the command/audit/safety model is planned. Do not edit IFTTT start/stop nodes or add Oom Sakkie start/stop commands in this slice.
 
 ## Credential / Secret Handling Plan
 

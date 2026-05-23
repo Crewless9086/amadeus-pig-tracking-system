@@ -1706,21 +1706,57 @@ Manual import steps:
 9. Confirm no Telegram message is sent because `BACKEND_AUDIT_TEST` is filtered out.
 10. Set both values back to `false` before any live manual run.
 
+Legacy cleanup:
+
+- [Done 2026-05-23] `ALERT - Local Weather Station` removed from repo workflow exports after backend delivery was live-verified.
+- [Done 2026-05-23] `ALERT - Weather Forecast` removed from repo workflow exports after backend delivery was live-verified.
+
 10.3N power backend alert checks:
 
-1. Deploy backend with `POST /api/telemetry/power/alerts/evaluate`.
-2. Call the endpoint with `{"dry_run": true}` and the telemetry ingest key.
-3. Confirm `success = true`, `mode = dry_run`, and no alert rows are written.
-4. Call the endpoint with `{"dry_run": true, "include_test_alert": true}`.
-5. Confirm `POWER_BACKEND_AUDIT_TEST` appears in the backend response and no Telegram message is sent.
-6. Import `ALERT - Power Backend Delivery` inactive.
-7. Paste the real telemetry key into `HTTP - Evaluate Power Alerts`.
-8. Confirm `Code - Build Evaluate Request` has `dryRun = true`.
-9. Run manually and confirm no Telegram message is sent.
-10. Set `includeTestAlert = true` while `dryRun = true`, run manually, and confirm the audit test is filtered out.
-11. Set `dryRun = false` and `includeTestAlert = false`.
-12. Run or wait for one live execution.
-13. Archive old `ALERT - Sunsynk` only after the new backend-driven workflow is live-verified.
+1. [Done 2026-05-23] Deploy backend with `POST /api/telemetry/power/alerts/evaluate`.
+2. [Done 2026-05-23] Call the endpoint with `{"dry_run": true}` and the telemetry ingest key.
+3. [Done 2026-05-23] Confirm `success = true`, `mode = dry_run`, and no alert rows are written.
+4. [Done 2026-05-23] Call the endpoint with `{"dry_run": true, "include_test_alert": true}`.
+5. [Done 2026-05-23] Confirm `POWER_BACKEND_AUDIT_TEST` appears in the backend response and no Telegram message is sent.
+6. [Done 2026-05-23] Import `ALERT - Power Backend Delivery` inactive.
+7. [Done 2026-05-23] Paste the real telemetry key into `HTTP - Evaluate Power Alerts`.
+8. [Done 2026-05-23] Confirm `Code - Build Evaluate Request` has `dryRun = true`.
+9. [Done 2026-05-23] Run manually and confirm no Telegram message is sent.
+10. [Done 2026-05-23] Set `includeTestAlert = true` while `dryRun = true`, run manually, and confirm the audit test is filtered out.
+11. [Done 2026-05-23] Set `dryRun = false` and `includeTestAlert = false`.
+12. [Done 2026-05-23] Run or wait for one live execution.
+13. [Done 2026-05-23] Archive/remove old `ALERT - Sunsynk` now that the new backend-driven workflow is live-verified.
+
+Latest dry-run evidence:
+
+- Normal n8n dry-run returned real candidates but emitted zero Telegram items because `mode = dry_run`.
+- Audit n8n dry-run returned `POWER_BATTERY_LOW` and `POWER_BACKEND_AUDIT_TEST`, but emitted zero Telegram items because dry-run/test alerts are blocked.
+- Live execution `47565` returned `mode = apply`, wrote `ALT-C758569F3D95` for `POWER_BATTERY_LOW`, sent one Telegram alert successfully, and held `POWER_GRID_ACTIVE` because quiet hours were active.
+- Owner made `ALERT - Power Backend Delivery` live and removed old `ALERT - Sunsynk` from n8n. Repo cleanup removed the old workflow export folder.
+
+10.3O irrigation inventory/control-boundary checks:
+
+1. Confirm `2.3.1 - Build Daily Irrigation Plan` remains the only active irrigation workflow.
+2. Confirm `2.3.2 - Run Irrigation Controller` remains inactive.
+3. Confirm no IFTTT start/stop node is edited during planning.
+4. Confirm no Oom Sakkie irrigation start/stop command is added.
+5. Confirm no backend hardware-control endpoint is created in this planning slice.
+6. Confirm current tabs are documented: `ZONES`, `RULES`, `DAILY_PLAN`, `STATE`, `LOG`.
+7. Confirm open owner decisions are captured before any implementation.
+8. Confirm any later build starts read-only unless the owner explicitly approves live control work.
+
+10.3P irrigation read-only status checks:
+
+1. [Done locally 2026-05-23] Confirm endpoint is `GET /api/telemetry/irrigation/status`.
+2. [Done locally 2026-05-23] Confirm response includes `mode = read_only`.
+3. [Done locally 2026-05-23] Confirm response includes `safety.read_only = true`.
+4. [Done locally 2026-05-23] Confirm response includes `safety.can_control = false`.
+5. [Done locally 2026-05-23] Confirm response includes `safety.hardware_commands_enabled = false`.
+6. [Done locally 2026-05-23] Confirm code performs no Google Sheet writes.
+7. [Done locally 2026-05-23] Confirm code performs no IFTTT/HTTP hardware calls.
+8. [Done locally 2026-05-23] Confirm missing/stale source data returns a cautious unavailable/unknown response.
+9. [Done locally 2026-05-23] Confirm Oom Sakkie is not updated for irrigation control commands in this slice.
+10. [Next] Deploy backend and verify the endpoint on Render.
 
 After any order change, inspect affected sheets/views:
 

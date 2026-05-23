@@ -70,4 +70,4 @@ In `HTTP - Evaluate Weather Alerts`, set the header value manually:
 
 - Backend/Supabase is the alert source of truth.
 - n8n is only the delivery layer.
-- Legacy alert workflows remain inactive/documented until this path is proven.
+- Legacy weather alert workflow exports were removed after this path was live-verified. Do not reintroduce the old Sheets-first alert workflows.

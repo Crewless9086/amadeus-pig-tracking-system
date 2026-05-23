@@ -47,3 +47,4 @@ Imported for docs: 2026-05-18
 - This is operational automation, not assistant conversation.
 - It writes to irrigation sheets and should be treated as a controlled automation workflow.
 - It is outside Phase 7.3 order lookup, but it belongs in the broader Oom Sakkie operating system documentation.
+- Phase 10.3O status: keep this workflow stable while irrigation command/audit planning is done. Do not expand it into hardware-control behavior in this slice.

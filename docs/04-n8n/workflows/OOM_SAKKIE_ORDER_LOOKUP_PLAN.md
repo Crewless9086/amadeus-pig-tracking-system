@@ -23,9 +23,9 @@ Imported from n8n on 2026-05-18:
 | `2.4.1 - Test Caller` | `GwWZueB0iyonpscl` | Inactive | Manual orders sub-agent test caller. |
 | `2.4.2 - Orders Approval Callback Handler` | `wmsgzHNywC6okTuI` | Inactive | Legacy callback handler; callback routing moved into GateKeeper to avoid Telegram webhook conflicts. |
 | `2.4.3 - Order Approval Request Webhook` | `k4XVMoJ1hK09PIvT` | Active | Approval request webhook. |
-| `ALERT - Local Weather Station` | `g0ajlm9gBp7J72Jn` | Inactive | Scheduled weather station alerts. |
-| `ALERT - Sunsynk` | `2LETWzde7lMDlMnl` | Inactive | Scheduled solar/power alerts. |
-| `ALERT - Weather Forecast` | `I4D76Gb9ddGFhSP5` | Inactive | Scheduled forecast alerts. |
+| `ALERT - Local Weather Station` | `g0ajlm9gBp7J72Jn` | Removed | Historical scheduled weather station alerts; replaced by backend-driven `ALERT - Weather Backend Delivery`. |
+| `ALERT - Sunsynk` | `2LETWzde7lMDlMnl` | Removed | Historical scheduled solar/power alerts; replaced by backend-driven `ALERT - Power Backend Delivery`. |
+| `ALERT - Weather Forecast` | `I4D76Gb9ddGFhSP5` | Removed | Historical scheduled forecast alerts; replaced by backend-driven `ALERT - Weather Backend Delivery`. |
 
 Planning correction:
 

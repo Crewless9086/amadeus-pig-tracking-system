@@ -2,7 +2,7 @@
 
 Thin Telegram delivery workflow for backend-owned Sunsynk/power alerts.
 
-Status at export: inactive  
+Status: active / live-verified  
 Created for docs: 2026-05-23  
 Phase: 10.3N
 
@@ -54,15 +54,15 @@ In `HTTP - Evaluate Power Alerts`, set the header value manually:
 
 ## Manual Test Plan
 
-1. Import inactive.
-2. Confirm `Code - Build Evaluate Request` has `dryRun = true`.
-3. In `HTTP - Evaluate Power Alerts`, replace `PASTE_TELEMETRY_INGEST_API_KEY_HERE` with the real key.
-4. Run manually and confirm no Telegram message is sent.
-5. Temporarily set `includeTestAlert = true` while `dryRun = true`.
-6. Run manually and confirm `POWER_BACKEND_AUDIT_TEST` is filtered out and no Telegram message is sent.
-7. Set `dryRun = false` and `includeTestAlert = false`.
-8. Run manually once.
-9. Activate schedule only after the manual live run returns no alerts or expected real alerts.
+1. [Done 2026-05-23] Import inactive.
+2. [Done 2026-05-23] Confirm `Code - Build Evaluate Request` has `dryRun = true`.
+3. [Done 2026-05-23] In `HTTP - Evaluate Power Alerts`, replace `PASTE_TELEMETRY_INGEST_API_KEY_HERE` with the real key.
+4. [Done 2026-05-23] Run manually and confirm no Telegram message is sent.
+5. [Done 2026-05-23] Temporarily set `includeTestAlert = true` while `dryRun = true`.
+6. [Done 2026-05-23] Run manually and confirm `POWER_BACKEND_AUDIT_TEST` is filtered out and no Telegram message is sent.
+7. [Done 2026-05-23] Set `dryRun = false` and `includeTestAlert = false`.
+8. [Done 2026-05-23] Run manually once.
+9. [Done 2026-05-23] Live execution `47565` sent `POWER_BATTERY_LOW` and wrote `ALT-C758569F3D95` to Supabase.
 
 ## Safety Rules
 
@@ -77,4 +77,4 @@ In `HTTP - Evaluate Power Alerts`, set the header value manually:
 
 ## Legacy Workflow
 
-`ALERT - Sunsynk` should remain live until this backend-driven path is imported, dry-run tested, live-tested, and accepted. After that it can be archived.
+`ALERT - Sunsynk` was removed from n8n and from the repo workflow exports after this workflow was live-verified. Do not keep both Sunsynk/power alert workflows live.

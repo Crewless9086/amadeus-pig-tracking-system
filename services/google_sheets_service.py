@@ -18,7 +18,9 @@ SHEETS_RETRY_DELAYS = (2, 5)
 _CACHE_LOCK = threading.RLock()
 _CLIENT = None
 _SPREADSHEET = None
+_SPREADSHEETS_BY_NAME = {}
 _WORKSHEETS = {}
+_WORKSHEETS_BY_SPREADSHEET = {}
 
 
 def _get_client():
@@ -41,7 +43,9 @@ def _reset_cached_spreadsheet():
 
     with _CACHE_LOCK:
         _SPREADSHEET = None
+        _SPREADSHEETS_BY_NAME.clear()
         _WORKSHEETS.clear()
+        _WORKSHEETS_BY_SPREADSHEET.clear()
 
 
 def _is_quota_error(exc):
@@ -82,6 +86,27 @@ def _get_spreadsheet():
         return _SPREADSHEET
 
 
+def _get_spreadsheet_by_name(spreadsheet_name: str):
+    spreadsheet_name = str(spreadsheet_name or "").strip()
+    if not spreadsheet_name:
+        raise ValueError("Spreadsheet name is required.")
+
+    if spreadsheet_name == GOOGLE_SHEET_NAME:
+        return _get_spreadsheet()
+
+    with _CACHE_LOCK:
+        spreadsheet = _SPREADSHEETS_BY_NAME.get(spreadsheet_name)
+        if spreadsheet is not None:
+            return spreadsheet
+
+    client = _get_client()
+    spreadsheet = _run_with_quota_retry(lambda: client.open(spreadsheet_name))
+
+    with _CACHE_LOCK:
+        _SPREADSHEETS_BY_NAME[spreadsheet_name] = spreadsheet
+        return spreadsheet
+
+
 def get_worksheet(sheet_name: str):
     sheet_name = str(sheet_name or "").strip()
     if not sheet_name:
@@ -100,8 +125,35 @@ def get_worksheet(sheet_name: str):
         return worksheet
 
 
+def get_worksheet_from_spreadsheet(spreadsheet_name: str, sheet_name: str):
+    spreadsheet_name = str(spreadsheet_name or "").strip()
+    sheet_name = str(sheet_name or "").strip()
+    if not spreadsheet_name:
+        raise ValueError("Spreadsheet name is required.")
+    if not sheet_name:
+        raise ValueError("Sheet name is required.")
+
+    cache_key = (spreadsheet_name, sheet_name)
+    with _CACHE_LOCK:
+        worksheet = _WORKSHEETS_BY_SPREADSHEET.get(cache_key)
+        if worksheet is not None:
+            return worksheet
+
+    spreadsheet = _get_spreadsheet_by_name(spreadsheet_name)
+    worksheet = _run_with_quota_retry(lambda: spreadsheet.worksheet(sheet_name))
+
+    with _CACHE_LOCK:
+        _WORKSHEETS_BY_SPREADSHEET[cache_key] = worksheet
+        return worksheet
+
+
 def get_all_records(sheet_name: str):
     worksheet = get_worksheet(sheet_name)
+    return _run_with_quota_retry(lambda: worksheet.get_all_records())
+
+
+def get_all_records_from_spreadsheet(spreadsheet_name: str, sheet_name: str):
+    worksheet = get_worksheet_from_spreadsheet(spreadsheet_name, sheet_name)
     return _run_with_quota_retry(lambda: worksheet.get_all_records())
 
 

@@ -1,0 +1,118 @@
+import unittest
+from unittest.mock import patch
+
+from modules.telemetry.irrigation_service import get_irrigation_status
+
+
+class IrrigationTelemetryTests(unittest.TestCase):
+    def test_irrigation_status_is_read_only_and_summarizes_plan(self):
+        records = {
+            "STATE": [
+                {
+                    "state_id": "main",
+                    "current_zone_id": "",
+                    "current_status": "IDLE",
+                    "remaining_minutes": "",
+                    "pause_reason": "",
+                    "last_update": "2026-05-23T05:00:00+02:00",
+                    "last_zone_completed": "ZONE-1",
+                    "next_zone_id": "ZONE-2",
+                }
+            ],
+            "DAILY_PLAN": [
+                {
+                    "plan_id": "2026-05-23_ZONE-1",
+                    "date": "2026-05-23",
+                    "zone_id": "ZONE-1",
+                    "planned_start": "",
+                    "planned_minutes": 20,
+                    "status": "DONE",
+                    "reason": "",
+                    "actual_start": "2026-05-23T05:00:00+02:00",
+                    "actual_end": "2026-05-23T05:20:00+02:00",
+                    "water_score": 1,
+                },
+                {
+                    "plan_id": "2026-05-23_ZONE-2",
+                    "date": "2026-05-23",
+                    "zone_id": "ZONE-2",
+                    "planned_start": "",
+                    "planned_minutes": 30,
+                    "status": "PLANNED",
+                    "reason": "",
+                    "actual_start": "",
+                    "actual_end": "",
+                    "water_score": 5,
+                },
+            ],
+            "ZONES": [
+                {"zone_id": "ZONE-1", "name": "North Drip", "priority": 2},
+                {"zone_id": "ZONE-2", "name": "South Sprinkler", "priority": 1},
+            ],
+            "RULES": [
+                {"rule_key": "wind_pause_kmh", "rule_value": 35},
+                {"rule_key": "live_rain_skip_mm", "rule_value": 2},
+            ],
+            "LOG": [
+                {
+                    "timestamp": "2026-05-23T05:20:00+02:00",
+                    "zone_id": "ZONE-1",
+                    "event": "ZONE_COMPLETED",
+                    "reason": "Planned runtime completed",
+                    "run_minutes_planned": 20,
+                    "run_minutes_actual": 20,
+                    "actor": "system",
+                    "plan_id": "2026-05-23_ZONE-1",
+                }
+            ],
+        }
+
+        def fake_get_records(_spreadsheet_name, tab_name):
+            return records[tab_name]
+
+        with patch("modules.telemetry.irrigation_service.get_all_records_from_spreadsheet", side_effect=fake_get_records):
+            result, status_code = get_irrigation_status(today="2026-05-23", spreadsheet_name="Irrigation")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "read_only")
+        self.assertTrue(result["safety"]["read_only"])
+        self.assertFalse(result["safety"]["can_control"])
+        self.assertFalse(result["safety"]["hardware_commands_enabled"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        self.assertEqual(result["current"]["status"], "IDLE")
+        self.assertEqual(result["today"]["planned_count"], 1)
+        self.assertEqual(result["today"]["done_count"], 1)
+        self.assertEqual(result["today"]["total_planned_minutes"], 50)
+        self.assertEqual(result["today"]["completed_minutes"], 20)
+        self.assertEqual(result["today"]["next_zone_id"], "ZONE-2")
+        self.assertEqual(result["today"]["next_zone_name"], "South Sprinkler")
+        self.assertEqual(len(result["recent_events"]), 1)
+
+    def test_irrigation_status_returns_safe_unavailable_on_sheet_failure(self):
+        with patch(
+            "modules.telemetry.irrigation_service.get_all_records_from_spreadsheet",
+            side_effect=RuntimeError("sheet unavailable"),
+        ):
+            result, status_code = get_irrigation_status(today="2026-05-23", spreadsheet_name="Irrigation")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["mode"], "read_only")
+        self.assertTrue(result["safety"]["read_only"])
+        self.assertFalse(result["safety"]["can_control"])
+        self.assertFalse(result["safety"]["hardware_commands_enabled"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+
+    def test_irrigation_route_is_registered(self):
+        import modules.telemetry.telemetry_routes as routes
+
+        route_source = routes.__file__
+        with open(route_source, "r", encoding="utf-8") as handle:
+            source = handle.read()
+
+        self.assertIn("/telemetry/irrigation/status", source)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -6,6 +6,7 @@ from modules.telemetry.power_service import (
     get_recent_power_profile,
     ingest_power_reading,
 )
+from modules.telemetry.irrigation_service import get_irrigation_status
 from modules.telemetry.weather_service import (
     evaluate_weather_alerts,
     get_current_weather_state,
@@ -54,6 +55,12 @@ def telemetry_power_alerts_evaluate():
 @telemetry_bp.route("/telemetry/weather/current", methods=["GET"])
 def telemetry_weather_current():
     result, status_code = get_current_weather_state()
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/irrigation/status", methods=["GET"])
+def telemetry_irrigation_status():
+    result, status_code = get_irrigation_status(request.args.get("date"))
     return jsonify(result), status_code
 
 

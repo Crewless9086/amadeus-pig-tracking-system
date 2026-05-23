@@ -1443,16 +1443,16 @@ Deployed verification:
 Agreed direction on 2026-05-22:
 
 - Use the backend/Supabase approach for weather alerts.
-- Keep `ALERT - Local Weather Station` and `ALERT - Weather Forecast` documented but do not rebuild or activate them as the source of truth yet.
+- Keep `ALERT - Local Weather Station` and `ALERT - Weather Forecast` as historical context only; their repo exports were removed after backend delivery was live-verified.
 - Alert rules, cooldowns, alert history, and duplicate prevention should live in backend/Supabase, not in Google Sheets workflow code.
 - n8n should eventually become a thin scheduled caller and Telegram delivery layer, not the place where alert truth is calculated.
 
-Current legacy alert shape:
+Historical legacy alert shape:
 
-| Workflow | Current state | Current source | Current issue |
+| Workflow | Final state | Historical source | Historical issue |
 | --- | --- | --- | --- |
-| `ALERT - Local Weather Station` | Inactive/documented | `LLM_Latest_Reading`, `LLM_Today_Readings`, `Weather_Alert_Log` | Reads Sheets, calculates rules in n8n Code nodes, writes Sheets alert history. |
-| `ALERT - Weather Forecast` | Inactive/documented | `Forecast_10Day_Current`, `Weather_Alert_Log` | Reads Sheets, calculates forecast alert rules in n8n Code nodes, writes Sheets alert history. |
+| `ALERT - Local Weather Station` | Removed from repo exports | `LLM_Latest_Reading`, `LLM_Today_Readings`, `Weather_Alert_Log` | Read Sheets, calculated rules in n8n Code nodes, wrote Sheets alert history. |
+| `ALERT - Weather Forecast` | Removed from repo exports | `Forecast_10Day_Current`, `Weather_Alert_Log` | Read Sheets, calculated forecast alert rules in n8n Code nodes, wrote Sheets alert history. |
 
 Recommended backend contract:
 
@@ -1636,7 +1636,7 @@ Next step:
 Agreed direction:
 
 - Create a new thin backend-driven delivery workflow instead of editing the legacy Sheets-first alert workflows.
-- Keep legacy `ALERT - Local Weather Station` and `ALERT - Weather Forecast` inactive/documented until the new delivery path is proven.
+- Keep legacy `ALERT - Local Weather Station` and `ALERT - Weather Forecast` as historical context only; the new delivery path is proven and the old repo exports have been removed.
 - Do not reuse old n8n cooldown logic, Google Sheets reads, or `Weather_Alert_Log` writes.
 - Do not use the old hard-coded multi-recipient list for the first live slice.
 
@@ -1722,8 +1722,8 @@ Legacy cleanup gate:
 
 - Completed on 2026-05-23.
 - `ALERT - Weather Backend Delivery` remains live.
-- `ALERT - Local Weather Station` is inactive and archived.
-- `ALERT - Weather Forecast` is inactive and archived.
+- `ALERT - Local Weather Station` is inactive/archived in n8n and its repo export has been removed.
+- `ALERT - Weather Forecast` is inactive/archived in n8n and its repo export has been removed.
 - The old Sheets-first weather alert path is no longer the live alert-delivery route.
 
 ## 10.3N Sunsynk/Power Alert Backend Alignment
@@ -1732,7 +1732,7 @@ Selected on 2026-05-23 after weather alert delivery was live-verified.
 
 Reason:
 
-- `ALERT - Sunsynk` is still the old active alert path.
+- `ALERT - Sunsynk` was the old active alert path.
 - It calculates thresholds/cooldowns in n8n and depends on the legacy Sheets-style alert model.
 - Weather alerts have now proven the preferred pattern: backend evaluates, Supabase stores history, n8n delivers only approved messages.
 
@@ -1774,24 +1774,29 @@ n8n replacement export prepared locally:
 - Filters out dry-run responses, `POWER_BACKEND_AUDIT_TEST`, and any alert where `details.test = true`.
 - Sends through `Telegram - Oom Sakkie` to Charl-only chat ID for the first trial.
 
-Local verification:
+Verification:
 
 - Focused power telemetry tests pass.
 - Workflow contract tests pass.
 - `ALERT - Power Backend Delivery/workflow.json` parses as valid JSON.
+- Direct backend dry-run and audit dry-run passed on 2026-05-23.
+- Manual n8n dry-run and audit dry-run passed on 2026-05-23.
+- Live execution `47565` passed on 2026-05-23: `POWER_BATTERY_LOW` was written as `ALT-C758569F3D95` and delivered by Telegram; `POWER_GRID_ACTIVE` was held by quiet hours.
+- Owner made `ALERT - Power Backend Delivery` live and removed the old `ALERT - Sunsynk` workflow from n8n.
+- Repo cleanup removed the legacy `docs/04-n8n/workflows/ALERT - Sunsynk/` export folder.
 
 Deploy/import sequence:
 
-1. Deploy backend with `POST /api/telemetry/power/alerts/evaluate`.
-2. Backend dry-run with the real telemetry key and `{"dry_run": true}`.
-3. Backend dry-run audit with `{"dry_run": true, "include_test_alert": true}`.
-4. Import `ALERT - Power Backend Delivery` inactive.
-5. Paste the real telemetry key into `HTTP - Evaluate Power Alerts`.
-6. Manual n8n dry-run.
-7. Manual n8n dry-run audit; confirm no Telegram.
-8. Switch new workflow to live mode only after dry-run is clean.
-9. Activate new workflow.
-10. Archive old `ALERT - Sunsynk` only after the backend-driven power alert workflow is live-verified.
+1. [Done] Deploy backend with `POST /api/telemetry/power/alerts/evaluate`.
+2. [Done] Backend dry-run with the real telemetry key and `{"dry_run": true}`.
+3. [Done] Backend dry-run audit with `{"dry_run": true, "include_test_alert": true}`.
+4. [Done] Import `ALERT - Power Backend Delivery` inactive.
+5. [Done] Paste the real telemetry key into `HTTP - Evaluate Power Alerts`.
+6. [Done] Manual n8n dry-run.
+7. [Done] Manual n8n dry-run audit; confirm no Telegram.
+8. [Done] Switch new workflow to live mode only after dry-run is clean.
+9. [Done] Activate new workflow.
+10. [Done] Archive/remove old `ALERT - Sunsynk` after the backend-driven power alert workflow is live-verified.
 
 Later improvements:
 
@@ -1846,6 +1851,9 @@ Recommended approach:
 - Keep monthly and yearly rollups permanently.
 - Keep latest/current-state snapshots permanently as overwritten rows or small latest-state tables.
 - Do not physically delete raw data until rollup jobs are tested and a backup/export rule exists.
+- Do not delete old Google Sheets telemetry history until Supabase import and rollup comparison are proven.
+- Import or archive the historical Google Sheets data before cleanup so weather and power history is not lost.
+- Keep a read-only backup/export of the old Sheets data even after Supabase becomes the source of truth.
 - Mark rollups with source window, row count, generated timestamp, and calculation version so we can trust where totals came from.
 - For Oom Sakkie, use current-state, daily, hourly, monthly, yearly, and alert read models. Do not let it scan raw 5-minute history.
 
@@ -1892,3 +1900,241 @@ Decision still needed:
 - Exact raw-retention window for 5-minute Sunsynk data.
 - Whether raw weather data should also be rolled up/deleted or kept longer because it is lower volume.
 - Whether Google Sheets should be cleaned after Supabase rollups are proven, or left as legacy history.
+
+Historical Google Sheets migration gate:
+
+Before deleting or clearing any old telemetry Google Sheet:
+
+1. Export/download the sheet as a backup.
+2. Import historical useful rows into Supabase staging/import tables or directly into approved telemetry tables.
+3. Build daily/monthly/yearly rollups from the imported data.
+4. Compare row counts, date ranges, totals, and sample days between Google Sheets and Supabase.
+5. Record the import batch ID, source sheet, row count, min/max timestamps, skipped rows, and known gaps.
+6. Keep the old sheet read-only until the owner accepts the comparison.
+7. Only then decide whether to delete, archive, or leave the old sheet as historical reference.
+
+What is needed for correct Sunsynk kWh/Rand calculations:
+
+- Confirm whether the Sunsynk API/logger can provide reliable energy counters, not only instantaneous W readings.
+- Preferred counter fields, if available:
+  - solar generation kWh today/lifetime;
+  - grid import kWh today/lifetime;
+  - grid export kWh today/lifetime;
+  - load/consumption kWh today/lifetime;
+  - battery charge/discharge kWh today/lifetime;
+  - generator kWh if available.
+- If reliable counters exist, calculate daily/monthly/yearly values from counter deltas or daily counter snapshots.
+- If counters do not exist, define an approved interval-integration rule from 5-minute W samples:
+  - `kWh = watts * interval_hours / 1000`;
+  - handle missing samples, duplicate samples, bad timestamps, and outliers;
+  - store coverage percentage and calculation version;
+  - mark values as estimated, not exact.
+- Confirm tariff assumptions:
+  - Eskom/reference rate, currently planned as `R9.10/kWh`;
+  - effective date for the tariff;
+  - whether export/feed-in has a different value;
+  - whether generator fuel cost should be included later.
+
+## 10.3O Irrigation Inventory And Control Boundary
+
+Selected after weather and power alerts were moved to backend/Supabase delivery.
+
+This phase is planning/inventory only. It must not activate irrigation hardware control or change live valve behavior.
+
+Current workflow inventory:
+
+| Workflow | Export status | Current role | Risk |
+| --- | --- | --- | --- |
+| `2.3.1 - Build Daily Irrigation Plan` | Active | Daily 00:05 planner. Reads irrigation zones/rules and forecast summary, writes `DAILY_PLAN`, `STATE`, and `LOG`. | Operational sheet automation, but no direct IFTTT hardware call in the inventory. |
+| `2.3.2 - Run Irrigation Controller` | Inactive | Reads state/rules/weather/plan, decides start/stop, calls IFTTT on/off webhooks, updates plan/state/log. | Can control real irrigation hardware if activated. Contains direct IFTTT HTTP nodes. |
+
+Current data sources:
+
+- Spreadsheet: `Amadeus_Irrigation_Logs`.
+- Main tabs already inventoried: `ZONES`, `RULES`, `DAILY_PLAN`, `STATE`, `LOG`.
+- Weather dependency: current/forecast weather is used as a planning/control input.
+- Hardware dependency: `2.3.2` uses IFTTT event names and direct IFTTT webhook calls.
+
+Hard guardrails:
+
+- Do not activate `2.3.2`.
+- Do not edit IFTTT start/stop HTTP nodes.
+- Do not expose or move IFTTT secrets until a credential migration plan is approved.
+- Do not add Oom Sakkie start/stop commands.
+- Do not build backend command endpoints until command audit, safety locks, and operator permissions are designed.
+- Do not combine human alerts with automatic irrigation actions. Alerts can notify; automation needs its own policy and audit path.
+
+Recommended target architecture:
+
+1. **Read-only irrigation status first**
+   - Backend reads current plan/state/log summaries.
+   - Oom Sakkie and the future dashboard can answer status questions.
+   - No command execution.
+2. **Command/audit schema second**
+   - Tables for zones, plans, actions, approvals, overrides, lockouts, and failures.
+   - Every requested action has a reason, source, approver, timestamps, result, and error details.
+3. **Credential migration third**
+   - Move IFTTT Maker key out of workflow URLs into backend-owned secret storage or approved n8n credential storage.
+   - Sheet/workflow data may hold event names, never the Maker key.
+4. **Controlled command endpoint later**
+   - Backend validates zone, time window, weather gate, power gate, cooldown, max runtime, manual lockout, and emergency stop state.
+   - n8n calls backend, not IFTTT directly.
+5. **Oom Sakkie control only after proven**
+   - Any start/stop command requires strong confirmation and a clear audit row.
+   - First version should likely be read-only status, not live control.
+
+Owner answers captured on 2026-05-23:
+
+- Both currently loaded zones are safe to run automatically. They already run from the controller's own app on automatic timers; `2.3.2` remained inactive to avoid duplicating control.
+- Approval has two meanings and should be modeled explicitly:
+  - **System authorization:** backend rule checks decide whether an action is allowed.
+  - **Human approval:** owner/operator confirms manual override, first live control tests, emergency restart, or unusual action.
+- Runtime is zone-derived, not globally fixed. The current irrigation sheet already has zone and rule fields such as `summer_minutes`, `winter_minutes`, allowed windows, priority, soil/crop context, and event names. The design should read these inputs rather than hard-code duration.
+- Forecast builds the plan; current weather adapts the plan.
+- Rain should pause irrigation, then later evaluate whether the plan should resume, skip, or reschedule.
+- Heat rules may allow drip irrigation while avoiding sprinklers in heat.
+- Wind rules should block/delay sprinkler zones above an agreed threshold.
+- Skipped zones should move up in priority compared with zones that already received water.
+- Low battery / poor power state should be able to hold non-critical irrigation or pump work.
+- Emergency stop remains possible manually and through the controller app. Future Oom Sakkie stop control may be allowed only after confirmation, backend validation, and audit.
+- First backend implementation should be read-only status first.
+
+Smart irrigation target:
+
+- Zone setup, planting/crop data, season runtime, priority, forecast, current weather, and power state should drive plan building.
+- Plan changes should be explainable: why a zone started, skipped, paused, resumed, or moved in priority.
+- Owner/operator should be informed when irrigation is running, how long it will run, what the day plan is, when a plan is updated, and when a zone stops or changes.
+- A future web app page should allow zone setup and editing so the builder gets clean inputs.
+- Irrigation should be treated as a core farm operating system. The model must support future devices, sensors, and automation triggers without mixing them into basic crop zones.
+
+Fertilizer and tank-control notes captured on 2026-05-23:
+
+- Not every valve is an irrigation zone.
+- Fertilizer injection valve:
+  - auxiliary action that should run alongside irrigation;
+  - expected pattern is about `1 minute` every `30 minutes` while a relevant irrigation valve/window is open;
+  - should be tied to an active irrigation run and stop/pause with that run unless later rules say otherwise.
+- Fertilizer mixing valve:
+  - support action for mixing fertilizer tanks;
+  - expected pattern is daily at a set time for about `30 minutes`;
+  - should be modeled as a scheduled support task, not as a crop/water zone.
+- Tank state triggers:
+  - tank full;
+  - tank empty;
+  - future sensor states should be expected.
+- Tank states should be structured telemetry/sensor events that can block, allow, or modify irrigation/fertilizer actions.
+
+Suggested modeling direction:
+
+- Use separate concepts for:
+  - **Irrigation zones:** crop/area watering targets with season runtimes, allowed windows, priority, and irrigation type.
+  - **Auxiliary valves:** valves that support another operation, such as fertilizer injection.
+  - **Support tasks:** scheduled non-zone actions, such as fertilizer tank mixing.
+  - **Sensors/triggers:** tank full/empty, pressure, flow, pump state, or future hardware signals.
+- Do not force fertilizer or tank logic into the same table/behavior as normal irrigation zones. They need different safety rules and different scheduling behavior.
+
+Remaining follow-up decisions:
+
+- Exact safe zone IDs/names currently loaded.
+- Human approval roles for overrides and live control tests.
+- Sprinkler wind threshold.
+- Heat threshold and which zones are drip vs sprinkler.
+- Low-battery/power threshold for holding pump/irrigation work.
+- Missing zone/crop/planting fields needed beyond the current sheet columns.
+- First build approach: read-only status from existing Sheets first, or migrate irrigation state/config to Supabase first.
+- Whether fertilizer injection pauses/restarts exactly with the active irrigation run.
+- Whether fertilizer mixing can run independently and what should block it.
+- First tank sensor types and how they are currently detected.
+
+## 10.3P Irrigation Read-Only Status Endpoint
+
+Proposed next slice after 10.3O planning.
+
+This slice should provide observability only. It must not control valves, edit plans, write logs, call IFTTT, or expose start/stop actions.
+
+Endpoint:
+
+- `GET /api/telemetry/irrigation/status`
+
+Source strategy:
+
+- First version may read the existing `Amadeus_Irrigation_Logs` spreadsheet directly because the owner wants read-only status before operational control.
+- Supabase is the target source of truth. The Google Sheet read is only a temporary bridge for the first read-only status slice.
+- Supabase migration should follow once the read-only shape is proven, especially before zone editing, adaptive planning, fertilizer logic, tank sensors, or hardware-control actions are added.
+- Backend should hide raw sheet shape and return a stable status payload to Oom Sakkie and the web app.
+
+Read-only source tabs:
+
+- `STATE`
+- `DAILY_PLAN`
+- `ZONES`
+- `RULES`
+- recent `LOG`
+
+Response contract:
+
+```json
+{
+  "success": true,
+  "status": "ok",
+  "mode": "read_only",
+  "safety": {
+    "read_only": true,
+    "can_control": false,
+    "hardware_commands_enabled": false
+  },
+  "current": {
+    "status": "IDLE",
+    "zone_id": "",
+    "zone_name": "",
+    "remaining_minutes": null,
+    "pause_reason": "",
+    "last_update": ""
+  },
+  "today": {
+    "date": "YYYY-MM-DD",
+    "planned_count": 0,
+    "running_count": 0,
+    "done_count": 0,
+    "skipped_count": 0,
+    "total_planned_minutes": 0,
+    "next_zone_id": "",
+    "plan": []
+  },
+  "recent_events": [],
+  "advisory_gates": {
+    "weather": {},
+    "power": {},
+    "tank": {}
+  },
+  "operator_summary": {
+    "headline": "",
+    "notes": []
+  }
+}
+```
+
+Safety requirements:
+
+- The endpoint must use only read operations.
+- The endpoint must set `hardware_commands_enabled = false`.
+- Any Oom Sakkie workflow using this endpoint must answer status only.
+- If source data is missing or stale, return a cautious `UNKNOWN`/`unavailable` response instead of inventing state.
+
+Later slices:
+
+- Supabase irrigation schema.
+- Irrigation zone/config web page.
+- Smart planner read model.
+- Command/audit schema.
+- Credential migration for hardware control.
+- Controlled command endpoints after owner approval.
+
+Local implementation status on 2026-05-23:
+
+- Added backend service `modules/telemetry/irrigation_service.py`.
+- Added route `GET /api/telemetry/irrigation/status`.
+- Added spreadsheet helper for reading a specific telemetry spreadsheet by name.
+- Added focused irrigation telemetry tests.
+- Local real read against `Amadeus_Irrigation_Logs` returned `success = true`, `mode = read_only`, current `IDLE` state, two planned zones for `2026-05-23`, and safety flags with hardware control disabled.
+- Endpoint still reads Google Sheets as a temporary bridge; Supabase remains the target source of truth.
