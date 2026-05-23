@@ -2530,4 +2530,247 @@ Next:
 - `IRRIGATION_STATUS_SOURCE=auto` was then enabled on Render for a controlled deployed trial.
 - Auto-source response returned `source = supabase`, `today.daily_plan_id = IRRPLAN-2026-05-23`, today's two plan rows, latest state, and read-only safety flags.
 - Recent events showed one duplicate `PLAN_CREATED` logical event because both the historical import and the daily sync contain the same event. Local read-path polish now dedupes recent events for display.
-- Next: redeploy the dedupe polish, then decide whether and how to schedule `scripts/irrigation_daily_sync.py`.
+- Dedupe polish was redeployed and verified. The `2026-05-23` recent `PLAN_CREATED` event now appears once.
+- Next: plan telemetry rollups before dashboards or scheduled irrigation sync.
+
+## 10.3W Telemetry Rollup Planning - Proposed
+
+Purpose:
+
+- Decide how weather, power, and irrigation data should roll up into daily/monthly/yearly summaries before dashboards are built.
+- Avoid building dashboards directly on raw high-frequency telemetry.
+- Protect old Google Sheet history by planning migration/backup before cleanup.
+
+Recommended planning decisions:
+
+1. Raw retention:
+   - How long to keep 5-minute power readings.
+   - How long to keep raw weather readings.
+   - Whether irrigation events/plans are kept permanently because they are lower volume and operationally useful.
+2. Daily rollups:
+   - Power: battery min/max, load/solar averages, grid/generator active minutes, estimated or confirmed kWh.
+   - Weather: temperature min/max/avg, humidity avg, rain total, max rain rate, wind/gust max.
+   - Irrigation: planned minutes, completed minutes, skipped/paused zones, weather/power/tank caution flags.
+3. Monthly/yearly rollups:
+   - Aggregate from daily rollups, not raw readings.
+   - Include data coverage/quality percentage.
+4. Cost/value fields:
+   - Use confirmed Sunsynk energy counters if available.
+   - Otherwise mark 5-minute interval integration as estimated and store calculation version and coverage.
+5. Google Sheet retirement gate:
+   - Backup/export old sheets.
+   - Import useful history.
+   - Compare row counts/date ranges/totals.
+   - Keep old sheets read-only until accepted.
+
+Do not implement dashboards until these rollup rules are agreed.
+
+Recommended default decisions:
+
+| Area | Recommendation | Reason |
+| --- | --- | --- |
+| Power raw 5-minute readings | Keep at least `90 days` initially, then review storage/cost. | Gives enough time to rebuild rollups if calculations are corrected. |
+| Weather raw readings | Keep at least `90 days` initially, then review. | Weather is useful for seasonal/farm analysis and not too large at current scale. |
+| Forecast snapshots | Keep current forecast plus selected history; roll old history into daily forecast-quality summaries later. | Forecast history can become large but is useful for comparing forecast vs actual. |
+| Irrigation events/plans | Keep long-term/permanent unless volume becomes a problem. | Lower volume and operationally important for audit/explanations. |
+| Daily rollups | Keep permanently. | This becomes the trusted reporting layer. |
+| Monthly/yearly rollups | Keep permanently. | Cheap, useful, and dashboard-friendly. |
+| Current/latest state | Keep as latest-state upsert tables. | Current status should not scan history. |
+
+Rollup table direction:
+
+| Table idea | Purpose | First priority |
+| --- | --- | --- |
+| `power_daily_rollups` | Daily power profile and later kWh/cost fields. | High |
+| `weather_daily_rollups` | Daily weather summary and irrigation context. | High |
+| `irrigation_daily_rollups` | Daily plan/run/skip/pause summary. | High |
+| `power_monthly_rollups` | Monthly dashboard/reporting. | Medium |
+| `weather_monthly_rollups` | Monthly climate/rain/wind trend. | Medium |
+| `irrigation_monthly_rollups` | Monthly water/runtime performance. | Medium |
+| yearly rollups | Long-term reporting. | Later, after monthly is proven. |
+
+Daily rollup field proposal:
+
+Power daily:
+
+- `rollup_date`
+- `source_id`
+- `sample_count`
+- `expected_sample_count`
+- `coverage_pct`
+- `battery_soc_min_pct`
+- `battery_soc_max_pct`
+- `battery_soc_avg_pct`
+- `load_power_avg_w`
+- `load_power_max_w`
+- `solar_power_avg_w`
+- `solar_power_max_w`
+- `grid_active_minutes`
+- `generator_active_minutes`
+- `no_solar_minutes`
+- `estimated_solar_kwh`
+- `estimated_load_kwh`
+- `estimated_grid_import_kwh`
+- `estimated_grid_export_kwh`
+- `estimated_generator_kwh`
+- `energy_calculation_method`
+- `calculation_version`
+- `tariff_zar_per_kwh`
+- `estimated_value_zar`
+- `limitations`
+
+Power calculation rule:
+
+- Prefer real Sunsynk energy counters if available.
+- Until real counters are confirmed, any kWh/Rand fields must be marked `estimated`.
+- Estimated interval rule:
+  - watts are integrated over sample gaps;
+  - normal interval target is 5 minutes;
+  - skip or cap abnormal gaps;
+  - store `coverage_pct`;
+  - store `calculation_version`;
+  - never present estimated values as exact.
+
+Weather daily:
+
+- `rollup_date`
+- `source_id`
+- `sample_count`
+- `expected_sample_count`
+- `coverage_pct`
+- `temperature_min_c`
+- `temperature_max_c`
+- `temperature_avg_c`
+- `humidity_avg_pct`
+- `rain_total_mm`
+- `rain_rate_max_mm_h`
+- `wind_speed_max_kmh`
+- `wind_gust_max_kmh`
+- `pressure_min_hpa`
+- `pressure_max_hpa`
+- `irrigation_caution_minutes`
+- `flags`
+- `calculation_version`
+
+Irrigation daily:
+
+- `rollup_date`
+- `source_id`
+- `daily_plan_id`
+- `planned_zone_count`
+- `completed_zone_count`
+- `skipped_zone_count`
+- `paused_zone_count`
+- `planned_minutes`
+- `completed_minutes`
+- `active_runtime_minutes`
+- `weather_hold_minutes`
+- `power_hold_minutes`
+- `tank_hold_minutes`
+- `manual_override_count`
+- `event_count`
+- `notes`
+- `calculation_version`
+
+Monthly/yearly rule:
+
+- Build monthly from daily rollups.
+- Build yearly from monthly rollups.
+- Do not recompute monthly/yearly directly from raw readings unless rebuilding after a calculation-version change.
+- Store period start/end, included day count, expected day count, and coverage percentage.
+
+Historical Google Sheet migration rule:
+
+- Do not delete or clear telemetry Google Sheets yet.
+- First export/download backups.
+- Import useful historical data or generate comparable Supabase rollups.
+- Compare:
+  - row counts;
+  - min/max timestamps;
+  - sample days;
+  - daily rain totals;
+  - daily power sample counts;
+  - irrigation plan/event counts.
+- Only after comparison is accepted should old sheets be archived or cleaned.
+
+Suggested implementation sequence:
+
+1. **10.3W1** - finalize this rollup plan and owner defaults.
+2. **10.3W2** - create empty rollup tables and health verifier.
+3. **10.3W3** - build daily rollup generator in plan-only mode.
+4. **10.3W4** - apply one-day rollups for recent known-good dates.
+5. **10.3W5** - compare rollups against current API summaries.
+6. **10.3W6** - only then plan schedules.
+7. **Later** - dashboards and Google Sheet cleanup.
+
+Questions still open:
+
+Owner decisions on 2026-05-23:
+
+- `90 days` is accepted as the initial raw retention window for power and weather.
+- Old telemetry Google Sheets do not need to remain as read-only archives forever. They may be deleted after the backup/import/compare gate is accepted, because otherwise they become another source of clutter.
+- Irrigation daily rollups should include nullable fertilizer and tank fields now, because fertilizer and tank operations are already in use.
+- `R9.10/kWh` remains the planning/default tariff until a tariff table exists.
+
+Updated irrigation daily rollup fields:
+
+- `fertilizer_injection_minutes`
+- `fertilizer_injection_cycles`
+- `fertilizer_mixer_minutes`
+- `tank_full_count`
+- `tank_empty_count`
+- `tank_hold_minutes`
+- `tank_status_notes`
+
+Sheet cleanup rule after owner decision:
+
+- The end target is deletion, not permanent archive clutter.
+- Deletion is still blocked until:
+  - backup/export exists;
+  - useful history is imported or summarized;
+  - row counts/date ranges/sample totals are compared;
+  - owner accepts the comparison.
+
+## 10.3W2 Empty Rollup Tables - Applied
+
+Purpose:
+
+- Create the storage foundation for daily/monthly/yearly telemetry rollups before any generator, schedule, dashboard, or sheet cleanup is built.
+- Keep this as schema-only so calculation rules can still be reviewed safely.
+
+Migration:
+
+- Added and applied `supabase/migrations/202605230003_create_telemetry_rollup_tables.sql`.
+- Backend verifier added: `GET /health/database/telemetry-rollup-schema`.
+
+Tables created:
+
+- `power_daily_rollups`
+- `weather_daily_rollups`
+- `irrigation_daily_rollups`
+- `power_monthly_rollups`
+- `weather_monthly_rollups`
+- `irrigation_monthly_rollups`
+- `power_yearly_rollups`
+- `weather_yearly_rollups`
+- `irrigation_yearly_rollups`
+
+Guardrails:
+
+- No rollup rows were generated.
+- No schedules were created.
+- No Google Sheet rows were deleted or cleared.
+- No irrigation command/control endpoint or command queue was created.
+- Irrigation rollups include fertilizer and tank placeholders now, but they are reporting fields only.
+- Power cost/value fields remain estimated and use the planning tariff `R9.10/kWh` until a tariff table or confirmed Sunsynk counters are added.
+
+Verification:
+
+- Focused database tests passed: `25 tests OK`.
+- Broader telemetry/database tests passed: `59 tests OK`.
+- Local Supabase health check returned `success = true`, `status = ok`, migration ID `202605230003_create_telemetry_rollup_tables`, all nine expected tables found, and `missing_tables = []`.
+
+Next:
+
+- 10.3W3 should build a daily rollup generator in plan-only mode first.
+- The first generator must report planned inserts/updates without writing, and should start with one known date before any schedule is discussed.

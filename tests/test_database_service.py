@@ -11,6 +11,8 @@ from services.database_service import (
     SALES_TRANSACTION_SCHEMA_TABLES,
     TELEMETRY_POWER_SCHEMA_MIGRATION_ID,
     TELEMETRY_POWER_SCHEMA_TABLES,
+    TELEMETRY_ROLLUP_SCHEMA_MIGRATION_ID,
+    TELEMETRY_ROLLUP_SCHEMA_TABLES,
     TELEMETRY_WEATHER_SCHEMA_MIGRATION_ID,
     TELEMETRY_WEATHER_SCHEMA_TABLES,
     check_database_foundation,
@@ -20,6 +22,7 @@ from services.database_service import (
     check_sales_transaction_payment_date_schema,
     check_sales_transaction_schema,
     check_telemetry_power_schema,
+    check_telemetry_rollup_schema,
     check_telemetry_weather_schema,
 )
 
@@ -52,6 +55,8 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertIn("check_telemetry_power_schema()", app_source)
         self.assertIn('@app.route("/health/database/irrigation-schema")', app_source)
         self.assertIn("check_irrigation_schema()", app_source)
+        self.assertIn('@app.route("/health/database/telemetry-rollup-schema")', app_source)
+        self.assertIn("check_telemetry_rollup_schema()", app_source)
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_database_health_does_not_return_connection_string_on_failure(self):
@@ -149,6 +154,16 @@ class DatabaseServiceHealthTests(unittest.TestCase):
     def test_irrigation_schema_health_reports_missing_database_url_without_importing_driver(self):
         with patch.dict(os.environ, {}, clear=True):
             body, status_code = check_irrigation_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertFalse(body["configured"])
+        self.assertEqual(body["status"], "not_configured")
+        self.assertNotIn("DATABASE_URL=", str(body))
+
+    def test_telemetry_rollup_schema_health_reports_missing_database_url_without_importing_driver(self):
+        with patch.dict(os.environ, {}, clear=True):
+            body, status_code = check_telemetry_rollup_schema()
 
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
@@ -323,6 +338,39 @@ class DatabaseServiceHealthTests(unittest.TestCase):
             with self.subTest(forbidden=text):
                 self.assertNotIn(text, migration_lower)
 
+    def test_telemetry_rollup_migration_creates_only_empty_rollup_tables(self):
+        migration = Path(
+            "supabase/migrations/202605230003_create_telemetry_rollup_tables.sql"
+        ).read_text(encoding="utf-8")
+        migration_lower = migration.lower()
+
+        for table in TELEMETRY_ROLLUP_SCHEMA_TABLES:
+            with self.subTest(table=table):
+                self.assertIn(f"create table if not exists public.{table}", migration_lower)
+
+        self.assertIn(TELEMETRY_ROLLUP_SCHEMA_MIGRATION_ID, migration)
+        self.assertIn("app_private.migration_log", migration)
+        self.assertIn("estimated_solar_kwh", migration)
+        self.assertIn("tariff_zar_per_kwh numeric(10, 4) not null default 9.10", migration)
+        self.assertIn("fertilizer_injection_minutes", migration)
+        self.assertIn("fertilizer_mixer_minutes", migration)
+        self.assertIn("tank_full_count", migration)
+        self.assertIn("not a command queue", migration_lower)
+
+        forbidden = [
+            "create table if not exists public.irrigation_actions",
+            "create table if not exists public.irrigation_commands",
+            "create table if not exists public.irrigation_command_queue",
+            "insert into public.power_daily_rollups",
+            "insert into public.weather_daily_rollups",
+            "insert into public.irrigation_daily_rollups",
+            "drop table",
+            "delete from",
+        ]
+        for text in forbidden:
+            with self.subTest(forbidden=text):
+                self.assertNotIn(text, migration_lower)
+
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_order_schema_health_does_not_return_connection_string_on_failure(self):
         with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
@@ -375,6 +423,17 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
         self.assertEqual(body["status"], "irrigation_schema_check_failed")
+        self.assertNotIn("secret", str(body))
+        self.assertNotIn("example", str(body))
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_telemetry_rollup_schema_health_does_not_return_connection_string_on_failure(self):
+        with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
+            body, status_code = check_telemetry_rollup_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertEqual(body["status"], "telemetry_rollup_schema_check_failed")
         self.assertNotIn("secret", str(body))
         self.assertNotIn("example", str(body))
 

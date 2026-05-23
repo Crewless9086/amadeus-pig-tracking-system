@@ -42,6 +42,18 @@ IRRIGATION_SCHEMA_TABLES = [
     "irrigation_auxiliary_tasks",
     "irrigation_sensor_states",
 ]
+TELEMETRY_ROLLUP_SCHEMA_MIGRATION_ID = "202605230003_create_telemetry_rollup_tables"
+TELEMETRY_ROLLUP_SCHEMA_TABLES = [
+    "power_daily_rollups",
+    "weather_daily_rollups",
+    "irrigation_daily_rollups",
+    "power_monthly_rollups",
+    "weather_monthly_rollups",
+    "irrigation_monthly_rollups",
+    "power_yearly_rollups",
+    "weather_yearly_rollups",
+    "irrigation_yearly_rollups",
+]
 
 
 def check_database_health():
@@ -672,5 +684,84 @@ def check_irrigation_schema():
             "configured": True,
             "status": "irrigation_schema_check_failed",
             "message": "Irrigation schema check failed.",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+
+def check_telemetry_rollup_schema():
+    database_url = os.getenv(DATABASE_URL_ENV, "").strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": "DATABASE_URL is not configured.",
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+        }, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=5) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select table_name
+                    from information_schema.tables
+                    where table_schema = 'public'
+                    and table_name = any(%s)
+                    """,
+                    (TELEMETRY_ROLLUP_SCHEMA_TABLES,),
+                )
+                found_tables = sorted(row[0] for row in cursor.fetchall())
+
+                cursor.execute(
+                    """
+                    select migration_id, applied_at
+                    from app_private.migration_log
+                    where migration_id = %s
+                    """,
+                    (TELEMETRY_ROLLUP_SCHEMA_MIGRATION_ID,),
+                )
+                migration_row = cursor.fetchone()
+
+        expected_tables = sorted(TELEMETRY_ROLLUP_SCHEMA_TABLES)
+        missing_tables = [table for table in expected_tables if table not in found_tables]
+
+        if missing_tables or not migration_row:
+            return {
+                "success": False,
+                "configured": True,
+                "status": "telemetry_rollup_schema_missing",
+                "migration_id": TELEMETRY_ROLLUP_SCHEMA_MIGRATION_ID,
+                "migration_applied": bool(migration_row),
+                "expected_tables": expected_tables,
+                "found_tables": found_tables,
+                "missing_tables": missing_tables,
+            }, 503
+
+        return {
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "migration_id": migration_row[0],
+            "applied_at": migration_row[1].isoformat(),
+            "expected_tables": expected_tables,
+            "found_tables": found_tables,
+            "missing_tables": [],
+        }, 200
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "telemetry_rollup_schema_check_failed",
+            "message": "Telemetry rollup schema check failed.",
             "error_type": exc.__class__.__name__,
         }, 503

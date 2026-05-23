@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Auto Verified | Redeploy small recent-event dedupe polish, then decide whether to schedule the daily sync later. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W2 Applied | Next: 10.3W3 plan-only daily rollup generator; no schedules or sheet cleanup yet. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -3405,7 +3405,89 @@ Deployment/test next:
 - `IRRIGATION_STATUS_SOURCE=auto` was enabled on Render and verified.
 - Auto response returned `source = supabase`, `today.daily_plan_id = IRRPLAN-2026-05-23`, exactly two current plan rows, and read-only safety flags.
 - Minor follow-up: recent event output showed the same `PLAN_CREATED` event twice because both the historical import and daily sync contain that logical event. Local fix now dedupes recent events for display; redeploy before final closure.
+- Redeployed dedupe fix verified: recent `PLAN_CREATED` appears once for `2026-05-23`.
 - Do not schedule the sync until the manual deployed path is proven.
+
+### 10.3W Telemetry Rollup Planning - In Progress
+
+Purpose:
+
+- Define how power, weather, and irrigation data should be summarized before dashboards or scheduled jobs are built.
+- Avoid dashboard queries over raw high-frequency data.
+- Protect old telemetry Google Sheets until Supabase import/rollup comparisons are trusted.
+
+Recommended defaults captured:
+
+- Keep raw power 5-minute readings for at least `90 days` initially.
+- Keep raw weather readings for at least `90 days` initially.
+- Keep irrigation events/plans long-term because they are lower volume and operationally important.
+- Keep daily, monthly, and yearly rollups permanently.
+- Keep current/latest status in latest-state tables, not history scans.
+- Use current/latest endpoints for Oom Sakkie current questions.
+- Use daily/monthly/yearly rollups for dashboard and reporting questions.
+
+Rollup direction:
+
+- Power daily rollups should include sample coverage, battery min/max/avg, load/solar averages and peaks, grid/generator active minutes, and estimated or confirmed kWh fields.
+- Weather daily rollups should include sample coverage, temperature min/max/avg, humidity average, rain total, max rain rate, wind/gust max, and irrigation caution flags.
+- Irrigation daily rollups should include planned/completed/skipped/paused counts, planned/completed minutes, hold reasons, event count, and notes.
+- Monthly rollups should be built from daily rollups.
+- Yearly rollups should be built from monthly rollups.
+
+Important power rule:
+
+- Prefer confirmed Sunsynk energy counters if available.
+- If only 5-minute W samples are available, kWh/Rand values must be marked as estimated.
+- Estimated values must store method, calculation version, sample count, coverage, and tariff.
+- Planning tariff remains `R9.10/kWh` until a proper tariff table is created.
+
+Google Sheet protection rule:
+
+- Do not delete or clear old telemetry Sheets yet.
+- First export/download backups.
+- Import or roll up useful history into Supabase.
+- Compare row counts, date ranges, sample days, and totals.
+- Only archive/clean after owner acceptance.
+
+Suggested next implementation order:
+
+1. Finalize owner defaults for retention and estimation.
+2. Create empty rollup tables and health verifier.
+3. Build daily rollup generator in plan-only mode.
+4. Apply one-day rollups for known-good dates.
+5. Compare rollups against existing current/today/recent endpoints.
+6. Plan schedules only after manual rollups are trusted.
+
+Questions to answer:
+
+Owner decisions:
+
+- `90 days` is accepted as the initial raw retention window for power and weather.
+- Old telemetry Sheets may be deleted after backup/import/compare acceptance; the goal is not to leave old sheets hanging around forever.
+- Irrigation rollups should include fertilizer and tank placeholders now, because those operations are already in use.
+- `R9.10/kWh` remains the planning/default tariff until a tariff table exists.
+
+Updated next implementation direction:
+
+- Create empty rollup tables with 90-day raw retention documented.
+- Include nullable fertilizer/tank fields in `irrigation_daily_rollups`.
+- Keep Google Sheet deletion blocked until backup/import/compare is accepted.
+
+10.3W2 implementation result:
+
+- Added and applied `supabase/migrations/202605230003_create_telemetry_rollup_tables.sql`.
+- Added backend verifier `GET /health/database/telemetry-rollup-schema`.
+- Created empty daily/monthly/yearly rollup tables for power, weather, and irrigation.
+- Included power estimated kWh/value fields with `R9.10/kWh` as the planning tariff.
+- Included irrigation fertilizer/tank placeholders for future reporting.
+- Verification passed: focused database tests `25 OK`, broader telemetry/database tests `59 OK`, and local Supabase health returned all nine expected rollup tables with `missing_tables = []`.
+- No rollup data, schedules, dashboards, sheet deletion, or hardware-control path was added.
+
+Next implementation direction:
+
+- Build 10.3W3 as a plan-only daily rollup generator.
+- Start with one date and report intended writes before applying anything.
+- Keep old telemetry Sheets untouched until backup/import/compare acceptance.
 
 Farm home/dashboard idea:
 

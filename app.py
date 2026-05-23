@@ -13,6 +13,7 @@ from services.database_service import (
     check_sales_transaction_payment_date_schema,
     check_sales_transaction_schema,
     check_telemetry_power_schema,
+    check_telemetry_rollup_schema,
     check_telemetry_weather_schema,
 )
 
@@ -200,6 +201,12 @@ def database_telemetry_weather_schema_health():
 @app.route("/health/database/irrigation-schema")
 def database_irrigation_schema_health():
     body, status_code = check_irrigation_schema()
+    return body, status_code
+
+
+@app.route("/health/database/telemetry-rollup-schema")
+def database_telemetry_rollup_schema_health():
+    body, status_code = check_telemetry_rollup_schema()
     return body, status_code
 
 
