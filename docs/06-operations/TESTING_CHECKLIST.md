@@ -1805,7 +1805,122 @@ Local/Supabase checks:
 - [Done 2026-05-23] Focused database tests passed.
 - [Done 2026-05-23] Migration applied successfully to Supabase.
 - [Done 2026-05-23] Local verifier returned all eight expected irrigation tables and source row `irrigation-controller-main`.
-- [Next] Deploy backend and verify Render `/health/database/irrigation-schema`.
+- [Done 2026-05-23] Deployed backend verifier returned `success = true`, `status = ok`, `missing_tables = []`, all eight expected tables, and source row `irrigation-controller-main`.
+
+### Phase 10.3S - Irrigation Sheet-to-Supabase Dry-Run Import
+
+Planned checks:
+
+1. [Done 2026-05-23] Build dry-run script/service that reads `Amadeus_Irrigation_Logs`.
+2. [Done 2026-05-23] Confirm dry-run writes nothing to Supabase or Google Sheets.
+3. [Done 2026-05-23] Map `ZONES`, `DAILY_PLAN`, `STATE`, and `LOG`.
+4. [Done 2026-05-23] Return source summaries, target payload counts, sample payloads, and link/mapping issues.
+5. [Still required] Do not import or apply data until owner reviews dry-run output.
+
+Dry-run result:
+
+- Script: `scripts/irrigation_import_dry_run.py`.
+- Tests: `tests/test_irrigation_import_dry_run.py`.
+- Real Google Sheet dry-run returned `success = true`, `mode = plan_only`, `writes_to_supabase = false`, and `writes_to_sheets = false`.
+- Source rows:
+  - `ZONES`: 2.
+  - `DAILY_PLAN`: 146.
+  - `STATE`: 1.
+  - `LOG`: 77.
+- Target mapped rows:
+  - `irrigation_zones`: 2.
+  - `irrigation_daily_plans`: 73.
+  - `irrigation_plan_items`: 146.
+  - `irrigation_state_snapshots`: 1.
+  - `irrigation_events`: 77.
+  - auxiliary/sensor tables: 0.
+- `duplicates.zone_ids = []`.
+- `link_issues = {}`.
+- Owner decision: `STATE` is latest truth. Apply/import must upsert `irrigation_state_snapshots` by `state_snapshot_id`; it must not append timestamped state rows in this first version.
+- Next test gate before any apply/import: verify the controlled apply path uses latest-state upsert, keeps event/plan history separate, and still makes no hardware-control changes.
+
+### Phase 10.3T - Irrigation Controlled Supabase Import
+
+Checks:
+
+1. [Done 2026-05-23] Extend import script with explicit `--apply`.
+2. [Done 2026-05-23] Keep default mode plan-only.
+3. [Done 2026-05-23] Add tests for `--apply`, transaction behavior, and latest-state strategy.
+4. [Done 2026-05-23] Run plan-only mode against the real sheet before applying.
+5. [Done 2026-05-23] Apply import to Supabase.
+6. [Done 2026-05-23] Verify Supabase row counts.
+7. [Done 2026-05-23] Verify exactly one latest-state row exists for `IRRSTATE-MAIN`.
+8. [Done 2026-05-23] Confirm no Google Sheets writes.
+9. [Done 2026-05-23] Confirm no n8n workflow changes.
+10. [Done 2026-05-23] Confirm no IFTTT/hardware-control changes.
+
+Result:
+
+- First apply attempt failed safely and rolled back because `irrigation_state_snapshots.source_sheet_row` was missing.
+- Migration `202605230002_add_irrigation_state_source_sheet_row.sql` added the missing trace column.
+- Second apply succeeded with import batch `IMPORT-20260523-IRRIGATION-SHEET-V1`.
+- Verified Supabase counts:
+  - `irrigation_zones`: 2.
+  - `irrigation_daily_plans`: 73.
+  - `irrigation_plan_items`: 146.
+  - `irrigation_state_snapshots`: 1.
+  - `irrigation_events`: 77.
+- Latest-state strategy verified:
+  - one state row: `IRRSTATE-MAIN`;
+  - `current_status = IDLE`;
+  - `current_zone_id = C12345`;
+  - `next_zone_id = C12345`.
+
+Follow-up current-plan rule:
+
+- Current irrigation status must show today's/latest active working plan only.
+- Imported historical plan rows may remain available for audit/history.
+- Current status endpoints and dashboards must not combine all historical plan rows into the visible current plan.
+
+### Phase 10.3U - Supabase-Backed Irrigation Status Read Path
+
+Checks:
+
+1. [Done locally 2026-05-23] Keep default status source as `google_sheets`.
+2. [Done locally 2026-05-23] Add `IRRIGATION_STATUS_SOURCE=supabase` support.
+3. [Done locally 2026-05-23] Add `IRRIGATION_STATUS_SOURCE=auto` fallback behavior.
+4. [Done locally 2026-05-23] Supabase read selects latest state only.
+5. [Done locally 2026-05-23] Supabase read selects one daily plan for the requested date.
+6. [Done locally 2026-05-23] Supabase read returns only items linked to the selected daily plan.
+7. [Done locally 2026-05-23] Supabase read does not write to Sheets or Supabase.
+8. [Done locally 2026-05-23] Supabase read does not expose hardware control.
+9. [Done locally 2026-05-23] Local Flask check against Supabase returned today's selected plan.
+10. [Next] Deploy backend.
+11. [Next] Test deployed endpoint with default source first.
+12. [Next] Test deployed endpoint with `IRRIGATION_STATUS_SOURCE=auto` only after deciding to set that Render env var.
+
+Deployment caution:
+
+- Do not permanently force `IRRIGATION_STATUS_SOURCE=supabase` until the daily planner or a sync job writes refreshed daily plans into Supabase.
+
+### Phase 10.3V - Irrigation Daily Supabase Sync
+
+Checks:
+
+1. [Done locally 2026-05-23] Add manual daily sync script.
+2. [Done locally 2026-05-23] Keep default mode plan-only.
+3. [Done locally 2026-05-23] Filter `DAILY_PLAN` to requested date only.
+4. [Done locally 2026-05-23] Keep latest `STATE` upsert behavior.
+5. [Done locally 2026-05-23] Include only requested-date/log-linked events.
+6. [Done locally 2026-05-23] Run plan-only against real sheet for `2026-05-23`.
+7. [Done locally 2026-05-23] Apply manual sync to Supabase.
+8. [Done locally 2026-05-23] Verify Supabase status reads today's selected plan only.
+9. [Next] Deploy backend.
+10. [Next] Test deployed default `google_sheets` source.
+11. [Next] Decide whether to test deployed `IRRIGATION_STATUS_SOURCE=auto`.
+
+Local result:
+
+- Plan-only found 1 daily plan, 2 plan items, 1 state row, 1 event, and 2 zones.
+- Apply batch: `SYNC-IRRIGATION-2026-05-23`.
+- Supabase status read returned `IRRPLAN-2026-05-23` and today's two plan items only.
+- No schedule has been added.
+- No hardware-control behavior changed.
 
 After any order change, inspect affected sheets/views:
 

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, Mock, patch
 
 from modules.telemetry.irrigation_service import get_irrigation_status
 
@@ -159,6 +159,96 @@ class IrrigationTelemetryTests(unittest.TestCase):
         self.assertFalse(result["safety"]["can_control"])
         self.assertFalse(result["safety"]["hardware_commands_enabled"])
         self.assertFalse(result["source"]["writes_to_sheets"])
+
+    @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "supabase", "DATABASE_URL": "postgresql://example"}, clear=True)
+    def test_irrigation_status_can_read_today_plan_from_supabase(self):
+        cursor = Mock()
+        cursor.fetchall.side_effect = [
+            [("ZONE-1", "North Drip", 2), ("ZONE-2", "South Sprinkler", 1)],
+            [
+                (
+                    "2026-05-23T05:20:00+02:00",
+                    "ZONE-1",
+                    "ZONE_COMPLETED",
+                    "Planned runtime completed",
+                    20,
+                    20,
+                    "system",
+                    "2026-05-23_ZONE-1",
+                )
+            ],
+        ]
+        cursor.fetchone.side_effect = [
+            ("IDLE", "", "ZONE-2", "ZONE-1", None, "", "2026-05-23T05:00:00+02:00"),
+            ("IRRPLAN-2026-05-23", "2026-05-23", "Planned", 50),
+        ]
+
+        def execute_side_effect(query, params=None):
+            if "from public.irrigation_plan_items" in query:
+                cursor.fetchall.side_effect = [
+                    [
+                        (
+                            "2026-05-23_ZONE-1",
+                            "IRRPLAN-2026-05-23",
+                            "ZONE-1",
+                            None,
+                            20,
+                            "2026-05-23T05:00:00+02:00",
+                            "2026-05-23T05:20:00+02:00",
+                            "Done",
+                            1,
+                            "",
+                        ),
+                        (
+                            "2026-05-23_ZONE-2",
+                            "IRRPLAN-2026-05-23",
+                            "ZONE-2",
+                            None,
+                            30,
+                            None,
+                            None,
+                            "Planned",
+                            5,
+                            "",
+                        ),
+                    ],
+                    [
+                        (
+                            "2026-05-23T05:20:00+02:00",
+                            "ZONE-1",
+                            "ZONE_COMPLETED",
+                            "Planned runtime completed",
+                            20,
+                            20,
+                            "system",
+                            "2026-05-23_ZONE-1",
+                        )
+                    ],
+                ]
+
+        cursor.execute.side_effect = execute_side_effect
+        connection = MagicMock()
+        psycopg = Mock()
+        psycopg.connect.return_value = MagicMock()
+        psycopg.connect.return_value.__enter__.return_value = connection
+        connection.cursor.return_value.__enter__.return_value = cursor
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_irrigation_status(today="2026-05-23")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source"]["source"], "supabase")
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        self.assertFalse(result["source"]["writes_to_supabase"])
+        self.assertEqual(result["today"]["daily_plan_id"], "IRRPLAN-2026-05-23")
+        self.assertEqual(result["today"]["total_plan_rows"], 2)
+        self.assertEqual(result["today"]["planned_count"], 1)
+        self.assertEqual(result["today"]["done_count"], 1)
+        self.assertEqual(result["today"]["next_zone_id"], "ZONE-2")
+        self.assertEqual(result["today"]["next_zone_source"], "state")
+        self.assertTrue(result["safety"]["read_only"])
+        self.assertFalse(result["safety"]["can_control"])
 
     def test_irrigation_route_is_registered(self):
         import modules.telemetry.telemetry_routes as routes

@@ -2267,3 +2267,264 @@ Local/Supabase implementation result on 2026-05-23:
   - `irrigation_sensor_states`.
 - Telemetry source row present: `irrigation-controller-main`.
 - No data was imported and no live irrigation behavior changed.
+
+Deployed verification on 2026-05-23:
+
+- Render `/health/database/irrigation-schema` returned `success = true`, `status = ok`.
+- `migration_id = 202605230001_create_irrigation_tables`.
+- `missing_tables = []`.
+- All expected irrigation tables were found.
+- Source row present: `irrigation-controller-main`, `provider = n8n_sheet_bridge`, `source_type = irrigation`, `stale_after_minutes = 60`.
+
+## 10.3S Irrigation Sheet-to-Supabase Dry-Run Import - Dry-Run Complete
+
+Purpose:
+
+- Map current `Amadeus_Irrigation_Logs` sheet data into the new Supabase irrigation table shapes without writing anything.
+- Prove the mapping before any import, dashboard, or operating cutover.
+
+First dry-run sources:
+
+- `ZONES` -> `irrigation_zones`
+- `DAILY_PLAN` -> `irrigation_daily_plans` and `irrigation_plan_items`
+- `STATE` -> `irrigation_state_snapshots`
+- `LOG` -> `irrigation_events`
+
+Optional later sources:
+
+- `TANK_COLUMNS` or other tank tabs -> `irrigation_sensor_states`
+- Future fertilizer/mixer configuration -> `irrigation_auxiliary_devices` and `irrigation_auxiliary_tasks`
+
+Dry-run rules:
+
+- `writes_to_supabase = false`
+- `writes_to_sheets = false`
+- Include row counts by source tab and target table.
+- Include sample payloads.
+- Report missing zone links, duplicate IDs, unknown statuses, and unmapped rows.
+- Do not infer hardware-control actions from historical log rows.
+- Do not create a command queue or start/stop model.
+
+Implementation result on 2026-05-23:
+
+- Added `scripts/irrigation_import_dry_run.py`.
+- Added `tests/test_irrigation_import_dry_run.py`.
+- The real dry-run required network access to read Google Sheets, then completed successfully in `plan_only` mode.
+- No writes were made:
+  - `writes_to_supabase = false`;
+  - `writes_to_sheets = false`.
+
+Source summaries:
+
+| Source tab | Non-empty rows | Target mapping |
+| --- | ---: | --- |
+| `ZONES` | 2 | 2 `irrigation_zones` rows |
+| `DAILY_PLAN` | 146 | 73 `irrigation_daily_plans` rows and 146 `irrigation_plan_items` rows |
+| `STATE` | 1 | 1 `irrigation_state_snapshots` row |
+| `LOG` | 77 | 77 `irrigation_events` rows |
+
+Target payload summary:
+
+| Target table | Dry-run rows |
+| --- | ---: |
+| `irrigation_zones` | 2 |
+| `irrigation_daily_plans` | 73 |
+| `irrigation_plan_items` | 146 |
+| `irrigation_state_snapshots` | 1 |
+| `irrigation_events` | 77 |
+| `irrigation_auxiliary_devices` | 0 |
+| `irrigation_auxiliary_tasks` | 0 |
+| `irrigation_sensor_states` | 0 |
+
+Dry-run quality result:
+
+- `duplicates.zone_ids = []`.
+- `link_issues = {}`.
+- `reason_counts` showed all mapped rows were included.
+- Sample plan IDs include `IRRPLAN-2026-03-12`, `IRRPLAN-2026-03-13`, and `IRRPLAN-2026-03-14`.
+- Sample plan item IDs include `2026-03-12_C12345`, `2026-03-12_B12345`, and `2026-03-13_C12345`.
+- Sample event IDs are generated from source row and timestamp.
+- Current state maps to `IRRSTATE-MAIN`.
+
+Owner decision before apply:
+
+- Do not auto-apply this history yet.
+- `STATE` should be treated as the latest controller truth, matching the current Google Sheet model.
+- `irrigation_state_snapshots` should be upserted by `state_snapshot_id`, for example `IRRSTATE-MAIN`.
+- Do not append timestamped state rows during the first import.
+- Historical questions should use `irrigation_events`, `irrigation_daily_plans`, and `irrigation_plan_items`.
+- If detailed state history becomes useful later, add a separate state-history model deliberately.
+- Decide whether auxiliary devices and tank sensors should be configured before importing irrigation operational history.
+- Keep `2.3.2 - Run Irrigation Controller` inactive; this dry-run is data mapping only.
+
+Owner clarification on 2026-05-23:
+
+- The operational irrigation plan should behave like the current daily working plan, not an ever-growing live worklist.
+- `DAILY_PLAN` is meant to hold the plan of the day and be refreshed/rebuilt daily.
+- Supabase may keep imported historical plan rows for audit/review, but the active read path should only treat the latest/today plan as the current operational plan.
+- Future planner writes should either:
+  - upsert the current day's plan/items; or
+  - mark old plan rows as completed/superseded and expose only today's active plan in current-status endpoints.
+- The user-facing status/dashboard should not show combined historical plans as the current plan.
+
+## 10.3T Irrigation Controlled Supabase Import - Applied And Verified
+
+Purpose:
+
+- Move the approved irrigation sheet history into Supabase after dry-run review.
+- Keep the import explicit and transactional.
+- Do not change the live irrigation controller or n8n workflow behavior.
+
+Implementation:
+
+- `scripts/irrigation_import_dry_run.py` now supports:
+  - default plan-only mode;
+  - explicit `--apply` mode.
+- `--apply` uses import batch `IMPORT-20260523-IRRIGATION-SHEET-V1`.
+- Import order respects foreign keys:
+  - `irrigation_zones`;
+  - `irrigation_daily_plans`;
+  - `irrigation_plan_items`;
+  - `irrigation_state_snapshots`;
+  - `irrigation_events`.
+- `STATE` uses latest-state upsert:
+  - conflict key: `state_snapshot_id`;
+  - current imported row: `IRRSTATE-MAIN`;
+  - no timestamped state history rows are appended.
+- Added verifier script `scripts/irrigation_import_verify.py`.
+- Added migration `202605230002_add_irrigation_state_source_sheet_row.sql` after the first apply attempt found the missing trace column.
+
+Apply result:
+
+- First apply attempt failed safely with `UndefinedColumn`; transaction rolled back and no rows were written.
+- After compatibility migration, apply succeeded.
+- Inserted/updated:
+  - `irrigation_zones`: 2;
+  - `irrigation_daily_plans`: 73;
+  - `irrigation_plan_items`: 146;
+  - `irrigation_state_snapshots`: 1;
+  - `irrigation_events`: 77.
+
+Verification result:
+
+- Direct Supabase verification passed.
+- `state_strategy_verified = true`.
+- Table counts match the import batch counts.
+- Latest state row:
+  - `state_snapshot_id = IRRSTATE-MAIN`;
+  - `current_status = IDLE`;
+  - `current_zone_id = C12345`;
+  - `next_zone_id = C12345`;
+  - `import_batch_id = IMPORT-20260523-IRRIGATION-SHEET-V1`.
+
+Safety result:
+
+- No Google Sheets writes.
+- No n8n workflow changes.
+- No hardware-control endpoint.
+- No IFTTT call.
+- No command queue/action table.
+- `2.3.2 - Run Irrigation Controller` remains inactive.
+
+Recommended next slice:
+
+- Build or plan the Supabase-backed irrigation read service so the backend can answer current status, today's active plan, and recent events from Supabase instead of the temporary Google Sheet bridge.
+
+## 10.3U Supabase-Backed Irrigation Status Read Path - Local Ready
+
+Purpose:
+
+- Move the read model toward Supabase without breaking the current sheet-driven daily planner.
+- Keep current status/read answers read-only.
+- Preserve the current-plan rule: today's active plan only, not all historical plans.
+
+Source selection:
+
+`GET /api/telemetry/irrigation/status` supports `IRRIGATION_STATUS_SOURCE`:
+
+| Value | Behavior |
+| --- | --- |
+| `google_sheets` | Use the existing sheet bridge. This remains the default. |
+| `supabase` | Force Supabase read. No sheet fallback. |
+| `auto` | Try Supabase first; fall back to the sheet bridge if Supabase has no plan rows for the requested day or cannot be read. |
+
+Supabase read behavior:
+
+- Reads latest state from `irrigation_state_snapshots`.
+- Selects one non-cancelled/non-superseded `irrigation_daily_plans` row for the requested date.
+- Reads only `irrigation_plan_items` linked to that selected daily plan.
+- Reads recent events from `irrigation_events`.
+- Does not read or combine older daily plans into the current plan.
+- Does not write to Supabase or Sheets.
+- Does not call IFTTT or expose hardware control.
+
+Local verification:
+
+- Existing sheet-path tests still pass.
+- New Supabase-path test passes.
+- Local Flask test with `IRRIGATION_STATUS_SOURCE=supabase` and date `2026-05-23` returned:
+  - `success = true`;
+  - `source.source = supabase`;
+  - `today.daily_plan_id = IRRPLAN-2026-05-23`;
+  - today's two imported plan rows only;
+  - read-only safety flags.
+
+Deployment recommendation:
+
+- Keep Render default as `google_sheets` until the live daily planner writes/syncs fresh plans into Supabase.
+- Consider testing `IRRIGATION_STATUS_SOURCE=auto` next, because it can use Supabase when current-day data exists and fall back to the existing sheet bridge when it does not.
+
+## 10.3V Irrigation Daily Supabase Sync - Applied Locally
+
+Purpose:
+
+- Add the missing bridge between the current sheet-driven planner and the Supabase read model.
+- Sync today's working plan/state/events into Supabase without importing all history as the current plan.
+- Keep the process explicit/manual before any schedule is added.
+
+Implementation:
+
+- Added `scripts/irrigation_daily_sync.py`.
+- Added `tests/test_irrigation_daily_sync.py`.
+- Default is plan-only.
+- `--apply` writes to Supabase in one transaction.
+- Sync batch format: `SYNC-IRRIGATION-YYYY-MM-DD`.
+
+Sync scope:
+
+- `ZONES`: all configured rows.
+- `DAILY_PLAN`: requested date only.
+- `STATE`: latest state, upserted by `state_snapshot_id`.
+- `LOG`: rows dated for the requested date or linked to that date's plan rows.
+
+Local result for `2026-05-23`:
+
+- Plan-only returned:
+  - 1 daily plan: `IRRPLAN-2026-05-23`;
+  - 2 plan items: `2026-05-23_C12345`, `2026-05-23_B12345`;
+  - 1 state row: `IRRSTATE-MAIN`;
+  - 1 event;
+  - 2 zones.
+- Apply succeeded with batch `SYNC-IRRIGATION-2026-05-23`.
+- Supabase-backed irrigation status read returned:
+  - `source = supabase`;
+  - `today.daily_plan_id = IRRPLAN-2026-05-23`;
+  - exactly two plan rows for the day;
+  - `current.status = IDLE`;
+  - `safety.read_only = true`;
+  - `safety.can_control = false`;
+  - `safety.hardware_commands_enabled = false`.
+
+Safety:
+
+- No Google Sheets writes.
+- No n8n changes.
+- No IFTTT calls.
+- No hardware-control endpoint.
+- No scheduled sync yet.
+
+Next:
+
+- Deploy backend.
+- Test default `google_sheets` source first.
+- Then decide whether to set `IRRIGATION_STATUS_SOURCE=auto` on Render for a controlled deployed trial.
