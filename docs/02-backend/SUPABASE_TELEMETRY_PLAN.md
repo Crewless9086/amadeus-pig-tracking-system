@@ -2161,3 +2161,109 @@ Next-zone clarity patch prepared on 2026-05-23:
   - `next_zone_mismatch`.
 - If the state-selected zone and computed priority/water-score zone differ, the endpoint adds an operator note so Oom Sakkie can word the answer cautiously.
 - Focused telemetry tests passed after the patch.
+
+## 10.3Q Oom Sakkie Read-Only Irrigation Status Tool
+
+Local workflow export prepared on 2026-05-23:
+
+- New workflow: `2.3.3 - Irrigation Status Tool`.
+- Caller update: `2.0 - OOM SAKKIE - Amadeus Assistant Agent` now includes `Irrigation_Info_Tool`.
+- Backend source: `GET /api/telemetry/irrigation/status`.
+- The workflow formats current irrigation state, today's plan, next-zone state/computed fields, recent events, rule values, and read-only safety flags.
+
+Safety boundaries:
+
+- `2.3.3` has no Telegram Trigger.
+- `2.3.3` has no Google Sheets nodes.
+- `2.3.3` has no IFTTT or controller hardware nodes.
+- `2.3.3` does not write to Sheets or Supabase.
+- `2.3.3` does not call any command endpoint.
+- `2.3.2 - Run Irrigation Controller` remains inactive and is not part of this status path.
+
+Import/test order:
+
+1. Import `2.3.3 - Irrigation Status Tool`.
+2. Run it manually with `What is the irrigation status?`.
+3. Confirm output is status-only and states it cannot start/stop/change irrigation.
+4. Import updated `2.0 - OOM SAKKIE - Amadeus Assistant Agent`.
+5. Ask Oom Sakkie for irrigation status.
+6. Confirm `2.3.2` does not execute.
+7. Ask a control-style question and confirm no control action is taken.
+
+Live verification on 2026-05-23:
+
+- Owner tested Oom Sakkie irrigation status twice after correcting the n8n workflow reference.
+- Status answers worked.
+- Control-style safety test also worked.
+- `2.3.2 - Run Irrigation Controller` remains inactive and outside the Oom Sakkie status path.
+
+## 10.3R Irrigation Supabase Data Model
+
+Selected direction on 2026-05-23:
+
+- Continue backend/data work before dashboards.
+- Build the irrigation data foundation in Supabase before zone editing, adaptive plan building, fertilizer scheduling, tank sensor actions, or hardware commands.
+- First slice is schema + verifier only. No control endpoints and no dashboard.
+
+Proposed data model:
+
+| Table | Purpose |
+| --- | --- |
+| `irrigation_zones` | Zone configuration and long-lived planning inputs. |
+| `irrigation_daily_plans` | One daily plan header per local date and plan source/version. |
+| `irrigation_plan_items` | Zone-level planned/running/done/skipped rows for each daily plan. |
+| `irrigation_state_snapshots` | Readback/latest state snapshots from the current sheet/controller path. |
+| `irrigation_events` | Append-only plan/run/audit events. |
+| `irrigation_auxiliary_devices` | Fertilizer injection valves, fertilizer mixer, pumps, and future non-zone devices. |
+| `irrigation_auxiliary_tasks` | Planned support tasks such as fertilizer injection windows and daily tank mixing. |
+| `irrigation_sensor_states` | Tank full/empty and future sensor states. |
+
+Key modeling decisions:
+
+- Normal irrigation zones are separate from auxiliary devices.
+- Fertilizer injection valves should be modeled as auxiliary devices/tasks that can depend on irrigation activity.
+- Fertilizer mixing is a scheduled support task, not a crop watering zone.
+- Tank full/empty states are sensor states that later influence planning/control rules.
+- Events are append-only. Do not hard-delete operational history.
+- Supabase should become the source of truth later, but the first migration imports no data and changes no live behavior.
+
+First migration guardrails:
+
+- No IFTTT credentials or URLs.
+- No hardware command endpoint.
+- No automatic plan creation.
+- No Google Sheets writeback.
+- No activation or edit to `2.3.2`.
+- No Oom Sakkie start/stop controls.
+- No dashboard.
+
+Implementation order:
+
+1. Create empty-table migration. - Done.
+2. Add backend verifier endpoint. - Done.
+3. Add focused schema tests. - Done.
+4. Apply migration only after SQL review. - Done locally against Supabase.
+5. Verify deployed schema. - Next after backend deploy.
+6. Then plan a read-only sheet-to-Supabase dry-run/import for zones/plans/state/events. - Later.
+
+Local/Supabase implementation result on 2026-05-23:
+
+- Migration `202605230001_create_irrigation_tables.sql` created.
+- Backend verifier `GET /health/database/irrigation-schema` added.
+- Migration applied successfully through the local migration runner.
+- Local verifier returned:
+  - `success = true`;
+  - `status = ok`;
+  - `migration_id = 202605230001_create_irrigation_tables`;
+  - `missing_tables = []`.
+- Tables present:
+  - `irrigation_zones`;
+  - `irrigation_daily_plans`;
+  - `irrigation_plan_items`;
+  - `irrigation_state_snapshots`;
+  - `irrigation_events`;
+  - `irrigation_auxiliary_devices`;
+  - `irrigation_auxiliary_tasks`;
+  - `irrigation_sensor_states`.
+- Telemetry source row present: `irrigation-controller-main`.
+- No data was imported and no live irrigation behavior changed.

@@ -30,6 +30,7 @@ It documents:
 | `2.2 - Amadeus Sunsynk Sub-Agent` | `workflows/2.2 - Amadeus Sunsynk Sub-Agent/` | Active | Solar and power worker called by Oom Sakkie; reads backend current-power endpoint. |
 | `2.3.1 - Build Daily Irrigation Plan` | `workflows/2.3.1 - Build Daily Irrigation Plan/` | Active | Scheduled daily irrigation planning. |
 | `2.3.2 - Run Irrigation Controller` | `workflows/2.3.2 - Run Irrigation Controller/` | Inactive | Scheduled irrigation valve controller. |
+| `2.3.3 - Irrigation Status Tool` | `workflows/2.3.3 - Irrigation Status Tool/` | Import/test pending | Read-only irrigation status worker called by Oom Sakkie; no hardware control. |
 | `2.4 - Amadeus Orders Sub Agent` | `workflows/2.4 - Amadeus Orders Sub Agent/` | Active | Internal order approval sub-agent. |
 | `2.4.1 - Test Caller` | `workflows/2.4.1 - Test Caller/` | Inactive | Manual test caller for the orders sub-agent. |
 | `2.4.2 - Orders Approval Callback Handler` | `workflows/2.4.2 - Orders Approval Callback Handler/` | Retired / Inactive | Historical callback handler only; do not reactivate. Callback routing now lives in GateKeeper to avoid bot webhook conflicts. |
@@ -104,6 +105,8 @@ flowchart TD
 - `2.4` already handles internal order approval behavior. Phase 7.3 order lookup should build around it, not replace it.
 - `2.4.4` is the separate read-only lookup tool for Oom Sakkie order/document questions. It must stay read-only until a later document-send guard phase is planned.
 - `2.4.5` should be called by GateKeeper's callback route for quote-send buttons. Do not create a second active `callback_query` Telegram trigger on the same Oom Sakkie bot.
+- `2.3.3` is the read-only irrigation status tool for Oom Sakkie. It may call the backend status endpoint only and must not start, stop, pause, resume, rebuild, or change irrigation.
+- `2.3.2` remains inactive. Do not use it as an Oom Sakkie tool because it contains real hardware-control behavior.
 - Telegram cleanup after human reply is desired but should be treated as a planned improvement unless confirmed implemented.
 - This repo is private, so workflow exports may keep full technical detail for local build planning.
 

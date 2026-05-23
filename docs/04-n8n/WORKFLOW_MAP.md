@@ -45,6 +45,7 @@ Workflow names in n8n should not be renamed during this cleanup because Execute 
 | `2.1 - Amadeus Weather Sub-Agent` | Weather Tool | Current weather and 3-day forecast questions via backend `/api/telemetry/weather/current` and `/api/telemetry/weather/forecast?days=3`. |
 | `2.1.1 - Amadeus Forecast Tool` | Forecast Worker | Legacy/standalone forecast utility. Not the normal Oom Sakkie weather path after Phase 10.3J. |
 | `2.2 - Amadeus Sunsynk Sub-Agent` | Solar Tool | Current and sample-based recent Sunsynk/power questions via backend `/api/telemetry/power/current` and `/api/telemetry/power/recent`. |
+| `2.3.3 - Irrigation Status Tool` | Irrigation Status Tool | Read-only irrigation status and daily-plan questions via backend `/api/telemetry/irrigation/status`; no hardware control. |
 | `2.4 - Amadeus Orders Sub Agent` | Approval Worker | Approval request and approval decision worker. |
 | `2.4.3 - Order Approval Request Webhook` | Approval Request Webhook | Backend inbound approval-request trigger. |
 | `2.4.4 - Order Lookup Tool` | Order Lookup Tool | Read-only order lookup and quote-send preparation. |

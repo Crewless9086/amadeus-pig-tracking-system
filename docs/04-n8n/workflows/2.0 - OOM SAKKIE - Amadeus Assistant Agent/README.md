@@ -13,7 +13,7 @@ Imported for docs: 2026-05-18
 - Runs when called by `2 - The GateKeeper`.
 - Uses a LangChain agent as the main assistant brain.
 - Sends replies back to Telegram.
-- Calls weather, Sunsynk, and read-only order lookup sub-agents as tools.
+- Calls weather, Sunsynk, read-only irrigation status, and order lookup sub-agents as tools.
 - Does not use assistant memory for operational routing; stale memory can cause tool-backed actions to be skipped.
 
 ## Main Nodes
@@ -25,6 +25,7 @@ Imported for docs: 2026-05-18
 - `Replay ChatGPT`
 - `Weather_Info_Tool`
 - `Sunsynk_Info_Tool`
+- `Irrigation_Info_Tool`
 - `Orders_Info_Tool`
 - `Switch - Suppress Direct Tool Reply`
 - `Send Replay`
@@ -33,6 +34,7 @@ Imported for docs: 2026-05-18
 
 - `2.1 - Amadeus Weather Sub-Agent` (`L4c34rFmN0kUJvWc`)
 - `2.2 - Amadeus Sunsynk Sub-Agent` (`tKVKoCcxhT7CAydT`)
+- `2.3.3 - Irrigation Status Tool` (`rG7mN4pQ8sT2uV6w`)
 - `2.4.4 - Order Lookup Tool` (`1VNdetSbgP0ffNyH`)
 
 ## Planning Notes
@@ -44,3 +46,4 @@ Imported for docs: 2026-05-18
 - Access remains controlled by `2 - The GateKeeper`.
 - 2026-05-19: `Simple Memory` was disconnected after repeated quote-send preparation requests were answered from memory without calling `Orders_Info_Tool`.
 - 2026-05-19: `Switch - Suppress Direct Tool Reply` was added locally. When a tool returns `__NO_TELEGRAM_REPLY__`, `2.0` suppresses its normal reply because the worker has already sent the direct Telegram button message.
+- 2026-05-23: `Irrigation_Info_Tool` was added locally for read-only irrigation status only. It points to `2.3.3 - Irrigation Status Tool`, which calls the backend status endpoint and cannot start, stop, pause, resume, rebuild, or change irrigation.

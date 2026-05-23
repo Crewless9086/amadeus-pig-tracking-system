@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import Mock, patch
 
 from services.database_service import (
+    IRRIGATION_SCHEMA_MIGRATION_ID,
+    IRRIGATION_SCHEMA_TABLES,
     ORDER_SCHEMA_TABLES,
     SALES_PAYMENT_DATE_MIGRATION_ID,
     SALES_TRANSACTION_SCHEMA_TABLES,
@@ -13,6 +15,7 @@ from services.database_service import (
     TELEMETRY_WEATHER_SCHEMA_TABLES,
     check_database_foundation,
     check_database_health,
+    check_irrigation_schema,
     check_order_schema,
     check_sales_transaction_payment_date_schema,
     check_sales_transaction_schema,
@@ -47,6 +50,8 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertIn("check_sales_transaction_payment_date_schema()", app_source)
         self.assertIn('@app.route("/health/database/telemetry-power-schema")', app_source)
         self.assertIn("check_telemetry_power_schema()", app_source)
+        self.assertIn('@app.route("/health/database/irrigation-schema")', app_source)
+        self.assertIn("check_irrigation_schema()", app_source)
 
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_database_health_does_not_return_connection_string_on_failure(self):
@@ -134,6 +139,16 @@ class DatabaseServiceHealthTests(unittest.TestCase):
     def test_telemetry_power_schema_health_reports_missing_database_url_without_importing_driver(self):
         with patch.dict(os.environ, {}, clear=True):
             body, status_code = check_telemetry_power_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertFalse(body["configured"])
+        self.assertEqual(body["status"], "not_configured")
+        self.assertNotIn("DATABASE_URL=", str(body))
+
+    def test_irrigation_schema_health_reports_missing_database_url_without_importing_driver(self):
+        with patch.dict(os.environ, {}, clear=True):
+            body, status_code = check_irrigation_schema()
 
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
@@ -278,6 +293,36 @@ class DatabaseServiceHealthTests(unittest.TestCase):
             with self.subTest(forbidden=text):
                 self.assertNotIn(text, migration_lower)
 
+    def test_irrigation_migration_creates_only_empty_data_model_tables(self):
+        migration = Path(
+            "supabase/migrations/202605230001_create_irrigation_tables.sql"
+        ).read_text(encoding="utf-8")
+        migration_lower = migration.lower()
+
+        for table in IRRIGATION_SCHEMA_TABLES:
+            with self.subTest(table=table):
+                self.assertIn(f"create table if not exists public.{table}", migration_lower)
+
+        self.assertIn(IRRIGATION_SCHEMA_MIGRATION_ID, migration)
+        self.assertIn("irrigation-controller-main", migration)
+        self.assertIn("app_private.migration_log", migration)
+        self.assertIn("irrigation_auxiliary_devices", migration)
+        self.assertIn("irrigation_sensor_states", migration)
+        self.assertIn("not a command queue", migration_lower)
+
+        forbidden = [
+            "ifttt.com",
+            "maker.ifttt",
+            "create table if not exists public.irrigation_actions",
+            "create table if not exists public.irrigation_commands",
+            "create table if not exists public.irrigation_command_queue",
+            "drop table",
+            "delete from",
+        ]
+        for text in forbidden:
+            with self.subTest(forbidden=text):
+                self.assertNotIn(text, migration_lower)
+
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_order_schema_health_does_not_return_connection_string_on_failure(self):
         with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
@@ -319,6 +364,17 @@ class DatabaseServiceHealthTests(unittest.TestCase):
         self.assertEqual(status_code, 503)
         self.assertFalse(body["success"])
         self.assertEqual(body["status"], "telemetry_power_schema_check_failed")
+        self.assertNotIn("secret", str(body))
+        self.assertNotIn("example", str(body))
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_irrigation_schema_health_does_not_return_connection_string_on_failure(self):
+        with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):
+            body, status_code = check_irrigation_schema()
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(body["success"])
+        self.assertEqual(body["status"], "irrigation_schema_check_failed")
         self.assertNotIn("secret", str(body))
         self.assertNotIn("example", str(body))
 

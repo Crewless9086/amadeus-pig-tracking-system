@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified | Deploy small next-zone clarity patch, then connect Oom Sakkie to read-only irrigation status. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Applied Locally | Deploy backend and verify `/health/database/irrigation-schema` on Render. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -3135,6 +3135,96 @@ Next-zone clarity patch prepared on 2026-05-23:
 - Endpoint now also returns `state_next_zone_id`, `computed_next_zone_id`, `next_zone_source`, and `next_zone_mismatch`.
 - If the sheet state and computed priority/water-score result differ, the response adds an operator note instead of silently hiding the mismatch.
 - Local focused telemetry tests passed after this patch.
+
+### 10.3Q Oom Sakkie Read-Only Irrigation Status Tool - Live-Verified
+
+Purpose:
+
+- Let Oom Sakkie answer irrigation status questions through the backend read-only endpoint.
+- Keep `2.3.2 - Run Irrigation Controller` inactive and untouched.
+- Keep all irrigation control out of Oom Sakkie until a later command/audit/safety phase.
+
+Local workflow changes prepared on 2026-05-23:
+
+- Added `docs/04-n8n/workflows/2.3.3 - Irrigation Status Tool/workflow.json`.
+- Added `docs/04-n8n/workflows/2.3.3 - Irrigation Status Tool/README.md`.
+- Updated `2.0 - OOM SAKKIE - Amadeus Assistant Agent` with `Irrigation_Info_Tool`.
+- `2.3.3` calls `GET /api/telemetry/irrigation/status` only.
+- `2.3.3` formats current state, today's plan, next-zone state/computed fields, recent events, rules, and read-only safety flags.
+- `2.3.3` has no Telegram Trigger, no Google Sheets node, no IFTTT node, and no hardware-control path.
+- Workflow contract tests now protect the new read-only irrigation worker and the `2.0` tool wiring.
+
+Manual import/test order:
+
+1. Import `docs/04-n8n/workflows/2.3.3 - Irrigation Status Tool/workflow.json`.
+2. Run `2.3.3` manually with input `What is the irrigation status?`.
+3. Confirm the answer is status-only and says it cannot start/stop/change irrigation.
+4. Import updated `docs/04-n8n/workflows/2.0 - OOM SAKKIE - Amadeus Assistant Agent/workflow.json`.
+5. Ask Telegram Oom Sakkie: `What is the irrigation status?`
+6. Confirm only GateKeeper, `2.0`, and `2.3.3` execute. `2.3.2` must not execute.
+7. Ask a control-style question such as `Start irrigation` and confirm Oom Sakkie does not start anything and says control requires a separate approved hardware-control path.
+
+Live result on 2026-05-23:
+
+- Owner imported/tested `2.3.3` and updated `2.0`.
+- Oom Sakkie irrigation status questions now work.
+- Control-style safety test also passed.
+- `2.3.2 - Run Irrigation Controller` remains inactive and must stay out of the read-only Oom Sakkie path.
+
+### 10.3R Irrigation Supabase Data Model - Proposed Next Backend/Data Slice
+
+Purpose:
+
+- Move irrigation from a sheet-shaped operating record toward a proper Supabase model before dashboards, zone editing, adaptive planning, fertilizer logic, tank sensors, or hardware-control actions.
+- Keep the first Supabase slice data-only and read-only from the app/API perspective.
+- Do not build any command/control endpoints in this slice.
+
+Recommended tables:
+
+- `irrigation_zones` - configured water zones such as `C12345` / `C - Kamp`, season runtimes, priority, irrigation type, active flag, and crop/context fields.
+- `irrigation_daily_plans` - one plan header per local date and plan source/version.
+- `irrigation_plan_items` - zone-level rows for each daily plan, planned minutes, status, water score, planned/actual times, and reason.
+- `irrigation_state_snapshots` - latest/readback state from the current sheet/controller path.
+- `irrigation_events` - append-only event/audit log such as `PLAN_CREATED`, `ZONE_STARTED`, `ZONE_COMPLETED`, `PAUSED`, `SKIPPED`.
+- `irrigation_auxiliary_devices` - fertilizer injection valves, fertilizer mixing valve, future pump/support devices.
+- `irrigation_auxiliary_tasks` - non-zone support tasks such as fertilizer injection window or daily tank mixing.
+- `irrigation_sensor_states` - tank full/empty, future level sensors, and other inputs that should drive planning safely later.
+
+Guardrails:
+
+- No writes back to Google Sheets.
+- No IFTTT calls.
+- No `2.3.2` activation.
+- No Oom Sakkie start/stop commands.
+- No automatic plan rebuilds from Supabase yet.
+- No dashboard work until the schema and verifier are accepted.
+
+Recommended implementation order:
+
+1. Create the empty Supabase irrigation schema migration. - Done.
+2. Add backend schema verifier endpoint. - Done.
+3. Run local tests. - Done.
+4. Apply migration to Supabase. - Done.
+5. Verify deployed schema. - Next after backend deploy.
+6. Plan a read-only sheet-to-Supabase import/dry-run for zones, current plans, state, and log rows. - Next slice after deployed schema verification.
+
+Local/Supabase result on 2026-05-23:
+
+- Migration file: `supabase/migrations/202605230001_create_irrigation_tables.sql`.
+- Applied successfully through `scripts/apply_supabase_migration.py`.
+- Local verifier endpoint added: `GET /health/database/irrigation-schema`.
+- Local verifier returned `success = true`, `status = ok`, migration ID `202605230001_create_irrigation_tables`, and `missing_tables = []`.
+- Expected/found tables:
+  - `irrigation_zones`;
+  - `irrigation_daily_plans`;
+  - `irrigation_plan_items`;
+  - `irrigation_state_snapshots`;
+  - `irrigation_events`;
+  - `irrigation_auxiliary_devices`;
+  - `irrigation_auxiliary_tasks`;
+  - `irrigation_sensor_states`.
+- Source row found: `irrigation-controller-main`, `source_type = irrigation`, `provider = n8n_sheet_bridge`, `stale_after_minutes = 60`.
+- This migration imports no data, creates no command/control endpoint, and changes no live irrigation behavior.
 
 Farm home/dashboard idea:
 

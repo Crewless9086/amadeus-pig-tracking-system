@@ -863,6 +863,26 @@ No redaction pass is required for current private documentation. If the reposito
 
 Status: accepted for private repo
 
+### 2026-05-23 - Oom Sakkie Read-Only Irrigation Status Tool Prepared
+
+Type: `WORKFLOW`
+
+Component: `2.0 - OOM SAKKIE - Amadeus Assistant Agent`, `2.3.3 - Irrigation Status Tool`
+
+Change:
+
+Added a new backend-only read-only irrigation status worker export and wired `2.0` with `Irrigation_Info_Tool`.
+
+Reason:
+
+Oom Sakkie should be able to answer irrigation status questions after the backend read-only endpoint was deployed, without touching `2.3.2 - Run Irrigation Controller` or any IFTTT hardware-control nodes.
+
+Expected outcome:
+
+Import `2.3.3` first, then import the updated `2.0`, then ask Oom Sakkie a status question. The answer must summarize status only and must not start, stop, pause, resume, rebuild, or change irrigation.
+
+Status: local export ready; n8n import/test pending
+
 ## Historical Notes
 
 The older 2026-04 stabilization work focused mainly on `1.0` reply integrity:

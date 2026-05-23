@@ -11,6 +11,7 @@ OOM_SAKKIE_WORKFLOW = WORKFLOW_ROOT / "2.0 - OOM SAKKIE - Amadeus Assistant Agen
 WEATHER_WORKFLOW = WORKFLOW_ROOT / "2.1 - Amadeus Weather Sub-Agent" / "workflow.json"
 FORECAST_WORKFLOW = WORKFLOW_ROOT / "2.1.1 - Amadeus Forecast Tool" / "workflow.json"
 SUNSYNK_WORKFLOW = WORKFLOW_ROOT / "2.2 - Amadeus Sunsynk Sub-Agent" / "workflow.json"
+IRRIGATION_STATUS_WORKFLOW = WORKFLOW_ROOT / "2.3.3 - Irrigation Status Tool" / "workflow.json"
 WEATHER_ALERT_DELIVERY_WORKFLOW = WORKFLOW_ROOT / "ALERT - Weather Backend Delivery" / "workflow.json"
 POWER_ALERT_DELIVERY_WORKFLOW = WORKFLOW_ROOT / "ALERT - Power Backend Delivery" / "workflow.json"
 
@@ -140,6 +141,7 @@ WORKFLOW_EXPORTS = {
     "weather": WEATHER_WORKFLOW,
     "forecast": FORECAST_WORKFLOW,
     "sunsynk": SUNSYNK_WORKFLOW,
+    "irrigation_status": IRRIGATION_STATUS_WORKFLOW,
     "weather_alert_delivery": WEATHER_ALERT_DELIVERY_WORKFLOW,
 }
 
@@ -380,6 +382,48 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("AI Sunsynk Agent", node_names)
         self.assertNotIn("OpenAI Chat Model", node_names)
         self.assertNotIn("Sunsynk Current Overview", node_names)
+
+    def test_oom_sakkie_irrigation_tool_uses_ai_supplied_input(self):
+        workflow = load_workflow(OOM_SAKKIE_WORKFLOW)
+        node = node_by_name(workflow, "Irrigation_Info_Tool")
+        agent = node_by_name(workflow, "AI Assistant Agent")
+
+        self.assertIsNotNone(node)
+        self.assertIsNotNone(agent)
+        workflow_inputs = node.get("parameters", {}).get("workflowInputs", {})
+        input_expression = workflow_inputs.get("value", {}).get("input", "")
+        system_message = agent.get("parameters", {}).get("options", {}).get("systemMessage", "")
+
+        self.assertIn("$fromAI", input_expression)
+        self.assertIn("irrigation_question", input_expression)
+        self.assertIn("irrigation status at the farm", input_expression)
+        self.assertIn("Irrigation_Info_Tool", system_message)
+        self.assertIn("read-only", system_message)
+        self.assertIn("cannot start, stop, pause, resume, rebuild, or change irrigation", system_message)
+
+    def test_irrigation_status_tool_is_backend_read_only(self):
+        workflow = load_workflow(IRRIGATION_STATUS_WORKFLOW)
+        workflow_text = json.dumps(workflow)
+        route_node = node_by_name(workflow, "Code - Route Irrigation Question")
+        http_node = node_by_name(workflow, "HTTP - Get Irrigation Status")
+        format_node = node_by_name(workflow, "Code - Format Irrigation Answer")
+        node_names = {node.get("name") for node in workflow.get("nodes", [])}
+
+        self.assertIsNotNone(route_node)
+        self.assertIsNotNone(http_node)
+        self.assertIsNotNone(format_node)
+        self.assertIn("/api/telemetry/irrigation/status", route_node.get("parameters", {}).get("jsCode", ""))
+        self.assertEqual(http_node.get("parameters", {}).get("url"), "={{ $json.request_url }}")
+        self.assertIn("next_zone_mismatch", format_node.get("parameters", {}).get("jsCode", ""))
+        self.assertIn("read-only status", format_node.get("parameters", {}).get("jsCode", ""))
+
+        self.assertNotIn("Telegram Trigger", node_names)
+        self.assertNotIn("n8n-nodes-base.googleSheets", workflow_text)
+        self.assertNotIn("ifttt.com", workflow_text.lower())
+        self.assertNotIn("/start", workflow_text)
+        self.assertNotIn("/stop", workflow_text)
+        self.assertNotIn("/pause", workflow_text)
+        self.assertNotIn("/resume", workflow_text)
 
     def test_forecast_tool_keeps_safe_blank_defaults_for_optional_offsets(self):
         workflow = load_workflow(FORECAST_WORKFLOW)

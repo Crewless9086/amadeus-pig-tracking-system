@@ -6,6 +6,7 @@ from modules.reports.report_routes import reports_bp
 from modules.sales.sales_transaction_routes import sales_bp
 from modules.telemetry.telemetry_routes import telemetry_bp
 from services.database_service import (
+    check_irrigation_schema,
     check_database_foundation,
     check_database_health,
     check_order_schema,
@@ -193,6 +194,12 @@ def database_telemetry_power_schema_health():
 @app.route("/health/database/telemetry-weather-schema")
 def database_telemetry_weather_schema_health():
     body, status_code = check_telemetry_weather_schema()
+    return body, status_code
+
+
+@app.route("/health/database/irrigation-schema")
+def database_irrigation_schema_health():
+    body, status_code = check_irrigation_schema()
     return body, status_code
 
 

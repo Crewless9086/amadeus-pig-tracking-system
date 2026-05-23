@@ -1,0 +1,285 @@
+{
+  "updatedAt": "2026-05-23T00:00:00.000Z",
+  "createdAt": "2026-05-23T00:00:00.000Z",
+  "id": "rG7mN4pQ8sT2uV6w",
+  "name": "2.3.3 - Irrigation Status Tool",
+  "description": "Deterministic read-only irrigation status tool for Oom Sakkie. Reads backend irrigation status endpoint only. No hardware control.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "input"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -520,
+        0
+      ],
+      "id": "2ab65d31-b5e6-4fd2-bb19-0b7f468fae4c",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst inputItem = $json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || inputItem.text || inputItem.chatInput || inputItem.prompt || \"irrigation status at the farm\");\n\nreturn [{\n  json: {\n    input: question,\n    query_type: \"status\",\n    request_url: \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/irrigation/status\",\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ],
+      "id": "3c0cc773-a836-44a9-8a54-a7d0a07fd69f",
+      "name": "Code - Route Irrigation Question"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.request_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "8b801899-dde0-4a48-9c04-1d6263408a5e",
+      "name": "HTTP - Get Irrigation Status"
+    },
+    {
+      "parameters": {
+        "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtMinutes(value) {\n  const n = num(value);\n  if (n === null) return \"unknown minutes\";\n  return `${Math.round(n)} min`;\n}\n\nfunction fmtScore(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(1)));\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction zoneLabel(name, id) {\n  const n = clean(name);\n  const z = clean(id);\n  if (n && z) return `${n} (${z})`;\n  return n || z || \"none\";\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst route = $(\"Code - Route Irrigation Question\").first()?.json || {};\nconst question = clean(route.input || \"irrigation status at the farm\");\nconst data = $json || {};\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || data.operator_summary?.headline || \"The irrigation status is not available yet.\");\n  answer = `I could not read the irrigation status. ${reason}`;\n} else {\n  const current = data.current || {};\n  const today = data.today || {};\n  const safety = data.safety || {};\n  const rules = data.rules || {};\n  const summary = data.operator_summary || {};\n  const notes = Array.isArray(summary.notes) ? summary.notes : [];\n  const plan = Array.isArray(today.plan) ? today.plan : [];\n  const recentEvents = Array.isArray(data.recent_events) ? data.recent_events : [];\n  const lines = [];\n\n  lines.push(\"Irrigation status at Amadeus Farm:\");\n  lines.push(\"\");\n  if (summary.headline) lines.push(sentence(summary.headline));\n  lines.push(`Current state: ${sentence(current.status || \"unknown\")}`);\n  lines.push(`Current zone: ${zoneLabel(current.zone_name, current.zone_id)}`);\n  lines.push(`Remaining time: ${fmtMinutes(current.remaining_minutes)}`);\n  if (current.pause_reason) lines.push(`Pause reason: ${sentence(current.pause_reason)}`);\n  if (current.last_update) lines.push(`Last update: ${formatDateTime(current.last_update)}`);\n  if (current.last_zone_completed) lines.push(`Last completed zone: ${current.last_zone_completed}`);\n\n  lines.push(\"\");\n  lines.push(`Today's plan (${today.date || \"unknown date\"}):`);\n  lines.push(`- Planned zones: ${today.planned_count ?? 0}`);\n  lines.push(`- Running: ${today.running_count ?? 0}`);\n  lines.push(`- Done: ${today.done_count ?? 0}`);\n  lines.push(`- Paused/skipped: ${today.paused_count ?? 0}/${today.skipped_count ?? 0}`);\n  lines.push(`- Planned total: ${fmtMinutes(today.total_planned_minutes)}`);\n  lines.push(`- Completed: ${fmtMinutes(today.completed_minutes)}`);\n\n  lines.push(\"\");\n  lines.push(`Next zone from state: ${zoneLabel(today.state_next_zone_name, today.state_next_zone_id)}`);\n  lines.push(`Computed priority next zone: ${zoneLabel(today.computed_next_zone_name, today.computed_next_zone_id)}`);\n  if (today.next_zone_mismatch === true) {\n    lines.push(\"Note: the sheet state and computed priority next zone do not match. Treat the state value as the live workflow pointer and review before changing the plan.\");\n  } else if (today.next_zone_id) {\n    lines.push(`Next planned zone: ${zoneLabel(today.next_zone_name, today.next_zone_id)}`);\n  }\n\n  if (plan.length > 0) {\n    lines.push(\"\");\n    lines.push(\"Plan rows:\");\n    for (const item of plan.slice(0, 6)) {\n      lines.push(`- ${zoneLabel(item.zone_name, item.zone_id)}: ${sentence(item.status || \"unknown\")}, ${fmtMinutes(item.planned_minutes)}, water score ${fmtScore(item.water_score)}`);\n    }\n    if (plan.length > 6) lines.push(`- ${plan.length - 6} more row(s) not shown.`);\n  }\n\n  const usefulNotes = notes.filter((note) => sentence(note));\n  if (usefulNotes.length > 0) {\n    lines.push(\"\");\n    lines.push(\"Notes:\");\n    for (const note of usefulNotes.slice(0, 4)) lines.push(`- ${sentence(note)}`);\n  }\n\n  if (recentEvents.length > 0) {\n    lines.push(\"\");\n    lines.push(\"Recent irrigation events:\");\n    for (const event of recentEvents.slice(-3)) {\n      lines.push(`- ${formatDateTime(event.timestamp)}: ${sentence(event.event || \"event\")} ${event.zone_id ? `for ${event.zone_id}` : \"\"}${event.reason ? ` - ${sentence(event.reason)}` : \"\"}`.trim());\n    }\n  }\n\n  lines.push(\"\");\n  lines.push(\"Safety: this is read-only status. It cannot start, stop, or change irrigation.\");\n  if (safety.hardware_commands_enabled === true || safety.can_control === true || safety.read_only !== true) {\n    lines.push(\"Warning: safety flags are not in the expected read-only state. Do not use this for control decisions until checked.\");\n  }\n  if (rules.wind_pause_kmh !== null || rules.live_rain_skip_mm !== null || rules.rain_forecast_skip_mm_24h !== null) {\n    lines.push(`Rules shown: wind pause ${rules.wind_pause_kmh ?? \"unknown\"} km/h, live rain skip ${rules.live_rain_skip_mm ?? \"unknown\"} mm, forecast rain skip ${rules.rain_forecast_skip_mm_24h ?? \"unknown\"} mm.`);\n  }\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    query_type: \"status\",\n    answer,\n    output: answer,\n    irrigation_response: answer,\n    telemetry_source: \"backend_google_sheets_irrigation_status_read_only\",\n    backend_payload: data,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "id": "ca218df0-4b72-4989-9114-ee2a9feb06ef",
+      "name": "Code - Format Irrigation Answer"
+    },
+    {
+      "parameters": {
+        "content": "Phase 10.3Q: deterministic read-only backend irrigation status. Calls /api/telemetry/irrigation/status only. No Google Sheets nodes, no IFTTT, no controller actions, no hardware control.",
+        "height": 180,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -520,
+        -260
+      ],
+      "id": "b3760a6b-29b7-4cec-b912-d91ff3cce35c",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Code - Route Irrigation Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Route Irrigation Question": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Irrigation Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Irrigation Status": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Irrigation Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Irrigation Answer": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "input": "What is the irrigation status?"
+        }
+      }
+    ]
+  },
+  "versionId": "8ad028e9-3087-4e34-9afa-09651d702a80",
+  "activeVersionId": "8ad028e9-3087-4e34-9afa-09651d702a80",
+  "versionCounter": 1,
+  "triggerCount": 0,
+  "shared": [],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-23T00:00:00.000Z",
+    "createdAt": "2026-05-23T00:00:00.000Z",
+    "versionId": "8ad028e9-3087-4e34-9afa-09651d702a80",
+    "workflowId": "rG7mN4pQ8sT2uV6w",
+    "nodes": [
+      {
+        "parameters": {
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "input"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -520,
+          0
+        ],
+        "id": "2ab65d31-b5e6-4fd2-bb19-0b7f468fae4c",
+        "name": "When Executed by Another Workflow"
+      },
+      {
+        "parameters": {
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nconst inputItem = $json || {};\nconst question = clean(inputItem.input || inputItem.question || inputItem.message || inputItem.text || inputItem.chatInput || inputItem.prompt || \"irrigation status at the farm\");\n\nreturn [{\n  json: {\n    input: question,\n    query_type: \"status\",\n    request_url: \"https://amadeus-pig-tracking-system.onrender.com/api/telemetry/irrigation/status\",\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -260,
+          0
+        ],
+        "id": "3c0cc773-a836-44a9-8a54-a7d0a07fd69f",
+        "name": "Code - Route Irrigation Question"
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.request_url }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            },
+            "neverError": true
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          0
+        ],
+        "id": "8b801899-dde0-4a48-9c04-1d6263408a5e",
+        "name": "HTTP - Get Irrigation Status"
+      },
+      {
+        "parameters": {
+          "jsCode": "function clean(value) {\n  if (value === null || value === undefined) return \"\";\n  return String(value).trim();\n}\n\nfunction num(value) {\n  const parsed = Number(value);\n  return Number.isFinite(parsed) ? parsed : null;\n}\n\nfunction fmtMinutes(value) {\n  const n = num(value);\n  if (n === null) return \"unknown minutes\";\n  return `${Math.round(n)} min`;\n}\n\nfunction fmtScore(value) {\n  const n = num(value);\n  if (n === null) return \"unknown\";\n  return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(1)));\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nfunction zoneLabel(name, id) {\n  const n = clean(name);\n  const z = clean(id);\n  if (n && z) return `${n} (${z})`;\n  return n || z || \"none\";\n}\n\nfunction sentence(value) {\n  return clean(value).replace(/\\s+/g, \" \");\n}\n\nconst route = $(\"Code - Route Irrigation Question\").first()?.json || {};\nconst question = clean(route.input || \"irrigation status at the farm\");\nconst data = $json || {};\nconst success = data.success === true && data.status === \"ok\";\nlet answer = \"\";\n\nif (!success) {\n  const reason = sentence(data.message || data.error || data.operator_summary?.headline || \"The irrigation status is not available yet.\");\n  answer = `I could not read the irrigation status. ${reason}`;\n} else {\n  const current = data.current || {};\n  const today = data.today || {};\n  const safety = data.safety || {};\n  const rules = data.rules || {};\n  const summary = data.operator_summary || {};\n  const notes = Array.isArray(summary.notes) ? summary.notes : [];\n  const plan = Array.isArray(today.plan) ? today.plan : [];\n  const recentEvents = Array.isArray(data.recent_events) ? data.recent_events : [];\n  const lines = [];\n\n  lines.push(\"Irrigation status at Amadeus Farm:\");\n  lines.push(\"\");\n  if (summary.headline) lines.push(sentence(summary.headline));\n  lines.push(`Current state: ${sentence(current.status || \"unknown\")}`);\n  lines.push(`Current zone: ${zoneLabel(current.zone_name, current.zone_id)}`);\n  lines.push(`Remaining time: ${fmtMinutes(current.remaining_minutes)}`);\n  if (current.pause_reason) lines.push(`Pause reason: ${sentence(current.pause_reason)}`);\n  if (current.last_update) lines.push(`Last update: ${formatDateTime(current.last_update)}`);\n  if (current.last_zone_completed) lines.push(`Last completed zone: ${current.last_zone_completed}`);\n\n  lines.push(\"\");\n  lines.push(`Today's plan (${today.date || \"unknown date\"}):`);\n  lines.push(`- Planned zones: ${today.planned_count ?? 0}`);\n  lines.push(`- Running: ${today.running_count ?? 0}`);\n  lines.push(`- Done: ${today.done_count ?? 0}`);\n  lines.push(`- Paused/skipped: ${today.paused_count ?? 0}/${today.skipped_count ?? 0}`);\n  lines.push(`- Planned total: ${fmtMinutes(today.total_planned_minutes)}`);\n  lines.push(`- Completed: ${fmtMinutes(today.completed_minutes)}`);\n\n  lines.push(\"\");\n  lines.push(`Next zone from state: ${zoneLabel(today.state_next_zone_name, today.state_next_zone_id)}`);\n  lines.push(`Computed priority next zone: ${zoneLabel(today.computed_next_zone_name, today.computed_next_zone_id)}`);\n  if (today.next_zone_mismatch === true) {\n    lines.push(\"Note: the sheet state and computed priority next zone do not match. Treat the state value as the live workflow pointer and review before changing the plan.\");\n  } else if (today.next_zone_id) {\n    lines.push(`Next planned zone: ${zoneLabel(today.next_zone_name, today.next_zone_id)}`);\n  }\n\n  if (plan.length > 0) {\n    lines.push(\"\");\n    lines.push(\"Plan rows:\");\n    for (const item of plan.slice(0, 6)) {\n      lines.push(`- ${zoneLabel(item.zone_name, item.zone_id)}: ${sentence(item.status || \"unknown\")}, ${fmtMinutes(item.planned_minutes)}, water score ${fmtScore(item.water_score)}`);\n    }\n    if (plan.length > 6) lines.push(`- ${plan.length - 6} more row(s) not shown.`);\n  }\n\n  const usefulNotes = notes.filter((note) => sentence(note));\n  if (usefulNotes.length > 0) {\n    lines.push(\"\");\n    lines.push(\"Notes:\");\n    for (const note of usefulNotes.slice(0, 4)) lines.push(`- ${sentence(note)}`);\n  }\n\n  if (recentEvents.length > 0) {\n    lines.push(\"\");\n    lines.push(\"Recent irrigation events:\");\n    for (const event of recentEvents.slice(-3)) {\n      lines.push(`- ${formatDateTime(event.timestamp)}: ${sentence(event.event || \"event\")} ${event.zone_id ? `for ${event.zone_id}` : \"\"}${event.reason ? ` - ${sentence(event.reason)}` : \"\"}`.trim());\n    }\n  }\n\n  lines.push(\"\");\n  lines.push(\"Safety: this is read-only status. It cannot start, stop, or change irrigation.\");\n  if (safety.hardware_commands_enabled === true || safety.can_control === true || safety.read_only !== true) {\n    lines.push(\"Warning: safety flags are not in the expected read-only state. Do not use this for control decisions until checked.\");\n  }\n  if (rules.wind_pause_kmh !== null || rules.live_rain_skip_mm !== null || rules.rain_forecast_skip_mm_24h !== null) {\n    lines.push(`Rules shown: wind pause ${rules.wind_pause_kmh ?? \"unknown\"} km/h, live rain skip ${rules.live_rain_skip_mm ?? \"unknown\"} mm, forecast rain skip ${rules.rain_forecast_skip_mm_24h ?? \"unknown\"} mm.`);\n  }\n\n  answer = lines.join(\"\\n\");\n}\n\nreturn [{\n  json: {\n    success,\n    input: question,\n    query_type: \"status\",\n    answer,\n    output: answer,\n    irrigation_response: answer,\n    telemetry_source: \"backend_google_sheets_irrigation_status_read_only\",\n    backend_payload: data,\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          260,
+          0
+        ],
+        "id": "ca218df0-4b72-4989-9114-ee2a9feb06ef",
+        "name": "Code - Format Irrigation Answer"
+      },
+      {
+        "parameters": {
+          "content": "Phase 10.3Q: deterministic read-only backend irrigation status. Calls /api/telemetry/irrigation/status only. No Google Sheets nodes, no IFTTT, no controller actions, no hardware control.",
+          "height": 180,
+          "width": 560,
+          "color": 4
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -520,
+          -260
+        ],
+        "id": "b3760a6b-29b7-4cec-b912-d91ff3cce35c",
+        "name": "Sticky Note"
+      }
+    ],
+    "connections": {
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Code - Route Irrigation Question",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Route Irrigation Question": {
+        "main": [
+          [
+            {
+              "node": "HTTP - Get Irrigation Status",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "HTTP - Get Irrigation Status": {
+        "main": [
+          [
+            {
+              "node": "Code - Format Irrigation Answer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code - Format Irrigation Answer": {
+        "main": [
+          []
+        ]
+      }
+    }
+  }
+}

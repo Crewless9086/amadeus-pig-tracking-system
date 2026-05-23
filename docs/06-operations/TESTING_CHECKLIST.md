@@ -1766,6 +1766,47 @@ Deployed verification:
 - Current state returned `IDLE`; today's plan returned two planned zones.
 - Follow-up next-zone clarity patch passed focused local tests: response exposes state-selected next zone, computed next zone, source, and mismatch flag.
 
+### Phase 10.3Q - Oom Sakkie Read-Only Irrigation Status Tool
+
+Pre-live checks:
+
+1. [Done locally 2026-05-23] Create `2.3.3 - Irrigation Status Tool` export.
+2. [Done locally 2026-05-23] Confirm `2.3.3` calls only `/api/telemetry/irrigation/status`.
+3. [Done locally 2026-05-23] Confirm `2.3.3` has no Telegram Trigger, Google Sheets node, IFTTT node, or command endpoint.
+4. [Done locally 2026-05-23] Wire `2.0` with `Irrigation_Info_Tool`.
+5. [Done locally 2026-05-23] Add workflow contract tests for read-only irrigation tool behavior.
+6. [Next] Import `2.3.3` and run manually.
+7. [Next] Import updated `2.0`.
+8. [Next] Ask Oom Sakkie `What is the irrigation status?`.
+9. [Next] Confirm `2.3.2 - Run Irrigation Controller` does not execute.
+10. [Next] Ask a control-style question and confirm no irrigation action is taken.
+
+Live verification:
+
+- [Done 2026-05-23] Owner confirmed Oom Sakkie irrigation status works.
+- [Done 2026-05-23] Owner confirmed control-style safety test works.
+- [Still required] Keep `2.3.2 - Run Irrigation Controller` inactive.
+
+### Phase 10.3R - Irrigation Supabase Data Model
+
+Planned checks:
+
+1. [Next] Create empty irrigation schema migration.
+2. [Next] Add backend schema verifier.
+3. [Next] Confirm migration creates data tables only and no command/control endpoints.
+4. [Next] Confirm no IFTTT URL/key appears in SQL or backend verifier.
+5. [Next] Confirm focused tests pass locally.
+
+Local/Supabase checks:
+
+- [Done 2026-05-23] Created `202605230001_create_irrigation_tables.sql`.
+- [Done 2026-05-23] Added `GET /health/database/irrigation-schema`.
+- [Done 2026-05-23] Confirmed SQL contains no IFTTT URL/key and no command queue/action table.
+- [Done 2026-05-23] Focused database tests passed.
+- [Done 2026-05-23] Migration applied successfully to Supabase.
+- [Done 2026-05-23] Local verifier returned all eight expected irrigation tables and source row `irrigation-controller-main`.
+- [Next] Deploy backend and verify Render `/health/database/irrigation-schema`.
+
 After any order change, inspect affected sheets/views:
 
 - `ORDER_MASTER`
