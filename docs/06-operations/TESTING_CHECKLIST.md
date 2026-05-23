@@ -1962,6 +1962,121 @@ Result:
 - Focused database tests passed at 25 tests.
 - Broader telemetry/database tests passed at 59 tests.
 
+### Phase 10.3W3 - Daily Rollup Generator Plan-Only
+
+Checks:
+
+1. [Done 2026-05-23] Add a one-date daily rollup planner script.
+2. [Done 2026-05-23] Keep mode plan-only with no insert/update/delete path.
+3. [Done 2026-05-23] Return candidate power, weather, and irrigation daily rows.
+4. [Done 2026-05-23] Include calculation version, sample counts, expected counts, and coverage.
+5. [Done 2026-05-23] Keep power kWh/Rand marked estimated.
+6. [Done 2026-05-23] Dedupe duplicate logical irrigation events.
+7. [Done 2026-05-23] Run focused tests.
+8. [Done 2026-05-23] Run live Supabase plan-only check for `2026-05-23`.
+
+Result:
+
+- Script: `scripts/telemetry_daily_rollup_plan.py`.
+- Focused tests passed at 5 tests.
+- Broader telemetry/database tests passed at 64 tests.
+- Live plan-only check returned one candidate row for each daily rollup table and wrote nothing.
+- Current-day power/weather coverage was below 75%, which is expected while the day is incomplete.
+
+### Phase 10.3W4 - Daily Rollup Apply One Date
+
+Checks:
+
+1. [Done 2026-05-23] Add explicit `--apply` flag.
+2. [Done 2026-05-23] Keep default mode plan-only.
+3. [Done 2026-05-23] Upsert only daily rollup tables.
+4. [Done 2026-05-23] Use one transaction.
+5. [Done 2026-05-23] Apply one selected date only.
+6. [Done 2026-05-23] Verify rows directly in Supabase.
+7. [Done 2026-05-23] Confirm no schedule, sheet cleanup, monthly/yearly rollup, or control path was added.
+
+Result:
+
+- Applied date: `2026-05-23`.
+- `power_daily_rollups`: one row, `sample_count = 119`, `coverage_pct = 41.32`.
+- `weather_daily_rollups`: one row, `sample_count = 119`, `coverage_pct = 41.32`.
+- `irrigation_daily_rollups`: one row for `IRRPLAN-2026-05-23`, two planned zones, `120` planned minutes.
+- Current-day coverage is partial and expected; do not treat this as the final closed-day reporting value.
+
+### Phase 10.3W5 - Daily Rollup Read/Compare Endpoint
+
+Checks:
+
+1. [Done 2026-05-23] Add read-only daily rollup endpoint.
+2. [Done 2026-05-23] Return stored power/weather/irrigation daily rollups.
+3. [Done 2026-05-23] Return current raw/source counts for the same date.
+4. [Done 2026-05-23] Flag sample-count mismatches and low coverage.
+5. [Done 2026-05-23] Keep endpoint read-only.
+6. [Done 2026-05-23] Run local Supabase check against `2026-05-23`.
+7. [Done 2026-05-23] Run focused and broader tests.
+
+Result:
+
+- Endpoint: `GET /api/telemetry/rollups/daily?date=YYYY-MM-DD`.
+- Local check for `2026-05-23` returned stored rollups for all three areas.
+- Comparison flagged current-day drift:
+  - power `119` stored samples vs `120` current samples;
+  - weather `119` stored samples vs `121` current samples.
+- Irrigation event and plan counts matched.
+- Focused tests passed at 3 tests.
+- Broader telemetry/database tests passed at 69 tests.
+
+### Phase 10.3W6 - After-Day-Close Apply Guard
+
+Checks:
+
+1. [Done 2026-05-23] Refuse apply for today/future ZA dates by default.
+2. [Done 2026-05-23] Add explicit `--allow-partial` override for manual testing.
+3. [Done 2026-05-23] Confirm refused current-day apply writes nothing.
+4. [Done 2026-05-23] Confirm explicit partial apply still works.
+5. [Done 2026-05-23] Confirm compare endpoint shows refreshed stored/current counts after partial apply.
+6. [Done 2026-05-23] Run focused and broader tests.
+
+Result:
+
+- Normal current-day apply returned `status = day_not_closed`, `allow_partial_required = true`, and `writes_to_supabase = false`.
+- Explicit `--allow-partial` apply refreshed `2026-05-23` test rows.
+- Compare endpoint then showed power/weather stored and current counts matching at `179`, with expected low-coverage warnings.
+- Focused rollup script tests passed at 8 tests.
+- Broader telemetry/database tests passed at 70 tests.
+
+### Phase 10.3W7 - Previous-Day Schedule Command
+
+Checks:
+
+1. [Done 2026-05-23] Owner selected schedule time `00:15` Africa/Johannesburg.
+2. [Done 2026-05-23] Add `--previous-day` option.
+3. [Done 2026-05-23] Verify plan-only previous-day selection.
+4. [Done 2026-05-23] Verify previous-day apply without `--allow-partial`.
+5. [Done 2026-05-23] Verify compare endpoint after apply.
+6. [Done 2026-05-23] Record Render cron command.
+
+Result:
+
+- Previous-day selected `2026-05-22` while today was `2026-05-23`.
+- Apply wrote one row each to power/weather/irrigation daily rollups.
+- Compare endpoint for `2026-05-22` matched current raw/source counts:
+  - power `283/288`, quality `complete`;
+  - weather `231/288`, quality `usable`;
+  - irrigation event and plan counts matched.
+- Broader telemetry/database tests passed at 71 tests.
+
+Render cron command:
+
+```bash
+python scripts/telemetry_daily_rollup_plan.py --previous-day --apply
+```
+
+Schedule:
+
+- `00:15` Africa/Johannesburg.
+- UTC-only equivalent: `22:15` UTC.
+
 After any order change, inspect affected sheets/views:
 
 - `ORDER_MASTER`

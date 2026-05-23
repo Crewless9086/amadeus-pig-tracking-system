@@ -2774,3 +2774,295 @@ Next:
 
 - 10.3W3 should build a daily rollup generator in plan-only mode first.
 - The first generator must report planned inserts/updates without writing, and should start with one known date before any schedule is discussed.
+
+## 10.3W3 Daily Rollup Generator - Plan-Only Ready
+
+Purpose:
+
+- Build the first daily rollup generator without writing rows.
+- Use it to inspect candidate rollup payloads before adding any apply mode, schedule, dashboard, or cleanup.
+
+Implementation:
+
+- Added `scripts/telemetry_daily_rollup_plan.py`.
+- Added tests in `tests/test_telemetry_daily_rollup_plan.py`.
+- Command format:
+  - `.\venv\Scripts\python.exe scripts\telemetry_daily_rollup_plan.py --date YYYY-MM-DD`
+
+Behavior:
+
+- Reads one ZA local date from Supabase.
+- Produces candidate rows for:
+  - `power_daily_rollups`
+  - `weather_daily_rollups`
+  - `irrigation_daily_rollups`
+- Returns JSON with `mode = plan_only`.
+- Always reports `writes_to_sheets = false` and `writes_to_supabase = false`.
+- Does not insert, update, or delete anything.
+
+Calculation notes:
+
+- Power kWh and Rand values are marked estimated using 5-minute sample integration.
+- Power values store calculation version, sample count, expected sample count, coverage, method, limitations, and planning tariff.
+- Weather rain total uses the day's maximum `rain_today_mm`, matching the current weather-today summary pattern.
+- Irrigation event counts dedupe duplicate logical events caused by historical import plus daily sync overlap.
+- Irrigation fertilizer/tank fields are included but remain zero/null until auxiliary tasks or sensor states are populated.
+
+Live plan-only result for `2026-05-23`:
+
+- Power candidate:
+  - sample count `118` of `288`;
+  - coverage `40.97%`;
+  - battery range `30%` to `39%`;
+  - estimated load `7.8965 kWh`;
+  - estimated solar `2.3182 kWh`;
+  - estimated grid import `3.7892 kWh`;
+  - grid active about `315 minutes`;
+  - warning: coverage below `75%`.
+- Weather candidate:
+  - sample count `118` of `288`;
+  - coverage `40.97%`;
+  - temperature `9 C` to `14 C`;
+  - average humidity `98.28%`;
+  - rain total `0 mm`;
+  - max wind `10 km/h`, max gust `11 km/h`;
+  - no irrigation caution flag;
+  - warning: coverage below `75%`.
+- Irrigation candidate:
+  - daily plan `IRRPLAN-2026-05-23`;
+  - two planned zones;
+  - `120` planned minutes;
+  - zero completed/skipped/paused zones at the time of the dry run;
+  - deduped event count `1`;
+  - fertilizer/tank fields zero/null.
+
+Verification:
+
+- Focused rollup plan tests passed: `5 tests OK`.
+- Broader telemetry/database tests passed: `64 tests OK`.
+
+Next:
+
+- Review the plan-only payload shape.
+- Then add 10.3W4 apply mode for one selected date only, still manual and unscheduled.
+
+## 10.3W4 Daily Rollup Apply - One Date Applied
+
+Purpose:
+
+- Add a manual apply path after the 10.3W3 plan-only payload was reviewed.
+- Apply exactly one selected date, without schedules, dashboards, retention cleanup, or sheet deletion.
+
+Implementation:
+
+- `scripts/telemetry_daily_rollup_plan.py` now supports `--apply`.
+- Default behavior remains plan-only.
+- Apply mode:
+  - rebuilds the candidate rows for the selected date;
+  - upserts only `power_daily_rollups`, `weather_daily_rollups`, and `irrigation_daily_rollups`;
+  - uses one transaction;
+  - writes no Google Sheets rows;
+  - does not touch monthly/yearly rollups.
+
+Applied date:
+
+- `2026-05-23`
+
+Apply result:
+
+- `power_daily_rollups`: 1 inserted/updated.
+- `weather_daily_rollups`: 1 inserted/updated.
+- `irrigation_daily_rollups`: 1 inserted/updated.
+
+Supabase verification:
+
+- Power daily row:
+  - `rollup_id = PWRDAY-2026-05-23-sunsynk-main-inverter`;
+  - `sample_count = 119`;
+  - `coverage_pct = 41.32`;
+  - `estimated_load_kwh = 7.9714`;
+  - `estimated_solar_kwh = 2.5383`;
+  - `calculation_version = daily_rollup_plan_v1`.
+- Weather daily row:
+  - `rollup_id = WTHDAY-2026-05-23-weather-station-main`;
+  - `sample_count = 119`;
+  - `coverage_pct = 41.32`;
+  - temperature range `9 C` to `14 C`;
+  - `rain_total_mm = 0`;
+  - `calculation_version = daily_rollup_plan_v1`.
+- Irrigation daily row:
+  - `rollup_id = IRRDAY-2026-05-23-irrigation-controller-main`;
+  - `daily_plan_id = IRRPLAN-2026-05-23`;
+  - `planned_zone_count = 2`;
+  - `planned_minutes = 120`;
+  - `event_count = 1`;
+  - `calculation_version = daily_rollup_plan_v1`.
+
+Important caution:
+
+- `2026-05-23` was still in progress when the row was applied, so power/weather coverage is intentionally low.
+- This is acceptable for testing the write path, but final daily rollups should normally be generated after the day closes unless explicitly marked partial.
+
+Verification:
+
+- Focused rollup tests passed: `7 tests OK`.
+- Broader telemetry/database tests passed before apply: `66 tests OK`.
+
+Next:
+
+- Do not schedule this yet.
+- Next useful slice is to add either:
+  - a compare/read endpoint for daily rollups, or
+  - an after-day-close apply rule that avoids partial current-day rollups by default.
+
+## 10.3W5 Daily Rollup Read/Compare Endpoint - Ready
+
+Purpose:
+
+- Let the backend/app inspect stored daily rollups without manual Supabase queries.
+- Compare stored daily rollup sample counts against the current raw/source data counts for the same ZA date.
+- Keep this read-only so it is safe before scheduling.
+
+Implementation:
+
+- Added `modules/telemetry/rollup_service.py`.
+- Added route `GET /api/telemetry/rollups/daily?date=YYYY-MM-DD`.
+- Added tests in `tests/test_telemetry_rollup_service.py`.
+
+Behavior:
+
+- Reads stored daily rows for:
+  - power;
+  - weather;
+  - irrigation.
+- Reads current raw/source counts for the same local date:
+  - power raw 5-minute samples;
+  - weather raw readings;
+  - deduped irrigation events;
+  - irrigation plan items.
+- Returns:
+  - `stored_rollups`;
+  - `raw_counts`;
+  - `comparison`;
+  - `operator_summary`;
+  - `source.writes_to_supabase = false`.
+
+Local Supabase check for `2026-05-23`:
+
+- Endpoint returned `success = true`.
+- Stored rollups were found for power, weather, and irrigation.
+- Comparison correctly showed the current-day rollups were already behind live raw data:
+  - power stored `119` samples vs current `120`;
+  - weather stored `119` samples vs current `121`;
+  - irrigation stored event count matched current deduped event count `1`;
+  - irrigation stored plan item count matched current plan item count `2`.
+- Operator notes correctly warned that:
+  - power/weather raw sample counts changed since rollup;
+  - power/weather coverage is below `75%`;
+  - power kWh/Rand values are estimated.
+
+Verification:
+
+- Focused rollup service tests passed: `3 tests OK`.
+- Broader telemetry/database tests passed: `69 tests OK`.
+
+Next:
+
+- Add an after-day-close guard before scheduling rollup apply.
+- Do not run scheduled rollups while the endpoint can still show current-day drift.
+
+## 10.3W6 After-Day-Close Apply Guard - Ready
+
+Purpose:
+
+- Prevent accidental scheduled or manual writes of incomplete current-day/future daily rollups.
+- Keep current-day applies possible only as explicit operator test actions.
+
+Implementation:
+
+- `scripts/telemetry_daily_rollup_plan.py --apply` now refuses today/future ZA dates by default.
+- New override:
+  - `--allow-partial`
+- The override is intended only for explicit manual testing.
+
+Behavior verified:
+
+- Running:
+  - `.\venv\Scripts\python.exe scripts\telemetry_daily_rollup_plan.py --date 2026-05-23 --apply`
+- returned:
+  - `status = day_not_closed`;
+  - `allow_partial_required = true`;
+  - `writes_to_supabase = false`.
+- Running with:
+  - `--allow-partial`
+- successfully applied the selected date and returned:
+  - `partial_apply_allowed = true`;
+  - `writes_to_supabase = true`.
+
+Post-override compare check:
+
+- `GET /api/telemetry/rollups/daily?date=2026-05-23` returned current matching sample counts after the explicit partial refresh:
+  - power stored/current `179`;
+  - weather stored/current `179`;
+  - irrigation event and plan counts matched.
+- It still warned that power/weather coverage is below `75%`, which is correct for an incomplete day.
+
+Verification:
+
+- Focused rollup script tests passed: `8 tests OK`.
+- Broader telemetry/database tests passed: `70 tests OK`.
+
+Next:
+
+- Scheduling is now safer, but still should not be added until we decide the daily run time.
+- Recommended first schedule time is after the local day closes and after loggers have had time to post final readings, for example between `00:15` and `00:30` Africa/Johannesburg for the previous day.
+
+## 10.3W7 Previous-Day Schedule Command - Verified
+
+Decision:
+
+- Daily rollup schedule time: `00:15` Africa/Johannesburg.
+- Scheduled job should apply the previous ZA day only.
+- It should not use `--allow-partial`.
+
+Implementation:
+
+- Added `--previous-day` to `scripts/telemetry_daily_rollup_plan.py`.
+- This lets cron avoid date calculation and always target yesterday in ZA time.
+
+Render cron command:
+
+```powershell
+.\venv\Scripts\python.exe scripts\telemetry_daily_rollup_plan.py --previous-day --apply
+```
+
+If Render runs from a Linux shell, use:
+
+```bash
+python scripts/telemetry_daily_rollup_plan.py --previous-day --apply
+```
+
+Recommended cron schedule:
+
+- `15 0 * * *`
+- Timezone: `Africa/Johannesburg`, if Render exposes a timezone setting.
+- If Render cron is UTC-only, use `15 22 * * *` UTC to represent `00:15` South Africa time.
+
+Verification:
+
+- `--previous-day` plan-only selected `2026-05-22` while today was `2026-05-23`.
+- Previous-day apply succeeded without `--allow-partial`.
+- Inserted/updated:
+  - one `power_daily_rollups` row;
+  - one `weather_daily_rollups` row;
+  - one `irrigation_daily_rollups` row.
+- Compare endpoint for `2026-05-22` returned:
+  - power stored/current samples matched at `283`, coverage `98.26%`, quality `complete`;
+  - weather stored/current samples matched at `231`, coverage `80.21%`, quality `usable`;
+  - irrigation event and plan counts matched.
+- Broader telemetry/database tests passed: `71 tests OK`.
+
+Next:
+
+- Add this as a Render cron only after the backend repo with this script is deployed to the cron environment.
+- First live cron run should be checked through `GET /api/telemetry/rollups/daily?date=YYYY-MM-DD`.

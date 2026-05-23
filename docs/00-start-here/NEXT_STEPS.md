@@ -3489,6 +3489,102 @@ Next implementation direction:
 - Start with one date and report intended writes before applying anything.
 - Keep old telemetry Sheets untouched until backup/import/compare acceptance.
 
+10.3W3 implementation result:
+
+- Added plan-only script `scripts/telemetry_daily_rollup_plan.py`.
+- Added focused tests in `tests/test_telemetry_daily_rollup_plan.py`.
+- The script reads one ZA local date from Supabase and returns candidate rows for `power_daily_rollups`, `weather_daily_rollups`, and `irrigation_daily_rollups`.
+- It writes nothing: `writes_to_sheets = false`, `writes_to_supabase = false`.
+- Live plan-only run for `2026-05-23` returned one candidate row for each daily rollup table.
+- Power/weather both had `118/288` samples and `40.97%` coverage because the selected date was still in progress.
+- Irrigation returned plan `IRRPLAN-2026-05-23`, two planned zones, `120` planned minutes, and deduped event count `1`.
+- Verification passed: focused rollup tests `5 OK`; broader telemetry/database tests `64 OK`.
+
+Next implementation direction:
+
+- Review the plan-only payload shape.
+- If accepted, build 10.3W4 as a manual one-date apply path.
+- Do not schedule rollups or delete old telemetry Sheets yet.
+
+10.3W4 implementation result:
+
+- `scripts/telemetry_daily_rollup_plan.py` now supports `--apply`.
+- Default remains plan-only.
+- Apply mode upserts only one selected date into the three daily rollup tables and uses one transaction.
+- Applied `2026-05-23` manually.
+- Supabase verification confirmed:
+  - `power_daily_rollups`: `sample_count = 119`, `coverage_pct = 41.32`, estimated load `7.9714 kWh`, estimated solar `2.5383 kWh`;
+  - `weather_daily_rollups`: `sample_count = 119`, `coverage_pct = 41.32`, temp `9 C` to `14 C`, rain `0 mm`;
+  - `irrigation_daily_rollups`: `IRRPLAN-2026-05-23`, two planned zones, `120` planned minutes, event count `1`.
+- This was a current-day test apply, so the low coverage is expected. Final daily rollups should normally run after the day closes unless marked partial.
+- No schedule, monthly/yearly rollup, dashboard, sheet cleanup, or control path was added.
+
+Next implementation direction:
+
+- Add a daily rollup read/compare endpoint, or add an after-day-close apply guard before scheduling.
+
+10.3W5 implementation result:
+
+- Added read-only route `GET /api/telemetry/rollups/daily?date=YYYY-MM-DD`.
+- Added `modules/telemetry/rollup_service.py`.
+- Added tests in `tests/test_telemetry_rollup_service.py`.
+- Endpoint returns stored daily rollups, current raw/source counts, comparison flags, and operator notes.
+- Local Supabase check for `2026-05-23` returned stored power/weather/irrigation rollups and correctly detected current-day drift:
+  - power stored `119` samples vs current `120`;
+  - weather stored `119` samples vs current `121`;
+  - irrigation event and plan counts still matched.
+- Endpoint is read-only and reports `writes_to_supabase = false`.
+- Verification passed: focused rollup service tests `3 OK`; broader telemetry/database tests `69 OK`.
+
+Next implementation direction:
+
+- Add an after-day-close guard before any scheduled rollup apply.
+- Keep current-day rollup applies manual/testing only unless explicitly marked partial.
+
+10.3W6 implementation result:
+
+- Added after-day-close guard to `scripts/telemetry_daily_rollup_plan.py --apply`.
+- Apply now refuses today/future ZA dates by default with `status = day_not_closed`.
+- Added explicit manual override `--allow-partial`.
+- Verified normal apply for `2026-05-23` refused because it is still today.
+- Verified `--allow-partial` refreshed the test rollups intentionally.
+- Read/compare endpoint then showed stored/current sample counts matching at `179` for both power and weather, while still warning coverage below `75%`.
+- Verification passed: focused rollup script tests `8 OK`; broader telemetry/database tests `70 OK`.
+
+Next implementation direction:
+
+- Decide the first safe schedule time, likely after midnight ZA for the previous day, for example `00:15` to `00:30`.
+- Do not schedule until we agree the run timing and recovery behavior.
+
+10.3W7 implementation result:
+
+- Owner selected `00:15` Africa/Johannesburg as the daily rollup schedule time.
+- Added `--previous-day` to `scripts/telemetry_daily_rollup_plan.py`.
+- Verified previous-day plan-only selected `2026-05-22` while today was `2026-05-23`.
+- Verified previous-day apply worked without `--allow-partial`.
+- Compare endpoint for `2026-05-22` confirmed:
+  - power stored/current sample count `283`, coverage `98.26%`, quality `complete`;
+  - weather stored/current sample count `231`, coverage `80.21%`, quality `usable`;
+  - irrigation event and plan counts matched.
+- Verification passed: broader telemetry/database tests `71 OK`.
+
+Render cron command:
+
+```bash
+python scripts/telemetry_daily_rollup_plan.py --previous-day --apply
+```
+
+Schedule:
+
+- `00:15` Africa/Johannesburg.
+- If cron uses UTC only: `22:15` UTC.
+
+Next implementation direction:
+
+- Deploy the backend repo containing the script.
+- Add a Render cron job for the daily rollup command.
+- After the first live scheduled run, verify with `/api/telemetry/rollups/daily?date=YYYY-MM-DD`.
+
 Farm home/dashboard idea:
 
 - Source note moved from `planning/ToDoList.md`.

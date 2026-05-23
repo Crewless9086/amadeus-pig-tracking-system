@@ -7,6 +7,7 @@ from modules.telemetry.power_service import (
     ingest_power_reading,
 )
 from modules.telemetry.irrigation_service import get_irrigation_status
+from modules.telemetry.rollup_service import get_daily_rollup_compare
 from modules.telemetry.weather_service import (
     evaluate_weather_alerts,
     get_current_weather_state,
@@ -97,6 +98,12 @@ def telemetry_weather_alerts_evaluate():
     payload = request.get_json(silent=True) or {}
     provided_key = _telemetry_key_from_request()
     result, status_code = evaluate_weather_alerts(payload, provided_key)
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/rollups/daily", methods=["GET"])
+def telemetry_daily_rollups():
+    result, status_code = get_daily_rollup_compare(request.args.get("date"))
     return jsonify(result), status_code
 
 
