@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Verified; 10.2J Verified; 10.2K1/10.2K2/10.2K3 Verified; 10.2L Local; 10.2L2 Owner-Pending; 10.2L3 Local; 10.2L4 Complete And Deployed-Verified; 10.3A Inventory Complete; 10.3B Agreed; 10.3C Applied And Verified; 10.3D/10.3E Deployed-Verified; 10.3F Deployed And Verified; 10.3G Live-Verified; 10.3H Deployed-Verified; 10.3I Live-Verified; 10.3J1 Contract Drafted; 10.3J2 Deployed-Verified; 10.3J3 Logger-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L Planned; 10.3L2 Deployed Dry-Run Verified; 10.3L2 Audit Test Local | Deploy backend and run backend-only audit apply test. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified; Legacy Weather Alerts Archived; 10.3N Local | Deploy/test backend power alert evaluator, then import backend-driven power alert workflow inactive. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2871,7 +2871,65 @@ Recommendation:
   - The message states no Telegram message was sent.
   - n8n must not deliver `BACKEND_AUDIT_TEST`.
   - Focused weather tests pass at 14 tests.
-- Next step: deploy backend and run backend-only audit apply test.
+- 10.3L2 backend audit apply verification passed on 2026-05-22:
+  - Production audit dry-run with `{"dry_run": true, "include_test_alert": true}` returned one `BACKEND_AUDIT_TEST` candidate and `writes_to_supabase = false`.
+  - Production audit apply with `{"include_test_alert": true}` wrote alert `ALT-F20D2245949B`.
+  - Supabase verification confirmed the row exists with `area = weather`, `alert_type = BACKEND_AUDIT_TEST`, `severity = info`, `status = Open`, `details.test = true`, and `details.safe_to_ignore = true`.
+  - No Telegram message was sent.
+- 10.3L4 n8n weather alert delivery planned on 2026-05-22:
+  - Build a new thin workflow named `ALERT - Weather Backend Delivery`.
+  - Do not edit/reactivate the old Sheets-first alert workflows.
+  - Backend evaluator remains the source of truth for thresholds, cooldowns, quiet hours, alert history, and duplicate prevention.
+  - n8n only calls backend, filters sendable alerts, formats Telegram messages, and sends them.
+  - First recipient scope is Charl only.
+  - `BACKEND_AUDIT_TEST` and any `details.test = true` alert must never be delivered.
+  - Manual tests must prove dry-run and audit-test responses send no Telegram messages.
+  - Detailed plan lives in `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`.
+- 10.3L4 local workflow export built on 2026-05-22:
+  - Export: `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/workflow.json`
+  - README: `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/README.md`
+  - Workflow is inactive by default.
+  - It calls `POST /api/telemetry/weather/alerts/evaluate`.
+  - n8n Cloud denied `$env` access in the HTTP node, so the workflow uses a manually configured `X-Amadeus-Telemetry-Key` header value matching Render's `TELEMETRY_INGEST_API_KEY`.
+  - It filters out dry-run responses, `BACKEND_AUDIT_TEST`, and any alert where `details.test = true`.
+  - It sends through `Telegram - Oom Sakkie` to Charl-only chat ID `5721652188`.
+  - Workflow contract tests pass at 16 tests.
+- 10.3L4 manual n8n verification passed on 2026-05-23:
+  - Manual dry-run with `include_test_alert = true` returned one backend audit candidate.
+  - `Code - Extract Sendable Alerts` correctly output zero items because `mode = dry_run`.
+  - No Telegram delivery occurred.
+  - Workflow was reset to `dryRun = true` and `includeTestAlert = false`.
+  - Workflow was activated for a scheduled dry-run trial every 15 minutes.
+- 10.3L4 scheduled dry-run verification passed on 2026-05-23:
+  - Execution `47520` ran from the schedule with `mode = trigger`.
+  - `Code - Build Evaluate Request` sent `{"dry_run": true}`.
+  - `HTTP - Evaluate Weather Alerts` returned `success = true`, `status = ok`, `mode = dry_run`, `candidate_count = 0`, `sendable_count = 0`, `held_count = 0`, and `suppressed_count = 0`.
+  - `Code - Extract Sendable Alerts` output zero items, so Telegram delivery was not reached.
+- 10.3L4 live scheduled verification passed on 2026-05-23:
+  - Workflow was active with `dryRun = false` and `includeTestAlert = false`.
+  - Execution `47527` ran from the schedule with `mode = trigger`.
+  - `Code - Build Evaluate Request` sent an empty body `{}` and `workflow_mode = apply`.
+  - `HTTP - Evaluate Weather Alerts` returned `success = true`, `status = ok`, `mode = apply`, `candidate_count = 0`, `sendable_count = 0`, `held_count = 0`, `suppressed_count = 0`, `source.writes_to_supabase = true`, and `written_alert_ids = []`.
+  - `Code - Extract Sendable Alerts` output zero items, so Telegram delivery was not reached because there were no real alerts.
+- Legacy weather alert cleanup completed on 2026-05-23:
+  - `ALERT - Local Weather Station` is inactive and archived.
+  - `ALERT - Weather Forecast` is inactive and archived.
+  - `ALERT - Weather Backend Delivery` remains active and is the only live weather alert delivery workflow.
+- 10.3M planning notes captured from owner on 2026-05-23:
+  - Future Sunsynk value reporting should use the farm Eskom reference rate of `R9.10/kWh` unless a later tariff model replaces it.
+  - Do not show Rand/kWh totals until reliable Sunsynk energy counters or approved interval-integration rules are in place.
+  - n8n should remain for now as a thin integration layer for Telegram, Chatwoot, schedules, and delivery; backend/Supabase should own truth, calculations, state, and safety rules.
+  - Human alerts and automation triggers must be separated. Rain, wind, heat, battery, and pump conditions may notify humans, but irrigation/pump actions need separate backend-owned trigger/audit policies.
+- 10.3N Sunsynk/power alert backend alignment prepared locally on 2026-05-23:
+  - Added protected backend endpoint `POST /api/telemetry/power/alerts/evaluate`.
+  - Backend evaluates current power alert candidates from `power_latest_state`, `telemetry_sources`, and recent `telemetry_alerts`.
+  - Backend-owned rules cover not logging, battery low/medium/high, grid active, generator active, and a `POWER_BACKEND_AUDIT_TEST` path.
+  - Backend applies cooldown and quiet-hours policy and writes only sendable alerts in apply mode.
+  - Added new inactive workflow export `docs/04-n8n/workflows/ALERT - Power Backend Delivery/workflow.json`.
+  - New workflow is dry-run by default, calls `/api/telemetry/power/alerts/evaluate`, filters out dry-run/test/audit alerts, and sends through `Telegram - Oom Sakkie` only when real sendable alerts exist.
+  - `ALERT - Sunsynk` remains the active legacy workflow until the backend-driven replacement is imported, dry-run tested, live-tested, and accepted.
+  - Focused power telemetry tests and workflow contract tests pass.
+- Next step: deploy backend, run backend dry-run/audit checks for power alerts, then import `ALERT - Power Backend Delivery` inactive.
 
 Farm home/dashboard idea:
 

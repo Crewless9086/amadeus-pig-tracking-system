@@ -11,6 +11,8 @@ OOM_SAKKIE_WORKFLOW = WORKFLOW_ROOT / "2.0 - OOM SAKKIE - Amadeus Assistant Agen
 WEATHER_WORKFLOW = WORKFLOW_ROOT / "2.1 - Amadeus Weather Sub-Agent" / "workflow.json"
 FORECAST_WORKFLOW = WORKFLOW_ROOT / "2.1.1 - Amadeus Forecast Tool" / "workflow.json"
 SUNSYNK_WORKFLOW = WORKFLOW_ROOT / "2.2 - Amadeus Sunsynk Sub-Agent" / "workflow.json"
+WEATHER_ALERT_DELIVERY_WORKFLOW = WORKFLOW_ROOT / "ALERT - Weather Backend Delivery" / "workflow.json"
+POWER_ALERT_DELIVERY_WORKFLOW = WORKFLOW_ROOT / "ALERT - Power Backend Delivery" / "workflow.json"
 
 
 REQUIRED_STEWARD_ACTIONS = {
@@ -138,6 +140,7 @@ WORKFLOW_EXPORTS = {
     "weather": WEATHER_WORKFLOW,
     "forecast": FORECAST_WORKFLOW,
     "sunsynk": SUNSYNK_WORKFLOW,
+    "weather_alert_delivery": WEATHER_ALERT_DELIVERY_WORKFLOW,
 }
 
 
@@ -390,6 +393,54 @@ class WorkflowContractTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertIn(field, assignment_by_name)
                 self.assertIn("?? \"\"", assignment_by_name[field].get("value", ""))
+
+    def test_weather_alert_delivery_workflow_is_backend_only_and_filters_test_alerts(self):
+        workflow = load_workflow(WEATHER_ALERT_DELIVERY_WORKFLOW)
+        workflow_text = json.dumps(workflow)
+        extract_node = node_by_name(workflow, "Code - Extract Sendable Alerts")
+        node_names = {node.get("name") for node in workflow.get("nodes", [])}
+
+        self.assertFalse(workflow.get("active"))
+        self.assertIn("HTTP - Evaluate Weather Alerts", node_names)
+        self.assertIn("Code - Extract Sendable Alerts", node_names)
+        self.assertIn("Telegram - Send Weather Alert", node_names)
+        self.assertNotIn("n8n-nodes-base.googleSheets", workflow_text)
+        self.assertNotIn("Weather_Alert_Log", workflow_text)
+        self.assertIn("/api/telemetry/weather/alerts/evaluate", workflow_text)
+        self.assertIn("X-Amadeus-Telemetry-Key", workflow_text)
+        self.assertIn("TELEMETRY_INGEST_API_KEY", workflow_text)
+        self.assertIn("BACKEND_AUDIT_TEST", workflow_text)
+        self.assertIn("details.test", workflow_text)
+        self.assertIn("5721652188", workflow_text)
+        self.assertIsNotNone(extract_node)
+        extract_code = extract_node.get("parameters", {}).get("jsCode", "")
+        self.assertIn('response.mode !== "apply"', extract_code)
+        self.assertIn('alert.alert_type === "BACKEND_AUDIT_TEST"', extract_code)
+        self.assertIn("details.test === true", extract_code)
+
+    def test_power_alert_delivery_workflow_is_backend_only_and_filters_test_alerts(self):
+        workflow = load_workflow(POWER_ALERT_DELIVERY_WORKFLOW)
+        workflow_text = json.dumps(workflow)
+        extract_node = node_by_name(workflow, "Code - Extract Sendable Alerts")
+        node_names = {node.get("name") for node in workflow.get("nodes", [])}
+
+        self.assertFalse(workflow.get("active"))
+        self.assertIn("HTTP - Evaluate Power Alerts", node_names)
+        self.assertIn("Code - Extract Sendable Alerts", node_names)
+        self.assertIn("Telegram - Send Power Alert", node_names)
+        self.assertNotIn("n8n-nodes-base.googleSheets", workflow_text)
+        self.assertNotIn("Sunsynk_Alert_Log", workflow_text)
+        self.assertIn("/api/telemetry/power/alerts/evaluate", workflow_text)
+        self.assertIn("X-Amadeus-Telemetry-Key", workflow_text)
+        self.assertIn("TELEMETRY_INGEST_API_KEY", workflow_text)
+        self.assertIn("POWER_BACKEND_AUDIT_TEST", workflow_text)
+        self.assertIn("details.test", workflow_text)
+        self.assertIn("5721652188", workflow_text)
+        self.assertIsNotNone(extract_node)
+        extract_code = extract_node.get("parameters", {}).get("jsCode", "")
+        self.assertIn('response.mode !== "apply"', extract_code)
+        self.assertIn('alert.alert_type === "POWER_BACKEND_AUDIT_TEST"', extract_code)
+        self.assertIn("details.test === true", extract_code)
 
 
 if __name__ == "__main__":

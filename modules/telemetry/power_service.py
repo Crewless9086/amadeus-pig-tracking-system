@@ -11,6 +11,23 @@ from services.database_service import DATABASE_URL_ENV
 INGEST_API_KEY_ENV = "TELEMETRY_INGEST_API_KEY"
 DEFAULT_POWER_SOURCE_ID = "sunsynk-main-inverter"
 ZA_TZ = ZoneInfo("Africa/Johannesburg")
+POWER_ALERT_RULES = {
+    "not_logging_minutes": 12,
+    "battery_low_pct": 30,
+    "battery_medium_pct": 50,
+    "battery_high_pct": 95,
+    "grid_power_w": 100,
+    "generator_power_w": 100,
+}
+POWER_ALERT_COOLDOWNS = {
+    "not_logging": 240,
+    "battery_low": 180,
+    "battery_medium": 360,
+    "battery_high": 180,
+    "grid_active": 180,
+    "generator_active": 180,
+    "backend_audit_test": 0,
+}
 
 
 def ingest_power_reading(payload, provided_api_key="", database_url=None):
@@ -371,6 +388,84 @@ def get_recent_power_profile(hours=24, database_url=None):
     return _format_recent_power_profile(rows, hours), 200
 
 
+def evaluate_power_alerts(payload=None, provided_api_key="", database_url=None):
+    auth_error = _validate_ingest_key(provided_api_key)
+    if auth_error:
+        return auth_error
+
+    payload = payload if isinstance(payload, dict) else {}
+    dry_run = bool(payload.get("dry_run"))
+    include_test_alert = bool(payload.get("include_test_alert"))
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": f"{DATABASE_URL_ENV} is not configured.",
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 500
+
+    now_utc = datetime.now(timezone.utc)
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                latest = _read_power_latest_for_alerts(cursor)
+                candidates = _build_power_alert_candidates(latest, now_utc)
+                if include_test_alert:
+                    candidates.append(_power_backend_audit_test_alert(now_utc))
+
+                recent_alerts = _read_recent_power_alerts(cursor)
+                evaluation = _apply_power_alert_policy(candidates, recent_alerts, now_utc)
+
+                written_alerts = []
+                if not dry_run:
+                    for alert in evaluation["sendable_alerts"]:
+                        written_alerts.append(_insert_power_alert(cursor, alert))
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "power_alert_evaluation_failed",
+            "message": "Power alert evaluation failed.",
+            "error_type": exc.__class__.__name__,
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "dry_run" if dry_run else "apply",
+        "evaluated_at": now_utc.isoformat(),
+        "test_alert_requested": include_test_alert,
+        "rules": POWER_ALERT_RULES,
+        "quiet_hours": _quiet_hours_state(now_utc),
+        "candidate_count": len(candidates),
+        "sendable_count": len(evaluation["sendable_alerts"]),
+        "held_count": len(evaluation["held_alerts"]),
+        "suppressed_count": len(evaluation["suppressed_alerts"]),
+        "sendable_alerts": evaluation["sendable_alerts"],
+        "held_alerts": evaluation["held_alerts"],
+        "suppressed_alerts": evaluation["suppressed_alerts"],
+        "written_alert_ids": written_alerts,
+        "source": _source_metadata(writes_to_supabase=not dry_run),
+    }, 200
+
+
 def _normalize_power_payload(payload):
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object.")
@@ -444,6 +539,304 @@ def _normalize_power_payload(payload):
         "summary_headline": summary["headline"],
         "summary_notes": json.dumps(summary["operator_notes"], separators=(",", ":")),
         "raw_payload": _json_param(payload.get("raw_payload")),
+    }
+
+
+def _validate_ingest_key(provided_api_key):
+    configured_key = os.getenv(INGEST_API_KEY_ENV, "").strip()
+    if not configured_key:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "ingest_key_not_configured",
+            "message": f"{INGEST_API_KEY_ENV} is not configured.",
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 503
+
+    if not provided_api_key or provided_api_key.strip() != configured_key:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "unauthorized",
+            "message": "Telemetry ingest key is invalid.",
+            "source": _source_metadata(writes_to_supabase=False),
+        }, 401
+
+    return None
+
+
+def _read_power_latest_for_alerts(cursor):
+    cursor.execute(
+        """
+        select
+            ts.source_id,
+            ts.display_name,
+            ts.stale_after_minutes,
+            pls.reading_at,
+            pls.battery_soc_pct,
+            pls.grid_power_w,
+            pls.generator_power_w,
+            pls.grid_active,
+            pls.generator_active
+        from public.telemetry_sources ts
+        left join public.power_latest_state pls on pls.source_id = ts.source_id
+        where ts.source_id = %s
+        """,
+        (DEFAULT_POWER_SOURCE_ID,),
+    )
+    return cursor.fetchone()
+
+
+def _read_recent_power_alerts(cursor):
+    cursor.execute(
+        """
+        select alert_type, severity, message, event_at, status, details
+        from public.telemetry_alerts
+        where area = 'power'
+          and event_at >= now() - interval '24 hours'
+        order by event_at desc
+        """
+    )
+    return cursor.fetchall()
+
+
+def _build_power_alert_candidates(row, now_utc):
+    if not row:
+        return [_power_alert_candidate(
+            "not_logging",
+            "POWER_NOT_LOGGING",
+            "critical",
+            "Power telemetry source is not available.",
+            now_utc,
+            {},
+            bypass_quiet_hours=True,
+        )]
+
+    (
+        source_id,
+        source_name,
+        stale_after_minutes,
+        reading_at,
+        battery_soc,
+        grid_power,
+        generator_power,
+        grid_active,
+        generator_active,
+    ) = row
+
+    source_id = source_id or DEFAULT_POWER_SOURCE_ID
+    source_name = source_name or "Amadeus Sunsynk Inverter"
+    candidates = []
+    details_base = {"source_id": source_id, "source_name": source_name}
+
+    if not reading_at:
+        candidates.append(_power_alert_candidate(
+            "not_logging",
+            "POWER_NOT_LOGGING",
+            "critical",
+            "Power telemetry has no latest reading yet.",
+            now_utc,
+            details_base,
+            bypass_quiet_hours=True,
+        ))
+        return candidates
+
+    age_minutes = max(0, int((now_utc - reading_at.astimezone(timezone.utc)).total_seconds() // 60))
+    not_logging_threshold = int(stale_after_minutes or POWER_ALERT_RULES["not_logging_minutes"])
+    not_logging_threshold = min(not_logging_threshold, POWER_ALERT_RULES["not_logging_minutes"])
+    event_at = reading_at.astimezone(timezone.utc)
+
+    if age_minutes > not_logging_threshold:
+        candidates.append(_power_alert_candidate(
+            "not_logging",
+            "POWER_NOT_LOGGING",
+            "critical",
+            f"Sunsynk has not logged for {age_minutes} minutes. Last reading: {_format_za_datetime(reading_at)}.",
+            now_utc,
+            {**details_base, "age_minutes": age_minutes, "threshold_minutes": not_logging_threshold},
+            bypass_quiet_hours=True,
+        ))
+
+    battery_soc = _float_or_none(battery_soc)
+    if battery_soc is not None and battery_soc <= POWER_ALERT_RULES["battery_low_pct"]:
+        candidates.append(_power_alert_candidate(
+            "battery_low",
+            "POWER_BATTERY_LOW",
+            "critical",
+            f"Sunsynk battery is low at {battery_soc:g}%.",
+            event_at,
+            {**details_base, "battery_soc_pct": battery_soc, "threshold_pct": POWER_ALERT_RULES["battery_low_pct"]},
+            bypass_quiet_hours=True,
+        ))
+    elif battery_soc is not None and battery_soc <= POWER_ALERT_RULES["battery_medium_pct"]:
+        candidates.append(_power_alert_candidate(
+            "battery_medium",
+            "POWER_BATTERY_MEDIUM",
+            "warning",
+            f"Sunsynk battery is at {battery_soc:g}%.",
+            event_at,
+            {**details_base, "battery_soc_pct": battery_soc, "threshold_pct": POWER_ALERT_RULES["battery_medium_pct"]},
+        ))
+
+    if battery_soc is not None and battery_soc >= POWER_ALERT_RULES["battery_high_pct"]:
+        candidates.append(_power_alert_candidate(
+            "battery_high",
+            "POWER_BATTERY_HIGH",
+            "info",
+            f"Sunsynk battery is high at {battery_soc:g}%.",
+            event_at,
+            {**details_base, "battery_soc_pct": battery_soc, "threshold_pct": POWER_ALERT_RULES["battery_high_pct"]},
+        ))
+
+    grid_power = _float_or_none(grid_power)
+    grid_is_active = bool(grid_active) or abs(grid_power or 0) > POWER_ALERT_RULES["grid_power_w"]
+    if grid_is_active:
+        candidates.append(_power_alert_candidate(
+            "grid_active",
+            "POWER_GRID_ACTIVE",
+            "warning",
+            f"Eskom/grid power is being used. Grid power: {_fmt_watts(grid_power)}.",
+            event_at,
+            {**details_base, "grid_power_w": grid_power, "threshold_w": POWER_ALERT_RULES["grid_power_w"]},
+        ))
+
+    generator_power = _float_or_none(generator_power)
+    generator_is_active = (bool(generator_active) or (generator_power or 0) > 0) and (
+        (generator_power or 0) > POWER_ALERT_RULES["generator_power_w"]
+    )
+    if generator_is_active:
+        candidates.append(_power_alert_candidate(
+            "generator_active",
+            "POWER_GENERATOR_ACTIVE",
+            "critical",
+            f"Generator is supplying power. Generator power: {_fmt_watts(generator_power)}.",
+            event_at,
+            {**details_base, "generator_power_w": generator_power, "threshold_w": POWER_ALERT_RULES["generator_power_w"]},
+            bypass_quiet_hours=True,
+        ))
+
+    return candidates
+
+
+def _power_alert_candidate(alert_key, alert_type, severity, message, event_at, details, bypass_quiet_hours=False):
+    return {
+        "alert_id": _alert_id(alert_type, alert_key, event_at),
+        "alert_key": alert_key,
+        "alert_type": alert_type,
+        "area": "power",
+        "severity": severity,
+        "message": message,
+        "event_at": event_at.isoformat(),
+        "source_id": DEFAULT_POWER_SOURCE_ID,
+        "source_name": details.get("source_name") or "Amadeus Sunsynk Inverter",
+        "cooldown_min": POWER_ALERT_COOLDOWNS.get(alert_key, 180),
+        "bypass_quiet_hours": bool(bypass_quiet_hours),
+        "details": {
+            **details,
+            "alert_key": alert_key,
+            "cooldown_min": POWER_ALERT_COOLDOWNS.get(alert_key, 180),
+            "bypass_quiet_hours": bool(bypass_quiet_hours),
+        },
+    }
+
+
+def _power_backend_audit_test_alert(now_utc):
+    return _power_alert_candidate(
+        "backend_audit_test",
+        "POWER_BACKEND_AUDIT_TEST",
+        "info",
+        "Backend power alert evaluator audit test. No Telegram message was sent.",
+        now_utc,
+        {
+            "source_id": DEFAULT_POWER_SOURCE_ID,
+            "source_name": "Amadeus Sunsynk Inverter",
+            "test": True,
+            "safe_to_ignore": True,
+            "purpose": "verify power alert apply-mode database write",
+        },
+        bypass_quiet_hours=True,
+    )
+
+
+def _apply_power_alert_policy(candidates, recent_alerts, now_utc):
+    recent_by_key = {}
+    for alert_type, severity, _message, event_at, status, details in recent_alerts:
+        details = details if isinstance(details, dict) else {}
+        key = details.get("alert_key") or alert_type
+        if key not in recent_by_key:
+            recent_by_key[key] = {
+                "alert_type": alert_type,
+                "severity": severity,
+                "event_at": event_at,
+                "status": status,
+                "details": details,
+            }
+
+    sendable = []
+    held = []
+    suppressed = []
+    quiet = _quiet_hours_state(now_utc)["active"]
+
+    for candidate in candidates:
+        recent = recent_by_key.get(candidate["alert_key"])
+        if recent and not _power_cooldown_expired(candidate, recent, now_utc):
+            suppressed.append({**candidate, "suppression_reason": "cooldown_active"})
+            continue
+        if quiet and not candidate["bypass_quiet_hours"]:
+            held.append({**candidate, "hold_reason": "quiet_hours"})
+            continue
+        sendable.append(candidate)
+
+    return {"sendable_alerts": sendable, "held_alerts": held, "suppressed_alerts": suppressed}
+
+
+def _insert_power_alert(cursor, alert):
+    cursor.execute(
+        """
+        insert into public.telemetry_alerts (
+            alert_id, source_id, area, alert_type, severity, message, event_at, status, details
+        )
+        values (
+            %(alert_id)s, %(source_id)s, %(area)s, %(alert_type)s, %(severity)s,
+            %(message)s, %(event_at)s, 'Open', %(details)s::jsonb
+        )
+        on conflict (alert_id) do nothing
+        """,
+        {
+            "alert_id": alert["alert_id"],
+            "source_id": alert["source_id"],
+            "area": alert["area"],
+            "alert_type": alert["alert_type"],
+            "severity": alert["severity"],
+            "message": alert["message"],
+            "event_at": alert["event_at"],
+            "details": json.dumps(alert["details"], separators=(",", ":")),
+        },
+    )
+    return alert["alert_id"]
+
+
+def _power_cooldown_expired(candidate, recent, now_utc):
+    event_at = recent.get("event_at")
+    if not isinstance(event_at, datetime):
+        return True
+    elapsed_minutes = (now_utc - event_at.astimezone(timezone.utc)).total_seconds() / 60
+    if elapsed_minutes >= candidate["cooldown_min"]:
+        return True
+    severity_rank = {"info": 1, "warning": 2, "critical": 3}
+    return severity_rank.get(candidate["severity"], 0) > severity_rank.get(recent.get("severity"), 0)
+
+
+def _quiet_hours_state(now_utc):
+    now_za = now_utc.astimezone(ZA_TZ)
+    start_hour = 21
+    end_hour = 6
+    active = now_za.hour >= start_hour or now_za.hour < end_hour
+    return {
+        "active": active,
+        "timezone": "Africa/Johannesburg",
+        "start_hour": start_hour,
+        "end_hour": end_hour,
     }
 
 
@@ -818,6 +1211,29 @@ def _fmt_kw_value(value):
     if value is None:
         return "unknown"
     return f"{round(float(value) / 1000, 1)} kW"
+
+
+def _fmt_watts(value):
+    if value is None:
+        return "unknown"
+    return f"{round(float(value)):g} W"
+
+
+def _format_za_datetime(value):
+    if not isinstance(value, datetime):
+        return "unknown"
+    return value.astimezone(ZA_TZ).strftime("%Y-%m-%d %H:%M")
+
+
+def _float_or_none(value):
+    if value is None:
+        return None
+    return float(value)
+
+
+def _alert_id(alert_type, alert_key, event_at):
+    digest = hashlib.sha1(f"{alert_type}|{alert_key}|{event_at.isoformat()}".encode("utf-8")).hexdigest()[:12].upper()
+    return f"ALT-{digest}"
 
 
 def _reading_id(source_id, reading_at):

@@ -1,0 +1,170 @@
+{
+  "name": "ALERT - Power Backend Delivery",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-520, 0],
+      "id": "3fd1edc8-fb10-4961-bb8b-9e378d1f1aa0",
+      "name": "Schedule - Power Alert Delivery"
+    },
+    {
+      "parameters": {
+        "jsCode": "const dryRun = true;\nconst includeTestAlert = false;\n\nconst body = {};\nif (dryRun) body.dry_run = true;\nif (includeTestAlert) body.include_test_alert = true;\n\nreturn [{\n  json: {\n    request_body: body,\n    workflow_mode: dryRun ? \"dry_run\" : \"apply\",\n    notes: \"Manual dry-run test mode. No Telegram alert should be sent while dryRun=true.\",\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 0],
+      "id": "dcc6d0ce-e648-4b19-bcf0-a8cd1f70ccce",
+      "name": "Code - Build Evaluate Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/power/alerts/evaluate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Amadeus-Telemetry-Key",
+              "value": "PASTE_TELEMETRY_INGEST_API_KEY_HERE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.request_body || {}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-80, 0],
+      "id": "1545ed43-a914-4fc6-945b-46b35634c0ff",
+      "name": "HTTP - Evaluate Power Alerts",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json || {};\n\nif (response.success !== true || response.status !== \"ok\") {\n  return [];\n}\n\n// Safety rule: never send from dry-run output.\nif (response.mode !== \"apply\") {\n  return [];\n}\n\nconst alerts = Array.isArray(response.sendable_alerts) ? response.sendable_alerts : [];\nconst safeAlerts = alerts.filter((alert) => {\n  const details = alert && typeof alert.details === \"object\" && alert.details !== null ? alert.details : {};\n  if (alert.alert_type === \"POWER_BACKEND_AUDIT_TEST\") return false;\n  if (details.test === true) return false;\n  if (details.safe_to_ignore === true) return false;\n  return true;\n});\n\nreturn safeAlerts.map((alert) => ({\n  json: {\n    ...alert,\n    evaluator_mode: response.mode,\n    evaluator_status: response.status,\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [140, 0],
+      "id": "9bb08c5c-91e1-4342-bddc-8b59ecf46a5e",
+      "name": "Code - Extract Sendable Alerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const CHARL_TELEGRAM_CHAT_ID = \"5721652188\";\n\nfunction clean(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nreturn $input.all().map((item) => {\n  const alert = item.json || {};\n  const severity = clean(alert.severity || \"warning\").toUpperCase();\n  const sourceName = clean(alert.source_name || alert.source_id || \"Power telemetry\");\n  const alertType = clean(alert.alert_type || \"POWER_ALERT\");\n  const message = clean(alert.message || \"Power alert triggered.\");\n  const text = [\n    `Power alert: ${severity}`,\n    \"\",\n    message,\n    \"\",\n    `Source: ${sourceName}`,\n    `Time: ${formatDateTime(alert.event_at)}`,\n    `Alert: ${alertType}`,\n  ].join(\"\\n\");\n\n  return {\n    json: {\n      chatId: CHARL_TELEGRAM_CHAT_ID,\n      telegram_text: text,\n      alert_id: alert.alert_id,\n      alert_key: alert.alert_key,\n      alert_type: alertType,\n      severity: alert.severity,\n      _alert: alert,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 0],
+      "id": "4d7f7cdd-4d12-4b83-962d-7300d1b6c7bc",
+      "name": "Code - Format Telegram Power Alerts"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.telegram_text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [580, 0],
+      "id": "57930a88-a259-45ed-abce-ce6ea2e02794",
+      "name": "Telegram - Send Power Alert",
+      "webhookId": "7debb576-3171-49e4-b48d-e6369cbf0630",
+      "credentials": {
+        "telegramApi": {
+          "id": "e5jS1ondryiauRNX",
+          "name": "Telegram - Oom Sakkie"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule - Power Alert Delivery": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Evaluate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Evaluate Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Evaluate Power Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Evaluate Power Alerts": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Sendable Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Sendable Alerts": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Telegram Power Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Telegram Power Alerts": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Power Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5c576b97-1327-4a2f-a35e-c92226cfc2e8",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "ALERT_POWER_BACKEND_DELIVERY_LOCAL",
+  "tags": []
+}

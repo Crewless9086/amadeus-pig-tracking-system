@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from modules.telemetry.power_service import (
+    evaluate_power_alerts,
     get_current_power_state,
     get_recent_power_profile,
     ingest_power_reading,
@@ -39,6 +40,14 @@ def telemetry_power_ingest():
         if auth_header.lower().startswith("bearer "):
             provided_key = auth_header[7:].strip()
     result, status_code = ingest_power_reading(payload, provided_key)
+    return jsonify(result), status_code
+
+
+@telemetry_bp.route("/telemetry/power/alerts/evaluate", methods=["POST"])
+def telemetry_power_alerts_evaluate():
+    payload = request.get_json(silent=True) or {}
+    provided_key = _telemetry_key_from_request()
+    result, status_code = evaluate_power_alerts(payload, provided_key)
     return jsonify(result), status_code
 
 

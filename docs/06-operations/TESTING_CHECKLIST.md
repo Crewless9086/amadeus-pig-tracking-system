@@ -1670,6 +1670,57 @@ Local result:
 Local result:
 
 - 2026-05-22: Focused weather telemetry tests pass at 14 tests after adding the backend audit test alert path.
+- 2026-05-22: Production audit dry-run returned one `BACKEND_AUDIT_TEST` candidate and `source.writes_to_supabase = false`.
+- 2026-05-22: Production audit apply returned written alert ID `ALT-F20D2245949B`.
+- 2026-05-22: Supabase row verification confirmed `ALT-F20D2245949B` exists with `details.test = true` and `details.safe_to_ignore = true`.
+- 2026-05-22: No Telegram message was sent.
+
+10.3L4 n8n weather alert delivery checks:
+
+1. Build/import new `ALERT - Weather Backend Delivery` workflow inactive first.
+2. Confirm it does not read Google Sheets.
+3. Confirm it does not write `Weather_Alert_Log`.
+4. Confirm it calls `POST /api/telemetry/weather/alerts/evaluate`.
+5. Confirm dry-run responses never send Telegram messages.
+6. Confirm `BACKEND_AUDIT_TEST` is always ignored.
+7. Confirm alerts with `details.test = true` are always ignored.
+8. Confirm first recipient scope is Charl only.
+9. Activate schedule only after manual no-alert and audit-test smoke checks pass.
+
+Local result:
+
+- 2026-05-22: Local export created at `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/workflow.json`.
+- 2026-05-22: README created at `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/README.md`.
+- 2026-05-22: Workflow contract tests pass at 16 tests.
+
+Manual import steps:
+
+1. Import `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/workflow.json`.
+2. Keep it inactive.
+3. Confirm n8n has `TELEMETRY_INGEST_API_KEY` available to the workflow.
+4. Confirm the Telegram credential is `Telegram - Oom Sakkie`.
+5. Confirm first recipient chat ID is Charl-only: `5721652188`.
+6. Set `dryRun = true` in `Code - Build Evaluate Request`, then run manually.
+7. Confirm no Telegram message is sent.
+8. Set `dryRun = true` and `includeTestAlert = true`, then run manually.
+9. Confirm no Telegram message is sent because `BACKEND_AUDIT_TEST` is filtered out.
+10. Set both values back to `false` before any live manual run.
+
+10.3N power backend alert checks:
+
+1. Deploy backend with `POST /api/telemetry/power/alerts/evaluate`.
+2. Call the endpoint with `{"dry_run": true}` and the telemetry ingest key.
+3. Confirm `success = true`, `mode = dry_run`, and no alert rows are written.
+4. Call the endpoint with `{"dry_run": true, "include_test_alert": true}`.
+5. Confirm `POWER_BACKEND_AUDIT_TEST` appears in the backend response and no Telegram message is sent.
+6. Import `ALERT - Power Backend Delivery` inactive.
+7. Paste the real telemetry key into `HTTP - Evaluate Power Alerts`.
+8. Confirm `Code - Build Evaluate Request` has `dryRun = true`.
+9. Run manually and confirm no Telegram message is sent.
+10. Set `includeTestAlert = true` while `dryRun = true`, run manually, and confirm the audit test is filtered out.
+11. Set `dryRun = false` and `includeTestAlert = false`.
+12. Run or wait for one live execution.
+13. Archive old `ALERT - Sunsynk` only after the new backend-driven workflow is live-verified.
 
 After any order change, inspect affected sheets/views:
 

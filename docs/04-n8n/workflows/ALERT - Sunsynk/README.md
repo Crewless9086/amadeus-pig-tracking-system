@@ -4,6 +4,8 @@
 
 Scheduled Sunsynk alert workflow.
 
+2026-05-23 status: active legacy path in n8n. Do not expand this workflow. It should be replaced by `ALERT - Power Backend Delivery`, which calls the backend/Supabase power alert evaluator and leaves n8n as a thin Telegram delivery layer.
+
 Workflow ID: `2LETWzde7lMDlMnl`  
 Status at import: inactive  
 Imported for docs: 2026-05-18

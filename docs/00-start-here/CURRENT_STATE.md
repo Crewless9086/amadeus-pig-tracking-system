@@ -412,4 +412,31 @@ Current position:
 - `POST /api/telemetry/weather/alerts/evaluate` supports `{"include_test_alert": true}` to create a clearly marked `BACKEND_AUDIT_TEST` candidate.
 - In apply mode this writes one backend audit row to `telemetry_alerts`; it does not send Telegram.
 - Focused weather tests pass at 14 tests.
-- Next step is deploying backend and running the backend-only audit apply test.
+- 10.3L2 backend audit apply verification passed on 2026-05-22.
+- Production audit dry-run with `{"dry_run": true, "include_test_alert": true}` returned one `BACKEND_AUDIT_TEST` candidate and `writes_to_supabase = false`.
+- Production audit apply with `{"include_test_alert": true}` wrote alert `ALT-F20D2245949B`.
+- Supabase verification confirmed `ALT-F20D2245949B` exists with `area = weather`, `alert_type = BACKEND_AUDIT_TEST`, `severity = info`, `status = Open`, `details.test = true`, and `details.safe_to_ignore = true`.
+- No Telegram message was sent.
+- 10.3L4 n8n weather alert delivery is planned.
+- New workflow should be `ALERT - Weather Backend Delivery`.
+- It must call the backend evaluator and treat backend as the only source of truth.
+- It must ignore `BACKEND_AUDIT_TEST` and any alert with `details.test = true`.
+- First recipient scope is Charl only.
+- Legacy Sheets-first alert workflows remain inactive/documented.
+- 10.3L4 local workflow export is built:
+  - `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/workflow.json`
+  - `docs/04-n8n/workflows/ALERT - Weather Backend Delivery/README.md`
+- The workflow is inactive by default.
+- It calls `POST /api/telemetry/weather/alerts/evaluate`.
+- n8n Cloud denied `$env` access in the HTTP node, so the workflow now uses a manually configured `X-Amadeus-Telemetry-Key` header value matching Render's `TELEMETRY_INGEST_API_KEY`.
+- It filters out dry-run responses, `BACKEND_AUDIT_TEST`, and `details.test = true`.
+- It sends through `Telegram - Oom Sakkie` to Charl-only chat ID `5721652188` for the first trial.
+- Workflow contract tests pass at 16 tests.
+- Manual n8n dry-run/audit-test verification passed on 2026-05-23: the backend returned one `BACKEND_AUDIT_TEST` candidate in dry-run mode, `Code - Extract Sendable Alerts` emitted zero items, and no Telegram delivery occurred.
+- Scheduled dry-run verification passed on 2026-05-23: execution `47520` ran from the schedule, backend returned `success = true`, `mode = dry_run`, zero candidates/sendable/held/suppressed alerts, and `Code - Extract Sendable Alerts` output zero items, so Telegram delivery was not reached.
+- Live scheduled verification passed on 2026-05-23: workflow was active with `dryRun = false` and `includeTestAlert = false`; execution `47527` ran from the schedule, backend returned `success = true`, `mode = apply`, zero candidates/sendable/held/suppressed alerts, `source.writes_to_supabase = true`, and no written alert IDs; `Code - Extract Sendable Alerts` output zero items, so Telegram delivery was not reached because there were no real alerts.
+- Weather backend alert delivery is now live-verified. Next step is keeping `ALERT - Weather Backend Delivery` live and archiving/deleting old Sheets-first weather alert workflows only after confirming they remain inactive/unneeded.
+- Legacy weather alert cleanup is complete: `ALERT - Local Weather Station` and `ALERT - Weather Forecast` are inactive and archived; `ALERT - Weather Backend Delivery` remains active as the only live weather alert delivery workflow.
+- 10.3N Sunsynk/power alert backend alignment is prepared locally: `POST /api/telemetry/power/alerts/evaluate` is implemented, backend rules/cooldowns/quiet-hours handling now cover not logging, battery low/medium/high, grid active, generator active, and `POWER_BACKEND_AUDIT_TEST`, and the new inactive n8n export `ALERT - Power Backend Delivery` is built.
+- `ALERT - Sunsynk` remains the active legacy workflow until the backend-driven replacement is deployed, imported inactive, dry-run tested, live-tested, and accepted.
+- Owner planning notes are captured in `SUPABASE_TELEMETRY_PLAN.md`: future Sunsynk cost/value reporting should use `R9.10/kWh` as a planning default; n8n remains a thin integration layer for now; human alerts must be separated from automation triggers for irrigation/pumps/power safety.

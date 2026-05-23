@@ -23,6 +23,56 @@ Do not rebuild `2.2` as another larger agent workflow over Google Sheets.
 
 Do not migrate telemetry blindly before the current sheets, cron jobs, n8n workflows, and data volume are documented.
 
+## n8n Role While Backend/Supabase Grows
+
+Owner question captured on 2026-05-23: as more logic moves into the Flask backend and Supabase, what is n8n still for?
+
+Recommendation:
+
+- Keep n8n for now, but make it thinner.
+- Backend/Supabase should own business rules, validation, state, cooldowns, duplicate prevention, history, and calculations.
+- n8n should mainly own integrations that are awkward or fast to iterate in code right now: Telegram, Chatwoot, scheduled calls, simple delivery routing, and workflow glue.
+- Avoid rebuilding heavy logic in n8n when the backend can provide a prepared endpoint.
+- Do not remove n8n yet, because Telegram/Oom Sakkie, customer messaging, approval callbacks, and some scheduler/delivery paths are already live there.
+- Long term, some n8n jobs can move into backend cron jobs or direct app integrations once each path is stable, tested, and easier to maintain in code.
+
+Practical rule:
+
+- If a workflow is deciding farm truth, calculating money, changing orders/pigs/sales, controlling hardware, or deduplicating alerts, move that logic toward backend/Supabase.
+- If a workflow is delivering a message, calling a backend endpoint on a schedule, or connecting to a third-party channel, n8n is still useful.
+
+This means n8n remains useful as an integration layer, but it should stop being the source of truth.
+
+## Alerts vs Automation Triggers
+
+Owner note captured on 2026-05-23: not every alert should notify a human. Some events are operational triggers for irrigation, pumps, or later farm automation.
+
+Planning distinction:
+
+| Type | Purpose | Example | Owner |
+| --- | --- | --- | --- |
+| Human notification | Tell an operator something important happened or needs attention. | Rain started, high wind, station stale, low battery risk. | Backend decides; n8n/Telegram delivers. |
+| Automation trigger | Change or pause a farm process without treating it as a chat alert. | Pause irrigation during rain, delay irrigation in high wind, pause pumps when battery is low, resume after rain stops. | Backend command/audit layer should decide; hardware controller executes. |
+| Audit event | Record that the system observed or did something. | Irrigation paused because rain started; pump skipped because battery was low. | Supabase history. |
+
+Rules before implementation:
+
+- Do not mix human alerts and hardware-control triggers in one vague "alert" bucket.
+- Weather/power conditions can create both a human notification and an automation trigger, but they need separate policies.
+- Irrigation and pump actions must be backend-owned with explicit audit rows before any automatic control expansion.
+- n8n can call or deliver these actions, but should not be the place where safety rules are invented.
+- Telegram should not be spammed for every automation event. Use severity, quiet hours, grouping, and summaries.
+
+Future automation examples to plan deliberately:
+
+- Rain starts: notify operator if useful, pause irrigation, log the reason, and recalculate remaining schedule after rain stops.
+- High wind: pause or skip spray/irrigation zones where wind matters.
+- Hot day / dry forecast: adjust irrigation plan only within approved zone limits.
+- Low battery / no solar: hold non-critical pumps to reduce grid use.
+- Good solar / water needed: allow pump windows if batteries and load are within safe limits.
+
+This should become a later telemetry/irrigation automation phase after alert delivery is proven.
+
 ## Current Telemetry Inventory
 
 Known from current workflow docs and Phase 7.3E notes:
@@ -1561,6 +1611,194 @@ Deploy/apply test:
 5. Confirm it returns one written alert ID and `writes_to_supabase = true`.
 6. Do not wire n8n to send `BACKEND_AUDIT_TEST`.
 
+Deployed apply verification:
+
+- Passed on 2026-05-22.
+- Production audit dry-run with `{"dry_run": true, "include_test_alert": true}` returned one `BACKEND_AUDIT_TEST` candidate and `source.writes_to_supabase = false`.
+- Production audit apply with `{"include_test_alert": true}` returned one written alert ID: `ALT-F20D2245949B`.
+- Supabase row verification confirmed:
+  - `alert_id = ALT-F20D2245949B`
+  - `area = weather`
+  - `alert_type = BACKEND_AUDIT_TEST`
+  - `severity = info`
+  - `status = Open`
+  - `details.test = true`
+  - `details.safe_to_ignore = true`
+- No Telegram message was sent.
+
+Next step:
+
+- Plan 10.3L4 n8n weather alert delivery, with backend evaluator as the source of truth.
+- The delivery workflow must ignore `BACKEND_AUDIT_TEST`.
+
+## 10.3L4 n8n Weather Alert Delivery Plan
+
+Agreed direction:
+
+- Create a new thin backend-driven delivery workflow instead of editing the legacy Sheets-first alert workflows.
+- Keep legacy `ALERT - Local Weather Station` and `ALERT - Weather Forecast` inactive/documented until the new delivery path is proven.
+- Do not reuse old n8n cooldown logic, Google Sheets reads, or `Weather_Alert_Log` writes.
+- Do not use the old hard-coded multi-recipient list for the first live slice.
+
+Recommended workflow:
+
+- Name: `ALERT - Weather Backend Delivery`
+- Status during build: inactive until imported and manually tested
+- Schedule: every 15 minutes for first trial; can adjust later
+- Recipient scope: Charl only first
+- Backend call:
+  - `POST https://amadeus-pig-tracking-system.onrender.com/api/telemetry/weather/alerts/evaluate`
+  - Header: `X-Amadeus-Telemetry-Key`
+  - Body for live delivery: `{}`
+  - Body for workflow smoke test: `{"dry_run": true}`
+- n8n must never send alerts from dry-run mode.
+
+Workflow shape:
+
+1. `Schedule - Weather Alert Delivery`
+2. `HTTP - Evaluate Weather Alerts`
+3. `Code - Extract Sendable Alerts`
+   - Read `sendable_alerts`.
+   - Drop all alerts where `alert_type = BACKEND_AUDIT_TEST`.
+   - Drop all alerts where `details.test = true`.
+   - Drop everything unless `mode = apply`.
+4. `IF - Has Alerts`
+5. `Code - Format Telegram Weather Alerts`
+6. `Telegram - Send Weather Alert`
+
+Delivery message format:
+
+```text
+Weather alert: {severity}
+
+{message}
+
+Source: {source_name}
+Time: {event_at in Africa/Johannesburg}
+Alert: {alert_type}
+```
+
+Safety rules:
+
+- `BACKEND_AUDIT_TEST` must be ignored permanently.
+- Do not calculate thresholds in n8n.
+- Do not calculate cooldowns in n8n.
+- Do not write `Weather_Alert_Log`.
+- Do not read weather Google Sheets.
+- Do not send to farm operators/groups until Charl-only trial is accepted.
+- Keep Telegram delivery separate from normal Oom Sakkie Q&A routing.
+
+Manual test plan:
+
+1. Import workflow inactive.
+2. Run manually with dry-run body `{"dry_run": true}`.
+3. Confirm no Telegram message is sent even if dry-run returns candidates.
+4. Temporarily run manual smoke with `{"dry_run": true, "include_test_alert": true}`.
+5. Confirm `BACKEND_AUDIT_TEST` is filtered out and no Telegram message is sent.
+6. Switch body to `{}` only after smoke checks pass.
+7. Activate schedule after one successful live manual run returns either no alerts or expected real alerts.
+
+Scheduled dry-run verification:
+
+- Passed on 2026-05-23.
+- n8n execution `47520` ran from the schedule with `mode = trigger`.
+- Workflow request body was `{"dry_run": true}`.
+- Backend response returned `success = true`, `status = ok`, `mode = dry_run`, zero candidates, zero sendable alerts, zero held alerts, zero suppressed alerts, and no written alert IDs.
+- `Code - Extract Sendable Alerts` output zero items because dry-run responses are intentionally blocked before Telegram delivery.
+- Next step is switching `dryRun = false` and `includeTestAlert = false`, then inspecting the first live scheduled run before retiring legacy Sheets-first weather alert workflows.
+
+Live scheduled verification:
+
+- Passed on 2026-05-23.
+- Workflow was active with `dryRun = false` and `includeTestAlert = false`.
+- n8n execution `47527` ran from the schedule with `mode = trigger`.
+- Workflow request body was `{}` and `workflow_mode = apply`.
+- Backend response returned `success = true`, `status = ok`, `mode = apply`, zero candidates, zero sendable alerts, zero held alerts, zero suppressed alerts, `source.writes_to_supabase = true`, and no written alert IDs.
+- `Code - Extract Sendable Alerts` output zero items because there were no real alerts to deliver.
+- Telegram delivery was not reached.
+- This proves the new backend-driven weather alert delivery path can run live safely when there are no alert candidates.
+
+Legacy cleanup gate:
+
+- Completed on 2026-05-23.
+- `ALERT - Weather Backend Delivery` remains live.
+- `ALERT - Local Weather Station` is inactive and archived.
+- `ALERT - Weather Forecast` is inactive and archived.
+- The old Sheets-first weather alert path is no longer the live alert-delivery route.
+
+## 10.3N Sunsynk/Power Alert Backend Alignment
+
+Selected on 2026-05-23 after weather alert delivery was live-verified.
+
+Reason:
+
+- `ALERT - Sunsynk` is still the old active alert path.
+- It calculates thresholds/cooldowns in n8n and depends on the legacy Sheets-style alert model.
+- Weather alerts have now proven the preferred pattern: backend evaluates, Supabase stores history, n8n delivers only approved messages.
+
+Backend endpoint prepared locally:
+
+- `POST /api/telemetry/power/alerts/evaluate`
+- Protected by `X-Amadeus-Telemetry-Key` / `TELEMETRY_INGEST_API_KEY`.
+- Supports `{"dry_run": true}`.
+- Supports `{"include_test_alert": true}` for `POWER_BACKEND_AUDIT_TEST`.
+- Reads `power_latest_state`, `telemetry_sources`, and recent `telemetry_alerts`.
+- Writes only sendable alerts in apply mode.
+- Does not send Telegram messages.
+
+Initial backend-owned power alert rules:
+
+| Alert key | Alert type | Severity | Rule |
+| --- | --- | --- | --- |
+| `not_logging` | `POWER_NOT_LOGGING` | critical | latest Sunsynk reading older than threshold |
+| `battery_low` | `POWER_BATTERY_LOW` | critical | battery SOC `<= 30%` |
+| `battery_medium` | `POWER_BATTERY_MEDIUM` | warning | battery SOC `> 30%` and `<= 50%` |
+| `battery_high` | `POWER_BATTERY_HIGH` | info | battery SOC `>= 95%` |
+| `grid_active` | `POWER_GRID_ACTIVE` | warning | grid active or grid power above threshold |
+| `generator_active` | `POWER_GENERATOR_ACTIVE` | critical | generator active and producing above threshold |
+| `backend_audit_test` | `POWER_BACKEND_AUDIT_TEST` | info | backend audit only, never delivered by n8n |
+
+Quiet-hours behavior:
+
+- Critical alerts bypass quiet hours.
+- Warning/info alerts are held during quiet hours.
+- Cooldowns are backend-owned.
+
+n8n replacement export prepared locally:
+
+- `docs/04-n8n/workflows/ALERT - Power Backend Delivery/workflow.json`
+- `docs/04-n8n/workflows/ALERT - Power Backend Delivery/README.md`
+- Inactive by default.
+- Dry-run by default.
+- Uses a manually configured `X-Amadeus-Telemetry-Key` header because n8n Cloud blocks `$env` access in HTTP nodes.
+- Filters out dry-run responses, `POWER_BACKEND_AUDIT_TEST`, and any alert where `details.test = true`.
+- Sends through `Telegram - Oom Sakkie` to Charl-only chat ID for the first trial.
+
+Local verification:
+
+- Focused power telemetry tests pass.
+- Workflow contract tests pass.
+- `ALERT - Power Backend Delivery/workflow.json` parses as valid JSON.
+
+Deploy/import sequence:
+
+1. Deploy backend with `POST /api/telemetry/power/alerts/evaluate`.
+2. Backend dry-run with the real telemetry key and `{"dry_run": true}`.
+3. Backend dry-run audit with `{"dry_run": true, "include_test_alert": true}`.
+4. Import `ALERT - Power Backend Delivery` inactive.
+5. Paste the real telemetry key into `HTTP - Evaluate Power Alerts`.
+6. Manual n8n dry-run.
+7. Manual n8n dry-run audit; confirm no Telegram.
+8. Switch new workflow to live mode only after dry-run is clean.
+9. Activate new workflow.
+10. Archive old `ALERT - Sunsynk` only after the backend-driven power alert workflow is live-verified.
+
+Later improvements:
+
+- Move recipient list into backend config or n8n environment variable.
+- Add backend endpoint for recent alert history in the app/Oom Sakkie.
+- Add a dashboard widget for active/recent weather alerts.
+
 ## 10.3A Inventory Owner Inputs
 
 Confirmed on 2026-05-21:
@@ -1622,6 +1860,32 @@ Likely Sunsynk retention model:
 | `power_monthly_rollups` | Monthly totals and reporting | Permanent. |
 | `power_yearly_rollups` | Yearly totals and long-term trend | Permanent. |
 | `telemetry_alerts` | Audit of warnings and notable events | Long-term/permanent. |
+
+## Sunsynk Cost And Value Calculations
+
+Owner note captured on 2026-05-23: power reporting should eventually show money/value, not only technical readings. Use the farm's Eskom reference rate of `R9.10 per unit` for value calculations unless a later verified tariff model replaces it.
+
+Planned value questions:
+
+- What did solar generation save today, this month, and this year?
+- How much grid use did we avoid?
+- How far has the system moved toward paying itself off?
+- What is the daily/monthly/yearly Rand value of generated solar, battery use, grid avoidance, or generator avoidance?
+
+Important calculation boundary:
+
+- Do not calculate Rand value from 5-minute power samples alone unless the energy integration rule is approved.
+- Prefer reliable kWh counters from Sunsynk if available.
+- If counters are not available, define and test interval-integration rules before showing monetary totals.
+- Store the tariff used, calculation version, source window, and row count with rollups so future reports remain explainable.
+- Keep `R9.10/kWh` as a planning default, not a hidden hard-coded constant.
+
+Likely future schema/config needs:
+
+- tariff/config table or backend setting for Eskom rate and effective date
+- daily/monthly/yearly power rollups with kWh fields
+- value fields calculated from approved kWh totals
+- optional system cost/payback configuration later
 
 Decision still needed:
 

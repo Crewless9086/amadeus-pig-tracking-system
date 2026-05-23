@@ -36,9 +36,11 @@ It documents:
 | `2.4.3 - Order Approval Request Webhook` | `workflows/2.4.3 - Order Approval Request Webhook/` | Active | Webhook entry for order approval requests. |
 | `2.4.4 - Order Lookup Tool` | `workflows/2.4.4 - Order Lookup Tool/` | Active | Oom Sakkie order lookup and guarded quote-send preparation tool. |
 | `2.4.5 - Document Send Callback Handler` | `workflows/2.4.5 - Document Send Callback Handler/` | Active | Worker workflow for guarded quote-send button callbacks. |
-| `ALERT - Local Weather Station` | `workflows/ALERT - Local Weather Station/` | Inactive | Scheduled local weather station alerts. |
-| `ALERT - Sunsynk` | `workflows/ALERT - Sunsynk/` | Inactive | Scheduled Sunsynk alerts. |
-| `ALERT - Weather Forecast` | `workflows/ALERT - Weather Forecast/` | Inactive | Scheduled forecast alerts. |
+| `ALERT - Local Weather Station` | `workflows/ALERT - Local Weather Station/` | Archived / Inactive | Historical Sheets-first local weather alert workflow. Do not reactivate. |
+| `ALERT - Sunsynk` | `workflows/ALERT - Sunsynk/` | Active legacy | Existing scheduled Sunsynk alert workflow. Replace with backend-driven `ALERT - Power Backend Delivery` after dry-run/live verification. |
+| `ALERT - Weather Forecast` | `workflows/ALERT - Weather Forecast/` | Archived / Inactive | Historical Sheets-first forecast alert workflow. Do not reactivate. |
+| `ALERT - Weather Backend Delivery` | `workflows/ALERT - Weather Backend Delivery/` | Active / Live-verified | Backend/Supabase weather alert delivery workflow. |
+| `ALERT - Power Backend Delivery` | `workflows/ALERT - Power Backend Delivery/` | Local export / Import pending | Backend/Supabase Sunsynk power alert delivery workflow. |
 
 ## Folder Map
 

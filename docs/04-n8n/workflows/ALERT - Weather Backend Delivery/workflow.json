@@ -1,0 +1,205 @@
+{
+  "name": "ALERT - Weather Backend Delivery",
+  "description": "Phase 10.3L4 thin Telegram delivery workflow. Backend/Supabase evaluator owns weather alert rules, cooldowns, quiet hours, and history.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -720,
+        0
+      ],
+      "id": "6f4d6a3d-eaf7-4c5e-a3d7-1db7ab4d9151",
+      "name": "Schedule - Weather Alert Delivery"
+    },
+    {
+      "parameters": {
+        "jsCode": "const dryRun = true;\nconst includeTestAlert = false;\n\nconst body = {};\nif (dryRun) body.dry_run = true;\nif (includeTestAlert) body.include_test_alert = true;\n\nreturn [{\n  json: {\n    request_body: body,\n    workflow_mode: dryRun ? \"dry_run\" : \"apply\",\n    notes: \"Manual dry-run test mode. No Telegram alert should be sent while dryRun=true.\",\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        0
+      ],
+      "id": "af3af84e-0b07-45ed-a476-f54215f3f16d",
+      "name": "Code - Build Evaluate Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://amadeus-pig-tracking-system.onrender.com/api/telemetry/weather/alerts/evaluate",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Amadeus-Telemetry-Key",
+              "value": "PASTE_TELEMETRY_INGEST_API_KEY_HERE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.request_body}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -260,
+        0
+      ],
+      "id": "7a3a4d91-7331-4bbf-9d59-0c1a6af8f8cd",
+      "name": "HTTP - Evaluate Weather Alerts",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json || {};\n\nif (response.success !== true || response.status !== \"ok\") {\n  return [];\n}\n\n// Safety rule: never send from dry-run output.\nif (response.mode !== \"apply\") {\n  return [];\n}\n\nconst alerts = Array.isArray(response.sendable_alerts) ? response.sendable_alerts : [];\nconst safeAlerts = alerts.filter((alert) => {\n  const details = alert && typeof alert.details === \"object\" && alert.details !== null ? alert.details : {};\n  if (alert.alert_type === \"BACKEND_AUDIT_TEST\") return false;\n  if (details.test === true) return false;\n  if (details.safe_to_ignore === true) return false;\n  return true;\n});\n\nreturn safeAlerts.map((alert) => ({\n  json: {\n    ...alert,\n    evaluator_mode: response.mode,\n    evaluator_status: response.status,\n  },\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        0
+      ],
+      "id": "d4cfa2cb-b0cc-4de5-9f45-e9d78b89e71e",
+      "name": "Code - Extract Sendable Alerts"
+    },
+    {
+      "parameters": {
+        "jsCode": "const CHARL_TELEGRAM_CHAT_ID = \"5721652188\";\n\nfunction clean(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction formatDateTime(iso) {\n  if (!iso) return \"unknown\";\n  const d = new Date(iso);\n  if (Number.isNaN(d.getTime())) return iso;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n    hour: \"2-digit\",\n    minute: \"2-digit\",\n    hour12: false,\n  }).format(d);\n}\n\nreturn $input.all().map((item) => {\n  const alert = item.json || {};\n  const severity = clean(alert.severity || \"warning\").toUpperCase();\n  const sourceName = clean(alert.source_name || alert.source_id || \"Weather telemetry\");\n  const alertType = clean(alert.alert_type || \"WEATHER_ALERT\");\n  const message = clean(alert.message || \"Weather alert triggered.\");\n  const text = [\n    `Weather alert: ${severity}`,\n    \"\",\n    message,\n    \"\",\n    `Source: ${sourceName}`,\n    `Time: ${formatDateTime(alert.event_at)}`,\n    `Alert: ${alertType}`,\n  ].join(\"\\n\");\n\n  return {\n    json: {\n      chatId: CHARL_TELEGRAM_CHAT_ID,\n      telegram_text: text,\n      alert_id: alert.alert_id,\n      alert_key: alert.alert_key,\n      alert_type: alertType,\n      severity: alert.severity,\n      _alert: alert,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "17274b24-45b4-40e4-9f13-47d239e4df20",
+      "name": "Code - Format Telegram Weather Alerts"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.telegram_text}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        460,
+        0
+      ],
+      "id": "c6f85d53-7afa-4222-97d1-b5cd6f5f01c4",
+      "name": "Telegram - Send Weather Alert",
+      "credentials": {
+        "telegramApi": {
+          "id": "e5jS1ondryiauRNX",
+          "name": "Telegram - Oom Sakkie"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Phase 10.3L4. Backend-driven weather alert delivery only. Do not add Google Sheets reads/writes, n8n cooldown rules, or delivery of BACKEND_AUDIT_TEST/details.test alerts. Keep inactive until manual dry-run and audit-test checks pass."
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -260
+      ],
+      "id": "d53e8e5e-63f3-4e67-9419-d5c5e6dc9be3",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Schedule - Weather Alert Delivery": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Evaluate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Evaluate Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Evaluate Weather Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Evaluate Weather Alerts": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Sendable Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Sendable Alerts": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Telegram Weather Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Telegram Weather Alerts": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Weather Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "10-3-l4-local"
+}

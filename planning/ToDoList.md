@@ -28,6 +28,8 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Weight form UX notes moved to `NEXT_STEPS.md` Phase 9.3B.
 - Pig list tag-formatting note moved to `NEXT_STEPS.md` Phase 9.2B.
 - Mobile/PWA and desktop layout notes moved to `NEXT_STEPS.md` Phase 10.4/farm home dashboard planning.
+- Sunsynk Eskom tariff/value calculation note moved to `NEXT_STEPS.md` Phase 10.3M and `SUPABASE_TELEMETRY_PLAN.md`.
+- n8n future-role question answered in `SUPABASE_TELEMETRY_PLAN.md` and summarized under `NEXT_STEPS.md` Phase 10.3M.
+- Human alerts vs automation triggers note moved to `NEXT_STEPS.md` Phase 10.3M and `SUPABASE_TELEMETRY_PLAN.md`.
 
 Add new scratch bullets below, then move them into the correct canonical file.
- - SunSunk Calculations and so on when we get to this I want to use our Eskom rate which is R9,10 per unit for the calculatiosn to see how we have done and how far we have come to pay off the system and what we make in a day and so ons, becuase comparing it to money is always value we like seeing. 

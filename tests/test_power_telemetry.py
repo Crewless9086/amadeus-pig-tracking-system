@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.telemetry.power_service import (
+    evaluate_power_alerts,
     get_current_power_state,
     get_recent_power_profile,
     ingest_power_reading,
@@ -210,6 +211,121 @@ class PowerTelemetryTests(unittest.TestCase):
         self.assertEqual(result["status"], "unavailable")
         self.assertEqual(result["window"]["row_count"], 0)
 
+    @patch.dict(os.environ, {"TELEMETRY_INGEST_API_KEY": "expected"}, clear=True)
+    def test_power_alert_evaluator_rejects_invalid_api_key(self):
+        result, status_code = evaluate_power_alerts({}, provided_api_key="wrong")
+
+        self.assertEqual(status_code, 401)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "unauthorized")
+
+    @patch.dict(
+        os.environ,
+        {
+            "DATABASE_URL": "postgresql://user:secret@example/db",
+            "TELEMETRY_INGEST_API_KEY": "expected",
+        },
+        clear=True,
+    )
+    def test_power_alert_evaluator_returns_dry_run_candidates_without_writing(self):
+        cursor = Mock()
+        cursor.fetchone.return_value = (
+            "sunsynk-main-inverter",
+            "Amadeus Sunsynk Inverter",
+            15,
+            datetime.now(timezone.utc),
+            Decimal("29"),
+            Decimal("0"),
+            Decimal("0"),
+            False,
+            False,
+        )
+        cursor.fetchall.return_value = []
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = evaluate_power_alerts({"dry_run": True}, provided_api_key="expected")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "dry_run")
+        self.assertEqual(result["candidate_count"], 1)
+        self.assertEqual(result["sendable_alerts"][0]["alert_key"], "battery_low")
+        self.assertEqual(result["sendable_alerts"][0]["alert_type"], "POWER_BATTERY_LOW")
+        self.assertFalse(result["source"]["writes_to_supabase"])
+        self.assertEqual(cursor.execute.call_count, 2)
+
+    @patch.dict(
+        os.environ,
+        {
+            "DATABASE_URL": "postgresql://user:secret@example/db",
+            "TELEMETRY_INGEST_API_KEY": "expected",
+        },
+        clear=True,
+    )
+    def test_power_alert_evaluator_writes_sendable_apply_alerts(self):
+        cursor = Mock()
+        cursor.fetchone.return_value = (
+            "sunsynk-main-inverter",
+            "Amadeus Sunsynk Inverter",
+            15,
+            datetime.now(timezone.utc),
+            Decimal("55"),
+            Decimal("0"),
+            Decimal("250"),
+            False,
+            True,
+        )
+        cursor.fetchall.return_value = []
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = evaluate_power_alerts({}, provided_api_key="expected")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "apply")
+        self.assertEqual(result["sendable_alerts"][0]["alert_key"], "generator_active")
+        self.assertEqual(result["written_alert_ids"], [result["sendable_alerts"][0]["alert_id"]])
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertEqual(cursor.execute.call_count, 3)
+
+    @patch.dict(
+        os.environ,
+        {
+            "DATABASE_URL": "postgresql://user:secret@example/db",
+            "TELEMETRY_INGEST_API_KEY": "expected",
+        },
+        clear=True,
+    )
+    def test_power_alert_evaluator_supports_backend_audit_test(self):
+        cursor = Mock()
+        cursor.fetchone.return_value = (
+            "sunsynk-main-inverter",
+            "Amadeus Sunsynk Inverter",
+            15,
+            datetime.now(timezone.utc),
+            Decimal("80"),
+            Decimal("0"),
+            Decimal("0"),
+            False,
+            False,
+        )
+        cursor.fetchall.return_value = []
+        _connection, psycopg = _mock_psycopg_connection(cursor)
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = evaluate_power_alerts(
+                {"dry_run": True, "include_test_alert": True},
+                provided_api_key="expected",
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["sendable_alerts"][0]["alert_type"], "POWER_BACKEND_AUDIT_TEST")
+        self.assertTrue(result["sendable_alerts"][0]["details"]["test"])
+        self.assertIn("No Telegram message was sent", result["sendable_alerts"][0]["message"])
+
     def test_telemetry_routes_are_registered(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
         route_source = Path("modules/telemetry/telemetry_routes.py").read_text(encoding="utf-8")
@@ -217,6 +333,7 @@ class PowerTelemetryTests(unittest.TestCase):
         self.assertIn("telemetry_bp", app_source)
         self.assertIn("app.register_blueprint(telemetry_bp, url_prefix=\"/api\")", app_source)
         self.assertIn("/telemetry/power/recent", route_source)
+        self.assertIn("/telemetry/power/alerts/evaluate", route_source)
 
 
 def _mock_psycopg_connection(cursor):
