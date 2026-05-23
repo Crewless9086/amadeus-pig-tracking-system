@@ -57,7 +57,10 @@ def get_irrigation_status(today=None, spreadsheet_name=None):
         elif today_plan:
             current_status = "IDLE"
 
-    next_zone_id = _clean(state.get("next_zone_id")) or _next_planned_zone_id(today_plan, zones_by_id)
+    state_next_zone_id = _clean(state.get("next_zone_id"))
+    computed_next_zone_id = _next_planned_zone_id(today_plan, zones_by_id)
+    next_zone_id = state_next_zone_id or computed_next_zone_id
+    next_zone_source = "state" if state_next_zone_id else "computed_plan"
 
     plan_items = [_format_plan_row(row, zones_by_id) for row in today_plan]
     counts = _plan_counts(today_plan)
@@ -75,6 +78,10 @@ def get_irrigation_status(today=None, spreadsheet_name=None):
         notes.append("No DAILY_PLAN rows were found for today.")
     if next_zone_id:
         notes.append(f"Next planned zone is {next_zone_id}.")
+    if state_next_zone_id and computed_next_zone_id and state_next_zone_id != computed_next_zone_id:
+        notes.append(
+            "STATE next zone differs from the computed highest-priority planned zone."
+        )
     if current_status == "RUNNING" and current_zone_id:
         notes.append(f"Zone {current_zone_id} is currently marked as running.")
 
@@ -115,6 +122,16 @@ def get_irrigation_status(today=None, spreadsheet_name=None):
             "completed_minutes": completed_minutes,
             "next_zone_id": next_zone_id,
             "next_zone_name": _zone_name(next_zone_id, zones_by_id),
+            "next_zone_source": next_zone_source,
+            "state_next_zone_id": state_next_zone_id,
+            "state_next_zone_name": _zone_name(state_next_zone_id, zones_by_id),
+            "computed_next_zone_id": computed_next_zone_id,
+            "computed_next_zone_name": _zone_name(computed_next_zone_id, zones_by_id),
+            "next_zone_mismatch": bool(
+                state_next_zone_id
+                and computed_next_zone_id
+                and state_next_zone_id != computed_next_zone_id
+            ),
             "plan": plan_items,
         },
         "recent_events": recent_events,

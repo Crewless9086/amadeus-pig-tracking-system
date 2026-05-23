@@ -1756,7 +1756,15 @@ Latest dry-run evidence:
 7. [Done locally 2026-05-23] Confirm code performs no IFTTT/HTTP hardware calls.
 8. [Done locally 2026-05-23] Confirm missing/stale source data returns a cautious unavailable/unknown response.
 9. [Done locally 2026-05-23] Confirm Oom Sakkie is not updated for irrigation control commands in this slice.
-10. [Next] Deploy backend and verify the endpoint on Render.
+10. [Done 2026-05-23] Deploy backend and verify the endpoint on Render.
+
+Deployed verification:
+
+- Endpoint returned `success = true`, `status = ok`, `mode = read_only`.
+- Safety flags returned `read_only = true`, `can_control = false`, and `hardware_commands_enabled = false`.
+- Source returned `writes_to_sheets = false` and `writes_to_supabase = false`.
+- Current state returned `IDLE`; today's plan returned two planned zones.
+- Follow-up next-zone clarity patch passed focused local tests: response exposes state-selected next zone, computed next zone, source, and mismatch flag.
 
 After any order change, inspect affected sheets/views:
 

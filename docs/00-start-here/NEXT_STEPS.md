@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Local Read-Verified | Deploy and verify read-only irrigation status endpoint. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified | Deploy small next-zone clarity patch, then connect Oom Sakkie to read-only irrigation status. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -3097,7 +3097,7 @@ Recommended implementation order:
 1. Build backend service that reads `STATE`, `DAILY_PLAN`, `ZONES`, and recent `LOG`. - Done locally.
 2. Add `GET /api/telemetry/irrigation/status`. - Done locally.
 3. Test locally against read-only data. - Done locally.
-4. Deploy and verify endpoint. - Next.
+4. Deploy and verify endpoint. - Done.
 5. Only after this works, update Oom Sakkie to answer irrigation status questions.
 
 Local result on 2026-05-23:
@@ -3113,6 +3113,28 @@ Local result on 2026-05-23:
   - `B12345` / `B - Kamp`, `60` minutes.
 - Source confirms `writes_to_sheets = false` and `writes_to_supabase = false`.
 - Focused telemetry tests passed.
+
+Deployed result on 2026-05-23:
+
+- Render endpoint returned `success = true`, `status = ok`, `mode = read_only`.
+- Safety flags returned correctly:
+  - `read_only = true`;
+  - `can_control = false`;
+  - `hardware_commands_enabled = false`.
+- Source confirmed `writes_to_sheets = false` and `writes_to_supabase = false`.
+- Current state returned `IDLE`, current/last zone `C12345` / `C - Kamp`.
+- Today returned two planned zones for `2026-05-23`:
+  - `C12345` / `C - Kamp`, `60` minutes, `PLANNED`;
+  - `B12345` / `B - Kamp`, `60` minutes, `PLANNED`.
+- Recent events show daily `PLAN_CREATED` rows.
+- Follow-up note: `next_zone_id` currently follows `STATE.next_zone_id` when present. If this should instead be recalculated from plan priority/water score, refine before wiring Oom Sakkie wording.
+
+Next-zone clarity patch prepared on 2026-05-23:
+
+- Endpoint still keeps `STATE.next_zone_id` as the authoritative displayed `next_zone_id` when present.
+- Endpoint now also returns `state_next_zone_id`, `computed_next_zone_id`, `next_zone_source`, and `next_zone_mismatch`.
+- If the sheet state and computed priority/water-score result differ, the response adds an operator note instead of silently hiding the mismatch.
+- Local focused telemetry tests passed after this patch.
 
 Farm home/dashboard idea:
 

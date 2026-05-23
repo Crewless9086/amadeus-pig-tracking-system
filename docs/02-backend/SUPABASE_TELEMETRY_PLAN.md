@@ -2138,3 +2138,26 @@ Local implementation status on 2026-05-23:
 - Added focused irrigation telemetry tests.
 - Local real read against `Amadeus_Irrigation_Logs` returned `success = true`, `mode = read_only`, current `IDLE` state, two planned zones for `2026-05-23`, and safety flags with hardware control disabled.
 - Endpoint still reads Google Sheets as a temporary bridge; Supabase remains the target source of truth.
+
+Deployed verification on 2026-05-23:
+
+- `GET /api/telemetry/irrigation/status` returned `success = true`, `status = ok`, and `mode = read_only`.
+- Safety flags confirmed:
+  - `read_only = true`;
+  - `can_control = false`;
+  - `hardware_commands_enabled = false`.
+- Source confirmed no writes: `writes_to_sheets = false`, `writes_to_supabase = false`.
+- Current state returned `IDLE`, current/last zone `C12345` / `C - Kamp`.
+- Today's plan returned two `PLANNED` zones: `C12345` and `B12345`, each `60` minutes.
+- Follow-up before Oom Sakkie wording: decide whether the endpoint should trust `STATE.next_zone_id` or recalculate next zone from plan priority/water score when all rows are still planned.
+
+Next-zone clarity patch prepared on 2026-05-23:
+
+- The endpoint keeps `STATE.next_zone_id` as the displayed `next_zone_id` when present, because the sheet state is the current live workflow's intended source of truth.
+- The endpoint now also returns:
+  - `state_next_zone_id`;
+  - `computed_next_zone_id`;
+  - `next_zone_source`;
+  - `next_zone_mismatch`.
+- If the state-selected zone and computed priority/water-score zone differ, the endpoint adds an operator note so Oom Sakkie can word the answer cautiously.
+- Focused telemetry tests passed after the patch.
