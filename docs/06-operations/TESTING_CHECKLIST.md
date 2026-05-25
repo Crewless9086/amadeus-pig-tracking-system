@@ -1093,7 +1093,7 @@ Deploy result:
 - 2026-05-21: 10.2K2 synthetic write test created `SALE-2026-F17E16` for `PIG-TEST-102K2-20260521`.
 - 2026-05-21: Readback through `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` returned the synthetic transaction.
 - 2026-05-21: Duplicate-pig protection returned `409 duplicate_pig` on a second create attempt for `PIG-TEST-102K2-20260521`.
-- No real `S10` transaction has been written.
+- At this checkpoint, no real `S10` transaction had been written; this changed later after the create/cancel/payment path was proven and owner-approved.
 - 2026-05-21: 10.2K3 cancellation/void flow implemented locally.
 - 2026-05-21: Focused sales transaction tests passed at 20 tests.
 - 2026-05-21: Local missing-config cancel route smoke returned safe `503` with `writes_to_supabase = false`.
@@ -1112,7 +1112,7 @@ Deploy result:
 
 - 2026-05-21: 10.2K3 deployed cancellation checks passed.
 - 2026-05-21: Final readback shows synthetic slaughter transactions `SALE-2026-F17E16` and `SALE-2026-28EF1B` are both cancelled.
-- No real `S10` transaction has been written.
+- At this checkpoint, no real `S10` transaction had been written; this changed later after the form/payment path was proven and owner-approved.
 
 ## Phase 10.2L Internal Slaughter Sale Form Checks
 
@@ -1156,10 +1156,33 @@ Deploy checks:
 6. Cancel the synthetic row after testing.
 7. Do not update real `S10` payment/final amount until the synthetic update check passes.
 
-Owner-pending note:
+Closed follow-up:
 
 - 2026-05-21: Owner decided to park the payment/final amount test until the real JC Slaghuis value is known.
-- Return to this checklist when the butcher payment/final amount is available.
+- 2026-05-23: Owner entered the real payment/final amount, and the S10 payment/final amount follow-up was verified and closed for now.
+
+Close-out result:
+
+- 2026-05-23: Owner entered the real JC Slaghuis payment/final amount after backend deploy.
+- Deployed list check passed through `GET /api/sales-transactions?sale_stream=Slaughter&limit=20`.
+- Real S10 transaction is present as `SALE-2026-1DE373`.
+- Header verification:
+  - buyer `JC Slaghuis`;
+  - destination `Bartelsfontein`;
+  - `sale_stream = Slaughter`;
+  - `sale_status = Completed`;
+  - `payment_status = Paid`;
+  - `payment_method = EFT`;
+  - `payment_date = 2026-05-23`;
+  - `gross_total = 2892.94`;
+  - `net_total = 2892.94`.
+- Item verification:
+  - pig `PIG-2026-C390`;
+  - tag `S10`;
+  - `carcass_weight_kg = 68`;
+  - `line_total = 2892.94`.
+- Focused sales transaction tests passed at 35 tests.
+- S10 payment/final amount follow-up is closed for now.
 
 ## Phase 10.2L3 Slaughter Form UX Polish Checks
 

@@ -508,7 +508,7 @@ Current real slaughter workflow:
 - Carcass weight may be supplied by the abattoir/butcher, but this is not guaranteed.
 - Payment normally arrives roughly two weeks later from the butcher.
 - Payment method is bank transfer/EFT and the sale must be treated as VAT-relevant.
-- Recent real candidate: pig `S10` was reported on 2026-05-21 as recently slaughtered and has been marked as slaughtered in Google Sheets. Use it later only after the create/cancel flow is proven.
+- Recent real candidate: pig `S10` was reported on 2026-05-21 as recently slaughtered and was marked as slaughtered in Google Sheets. It later became the first real JC Slaghuis slaughter/payment close-out verification after the create/cancel flow was proven.
 
 Recommended status handling for this workflow:
 
@@ -602,7 +602,7 @@ Implementation state:
 - Deployed 10.2K2 write test passed on 2026-05-21: `POST /api/sales-transactions` created synthetic transaction `SALE-2026-F17E16` for `PIG-TEST-102K2-20260521`.
 - Deployed readback passed: `GET /api/sales-transactions?sale_stream=Slaughter&limit=10` returned the synthetic transaction with `payment_status = Unpaid`, `sale_status = Confirmed`, `gross_total = 1200`, and `writes_to_supabase = false`.
 - Deployed duplicate guard passed: second create attempt for `PIG-TEST-102K2-20260521` returned `409 duplicate_pig` and `writes_to_supabase = false`.
-- No real `S10` transaction has been written.
+- At this checkpoint, no real `S10` transaction had been written; S10 was written later only after the create/cancel/payment path was proven.
 - 10.2K3 is deployed and verified.
 - New route: `POST /api/sales-transactions/<sale_id>/cancel`.
 - Cancel requires `cancelled_by` and `cancel_reason`.
@@ -615,7 +615,7 @@ Implementation state:
 - Reuse check passed: after cancelling `SALE-2026-F17E16`, the same synthetic pig ID `PIG-TEST-102K2-20260521` was accepted in new synthetic transaction `SALE-2026-28EF1B`.
 - Cleanup passed: synthetic reuse transaction `SALE-2026-28EF1B` was cancelled.
 - Final readback shows both synthetic slaughter transactions are cancelled and no active synthetic slaughter transaction remains.
-- No real `S10` transaction has been written.
+- At this checkpoint, no real `S10` transaction had been written; S10 was written later only after the form/payment path was proven.
 - 10.2L is implemented locally and not yet deployed.
 - New page route: `/sales/slaughter`.
 - New template/script: `templates/slaughter-sale.html` and `static/js/slaughterSale.js`.
@@ -634,7 +634,7 @@ Implementation state:
 - Full local unittest suite passed on 2026-05-21 at 200 tests.
 - Next deployed test should update a synthetic non-cancelled transaction before using this for real `S10` payment completion.
 - Owner decision on 2026-05-21: park the real-value test until the actual JC Slaghuis sale amount/payment details are known.
-- Keep S10/payment completion as an owner-pending follow-up, not as a blocker for the next planning slice.
+- This follow-up was completed and verified on 2026-05-23 after the owner entered the real S10 payment/final amount.
 - 10.2L3 slaughter form UX polish is implemented locally and not yet deployed.
 - `/sales/slaughter` now has a top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills.
 - 10.2L3 does not change the database model, create endpoint, cancel endpoint, payment update endpoint, or single-pig transaction behavior.
@@ -752,7 +752,18 @@ Open decisions before implementation:
 - Cancelled `SALE-2026-0C9DE0`.
 - Deployed `/sales/slaughter` page smoke passed and included the multi-pig row container plus batch total UI.
 - Phase 10.2L4 is closed after deployed synthetic verification; manual UI owner smoke is optional, not a blocker.
-- S10 / real JC Slaghuis payment completion remains owner-pending until the real amount is known.
+- S10 / real JC Slaghuis payment completion was owner-completed and verified on 2026-05-23:
+  - sale `SALE-2026-1DE373`;
+  - pig `PIG-2026-C390`, tag `S10`;
+  - buyer `JC Slaghuis`;
+  - destination `Bartelsfontein`;
+  - carcass weight `68 kg`;
+  - final amount `R2892.94`;
+  - `payment_status = Paid`;
+  - `payment_method = EFT`;
+  - `payment_date = 2026-05-23`;
+  - `sale_status = Completed`.
+- Focused sales transaction tests passed at 35 tests after verification.
 - Next step: select the next Phase 10 slice.
 
 Open questions before implementation:

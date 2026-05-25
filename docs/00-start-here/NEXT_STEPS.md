@@ -2626,27 +2626,27 @@ Recommendation:
 - Planned implementation split: backend create service first, safe deployed write test second, cancellation/void planning third, internal form later.
 - Real slaughter workflow captured for 10.2K: pigs go to `Bartelsfontein` abattoir, butcher/buyer is currently `JC Slaghuis`, carcass weight may or may not be provided, payment normally arrives about two weeks later by bank transfer/EFT, and the sale is VAT-relevant.
 - Status rule for slaughter planning: delivered/slaughtered but unpaid should be `sale_status = Confirmed` and `payment_status = Unpaid`; after EFT payment, update to `sale_status = Completed` and `payment_status = Paid`.
-- Pig `S10` was reported on 2026-05-21 as recently slaughtered and marked as slaughtered in Google Sheets. Treat it as a possible later real transaction candidate only after the Supabase create/cancel flow is proven.
+- Pig `S10` was reported on 2026-05-21 as recently slaughtered and marked as slaughtered in Google Sheets. It later became the first real JC Slaghuis slaughter/payment close-out verification after the Supabase create/cancel flow was proven.
 - VAT handling is now an explicit planning point: before dashboard financial reporting, decide/add structured VAT fields rather than hiding VAT permanently in notes.
 - Phase 10.2K1 backend create service implemented locally: `POST /api/sales-transactions` supports `Slaughter` only, requires `created_by`, writes Supabase header/items atomically, blocks duplicate pig IDs, and writes nothing to Google Sheets.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 15 tests, local missing-config route smoke returned safe `503`, and full local unittest suite passed at 184 tests.
 - Phase 10.2K1/10.2K2 deployed verification passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was created for `PIG-TEST-102K2-20260521`, read back through `GET /api/sales-transactions`, and duplicate-pig protection returned `409 duplicate_pig` on a second create attempt.
 - The synthetic test row remains in Supabase as a clear test transaction. It is not linked to a real pig/order.
-- No real `S10` transaction has been written.
+- At the 10.2K1/10.2K2 checkpoint, no real `S10` transaction had been written; this changed later after the create/cancel/payment path was proven.
 - Phase 10.2K3 cancellation/void flow implemented locally: `POST /api/sales-transactions/<sale_id>/cancel` requires `cancelled_by` and `cancel_reason`, marks `sale_status = Cancelled`, sets `payment_status = Cancelled`, appends an audit note, and never hard-deletes rows.
 - Local verification passed on 2026-05-21: focused sales transaction tests passed at 20 tests, local missing-config cancel route smoke returned safe `503`, and full local unittest suite passed at 191 tests.
 - Phase 10.2K3 deployed verification passed on 2026-05-21: synthetic transaction `SALE-2026-F17E16` was cancelled, duplicate release was proven by creating `SALE-2026-28EF1B` with the same synthetic pig ID, and the second synthetic transaction was also cancelled.
 - Final readback shows both synthetic slaughter transactions are cancelled.
-- No real `S10` transaction has been written.
+- At the 10.2K3 checkpoint, no real `S10` transaction had been written; this changed later after the form/payment path was proven.
 - Phase 10.2L internal slaughter sale form implemented locally at `/sales/slaughter`.
 - The form defaults to `JC Slaghuis`, `Bartelsfontein`, `Unpaid`, `Confirmed`, and `EFT`; it loads active pigs, creates slaughter transactions, shows recent slaughter transactions, and can cancel non-cancelled transaction rows.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused frontend/sales tests passed at 27 tests, local page smoke returned `200`, and full local unittest suite passed at 192 tests.
 - Phase 10.2L2 payment/final amount update implemented locally: `PATCH /api/sales-transactions/<sale_id>/payment` updates a non-cancelled slaughter transaction amount, payment status, sale status, payment method, optional carcass weight, and appends an audit note.
 - `/sales/slaughter` now has an `Update Payment` action for non-cancelled rows.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, focused sales/frontend tests passed at 23 tests, local missing-config update route smoke returned safe `503`, and full local unittest suite passed at 200 tests.
-- 10.2L2 real-value test is parked by owner decision on 2026-05-21 until the real JC Slaghuis sale value is known.
-- Do not treat this as blocked implementation work; return to it when the butcher payment/final amount is available.
-- Next step: continue with the next selected Phase 10 slice while keeping S10/payment completion as an owner-pending follow-up.
+- 10.2L2 real-value test was parked by owner decision on 2026-05-21 until the real JC Slaghuis sale value was known.
+- This follow-up was completed and verified on 2026-05-23 after the owner entered the actual payment/final amount.
+- Next step: continue with the selected Phase 10 telemetry/irrigation slices.
 - Phase 10.2L3 slaughter form UX polish implemented locally: added a top save action, transaction search, sale-status filter, payment-status filter, clear filters action, filtered transaction count, and clearer status pills.
 - 10.2L3 intentionally keeps the form single-pig only; multi-pig/batch slaughter remains a planned follow-up.
 - Local verification passed on 2026-05-21: `node --check static/js/slaughterSale.js`, frontend contract tests passed at 10 tests, local page smoke returned `200`, and full local unittest suite passed at 200 tests.
@@ -2673,7 +2673,7 @@ Recommendation:
 - 10.2L4E deployed page smoke passed: `/sales/slaughter` loaded and included the multi-pig row container and batch total UI.
 - Synthetic test pig IDs used: `PIG-TEST-L4E-A-20260521180640` and `PIG-TEST-L4E-B-20260521180640`; both synthetic transactions were cancelled.
 - Phase 10.2L4 closed on 2026-05-21 after deployed synthetic verification; manual UI owner smoke is optional, not a blocker.
-- S10 / real JC Slaghuis payment completion remains owner-pending until the real amount is known.
+- S10 / real JC Slaghuis payment completion was completed and verified on 2026-05-23. Sale `SALE-2026-1DE373` is `Completed` and `Paid`, final amount `R2892.94`, payment date `2026-05-23`, carcass weight `68 kg`, pig `PIG-2026-C390` / tag `S10`, buyer `JC Slaghuis`, destination `Bartelsfontein`. Focused sales transaction tests passed at 35 tests. This follow-up is closed for now.
 - Phase 10.3 telemetry review selected as the next Phase 10 slice.
 - Phase 10.3 working source created: `docs/02-backend/SUPABASE_TELEMETRY_PLAN.md`.
 - 10.3 plan scope: inventory weather, Sunsynk, forecast, irrigation, and alert data; design compact backend read models for Oom Sakkie and dashboard use; keep working weather stable; fix the slow Sunsynk path by moving toward backend/Supabase prepared payloads rather than more agent-over-sheet loops.

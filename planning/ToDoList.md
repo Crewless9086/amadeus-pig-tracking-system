@@ -33,3 +33,4 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Human alerts vs automation triggers note moved to `NEXT_STEPS.md` Phase 10.3M and `SUPABASE_TELEMETRY_PLAN.md`.
 
 Add new scratch bullets below, then move them into the correct canonical file.
+- Please note that the Sale data on the Dashboard dit not updated with the new slaughter sale that was updated, I's showing nothing in these field, why is this? It would be great if it could show the slaughter one as 1 sold for the price it was sold. AS we mentioned how we want to split these. 
