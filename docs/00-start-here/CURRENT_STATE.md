@@ -176,6 +176,7 @@ Current position:
 - Phase 9.1A is live-verified: real litters `LIT-2026-9E4A` and `LIT-2026-EB92` generated the expected piglet rows with `Purpose = Unknown`.
 - Phase 9.1B is deployed and browser-verified: dashboard litter attention reads `LITTER_OVERVIEW`, and litter tiles open the litter detail page.
 - Phase 9.1C is implemented locally: litter detail now shows attention metadata and provides a backend-owned `Mark as Weaned` action that updates `LITTERS` and linked active/on-farm `PIG_MASTER` piglets with the chosen wean date/count. Purpose/classification review remains a later slice.
+- Lifecycle automation direction is captured in `NEXT_STEPS.md`: future piglet death, post-weaning death, weaning, sales, slaughter, and meat-stream actions should update the correct source records/logs and feed sow/boar/litter/bloodline outcome reporting. Pre-weaning deaths must keep the pig row because they are part of born-alive survival history.
 - Phase 9.2A is deployed and owner-verified: pig dropdown APIs and labels now include current pen context and three-slot numeric tag display.
 - Phase 9.2B is deployed and owner-verified: `/pigs` now displays numeric-only tags as three digits, sorts the list with numeric-aware tag order, and keeps profile links on unchanged `pig_id` values.
 - Phase 9.3 is deployed and owner-verified: the weight form shows the selected pig's current pen beside `Moved To Pen (Optional)` without changing the save payload.

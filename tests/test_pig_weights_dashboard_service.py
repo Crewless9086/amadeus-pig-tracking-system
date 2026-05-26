@@ -14,6 +14,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
                 "Wean_Date": "",
                 "Litter_Status": "Active",
                 "Needs_Attention": "Yes",
+                "Attention_Reason": "Born alive count missing",
                 "Active_Pig_Count": "8",
                 "Weaned_Count": "",
                 "Youngest_Age_Days": "18",
@@ -44,9 +45,28 @@ class LitterAttentionSummaryTests(unittest.TestCase):
 
         self.assertEqual(result["count"], 2)
         self.assertEqual([item["litter_id"] for item in result["items"]], ["LIT-ATTN", "LIT-WEANED"])
-        self.assertEqual(result["items"][0]["reason"], "Needs attention")
+        self.assertEqual(result["items"][0]["reason"], "Born alive count missing")
         self.assertEqual(result["items"][1]["reason"], "Weaned - review purpose")
         self.assertEqual(result["items"][1]["wean_date"], "2026-05-19")
+
+    def test_litter_attention_reason_falls_back_to_litter_counts(self):
+        rows = [
+            {
+                "Litter_ID": "LIT-MISSING-PIGS",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Total_Born": "7",
+                "Born_Alive": "6",
+                "Pig_Master_Row_Count": "5",
+                "Tagged_Pig_Count": "5",
+                "Active_Pig_Count": "5",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=rows):
+            result = pig_weights_service.get_litter_attention_summary()
+
+        self.assertEqual(result["items"][0]["reason"], "Linked pig records do not match born alive count")
 
     def test_litter_attention_limits_returned_items_but_keeps_total_count(self):
         rows = [

@@ -233,7 +233,7 @@ def get_litter_attention_summary(limit: int = 5):
 
         reason = ""
         if needs_attention == "Yes":
-            reason = "Needs attention"
+            reason = _litter_attention_reason(row)
         elif litter_status == "Weaned" and active_pig_count > 0:
             reason = "Weaned - review purpose"
 
@@ -260,6 +260,25 @@ def get_litter_attention_summary(limit: int = 5):
     }
 
 
+def _litter_attention_reason(row):
+    explicit_reason = to_clean_string(row.get("Attention_Reason", ""))
+    if explicit_reason:
+        return explicit_reason
+
+    total_born = to_float(row.get("Total_Born", ""))
+    born_alive = to_float(row.get("Born_Alive", ""))
+    pig_master_count = to_float(row.get("Pig_Master_Row_Count", ""))
+    tagged_count = to_float(row.get("Tagged_Pig_Count", ""))
+
+    if born_alive is None and total_born is not None:
+        return "Born alive count missing"
+    if born_alive is not None and pig_master_count is not None and pig_master_count != born_alive:
+        return "Linked pig records do not match born alive count"
+    if pig_master_count and tagged_count == 0:
+        return "Piglets need tag numbers"
+    return "Needs attention"
+
+
 def _build_litter_attention(row):
     needs_attention = to_clean_string(row.get("Needs_Attention", ""))
     litter_status = to_clean_string(row.get("Litter_Status", ""))
@@ -270,7 +289,7 @@ def _build_litter_attention(row):
     action_type = ""
 
     if needs_attention == "Yes":
-        reason = "Needs attention"
+        reason = _litter_attention_reason(row)
         recommended_action = "Review this litter and mark it as weaned once the weaning count/date are confirmed."
         action_type = "review_or_wean"
     elif litter_status == "Weaned" and active_pig_count > 0:

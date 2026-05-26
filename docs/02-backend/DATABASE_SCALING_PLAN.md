@@ -48,6 +48,28 @@ The first migration should focus on sales/order transaction data only:
 
 Do not include full piggery records in the first migration unless a separate stability problem appears. Pig records, weight logs, mating records, and stock availability can stay in Sheets for the first database phase.
 
+## Later Boundary: Pig, Litter, And Breeding Lifecycle
+
+Pig, litter, and breeding data must migrate as a separate deliberate boundary after the first order/sales migration.
+
+Rules to preserve when this boundary is designed:
+
+- `total_born` means every piglet delivered by the sow, alive or not.
+- `born_alive` means piglets alive at birth and should normally correspond to individual pig records.
+- `stillborn_count` and `mummified_count` are litter outcome metrics and should not require live pig records.
+- Piglets that die after live birth and before weaning must keep their pig record, with death/exit date and reason captured as lifecycle data.
+- Pigs that die after weaning must also keep their pig record, with death/exit date and reason captured for growth, survival, and bloodline reporting.
+- `weaned_count` is an outcome count, not the expected number of pig records.
+- Litter attention checks should compare generated/live pig records to `born_alive`, not `total_born`.
+- Future parent/bloodline analytics should derive survival, weaning, sold, slaughtered, meat-stream, slow-growth, fast-growth, and retained-breeding outcomes from pig lifecycle events.
+
+Likely future data shape:
+
+- pig master/current state table
+- pig lifecycle event log for born, died, weaned, sold, slaughtered, off-farm, and retained/classified events
+- litter table for birth facts and historical litter-level counts
+- derived litter/parent/bloodline views for operator reporting
+
 ## Later Boundary: Farm Telemetry
 
 Sunsynk/power and weather telemetry should be treated as a separate migration boundary from the first order-data migration.

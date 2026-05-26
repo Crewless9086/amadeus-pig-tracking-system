@@ -1976,6 +1976,7 @@ Questions to answer when planning:
 - What data do we already have reliably, and what needs to start being captured before the analytics can be trusted?
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
+- Owner note moved from scratch 2026-05-26: add clearer mating-level attention groups/reasons as well as litter-level attention. Matings and litters are intertwined, but they are not the same record; the app should make that distinction obvious and show what each mating or litter needs next.
 
 ## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now
 
@@ -1995,6 +1996,7 @@ Future direction:
 - Suggested classes should include breeding candidate, grow-out, sale, and later slaughter-ready/meat-stream eligibility.
 - Suggestions should explain the reason and remain operator-approved, not silently force purpose changes.
 - This ties into Phase 11 because multiple revenue streams need flexible pig allocation from weaning through sale/slaughter weight.
+- Owner direction 2026-05-26: the system should increasingly intertwine captured events instead of relying on duplicate manual updates. Mating -> litter -> generated piglets -> death/exits/weaning/sales/slaughter should flow through backend-owned actions that update the right source records and logs. The long-term goal is parent/litter/bloodline reporting that can show outcomes such as sold, slaughtered, died, finishers, meat stream, slow growers, fast growers, and retained breeding candidates for each sow/boar pairing.
 
 9.1A verification state:
 
@@ -2039,6 +2041,20 @@ Implementation state 2026-05-26:
 - Sold/off-farm piglets are excluded from the active weaning count.
 - Purpose/classification changes are not automatic yet; weaned litters with active piglets remain a future `review_purpose` workflow.
 - Local verification passed: focused litter service tests, dashboard service tests, frontend route contract tests, and `node --check static/js/litterDetail.js`.
+
+Lifecycle automation planning note:
+
+- Future piglet death action should be available from the easiest user context, either pig profile/list or litter detail.
+- Piglets that die after live birth and before weaning should still have `PIG_MASTER` rows because they were part of `born_alive`. Marking a piglet as died should update `PIG_MASTER` status/on-farm/exit fields, log the date/reason, and let `LITTER_OVERVIEW` recalculate survival and active counts.
+- Piglets or pigs that die after weaning are also important records and should keep their pig row with the correct death/exit date and reason so growth, survival, parent, and bloodline analytics remain honest.
+- Weaning should update litter-level historical fields and linked active piglet fields, without overwriting sold/dead/off-farm history.
+- Completed sales/order pickup should mark linked pigs as no longer on farm, set the correct exit reason/order link, and feed parent/litter performance reporting.
+- Slaughter/meat sales should similarly connect the sales transaction, pig exit state, carcass/weight fields where known, and future revenue-stream analytics.
+- These workflows should become backend-owned actions, not manual edits across multiple sheets.
+- Parent and bloodline analytics should be based on these lifecycle events so each sow/boar can be evaluated by fertility, litter size, survival, growth, sale/slaughter/meat outcomes, retained breeding candidates, and profitability.
+- Supabase migration rule: litter attention and row-count checks must distinguish `total_born` from `born_alive`. Stillborn and mummified piglets count in litter outcome metrics, but they should not require live pig rows in the pig master table. Missing-pig attention should compare generated/live pig records to `born_alive`, not `total_born`.
+- Supabase migration rule: model pig lifecycle/death events explicitly. Pre-weaning death and post-weaning death are both valuable outcomes. Keep the pig record, store death/exit date and reason, and derive litter survival, weaned count checks, sow/boar performance, and bloodline metrics from those events.
+- Sheet improvement: add `LITTER_OVERVIEW.Attention_Reason` at the end of the table so the dashboard and operator can see what is missing, for example born-alive count missing, linked pig records do not match born-alive count, or piglets need tag numbers. Add it at the end rather than between existing columns to avoid shifting current references.
 
 Questions to answer when planning:
 
