@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W2 Applied | Next: 10.3W3 plan-only daily rollup generator; no schedules or sheet cleanup yet. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified | Next: choose the next Phase 10 slice deliberately. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2022,6 +2022,7 @@ Future direction:
 
 - Source notes moved from `planning/ToDoList.md`.
 - Review how `LITTER_OVERVIEW.Needs_Attention` is calculated and make the reason visible to the user. If a litter tile says it needs attention, the app should explain what action is needed.
+- Owner note 2026-05-26: litter attention currently opens the litter detail page, but the detail view does not give the operator a clear action to resolve the attention item. Plan the next slice so each attention reason has an obvious action path, for example mark weaned, review purpose/classification, update piglet state, or dismiss/resolve when no action is needed.
 - Clarify when litter-level tracking should stop or change after weaning. Litter data should remain useful historically, but post-weaning growth and outcomes should move to individual pig records where appropriate.
 - Add a litter tile/detail action to mark a litter as weaned.
 - Marking a litter as weaned should ask for the weaning date.
@@ -2303,6 +2304,7 @@ Implementation state:
 
 - Owner note: the three stream cards are useful as a start, but the sales/income streams need clearer planning later.
 - Current month can show `0` if no livestock/meat exits were logged; the known slaughter item was not logged yet, so it cannot be counted until the exit/sale event exists in the data.
+- Owner note 2026-05-26: the dashboard still showed `0` for slaughter even after a slaughter sale/update was entered. Investigate whether the slaughter sale was saved as a Supabase `sales_transactions` row, whether it has the correct `sale_stream = Slaughter`, status/payment fields, date, item rows, and whether the dashboard summary is reading that transaction source instead of only old pig-exit counts. Desired behavior: show one slaughter sale and its Rand value once the transaction source is defined and trusted.
 - Future dashboard should separate:
   - `Sales count`: number of sale transactions per stream.
   - `Item/pig count`: number of pigs/items sold per stream.
@@ -3581,15 +3583,28 @@ Schedule:
 
 Next implementation direction:
 
-- Deploy the backend repo containing the script.
-- Add a Render cron job for the daily rollup command.
-- After the first live scheduled run, verify with `/api/telemetry/rollups/daily?date=YYYY-MM-DD`.
+- Backend repo containing the script was deployed by owner on 2026-05-25.
+- Render cron `amadeus-telemetry-daily-rollups` was created by owner on 2026-05-25 and built successfully.
+- Command: `python scripts/telemetry_daily_rollup_plan.py --previous-day --apply`.
+- Schedule shown by Render: `10:15 PM UTC`, which is `00:15 Africa/Johannesburg`.
+- There is no `render.yaml` / Render Blueprint in this repo, so the live cron is dashboard-managed unless Render API credentials or an infrastructure-as-code path is provided.
+- First scheduled run verified on 2026-05-26 with `/api/telemetry/rollups/daily?date=2026-05-25`.
+- Result: `success = true`, `status = ok`, all three rollups found, no Supabase writes from the read endpoint.
+- Power: stored/current `288/288`, coverage `100%`, quality `complete`.
+- Weather: stored/current `287/288`, coverage `99.65%`, quality `complete`.
+- Irrigation: stored/current `0` events and `0` plan items, both matched.
 
 Farm home/dashboard idea:
 
 - Source note moved from `planning/ToDoList.md`.
 - After login, the web app should eventually open on a useful farm home page that brings the wider operating system together.
 - Desired first-viewport signals: current weather, short forecast, power/solar state, and navigation into pig system, weather, power, irrigation, orders, and other modules as they mature.
+- Owner note 2026-05-26: the home page should use the wider desktop screen properly. The current app often feels squeezed into a centered block because the shared `.page-card` layout is capped around `960px`; the farm home should use a wider operational canvas with dense, readable panels instead of a narrow center column.
+- Template rule logged 2026-05-26:
+  - Use the existing narrow centered `page-card` pattern for forms, focused detail screens, and simple CRUD pages.
+  - Use the wider `ops-shell` / `ops-dashboard` pattern for operating dashboards, status boards, reporting overviews, and cross-module pages.
+  - Wide operational pages should target roughly `1500px` to `1680px` of desktop canvas, use responsive grid panels, avoid nested cards, and keep information dense enough for daily farm scanning.
+  - Do not redesign each page separately; build future high-level pages from the same operational-dashboard conventions unless a page has a clear reason to stay form-like.
 - The page may include farm photos as a quiet rotating background/screensaver element, but operational information must remain readable and useful.
 - Treat this as an operating dashboard, not a marketing landing page.
 - This belongs in Phase 10 because it depends on weather, solar, irrigation, pig records, and order modules having stable documented contracts.
@@ -3597,6 +3612,15 @@ Farm home/dashboard idea:
 - Mobile/PWA note moved from `planning/ToDoList.md`: investigate whether the app should support installable mobile behavior, for example a Progressive Web App pattern, so phone use feels closer to an app while still running through the browser.
 - UX rule: do not redesign every page separately. Establish shared layout conventions for page width, filters, tabs, tables, action placement, mobile behavior, and desktop density.
 - Shared template/layout follow-up moved from `planning/ToDoList.md`: define a reusable page template for new pages so forms, tables, filters, action buttons, and page width stay consistent.
+- 2026-05-26 local implementation result:
+  - Replaced the `/` dashboard with a read-only wide `ops-shell` / `ops-dashboard` layout.
+  - First slice uses existing endpoints only: weather current/today/forecast, power current, irrigation status, daily rollup compare, pig-weight dashboard, and daily order summary.
+  - Added wide dashboard CSS with responsive desktop/mobile grids while leaving existing narrow form/detail pages on `page-card`.
+  - Added frontend route contract coverage for the wide dashboard template and read-only API usage.
+  - Local checks passed: frontend route contract tests, dashboard/rollup service tests, JS syntax check, Flask route smoke through the project virtualenv, and browser-serving smoke at `http://127.0.0.1:5000/`.
+  - Owner desktop browser review 2026-05-26: layout direction accepted and data now loads after replacing stale local server processes on port `5000`.
+  - Minor polish note: improve tight metric wrapping where values such as rollup quality `complete` can split across two lines; then do a final desktop/mobile review before deploy.
+  - 2026-05-26 polish applied: compact metric cards now auto-fit to avoid cramped four-column tiles in narrow panels, metric values no longer split words mid-word, machine labels such as `not_using_grid`, `google_sheets`, and `complete` display as human-readable text, and the dashboard script has a refreshed cache-buster.
 
 Slaughter form refinement notes:
 
@@ -3604,6 +3628,7 @@ Slaughter form refinement notes:
 - The save action should be easier to reach without unnecessary scrolling, likely by adding a top action row or sticky action behavior consistent with the weight form.
 - The bottom transaction table should use the agreed table layout pattern with filters and clearer spacing.
 - The slaughter form needs a planned multi-pig workflow because more than one pig may go to slaughter at a time.
+- Owner note 2026-05-26: the slaughter update action currently opens in a browser/Google-style prompt that is awkward to use. Preferred direction is an in-app update form/modal/panel that exposes the required fields clearly before saving, especially final amount, payment status, payment date, carcass weight, and notes.
 - Multi-pig planning needs to decide whether each pig has its own amount/weight line or whether the batch has one total with per-pig item details.
 - Payment date is separate from slaughter date and should be captured once the butcher pays.
 - The real amount may arrive later than slaughter date, so payment/final amount update needs a payment date field before financial reporting.
@@ -3620,6 +3645,7 @@ Questions to answer when planning:
 - For `/sales/slaughter`, should the next refinement be UX/table polish first, or multi-pig batch entry first?
 - For slaughter batches, should amount be captured per pig, as one batch total split across pigs, or both?
 - Should payment date be required only when `payment_status = Paid`, or optional for all payment updates?
+- Should the slaughter payment/final-amount update be a modal, inline expandable row, or separate edit page?
 
 ## Phase 11: Pork Sales Business Module - Discovery Source Captured
 

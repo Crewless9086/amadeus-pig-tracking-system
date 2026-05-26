@@ -1,28 +1,32 @@
 const dashboardMessage = document.getElementById("dashboard_message");
-const dashboardSummary = document.getElementById("dashboard_summary");
+const dashboardTimestamp = document.getElementById("dashboard_timestamp");
+
+const state = {
+  weatherCurrent: null,
+  weatherToday: null,
+  forecast: null,
+  powerCurrent: null,
+  irrigation: null,
+  rollup: null,
+  farm: null,
+  orders: null,
+};
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function setText(id, value) {
+  const element = byId(id);
+  if (element) {
+    element.textContent = value ?? "--";
+  }
+}
 
 function showDashboardMessage(message, type = "error") {
   dashboardMessage.classList.remove("hidden", "message-success", "message-error");
   dashboardMessage.classList.add(type === "success" ? "message-success" : "message-error");
   dashboardMessage.textContent = message;
-}
-
-function renderSummaryCard(label, value) {
-  return `
-    <div class="detail-card">
-      <span class="detail-label">${label}</span>
-      <span class="detail-value">${value}</span>
-    </div>
-  `;
-}
-
-function renderBreakdownCard(label, value) {
-  return `
-    <div class="breakdown-card">
-      <span class="detail-label">${label}</span>
-      <span class="breakdown-value">${value}</span>
-    </div>
-  `;
 }
 
 function escapeHtml(value) {
@@ -34,103 +38,264 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-function formatOptional(value, fallback = "-") {
-  return value !== null && value !== undefined && value !== "" ? escapeHtml(value) : fallback;
+function numberOrDash(value, suffix = "") {
+  if (value === null || value === undefined || value === "") return "--";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return escapeHtml(value);
+  return `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
 }
 
-function renderLitterAttention(attention) {
-  const items = attention?.items || [];
-  const count = Number(attention?.count || 0);
+function displayLabel(value, fallback = "--") {
+  if (value === null || value === undefined || value === "") return fallback;
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, char => char.toUpperCase());
+}
 
-  if (!count) {
-    return `
-      <p class="section-heading">Litter Attention</p>
-      <div class="empty-state" style="margin-bottom: 28px;">
-        <strong>No litter reminders</strong>
-        <span>No litters are currently flagged for attention.</span>
-      </div>
-    `;
+function kw(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  return `${(Number(value) / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} kW`;
+}
+
+function pct(value) {
+  return numberOrDash(value, "%");
+}
+
+function mm(value) {
+  return numberOrDash(value, " mm");
+}
+
+function kmh(value) {
+  return numberOrDash(value, " km/h");
+}
+
+function minutesAge(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return "No age";
+  if (minutes < 1) return "Now";
+  if (minutes === 1) return "1 min";
+  return `${minutes} min`;
+}
+
+function localISODate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function todayISO() {
+  return localISODate(new Date());
+}
+
+function yesterdayISO() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return localISODate(date);
+}
+
+function formatDateLabel(value) {
+  if (!value) return "--";
+  const date = new Date(`${value}T00:00:00`);
+  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Expected JSON from ${url}, got HTTP ${response.status}. Restart the local Flask server if this is a local review.`);
   }
+  const data = await response.json();
+  if (!response.ok || data.success === false) {
+    const message = data.message || data.errors?.[0] || `Request failed: ${url}`;
+    throw new Error(message);
+  }
+  return data;
+}
 
-  const cards = items.map(item => `
-    <a href="/litter/${encodeURIComponent(item.litter_id)}" class="pig-list-card">
-      <div class="pig-list-top">
-        <div class="pig-list-tag">${escapeHtml(item.litter_id)}</div>
-        <div class="pig-list-action">Open Litter</div>
-      </div>
-      <div class="pig-list-meta">${escapeHtml(item.reason || "Review litter")}</div>
-      <div class="pig-list-submeta">
-        Sow ${formatOptional(item.sow_tag_number)} • ${formatOptional(item.litter_status)} • Active ${formatOptional(item.active_pig_count, "0")}
-      </div>
-      <div class="sales-meta-grid">
-        <div><span class="history-label">Farrowed</span><span class="history-value">${formatOptional(item.farrowing_date)}</span></div>
-        <div><span class="history-label">Weaned</span><span class="history-value">${formatOptional(item.wean_date)}</span></div>
-        <div><span class="history-label">Age Range</span><span class="history-value">${formatOptional(item.youngest_age_days)}-${formatOptional(item.oldest_age_days)} days</span></div>
-        <div><span class="history-label">Weaned Count</span><span class="history-value">${formatOptional(item.weaned_count)}</span></div>
-      </div>
-    </a>
-  `).join("");
+function renderError(panelId, message) {
+  const panel = byId(panelId);
+  if (!panel) return;
+  panel.classList.add("ops-panel-warning");
+  const warning = document.createElement("p");
+  warning.className = "ops-error-text";
+  warning.textContent = message;
+  panel.appendChild(warning);
+}
 
-  const moreText = count > items.length
-    ? `<p style="margin: 8px 0 28px 0; color: var(--text-soft);">${count - items.length} more litter reminder(s) not shown.</p>`
-    : `<div style="margin-bottom: 28px;"></div>`;
+function renderWeather() {
+  const current = state.weatherCurrent || {};
+  const weather = current.current || {};
+  const source = current.source || {};
+  const summary = current.summary || {};
 
-  return `
-    <p class="section-heading">Litter Attention</p>
-    <div class="pig-list-grid">
-      ${cards}
-    </div>
-    ${moreText}
-  `;
+  setText("weather_temperature", `${numberOrDash(weather.temperature_c)} C`);
+  setText("weather_headline", summary.headline || "Current weather loaded.");
+  setText("weather_age", minutesAge(source.data_age_minutes));
+  setText("weather_humidity", pct(weather.humidity_pct));
+  setText("weather_wind", `${kmh(weather.wind_speed_kmh)} / gust ${kmh(weather.wind_gust_kmh)}`);
+  setText("weather_rain", mm(weather.rain_today_mm));
+  setText("weather_pressure", `${numberOrDash(weather.pressure_hpa)} hPa`);
+  setText("alert_weather", summary.status === "ok" ? "Clear" : (summary.status || "Review"));
+
+  const today = state.weatherToday || {};
+  setText("today_temperature", `${numberOrDash(today.temperature?.min_c)} - ${numberOrDash(today.temperature?.max_c)} C`);
+  setText("today_rain", mm(today.rain?.total_mm));
+  setText("today_wind", kmh(today.wind?.max_speed_kmh));
+  setText("today_coverage", pct(today.window?.coverage_pct));
+
+  const forecast = state.forecast?.days || [];
+  const forecastStrip = byId("forecast_strip");
+  forecastStrip.innerHTML = forecast.length
+    ? forecast.map(day => `
+      <div class="forecast-day">
+        <span>${escapeHtml(formatDateLabel(day.forecast_date))}</span>
+        <strong>${numberOrDash(day.temp_min_c)} - ${numberOrDash(day.temp_max_c)} C</strong>
+        <small>${mm(day.rain_sum_mm)} rain</small>
+      </div>
+    `).join("")
+    : `<div class="ops-empty-inline">No forecast loaded.</div>`;
+}
+
+function renderPower() {
+  const current = state.powerCurrent || {};
+  const power = current.current || {};
+  const source = current.source || {};
+  const summary = current.summary || {};
+  const rollup = state.rollup?.stored_rollups?.power || {};
+
+  setText("power_battery", pct(power.battery_soc_pct));
+  setText("power_headline", summary.headline || "Power data loaded.");
+  setText("power_age", minutesAge(source.data_age_minutes));
+  setText("power_solar", kw(power.solar_power_w));
+  setText("power_load", kw(power.load_power_w));
+  setText("power_grid", power.grid_state ? displayLabel(power.grid_state) : kw(power.grid_power_w));
+  setText("power_generator", power.generator_state ? displayLabel(power.generator_state) : kw(power.generator_power_w));
+  setText("alert_power", summary.status === "ok" ? "Normal" : (summary.status || "Review"));
+
+  setText("rollup_load_kwh", numberOrDash(rollup.estimated_load_kwh, " kWh"));
+  setText("rollup_solar_kwh", numberOrDash(rollup.estimated_solar_kwh, " kWh"));
+  setText("rollup_value", rollup.estimated_value_zar === undefined ? "--" : `R${numberOrDash(rollup.estimated_value_zar)}`);
+  setText("rollup_power_quality", displayLabel(rollup.quality));
+}
+
+function renderIrrigation() {
+  const irrigation = state.irrigation || {};
+  const current = irrigation.current || {};
+  const today = irrigation.today || {};
+  const notes = irrigation.operator_summary?.notes || [];
+
+  setText("irrigation_status", current.status || "--");
+  setText("irrigation_note", notes[0] || "Read-only irrigation status loaded.");
+  setText("irrigation_source", displayLabel(irrigation.source?.source, "source"));
+  setText("irrigation_current_zone", current.zone_name || current.zone_id || "--");
+  setText("irrigation_next_zone", today.next_zone_name || today.next_zone_id || "--");
+  setText("irrigation_planned", numberOrDash(today.planned_count));
+  setText("irrigation_completed", numberOrDash(today.done_count));
+  setText("alert_irrigation", displayLabel(current.status, "Review"));
+
+  const plan = today.plan || [];
+  byId("irrigation_plan_list").innerHTML = plan.length
+    ? plan.slice(0, 4).map(item => `
+      <div class="ops-list-row">
+        <strong>${escapeHtml(item.zone_name || item.zone_id || "Zone")}</strong>
+        <span>${escapeHtml(displayLabel(item.status))} - ${numberOrDash(item.planned_minutes, " min")}</span>
+      </div>
+    `).join("")
+    : `<div class="ops-empty-inline">No plan rows for today.</div>`;
+}
+
+function renderFarmSummary() {
+  const summary = state.farm?.summary || {};
+  setText("herd_total", numberOrDash(summary.on_farm_pigs));
+  setText("herd_sows", numberOrDash(summary.sows));
+  setText("herd_boars", numberOrDash(summary.boars));
+  setText("herd_weaners", numberOrDash(summary.weaners));
+  setText("herd_finishers", numberOrDash(summary.finishers));
+  setText("sales_available", numberOrDash(summary.available_for_sale_pigs));
+  setText("sales_reserved", numberOrDash(summary.reserved_pigs));
+  setText("sales_livestock", numberOrDash(summary.livestock_sold_this_month ?? 0));
+  setText("sales_slaughter", numberOrDash(summary.slaughter_sold_this_month ?? 0));
+  setText("sales_meat", numberOrDash(summary.meat_sold_this_month ?? 0));
+
+  const litterItems = state.farm?.litter_attention?.items || [];
+  byId("litter_attention_list").innerHTML = litterItems.length
+    ? litterItems.slice(0, 4).map(item => `
+      <a class="ops-list-row ops-list-link" href="/litter/${encodeURIComponent(item.litter_id)}">
+        <strong>${escapeHtml(item.litter_id)}</strong>
+        <span>${escapeHtml(item.reason || "Review")} - Sow ${escapeHtml(item.sow_tag_number || "--")}</span>
+      </a>
+    `).join("")
+    : `<div class="ops-empty-inline">No litter reminders.</div>`;
+}
+
+function renderOrders() {
+  const counts = state.orders?.counts || {};
+  const items = state.orders?.sections?.orders_needing_attention || [];
+
+  setText("orders_attention", numberOrDash(counts.orders_needing_attention || 0));
+  setText("orders_pending", numberOrDash(counts.pending_approval || 0));
+  setText("orders_approved", numberOrDash(counts.approved || 0));
+  setText("orders_drafts", numberOrDash(counts.new_drafts || 0));
+  setText("alert_orders", (counts.orders_needing_attention || 0) > 0 ? `${counts.orders_needing_attention} review` : "Clear");
+
+  byId("orders_attention_list").innerHTML = items.length
+    ? items.slice(0, 4).map(item => `
+      <a class="ops-list-row ops-list-link" href="/orders/${encodeURIComponent(item.order_id)}">
+        <strong>${escapeHtml(item.order_id)}</strong>
+        <span>${escapeHtml(item.customer_name || "Customer")} - ${escapeHtml((item.reasons || []).join(", ") || "Review")}</span>
+      </a>
+    `).join("")
+    : `<div class="ops-empty-inline">No order attention items.</div>`;
+}
+
+function renderTimestamp() {
+  dashboardTimestamp.textContent = `Updated ${new Date().toLocaleString()}`;
 }
 
 async function loadDashboard() {
-  try {
-    const response = await fetch("/api/pig-weights/dashboard");
-    const data = await response.json();
+  const yesterday = yesterdayISO();
+  const today = todayISO();
+  const requests = [
+    ["weatherCurrent", "/api/telemetry/weather/current", "weather_panel"],
+    ["weatherToday", `/api/telemetry/weather/today?date=${today}`, "weather_panel"],
+    ["forecast", "/api/telemetry/weather/forecast?days=3", "weather_panel"],
+    ["powerCurrent", "/api/telemetry/power/current", "power_panel"],
+    ["irrigation", `/api/telemetry/irrigation/status?date=${today}`, "irrigation_panel"],
+    ["rollup", `/api/telemetry/rollups/daily?date=${yesterday}`, "power_panel"],
+    ["farm", "/api/pig-weights/dashboard", "herd_panel"],
+    ["orders", `/api/reports/daily-summary?date=${today}`, "orders_panel"],
+  ];
 
-    if (!response.ok || !data.success) {
-      showDashboardMessage("Could not load dashboard summary.", "error");
-      return;
+  const results = await Promise.allSettled(requests.map(([key, url]) => fetchJson(url).then(data => [key, data])));
+  let failures = 0;
+
+  results.forEach((result, index) => {
+    const [key, , panelId] = requests[index];
+    if (result.status === "fulfilled") {
+      state[result.value[0]] = result.value[1];
+    } else {
+      failures += 1;
+      renderError(panelId, result.reason.message);
+      state[key] = null;
     }
+  });
 
-    const summary = data.summary;
-    const litterAttention = data.litter_attention;
+  renderTimestamp();
+  renderWeather();
+  renderPower();
+  renderIrrigation();
+  renderFarmSummary();
+  renderOrders();
 
-    dashboardSummary.innerHTML = `
-      <p class="section-heading">Herd</p>
-      <div class="detail-grid" style="margin-bottom: 10px;">
-        <div class="detail-card detail-card-wide">
-          <span class="detail-label">On Farm</span>
-          <span class="detail-value">${summary.on_farm_pigs}</span>
-        </div>
-      </div>
-      <div class="breakdown-grid" style="margin-bottom: 28px;">
-        ${renderBreakdownCard("Boars", summary.boars)}
-        ${renderBreakdownCard("Sows", summary.sows)}
-        ${renderBreakdownCard("Gilts", summary.gilts)}
-        ${renderBreakdownCard("Piglets", summary.piglets)}
-        ${renderBreakdownCard("Weaners", summary.weaners)}
-        ${renderBreakdownCard("Growers", summary.growers)}
-        ${renderBreakdownCard("Finishers", summary.finishers)}
-      </div>
-
-      ${renderLitterAttention(litterAttention)}
-
-      <p class="section-heading">Sales</p>
-      <div class="detail-grid">
-        ${renderSummaryCard("Available For Sale", summary.available_for_sale_pigs)}
-        ${renderSummaryCard("Reserved", summary.reserved_pigs)}
-        ${renderSummaryCard("Withdrawal Hold", summary.withdrawal_hold_pigs)}
-        ${renderSummaryCard("Sales Exits This Month", summary.sold_this_month)}
-        ${renderSummaryCard("Livestock Exits", summary.livestock_sold_this_month ?? 0)}
-        ${renderSummaryCard("Slaughter Exits", summary.slaughter_sold_this_month ?? 0)}
-        ${renderSummaryCard("Meat Exits", summary.meat_sold_this_month ?? 0)}
-      </div>
-    `;
-  } catch (error) {
-    showDashboardMessage("Something went wrong while loading the dashboard.", "error");
+  if (failures) {
+    showDashboardMessage(`${failures} dashboard section(s) could not load.`, "error");
   }
 }
 
-loadDashboard();
+loadDashboard().catch(() => {
+  showDashboardMessage("Something went wrong while loading the dashboard.", "error");
+});

@@ -11,10 +11,10 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.2L4 complete and deployed-verified; Phase 10.3A inventory complete; 10.3B agreed; 10.3C applied and verified; 10.3D/10.3E deployed-verified; 10.3F deployed and verified; 10.3G live-verified; 10.3H deployed-verified; 10.3I live-verified; 10.3J1 contract drafted; 10.3J2 deployed-verified; 10.3J3 logger-verified; 10.3J4 live-verified; 10.3K live-verified; 10.3L planned; 10.3L2 deployed dry-run verified; 10.3L2 audit apply verified; 10.3L4 local export built |
-| **Current focus** | Import `ALERT - Weather Backend Delivery` inactive and run manual dry-run/audit-test checks |
-| **Current last verified** | **2026-05-22** - Oom Sakkie weather today summary returns readings, coverage, temperature range, humidity, rain, wind, and measurement window from backend/Supabase weather data |
-| **Last verified** | **2026-05-09** — §1.8 approval auto-reservation live checks |
+| **Status** | Phase 9 parked for now; Phase 10.3 weather, power, irrigation, alerts, Supabase status paths, irrigation import/sync, and telemetry rollup work complete through 10.3W8. Render cron `amadeus-telemetry-daily-rollups` is created and first scheduled run is verified. |
+| **Current focus** | Final desktop/mobile review of the polished wide farm home/dashboard at `http://127.0.0.1:5000/`, then deploy if accepted. |
+| **Current last verified** | **2026-05-26** - 10.3W8 first scheduled Render cron run wrote `2026-05-25` rollups; power `288/288`, weather `287/288`, irrigation `0/0`, and stored/current counts matched. |
+| **Last verified** | **2026-05-26** - Phase 10.3W8 scheduled daily telemetry rollup verified. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
 

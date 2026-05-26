@@ -3064,5 +3064,11 @@ Verification:
 
 Next:
 
-- Add this as a Render cron only after the backend repo with this script is deployed to the cron environment.
-- First live cron run should be checked through `GET /api/telemetry/rollups/daily?date=YYYY-MM-DD`.
+- Backend repo containing this script was deployed by owner on 2026-05-25.
+- Render cron `amadeus-telemetry-daily-rollups` was created by owner on 2026-05-25 and built successfully.
+- The cron runs `python scripts/telemetry_daily_rollup_plan.py --previous-day --apply`.
+- Render displays the schedule as `10:15 PM UTC`, which is `00:15 Africa/Johannesburg`.
+- No `render.yaml` / Render Blueprint is present in this repo, so the cron is dashboard-managed unless Render API credentials or an infrastructure-as-code path is provided.
+- First live cron run verified on 2026-05-26 through `GET /api/telemetry/rollups/daily?date=2026-05-25`.
+- Verification result: `success = true`, `status = ok`, all three rollups found, power stored/current `288/288`, weather stored/current `287/288`, irrigation stored/current `0/0`.
+- Power kWh/Rand values remain estimated until confirmed Sunsynk energy counters are available.

@@ -2095,10 +2095,48 @@ Render cron command:
 python scripts/telemetry_daily_rollup_plan.py --previous-day --apply
 ```
 
+Required environment:
+
+- `DATABASE_URL` must be configured on the cron job, using the same Supabase database connection as the deployed backend.
+- The cron job must install `requirements.txt` so `psycopg[binary]` is available.
+
 Schedule:
 
 - `00:15` Africa/Johannesburg.
 - UTC-only equivalent: `22:15` UTC.
+
+### Phase 10.3W8 - Render Cron Setup And First Scheduled Verification
+
+Checks:
+
+1. [Done 2026-05-25] Backend repo containing `scripts/telemetry_daily_rollup_plan.py` was deployed by owner.
+2. [Done 2026-05-25] Render cron `amadeus-telemetry-daily-rollups` was created and built successfully.
+3. [Done 2026-05-26] After the first scheduled run, verified the previous day's rollup with `GET /api/telemetry/rollups/daily?date=2026-05-25`.
+4. [Done 2026-05-26] Stored/current counts matched: power `288/288`, weather `287/288`, irrigation `0/0`.
+
+Result:
+
+- Response returned `success = true`, `status = ok`, and `date = 2026-05-25`.
+- Power rollup found: coverage `100%`, quality `complete`.
+- Weather rollup found: coverage `99.65%`, quality `complete`.
+- Irrigation rollup found: no events or plan items for the day, and counts matched.
+- Operator note remains: power kWh/Rand values are estimated, not confirmed meter totals.
+
+Render cron command:
+
+```bash
+python scripts/telemetry_daily_rollup_plan.py --previous-day --apply
+```
+
+Schedule:
+
+- `00:15` Africa/Johannesburg.
+- UTC-only equivalent: `15 22 * * *`.
+- Render displays this as `10:15 PM UTC`.
+
+Repo note:
+
+- No `render.yaml` / Render Blueprint is present, so this cron is currently dashboard-managed unless Render API credentials or an infrastructure-as-code path is provided.
 
 After any order change, inspect affected sheets/views:
 

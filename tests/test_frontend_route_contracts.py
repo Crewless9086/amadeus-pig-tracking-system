@@ -78,15 +78,34 @@ class FrontendRouteContractTests(unittest.TestCase):
 
     def test_dashboard_labels_monthly_sales_as_exits_not_income(self):
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
+        template = Path("templates/dashboard.html").read_text(encoding="utf-8")
 
-        self.assertIn("Sales Exits This Month", js)
-        self.assertIn("Livestock Exits", js)
-        self.assertIn("Slaughter Exits", js)
-        self.assertIn("Meat Exits", js)
+        self.assertIn("Monthly Exits", template)
+        self.assertIn("Livestock", template)
+        self.assertIn("Slaughter", template)
         self.assertNotIn('"Sales This Month"', js)
         self.assertIn("livestock_sold_this_month", js)
         self.assertIn("slaughter_sold_this_month", js)
         self.assertIn("meat_sold_this_month", js)
+
+    def test_dashboard_uses_wide_operational_template_and_existing_read_apis(self):
+        template = Path("templates/dashboard.html").read_text(encoding="utf-8")
+        js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+
+        self.assertIn('class="ops-shell"', template)
+        self.assertIn('class="ops-dashboard"', template)
+        self.assertIn("Farm Operating Dashboard", template)
+        self.assertIn("width: min(100%, 1640px)", css)
+        self.assertIn("/api/telemetry/weather/current", js)
+        self.assertIn("/api/telemetry/weather/today?date=", js)
+        self.assertIn("/api/telemetry/weather/forecast?days=3", js)
+        self.assertIn("/api/telemetry/power/current", js)
+        self.assertIn("/api/telemetry/irrigation/status?date=", js)
+        self.assertIn("/api/telemetry/rollups/daily?date=", js)
+        self.assertIn("/api/pig-weights/dashboard", js)
+        self.assertIn("/api/reports/daily-summary?date=", js)
+        self.assertNotIn('method: "POST"', js)
 
     def test_slaughter_sale_form_uses_supabase_sales_transaction_endpoints(self):
         template = Path("templates/slaughter-sale.html").read_text(encoding="utf-8")
