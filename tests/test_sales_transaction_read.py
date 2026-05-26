@@ -4,7 +4,10 @@ from datetime import datetime
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
-from modules.sales.sales_transaction_read import list_sales_transactions
+from modules.sales.sales_transaction_read import (
+    get_monthly_sales_transaction_summary,
+    list_sales_transactions,
+)
 
 
 class SalesTransactionReadTests(unittest.TestCase):
@@ -68,6 +71,55 @@ class SalesTransactionReadTests(unittest.TestCase):
         self.assertEqual(result["sales_transactions"][0]["sale_date"], "2026-05-21T10:00:00")
         self.assertFalse(result["source"]["writes_to_sheets"])
         self.assertFalse(result["source"]["writes_to_supabase"])
+        cursor.execute.assert_called_once()
+
+    def test_monthly_sales_transaction_summary_reports_missing_database_url(self):
+        with patch.dict(os.environ, {}, clear=True):
+            result, status_code = get_monthly_sales_transaction_summary("2026-05-26")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertFalse(result["configured"])
+        self.assertEqual(result["report_month"], "2026-05")
+        self.assertEqual(result["streams"]["slaughter"]["transaction_count"], 0)
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_monthly_sales_transaction_summary_returns_stream_counts_and_values(self):
+        cursor = Mock()
+        cursor.description = [
+            ("sale_stream",),
+            ("transaction_count",),
+            ("pig_count",),
+            ("gross_total",),
+            ("net_total",),
+            ("item_count",),
+        ]
+        cursor.fetchall.return_value = [
+            ("Slaughter", 1, 1, Decimal("2500.00"), Decimal("2400.00"), 1),
+            ("Livestock", 2, 5, Decimal("5000.00"), Decimal("5000.00"), 5),
+        ]
+        cursor_context = Mock()
+        cursor_context.__enter__ = Mock(return_value=cursor)
+        cursor_context.__exit__ = Mock(return_value=False)
+
+        connection = Mock()
+        connection.cursor.return_value = cursor_context
+        connection_context = Mock()
+        connection_context.__enter__ = Mock(return_value=connection)
+        connection_context.__exit__ = Mock(return_value=False)
+
+        psycopg = Mock(connect=Mock(return_value=connection_context))
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_monthly_sales_transaction_summary("2026-05-26")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["streams"]["slaughter"]["transaction_count"], 1)
+        self.assertEqual(result["streams"]["slaughter"]["net_total"], 2400.0)
+        self.assertEqual(result["streams"]["livestock"]["transaction_count"], 2)
+        self.assertEqual(result["totals"]["transaction_count"], 3)
+        self.assertEqual(result["totals"]["net_total"], 7400.0)
         cursor.execute.assert_called_once()
 
 

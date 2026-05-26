@@ -17,6 +17,7 @@ from modules.pig_weights.pig_weights_utils import (
     generate_litter_id,
 )
 from modules.pig_weights.mating_service import link_litter_to_mating
+from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 
 
 def _build_pig_lookup(rows, columns):
@@ -171,6 +172,12 @@ def get_dashboard_summary():
             sales_this_month[sale_stream] += 1
 
     sold_this_month = sum(sales_this_month.values())
+    transaction_summary, _transaction_status_code = get_monthly_sales_transaction_summary(now.date())
+    transaction_streams = transaction_summary.get("streams", {})
+    transaction_totals = transaction_summary.get("totals", {})
+    livestock_transactions = transaction_streams.get("livestock", {})
+    slaughter_transactions = transaction_streams.get("slaughter", {})
+    meat_transactions = transaction_streams.get("meat", {})
 
     return {
         "on_farm_pigs": on_farm_pigs,
@@ -185,6 +192,20 @@ def get_dashboard_summary():
         "livestock_sold_this_month": sales_this_month["livestock"],
         "slaughter_sold_this_month": sales_this_month["slaughter"],
         "meat_sold_this_month": sales_this_month["meat"],
+        "pig_exit_sold_this_month": sold_this_month,
+        "pig_exit_livestock_sold_this_month": sales_this_month["livestock"],
+        "pig_exit_slaughter_sold_this_month": sales_this_month["slaughter"],
+        "pig_exit_meat_sold_this_month": sales_this_month["meat"],
+        "sales_transaction_summary_status": transaction_summary.get("status", "unknown"),
+        "sales_transaction_summary_configured": bool(transaction_summary.get("configured")),
+        "sales_transaction_count_this_month": transaction_totals.get("transaction_count", 0),
+        "sales_transaction_value_this_month": transaction_totals.get("net_total", 0.0),
+        "livestock_sales_this_month": livestock_transactions.get("transaction_count", 0),
+        "livestock_sales_value_this_month": livestock_transactions.get("net_total", 0.0),
+        "slaughter_sales_this_month": slaughter_transactions.get("transaction_count", 0),
+        "slaughter_sales_value_this_month": slaughter_transactions.get("net_total", 0.0),
+        "meat_sales_this_month": meat_transactions.get("transaction_count", 0),
+        "meat_sales_value_this_month": meat_transactions.get("net_total", 0.0),
         "available_for_sale_pigs": available_for_sale_count,
         "reserved_pigs": reserved_count,
         "withdrawal_hold_pigs": withdrawal_hold_count,

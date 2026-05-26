@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified | Next: choose the next Phase 10 slice deliberately. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2305,6 +2305,7 @@ Implementation state:
 - Owner note: the three stream cards are useful as a start, but the sales/income streams need clearer planning later.
 - Current month can show `0` if no livestock/meat exits were logged; the known slaughter item was not logged yet, so it cannot be counted until the exit/sale event exists in the data.
 - Owner note 2026-05-26: the dashboard still showed `0` for slaughter even after a slaughter sale/update was entered. Investigate whether the slaughter sale was saved as a Supabase `sales_transactions` row, whether it has the correct `sale_stream = Slaughter`, status/payment fields, date, item rows, and whether the dashboard summary is reading that transaction source instead of only old pig-exit counts. Desired behavior: show one slaughter sale and its Rand value once the transaction source is defined and trusted.
+- 2026-05-26 local implementation: dashboard summary now reads a monthly Supabase `sales_transactions` aggregate for non-cancelled transactions and exposes transaction count plus `net_total` value by stream. The home dashboard shows `count / Rand value` for Livestock, Slaughter, and Meat sales, while old pig-exit counts remain available as separate audit fields. Local test-client without `DATABASE_URL` safely reports the transaction source as not configured; Render should activate the Supabase path through its configured `DATABASE_URL`.
 - Future dashboard should separate:
   - `Sales count`: number of sale transactions per stream.
   - `Item/pig count`: number of pigs/items sold per stream.
@@ -2922,6 +2923,7 @@ Recommendation:
   - Do not show Rand/kWh totals until reliable Sunsynk energy counters or approved interval-integration rules are in place.
   - n8n should remain for now as a thin integration layer for Telegram, Chatwoot, schedules, and delivery; backend/Supabase should own truth, calculations, state, and safety rules.
   - Human alerts and automation triggers must be separated. Rain, wind, heat, battery, and pump conditions may notify humans, but irrigation/pump actions need separate backend-owned trigger/audit policies.
+  - Owner note 2026-05-26: future alert, notification, and update delivery should support additional Telegram recipients besides Charl. Plan recipient configuration deliberately with authorization, severity/area subscriptions, quiet-hours behavior, and test/audit filtering before broadening delivery.
 - 10.3N Sunsynk/power alert backend alignment prepared locally on 2026-05-23:
   - Added protected backend endpoint `POST /api/telemetry/power/alerts/evaluate`.
   - Backend evaluates current power alert candidates from `power_latest_state`, `telemetry_sources`, and recent `telemetry_alerts`.
@@ -3621,6 +3623,7 @@ Farm home/dashboard idea:
   - Owner desktop browser review 2026-05-26: layout direction accepted and data now loads after replacing stale local server processes on port `5000`.
   - Minor polish note: improve tight metric wrapping where values such as rollup quality `complete` can split across two lines; then do a final desktop/mobile review before deploy.
   - 2026-05-26 polish applied: compact metric cards now auto-fit to avoid cramped four-column tiles in narrow panels, metric values no longer split words mid-word, machine labels such as `not_using_grid`, `google_sheets`, and `complete` display as human-readable text, and the dashboard script has a refreshed cache-buster.
+  - 2026-05-26 live verification passed: owner confirmed the live home page is good after deploy.
 
 Slaughter form refinement notes:
 

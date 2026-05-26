@@ -45,6 +45,12 @@ function numberOrDash(value, suffix = "") {
   return `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })}${suffix}`;
 }
 
+function money(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "R0";
+  return `R${number.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
 function displayLabel(value, fallback = "--") {
   if (value === null || value === undefined || value === "") return fallback;
   return String(value)
@@ -217,9 +223,15 @@ function renderFarmSummary() {
   setText("herd_finishers", numberOrDash(summary.finishers));
   setText("sales_available", numberOrDash(summary.available_for_sale_pigs));
   setText("sales_reserved", numberOrDash(summary.reserved_pigs));
-  setText("sales_livestock", numberOrDash(summary.livestock_sold_this_month ?? 0));
-  setText("sales_slaughter", numberOrDash(summary.slaughter_sold_this_month ?? 0));
-  setText("sales_meat", numberOrDash(summary.meat_sold_this_month ?? 0));
+  setText("sales_livestock", `${numberOrDash(summary.livestock_sales_this_month ?? 0)} / ${money(summary.livestock_sales_value_this_month)}`);
+  setText("sales_slaughter", `${numberOrDash(summary.slaughter_sales_this_month ?? 0)} / ${money(summary.slaughter_sales_value_this_month)}`);
+  setText("sales_meat", `${numberOrDash(summary.meat_sales_this_month ?? 0)} / ${money(summary.meat_sales_value_this_month)}`);
+  setText(
+    "sales_source_note",
+    summary.sales_transaction_summary_configured
+      ? "Monthly sales use Supabase transaction count / net value."
+      : "Monthly sales transaction source is not configured here."
+  );
 
   const litterItems = state.farm?.litter_attention?.items || [];
   byId("litter_attention_list").innerHTML = litterItems.length

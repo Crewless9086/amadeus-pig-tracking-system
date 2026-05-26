@@ -80,13 +80,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")
 
-        self.assertIn("Monthly Exits", template)
-        self.assertIn("Livestock", template)
-        self.assertIn("Slaughter", template)
+        self.assertIn("Monthly Sales", template)
+        self.assertIn("Livestock Sales", template)
+        self.assertIn("Slaughter Sales", template)
         self.assertNotIn('"Sales This Month"', js)
-        self.assertIn("livestock_sold_this_month", js)
-        self.assertIn("slaughter_sold_this_month", js)
-        self.assertIn("meat_sold_this_month", js)
+        self.assertIn("livestock_sales_this_month", js)
+        self.assertIn("slaughter_sales_this_month", js)
+        self.assertIn("meat_sales_this_month", js)
+        self.assertIn("slaughter_sales_value_this_month", js)
 
     def test_dashboard_uses_wide_operational_template_and_existing_read_apis(self):
         template = Path("templates/dashboard.html").read_text(encoding="utf-8")

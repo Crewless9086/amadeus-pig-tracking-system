@@ -31,9 +31,9 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Sunsynk Eskom tariff/value calculation note moved to `NEXT_STEPS.md` Phase 10.3M and `SUPABASE_TELEMETRY_PLAN.md`.
 - n8n future-role question answered in `SUPABASE_TELEMETRY_PLAN.md` and summarized under `NEXT_STEPS.md` Phase 10.3M.
 - Human alerts vs automation triggers note moved to `NEXT_STEPS.md` Phase 10.3M and `SUPABASE_TELEMETRY_PLAN.md`.
+- Dashboard slaughter sale count/value note moved to `NEXT_STEPS.md` Phase 9.5B.
+- Multi-recipient Telegram alert/notification note moved to `NEXT_STEPS.md` Phase 10.3M.
+- Slaughter update form/modal UX note moved to `NEXT_STEPS.md` Phase 10 slaughter form refinement notes.
+- Litter attention action-path note moved to `NEXT_STEPS.md` Phase 9.1C.
 
 Add new scratch bullets below, then move them into the correct canonical file.
-- Please note that the Sale data on the Dashboard dit not updated with the new slaughter sale that was updated, I's showing nothing in these field, why is this? It would be great if it could show the slaughter one as 1 sold for the price it was sold. AS we mentioned how we want to split these. 
-- Send alerts, notifications and updates to other telegram numbers besides just mine.
-- On the Slaughter updated fucntion, when adding the details it's not popping up as a form with the fields expose but it comes as a weird google thing that is not really working for me, I would rather it pops up with a form and then the user can see the fields required. 
-- We need to discuss what is meant to happen witht he Litters that needs attention, If you click on these and open them then you get taken to the detailed view but then there is no action you can take, So this needs to be addressed so we are able to do something about them. 

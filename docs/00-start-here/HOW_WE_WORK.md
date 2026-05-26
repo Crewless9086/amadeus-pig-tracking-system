@@ -11,10 +11,10 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.3 weather, power, irrigation, alerts, Supabase status paths, irrigation import/sync, and telemetry rollup work complete through 10.3W8. Render cron `amadeus-telemetry-daily-rollups` is created and first scheduled run is verified. |
-| **Current focus** | Final desktop/mobile review of the polished wide farm home/dashboard at `http://127.0.0.1:5000/`, then deploy if accepted. |
-| **Current last verified** | **2026-05-26** - 10.3W8 first scheduled Render cron run wrote `2026-05-25` rollups; power `288/288`, weather `287/288`, irrigation `0/0`, and stored/current counts matched. |
-| **Last verified** | **2026-05-26** - Phase 10.3W8 scheduled daily telemetry rollup verified. |
+| **Status** | Phase 9 parked for now; Phase 10.3 weather, power, irrigation, alerts, Supabase status paths, irrigation import/sync, telemetry rollups, and the wide farm home dashboard are live-verified. |
+| **Current focus** | Deploy and verify dashboard sales transaction count/value source on the live home page. |
+| **Current last verified** | **2026-05-26** - live `/` wide farm home dashboard loads correctly with weather, power, irrigation, herd, orders, breeding, sales, and action panels. |
+| **Last verified** | **2026-05-26** - Phase 10 farm home/dashboard live verification passed. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
 

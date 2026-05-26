@@ -187,17 +187,18 @@
           <div class="ops-panel-header">
             <div>
               <span class="ops-panel-kicker">Sales</span>
-              <h2>Monthly Exits</h2>
+              <h2>Monthly Sales</h2>
             </div>
             <a href="/sales-dashboard" class="ops-text-link">Open</a>
           </div>
           <div class="ops-metric-grid">
             <div><span>Available</span><strong id="sales_available">--</strong></div>
             <div><span>Reserved</span><strong id="sales_reserved">--</strong></div>
-            <div><span>Livestock</span><strong id="sales_livestock">--</strong></div>
-            <div><span>Slaughter</span><strong id="sales_slaughter">--</strong></div>
-            <div><span>Meat</span><strong id="sales_meat">--</strong></div>
+            <div><span>Livestock Sales</span><strong id="sales_livestock">--</strong></div>
+            <div><span>Slaughter Sales</span><strong id="sales_slaughter">--</strong></div>
+            <div><span>Meat Sales</span><strong id="sales_meat">--</strong></div>
           </div>
+          <p class="ops-footnote" id="sales_source_note">Sales values use Supabase transactions when configured.</p>
         </article>
       </section>
 
@@ -224,6 +225,6 @@
     </main>
   </div>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260526-ops-dashboard-2"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260526-sales-values"></script>
 </body>
 </html>
