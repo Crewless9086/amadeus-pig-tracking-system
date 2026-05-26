@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Resume only when a parked 9.x refinement becomes the selected priority. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Local Implementation Complete; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Deploy and live-verify the litter attention action when ready. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2018,7 +2018,7 @@ Future direction:
 - Tile link issue fixed: `litterDetail.js` now calls the existing `GET /api/pig-weights/litter/<litter_id>` route instead of the obsolete `/detail` path.
 - Owner confirmed dashboard tile opens the litter detail page after deploy.
 
-9.1C litter attention and weaning workflow - planned:
+9.1C litter attention and weaning workflow - local implementation complete:
 
 - Source notes moved from `planning/ToDoList.md`.
 - Review how `LITTER_OVERVIEW.Needs_Attention` is calculated and make the reason visible to the user. If a litter tile says it needs attention, the app should explain what action is needed.
@@ -2030,12 +2030,28 @@ Future direction:
 - Dead, sold, or off-farm piglets should not distort active litter age/growth/average metrics after their exit state is known.
 - Weaning should feed the future purpose-classification workflow: breeding candidate, grow-out, sale, and later slaughter/meat stream eligibility.
 
+Implementation state 2026-05-26:
+
+- Litter detail now receives `attention` metadata from `LITTER_OVERVIEW`, including reason, recommended action, litter status, wean date, active pig count, and action type.
+- Litter detail page shows an attention/action panel instead of only showing piglets.
+- Added `POST /api/pig-weights/litter/<litter_id>/mark-weaned`.
+- First action is deliberately narrow: the operator chooses a wean date, backend counts active/on-farm piglets for the litter, updates `LITTERS.Weaned_Count` / `LITTERS.Wean_Date` when those columns exist, and stamps linked active piglets in `PIG_MASTER` with `Litter_Size_Weaned`, `Wean_Date`, and `Updated_At`.
+- Sold/off-farm piglets are excluded from the active weaning count.
+- Purpose/classification changes are not automatic yet; weaned litters with active piglets remain a future `review_purpose` workflow.
+- Local verification passed: focused litter service tests, dashboard service tests, frontend route contract tests, and `node --check static/js/litterDetail.js`.
+
 Questions to answer when planning:
 
 - What exact sheet/formula currently drives `Needs_Attention`, and which reasons should be shown in the UI?
 - Should weaned litters disappear from the dashboard attention list once every active piglet has a purpose?
 - Which fields should be updated when marking a litter as weaned: `LITTERS`, generated `PIG_MASTER` rows, both, or a future Supabase table?
 - Should the first weaning action be Google Sheets-backed, or should it wait for the pig/litter Supabase migration?
+
+Decision for first slice:
+
+- Use the current Google Sheets-backed pig/litter source because the live litter workflow still writes there.
+- Keep the write backend-owned and limited to weaning fields only.
+- Defer purpose/classification, sale allocation, and dismiss/resolve actions to later slices.
 
 ### 9.2 Pig Dropdown Usability — Complete / Owner-Verified
 
@@ -2306,10 +2322,12 @@ Implementation state:
 - Current month can show `0` if no livestock/meat exits were logged; the known slaughter item was not logged yet, so it cannot be counted until the exit/sale event exists in the data.
 - Owner note 2026-05-26: the dashboard still showed `0` for slaughter even after a slaughter sale/update was entered. Investigate whether the slaughter sale was saved as a Supabase `sales_transactions` row, whether it has the correct `sale_stream = Slaughter`, status/payment fields, date, item rows, and whether the dashboard summary is reading that transaction source instead of only old pig-exit counts. Desired behavior: show one slaughter sale and its Rand value once the transaction source is defined and trusted.
 - 2026-05-26 local implementation: dashboard summary now reads a monthly Supabase `sales_transactions` aggregate for non-cancelled transactions and exposes transaction count plus `net_total` value by stream. The home dashboard shows `count / Rand value` for Livestock, Slaughter, and Meat sales, while old pig-exit counts remain available as separate audit fields. Local test-client without `DATABASE_URL` safely reports the transaction source as not configured; Render should activate the Supabase path through its configured `DATABASE_URL`.
+- 2026-05-26 live verification passed: owner confirmed the live dashboard now displays the slaughter sale value.
 - Future dashboard should separate:
   - `Sales count`: number of sale transactions per stream.
   - `Item/pig count`: number of pigs/items sold per stream.
   - `Sales value`: Rand total per stream.
+- Owner note moved from scratch 2026-05-26: add a full sales summary screen later that brings all sale streams together with totals, Rand value, and filters by date/year/month. It should show a professional overview and allow drilling into each stream or sale record.
 - Suggested display shape:
   - top sales line/card: total sales count and total Rand value, similar visual weight to the Herd total
   - underneath: `Livestock`, `Slaughter`, and `Meat`, each with count and Rand value

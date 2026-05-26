@@ -14,7 +14,7 @@
           <h1 id="litter_title">Litter Detail</h1>
           <p id="litter_subtitle">Loading litter information...</p>
         </div>
-        <a href="/pigs" class="secondary-link">← Back to Pig List</a>
+        <a href="/pigs" class="secondary-link">&larr; Back to Pig List</a>
       </div>
 
       <div id="litter_message" class="message-box hidden"></div>
@@ -22,44 +22,59 @@
       <div class="detail-grid">
         <div class="detail-card">
           <span class="detail-label">Litter ID</span>
-          <span id="litter_id_value" class="detail-value">—</span>
+          <span id="litter_id_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Total Piglets</span>
-          <span id="litter_count_value" class="detail-value">—</span>
+          <span id="litter_count_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Male Count</span>
-          <span id="litter_male_count_value" class="detail-value">—</span>
+          <span id="litter_male_count_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Female Count</span>
-          <span id="litter_female_count_value" class="detail-value">—</span>
+          <span id="litter_female_count_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Active Piglets</span>
-          <span id="litter_active_count_value" class="detail-value">—</span>
+          <span id="litter_active_count_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Average Weight</span>
-          <span id="litter_average_weight_value" class="detail-value">—</span>
+          <span id="litter_average_weight_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Mother</span>
-          <span id="litter_mother_value" class="detail-value">—</span>
+          <span id="litter_mother_value" class="detail-value">-</span>
         </div>
 
         <div class="detail-card">
           <span class="detail-label">Father</span>
-          <span id="litter_father_value" class="detail-value">—</span>
+          <span id="litter_father_value" class="detail-value">-</span>
         </div>
       </div>
+
+      <section id="litter_attention_panel" class="attention-action-panel hidden">
+        <div class="attention-action-copy">
+          <span class="status-pill">Attention</span>
+          <h2 id="litter_attention_title">Review Litter</h2>
+          <p id="litter_attention_text">This litter needs a follow-up action.</p>
+        </div>
+        <form id="mark_weaned_form" class="attention-action-form hidden">
+          <div class="form-group">
+            <label for="mark_weaned_date">Wean Date</label>
+            <input type="date" id="mark_weaned_date" required />
+          </div>
+          <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
+        </form>
+      </section>
 
       <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
         <div>
@@ -72,6 +87,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260526-litter-actions"></script>
 </body>
 </html>

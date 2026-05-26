@@ -1,9 +1,19 @@
 const litterMessage = document.getElementById("litter_message");
 const litterPigletsList = document.getElementById("litter_piglets_list");
+const attentionPanel = document.getElementById("litter_attention_panel");
+const attentionTitle = document.getElementById("litter_attention_title");
+const attentionText = document.getElementById("litter_attention_text");
+const markWeanedForm = document.getElementById("mark_weaned_form");
+const markWeanedDate = document.getElementById("mark_weaned_date");
+const markWeanedButton = document.getElementById("mark_weaned_button");
 
 function getLitterIdFromUrl() {
   const parts = window.location.pathname.split("/");
   return decodeURIComponent(parts[parts.length - 1] || "");
+}
+
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function showLitterMessage(message, type = "error") {
@@ -12,12 +22,17 @@ function showLitterMessage(message, type = "error") {
   litterMessage.textContent = message;
 }
 
+function clearLitterMessage() {
+  litterMessage.classList.add("hidden");
+  litterMessage.textContent = "";
+}
+
 function setText(id, value, suffix = "") {
   const element = document.getElementById(id);
   if (!element) return;
   element.textContent = value !== null && value !== undefined && value !== ""
     ? `${value}${suffix}`
-    : "—";
+    : "-";
 }
 
 function setLinkedValue(id, label, href) {
@@ -27,15 +42,79 @@ function setLinkedValue(id, label, href) {
   if (label && href) {
     element.innerHTML = `<a href="${href}" class="detail-link">${label}</a>`;
   } else {
-    element.textContent = "—";
+    element.textContent = "-";
   }
 }
 
 function formatNumber(value, decimals = 2) {
   if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
-    return "—";
+    return "-";
   }
   return Number(value).toFixed(decimals);
+}
+
+function renderAttention(litter) {
+  const attention = litter.attention || {};
+  const hasReason = Boolean(attention.reason || attention.recommended_action);
+  const activeCount = Number(litter.active_count || attention.active_pig_count || 0);
+  const canMarkWeaned = attention.action_type === "review_or_wean"
+    || (attention.litter_status !== "Weaned" && activeCount > 0);
+
+  attentionPanel.classList.toggle("hidden", !hasReason && !canMarkWeaned);
+  markWeanedForm.classList.toggle("hidden", !canMarkWeaned);
+
+  if (!hasReason && !canMarkWeaned) return;
+
+  attentionTitle.textContent = attention.reason || "Review Litter";
+  attentionText.textContent = attention.recommended_action
+    || "Confirm the litter status and update the weaning details when ready.";
+  markWeanedDate.value = attention.wean_date || todayIsoDate();
+}
+
+function setMarkWeanedSubmitting(isSubmitting) {
+  markWeanedButton.disabled = isSubmitting;
+  markWeanedButton.textContent = isSubmitting ? "Saving..." : "Mark as Weaned";
+}
+
+async function submitMarkWeaned(event) {
+  event.preventDefault();
+  clearLitterMessage();
+
+  const litterId = getLitterIdFromUrl();
+  const weanDate = markWeanedDate.value;
+
+  if (!weanDate) {
+    showLitterMessage("Choose a wean date before saving.", "error");
+    return;
+  }
+
+  setMarkWeanedSubmitting(true);
+
+  try {
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/mark-weaned`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        wean_date: weanDate,
+        changed_by: "web_app",
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      showLitterMessage((data.errors || [data.error || "Could not mark litter as weaned."]).join(" "), "error");
+      return;
+    }
+
+    showLitterMessage(data.message || "Litter was marked as weaned.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage("Something went wrong while saving the litter action.", "error");
+  } finally {
+    setMarkWeanedSubmitting(false);
+  }
 }
 
 function buildPigletCard(piglet) {
@@ -52,7 +131,7 @@ function buildPigletCard(piglet) {
 
   const action = document.createElement("div");
   action.className = "pig-list-action";
-  action.textContent = "Open Profile →";
+  action.textContent = "Open Profile ->";
 
   topRow.appendChild(tag);
   topRow.appendChild(action);
@@ -64,15 +143,15 @@ function buildPigletCard(piglet) {
   const subMeta = document.createElement("div");
   subMeta.className = "pig-list-submeta";
   subMeta.textContent =
-    `${piglet.sex || "—"} • ${piglet.calculated_stage || "—"} • ${piglet.current_weight_kg !== null && piglet.current_weight_kg !== "" ? `${formatNumber(piglet.current_weight_kg, 2)} kg` : "No weight"}`;
+    `${piglet.sex || "-"} / ${piglet.calculated_stage || "-"} / ${piglet.current_weight_kg !== null && piglet.current_weight_kg !== "" ? `${formatNumber(piglet.current_weight_kg, 2)} kg` : "No weight"}`;
 
   const extra = document.createElement("div");
   extra.className = "sales-meta-grid";
   extra.innerHTML = `
-    <div><span class="history-label">Status</span><span class="history-value">${piglet.status || "—"}</span></div>
-    <div><span class="history-label">On Farm</span><span class="history-value">${piglet.on_farm || "—"}</span></div>
-    <div><span class="history-label">Age (Days)</span><span class="history-value">${piglet.age_days || "—"}</span></div>
-    <div><span class="history-label">Pen</span><span class="history-value">${piglet.current_pen_id || "—"}</span></div>
+    <div><span class="history-label">Status</span><span class="history-value">${piglet.status || "-"}</span></div>
+    <div><span class="history-label">On Farm</span><span class="history-value">${piglet.on_farm || "-"}</span></div>
+    <div><span class="history-label">Age (Days)</span><span class="history-value">${piglet.age_days || "-"}</span></div>
+    <div><span class="history-label">Pen</span><span class="history-value">${piglet.current_pen_id || "-"}</span></div>
   `;
 
   card.appendChild(topRow);
@@ -83,12 +162,16 @@ function buildPigletCard(piglet) {
   return card;
 }
 
-async function loadLitterDetail() {
+async function loadLitterDetail(options = {}) {
   const litterId = getLitterIdFromUrl();
 
   if (!litterId) {
     showLitterMessage("No litter ID found in URL.", "error");
     return;
+  }
+
+  if (!options.keepMessage) {
+    clearLitterMessage();
   }
 
   try {
@@ -102,7 +185,7 @@ async function loadLitterDetail() {
 
     const litter = data.litter;
 
-    document.getElementById("litter_title").textContent = `Litter • ${litter.litter_id}`;
+    document.getElementById("litter_title").textContent = `Litter - ${litter.litter_id}`;
     document.getElementById("litter_subtitle").textContent = `${litter.count} piglet(s) linked to this litter`;
 
     setText("litter_id_value", litter.litter_id);
@@ -124,6 +207,7 @@ async function loadLitterDetail() {
       litter.father_pig_id ? `/pig/${encodeURIComponent(litter.father_pig_id)}` : ""
     );
 
+    renderAttention(litter);
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {
@@ -144,4 +228,5 @@ async function loadLitterDetail() {
   }
 }
 
+markWeanedForm.addEventListener("submit", submitMarkWeaned);
 loadLitterDetail();

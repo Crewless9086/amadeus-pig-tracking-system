@@ -8,6 +8,7 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_availability,
     get_family_tree,
     get_litter_detail,
+    mark_litter_weaned,
     get_pig_detail,
     get_products,
     get_pens,
@@ -112,6 +113,14 @@ def get_litter_profile(litter_id: str):
         "success": True,
         "litter": litter
     }, 200
+
+
+def mark_litter_profile_weaned(litter_id: str, payload: dict):
+    return mark_litter_weaned(
+        litter_id=litter_id,
+        wean_date_value=(payload or {}).get("wean_date", ""),
+        changed_by=(payload or {}).get("changed_by", "web_app"),
+    )
 
 
 def list_products():

@@ -35,5 +35,6 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Multi-recipient Telegram alert/notification note moved to `NEXT_STEPS.md` Phase 10.3M.
 - Slaughter update form/modal UX note moved to `NEXT_STEPS.md` Phase 10 slaughter form refinement notes.
 - Litter attention action-path note moved to `NEXT_STEPS.md` Phase 9.1C.
+- Full sales summary screen note moved to `NEXT_STEPS.md` Phase 9.5B.
 
 Add new scratch bullets below, then move them into the correct canonical file.

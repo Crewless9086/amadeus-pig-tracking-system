@@ -1,6 +1,12 @@
 from datetime import datetime
 
-from services.google_sheets_service import get_all_records, append_row
+from services.google_sheets_service import (
+    append_row,
+    batch_update_rows_by_id,
+    get_all_records,
+    get_all_values,
+    update_row_by_first_column_match,
+)
 from modules.pig_weights.pig_weights_config import PIG_WEIGHTS_CONFIG
 from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
@@ -254,6 +260,152 @@ def get_litter_attention_summary(limit: int = 5):
     }
 
 
+def _build_litter_attention(row):
+    needs_attention = to_clean_string(row.get("Needs_Attention", ""))
+    litter_status = to_clean_string(row.get("Litter_Status", ""))
+    active_pig_count = to_float(row.get("Active_Pig_Count", "")) or 0
+
+    reason = ""
+    recommended_action = ""
+    action_type = ""
+
+    if needs_attention == "Yes":
+        reason = "Needs attention"
+        recommended_action = "Review this litter and mark it as weaned once the weaning count/date are confirmed."
+        action_type = "review_or_wean"
+    elif litter_status == "Weaned" and active_pig_count > 0:
+        reason = "Weaned - review purpose"
+        recommended_action = "Litter is already weaned. Review linked piglet purpose/sales classification next."
+        action_type = "review_purpose"
+
+    return {
+        "needs_attention": needs_attention,
+        "reason": reason,
+        "recommended_action": recommended_action,
+        "action_type": action_type,
+        "litter_status": litter_status,
+        "wean_date": format_date_for_json(row.get("Wean_Date", "")),
+        "active_pig_count": active_pig_count,
+        "weaned_count": to_float(row.get("Weaned_Count", "")),
+    }
+
+
+def _litter_attention_for_id(litter_id):
+    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+
+    for row in rows:
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+            return _build_litter_attention(row)
+
+    return {
+        "needs_attention": "",
+        "reason": "",
+        "recommended_action": "",
+        "action_type": "",
+        "litter_status": "",
+        "wean_date": "",
+        "active_pig_count": 0,
+        "weaned_count": None,
+    }
+
+
+def _update_litter_weaning_fields(litter_id, wean_date, weaned_count):
+    sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"]
+    all_values = get_all_values(sheet_name)
+
+    if not all_values or len(all_values) < 2:
+        raise ValueError("No litter rows found.")
+
+    headers = all_values[0]
+    header_map = {header: index for index, header in enumerate(headers)}
+
+    matched_row = None
+    for row in all_values[1:]:
+        if row and to_clean_string(row[0]) == litter_id:
+            matched_row = list(row)
+            break
+
+    if matched_row is None:
+        raise ValueError(f"Litter '{litter_id}' was not found.")
+
+    padded_row = matched_row + [""] * (len(headers) - len(matched_row))
+    sheet_wean_date = format_date_for_sheet(wean_date)
+    today = format_date_for_sheet(datetime.now().date())
+
+    for field_name, field_value in {
+        "Weaned_Count": weaned_count,
+        "Litter_Size_Weaned": weaned_count,
+        "Wean_Date": sheet_wean_date,
+        "Updated_At": today,
+    }.items():
+        if field_name in header_map:
+            padded_row[header_map[field_name]] = field_value
+
+    return update_row_by_first_column_match(sheet_name, litter_id, padded_row)
+
+
+def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_app"):
+    litter_id = str(litter_id or "").strip()
+    wean_date = parse_sheet_date(wean_date_value)
+
+    if not litter_id:
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+
+    if not wean_date:
+        return {"success": False, "errors": ["A valid wean date is required."]}, 400
+
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    pig_rows = get_all_records(pig_master_sheet)
+
+    active_piglets = []
+    for row in pig_rows:
+        if to_clean_string(row.get("Litter_ID", "")) != litter_id:
+            continue
+        if to_clean_string(row.get(columns["status"], "")) != "Active":
+            continue
+        if to_clean_string(row.get(columns["on_farm"], "")) != "Yes":
+            continue
+
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if pig_id:
+            active_piglets.append(pig_id)
+
+    if not active_piglets:
+        return {
+            "success": False,
+            "errors": ["No active on-farm piglets were found for this litter."],
+        }, 409
+
+    weaned_count = len(active_piglets)
+    litter_row_updated = _update_litter_weaning_fields(litter_id, wean_date, weaned_count)
+    sheet_wean_date = format_date_for_sheet(wean_date)
+    today = format_date_for_sheet(datetime.now().date())
+    updated_by = to_clean_string(changed_by) or "web_app"
+
+    pig_updates = {
+        pig_id: {
+            "Litter_Size_Weaned": weaned_count,
+            "Wean_Date": sheet_wean_date,
+            "Updated_At": today,
+        }
+        for pig_id in active_piglets
+    }
+    pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+
+    return {
+        "success": True,
+        "action": "mark_litter_weaned",
+        "litter_id": litter_id,
+        "wean_date": wean_date.isoformat(),
+        "weaned_count": weaned_count,
+        "litter_row_updated": litter_row_updated,
+        "pig_rows_updated": pig_rows_updated,
+        "changed_by": updated_by,
+        "message": f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s).",
+    }, 200
+
+
 def get_sales_stock_summary():
     rows = get_all_records("SALES_STOCK_SUMMARY")
     records = []
@@ -482,6 +634,7 @@ def get_litter_detail(litter_id: str):
     if not litter_id:
         return None
 
+    attention = _litter_attention_for_id(litter_id)
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -515,6 +668,7 @@ def get_litter_detail(litter_id: str):
                     "active_count": 0,
                     "average_weight_kg": None,
                     "piglets": [],
+                    "attention": attention,
                 }
         return None
 
@@ -583,6 +737,7 @@ def get_litter_detail(litter_id: str):
         "active_count": active_count,
         "average_weight_kg": average_weight,
         "piglets": piglets,
+        "attention": attention,
     }
 
 

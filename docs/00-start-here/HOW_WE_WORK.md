@@ -10,11 +10,11 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 10** - Farm Operating System Integration |
-| **Status** | Phase 9 parked for now; Phase 10.3 weather, power, irrigation, alerts, Supabase status paths, irrigation import/sync, telemetry rollups, and the wide farm home dashboard are live-verified. |
-| **Current focus** | Deploy and verify dashboard sales transaction count/value source on the live home page. |
-| **Current last verified** | **2026-05-26** - live `/` wide farm home dashboard loads correctly with weather, power, irrigation, herd, orders, breeding, sales, and action panels. |
-| **Last verified** | **2026-05-26** - Phase 10 farm home/dashboard live verification passed. |
+| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.1C** - Litter attention action path |
+| **Status** | Phase 9.1C local implementation complete; deploy/live verification still pending. Phase 10.3 weather, power, irrigation, alerts, telemetry rollups, and the wide farm home dashboard are live-verified. |
+| **Current focus** | Litter attention action: mark litter as weaned from the litter detail page. |
+| **Current last verified** | **2026-05-26** - local litter attention action tests passed; live deployment verification pending. |
+| **Last verified** | **2026-05-26** - Dashboard sales transaction count/value source live verification passed. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
 

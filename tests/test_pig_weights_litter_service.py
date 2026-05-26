@@ -94,5 +94,87 @@ class LitterPigletCreationTests(unittest.TestCase):
         append_row.assert_not_called()
 
 
+class LitterAttentionActionTests(unittest.TestCase):
+    def test_mark_litter_weaned_updates_litter_and_active_piglets(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+            },
+            {
+                "Pig_ID": "PIG-3",
+                "Litter_ID": "LIT-1",
+                "Status": "Sold",
+                "On_Farm": "No",
+            },
+        ]
+        litter_values = [
+            [
+                "Litter_ID",
+                "Farrowing_Date",
+                "Sow_Pig_ID",
+                "Boar_Pig_ID",
+                "Weaned_Count",
+                "Wean_Date",
+                "Updated_At",
+            ],
+            ["LIT-1", "01 May 2026", "SOW-1", "BOAR-1", "", "", ""],
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "get_all_values", return_value=litter_values), \
+             patch.object(pig_weights_service, "update_row_by_first_column_match", return_value=2) as update_litter, \
+             patch.object(pig_weights_service, "batch_update_rows_by_id", return_value=2) as update_pigs:
+
+            result, status_code = pig_weights_service.mark_litter_weaned(
+                "LIT-1",
+                "2026-05-26",
+                changed_by="test",
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["weaned_count"], 2)
+        self.assertEqual(result["pig_rows_updated"], 2)
+
+        litter_row = update_litter.call_args.args[2]
+        self.assertEqual(litter_row[4], 2)
+        self.assertEqual(litter_row[5], "26 May 2026")
+
+        update_map = update_pigs.call_args.args[1]
+        self.assertEqual(set(update_map.keys()), {"PIG-1", "PIG-2"})
+        self.assertEqual(update_map["PIG-1"]["Litter_Size_Weaned"], 2)
+        self.assertEqual(update_map["PIG-1"]["Wean_Date"], "26 May 2026")
+
+    def test_mark_litter_weaned_requires_active_on_farm_piglets(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Sold",
+                "On_Farm": "No",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "get_all_values") as get_values, \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.mark_litter_weaned("LIT-1", "2026-05-26")
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        get_values.assert_not_called()
+        update_pigs.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

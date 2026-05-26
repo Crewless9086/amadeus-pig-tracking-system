@@ -370,6 +370,36 @@ textarea {
   text-decoration: underline;
 }
 
+.attention-action-panel {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 18px;
+  align-items: end;
+  padding: 18px;
+  border: 1px solid var(--success-border);
+  border-radius: 16px;
+  background: var(--success-bg);
+}
+
+.attention-action-copy h2 {
+  margin: 12px 0 8px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.attention-action-copy p {
+  margin: 0;
+  color: var(--success-text);
+  line-height: 1.45;
+}
+
+.attention-action-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
 .good-text {
   color: var(--good);
 }
@@ -1389,6 +1419,7 @@ button:disabled {
 
   .form-grid,
   .sales-filters-grid,
+  .attention-action-panel,
   .info-grid,
   .detail-grid,
   .summary-metric-grid,

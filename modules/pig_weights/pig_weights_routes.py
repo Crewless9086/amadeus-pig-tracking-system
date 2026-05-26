@@ -9,6 +9,7 @@ from modules.pig_weights.pig_weights_controller import (
     list_sales_availability,
     get_family_tree_profile,
     get_litter_profile,
+    mark_litter_profile_weaned,
     list_products,
     list_pens,
     get_pig_profile,
@@ -126,6 +127,13 @@ def latest_weight(pig_id):
 @pig_weights_bp.route("/litter/<litter_id>", methods=["GET"])
 def litter_profile(litter_id):
     result, status_code = get_litter_profile(litter_id)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/mark-weaned", methods=["POST"])
+def mark_litter_weaned_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = mark_litter_profile_weaned(litter_id, payload)
     return jsonify(result), status_code
 
 
