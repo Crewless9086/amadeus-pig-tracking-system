@@ -3072,3 +3072,12 @@ Next:
 - First live cron run verified on 2026-05-26 through `GET /api/telemetry/rollups/daily?date=2026-05-25`.
 - Verification result: `success = true`, `status = ok`, all three rollups found, power stored/current `288/288`, weather stored/current `287/288`, irrigation stored/current `0/0`.
 - Power kWh/Rand values remain estimated until confirmed Sunsynk energy counters are available.
+
+## Future External Weather Integrations
+
+Owner note captured on 2026-05-30:
+
+- Investigate whether the local weather station can publish to Windy.
+- Treat this as research before implementation.
+- Do not disturb the current weather ingestion, Supabase storage, dashboard, Oom Sakkie weather answers, or weather alert paths until the Windy upload method, station ID/API requirements, retry behavior, and data ownership are understood.
+- If implemented, Windy should be an outbound mirror/integration, not the source of truth for the farm operating system.

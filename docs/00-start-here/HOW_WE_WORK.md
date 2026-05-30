@@ -10,11 +10,11 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.1C** - Litter attention action path |
-| **Status** | Phase 9.1C local implementation and 2026-05-30 attention-reason hardening complete; owner deployed the first hardening and reconciled two old litter records. Latest local purpose-review fix still needs deploy/browser verification before closing the section. Phase 10.3 weather, power, irrigation, alerts, telemetry rollups, and the wide farm home dashboard are live-verified. |
-| **Current focus** | Litter attention action path: show the correct reason/action for each attention item, and only offer `Mark as Weaned` when it is the right resolution path. |
-| **Current last verified** | **2026-05-30** - focused local litter attention tests passed, `litterDetail.js` syntax passed, local API checks returned expected action types, and local dashboard now returns only `LIT-2026-8A0F` as the legitimate remaining litter attention item; latest deploy/browser verification pending. |
-| **Last verified** | **2026-05-26** - Dashboard sales transaction count/value source live verification passed. |
+| **Today's focus** | `NEXT_STEPS.md` Phase 10 choice point - choose the next deliberate slice |
+| **Status** | Phase 9.1C litter attention action path is deployed and browser-verified. Supabase RLS hardening is applied and Security Advisor now has `0 errors` / `0 warnings`. Herd dashboard count audit is locally fixed and awaiting deploy/browser verification. |
+| **Current focus** | Phase 10 dashboard slice: deploy/browser-check the Herd tile full breakdown, then choose the next deliberate slice, likely farm attention Telegram digest planning. |
+| **Current last verified** | **2026-05-30** - local Herd tile audit fixed the visible breakdown by adding `Gilts`, `Piglets`, and `Growers`; focused tests and local route smoke passed. |
+| **Last verified** | **2026-05-30** - Supabase RLS hardening owner-verified after migration. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
 

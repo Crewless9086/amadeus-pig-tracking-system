@@ -377,6 +377,13 @@ Because the owner has not used Supabase before, these defaults should be used un
 - Do not add broad `anon` or `authenticated` policies unless a future frontend/Supabase Auth design is explicitly approved.
 - Keep Google Sheets visible as read-only or synced operator views until the database-backed screens are proven.
 
+2026-05-30 verification:
+
+- Owner applied the RLS hardening migration.
+- Supabase Security Advisor shows `0 errors` and `0 warnings`.
+- Remaining `RLS Enabled No Policy` rows are informational suggestions and are expected for the current backend-only access model.
+- Continue to avoid anon/auth policies until browser/Supabase Auth access is deliberately designed.
+
 ## `/health/database` Smoke Endpoint
 
 Recommendation: add this during foundation setup.

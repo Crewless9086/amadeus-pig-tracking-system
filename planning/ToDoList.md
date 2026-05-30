@@ -38,5 +38,11 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Full sales summary screen note moved to `NEXT_STEPS.md` Phase 9.5B.
 - Mating attention group/reason note moved to `NEXT_STEPS.md` Phase 8F.
 - Bulk weight-entry from printable capture sheet note moved to `NEXT_STEPS.md` Phase 9.6C.
+- Herd dashboard total/breakdown audit note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Farm attention Telegram reminder note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Farm task/reminder/project management note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Telegram alert emoji/formatting note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Weather/solar dashboard symbol note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Windy weather-station integration research note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 
 Add new scratch bullets below, then move them into the correct canonical file.

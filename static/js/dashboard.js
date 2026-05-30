@@ -219,7 +219,10 @@ function renderFarmSummary() {
   setText("herd_total", numberOrDash(summary.on_farm_pigs));
   setText("herd_sows", numberOrDash(summary.sows));
   setText("herd_boars", numberOrDash(summary.boars));
+  setText("herd_gilts", numberOrDash(summary.gilts));
+  setText("herd_piglets", numberOrDash(summary.piglets));
   setText("herd_weaners", numberOrDash(summary.weaners));
+  setText("herd_growers", numberOrDash(summary.growers));
   setText("herd_finishers", numberOrDash(summary.finishers));
   setText("sales_available", numberOrDash(summary.available_for_sale_pigs));
   setText("sales_reserved", numberOrDash(summary.reserved_pigs));

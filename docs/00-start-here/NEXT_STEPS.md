@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Local Implementation Complete; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Deploy and live-verify the litter attention action when ready. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Phase 9 can stay parked unless a deliberate Phase 9 follow-up is selected. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2020,7 +2020,7 @@ Future direction:
 - Tile link issue fixed: `litterDetail.js` now calls the existing `GET /api/pig-weights/litter/<litter_id>` route instead of the obsolete `/detail` path.
 - Owner confirmed dashboard tile opens the litter detail page after deploy.
 
-9.1C litter attention and weaning workflow - local implementation complete:
+9.1C litter attention and weaning workflow - deployed and browser-verified:
 
 - Source notes moved from `planning/ToDoList.md`.
 - Review how `LITTER_OVERVIEW.Needs_Attention` is calculated and make the reason visible to the user. If a litter tile says it needs attention, the app should explain what action is needed.
@@ -2056,6 +2056,7 @@ Follow-up audit 2026-05-30:
 - Follow-up local fix on 2026-05-30: `Weaned - review purpose` now appears only when an active/on-farm piglet in the litter still has blank or `Unknown` purpose. Older weaned litters whose active piglets already have `Sale`, `Grow_Out`, or `Breeding` should not stay on the dashboard just because the future auto-classification function does not exist yet.
 - Local dashboard API check after the purpose-review fix returned one legitimate litter attention item: `LIT-2026-8A0F` / Sow Olivia / `Piglets need tag numbers`. Owner decision: keep this item visible for now because these piglets only get tags later once they are marked.
 - Future purpose-classification function remains planned: when active weaned piglets still have blank/`Unknown` purpose, the system should eventually suggest or assign purpose from weight/growth/litter rules. For older data where purpose is already set, the workaround is to treat the existing purpose as accepted and not show `review purpose`.
+- Owner deployed and browser-verified this slice on 2026-05-30. Dashboard/litter attention now looks correct: reconciled older litters no longer show purpose-review noise, and `LIT-2026-8A0F` remains visible as the intended tag-number reminder.
 
 Lifecycle automation planning note:
 
@@ -3673,7 +3674,33 @@ Farm home/dashboard idea:
   - Owner desktop browser review 2026-05-26: layout direction accepted and data now loads after replacing stale local server processes on port `5000`.
   - Minor polish note: improve tight metric wrapping where values such as rollup quality `complete` can split across two lines; then do a final desktop/mobile review before deploy.
   - 2026-05-26 polish applied: compact metric cards now auto-fit to avoid cramped four-column tiles in narrow panels, metric values no longer split words mid-word, machine labels such as `not_using_grid`, `google_sheets`, and `complete` display as human-readable text, and the dashboard script has a refreshed cache-buster.
-  - 2026-05-26 live verification passed: owner confirmed the live home page is good after deploy.
+- 2026-05-26 live verification passed: owner confirmed the live home page is good after deploy.
+
+Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 2026-05-30:
+
+- Herd tile audit: the dashboard `Herd` card currently shows a total head count, but the visible breakdown numbers do not add back up to that total. Next dashboard audit should inspect the backend source fields and either add the missing categories to fill the space or clarify the labels so the total and breakdown reconcile.
+- Farm `Needs Attention` Telegram reminder: send important farm attention items to Telegram so they are visible even when the web app is not opened first. This must avoid spam through digest timing, cooldowns, change detection, or severity grouping. Preferred direction is backend-owned attention summary and n8n as the thin Telegram delivery layer, matching the weather/power alert pattern.
+- Telegram alert message polish: make alert messages easier to scan by adding clear symbols/emoji and consistent formatting by alert type/severity. Keep this as presentation polish only; do not change backend alert rules, cooldowns, or recipient safety while doing it.
+- Dashboard visual cues: add weather and solar/power symbols or small visual states to the home dashboard so weather and energy status are easier to scan. Keep visuals functional, not decorative, and preserve readable text for exact values.
+- Farm task/reminder/project management: future planning item for important dates, reminders, task ownership, projects, and idea logging. This needs a proper model and should not be squeezed into the current attention list as ad hoc notes.
+- Weather station to Windy integration: research whether the local weather station can publish to Windy. Treat as an external integration planning task first; do not change the existing weather ingestion path until the Windy upload method, API requirements, station ID handling, and data ownership are understood.
+
+Supabase RLS hardening verification:
+
+- 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.
+- Migration `supabase/migrations/202605270001_enable_rls_on_public_tables.sql` was prepared to enable RLS on current public tables without adding anon/auth policies.
+- Owner applied the migration and verified Security Advisor on 2026-05-30.
+- Result: `0 errors` and `0 warnings`.
+- Remaining `RLS Enabled No Policy` rows are info-level suggestions and are expected for the current backend-only `DATABASE_URL` access pattern.
+- Do not add broad anon/auth policies unless a future browser/Supabase Auth design is explicitly approved.
+
+Herd tile audit result:
+
+- Local audit on 2026-05-30 confirmed the backend counts already reconcile when all counted categories are visible.
+- Live-style local summary returned `on_farm_pigs = 103`: `18` sows, `3` boars, `0` gilts, `45` piglets, `17` weaners, `19` growers, and `1` finisher.
+- The dashboard mismatch was a display issue: the tile only showed sows, boars, weaners, and finishers, so the visible breakdown summed to `39`.
+- Local fix adds `Gilts`, `Piglets`, and `Growers` to the Herd tile and binds them to the existing backend summary fields.
+- Local verification passed: `node --check static/js/dashboard.js`, focused frontend/dashboard tests passed at 14 tests, and local route smoke confirmed the new Herd IDs render.
 
 Slaughter form refinement notes:
 
@@ -3759,6 +3786,7 @@ Recently completed:
 - Phase 8D follow-up fix — deployed and live-verified 2026-05-20: date parsing now accepts full month names from Google Sheet formulas, for example `9 June 2026` and `10 September 2026`; Baby's new mating `MAT-2026-9EFC4E` now shows expected check `2026-06-09` and expected farrowing `2026-09-10` from the live API.
 - Phase 9.1A new litter defaults — live-verified 2026-05-20: Lolly's `LIT-2026-9E4A` created 11 piglets and Shupe's `LIT-2026-EB92` created 8 piglets; generated rows have `Purpose = Unknown` and `Source = Born_on_Farm`.
 - Phase 9.1B litter attention dashboard — deployed and browser-verified 2026-05-19.
+- Phase 9.1C litter attention action path — deployed and browser-verified 2026-05-30: detail pages show reason-specific action guidance, `Mark as Weaned` only appears for true weaning actions, purpose-review noise is suppressed for older litters whose active piglets already have accepted purpose values, and `LIT-2026-8A0F` remains as the legitimate tag-number reminder.
 - Phase 9.2A pig dropdown usability — deployed and owner-verified 2026-05-20.
 - Phase 9.3 weight form context — deployed and owner-verified 2026-05-20: current-pen helper added beside optional move pen, save payload unchanged, syntax/focused tests and full unittest suite passed.
 - Phase 9.4A/B/C1 weight report — owner-verified 2026-05-20: read-only report endpoint and `/weight-report` page with Today default, active-pig filtering, pen grouping, detail rows, browser print support, duplicate markers, loss flags, improved table spacing, pen-name-only display, and single-day date hiding; focused tests, full local unittest suite, local route/API smoke, deploy, and browser review passed.

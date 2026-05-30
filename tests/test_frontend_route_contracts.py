@@ -116,6 +116,22 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/reports/daily-summary?date=", js)
         self.assertNotIn('method: "POST"', js)
 
+    def test_dashboard_herd_breakdown_includes_all_counted_categories(self):
+        template = Path("templates/dashboard.html").read_text(encoding="utf-8")
+        js = Path("static/js/dashboard.js").read_text(encoding="utf-8")
+
+        for field in [
+            "sows",
+            "boars",
+            "gilts",
+            "piglets",
+            "weaners",
+            "growers",
+            "finishers",
+        ]:
+            self.assertIn(f'id="herd_{field}"', template)
+            self.assertIn(f'summary.{field}', js)
+
     def test_slaughter_sale_form_uses_supabase_sales_transaction_endpoints(self):
         template = Path("templates/slaughter-sale.html").read_text(encoding="utf-8")
         js = Path("static/js/slaughterSale.js").read_text(encoding="utf-8")
