@@ -363,6 +363,18 @@ Because the owner has not used Supabase before, these defaults should be used un
 - Do not let n8n or the frontend write directly to Supabase.
 - Add a backend `/health/database` smoke endpoint during foundation setup.
 - Migrate orders/sales first; review Sunsynk/weather/irrigation telemetry after the first database path is proven.
+
+## Security Hardening Notes
+
+2026-05-27 Supabase Security Advisor warning:
+
+- Supabase reported `rls_disabled_in_public` for project `cmosbfsrygohromzapxs`.
+- Cause: project tables were created through raw SQL migrations in the `public` schema, and RLS was not explicitly enabled.
+- Official Supabase guidance is to enable Row-Level Security on public tables exposed through the Supabase Data API.
+- Current Amadeus design keeps all Supabase access behind the Flask backend using `DATABASE_URL`; the browser should not read/write Supabase tables directly.
+- Fix prepared in `supabase/migrations/202605270001_enable_rls_on_public_tables.sql`.
+- The migration enables RLS on all current public tables and intentionally adds no anon/auth policies, leaving direct browser/Data API access closed by default.
+- Do not add broad `anon` or `authenticated` policies unless a future frontend/Supabase Auth design is explicitly approved.
 - Keep Google Sheets visible as read-only or synced operator views until the database-backed screens are proven.
 
 ## `/health/database` Smoke Endpoint

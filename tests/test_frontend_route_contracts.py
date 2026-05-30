@@ -14,6 +14,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="mark_weaned_button"', template)
         self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/mark-weaned", js)
         self.assertIn('method: "POST"', js)
+        self.assertIn('attention.action_type === "mark_weaned"', js)
+        self.assertNotIn('attention.action_type === "review_or_wean"', js)
 
     def test_pig_dropdowns_pad_numeric_tags_for_display(self):
         paths = [

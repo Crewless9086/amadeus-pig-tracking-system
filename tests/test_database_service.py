@@ -371,6 +371,33 @@ class DatabaseServiceHealthTests(unittest.TestCase):
             with self.subTest(forbidden=text):
                 self.assertNotIn(text, migration_lower)
 
+    def test_public_table_rls_hardening_migration_enables_rls_without_policies(self):
+        migration = Path(
+            "supabase/migrations/202605270001_enable_rls_on_public_tables.sql"
+        ).read_text(encoding="utf-8")
+        migration_lower = migration.lower()
+
+        expected_tables = [
+            *ORDER_SCHEMA_TABLES,
+            *SALES_TRANSACTION_SCHEMA_TABLES,
+            *TELEMETRY_POWER_SCHEMA_TABLES,
+            *TELEMETRY_WEATHER_SCHEMA_TABLES,
+            *IRRIGATION_SCHEMA_TABLES,
+            *TELEMETRY_ROLLUP_SCHEMA_TABLES,
+        ]
+
+        self.assertIn("alter table %i.%i enable row level security", migration_lower)
+        self.assertIn("202605270001_enable_rls_on_public_tables", migration)
+        self.assertIn("app_private.migration_log", migration)
+        self.assertNotIn("alter table %i.%i force row level security", migration_lower)
+        self.assertNotIn("create policy", migration_lower)
+        self.assertNotIn("drop table", migration_lower)
+        self.assertNotIn("delete from", migration_lower)
+
+        for table in expected_tables:
+            with self.subTest(table=table):
+                self.assertIn(f"'{table}'", migration)
+
     @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
     def test_order_schema_health_does_not_return_connection_string_on_failure(self):
         with patch.dict("sys.modules", {"psycopg": Mock(connect=Mock(side_effect=RuntimeError("boom")))}):

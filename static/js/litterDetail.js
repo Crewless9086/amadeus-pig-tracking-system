@@ -56,9 +56,7 @@ function formatNumber(value, decimals = 2) {
 function renderAttention(litter) {
   const attention = litter.attention || {};
   const hasReason = Boolean(attention.reason || attention.recommended_action);
-  const activeCount = Number(litter.active_count || attention.active_pig_count || 0);
-  const canMarkWeaned = attention.action_type === "review_or_wean"
-    || (attention.litter_status !== "Weaned" && activeCount > 0);
+  const canMarkWeaned = attention.action_type === "mark_weaned";
 
   attentionPanel.classList.toggle("hidden", !hasReason && !canMarkWeaned);
   markWeanedForm.classList.toggle("hidden", !canMarkWeaned);

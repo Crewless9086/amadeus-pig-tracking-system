@@ -2042,6 +2042,17 @@ Implementation state 2026-05-26:
 - Purpose/classification changes are not automatic yet; weaned litters with active piglets remain a future `review_purpose` workflow.
 - Local verification passed: focused litter service tests, dashboard service tests, frontend route contract tests, and `node --check static/js/litterDetail.js`.
 
+Follow-up audit 2026-05-30:
+
+- Real attention checks for `LIT-2026-OTY0`, `LIT-2026-0LBF`, and `LIT-2026-8A0F` showed the attention list is still correctly driven by `LITTER_OVERVIEW.Needs_Attention`.
+- `LIT-2026-OTY0`: `Born_Alive = 12`, `Pig_Master_Row_Count = 10`, `Weaned_Count = 10`, `Wean_Date = 5 March 2026`, `Active_Pig_Count = 5`, `Exited_Pig_Count = 5`; reason is `Linked pig records do not match born alive count`. This is a record-reconciliation issue, not a simple weaning action.
+- `LIT-2026-0LBF`: `Born_Alive = 11`, `Pig_Master_Row_Count = 9`, `Wean_Date = 28 Feb 2026`, blank `Weaned_Count`, `Active_Pig_Count = 1`, `Exited_Pig_Count = 8`; reason is `Linked pig records do not match born alive count`. This needs reconciliation of born-alive/history rows and weaning count before it should disappear from attention.
+- `LIT-2026-8A0F`: `Born_Alive = 8`, `Pig_Master_Row_Count = 8`, `Tagged_Pig_Count = 0`, `Untagged_Pig_Count = 8`, `Active_Pig_Count = 6`, `Exited_Pig_Count = 2`; reason is `Piglets need tag numbers`. This should stay visible until linked piglets have tag numbers or the tagging rule changes.
+- Local code now maps attention reasons to specific action types: `reconcile_litter_records`, `complete_born_alive`, `assign_tag_numbers`, `review_litter`, `review_purpose`, or `mark_weaned`.
+- Litter detail no longer shows the `Mark as Weaned` form for record-mismatch or missing-tag attention reasons. It only shows that form when the backend returns `action_type = mark_weaned`.
+- Local verification passed on 2026-05-30: focused dashboard/litter/frontend tests passed at 19 tests, `node --check static/js/litterDetail.js` passed, and local API checks returned the expected reason/action pairs for the three real litters above.
+- Remaining closure step: deploy and browser-check the litter detail pages for those three litters, then either fix the underlying sheet records/tags or leave the attention items visible as legitimate operational work.
+
 Lifecycle automation planning note:
 
 - Future piglet death action should be available from the easiest user context, either pig profile/list or litter detail.
@@ -2458,6 +2469,7 @@ Questions to answer when planning:
 Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
+- Owner note moved from `planning/ToDoList.md` on 2026-05-30: the printable weight capture sheet should later become an editable bulk-capture workflow. The user should be able to fill in new weights, optional camp/pen moves, and notes in a sheet-like page, then save all rows in one batch. Backend validation should detect duplicates or mistakes before committing, and only accepted rows should be written.
 
 Recommended 9.6 split:
 

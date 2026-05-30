@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Section **Phase 9.1C** - Litter attention action path |
-| **Status** | Phase 9.1C local implementation complete; deploy/live verification still pending. Phase 10.3 weather, power, irrigation, alerts, telemetry rollups, and the wide farm home dashboard are live-verified. |
-| **Current focus** | Litter attention action: mark litter as weaned from the litter detail page. |
-| **Current last verified** | **2026-05-26** - local litter attention action tests passed; live deployment verification pending. |
+| **Status** | Phase 9.1C local implementation and 2026-05-30 attention-reason hardening complete; deploy/browser verification still pending before closing the section. Phase 10.3 weather, power, irrigation, alerts, telemetry rollups, and the wide farm home dashboard are live-verified. |
+| **Current focus** | Litter attention action path: show the correct reason/action for each attention item, and only offer `Mark as Weaned` when it is the right resolution path. |
+| **Current last verified** | **2026-05-30** - focused local litter attention tests passed, `litterDetail.js` syntax passed, and local API checks returned expected action types for `LIT-2026-OTY0`, `LIT-2026-0LBF`, and `LIT-2026-8A0F`; live deployment verification pending. |
 | **Last verified** | **2026-05-26** - Dashboard sales transaction count/value source live verification passed. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

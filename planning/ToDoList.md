@@ -37,5 +37,6 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Litter attention action-path note moved to `NEXT_STEPS.md` Phase 9.1C.
 - Full sales summary screen note moved to `NEXT_STEPS.md` Phase 9.5B.
 - Mating attention group/reason note moved to `NEXT_STEPS.md` Phase 8F.
+- Bulk weight-entry from printable capture sheet note moved to `NEXT_STEPS.md` Phase 9.6C.
 
 Add new scratch bullets below, then move them into the correct canonical file.

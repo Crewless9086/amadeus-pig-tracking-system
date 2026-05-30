@@ -290,12 +290,30 @@ def _build_litter_attention(row):
 
     if needs_attention == "Yes":
         reason = _litter_attention_reason(row)
-        recommended_action = "Review this litter and mark it as weaned once the weaning count/date are confirmed."
-        action_type = "review_or_wean"
+        reason_lower = reason.lower()
+        if "linked pig records" in reason_lower:
+            recommended_action = (
+                "Reconcile Born Alive against linked pig records. Add the missing born-alive/death records "
+                "or correct the litter count before using weaning actions."
+            )
+            action_type = "reconcile_litter_records"
+        elif "born alive" in reason_lower:
+            recommended_action = "Complete the born-alive count before resolving this litter attention item."
+            action_type = "complete_born_alive"
+        elif "tag" in reason_lower:
+            recommended_action = "Assign tag numbers to the linked piglets that are still missing tags."
+            action_type = "assign_tag_numbers"
+        else:
+            recommended_action = "Review this litter and correct the source data shown in the attention reason."
+            action_type = "review_litter"
     elif litter_status == "Weaned" and active_pig_count > 0:
         reason = "Weaned - review purpose"
         recommended_action = "Litter is already weaned. Review linked piglet purpose/sales classification next."
         action_type = "review_purpose"
+    elif litter_status != "Weaned" and active_pig_count > 0:
+        reason = ""
+        recommended_action = "Confirm the litter status and mark it as weaned once the weaning date is known."
+        action_type = "mark_weaned"
 
     return {
         "needs_attention": needs_attention,

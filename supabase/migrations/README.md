@@ -26,6 +26,8 @@ Current state:
 - It imports no data and does not change live backend order/dashboard reads/writes.
 - `202605210005_create_telemetry_power_tables.sql` creates the first empty telemetry power tables and seeds the Sunsynk source registry row.
 - It imports no telemetry readings, changes no Render logger, and does not change live n8n workflows.
+- `202605270001_enable_rls_on_public_tables.sql` enables RLS on all current public tables to resolve the Supabase `rls_disabled_in_public` security advisor warning.
+- It intentionally creates no anon/auth policies because the browser must not access Supabase tables directly; the Flask backend remains the database access layer.
 
 Manual run process for Phase 10.1B:
 
@@ -75,3 +77,12 @@ Manual run process for Phase 10.3C:
 5. Run it once.
 6. Open `/health/database/telemetry-power-schema` on the deployed backend.
 7. Confirm it returns `success = true`, `status = ok`, migration ID `202605210005_create_telemetry_power_tables`, no missing tables, and `sunsynk_source.source_id = sunsynk-main-inverter`.
+
+Manual run process for RLS security hardening:
+
+1. Open Supabase SQL Editor for project `cmosbfsrygohromzapxs`.
+2. Open `supabase/migrations/202605270001_enable_rls_on_public_tables.sql` from this repo.
+3. Paste the full SQL into Supabase SQL Editor.
+4. Run it once.
+5. In Supabase, open Database -> Advisors / Security Advisor again and confirm `rls_disabled_in_public` is cleared for the listed tables.
+6. Smoke test the deployed backend pages/endpoints that read Supabase-backed data, especially the home dashboard and `/sales/slaughter`.

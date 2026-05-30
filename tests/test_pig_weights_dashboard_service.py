@@ -68,6 +68,31 @@ class LitterAttentionSummaryTests(unittest.TestCase):
 
         self.assertEqual(result["items"][0]["reason"], "Linked pig records do not match born alive count")
 
+    def test_litter_attention_actions_match_attention_reason(self):
+        record_mismatch = pig_weights_service._build_litter_attention({
+            "Litter_Status": "Weaned",
+            "Needs_Attention": "Yes",
+            "Attention_Reason": "Linked pig records do not match born alive count",
+            "Active_Pig_Count": "5",
+        })
+        missing_tags = pig_weights_service._build_litter_attention({
+            "Litter_Status": "Active",
+            "Needs_Attention": "Yes",
+            "Attention_Reason": "Piglets need tag numbers",
+            "Active_Pig_Count": "6",
+        })
+        ready_to_wean = pig_weights_service._build_litter_attention({
+            "Litter_Status": "Active",
+            "Needs_Attention": "",
+            "Active_Pig_Count": "6",
+        })
+
+        self.assertEqual(record_mismatch["action_type"], "reconcile_litter_records")
+        self.assertIn("Reconcile Born Alive", record_mismatch["recommended_action"])
+        self.assertEqual(missing_tags["action_type"], "assign_tag_numbers")
+        self.assertIn("Assign tag numbers", missing_tags["recommended_action"])
+        self.assertEqual(ready_to_wean["action_type"], "mark_weaned")
+
     def test_litter_attention_limits_returned_items_but_keeps_total_count(self):
         rows = [
             {
