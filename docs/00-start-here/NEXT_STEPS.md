@@ -3741,6 +3741,9 @@ Slaughter form refinement notes:
 - The panel exposes final amount, payment status, payment method, payment date, sale status, carcass weight for one-pig transactions, updated-by, and update note before saving.
 - The existing backend payment update endpoint remains the source of truth; this slice does not change Supabase schema, sale transaction rules, or the multi-pig transaction model.
 - Local verification passed: `node --check static/js/slaughterSale.js`, focused frontend/sales transaction tests, and local Flask route smoke for `/sales/slaughter`.
+- Owner local browser check passed on 2026-05-30: clicking `Update Payment` opens the in-page update panel and the flow appears correct.
+- 2026-05-30 local layout/table slice: widened `/sales/slaughter` to a 1640px operational canvas, split the create form and transaction ledger into a responsive two-column workspace, and compressed the transaction table by grouping transaction/date, buyer/destination, and amount/item count.
+- Local verification passed: `node --check static/js/slaughterSale.js`, focused frontend/sales transaction tests, and local Flask route smoke for `/sales/slaughter`.
 - Multi-pig planning needs to decide whether each pig has its own amount/weight line or whether the batch has one total with per-pig item details.
 - Payment date is separate from slaughter date and should be captured once the butcher pays.
 - The real amount may arrive later than slaughter date, so payment/final amount update needs a payment date field before financial reporting.

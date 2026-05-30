@@ -237,6 +237,7 @@ textarea {
 .slaughter-filters-grid {
   margin-top: 10px;
   margin-bottom: 8px;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 0.55fr) minmax(150px, 0.55fr) auto;
 }
 
 .slaughter-filter-actions {
@@ -245,6 +246,42 @@ textarea {
 
 .slaughter-count-helper {
   margin: 8px 0 0;
+}
+
+.slaughter-page-shell {
+  display: block;
+  padding: 24px;
+}
+
+.slaughter-page-card {
+  max-width: 1640px;
+  margin: 0 auto;
+  border-radius: 18px;
+}
+
+.slaughter-workspace {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.82fr) minmax(620px, 1.18fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.slaughter-entry-column,
+.slaughter-ledger-column {
+  min-width: 0;
+}
+
+.slaughter-ledger-column .section-header-compact {
+  margin-top: 0;
+}
+
+.table-subtext {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: normal;
 }
 
 .slaughter-items-section {
@@ -1491,6 +1528,18 @@ button:disabled {
     grid-column: auto;
   }
 
+  .slaughter-page-shell {
+    padding: 18px;
+  }
+
+  .slaughter-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .slaughter-filters-grid {
+    grid-template-columns: 1fr;
+  }
+
   .info-value,
   .detail-value,
   .history-value,
@@ -1566,6 +1615,10 @@ button:disabled {
   .ops-list-row {
     flex-direction: column;
     gap: 4px;
+  }
+
+  .slaughter-page-shell {
+    padding: 12px;
   }
 }
 

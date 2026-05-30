@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card">
+  <div class="page-shell slaughter-page-shell">
+    <div class="page-card slaughter-page-card">
       <div class="page-header page-header-with-link">
         <div>
           <h1>Record Slaughter Sale</h1>
@@ -19,6 +19,8 @@
 
       <div id="slaughter_sale_message" class="message-box hidden"></div>
 
+      <div class="slaughter-workspace">
+        <section class="slaughter-entry-column">
       <form id="slaughter_sale_form" class="weight-form">
         <div class="form-grid">
           <div class="form-group">
@@ -106,7 +108,9 @@
           <button type="submit" id="submit_slaughter_sale" class="submit-button">Save Slaughter Sale</button>
         </div>
       </form>
+        </section>
 
+        <section class="slaughter-ledger-column">
       <div class="page-header section-header-compact">
         <div>
           <h2>Recent Slaughter Transactions</h2>
@@ -234,22 +238,22 @@
         <table class="simple-table">
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Sale ID</th>
-              <th>Buyer</th>
+              <th>Transaction</th>
+              <th>Buyer / Destination</th>
               <th>Status</th>
               <th>Payment</th>
-              <th>Total</th>
-              <th>Items</th>
-              <th>Action</th>
+              <th>Amount</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="slaughter_transactions_body">
             <tr>
-              <td colspan="8" class="table-empty">Loading slaughter transactions...</td>
+              <td colspan="6" class="table-empty">Loading slaughter transactions...</td>
             </tr>
           </tbody>
         </table>
+      </div>
+        </section>
       </div>
     </div>
   </div>

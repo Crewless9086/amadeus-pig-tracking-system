@@ -241,7 +241,7 @@ function applyTransactionFilters() {
 
 function renderTransactions(rows) {
   if (!rows.length) {
-    transactionsBody.innerHTML = '<tr><td colspan="8" class="table-empty">No slaughter transactions found.</td></tr>';
+    transactionsBody.innerHTML = '<tr><td colspan="6" class="table-empty">No slaughter transactions found.</td></tr>';
     transactionCount.textContent = allTransactions.length
       ? "No transactions match the selected filters."
       : "No slaughter transactions recorded yet.";
@@ -264,13 +264,20 @@ function renderTransactions(rows) {
     const statusClass = isCancelled ? "status-pill status-pill-muted" : "status-pill";
     return `
       <tr${rowClass}>
-        <td>${formatDate(item.sale_date)}</td>
-        <td>${item.sale_id || "-"}</td>
-        <td>${item.buyer_name || "-"}</td>
+        <td>
+          <strong>${item.sale_id || "-"}</strong>
+          <span class="table-subtext">${formatDate(item.sale_date)}</span>
+        </td>
+        <td>
+          <strong>${item.buyer_name || "-"}</strong>
+          <span class="table-subtext">${item.destination || "No destination"}</span>
+        </td>
         <td><span class="${statusClass}">${item.sale_status || "-"}</span></td>
         <td><span class="${statusClass}">${item.payment_status || "-"}</span></td>
-        <td>${money(item.net_total)}</td>
-        <td>${item.item_count ?? "-"}</td>
+        <td>
+          <strong>${money(item.net_total)}</strong>
+          <span class="table-subtext">${item.item_count ?? "-"} pig${Number(item.item_count) === 1 ? "" : "s"}</span>
+        </td>
         <td>${action}</td>
       </tr>
     `;
@@ -300,7 +307,7 @@ async function loadTransactions() {
     allTransactions = data.sales_transactions || [];
     applyTransactionFilters();
   } catch (error) {
-    transactionsBody.innerHTML = '<tr><td colspan="8" class="table-empty">Could not load slaughter transactions.</td></tr>';
+    transactionsBody.innerHTML = '<tr><td colspan="6" class="table-empty">Could not load slaughter transactions.</td></tr>';
   }
 }
 
