@@ -2052,6 +2052,10 @@ Follow-up audit 2026-05-30:
 - Litter detail no longer shows the `Mark as Weaned` form for record-mismatch or missing-tag attention reasons. It only shows that form when the backend returns `action_type = mark_weaned`.
 - Local verification passed on 2026-05-30: focused dashboard/litter/frontend tests passed at 19 tests, `node --check static/js/litterDetail.js` passed, and local API checks returned the expected reason/action pairs for the three real litters above.
 - Remaining closure step: deploy and browser-check the litter detail pages for those three litters, then either fix the underlying sheet records/tags or leave the attention items visible as legitimate operational work.
+- Owner deployed the first action-reason hardening on 2026-05-30 and reconciled `LIT-2026-OTY0` / `LIT-2026-0LBF` in the source records.
+- Follow-up local fix on 2026-05-30: `Weaned - review purpose` now appears only when an active/on-farm piglet in the litter still has blank or `Unknown` purpose. Older weaned litters whose active piglets already have `Sale`, `Grow_Out`, or `Breeding` should not stay on the dashboard just because the future auto-classification function does not exist yet.
+- Local dashboard API check after the purpose-review fix returned one legitimate litter attention item: `LIT-2026-8A0F` / Sow Olivia / `Piglets need tag numbers`. Owner decision: keep this item visible for now because these piglets only get tags later once they are marked.
+- Future purpose-classification function remains planned: when active weaned piglets still have blank/`Unknown` purpose, the system should eventually suggest or assign purpose from weight/growth/litter rules. For older data where purpose is already set, the workaround is to treat the existing purpose as accepted and not show `review purpose`.
 
 Lifecycle automation planning note:
 

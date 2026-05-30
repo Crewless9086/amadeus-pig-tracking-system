@@ -220,6 +220,7 @@ def get_dashboard_summary():
 
 def get_litter_attention_summary(limit: int = 5):
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     items = []
 
     for row in rows:
@@ -234,7 +235,7 @@ def get_litter_attention_summary(limit: int = 5):
         reason = ""
         if needs_attention == "Yes":
             reason = _litter_attention_reason(row)
-        elif litter_status == "Weaned" and active_pig_count > 0:
+        elif litter_status == "Weaned" and _litter_needs_purpose_review(litter_id, pig_rows):
             reason = "Weaned - review purpose"
 
         if not reason:
@@ -279,7 +280,34 @@ def _litter_attention_reason(row):
     return "Needs attention"
 
 
+def _purpose_needs_review(purpose):
+    normalized = to_clean_string(purpose).lower()
+    return normalized in ("", "unknown")
+
+
+def _litter_needs_purpose_review(litter_id, pig_rows=None):
+    litter_id = to_clean_string(litter_id)
+    if not litter_id:
+        return False
+
+    if pig_rows is None:
+        pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+
+    for pig in pig_rows:
+        if to_clean_string(pig.get("Litter_ID", "")) != litter_id:
+            continue
+        if to_clean_string(pig.get("Status", "")) != "Active":
+            continue
+        if to_clean_string(pig.get("On_Farm", "")) != "Yes":
+            continue
+        if _purpose_needs_review(pig.get("Purpose", "")):
+            return True
+
+    return False
+
+
 def _build_litter_attention(row):
+    litter_id = to_clean_string(row.get("Litter_ID", ""))
     needs_attention = to_clean_string(row.get("Needs_Attention", ""))
     litter_status = to_clean_string(row.get("Litter_Status", ""))
     active_pig_count = to_float(row.get("Active_Pig_Count", "")) or 0
@@ -306,7 +334,7 @@ def _build_litter_attention(row):
         else:
             recommended_action = "Review this litter and correct the source data shown in the attention reason."
             action_type = "review_litter"
-    elif litter_status == "Weaned" and active_pig_count > 0:
+    elif litter_status == "Weaned" and _litter_needs_purpose_review(litter_id):
         reason = "Weaned - review purpose"
         recommended_action = "Litter is already weaned. Review linked piglet purpose/sales classification next."
         action_type = "review_purpose"

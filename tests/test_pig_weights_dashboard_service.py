@@ -6,7 +6,7 @@ from modules.pig_weights import pig_weights_service
 
 class LitterAttentionSummaryTests(unittest.TestCase):
     def test_litter_attention_includes_sheet_attention_and_weaned_litters(self):
-        rows = [
+        overview_rows = [
             {
                 "Litter_ID": "LIT-ATTN",
                 "Sow_Tag_Number": "Sow 1",
@@ -33,14 +33,30 @@ class LitterAttentionSummaryTests(unittest.TestCase):
                 "Oldest_Age_Days": "48",
             },
             {
-                "Litter_ID": "LIT-OK",
-                "Litter_Status": "Active",
+                "Litter_ID": "LIT-WEANED-DONE",
+                "Litter_Status": "Weaned",
                 "Needs_Attention": "No",
                 "Active_Pig_Count": "6",
             },
         ]
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-WEANED",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Litter_ID": "LIT-WEANED-DONE",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Sale",
+            },
+        ]
 
-        with patch.object(pig_weights_service, "get_all_records", return_value=rows):
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows]):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["count"], 2)
@@ -50,7 +66,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
         self.assertEqual(result["items"][1]["wean_date"], "2026-05-19")
 
     def test_litter_attention_reason_falls_back_to_litter_counts(self):
-        rows = [
+        overview_rows = [
             {
                 "Litter_ID": "LIT-MISSING-PIGS",
                 "Litter_Status": "Active",
@@ -63,7 +79,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             }
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", return_value=rows):
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, []]):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["items"][0]["reason"], "Linked pig records do not match born alive count")
@@ -82,6 +98,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             "Active_Pig_Count": "6",
         })
         ready_to_wean = pig_weights_service._build_litter_attention({
+            "Litter_ID": "LIT-ACTIVE",
             "Litter_Status": "Active",
             "Needs_Attention": "",
             "Active_Pig_Count": "6",
@@ -93,8 +110,29 @@ class LitterAttentionSummaryTests(unittest.TestCase):
         self.assertIn("Assign tag numbers", missing_tags["recommended_action"])
         self.assertEqual(ready_to_wean["action_type"], "mark_weaned")
 
+    def test_weaned_litter_only_reviews_purpose_when_active_piglets_have_unknown_purpose(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-UNKNOWN",
+                "Litter_ID": "LIT-UNKNOWN",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+            },
+            {
+                "Pig_ID": "PIG-SALE",
+                "Litter_ID": "LIT-DONE",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Sale",
+            },
+        ]
+
+        self.assertTrue(pig_weights_service._litter_needs_purpose_review("LIT-UNKNOWN", pig_rows))
+        self.assertFalse(pig_weights_service._litter_needs_purpose_review("LIT-DONE", pig_rows))
+
     def test_litter_attention_limits_returned_items_but_keeps_total_count(self):
-        rows = [
+        overview_rows = [
             {
                 "Litter_ID": f"LIT-{i}",
                 "Litter_Status": "Active",
@@ -104,7 +142,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             for i in range(7)
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", return_value=rows):
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, []]):
             result = pig_weights_service.get_litter_attention_summary(limit=3)
 
         self.assertEqual(result["count"], 7)
