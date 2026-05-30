@@ -3680,6 +3680,10 @@ Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 
 
 - Herd tile audit: the dashboard `Herd` card currently shows a total head count, but the visible breakdown numbers do not add back up to that total. Next dashboard audit should inspect the backend source fields and either add the missing categories to fill the space or clarify the labels so the total and breakdown reconcile.
 - Farm `Needs Attention` Telegram reminder: send important farm attention items to Telegram so they are visible even when the web app is not opened first. This must avoid spam through digest timing, cooldowns, change detection, or severity grouping. Preferred direction is backend-owned attention summary and n8n as the thin Telegram delivery layer, matching the weather/power alert pattern.
+  - 2026-05-30 local first slice: added read-only backend endpoint `GET /api/reports/farm-attention-summary`.
+  - The endpoint combines existing order attention and litter attention, returns `digest_lines`, reports `mode = read_only`, and explicitly reports no Supabase writes, no Google Sheets writes, and no Telegram send.
+  - Local verification passed: `python -m unittest tests.test_farm_attention_summary tests.test_pig_weights_dashboard_service` and `node --check static/js/dashboard.js`.
+  - Next slice should be the thin n8n scheduled/manual Telegram delivery layer with anti-spam rules before activation.
 - Telegram alert message polish: make alert messages easier to scan by adding clear symbols/emoji and consistent formatting by alert type/severity. Keep this as presentation polish only; do not change backend alert rules, cooldowns, or recipient safety while doing it.
 - Dashboard visual cues: add weather and solar/power symbols or small visual states to the home dashboard so weather and energy status are easier to scan. Keep visuals functional, not decorative, and preserve readable text for exact values.
 - Farm task/reminder/project management: future planning item for important dates, reminders, task ownership, projects, and idea logging. This needs a proper model and should not be squeezed into the current attention list as ad hoc notes.
@@ -3701,6 +3705,14 @@ Herd tile audit result:
 - The dashboard mismatch was a display issue: the tile only showed sows, boars, weaners, and finishers, so the visible breakdown summed to `39`.
 - Local fix adds `Gilts`, `Piglets`, and `Growers` to the Herd tile and binds them to the existing backend summary fields.
 - Local verification passed: `node --check static/js/dashboard.js`, focused frontend/dashboard tests passed at 14 tests, and local route smoke confirmed the new Herd IDs render.
+- Owner deployed and browser-verified the Herd tile fix on 2026-05-30.
+
+Farm attention summary result:
+
+- Local first slice on 2026-05-30 adds `GET /api/reports/farm-attention-summary`.
+- This is backend-owned and read-only: it aggregates daily order attention plus litter attention, prepares digest lines, and sends nothing.
+- It is intended as the source contract for the later Telegram reminder workflow, so n8n can remain a thin caller/delivery layer.
+- It does not yet implement scheduled delivery, cooldowns, change detection, severity grouping, or Telegram formatting.
 
 Slaughter form refinement notes:
 

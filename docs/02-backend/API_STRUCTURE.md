@@ -19,6 +19,7 @@ All order API routes are registered under `/api`.
 | `GET` | `/api/orders/active-customer-context` | Safe active customer order lookup by `order_id`, `conversation_id`, or `customer_phone`. Returns one filtered context, a short multiple-match list, no match, or terminal-order status. | Future `1.2` / Sam review action. |
 | `GET` | `/api/orders/<order_id>` | Return one order with matching `ORDER_LINES` and generated `ORDER_DOCUMENTS` rows. Header includes `payment_method` (from `ORDER_MASTER`), `line_count` (from overview: **all** line rows including cancelled — see `ORDER_OVERVIEW.md`), **`active_line_count`**, **`cancelled_line_count`**, **`active_line_total`**, and **`all_line_total`**. | Web app, `1.2` `get_order_context` branch. |
 | `GET` | `/api/reports/daily-summary` | Return daily operational order buckets and counts for n8n/reporting. Optional `?date=YYYY-MM-DD`. | n8n scheduled summary, web app/report tooling. |
+| `GET` | `/api/reports/farm-attention-summary` | Return a read-only digest contract combining order attention and litter attention. Optional `?date=YYYY-MM-DD&limit=10`. | Future thin n8n farm attention Telegram reminder. |
 | `GET` | `/api/orders/available-pigs` | Return sale-available pigs from `SALES_AVAILABILITY`. | Web app/order tooling. |
 | `POST` | `/api/orders/<order_id>/reserve` | Mark order lines as reserved and update master reserved count. | Web app, future steward action. |
 | `POST` | `/api/orders/<order_id>/release` | Release reserved order lines and reset master reserved count. | Web app, future cancel/reject flow. |
@@ -401,6 +402,25 @@ Rules:
 - `orders_needing_attention`: Drafts missing payment/location/active lines, pending approvals without active lines, or approved orders where reserved count is below active line count.
 
 n8n should read this endpoint for the scheduled daily summary instead of reading order sheets directly.
+
+## Farm Attention Summary (Phase 10 follow-up)
+
+Endpoint: `GET /api/reports/farm-attention-summary`
+
+Optional query:
+
+- `date=YYYY-MM-DD` - report date used for the daily order attention source. Defaults to today's server date when omitted.
+- `limit=1..50` - maximum litter attention items returned. Defaults to `10`.
+
+Current contract:
+
+- Aggregates `orders_needing_attention` from `/api/reports/daily-summary`.
+- Aggregates litter attention from the pig-weight/litter attention service.
+- Returns `digest_lines` for a later Telegram delivery layer.
+- Returns `mode = read_only`.
+- Returns source flags showing `writes_to_supabase = false`, `writes_to_sheets = false`, and `sends_telegram = false`.
+
+This endpoint does not schedule reminders, apply cooldowns, perform change detection, or send Telegram messages. Those rules belong in the next thin n8n delivery slice, using this endpoint as the backend-owned source contract.
 
 ## Send For Approval Validation Contract
 

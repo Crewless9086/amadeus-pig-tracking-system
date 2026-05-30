@@ -1,6 +1,9 @@
 from flask import Blueprint, jsonify, request
 
-from modules.reports.report_service import get_daily_order_summary
+from modules.reports.report_service import (
+    get_daily_order_summary,
+    get_farm_attention_summary,
+)
 
 
 reports_bp = Blueprint("reports", __name__)
@@ -12,6 +15,21 @@ def daily_summary():
 
     try:
         result = get_daily_order_summary(report_date=report_date)
+        return jsonify(result), 200
+    except ValueError as exc:
+        return jsonify({
+            "success": False,
+            "errors": [str(exc)],
+        }), 400
+
+
+@reports_bp.route("/reports/farm-attention-summary", methods=["GET"])
+def farm_attention_summary():
+    report_date = request.args.get("date", "").strip()
+    limit = request.args.get("limit", "").strip()
+
+    try:
+        result = get_farm_attention_summary(report_date=report_date, limit=limit)
         return jsonify(result), 200
     except ValueError as exc:
         return jsonify({

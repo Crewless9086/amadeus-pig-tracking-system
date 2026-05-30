@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from modules.orders.order_service import list_orders
+from modules.pig_weights.pig_weights_service import get_litter_attention_summary
 from modules.pig_weights.pig_weights_utils import parse_sheet_date, to_clean_string
 from services.google_sheets_service import get_all_records
 
@@ -81,6 +82,104 @@ def get_daily_order_summary(report_date=None):
             "orders_needing_attention": "Drafts missing payment/location/active lines, pending approvals without active lines, or approved orders with reservation shortfall.",
         },
     }
+
+
+def get_farm_attention_summary(report_date=None, limit=10):
+    target_date = _parse_report_date(report_date)
+    item_limit = _parse_attention_limit(limit)
+    order_summary = get_daily_order_summary(report_date=target_date.isoformat())
+    litter_summary = get_litter_attention_summary(limit=item_limit)
+
+    orders_needing_attention = order_summary.get("sections", {}).get(
+        "orders_needing_attention",
+        [],
+    )
+    litter_attention = litter_summary.get("items", [])
+    order_attention_count = len(orders_needing_attention)
+    litter_attention_count = int(litter_summary.get("count") or 0)
+    total_attention_count = order_attention_count + litter_attention_count
+
+    return {
+        "success": True,
+        "status": "ok",
+        "mode": "read_only",
+        "report_date": target_date.isoformat(),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": {
+            "writes_to_supabase": False,
+            "writes_to_sheets": False,
+            "sends_telegram": False,
+        },
+        "counts": {
+            "attention_total": total_attention_count,
+            "orders_needing_attention": order_attention_count,
+            "litter_attention": litter_attention_count,
+            "litter_attention_returned": len(litter_attention),
+        },
+        "sections": {
+            "orders_needing_attention": orders_needing_attention,
+            "litter_attention": litter_attention,
+        },
+        "digest_lines": _build_farm_attention_digest_lines(
+            orders_needing_attention=orders_needing_attention,
+            litter_attention=litter_attention,
+            litter_attention_total=litter_attention_count,
+        ),
+        "rules": {
+            "orders_needing_attention": order_summary.get("rules", {}).get(
+                "orders_needing_attention",
+                "",
+            ),
+            "litter_attention": (
+                "Litters flagged by LITTER_OVERVIEW attention rules, plus weaned litters whose "
+                "active/on-farm piglets still have blank or Unknown purpose."
+            ),
+            "delivery": "This endpoint prepares a read-only summary only. Telegram delivery stays outside this call.",
+        },
+    }
+
+
+def _parse_attention_limit(value):
+    if value in (None, ""):
+        return 10
+
+    try:
+        limit = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("limit must be a whole number.") from exc
+
+    if limit < 1 or limit > 50:
+        raise ValueError("limit must be between 1 and 50.")
+
+    return limit
+
+
+def _build_farm_attention_digest_lines(
+    orders_needing_attention,
+    litter_attention,
+    litter_attention_total,
+):
+    lines = []
+
+    if not orders_needing_attention and not litter_attention:
+        return ["No current farm attention items."]
+
+    if orders_needing_attention:
+        lines.append(f"Orders needing attention: {len(orders_needing_attention)}")
+        for order in orders_needing_attention:
+            reasons = ", ".join(order.get("reasons") or ["review_order"])
+            lines.append(f"- {order.get('order_id')}: {reasons}")
+
+    if litter_attention:
+        lines.append(f"Litter attention: {litter_attention_total}")
+        for litter in litter_attention:
+            lines.append(f"- {litter.get('litter_id')}: {litter.get('reason')}")
+
+    if litter_attention_total > len(litter_attention):
+        remaining = litter_attention_total - len(litter_attention)
+        lines.append(f"- {remaining} more litter attention item(s) not shown in this response.")
+
+    return lines
 
 
 def _parse_report_date(value):

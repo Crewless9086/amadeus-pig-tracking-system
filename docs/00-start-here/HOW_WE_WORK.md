@@ -11,10 +11,10 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Phase 10 choice point - choose the next deliberate slice |
-| **Status** | Phase 9.1C litter attention action path is deployed and browser-verified. Supabase RLS hardening is applied and Security Advisor now has `0 errors` / `0 warnings`. Herd dashboard count audit is locally fixed and awaiting deploy/browser verification. |
-| **Current focus** | Phase 10 dashboard slice: deploy/browser-check the Herd tile full breakdown, then choose the next deliberate slice, likely farm attention Telegram digest planning. |
-| **Current last verified** | **2026-05-30** - local Herd tile audit fixed the visible breakdown by adding `Gilts`, `Piglets`, and `Growers`; focused tests and local route smoke passed. |
-| **Last verified** | **2026-05-30** - Supabase RLS hardening owner-verified after migration. |
+| **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, and Herd dashboard count audit are deployed/browser-verified. Farm attention summary backend slice is local. |
+| **Current focus** | Phase 10 farm attention Telegram digest planning: next build the thin n8n delivery/cooldown layer after deploying the read-only backend summary. |
+| **Current last verified** | **2026-05-30** - Herd tile full breakdown deployed/browser-verified. |
+| **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
 
