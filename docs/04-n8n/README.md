@@ -39,6 +39,7 @@ It documents:
 | `2.4.5 - Document Send Callback Handler` | `workflows/2.4.5 - Document Send Callback Handler/` | Active | Worker workflow for guarded quote-send button callbacks. |
 | `ALERT - Weather Backend Delivery` | `workflows/ALERT - Weather Backend Delivery/` | Active / Live-verified | Backend/Supabase weather alert delivery workflow. |
 | `ALERT - Power Backend Delivery` | `workflows/ALERT - Power Backend Delivery/` | Active / Live-verified | Backend/Supabase Sunsynk power alert delivery workflow. |
+| `ALERT - Farm Attention Digest` | `workflows/ALERT - Farm Attention Digest/` | Active / manual send verified | Backend-owned farm attention digest delivery workflow; first scheduled duplicate-suppression observation pending. |
 
 ## Folder Map
 

@@ -14,6 +14,7 @@ SUNSYNK_WORKFLOW = WORKFLOW_ROOT / "2.2 - Amadeus Sunsynk Sub-Agent" / "workflow
 IRRIGATION_STATUS_WORKFLOW = WORKFLOW_ROOT / "2.3.3 - Irrigation Status Tool" / "workflow.json"
 WEATHER_ALERT_DELIVERY_WORKFLOW = WORKFLOW_ROOT / "ALERT - Weather Backend Delivery" / "workflow.json"
 POWER_ALERT_DELIVERY_WORKFLOW = WORKFLOW_ROOT / "ALERT - Power Backend Delivery" / "workflow.json"
+FARM_ATTENTION_DIGEST_WORKFLOW = WORKFLOW_ROOT / "ALERT - Farm Attention Digest" / "workflow.json"
 
 
 REQUIRED_STEWARD_ACTIONS = {
@@ -143,6 +144,7 @@ WORKFLOW_EXPORTS = {
     "sunsynk": SUNSYNK_WORKFLOW,
     "irrigation_status": IRRIGATION_STATUS_WORKFLOW,
     "weather_alert_delivery": WEATHER_ALERT_DELIVERY_WORKFLOW,
+    "farm_attention_digest": FARM_ATTENTION_DIGEST_WORKFLOW,
 }
 
 
@@ -485,6 +487,41 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn('response.mode !== "apply"', extract_code)
         self.assertIn('alert.alert_type === "POWER_BACKEND_AUDIT_TEST"', extract_code)
         self.assertIn("details.test === true", extract_code)
+
+    def test_farm_attention_digest_workflow_is_backend_only_and_throttled(self):
+        workflow = load_workflow(FARM_ATTENTION_DIGEST_WORKFLOW)
+        workflow_text = json.dumps(workflow)
+        extract_node = node_by_name(workflow, "Code - Extract Sendable Digest")
+        node_names = {node.get("name") for node in workflow.get("nodes", [])}
+
+        self.assertFalse(workflow.get("active"))
+        self.assertIn("HTTP - Get Farm Attention Summary", node_names)
+        self.assertIn("Code - Extract Sendable Digest", node_names)
+        self.assertIn("Telegram - Send Farm Attention Digest", node_names)
+        self.assertIn("Code - Record Sent Digest", node_names)
+        self.assertNotIn("n8n-nodes-base.googleSheets", workflow_text)
+        self.assertNotIn("ORDER_OVERVIEW", workflow_text)
+        self.assertNotIn("LITTER_OVERVIEW", workflow_text)
+        self.assertIn("/api/reports/farm-attention-summary", workflow_text)
+        self.assertIn("5721652188", workflow_text)
+        self.assertIsNotNone(extract_node)
+        extract_code = extract_node.get("parameters", {}).get("jsCode", "")
+        self.assertIn("const dryRun = true", extract_code)
+        self.assertIn('response.mode !== "read_only"', extract_code)
+        self.assertIn("source.writes_to_supabase === true", extract_code)
+        self.assertIn("source.writes_to_sheets === true", extract_code)
+        self.assertIn("source.sends_telegram === true", extract_code)
+        self.assertIn("attentionTotal <= 0", extract_code)
+        self.assertIn("$getWorkflowStaticData", extract_code)
+        self.assertIn("lastSentHash", extract_code)
+        self.assertIn("minHoursBetweenSends", extract_code)
+        record_node = node_by_name(workflow, "Code - Record Sent Digest")
+        self.assertIsNotNone(record_node)
+        record_code = record_node.get("parameters", {}).get("jsCode", "")
+        self.assertIn("$getWorkflowStaticData", record_code)
+        self.assertIn("lastSentAt", record_code)
+        self.assertIn("lastSentHash", record_code)
+        self.assertIn("after Telegram delivery succeeds", record_code)
 
 
 if __name__ == "__main__":

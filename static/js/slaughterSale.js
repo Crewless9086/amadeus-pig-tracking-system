@@ -19,6 +19,22 @@ const transactionSearch = document.getElementById("slaughter_search");
 const transactionStatusFilter = document.getElementById("slaughter_status_filter");
 const transactionPaymentFilter = document.getElementById("slaughter_payment_filter");
 const clearFiltersButton = document.getElementById("clear_slaughter_filters_button");
+const updatePanel = document.getElementById("slaughter_update_panel");
+const updateForm = document.getElementById("slaughter_update_form");
+const updateSaleLabel = document.getElementById("slaughter_update_sale_label");
+const updateSaleIdInput = document.getElementById("update_sale_id");
+const updateItemCountInput = document.getElementById("update_item_count");
+const updateLineTotalInput = document.getElementById("update_line_total");
+const updatePaymentStatusSelect = document.getElementById("update_payment_status");
+const updatePaymentMethodSelect = document.getElementById("update_payment_method");
+const updatePaymentDateInput = document.getElementById("update_payment_date");
+const updateSaleStatusSelect = document.getElementById("update_sale_status");
+const updateCarcassWeightInput = document.getElementById("update_carcass_weight");
+const updateCarcassHelper = document.getElementById("update_carcass_helper");
+const updateByInput = document.getElementById("update_by");
+const updateReasonInput = document.getElementById("update_reason");
+const submitUpdateButton = document.getElementById("submit_slaughter_update");
+const closeUpdatePanelButton = document.getElementById("close_slaughter_update_panel");
 
 let allPigs = [];
 let allTransactions = [];
@@ -81,6 +97,11 @@ function setSubmitting(isSubmitting) {
     button.disabled = isSubmitting;
     button.textContent = isSubmitting ? "Saving..." : "Save Slaughter Sale";
   });
+}
+
+function setUpdateSubmitting(isSubmitting) {
+  submitUpdateButton.disabled = isSubmitting;
+  submitUpdateButton.textContent = isSubmitting ? "Saving..." : "Save Payment Update";
 }
 
 function money(value) {
@@ -419,52 +440,79 @@ async function cancelTransaction(saleId) {
   }
 }
 
-async function updatePayment(saleId, currentTotal, itemCount = 1) {
-  const amount = window.prompt(`Final batch amount for ${saleId}?`, currentTotal || "");
-  if (amount === null) return;
+function openUpdatePanel(saleId, currentTotal, itemCount = 1) {
+  clearMessage();
+  const transaction = allTransactions.find((item) => item.sale_id === saleId) || {};
+  const count = Number(itemCount || transaction.item_count || 1);
 
-  const cleanAmount = Number(amount);
-  if (Number.isNaN(cleanAmount) || cleanAmount < 0) {
-    showMessage("Final amount must be a valid number.", "error");
-    return;
+  updateSaleIdInput.value = saleId;
+  updateItemCountInput.value = String(count);
+  updateLineTotalInput.value = currentTotal || transaction.net_total || "";
+  updatePaymentStatusSelect.value = transaction.payment_status || "Paid";
+  updatePaymentMethodSelect.value = transaction.payment_method || "EFT";
+  updatePaymentDateInput.value = transaction.payment_date || (updatePaymentStatusSelect.value === "Paid" ? todayIsoDate() : "");
+  updateSaleStatusSelect.value = transaction.sale_status || (updatePaymentStatusSelect.value === "Paid" ? "Completed" : "Confirmed");
+  updateCarcassWeightInput.value = transaction.carcass_weight_kg || "";
+  updateByInput.value = createdByInput.value.trim() || "Charl";
+  updateReasonInput.value = "Butcher payment updated";
+  updateSaleLabel.textContent = `${saleId} - ${transaction.buyer_name || "Slaughter sale"} (${count} pig${count === 1 ? "" : "s"})`;
+  updateCarcassWeightInput.disabled = count > 1;
+  updateCarcassHelper.textContent = count > 1
+    ? "Carcass weight updates are only available for one-pig transactions in this slice."
+    : "Optional actual carcass weight from the butcher.";
+  if (count > 1) updateCarcassWeightInput.value = "";
+
+  updatePanel.classList.remove("hidden");
+  updateLineTotalInput.focus();
+  updatePanel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeUpdatePanel() {
+  updatePanel.classList.add("hidden");
+  updateForm.reset();
+}
+
+function buildUpdatePayload() {
+  const lineTotal = Number(updateLineTotalInput.value);
+  const carcassWeightValue = updateCarcassWeightInput.value.trim();
+  const carcassWeight = carcassWeightValue ? Number(carcassWeightValue) : null;
+
+  if (Number.isNaN(lineTotal) || lineTotal < 0) {
+    throw new Error("Final amount must be a valid number.");
+  }
+  if (updatePaymentStatusSelect.value === "Paid" && !updatePaymentDateInput.value) {
+    throw new Error("Payment date is required when payment status is Paid.");
+  }
+  if (carcassWeight !== null && Number.isNaN(carcassWeight)) {
+    throw new Error("Carcass weight must be a valid number or blank.");
   }
 
-  const paymentStatus = window.prompt("Payment status: Unpaid, Part_Paid, or Paid", "Paid");
-  if (paymentStatus === null) return;
-
-  const saleStatus = window.prompt("Sale status: Confirmed or Completed", paymentStatus === "Paid" ? "Completed" : "Confirmed");
-  if (saleStatus === null) return;
-
-  let paymentDate = "";
-  if (paymentStatus.trim() === "Paid") {
-    paymentDate = window.prompt("Payment date", todayIsoDate());
-    if (paymentDate === null) return;
-  }
-
-  let carcassWeight = "";
-  if (Number(itemCount) <= 1) {
-    carcassWeight = window.prompt("Carcass weight in kg, if known. Leave blank if unknown.", "");
-    if (carcassWeight === null) return;
-  }
-
-  const reason = window.prompt("Reason / note for this update", "Butcher payment updated");
-  if (!reason) return;
-
-  const payload = {
-    updated_by: createdByInput.value.trim() || "Charl",
-    update_reason: reason,
-    line_total: cleanAmount,
-    payment_status: paymentStatus.trim(),
-    payment_method: "EFT",
-    payment_date: paymentDate.trim(),
-    sale_status: saleStatus.trim(),
-    carcass_weight_kg: carcassWeight.trim() ? Number(carcassWeight) : null,
+  return {
+    updated_by: updateByInput.value.trim() || "Charl",
+    update_reason: updateReasonInput.value.trim(),
+    line_total: lineTotal,
+    payment_status: updatePaymentStatusSelect.value,
+    payment_method: updatePaymentMethodSelect.value,
+    payment_date: updatePaymentDateInput.value,
+    sale_status: updateSaleStatusSelect.value,
+    carcass_weight_kg: updateCarcassWeightInput.disabled ? null : carcassWeight,
   };
+}
 
-  if (payload.carcass_weight_kg !== null && Number.isNaN(payload.carcass_weight_kg)) {
-    showMessage("Carcass weight must be a valid number or blank.", "error");
+async function submitUpdatePayment(event) {
+  event.preventDefault();
+  clearMessage();
+  const saleId = updateSaleIdInput.value;
+
+  let payload;
+  try {
+    payload = buildUpdatePayload();
+  } catch (error) {
+    showMessage(error.message, "error");
     return;
   }
+
+  setUpdateSubmitting(true);
 
   try {
     const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/payment`, {
@@ -480,16 +528,19 @@ async function updatePayment(saleId, currentTotal, itemCount = 1) {
     }
 
     showMessage(`Payment updated: ${saleId}`, "success");
+    closeUpdatePanel();
     await loadTransactions();
   } catch (error) {
     showMessage(error.message || "Could not update payment.", "error");
+  } finally {
+    setUpdateSubmitting(false);
   }
 }
 
 transactionsBody.addEventListener("click", (event) => {
   const updateButton = event.target.closest("[data-update-sale-id]");
   if (updateButton) {
-    updatePayment(
+    openUpdatePanel(
       updateButton.dataset.updateSaleId,
       updateButton.dataset.currentTotal,
       updateButton.dataset.itemCount,
@@ -536,6 +587,16 @@ clearFiltersButton.addEventListener("click", () => {
   transactionStatusFilter.value = "";
   transactionPaymentFilter.value = "";
   applyTransactionFilters();
+});
+updateForm.addEventListener("submit", submitUpdatePayment);
+closeUpdatePanelButton.addEventListener("click", closeUpdatePanel);
+updatePaymentStatusSelect.addEventListener("change", () => {
+  if (updatePaymentStatusSelect.value === "Paid") {
+    updatePaymentDateInput.value = updatePaymentDateInput.value || todayIsoDate();
+    updateSaleStatusSelect.value = "Completed";
+  } else if (updateSaleStatusSelect.value === "Completed") {
+    updateSaleStatusSelect.value = "Confirmed";
+  }
 });
 
 setTodayDate();

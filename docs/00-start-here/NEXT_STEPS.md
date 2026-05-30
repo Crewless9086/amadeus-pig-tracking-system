@@ -3683,7 +3683,16 @@ Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 
   - 2026-05-30 local first slice: added read-only backend endpoint `GET /api/reports/farm-attention-summary`.
   - The endpoint combines existing order attention and litter attention, returns `digest_lines`, reports `mode = read_only`, and explicitly reports no Supabase writes, no Google Sheets writes, and no Telegram send.
   - Local verification passed: `python -m unittest tests.test_farm_attention_summary tests.test_pig_weights_dashboard_service` and `node --check static/js/dashboard.js`.
-  - Next slice should be the thin n8n scheduled/manual Telegram delivery layer with anti-spam rules before activation.
+  - Owner deployed the backend endpoint on 2026-05-30.
+  - Production smoke on 2026-05-30 returned `success = true`, `status = ok`, `mode = read_only`, `attention_total = 1`, and current digest item `LIT-2026-8A0F: Piglets need tag numbers`; backend source flags remained no Supabase writes, no Google Sheets writes, and no Telegram send.
+  - 2026-05-30 local n8n slice: added inactive workflow export `ALERT - Farm Attention Digest`.
+  - Workflow starts with `dryRun = true`, calls only `/api/reports/farm-attention-summary`, sends only to Charl when deliberately enabled, suppresses empty digests, suppresses duplicate content hashes, and enforces a minimum-hours-between-sends guard through workflow static data.
+  - Owner uploaded the updated workflow export to n8n on 2026-05-30.
+  - n8n API verification on 2026-05-30 confirmed workflow `kd5wrJEgBfUNNxnb` is active.
+  - Manual execution `49136` stopped at `Code - Extract Sendable Digest` with zero output.
+  - Manual executions `49137` and `49138` reached `Telegram - Send Farm Attention Digest` and `Code - Record Sent Digest`; both sent the expected digest: `attention_total = 1`, `orders = 0`, `litters = 1`, `LIT-2026-8A0F: Piglets need tag numbers`.
+  - Manual repeated sends are not valid duplicate-suppression proof because n8n manual executions do not reliably persist workflow static data.
+  - Next action: observe the next scheduled execution. If the digest content is unchanged, it should stop at `Code - Extract Sendable Digest`; if content changes, a send is acceptable.
 - Telegram alert message polish: make alert messages easier to scan by adding clear symbols/emoji and consistent formatting by alert type/severity. Keep this as presentation polish only; do not change backend alert rules, cooldowns, or recipient safety while doing it.
 - Dashboard visual cues: add weather and solar/power symbols or small visual states to the home dashboard so weather and energy status are easier to scan. Keep visuals functional, not decorative, and preserve readable text for exact values.
 - Farm task/reminder/project management: future planning item for important dates, reminders, task ownership, projects, and idea logging. This needs a proper model and should not be squeezed into the current attention list as ad hoc notes.
@@ -3712,7 +3721,14 @@ Farm attention summary result:
 - Local first slice on 2026-05-30 adds `GET /api/reports/farm-attention-summary`.
 - This is backend-owned and read-only: it aggregates daily order attention plus litter attention, prepares digest lines, and sends nothing.
 - It is intended as the source contract for the later Telegram reminder workflow, so n8n can remain a thin caller/delivery layer.
-- It does not yet implement scheduled delivery, cooldowns, change detection, severity grouping, or Telegram formatting.
+- Owner deployed the backend endpoint on 2026-05-30.
+- Production smoke on 2026-05-30 confirmed one current digest item, `LIT-2026-8A0F: Piglets need tag numbers`, and no backend writes or Telegram send.
+- Local n8n workflow export `ALERT - Farm Attention Digest` is prepared inactive and dry-run by default.
+- It implements the first delivery guardrails: no empty sends, no dry-run sends, no repeat content hash, and a minimum hours-between-sends check.
+- Owner uploaded the updated workflow export to n8n on 2026-05-30.
+- Manual Telegram send verification passed on 2026-05-30 through executions `49137` and `49138`.
+- Manual no-output gate verification passed on 2026-05-30 through execution `49136`.
+- It does not yet have first scheduled duplicate-suppression observation or backend severity grouping.
 
 Slaughter form refinement notes:
 
@@ -3721,6 +3737,10 @@ Slaughter form refinement notes:
 - The bottom transaction table should use the agreed table layout pattern with filters and clearer spacing.
 - The slaughter form needs a planned multi-pig workflow because more than one pig may go to slaughter at a time.
 - Owner note 2026-05-26: the slaughter update action currently opens in a browser/Google-style prompt that is awkward to use. Preferred direction is an in-app update form/modal/panel that exposes the required fields clearly before saving, especially final amount, payment status, payment date, carcass weight, and notes.
+- 2026-05-30 local UX slice: replaced the browser-prompt payment update flow with an in-page `Update Slaughter Payment` panel.
+- The panel exposes final amount, payment status, payment method, payment date, sale status, carcass weight for one-pig transactions, updated-by, and update note before saving.
+- The existing backend payment update endpoint remains the source of truth; this slice does not change Supabase schema, sale transaction rules, or the multi-pig transaction model.
+- Local verification passed: `node --check static/js/slaughterSale.js`, focused frontend/sales transaction tests, and local Flask route smoke for `/sales/slaughter`.
 - Multi-pig planning needs to decide whether each pig has its own amount/weight line or whether the batch has one total with per-pig item details.
 - Payment date is separate from slaughter date and should be captured once the butcher pays.
 - The real amount may arrive later than slaughter date, so payment/final amount update needs a payment date field before financial reporting.

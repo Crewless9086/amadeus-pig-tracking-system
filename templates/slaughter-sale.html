@@ -149,6 +149,87 @@
 
       <div id="slaughter_transactions_count" class="field-helper slaughter-count-helper"></div>
 
+      <section id="slaughter_update_panel" class="slaughter-update-panel hidden" aria-live="polite">
+        <div class="slaughter-update-panel-header">
+          <div>
+            <h3>Update Slaughter Payment</h3>
+            <p id="slaughter_update_sale_label">Select a transaction to update payment details.</p>
+          </div>
+          <button type="button" id="close_slaughter_update_panel" class="small-action-button">Close</button>
+        </div>
+
+        <form id="slaughter_update_form">
+          <input type="hidden" id="update_sale_id" />
+          <input type="hidden" id="update_item_count" />
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="update_line_total">Final Amount</label>
+              <input type="number" step="0.01" inputmode="decimal" id="update_line_total" class="no-spinner" required />
+            </div>
+
+            <div class="form-group">
+              <label for="update_payment_status">Payment Status</label>
+              <select id="update_payment_status" required>
+                <option value="Unpaid">Unpaid</option>
+                <option value="Deposit_Paid">Deposit Paid</option>
+                <option value="Part_Paid">Part Paid</option>
+                <option value="Paid">Paid</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="update_payment_method">Payment Method</label>
+              <select id="update_payment_method">
+                <option value="EFT">EFT / Bank Transfer</option>
+                <option value="Cash">Cash</option>
+                <option value="">Not Set</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="update_payment_date">Payment Date</label>
+              <input type="date" id="update_payment_date" />
+              <div class="field-helper">Required when payment status is Paid.</div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="update_sale_status">Sale Status</label>
+              <select id="update_sale_status" required>
+                <option value="Confirmed">Confirmed</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="update_carcass_weight">Carcass Weight (Optional)</label>
+              <input type="number" step="0.001" inputmode="decimal" id="update_carcass_weight" class="no-spinner" />
+              <div id="update_carcass_helper" class="field-helper">For one-pig transactions only.</div>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="update_by">Updated By</label>
+              <input type="text" id="update_by" value="Charl" required />
+            </div>
+
+            <div class="form-group">
+              <label for="update_reason">Update Note</label>
+              <input type="text" id="update_reason" value="Butcher payment updated" required />
+            </div>
+          </div>
+
+          <div class="form-actions form-actions-primary">
+            <button type="submit" id="submit_slaughter_update" class="submit-button">Save Payment Update</button>
+          </div>
+        </form>
+      </section>
+
       <div class="simple-table-wrap">
         <table class="simple-table">
           <thead>

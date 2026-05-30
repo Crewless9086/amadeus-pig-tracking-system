@@ -1,0 +1,212 @@
+{
+  "name": "ALERT - Farm Attention Digest",
+  "description": "Phase 10 thin Telegram digest workflow. Backend owns farm attention rules; n8n only calls the read-only summary endpoint, throttles duplicates, and delivers to Telegram.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -720,
+        0
+      ],
+      "id": "1b6a1bb8-fb40-4872-916d-c1b1f126a601",
+      "name": "Schedule - Farm Attention Digest"
+    },
+    {
+      "parameters": {
+        "jsCode": "const limit = 10;\nconst endpoint = `https://amadeus-pig-tracking-system.onrender.com/api/reports/farm-attention-summary?limit=${limit}`;\n\nreturn [{\n  json: {\n    request_url: endpoint,\n    limit,\n    notes: \"Read-only farm attention summary. Delivery safety is handled after backend response validation.\",\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        0
+      ],
+      "id": "fd2ebdff-df83-41cd-bb3f-a61bf33191f5",
+      "name": "Code - Build Attention Request"
+    },
+    {
+      "parameters": {
+        "url": "={{$json.request_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -260,
+        0
+      ],
+      "id": "b2016224-4d30-4fce-99f4-72c63e003d68",
+      "name": "HTTP - Get Farm Attention Summary",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const dryRun = true;\nconst forceSend = false;\nconst minHoursBetweenSends = 20;\n\nfunction stableStringify(value) {\n  if (Array.isArray(value)) return `[${value.map(stableStringify).join(\",\")}]`;\n  if (value && typeof value === \"object\") {\n    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(\",\")}}`;\n  }\n  return JSON.stringify(value);\n}\n\nfunction hashText(value) {\n  const text = stableStringify(value);\n  let hash = 5381;\n  for (let i = 0; i < text.length; i += 1) {\n    hash = ((hash << 5) + hash) + text.charCodeAt(i);\n    hash |= 0;\n  }\n  return String(hash >>> 0);\n}\n\nfunction hoursBetween(a, b) {\n  return Math.abs(b.getTime() - a.getTime()) / 36e5;\n}\n\nconst response = $json || {};\nconst source = response.source && typeof response.source === \"object\" ? response.source : {};\n\nif (response.success !== true || response.status !== \"ok\") return [];\nif (response.mode !== \"read_only\") return [];\nif (source.writes_to_supabase === true || source.writes_to_sheets === true || source.sends_telegram === true) return [];\n\nconst counts = response.counts && typeof response.counts === \"object\" ? response.counts : {};\nconst attentionTotal = Number(counts.attention_total || 0);\nif (!Number.isFinite(attentionTotal) || attentionTotal <= 0) return [];\n\nconst digestLines = Array.isArray(response.digest_lines) ? response.digest_lines : [];\nif (digestLines.length === 0) return [];\n\nconst contentHash = hashText({\n  report_date: response.report_date,\n  counts,\n  digest_lines: digestLines,\n});\n\nconst staticData = $getWorkflowStaticData(\"global\");\nconst now = new Date();\nconst lastSentAt = staticData.lastSentAt ? new Date(staticData.lastSentAt) : null;\nconst recentlySent = lastSentAt && !Number.isNaN(lastSentAt.getTime()) && hoursBetween(lastSentAt, now) < minHoursBetweenSends;\nconst sameContent = staticData.lastSentHash === contentHash;\n\nif (dryRun) return [];\nif (!forceSend && sameContent) return [];\nif (!forceSend && recentlySent) return [];\n\nreturn [{\n  json: {\n    report_date: response.report_date,\n    generated_at: response.generated_at,\n    counts,\n    digest_lines: digestLines,\n    content_hash: contentHash,\n    dry_run: dryRun,\n    force_send: forceSend,\n    min_hours_between_sends: minHoursBetweenSends,\n    source,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        0
+      ],
+      "id": "483e1758-776b-4b70-8fc6-26adceecff58",
+      "name": "Code - Extract Sendable Digest"
+    },
+    {
+      "parameters": {
+        "jsCode": "const CHARL_TELEGRAM_CHAT_ID = \"5721652188\";\n\nfunction clean(value) {\n  return String(value ?? \"\").trim();\n}\n\nfunction formatDate(value) {\n  if (!value) return \"today\";\n  const d = new Date(`${value}T00:00:00+02:00`);\n  if (Number.isNaN(d.getTime())) return value;\n  return new Intl.DateTimeFormat(\"en-ZA\", {\n    timeZone: \"Africa/Johannesburg\",\n    year: \"numeric\",\n    month: \"short\",\n    day: \"2-digit\",\n  }).format(d);\n}\n\nreturn $input.all().map((item) => {\n  const digest = item.json || {};\n  const counts = digest.counts || {};\n  const lines = Array.isArray(digest.digest_lines) ? digest.digest_lines.map(clean).filter(Boolean) : [];\n  const text = [\n    `Farm attention digest - ${formatDate(digest.report_date)}`,\n    \"\",\n    `Total: ${counts.attention_total || 0}`,\n    `Orders: ${counts.orders_needing_attention || 0}`,\n    `Litters: ${counts.litter_attention || 0}`,\n    \"\",\n    ...lines.slice(0, 25),\n  ].join(\"\\n\");\n\n  return {\n    json: {\n      chatId: CHARL_TELEGRAM_CHAT_ID,\n      telegram_text: text,\n      report_date: digest.report_date,\n      content_hash: digest.content_hash,\n      counts,\n      _digest: digest,\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ],
+      "id": "1e468705-58fc-4537-ae95-0a8790abec5b",
+      "name": "Code - Format Telegram Farm Attention Digest"
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.chatId}}",
+        "text": "={{$json.telegram_text}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        460,
+        0
+      ],
+      "id": "a1b6ed32-d4fd-4c82-af25-a939444b76b9",
+      "name": "Telegram - Send Farm Attention Digest",
+      "credentials": {
+        "telegramApi": {
+          "id": "e5jS1ondryiauRNX",
+          "name": "Telegram - Oom Sakkie"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst staticData = $getWorkflowStaticData(\"global\");\n\nreturn $input.all().map((item) => {\n  const payload = item.json || {};\n  if (payload.content_hash) {\n    staticData.lastSentAt = now.toISOString();\n    staticData.lastSentHash = payload.content_hash;\n    staticData.lastReportDate = payload.report_date || \"\";\n  }\n\n  return {\n    json: {\n      ...payload,\n      delivery_recorded_at: now.toISOString(),\n      delivery_static_data_note: \"Duplicate suppression state is recorded after Telegram delivery succeeds. Manual executions may not persist workflow static data in n8n.\",\n    },\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        0
+      ],
+      "id": "64ea09c2-9f94-432f-b9d0-2395af1041dc",
+      "name": "Code - Record Sent Digest"
+    },
+    {
+      "parameters": {
+        "content": "Phase 10 farm attention digest. Backend source only: /api/reports/farm-attention-summary. Keep inactive and dryRun=true until manual read-only, no-send, and duplicate-suppression checks pass. Do not add Google Sheets reads/writes or duplicate attention rules in n8n."
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -260
+      ],
+      "id": "ecdf1fb0-e733-4474-a66f-4f7c5fbd90165",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Schedule - Farm Attention Digest": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Attention Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Attention Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Get Farm Attention Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Get Farm Attention Summary": {
+      "main": [
+        [
+          {
+            "node": "Code - Extract Sendable Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Extract Sendable Digest": {
+      "main": [
+        [
+          {
+            "node": "Code - Format Telegram Farm Attention Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Format Telegram Farm Attention Digest": {
+      "main": [
+        [
+          {
+            "node": "Telegram - Send Farm Attention Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram - Send Farm Attention Digest": {
+      "main": [
+        [
+          {
+            "node": "Code - Record Sent Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "phase-10-farm-attention-digest-local"
+}

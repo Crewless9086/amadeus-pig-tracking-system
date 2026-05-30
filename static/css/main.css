@@ -285,6 +285,32 @@ textarea {
   margin-bottom: 0;
 }
 
+.slaughter-update-panel {
+  margin: 14px 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: #fffdf9;
+}
+
+.slaughter-update-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.slaughter-update-panel-header h3 {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+
+.slaughter-update-panel-header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
 .readonly-total {
   min-height: 52px;
   display: flex;
@@ -1443,7 +1469,8 @@ button:disabled {
 
   .summary-hero,
   .compact-record-main,
-  .slaughter-items-header {
+  .slaughter-items-header,
+  .slaughter-update-panel-header {
     flex-direction: column;
     padding-right: 0;
   }

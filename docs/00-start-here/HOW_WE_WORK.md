@@ -11,9 +11,9 @@ Edit the lines below so every session starts with clarity.
 | Field | Value |
 |--------|--------|
 | **Today's focus** | `NEXT_STEPS.md` Phase 10 choice point - choose the next deliberate slice |
-| **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, and Herd dashboard count audit are deployed/browser-verified. Farm attention summary backend slice is local. |
-| **Current focus** | Phase 10 farm attention Telegram digest planning: next build the thin n8n delivery/cooldown layer after deploying the read-only backend summary. |
-| **Current last verified** | **2026-05-30** - Herd tile full breakdown deployed/browser-verified. |
+| **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, Herd dashboard count audit, and farm attention summary endpoint are deployed/browser-verified. Farm attention digest workflow is active in n8n with manual Telegram send verified; first scheduled duplicate-suppression observation remains pending. `/sales/slaughter` update UX is locally browser-checked. |
+| **Current focus** | Deploy the `/sales/slaughter` in-page payment update panel, while observing the next farm attention digest scheduled run in the background. |
+| **Current last verified** | **2026-05-30** - `/sales/slaughter` in-page payment update panel local browser check passed. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
