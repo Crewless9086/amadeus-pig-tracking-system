@@ -119,6 +119,10 @@ backButton.addEventListener("click", () => {
     window.history.back();
     return;
   }
+  if (window.location.pathname.startsWith("/sales/transactions/")) {
+    window.location.href = "/sales-dashboard";
+    return;
+  }
   window.location.href = "/sales/slaughter";
 });
 

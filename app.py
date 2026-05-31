@@ -56,6 +56,11 @@ def slaughter_sale_detail_page(sale_id):
     return render_template("slaughter-sale-detail.html", sale_id=sale_id)
 
 
+@app.route("/sales/transactions/<sale_id>")
+def sales_transaction_detail_page(sale_id):
+    return render_template("slaughter-sale-detail.html", sale_id=sale_id)
+
+
 @app.route("/orders")
 def orders_page():
     return render_template("orders.html")

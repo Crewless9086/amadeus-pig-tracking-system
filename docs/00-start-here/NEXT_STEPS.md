@@ -3728,7 +3728,8 @@ Farm attention summary result:
 - Owner uploaded the updated workflow export to n8n on 2026-05-30.
 - Manual Telegram send verification passed on 2026-05-30 through executions `49137` and `49138`.
 - Manual no-output gate verification passed on 2026-05-30 through execution `49136`.
-- It does not yet have first scheduled duplicate-suppression observation or backend severity grouping.
+- First scheduled duplicate-suppression observation passed through n8n execution `49154`: trigger-mode run stopped at `Code - Extract Sendable Digest` with zero output, Telegram did not run, and no sent digest was recorded.
+- Backend severity grouping remains a possible future refinement.
 
 Slaughter form refinement notes:
 
@@ -3751,6 +3752,13 @@ Slaughter form refinement notes:
   - Table rows are clickable and keyboard accessible, opening `/sales/slaughter/<sale_id>`.
   - Added read-only sale detail API `GET /api/sales-transactions/<sale_id>` and detail page with a back button, sale/payment summary, and item rows.
   - Local verification passed: JS syntax checks for `slaughterSale.js` and `slaughterSaleDetail.js`, focused frontend/sales read/routes/update tests, and route smoke for `/sales/slaughter` plus `/sales/slaughter/SALE-2026-1DE373`.
+- 2026-05-31 local sales overview/reporting slice:
+  - Reworked `/sales-dashboard` from stock-only summary into a wider sales reporting screen.
+  - Added filters for period, selected month, selected year, custom date range, and sales stream.
+  - Added totals for all sales, livestock, slaughter, and meat using loaded Supabase `sales_transactions`.
+  - Added a clickable transaction ledger with drill-in route `/sales/transactions/<sale_id>`.
+  - Kept existing current stock availability summary as a secondary section below the transaction report.
+  - Local verification passed: `node --check static/js/salesDashboard.js`, `node --check static/js/slaughterSaleDetail.js`, focused frontend/sales read/routes tests, and local route smoke for `/sales-dashboard` plus `/sales/transactions/SALE-2026-1DE373`.
 - Multi-pig planning needs to decide whether each pig has its own amount/weight line or whether the batch has one total with per-pig item details.
 - Payment date is separate from slaughter date and should be captured once the butcher pays.
 - The real amount may arrive later than slaughter date, so payment/final amount update needs a payment date field before financial reporting.

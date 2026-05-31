@@ -303,6 +303,101 @@ textarea {
   white-space: normal;
 }
 
+.sales-overview-shell {
+  display: block;
+  padding: 24px;
+}
+
+.sales-overview-card {
+  max-width: 1640px;
+  margin: 0 auto;
+  border-radius: 18px;
+}
+
+.sales-overview-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(150px, 0.7fr) minmax(110px, 0.45fr) minmax(150px, 0.7fr) minmax(140px, 0.65fr) minmax(140px, 0.65fr) auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.sales-overview-summary {
+  display: grid;
+  grid-template-columns: 1.25fr repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.sales-total-card,
+.sales-stock-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #ffffff;
+}
+
+.sales-total-card-main {
+  background: var(--green-soft);
+}
+
+.sales-total-card span,
+.sales-stock-card span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.sales-total-card strong,
+.sales-stock-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 24px;
+}
+
+.sales-total-card small,
+.sales-stock-card small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.sales-overview-section {
+  margin-top: 22px;
+}
+
+.sales-stock-total-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.sales-stock-summary-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sales-stock-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.75fr 1fr 0.8fr;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.sales-stock-row span {
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
 .slaughter-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1599,7 +1694,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .slaughter-filters-grid {
+  .slaughter-filters-grid,
+  .sales-overview-filters,
+  .sales-overview-summary,
+  .sales-stock-row {
     grid-template-columns: 1fr;
   }
 
@@ -1686,6 +1784,10 @@ button:disabled {
   }
 
   .slaughter-page-shell {
+    padding: 12px;
+  }
+
+  .sales-overview-shell {
     padding: 12px;
   }
 }

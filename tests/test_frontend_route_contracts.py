@@ -206,6 +206,26 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/sales/slaughter", js)
         self.assertIn("renderItems", js)
 
+    def test_sales_dashboard_is_transaction_overview_with_filters_and_drill_in(self):
+        template = Path("templates/sales-dashboard.html").read_text(encoding="utf-8")
+        js = Path("static/js/salesDashboard.js").read_text(encoding="utf-8")
+
+        self.assertIn("Sales Overview", template)
+        self.assertIn('id="sales_period_filter"', template)
+        self.assertIn('id="sales_month_filter"', template)
+        self.assertIn('id="sales_year_filter"', template)
+        self.assertIn('id="sales_stream_filter"', template)
+        self.assertIn('id="sales_transactions_body"', template)
+        self.assertIn('id="sales_total_value"', template)
+        self.assertIn("/api/sales-transactions?limit=100", js)
+        self.assertIn("/api/pig-weights/sales-dashboard", js)
+        self.assertIn("filteredTransactions", js)
+        self.assertIn("renderSalesTotals", js)
+        self.assertIn("data-sale-row", js)
+        self.assertIn("/sales/transactions/${encodeURIComponent(row.dataset.saleRow)}", js)
+        self.assertIn("selected_month", js)
+        self.assertIn("selected_year", js)
+
     def test_print_sheets_page_is_read_only_weight_capture_sheet(self):
         template = Path("templates/print-sheets.html").read_text(encoding="utf-8")
         js = Path("static/js/printSheets.js").read_text(encoding="utf-8")

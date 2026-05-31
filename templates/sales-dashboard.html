@@ -3,43 +3,139 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sales Dashboard</title>
+  <title>Sales Overview</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card">
+  <div class="page-shell sales-overview-shell">
+    <div class="page-card sales-overview-card">
       <div class="page-header page-header-with-link">
         <div>
-          <h1>Sales Dashboard</h1>
-          <p>Grouped sales stock view for humans now and Sam later.</p>
+          <h1>Sales Overview</h1>
+          <p id="sales_overview_period_label">Sales totals, transaction history, and stock availability.</p>
         </div>
-        <a href="/" class="secondary-link">← Dashboard</a>
+        <div class="ops-header-actions">
+          <a href="/sales/slaughter">Slaughter Sale</a>
+          <a href="/sales-availability">Availability</a>
+          <a href="/">Dashboard</a>
+        </div>
       </div>
 
       <div id="sales_dashboard_message" class="message-box hidden"></div>
 
-      <div class="page-header" style="margin-bottom: 14px;">
-        <div>
-          <h2 style="margin: 0 0 8px 0;">Category Totals</h2>
-          <p style="margin: 0; color: var(--text-soft);">Top-level totals by sales category.</p>
+      <section class="sales-overview-filters">
+        <div class="form-group">
+          <label for="sales_period_filter">Period</label>
+          <select id="sales_period_filter">
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_year">This Year</option>
+            <option value="selected_month">Selected Month</option>
+            <option value="selected_year">Selected Year</option>
+            <option value="custom">Custom Range</option>
+            <option value="all">All Loaded</option>
+          </select>
         </div>
-      </div>
 
-      <div id="sales_totals_grid" class="dashboard-actions-grid"></div>
-
-      <div class="page-header" style="margin-top: 28px; margin-bottom: 14px;">
-        <div>
-          <h2 style="margin: 0 0 8px 0;">Weight Band Summary</h2>
-          <p style="margin: 0; color: var(--text-soft);">Detailed grouped stock by category and weight band.</p>
+        <div class="form-group">
+          <label for="sales_month_filter">Month</label>
+          <input type="month" id="sales_month_filter" />
         </div>
-      </div>
 
-      <div id="sales_summary_list" class="history-list"></div>
+        <div class="form-group">
+          <label for="sales_year_filter">Year</label>
+          <input type="number" id="sales_year_filter" min="2020" max="2100" step="1" />
+        </div>
 
-      <div class="form-actions" style="margin-top: 24px;">
-        <a href="/sales-availability" class="button-link button-link-secondary">Open Pig-Level Sales Availability</a>
-      </div>
+        <div class="form-group">
+          <label for="sales_stream_filter">Stream</label>
+          <select id="sales_stream_filter">
+            <option value="">All streams</option>
+            <option value="Livestock">Livestock</option>
+            <option value="Slaughter">Slaughter</option>
+            <option value="Meat">Meat</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="sales_from_filter">From</label>
+          <input type="date" id="sales_from_filter" />
+        </div>
+
+        <div class="form-group">
+          <label for="sales_to_filter">To</label>
+          <input type="date" id="sales_to_filter" />
+        </div>
+
+        <div class="form-group slaughter-filter-actions">
+          <label>&nbsp;</label>
+          <button type="button" id="reset_sales_filters" class="button-link button-link-secondary">Reset</button>
+        </div>
+      </section>
+
+      <section class="sales-overview-summary">
+        <article class="sales-total-card sales-total-card-main">
+          <span>Total Sales</span>
+          <strong id="sales_total_value">R0.00</strong>
+          <small id="sales_total_count">0 transactions</small>
+        </article>
+        <article class="sales-total-card">
+          <span>Livestock</span>
+          <strong id="sales_livestock_value">R0.00</strong>
+          <small id="sales_livestock_count">0 transactions</small>
+        </article>
+        <article class="sales-total-card">
+          <span>Slaughter</span>
+          <strong id="sales_slaughter_value">R0.00</strong>
+          <small id="sales_slaughter_count">0 transactions</small>
+        </article>
+        <article class="sales-total-card">
+          <span>Meat</span>
+          <strong id="sales_meat_value">R0.00</strong>
+          <small id="sales_meat_count">0 transactions</small>
+        </article>
+      </section>
+
+      <section class="sales-overview-section">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Transactions</h2>
+            <p id="sales_transactions_count">Loading sales transactions...</p>
+          </div>
+        </div>
+
+        <div class="simple-table-wrap">
+          <table class="simple-table sales-overview-table">
+            <thead>
+              <tr>
+                <th>Transaction</th>
+                <th>Stream</th>
+                <th>Buyer / Destination</th>
+                <th>Status</th>
+                <th>Payment</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody id="sales_transactions_body">
+              <tr>
+                <td colspan="6" class="table-empty">Loading sales transactions...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sales-overview-section">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Available Stock</h2>
+            <p>Current pig-level stock summary from the existing availability view.</p>
+          </div>
+        </div>
+
+        <div id="sales_totals_grid" class="sales-stock-total-grid"></div>
+        <div id="sales_summary_list" class="sales-stock-summary-list"></div>
+      </section>
     </div>
   </div>
 
