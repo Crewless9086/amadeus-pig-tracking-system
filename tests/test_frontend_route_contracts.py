@@ -182,11 +182,29 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("applyTransactionFilters", js)
         self.assertIn("table-subtext", js)
         self.assertIn('colspan="6"', js)
+        self.assertIn("data-sale-row", js)
+        self.assertIn("/sales/slaughter/${encodeURIComponent(row.dataset.saleRow)}", js)
+        self.assertIn('item.sale_status === "Completed"', js)
+        self.assertIn('item.payment_status === "Paid"', js)
+        self.assertIn("table-action-button", js)
         self.assertIn("setSubmitting", js)
         self.assertIn("submitButtons.forEach", js)
         self.assertNotIn("/api/pig-weights/weights", js)
         self.assertNotIn("/api/master/pigs", js)
         self.assertIn("/sales/slaughter", dashboard)
+
+    def test_slaughter_sale_detail_page_reads_one_sale(self):
+        template = Path("templates/slaughter-sale-detail.html").read_text(encoding="utf-8")
+        js = Path("static/js/slaughterSaleDetail.js").read_text(encoding="utf-8")
+
+        self.assertIn("sale_detail_back", template)
+        self.assertIn("sale_detail_summary", template)
+        self.assertIn("sale_items_body", template)
+        self.assertIn("window.SLAUGHTER_SALE_ID", template)
+        self.assertIn("/api/sales-transactions/${encodeURIComponent(saleId)}", js)
+        self.assertIn("window.history.back", js)
+        self.assertIn("/sales/slaughter", js)
+        self.assertIn("renderItems", js)
 
     def test_print_sheets_page_is_read_only_weight_capture_sheet(self):
         template = Path("templates/print-sheets.html").read_text(encoding="utf-8")

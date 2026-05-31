@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from modules.sales.sales_transaction_read import (
+    get_sales_transaction,
     get_monthly_sales_transaction_summary,
     list_sales_transactions,
 )
@@ -72,6 +73,43 @@ class SalesTransactionReadTests(unittest.TestCase):
         self.assertFalse(result["source"]["writes_to_sheets"])
         self.assertFalse(result["source"]["writes_to_supabase"])
         cursor.execute.assert_called_once()
+        self.assertIn("created_at desc", cursor.execute.call_args[0][0].lower())
+
+    @patch.dict(os.environ, {"DATABASE_URL": "postgresql://user:secret@example/db"}, clear=True)
+    def test_get_sales_transaction_returns_header_and_items(self):
+        cursor = Mock()
+        cursor_context = Mock()
+        cursor_context.__enter__ = Mock(return_value=cursor)
+        cursor_context.__exit__ = Mock(return_value=False)
+
+        connection = Mock()
+        connection.cursor.return_value = cursor_context
+        connection_context = Mock()
+        connection_context.__enter__ = Mock(return_value=connection)
+        connection_context.__exit__ = Mock(return_value=False)
+
+        def execute_side_effect(query, params):
+            if "from public.sales_transactions" in query:
+                cursor.description = [("sale_id",), ("sale_date",), ("net_total",)]
+                cursor.fetchall.return_value = [("SALE-1", datetime(2026, 5, 21, 10, 0, 0), Decimal("1200.00"))]
+            else:
+                cursor.description = [("sale_item_id",), ("sale_id",), ("line_total",)]
+                cursor.fetchall.return_value = [("ITEM-1", "SALE-1", Decimal("1200.00"))]
+
+        cursor.execute.side_effect = execute_side_effect
+        psycopg = Mock(connect=Mock(return_value=connection_context))
+
+        with patch.dict("sys.modules", {"psycopg": psycopg}):
+            result, status_code = get_sales_transaction("SALE-1")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["sales_transaction"]["sale_id"], "SALE-1")
+        self.assertEqual(result["sales_transaction"]["net_total"], 1200.0)
+        self.assertEqual(result["items"][0]["sale_item_id"], "ITEM-1")
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        self.assertFalse(result["source"]["writes_to_supabase"])
+        self.assertEqual(cursor.execute.call_count, 2)
 
     def test_monthly_sales_transaction_summary_reports_missing_database_url(self):
         with patch.dict(os.environ, {}, clear=True):

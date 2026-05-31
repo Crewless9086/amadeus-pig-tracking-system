@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slaughter Sale Detail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell slaughter-page-shell">
+    <div class="page-card slaughter-page-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="sale_detail_title">Slaughter Sale</h1>
+          <p id="sale_detail_subtitle">Loading sale details...</p>
+        </div>
+        <button type="button" id="sale_detail_back" class="small-action-button">Back</button>
+      </div>
+
+      <div id="sale_detail_message" class="message-box hidden"></div>
+
+      <section class="slaughter-detail-grid">
+        <article class="slaughter-detail-panel">
+          <h2>Sale</h2>
+          <dl class="detail-list" id="sale_detail_summary"></dl>
+        </article>
+
+        <article class="slaughter-detail-panel">
+          <h2>Payment</h2>
+          <dl class="detail-list" id="sale_detail_payment"></dl>
+        </article>
+      </section>
+
+      <section class="slaughter-detail-panel">
+        <div class="slaughter-update-panel-header">
+          <div>
+            <h2>Items</h2>
+            <p id="sale_items_count">Loading items...</p>
+          </div>
+        </div>
+        <div class="simple-table-wrap">
+          <table class="simple-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Pig</th>
+                <th>Weights</th>
+                <th>Pricing</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="sale_items_body">
+              <tr>
+                <td colspan="5" class="table-empty">Loading sale items...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    window.SLAUGHTER_SALE_ID = "{{ sale_id }}";
+  </script>
+  <script src="{{ url_for('static', filename='js/slaughterSaleDetail.js') }}"></script>
+</body>
+</html>

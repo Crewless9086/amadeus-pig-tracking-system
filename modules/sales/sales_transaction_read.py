@@ -65,14 +65,16 @@ def list_sales_transactions(sale_stream="", limit=DEFAULT_LIMIT, database_url=No
                         st.currency,
                         st.payment_status,
                         st.payment_method,
+                        st.payment_date,
                         st.sale_status,
                         st.created_at,
+                        st.updated_at,
                         count(sti.sale_item_id)::int as item_count
                     from public.sales_transactions st
                     left join public.sales_transaction_items sti on sti.sale_id = st.sale_id
                     {where_clause}
                     group by st.sale_id
-                    order by st.sale_date desc, st.sale_id desc
+                    order by st.created_at desc, st.sale_date desc, st.sale_id desc
                     limit %s
                     """,
                     tuple(params),
@@ -95,6 +97,120 @@ def list_sales_transactions(sale_stream="", limit=DEFAULT_LIMIT, database_url=No
         "limit": limit,
         "sale_stream": sale_stream or None,
         "sales_transactions": [_json_safe_row(row) for row in rows],
+        "source": _source_metadata(),
+    }, 200
+
+
+def get_sales_transaction(sale_id, database_url=None):
+    sale_id = str(sale_id or "").strip()
+    if not sale_id:
+        raise ValueError("sale_id is required.")
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "message": f"{DATABASE_URL_ENV} is not configured.",
+            "source": _source_metadata(),
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "message": "Python database dependency is not installed.",
+            "source": _source_metadata(),
+        }, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                transaction_rows = _fetch_all_dicts(
+                    cursor,
+                    """
+                    select
+                        sale_id,
+                        sale_date,
+                        sale_stream,
+                        buyer_name,
+                        buyer_phone_raw,
+                        destination,
+                        linked_order_id,
+                        pig_count,
+                        gross_total,
+                        deductions_total,
+                        net_total,
+                        currency,
+                        payment_status,
+                        payment_method,
+                        payment_date,
+                        sale_status,
+                        notes,
+                        created_by,
+                        created_at,
+                        updated_at
+                    from public.sales_transactions
+                    where sale_id = %s
+                    """,
+                    (sale_id,),
+                )
+                if not transaction_rows:
+                    return {
+                        "success": False,
+                        "configured": True,
+                        "status": "not_found",
+                        "message": f"Sales transaction {sale_id} was not found.",
+                        "source": _source_metadata(),
+                    }, 404
+
+                item_rows = _fetch_all_dicts(
+                    cursor,
+                    """
+                    select
+                        sale_item_id,
+                        sale_id,
+                        item_type,
+                        pig_id,
+                        tag_number,
+                        order_line_id,
+                        description,
+                        quantity,
+                        live_weight_kg,
+                        carcass_weight_kg,
+                        packed_weight_kg,
+                        unit_price,
+                        pricing_basis,
+                        line_total,
+                        notes,
+                        created_at,
+                        updated_at
+                    from public.sales_transaction_items
+                    where sale_id = %s
+                    order by created_at asc, sale_item_id asc
+                    """,
+                    (sale_id,),
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_transaction_read_failed",
+            "message": "Sales transaction detail read failed.",
+            "error_type": exc.__class__.__name__,
+            "source": _source_metadata(),
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "sales_transaction": _json_safe_row(transaction_rows[0]),
+        "items": [_json_safe_row(row) for row in item_rows],
         "source": _source_metadata(),
     }, 200
 

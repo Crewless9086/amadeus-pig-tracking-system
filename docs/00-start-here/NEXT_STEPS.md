@@ -3744,6 +3744,13 @@ Slaughter form refinement notes:
 - Owner local browser check passed on 2026-05-30: clicking `Update Payment` opens the in-page update panel and the flow appears correct.
 - 2026-05-30 local layout/table slice: widened `/sales/slaughter` to a 1640px operational canvas, split the create form and transaction ledger into a responsive two-column workspace, and compressed the transaction table by grouping transaction/date, buyer/destination, and amount/item count.
 - Local verification passed: `node --check static/js/slaughterSale.js`, focused frontend/sales transaction tests, and local Flask route smoke for `/sales/slaughter`.
+- 2026-05-31 local table/detail slice:
+  - Slaughter transactions now sort by newest `created_at` first, then sale date and sale ID.
+  - Completed/paid rows are treated as closed in the table and no longer show update/cancel actions.
+  - Table action buttons are smaller (`Update`, `Cancel`) for open rows.
+  - Table rows are clickable and keyboard accessible, opening `/sales/slaughter/<sale_id>`.
+  - Added read-only sale detail API `GET /api/sales-transactions/<sale_id>` and detail page with a back button, sale/payment summary, and item rows.
+  - Local verification passed: JS syntax checks for `slaughterSale.js` and `slaughterSaleDetail.js`, focused frontend/sales read/routes/update tests, and route smoke for `/sales/slaughter` plus `/sales/slaughter/SALE-2026-1DE373`.
 - Multi-pig planning needs to decide whether each pig has its own amount/weight line or whether the batch has one total with per-pig item details.
 - Payment date is separate from slaughter date and should be captured once the butcher pays.
 - The real amount may arrive later than slaughter date, so payment/final amount update needs a payment date field before financial reporting.

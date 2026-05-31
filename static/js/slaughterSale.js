@@ -252,18 +252,19 @@ function renderTransactions(rows) {
 
   transactionsBody.innerHTML = rows.map((item) => {
     const isCancelled = item.sale_status === "Cancelled";
-    const action = isCancelled
-      ? '<span class="muted-text">Cancelled</span>'
+    const isClosed = isCancelled || item.sale_status === "Completed" || item.payment_status === "Paid";
+    const action = isClosed
+      ? `<span class="muted-text">${isCancelled ? "Cancelled" : "Closed"}</span>`
       : `
-        <div class="inline-action-group">
-          <button type="button" class="small-action-button" data-update-sale-id="${item.sale_id}" data-current-total="${item.net_total ?? ""}" data-item-count="${item.item_count ?? 0}">Update Payment</button>
-          <button type="button" class="small-action-button" data-cancel-sale-id="${item.sale_id}">Cancel</button>
+        <div class="inline-action-group table-action-group">
+          <button type="button" class="small-action-button table-action-button" data-update-sale-id="${item.sale_id}" data-current-total="${item.net_total ?? ""}" data-item-count="${item.item_count ?? 0}">Update</button>
+          <button type="button" class="small-action-button table-action-button" data-cancel-sale-id="${item.sale_id}">Cancel</button>
         </div>
       `;
     const rowClass = isCancelled ? ' class="muted-row"' : "";
     const statusClass = isCancelled ? "status-pill status-pill-muted" : "status-pill";
     return `
-      <tr${rowClass}>
+      <tr${rowClass} data-sale-row="${item.sale_id}" tabindex="0">
         <td>
           <strong>${item.sale_id || "-"}</strong>
           <span class="table-subtext">${formatDate(item.sale_date)}</span>
@@ -547,6 +548,7 @@ async function submitUpdatePayment(event) {
 transactionsBody.addEventListener("click", (event) => {
   const updateButton = event.target.closest("[data-update-sale-id]");
   if (updateButton) {
+    event.stopPropagation();
     openUpdatePanel(
       updateButton.dataset.updateSaleId,
       updateButton.dataset.currentTotal,
@@ -556,8 +558,23 @@ transactionsBody.addEventListener("click", (event) => {
   }
 
   const button = event.target.closest("[data-cancel-sale-id]");
-  if (!button) return;
-  cancelTransaction(button.dataset.cancelSaleId);
+  if (button) {
+    event.stopPropagation();
+    cancelTransaction(button.dataset.cancelSaleId);
+    return;
+  }
+
+  const row = event.target.closest("[data-sale-row]");
+  if (!row) return;
+  window.location.href = `/sales/slaughter/${encodeURIComponent(row.dataset.saleRow)}`;
+});
+
+transactionsBody.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const row = event.target.closest("[data-sale-row]");
+  if (!row) return;
+  event.preventDefault();
+  window.location.href = `/sales/slaughter/${encodeURIComponent(row.dataset.saleRow)}`;
 });
 
 pigRowsContainer.addEventListener("change", (event) => {
