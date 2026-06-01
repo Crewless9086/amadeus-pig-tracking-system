@@ -19,6 +19,30 @@
 
       <div id="sale_detail_message" class="message-box hidden"></div>
 
+      <section id="sale_exit_confirm_panel" class="lifecycle-action-panel hidden">
+        <div class="section-subtitle">Pig Exit Confirmation</div>
+        <form id="sale_exit_confirm_form" class="compact-form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="sale_exit_date">Exit Date</label>
+              <input id="sale_exit_date" type="date" required>
+            </div>
+            <div class="form-field">
+              <label for="sale_exit_changed_by">Confirmed By</label>
+              <input id="sale_exit_changed_by" type="text" value="web_app" required>
+            </div>
+            <div class="form-field form-field-wide">
+              <label for="sale_exit_notes">Notes</label>
+              <textarea id="sale_exit_notes" rows="3"></textarea>
+            </div>
+          </div>
+          <p class="form-helper">This marks linked pigs as slaughtered in pig records while keeping their litter and history.</p>
+          <div class="form-actions">
+            <button id="sale_exit_confirm_button" type="submit" class="button-danger">Confirm Pig Exits</button>
+          </div>
+        </form>
+      </section>
+
       <section class="slaughter-detail-grid">
         <article class="slaughter-detail-panel">
           <h2>Sale</h2>

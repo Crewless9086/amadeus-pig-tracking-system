@@ -175,6 +175,31 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         update_transaction.assert_called_once()
 
+    def test_sales_transaction_confirm_pig_exits_route_calls_lifecycle_service(self):
+        service_result = {
+            "success": True,
+            "status": "pig_exits_confirmed",
+            "sale_id": "SALE-1",
+            "source": {
+                "source": "supabase_sales_transaction_to_google_sheets_pig_master",
+                "writes_to_sheets": True,
+                "writes_to_supabase": False,
+            },
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "confirm_slaughter_pig_exits",
+            return_value=(service_result, 200),
+        ) as confirm_exits:
+            response = self.client.post("/api/sales-transactions/SALE-1/confirm-pig-exits", json={
+                "changed_by": "Charl",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        confirm_exits.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -112,4 +112,17 @@ Tests to add:
 - The pig row, `Pig_ID`, parent fields, and `Litter_ID` are preserved for litter and breeding history.
 - Already terminal/off-farm pigs are blocked; historical correction remains a future separate workflow.
 - Local verification passed: `node --check static/js/pigDetail.js`, focused pig lifecycle/frontend tests at 27 tests, route smoke for the pig detail page and invalid lifecycle payload, and full local unittest suite at 316 tests.
-- Next step: deploy and browser-check on a non-critical/known test case before using it for an actual farm death/removal record.
+- Owner can see the action in the UI after deploy, but it has not been live-tested yet. Keep 9.7B open until a safe known/test case is verified before using it for an actual farm death/removal record.
+
+## 9.7C Local Implementation State - 2026-06-01
+
+- Added backend service `confirm_slaughter_pig_exits()`.
+- Added route `POST /api/sales-transactions/<sale_id>/confirm-pig-exits`.
+- Added a `Pig Exit Confirmation` form to the slaughter sale detail page.
+- This action is explicit and operator-triggered; it does not run automatically when a sale is created, completed, or paid.
+- It reads the Supabase sales transaction and linked item rows, then updates linked `PIG_MASTER` rows only if all linked pigs still exist, are not terminal, and are still on farm.
+- Successful confirmation sets linked pigs to `Status = Slaughtered`, `On_Farm = No`, `Exit_Date`, `Exit_Reason = Sold to Abattoir`, optional `Carcass_Weight_Kg`, `General_Notes`, and `Updated_At`.
+- It writes to Google Sheets `PIG_MASTER` and does not write to Supabase.
+- If any linked pig is missing, terminal, or already off farm, no pig rows are updated and the action returns a blocking error.
+- Local verification passed: `node --check static/js/slaughterSaleDetail.js`, `node --check static/js/pigDetail.js`, focused sales lifecycle/routes/frontend/pig lifecycle tests at 38 tests, route smoke for `/sales/slaughter/<sale_id>` plus missing-config confirm endpoint, and full local unittest suite at 320 tests.
+- Next step: deploy and browser-check on an existing slaughter sale. Use caution if the linked pig was already manually marked slaughtered; the endpoint will block terminal/off-farm pigs by design.

@@ -7,6 +7,12 @@ const summaryList = document.getElementById("sale_detail_summary");
 const paymentList = document.getElementById("sale_detail_payment");
 const itemsCount = document.getElementById("sale_items_count");
 const itemsBody = document.getElementById("sale_items_body");
+const exitConfirmPanel = document.getElementById("sale_exit_confirm_panel");
+const exitConfirmForm = document.getElementById("sale_exit_confirm_form");
+const exitDateInput = document.getElementById("sale_exit_date");
+const exitChangedByInput = document.getElementById("sale_exit_changed_by");
+const exitNotesInput = document.getElementById("sale_exit_notes");
+const exitConfirmButton = document.getElementById("sale_exit_confirm_button");
 
 function showMessage(message, type = "error") {
   messageBox.classList.remove("hidden", "message-success", "message-error");
@@ -38,6 +44,22 @@ function renderDetailList(element, rows) {
       <dd>${valueOrDash(value)}</dd>
     </div>
   `).join("");
+}
+
+function setExitSubmitting(isSubmitting) {
+  if (!exitConfirmButton) return;
+  exitConfirmButton.disabled = isSubmitting;
+  exitConfirmButton.textContent = isSubmitting ? "Saving..." : "Confirm Pig Exits";
+}
+
+function updateExitConfirmPanel(sale, items) {
+  if (!exitConfirmPanel) return;
+  const hasPigItems = items.some((item) => item.pig_id);
+  const canConfirm = sale.sale_stream === "Slaughter" && sale.sale_status !== "Cancelled" && hasPigItems;
+  exitConfirmPanel.classList.toggle("hidden", !canConfirm);
+  if (canConfirm && exitDateInput && !exitDateInput.value) {
+    exitDateInput.value = dateOnly(sale.sale_date);
+  }
 }
 
 function renderItems(items) {
@@ -108,9 +130,40 @@ async function loadSaleDetail() {
     ]);
 
     renderItems(items);
+    updateExitConfirmPanel(sale, items);
   } catch (error) {
     showMessage(error.message || "Could not load sale detail.");
     itemsBody.innerHTML = '<tr><td colspan="5" class="table-empty">Could not load sale items.</td></tr>';
+  }
+}
+
+async function submitExitConfirmation(event) {
+  event.preventDefault();
+  if (!window.confirm("Confirm linked pigs exited for slaughter? This updates pig records and keeps their history.")) {
+    return;
+  }
+
+  setExitSubmitting(true);
+  try {
+    const response = await fetch(`/api/sales-transactions/${encodeURIComponent(saleId)}/confirm-pig-exits`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        exit_date: exitDateInput.value,
+        changed_by: exitChangedByInput.value,
+        notes: exitNotesInput.value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || []).join(" ") || data.message || "Could not confirm pig exits.");
+    }
+    showMessage(`Pig exits confirmed: ${data.pigs_updated || 0}`, "success");
+    await loadSaleDetail();
+  } catch (error) {
+    showMessage(error.message || "Could not confirm pig exits.");
+  } finally {
+    setExitSubmitting(false);
   }
 }
 
@@ -125,5 +178,9 @@ backButton.addEventListener("click", () => {
   }
   window.location.href = "/sales/slaughter";
 });
+
+if (exitConfirmForm) {
+  exitConfirmForm.addEventListener("submit", submitExitConfirmation);
+}
 
 loadSaleDetail();

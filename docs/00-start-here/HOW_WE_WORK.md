@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Deploy/browser-check Phase 9.7B controlled death/removal action |
-| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is deployed and owner-verified. Phase 8F drill-in/data-quality slice is local and ready for deploy/browser acceptance. 9.7A lifecycle outcome audit is documented. 9.7B death/removal action is local and ready for deploy/browser acceptance. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
-| **Current focus** | Deploy/browser-check `/pig/<pig_id>` lifecycle outcome form with a safe known/test case before using it for a real farm death/removal event. |
-| **Current last verified** | **2026-06-01** - Phase 9.7B local checks passed: JS syntax, focused pig lifecycle/frontend tests, route smoke, and full unittest suite at 316 tests. |
+| **Today's focus** | Deploy/browser-check Phase 9.7B/9.7C lifecycle actions |
+| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is deployed and owner-verified. Phase 8F drill-in/data-quality slice is local and ready for deploy/browser acceptance. 9.7A lifecycle outcome audit is documented. 9.7B death/removal action is awaiting live test. 9.7C slaughter pig-exit confirmation is local and ready for deploy/browser acceptance. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
+| **Current focus** | Deploy/browser-check `/pig/<pig_id>` lifecycle outcome and `/sales/slaughter/<sale_id>` pig-exit confirmation with safe known/test cases before real operational use. |
+| **Current last verified** | **2026-06-01** - Phase 9.7C local checks passed: JS syntax, focused sales lifecycle/routes/frontend/pig lifecycle tests, route smoke, and full unittest suite at 320 tests. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
