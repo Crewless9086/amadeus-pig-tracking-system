@@ -51,6 +51,16 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('a.action_section === "needs_action"', js)
         self.assertIn('a.action_section === "closed"', js)
         self.assertIn('compareByActionDate(a, b, "desc")', js)
+        self.assertIn("isEligibleForAddLitter", js)
+        self.assertIn('/master/add-litter?mating_id=', js)
+
+    def test_add_litter_can_prefill_from_mating_query_param(self):
+        js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
+
+        self.assertIn("prefillMatingFromUrl", js)
+        self.assertIn("new URLSearchParams(window.location.search)", js)
+        self.assertIn('params.get("mating_id")', js)
+        self.assertIn("handleMatingSelect({ target: select })", js)
 
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")

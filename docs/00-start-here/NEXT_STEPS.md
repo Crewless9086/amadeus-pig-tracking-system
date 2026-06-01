@@ -1954,7 +1954,10 @@ Implementation state 2026-06-01:
 - `Closed / Farrowed` sorts newest to oldest by actual farrowing date where available, then expected farrowing date, then mating date.
 - `Move Soon / Prepare`, `Upcoming Pregnancy Checks`, and `All Open Matings` continue to sort by the relevant upcoming action date.
 - Closed or linked-litter records are classified into `Closed / Farrowed` before overdue flags are considered, so completed records do not stay in action sections because of old formula flags.
-- Local verification passed: `node --check static/js/matings.js`, focused frontend/mating tests, `/matings` route smoke, and full local unittest suite at 306 tests.
+- Added a closed-loop `Add Litter` shortcut on eligible mating cards. It links to `/master/add-litter?mating_id=<id>`.
+- Add Litter now reads the `mating_id` query parameter and preselects the mating, which fills mother, father, expected farrowing date, and pen through the existing form logic.
+- Saving the litter continues to use the existing backend path that links the litter back to the mating and closes the mating flow.
+- Local verification passed: `node --check static/js/matings.js`, `node --check static/js/addLitter.js`, focused frontend/mating/litter tests, `/matings` and `/master/add-litter?mating_id=...` route smoke, and full local unittest suite at 307 tests.
 - Remaining closure step: deploy and browser-check `/matings` ordering with live records before marking 8E owner-verified.
 
 ### 8F Fertility, Bloodline, And Breeding Suggestions - Discovery Captured

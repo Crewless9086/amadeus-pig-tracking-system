@@ -30,8 +30,20 @@ async function loadMatingOptions() {
         });
 
         select.addEventListener("change", handleMatingSelect);
+        prefillMatingFromUrl(select);
     } catch (error) {
         console.error("Error loading mating options:", error);
+    }
+}
+
+function prefillMatingFromUrl(select) {
+    const params = new URLSearchParams(window.location.search);
+    const matingId = params.get("mating_id") || "";
+    if (!matingId) return;
+
+    select.value = matingId;
+    if (select.value === matingId) {
+        handleMatingSelect({ target: select });
     }
 }
 

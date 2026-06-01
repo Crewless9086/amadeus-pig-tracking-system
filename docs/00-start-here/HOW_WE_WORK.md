@@ -12,8 +12,8 @@ Edit the lines below so every session starts with clarity.
 |--------|--------|
 | **Today's focus** | Phase 8E breeding-board sorting deploy/browser verification |
 | **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, Herd dashboard count audit, farm attention summary endpoint, and farm attention digest workflow are deployed/live-verified. `/sales/slaughter` refinements are deployed and owner-accepted. `/bulk-weights` and `/sales-dashboard` are deployed and awaiting owner acceptance/live use before closure. Phase 8E sorting is local complete. |
-| **Current focus** | Deploy/browser-check `/matings` ordering; keep `/bulk-weights` open until the real farm weighing test passes and `/sales-dashboard` open until owner browser acceptance. |
-| **Current last verified** | **2026-06-01** - Phase 8E sorting local checks passed: `node --check static/js/matings.js`, focused frontend/mating tests, `/matings` route smoke, and full local unittest suite at 306 tests. |
+| **Current focus** | Deploy/browser-check `/matings` ordering and `Add Litter` shortcut; keep `/bulk-weights` open until the real farm weighing test passes and `/sales-dashboard` open until owner browser acceptance. |
+| **Current last verified** | **2026-06-01** - Phase 8E sorting/action-loop local checks passed: JS syntax checks, focused frontend/mating/litter tests, route smokes, and full local unittest suite at 307 tests. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

@@ -384,6 +384,10 @@ function renderMatingCard(record) {
         : "";
 
     const assumeFormHtml = isAssumeFormOpen ? renderAssumePregnantForm(record.mating_id) : "";
+    const showAddLitterButton = isEligibleForAddLitter(record);
+    const addLitterButtonHtml = showAddLitterButton
+        ? `<a class="button-link" href="/master/add-litter?mating_id=${encodeURIComponent(record.mating_id || "")}">Add Litter</a>`
+        : "";
     const showMarkNotPregnantButton = isEligibleForMarkNotPregnant(record);
     const markNotPregnantButtonHtml = showMarkNotPregnantButton
         ? `<button type="button" class="button-link${isMarkNotPregnantFormOpen ? " button-link-secondary" : ""}" data-mark-not-pregnant="${escapeHtml(record.mating_id)}">
@@ -485,6 +489,12 @@ function renderMatingCard(record) {
               </div>
             ` : ""}
 
+            ${showAddLitterButton ? `
+              <div class="history-notes" style="margin-top: 8px;">
+                ${addLitterButtonHtml}
+              </div>
+            ` : ""}
+
             ${showMarkNotPregnantButton ? `
               <div class="history-notes" style="margin-top: 8px;">
                 ${markNotPregnantButtonHtml}
@@ -580,6 +590,14 @@ function isEligibleForMarkNotPregnant(record) {
     return record.mating_status === "Confirmed_Pregnant"
         && !record.linked_litter_id
         && !record.actual_farrowing_date;
+}
+
+function isEligibleForAddLitter(record) {
+    return record.is_open === "Yes"
+        && record.mating_id
+        && !record.linked_litter_id
+        && !record.actual_farrowing_date
+        && (record.mating_status === "Confirmed_Pregnant" || record.is_overdue_farrowing === "Yes");
 }
 
 function classifyMating(record) {
