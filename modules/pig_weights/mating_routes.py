@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from modules.pig_weights.mating_service import (
     get_breeding_options,
+    get_breeding_analytics,
     get_mating_overview,
     save_new_mating,
     assume_pregnant,
@@ -32,6 +33,11 @@ def mating_list():
         "count": len(records),
         "records": records
     })
+
+
+@mating_bp.route("/breeding-analytics", methods=["GET"])
+def breeding_analytics():
+    return jsonify(get_breeding_analytics())
 
 
 @mating_bp.route("/master/matings", methods=["POST"])

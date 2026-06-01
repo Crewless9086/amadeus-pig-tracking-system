@@ -1366,6 +1366,24 @@ button:disabled {
   color: var(--error-text);
 }
 
+.breeding-analytics-page {
+  max-width: 1380px;
+}
+
+.analytics-section {
+  margin-top: 22px;
+}
+
+.breeding-analytics-table th,
+.breeding-analytics-table td {
+  text-align: right;
+}
+
+.breeding-analytics-table th:first-child,
+.breeding-analytics-table td:first-child {
+  text-align: left;
+}
+
 .blank-write-cell {
   min-width: 88px;
   height: 28px;

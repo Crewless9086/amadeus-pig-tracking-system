@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 8E breeding-board sorting deploy/browser verification |
-| **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, Herd dashboard count audit, farm attention summary endpoint, and farm attention digest workflow are deployed/live-verified. `/sales/slaughter` refinements are deployed and owner-accepted. `/bulk-weights` and `/sales-dashboard` are deployed and awaiting owner acceptance/live use before closure. Phase 8E sorting is local complete. |
-| **Current focus** | Deploy/browser-check `/matings` ordering and `Add Litter` shortcut; keep `/bulk-weights` open until the real farm weighing test passes and `/sales-dashboard` open until owner browser acceptance. |
-| **Current last verified** | **2026-06-01** - Phase 8E sorting/action-loop local checks passed: JS syntax checks, focused frontend/mating/litter tests, route smokes, and full local unittest suite at 307 tests. |
+| **Today's focus** | Phase 8F read-only breeding analytics deploy/browser verification |
+| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is local complete. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
+| **Current focus** | Deploy/browser-check `/breeding-analytics` with live data; do not build automated mating suggestions until owner accepts KPI labels and logic. |
+| **Current last verified** | **2026-06-01** - Phase 8F local checks passed: JS syntax, focused breeding/frontend/mating tests, route smokes, and full local unittest suite at 309 tests. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

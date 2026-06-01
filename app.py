@@ -106,6 +106,11 @@ def add_mating_page():
     return render_template("add-mating.html")
 
 
+@app.route("/breeding-analytics")
+def breeding_analytics_page():
+    return render_template("breeding-analytics.html")
+
+
 @app.route("/pig/<pig_id>")
 def pig_detail_page(pig_id):
     return render_template("pig-detail.html")

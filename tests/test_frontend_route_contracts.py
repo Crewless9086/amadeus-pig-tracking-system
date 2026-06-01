@@ -62,6 +62,18 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('params.get("mating_id")', js)
         self.assertIn("handleMatingSelect({ target: select })", js)
 
+    def test_breeding_analytics_page_is_read_only_kpi_overview(self):
+        template = Path("templates/breeding-analytics.html").read_text(encoding="utf-8")
+        js = Path("static/js/breedingAnalytics.js").read_text(encoding="utf-8")
+        matings_template = Path("templates/matings.html").read_text(encoding="utf-8")
+
+        self.assertIn("Breeding Analytics", template)
+        self.assertIn("Sow Performance", template)
+        self.assertIn("Boar Performance", template)
+        self.assertIn("/api/pig-weights/breeding-analytics", js)
+        self.assertNotIn('method: "POST"', js)
+        self.assertIn("/breeding-analytics", matings_template)
+
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")
         js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")

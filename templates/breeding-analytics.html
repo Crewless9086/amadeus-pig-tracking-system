@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Breeding Analytics</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card breeding-analytics-page">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Breeding Analytics</h1>
+          <p>Read-only fertility and litter-performance overview from current breeding records.</p>
+        </div>
+        <div class="header-link-group">
+          <a href="/matings" class="secondary-link">Breeding Board</a>
+          <a href="/" class="secondary-link">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="breeding_analytics_message" class="message-box hidden"></div>
+
+      <div class="bulk-weight-summary breeding-summary">
+        <div>
+          <span class="info-title">Matings</span>
+          <span id="breeding_mating_count" class="info-value">-</span>
+        </div>
+        <div>
+          <span class="info-title">Litters</span>
+          <span id="breeding_litter_count" class="info-value">-</span>
+        </div>
+        <div>
+          <span class="info-title">Breeding Animals</span>
+          <span id="breeding_animal_count" class="info-value">-</span>
+        </div>
+      </div>
+
+      <section class="analytics-section">
+        <div class="section-subtitle">Sow Performance</div>
+        <div class="simple-table-wrap">
+          <table class="simple-table breeding-analytics-table">
+            <thead>
+              <tr>
+                <th>Sow</th>
+                <th>Matings</th>
+                <th>Confirmed</th>
+                <th>Repeat Service</th>
+                <th>Farrowed</th>
+                <th>Litters</th>
+                <th>Born Alive Avg</th>
+                <th>Weaned Avg</th>
+                <th>Survival</th>
+              </tr>
+            </thead>
+            <tbody id="sow_analytics_body">
+              <tr><td colspan="9" class="table-empty">Loading sow analytics...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="analytics-section">
+        <div class="section-subtitle">Boar Performance</div>
+        <div class="simple-table-wrap">
+          <table class="simple-table breeding-analytics-table">
+            <thead>
+              <tr>
+                <th>Boar</th>
+                <th>Matings</th>
+                <th>Confirmed</th>
+                <th>Repeat Service</th>
+                <th>Farrowed</th>
+                <th>Litters</th>
+                <th>Born Alive Avg</th>
+                <th>Weaned Avg</th>
+                <th>Survival</th>
+              </tr>
+            </thead>
+            <tbody id="boar_analytics_body">
+              <tr><td colspan="9" class="table-empty">Loading boar analytics...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/breedingAnalytics.js') }}"></script>
+</body>
+</html>

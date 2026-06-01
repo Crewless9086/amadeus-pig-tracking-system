@@ -9,6 +9,7 @@ from services.google_sheets_service import (
 )
 from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
+    to_float,
     format_date_for_json,
     format_date_for_sheet,
     parse_sheet_date,
@@ -18,6 +19,7 @@ from modules.pig_weights.pig_weights_utils import (
 PIG_OVERVIEW_SHEET = "PIG_OVERVIEW"
 MATING_LOG_SHEET = "MATING_LOG"
 MATING_OVERVIEW_SHEET = "MATING_OVERVIEW"
+LITTER_OVERVIEW_SHEET = "LITTER_OVERVIEW"
 PEN_REGISTER_SHEET = "PEN_REGISTER"
 LOCATION_HISTORY_SHEET = "LOCATION_HISTORY"
 
@@ -191,6 +193,142 @@ def get_mating_overview():
     records = sorted(records, key=sort_key, reverse=True)
 
     return records
+
+
+def _blank_breeding_metric(pig_id, tag_number):
+    return {
+        "pig_id": pig_id,
+        "tag_number": tag_number,
+        "mating_count": 0,
+        "confirmed_pregnant_count": 0,
+        "repeat_service_count": 0,
+        "farrowed_count": 0,
+        "open_count": 0,
+        "litter_count": 0,
+        "born_alive_total": 0,
+        "weaned_total": 0,
+        "average_born_alive": None,
+        "average_weaned": None,
+        "survival_pct": None,
+    }
+
+
+def _metric_for(metrics, pig_id, tag_number):
+    if not pig_id:
+        return None
+    if pig_id not in metrics:
+        metrics[pig_id] = _blank_breeding_metric(pig_id, tag_number)
+    if tag_number and not metrics[pig_id]["tag_number"]:
+        metrics[pig_id]["tag_number"] = tag_number
+    return metrics[pig_id]
+
+
+def _finish_breeding_metrics(metrics):
+    rows = []
+    for metric in metrics.values():
+        litter_count = metric["litter_count"]
+        born_alive_total = metric["born_alive_total"]
+        weaned_total = metric["weaned_total"]
+
+        if litter_count:
+            metric["average_born_alive"] = round(born_alive_total / litter_count, 2)
+            metric["average_weaned"] = round(weaned_total / litter_count, 2)
+        if born_alive_total:
+            metric["survival_pct"] = round((weaned_total / born_alive_total) * 100, 1)
+
+        rows.append(metric)
+
+    return sorted(
+        rows,
+        key=lambda item: (
+            -item["litter_count"],
+            -item["farrowed_count"],
+            str(item["tag_number"] or item["pig_id"]).lower(),
+        ),
+    )
+
+
+def get_breeding_analytics():
+    mating_rows = get_mating_overview()
+    litter_rows = get_all_records(LITTER_OVERVIEW_SHEET)
+
+    sow_metrics = {}
+    boar_metrics = {}
+
+    for row in mating_rows:
+        sow_metric = _metric_for(sow_metrics, row.get("sow_pig_id", ""), row.get("sow_tag_number", ""))
+        boar_metric = _metric_for(boar_metrics, row.get("boar_pig_id", ""), row.get("boar_tag_number", ""))
+        metric_targets = [metric for metric in (sow_metric, boar_metric) if metric]
+
+        pregnancy_result = to_clean_string(row.get("pregnancy_check_result", "")).lower()
+        mating_status = to_clean_string(row.get("mating_status", "")).lower()
+        outcome = to_clean_string(row.get("outcome", "")).lower()
+        linked_litter_id = to_clean_string(row.get("linked_litter_id", ""))
+
+        confirmed = (
+            pregnancy_result == "pregnant"
+            or mating_status in {"confirmed_pregnant", "farrowed"}
+            or outcome in {"pregnant", "farrowed"}
+        )
+        repeat_service = (
+            pregnancy_result == "not_pregnant"
+            or mating_status == "repeat_service"
+            or outcome == "repeat_required"
+        )
+        farrowed = bool(linked_litter_id) or mating_status == "farrowed" or outcome == "farrowed"
+        is_open = to_clean_string(row.get("is_open", "")) == "Yes"
+
+        for metric in metric_targets:
+            metric["mating_count"] += 1
+            if confirmed:
+                metric["confirmed_pregnant_count"] += 1
+            if repeat_service:
+                metric["repeat_service_count"] += 1
+            if farrowed:
+                metric["farrowed_count"] += 1
+            if is_open:
+                metric["open_count"] += 1
+
+    for row in litter_rows:
+        sow_metric = _metric_for(
+            sow_metrics,
+            to_clean_string(row.get("Sow_Pig_ID", "")),
+            to_clean_string(row.get("Sow_Tag_Number", "")),
+        )
+        boar_metric = _metric_for(
+            boar_metrics,
+            to_clean_string(row.get("Boar_Pig_ID", "")),
+            to_clean_string(row.get("Boar_Tag_Number", "")),
+        )
+        born_alive = to_float(row.get("Born_Alive", "")) or 0
+        weaned_count = to_float(row.get("Weaned_Count", "")) or 0
+
+        for metric in [metric for metric in (sow_metric, boar_metric) if metric]:
+            metric["litter_count"] += 1
+            metric["born_alive_total"] += born_alive
+            metric["weaned_total"] += weaned_count
+
+    sows = _finish_breeding_metrics(sow_metrics)
+    boars = _finish_breeding_metrics(boar_metrics)
+
+    return {
+        "success": True,
+        "mode": "read_only",
+        "summary": {
+            "sow_count": len(sows),
+            "boar_count": len(boars),
+            "mating_count": len(mating_rows),
+            "litter_count": len(litter_rows),
+        },
+        "sows": sows,
+        "boars": boars,
+        "source": {
+            "mating_source": MATING_OVERVIEW_SHEET,
+            "litter_source": LITTER_OVERVIEW_SHEET,
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": False,
+        },
+    }
 
 
 def save_new_mating(cleaned_data: dict):

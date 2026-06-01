@@ -24,7 +24,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
-| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Local Complete; 8F Planned | Deploy/browser-check breeding-board sorting before the next breeding analytics work. |
+| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F Local First Slice Complete | Next: deploy/browser-check read-only breeding analytics before planning suggestions. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test | Next: owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`; choose next deliberate slice while waiting. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Local Complete
+## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Owner-Verified; 8F Local First Slice Complete
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1929,7 +1929,7 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
 - Live write verification passed on 2026-05-20: Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
 
-### 8E Breeding Board Sorting - Local Complete
+### 8E Breeding Board Sorting - Owner-Verified
 
 Source note moved from `planning/ToDoList.md`.
 
@@ -1958,9 +1958,9 @@ Implementation state 2026-06-01:
 - Add Litter now reads the `mating_id` query parameter and preselects the mating, which fills mother, father, expected farrowing date, and pen through the existing form logic.
 - Saving the litter continues to use the existing backend path that links the litter back to the mating and closes the mating flow.
 - Local verification passed: `node --check static/js/matings.js`, `node --check static/js/addLitter.js`, focused frontend/mating/litter tests, `/matings` and `/master/add-litter?mating_id=...` route smoke, and full local unittest suite at 307 tests.
-- Remaining closure step: deploy and browser-check `/matings` ordering with live records before marking 8E owner-verified.
+- Owner deployed and browser-tested on 2026-06-01. Sorting and the `Add Litter` closed-loop shortcut are working and accepted for now.
 
-### 8F Fertility, Bloodline, And Breeding Suggestions - Discovery Captured
+### 8F Fertility, Bloodline, And Breeding Suggestions - Local First Slice Complete
 
 Source note moved from `planning/ToDoList.md`.
 
@@ -1990,6 +1990,18 @@ Questions to answer when planning:
 - How strict should family/bloodline avoidance be, and how many generations should be checked?
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 - Owner note moved from scratch 2026-05-26: add clearer mating-level attention groups/reasons as well as litter-level attention. Matings and litters are intertwined, but they are not the same record; the app should make that distinction obvious and show what each mating or litter needs next.
+
+8F first slice decisions and implementation state 2026-06-01:
+
+- Start with a read-only analytics page before any automated mating suggestions.
+- First KPI scope: mating count, confirmed-pregnant count, repeat-service count, farrowed count, open count, litter count, born-alive average, weaned average, and survival percentage.
+- Added read-only backend API `GET /api/pig-weights/breeding-analytics`.
+- Added `/breeding-analytics` page and linked it from `/matings`.
+- Source data is existing `MATING_OVERVIEW` and `LITTER_OVERVIEW`; no Google Sheets or Supabase writes.
+- Page has separate sow and boar performance tables.
+- This is not a recommendation engine yet. It is a visibility slice so owner can inspect whether current data is trustworthy enough for future breeding suggestions.
+- Local verification passed: `node --check static/js/breedingAnalytics.js`, `node --check static/js/matings.js`, focused breeding/frontend/mating tests, route smokes for `/breeding-analytics` and `/api/pig-weights/breeding-analytics`, and full local unittest suite at 309 tests.
+- Remaining closure step: deploy and browser-check `/breeding-analytics` with live data; decide which KPIs need label/logic adjustment before moving to any suggestions.
 
 ## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test
 
