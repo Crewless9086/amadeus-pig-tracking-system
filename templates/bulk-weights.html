@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulk Weight Entry</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card bulk-weight-page">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Bulk Weight Entry</h1>
+          <p>Enter captured sheet weights in row order, save a draft, then upload the batch.</p>
+        </div>
+        <div class="header-link-group">
+          <a href="/print-sheets" class="secondary-link">Print Sheets</a>
+          <a href="/pig-weights" class="secondary-link">Single Weight</a>
+        </div>
+      </div>
+
+      <div id="bulk_weights_message" class="message-box hidden"></div>
+
+      <form id="bulk_weight_filters" class="weight-form">
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="bulk_weight_date">Weighing Date</label>
+            <input type="date" id="bulk_weight_date" name="bulk_weight_date" required />
+          </div>
+          <div class="form-group">
+            <label for="bulk_pen_filter">Pens (Optional)</label>
+            <select id="bulk_pen_filter" name="bulk_pen_filter" multiple size="5"></select>
+            <small class="field-help">Leave empty for all active pigs.</small>
+          </div>
+        </div>
+
+        <div class="form-actions compact-actions">
+          <button type="button" id="bulk_clear_pens_button" class="button-link button-link-secondary">All Pens</button>
+          <button type="button" id="bulk_save_draft_button" class="button-link button-link-secondary">Save Draft</button>
+          <button type="button" id="bulk_upload_button">Upload Batch</button>
+        </div>
+      </form>
+
+      <div class="bulk-weight-summary">
+        <div>
+          <span class="info-title">Visible Rows</span>
+          <span id="bulk_visible_count" class="info-value">0</span>
+        </div>
+        <div>
+          <span class="info-title">Entered Weights</span>
+          <span id="bulk_entered_count" class="info-value">0</span>
+        </div>
+        <div>
+          <span class="info-title">Draft</span>
+          <span id="bulk_draft_status" class="info-value">Not saved</span>
+        </div>
+      </div>
+
+      <div id="bulk_review_panel" class="bulk-review-panel hidden"></div>
+
+      <div class="simple-table-wrap bulk-weight-wrap">
+        <table class="simple-table bulk-weight-table">
+          <thead>
+            <tr>
+              <th>Tag Number</th>
+              <th>Previous Weight Date</th>
+              <th>Previous Weight</th>
+              <th>New Weight</th>
+              <th>Current Pen</th>
+              <th>New Pen</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="bulk_weight_body">
+            <tr><td colspan="7" class="table-empty">Loading active pigs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/bulkWeights.js') }}"></script>
+</body>
+</html>

@@ -71,6 +71,13 @@ body {
   gap: 18px;
 }
 
+.header-link-group {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
 .page-header h1 {
   margin: 0 0 10px 0;
   font-size: 36px;
@@ -1295,6 +1302,68 @@ button:disabled {
 .printable-sheet-table td {
   border-bottom: 1px solid #ded7ca;
   padding: 11px 12px;
+}
+
+.bulk-weight-page {
+  max-width: 1380px;
+}
+
+.bulk-weight-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.bulk-weight-summary > div {
+  min-height: 74px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.bulk-weight-wrap {
+  margin-top: 18px;
+}
+
+.bulk-weight-table th,
+.bulk-weight-table td {
+  vertical-align: middle;
+}
+
+.bulk-weight-input {
+  min-width: 110px;
+}
+
+.bulk-pen-select {
+  min-width: 180px;
+}
+
+.bulk-notes-input {
+  min-width: 220px;
+}
+
+.bulk-review-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.bulk-review-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-main);
+}
+
+.bulk-review-errors {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--error-text);
 }
 
 .blank-write-cell {

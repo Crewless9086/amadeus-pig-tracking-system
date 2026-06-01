@@ -1832,6 +1832,186 @@ def save_weight_entry_with_optional_move(cleaned_data: dict):
         "movement": movement_result.get("saved", {}) if movement_result else None,
     }
 
+
+def _bulk_weight_existing_key(row, columns):
+    pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+    weight_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+    return (pig_id, weight_date)
+
+
+def preflight_bulk_weight_entries(payload: dict):
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    batch_date = parse_sheet_date(payload.get("weight_date", ""))
+    weighed_by = to_clean_string(payload.get("weighed_by", "")) or "WebApp"
+    source_rows = payload.get("rows", [])
+
+    if not batch_date:
+        return {
+            "success": False,
+            "errors": ["Weight_Date is required and must be a valid date."],
+            "accepted_rows": [],
+            "blocked_rows": [],
+            "skipped_rows": [],
+        }, 400
+
+    if not isinstance(source_rows, list):
+        return {
+            "success": False,
+            "errors": ["Rows must be a list."],
+            "accepted_rows": [],
+            "blocked_rows": [],
+            "skipped_rows": [],
+        }, 400
+
+    active_pigs = {pig["pig_id"]: pig for pig in get_active_pigs()}
+    active_pen_ids = {pen["pen_id"] for pen in get_pens()}
+    weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+    existing_weights = {_bulk_weight_existing_key(row, columns): row for row in weight_rows}
+
+    accepted_rows = []
+    blocked_rows = []
+    skipped_rows = []
+    seen_batch_keys = set()
+
+    for index, row in enumerate(source_rows):
+        if not isinstance(row, dict):
+            blocked_rows.append({
+                "row_index": index,
+                "pig_id": "",
+                "tag_number": "",
+                "reason": "Row must be an object.",
+            })
+            continue
+
+        pig_id = to_clean_string(row.get("pig_id", ""))
+        tag_number = to_clean_string(row.get("tag_number", ""))
+        weight_value = row.get("weight_kg", "")
+        moved_to_pen_id = to_clean_string(row.get("moved_to_pen_id", ""))
+        condition_notes = to_clean_string(row.get("condition_notes", ""))
+
+        if weight_value in (None, "") or str(weight_value).strip() == "":
+            skipped_rows.append({
+                "row_index": index,
+                "pig_id": pig_id,
+                "tag_number": tag_number,
+                "reason": "No weight entered.",
+            })
+            continue
+
+        errors = []
+        parsed_weight = to_float(weight_value)
+
+        if not pig_id or pig_id not in active_pigs:
+            errors.append("Pig is not active/on-farm or could not be found.")
+        if parsed_weight is None:
+            errors.append("Weight must be a valid number.")
+        elif parsed_weight <= 0:
+            errors.append("Weight must be greater than 0.")
+        if moved_to_pen_id and moved_to_pen_id not in active_pen_ids:
+            errors.append("Selected new pen is not active or could not be found.")
+
+        batch_key = (pig_id, batch_date)
+        if batch_key in seen_batch_keys:
+            errors.append("This pig appears more than once in this batch.")
+        if batch_key in existing_weights:
+            errors.append("This pig already has a weight entry for this date.")
+
+        if errors:
+            existing = existing_weights.get(batch_key, {})
+            blocked_rows.append({
+                "row_index": index,
+                "pig_id": pig_id,
+                "tag_number": tag_number or active_pigs.get(pig_id, {}).get("tag_number", ""),
+                "weight_kg": parsed_weight,
+                "moved_to_pen_id": moved_to_pen_id,
+                "condition_notes": condition_notes,
+                "reason": " ".join(errors),
+                "existing": {
+                    "weight_log_id": to_clean_string(existing.get(columns["weight_log_id"], "")),
+                    "weight_date": format_date_for_json(existing.get(columns["weight_date"], "")),
+                    "weight_kg": to_float(existing.get(columns["weight_kg"], "")),
+                } if existing else {},
+            })
+            continue
+
+        seen_batch_keys.add(batch_key)
+        pig = active_pigs[pig_id]
+        accepted_rows.append({
+            "row_index": index,
+            "pig_id": pig_id,
+            "tag_number": tag_number or pig.get("tag_number", ""),
+            "weight_date": format_date_for_json(batch_date),
+            "weight_kg": parsed_weight,
+            "weighed_by": weighed_by,
+            "moved_to_pen_id": moved_to_pen_id,
+            "condition_notes": condition_notes,
+            "current_pen_id": pig.get("current_pen_id", ""),
+            "current_pen_name": pig.get("current_pen_name", ""),
+        })
+
+    return {
+        "success": len(blocked_rows) == 0,
+        "message": "Batch preflight passed." if len(blocked_rows) == 0 else "Batch has rows that need attention.",
+        "accepted_count": len(accepted_rows),
+        "blocked_count": len(blocked_rows),
+        "skipped_count": len(skipped_rows),
+        "accepted_rows": accepted_rows,
+        "blocked_rows": blocked_rows,
+        "skipped_rows": skipped_rows,
+        "writes_to_google_sheets": False,
+    }, 200
+
+
+def save_bulk_weight_entries(payload: dict):
+    preflight, status_code = preflight_bulk_weight_entries(payload)
+    if status_code != 200 or not preflight.get("success"):
+        return preflight, 409 if preflight.get("blocked_count", 0) else status_code
+    if preflight.get("accepted_count", 0) == 0:
+        return {
+            "success": False,
+            "message": "No weights entered. Nothing to upload.",
+            "saved_count": 0,
+            "skipped_count": preflight.get("skipped_count", 0),
+        }, 400
+
+    saved_rows = []
+    movement_count = 0
+
+    for row in preflight.get("accepted_rows", []):
+        result = save_weight_entry_with_optional_move({
+            "pig_id": row["pig_id"],
+            "weight_date": parse_sheet_date(row["weight_date"]),
+            "weight_kg": row["weight_kg"],
+            "condition_notes": row.get("condition_notes", ""),
+            "weighed_by": row.get("weighed_by", "WebApp"),
+            "moved_to_pen_id": row.get("moved_to_pen_id", ""),
+            "allow_duplicate": False,
+        })
+
+        if not result.get("success"):
+            return {
+                "success": False,
+                "message": "Batch upload stopped because a row failed during save.",
+                "saved_count": len(saved_rows),
+                "saved_rows": saved_rows,
+                "failed_row": row,
+                "error": result,
+            }, 409 if result.get("duplicate_weight") else 500
+
+        if result.get("movement_logged"):
+            movement_count += 1
+        saved_rows.append(result.get("saved", {}))
+
+    return {
+        "success": True,
+        "message": "Bulk weight batch uploaded successfully.",
+        "saved_count": len(saved_rows),
+        "movement_count": movement_count,
+        "skipped_count": preflight.get("skipped_count", 0),
+        "saved_rows": saved_rows,
+    }, 201
+
+
 def save_treatment_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
     product = get_product_by_id(cleaned_data["product_id"])

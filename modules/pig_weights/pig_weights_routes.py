@@ -25,6 +25,8 @@ from modules.pig_weights.pig_weights_controller import (
     create_new_litter,
     create_weight_entry,
     create_weight_entry_with_optional_move,
+    create_bulk_weight_entries,
+    preview_bulk_weight_entries,
     create_treatment_entry,
     create_movement_entry,
 )
@@ -176,6 +178,20 @@ def add_weight():
 def add_weight_with_optional_move():
     payload = request.get_json(silent=True) or {}
     result, status_code = create_weight_entry_with_optional_move(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/weights-batch/preflight", methods=["POST"])
+def preflight_weights_batch():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = preview_bulk_weight_entries(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/weights-batch", methods=["POST"])
+def add_weights_batch():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_bulk_weight_entries(payload)
     return jsonify(result), status_code
 
 

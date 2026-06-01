@@ -44,6 +44,6 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Telegram alert emoji/formatting note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 - Weather/solar dashboard symbol note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 - Windy weather-station integration research note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Future alert-preference page note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 
 Add new scratch bullets below, then move them into the correct canonical file.
-- once we have a login sheet to the Web App it would be nice to have a preference sheet where the use then can select the alrets they want and the minutes apart and when they want to summary and so on to be send, whis will make it more personalized. But this is only later later once we get there. Just a good idea.

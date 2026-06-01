@@ -243,6 +243,23 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("method: \"POST\"", js)
         self.assertIn("window.print", js)
         self.assertIn("multiple", template)
+        self.assertIn("/bulk-weights", template)
+
+    def test_bulk_weights_page_uses_batch_preflight_and_local_draft(self):
+        template = Path("templates/bulk-weights.html").read_text(encoding="utf-8")
+        js = Path("static/js/bulkWeights.js").read_text(encoding="utf-8")
+
+        self.assertIn("Bulk Weight Entry", template)
+        self.assertIn("Save Draft", template)
+        self.assertIn("Upload Batch", template)
+        self.assertIn("Previous Weight Date", template)
+        self.assertIn("New Weight", template)
+        self.assertIn('fetch("/api/pig-weights/pigs")', js)
+        self.assertIn('fetch("/api/pig-weights/pens")', js)
+        self.assertIn("/api/pig-weights/weights-batch/preflight", js)
+        self.assertIn("/api/pig-weights/weights-batch", js)
+        self.assertIn("window.localStorage", js)
+        self.assertIn("Blank rows will be skipped", js)
 
 
 if __name__ == "__main__":

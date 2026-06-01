@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | `NEXT_STEPS.md` Phase 10 choice point - choose the next deliberate slice |
-| **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, Herd dashboard count audit, farm attention summary endpoint, and farm attention digest workflow are deployed/live-verified. `/sales/slaughter` update UX is locally browser-checked; wide layout, table polish, and sale detail page are local. `/sales-dashboard` sales overview/reporting is local. |
-| **Current focus** | Browser-check and deploy the `/sales-dashboard` reporting screen plus the `/sales/slaughter` refinements. |
-| **Current last verified** | **2026-05-30** - `/sales/slaughter` in-page payment update panel local browser check passed. |
+| **Today's focus** | `NEXT_STEPS.md` Phase 9.6C - bulk weight entry from printable capture sheet |
+| **Status** | Phase 9.1C litter attention action path, Supabase RLS hardening, Herd dashboard count audit, farm attention summary endpoint, and farm attention digest workflow are deployed/live-verified. `/sales/slaughter` refinements are deployed and owner-accepted. `/sales-dashboard` sales overview/reporting is built locally and owner-accepted for later play-through. |
+| **Current focus** | Browser-test and deploy `/bulk-weights`, then verify one real bulk weight batch before closing 9.6C. |
+| **Current last verified** | **2026-06-01** - `/bulk-weights` local route smoke passed and full local unittest suite passed at 305 tests. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

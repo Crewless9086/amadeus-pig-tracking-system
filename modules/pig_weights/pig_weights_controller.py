@@ -18,10 +18,12 @@ from modules.pig_weights.pig_weights_service import (
     get_weight_entries_by_date,
     get_weight_report,
     get_latest_weight_for_pig,
+    preflight_bulk_weight_entries,
     save_new_pig,
     save_new_product,
     save_new_pen,
     save_new_litter,
+    save_bulk_weight_entries,
     save_weight_entry,
     save_weight_entry_with_optional_move,
     save_treatment_entry,
@@ -267,6 +269,16 @@ def create_weight_entry_with_optional_move(payload: dict):
 
     result = save_weight_entry_with_optional_move(validation["cleaned_data"])
     return result, 409 if result.get("duplicate_weight") else 201
+
+
+def preview_bulk_weight_entries(payload: dict):
+    result, status_code = preflight_bulk_weight_entries(payload)
+    return result, status_code
+
+
+def create_bulk_weight_entries(payload: dict):
+    result, status_code = save_bulk_weight_entries(payload)
+    return result, status_code
 
 
 def create_treatment_entry(payload: dict):

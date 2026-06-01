@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now | Phase 9 can stay parked unless a deliberate Phase 9 follow-up is selected. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Selected | Next: plan and build bulk weight entry from the printable sheet workflow. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1978,7 +1978,7 @@ Questions to answer when planning:
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 - Owner note moved from scratch 2026-05-26: add clearer mating-level attention groups/reasons as well as litter-level attention. Matings and litters are intertwined, but they are not the same record; the app should make that distinction obvious and show what each mating or litter needs next.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; Parked For Now
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Selected
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2475,12 +2475,48 @@ Follow-up idea:
 
 - after the printable sheet is useful, consider a bulk weight entry page that follows the same row order so handwritten weights can be entered quickly without searching for each pig individually
 - Owner note moved from `planning/ToDoList.md` on 2026-05-30: the printable weight capture sheet should later become an editable bulk-capture workflow. The user should be able to fill in new weights, optional camp/pen moves, and notes in a sheet-like page, then save all rows in one batch. Backend validation should detect duplicates or mistakes before committing, and only accepted rows should be written.
+- Owner selected 9.6C on 2026-06-01 because bulk weighing will be used later the same day.
+- Draft-saving is required so partially typed work is not lost when the operator walks away. First recommended slice: local browser draft storage tied to date/filter/user-device, with a later Supabase shared-draft option only if needed.
+- Rows with blank weight must be skipped and must not create weight-log records.
+- Upload should be a deliberate batch commit after review, not auto-save to Google Sheets per row.
+- Backend validation should preflight the batch before commit: valid pig IDs, valid dates, positive numeric weights, duplicate same-pig/same-date weights, and valid optional destination pens.
+- Duplicate same-pig/same-date handling should reuse the existing duplicate-prevention rule. Default should block the affected row and show it in review rather than silently writing a second weight.
+- Optional pen movement should use the existing weight-with-optional-move behavior: only log movement when a destination pen is selected and differs from the current pen.
+
+9.6C open questions before implementation:
+
+- Should the first draft save be local to the same device/browser, or must drafts be shared across devices/users immediately?
+- Should one weighing date apply to the whole batch, or should individual rows be allowed to override the date?
+- For duplicate weights on the same pig/date, should the batch upload block those rows by default, or should an operator be able to confirm and write duplicates from the review screen?
+- Should bulk entry live as a new page, for example `/bulk-weights`, or as an editable mode/tab inside `/print-sheets`?
+
+9.6C owner decisions 2026-06-01:
+
+- First draft save can be local to the same device/browser.
+- One weighing date applies to the whole batch.
+- Duplicate same-pig/same-date weights should be blocked by default and shown in review.
+- Bulk entry should be a new page accessible from Print Sheets and the single Add Weight page.
+
+9.6C local implementation state 2026-06-01:
+
+- Added `/bulk-weights` page.
+- Added links from `/print-sheets` and `/pig-weights`.
+- Page uses active pig row order matching the printable sheet: current pen/camp, then numeric tag number.
+- Page supports multi-pen filtering, one batch date, new weight, optional new pen, and notes.
+- `Save Draft` stores typed rows in browser `localStorage` for the selected date.
+- `Upload Batch` runs backend preflight first, shows accepted/skipped/blocked counts, asks for confirmation, then writes the batch.
+- Blank weight rows are skipped and do not create `WEIGHT_LOG` rows.
+- Backend added `POST /api/pig-weights/weights-batch/preflight` and `POST /api/pig-weights/weights-batch`.
+- Backend blocks invalid pigs, invalid dates, non-positive/invalid weights, invalid destination pens, duplicate rows in the batch, and existing same-pig/same-date weights before commit.
+- Optional pen movement reuses the existing weight-with-optional-move behavior.
+- Local verification passed: `node --check static/js/bulkWeights.js`, focused bulk/frontend tests, full local unittest suite at 305 tests, route smoke for `/bulk-weights`, and no-op batch upload guard.
+- Remaining closure step: owner browser-test the local/deployed `/bulk-weights` flow with real weighing data before marking 9.6C deployed/browser-verified.
 
 Recommended 9.6 split:
 
 1. **9.6A Printable weight capture sheet** - build `/print-sheets` with the first printable weekly weight sheet only.
 2. **9.6B Sheet filters and polish** - add useful filters after 9.6A works: all active pigs, by pen/camp, by purpose, for-sale animals, grow-out/sale animals.
-3. **9.6C Bulk weight entry idea** - future planning only; use the same row order as the printed sheet to speed up data entry later.
+3. **9.6C Bulk weight entry from printable sheet** - selected 2026-06-01; use the same row order as the printed sheet to speed up data entry later.
 
 9.6A first-slice assumptions:
 
@@ -3697,6 +3733,7 @@ Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 
 - Dashboard visual cues: add weather and solar/power symbols or small visual states to the home dashboard so weather and energy status are easier to scan. Keep visuals functional, not decorative, and preserve readable text for exact values.
 - Farm task/reminder/project management: future planning item for important dates, reminders, task ownership, projects, and idea logging. This needs a proper model and should not be squeezed into the current attention list as ad hoc notes.
 - Weather station to Windy integration: research whether the local weather station can publish to Windy. Treat as an external integration planning task first; do not change the existing weather ingestion path until the Windy upload method, API requirements, station ID handling, and data ownership are understood.
+- Future alert preferences page: once the web app has login/user identity, add a preferences screen where each user can choose which alert/update types they receive, digest timing, repeat/cooldown intervals, quiet hours, and summary schedule. Keep this later-later; do not build before auth, recipient configuration, and alert delivery safety are settled.
 
 Supabase RLS hardening verification:
 
