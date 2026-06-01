@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from modules.pig_weights.mating_service import (
     get_breeding_options,
     get_breeding_analytics,
+    get_breeding_animal_detail,
     get_mating_overview,
     save_new_mating,
     assume_pregnant,
@@ -38,6 +39,12 @@ def mating_list():
 @mating_bp.route("/breeding-analytics", methods=["GET"])
 def breeding_analytics():
     return jsonify(get_breeding_analytics())
+
+
+@mating_bp.route("/breeding-analytics/<pig_id>", methods=["GET"])
+def breeding_animal_detail(pig_id):
+    result, status_code = get_breeding_animal_detail(pig_id)
+    return jsonify(result), status_code
 
 
 @mating_bp.route("/master/matings", methods=["POST"])

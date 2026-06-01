@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Breeding Analytics Detail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card breeding-analytics-page">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1 id="breeding_detail_title">Breeding Analytics Detail</h1>
+          <p id="breeding_detail_subtitle">Read-only breeding record, litter outcomes, and data-quality context.</p>
+        </div>
+        <div class="header-link-group">
+          <a href="/breeding-analytics" class="secondary-link">Back to Analytics</a>
+          <a href="/matings" class="secondary-link">Breeding Board</a>
+        </div>
+      </div>
+
+      <div id="breeding_detail_message" class="message-box hidden"></div>
+
+      <div class="bulk-weight-summary breeding-summary breeding-detail-summary">
+        <div>
+          <span class="info-title">Animal</span>
+          <span id="breeding_detail_animal" class="info-value">-</span>
+        </div>
+        <div>
+          <span class="info-title">Matings</span>
+          <span id="breeding_detail_matings" class="info-value">-</span>
+        </div>
+        <div>
+          <span class="info-title">Litters</span>
+          <span id="breeding_detail_litters" class="info-value">-</span>
+        </div>
+        <div>
+          <span class="info-title">Data Flags</span>
+          <span id="breeding_detail_flags" class="info-value">-</span>
+        </div>
+      </div>
+
+      <section class="analytics-section">
+        <div class="section-subtitle">Data Quality</div>
+        <div id="breeding_quality_list" class="breeding-quality-list">
+          <span class="quality-flag-muted">Loading data-quality context...</span>
+        </div>
+      </section>
+
+      <section class="analytics-section">
+        <div class="section-subtitle">Matings</div>
+        <div class="simple-table-wrap">
+          <table class="simple-table breeding-analytics-table breeding-detail-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Mating</th>
+                <th>Pairing</th>
+                <th>Status</th>
+                <th>Check Result</th>
+                <th>Litter</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody id="breeding_detail_matings_body">
+              <tr><td colspan="7" class="table-empty">Loading matings...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="analytics-section">
+        <div class="section-subtitle">Litters</div>
+        <div class="simple-table-wrap">
+          <table class="simple-table breeding-analytics-table breeding-detail-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Litter</th>
+                <th>Pairing</th>
+                <th>Born Alive</th>
+                <th>Weaned</th>
+                <th>Survival</th>
+                <th>Active / Exited</th>
+                <th>Avg Weight</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody id="breeding_detail_litters_body">
+              <tr><td colspan="9" class="table-empty">Loading litters...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/breedingAnalyticsDetail.js') }}"></script>
+</body>
+</html>

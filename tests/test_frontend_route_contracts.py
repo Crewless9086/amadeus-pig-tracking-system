@@ -71,8 +71,24 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Sow Performance", template)
         self.assertIn("Boar Performance", template)
         self.assertIn("/api/pig-weights/breeding-analytics", js)
+        self.assertIn('/breeding-analytics/${encodeURIComponent(row.pig_id || "")}', js)
         self.assertNotIn('method: "POST"', js)
         self.assertIn("/breeding-analytics", matings_template)
+
+    def test_breeding_analytics_detail_page_is_read_only_drill_in(self):
+        template = Path("templates/breeding-analytics-detail.html").read_text(encoding="utf-8")
+        js = Path("static/js/breedingAnalyticsDetail.js").read_text(encoding="utf-8")
+
+        self.assertIn("Breeding Analytics Detail", template)
+        self.assertIn('id="breeding_quality_list"', template)
+        self.assertIn('id="breeding_detail_matings_body"', template)
+        self.assertIn('id="breeding_detail_litters_body"', template)
+        self.assertIn("breedingAnalyticsDetail.js", template)
+        self.assertIn("/api/pig-weights/breeding-analytics/${encodeURIComponent(pigId)}", js)
+        self.assertIn("renderQuality", js)
+        self.assertIn("renderMatings", js)
+        self.assertIn("renderLitters", js)
+        self.assertNotIn('method: "POST"', js)
 
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")

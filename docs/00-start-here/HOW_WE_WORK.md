@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 8F read-only breeding analytics deploy/browser verification |
-| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is local complete. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
-| **Current focus** | Deploy/browser-check `/breeding-analytics` with live data; do not build automated mating suggestions until owner accepts KPI labels and logic. |
-| **Current last verified** | **2026-06-01** - Phase 8F local checks passed: JS syntax, focused breeding/frontend/mating tests, route smokes, and full local unittest suite at 309 tests. |
+| **Today's focus** | Deploy/browser-check Phase 8F breeding analytics drill-ins |
+| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is deployed and owner-verified. Phase 8F drill-in/data-quality slice is local and ready for deploy/browser acceptance. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
+| **Current focus** | Browser-check `/breeding-analytics/<pig_id>` rows from the overview before planning any automated breeding suggestions. |
+| **Current last verified** | **2026-06-01** - Phase 8F drill-in/data-quality slice passed local JS checks, focused tests, route smoke, and full unittest suite at 312 tests. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

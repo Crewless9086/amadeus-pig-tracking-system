@@ -24,7 +24,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
-| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F Local First Slice Complete | Next: deploy/browser-check read-only breeding analytics before planning suggestions. |
+| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test | Next: owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`; choose next deliberate slice while waiting. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Owner-Verified; 8F Local First Slice Complete
+## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1960,7 +1960,7 @@ Implementation state 2026-06-01:
 - Local verification passed: `node --check static/js/matings.js`, `node --check static/js/addLitter.js`, focused frontend/mating/litter tests, `/matings` and `/master/add-litter?mating_id=...` route smoke, and full local unittest suite at 307 tests.
 - Owner deployed and browser-tested on 2026-06-01. Sorting and the `Add Litter` closed-loop shortcut are working and accepted for now.
 
-### 8F Fertility, Bloodline, And Breeding Suggestions - Local First Slice Complete
+### 8F Fertility, Bloodline, And Breeding Suggestions - First Slice Owner-Verified; Drill-In Slice Local
 
 Source note moved from `planning/ToDoList.md`.
 
@@ -2001,7 +2001,18 @@ Questions to answer when planning:
 - Page has separate sow and boar performance tables.
 - This is not a recommendation engine yet. It is a visibility slice so owner can inspect whether current data is trustworthy enough for future breeding suggestions.
 - Local verification passed: `node --check static/js/breedingAnalytics.js`, `node --check static/js/matings.js`, focused breeding/frontend/mating tests, route smokes for `/breeding-analytics` and `/api/pig-weights/breeding-analytics`, and full local unittest suite at 309 tests.
-- Remaining closure step: deploy and browser-check `/breeding-analytics` with live data; decide which KPIs need label/logic adjustment before moving to any suggestions.
+- Owner deployed/browser-checked `/breeding-analytics` and confirmed it is working on 2026-06-01.
+- Next 8F step should stay read-only: add drill-in/data-quality context before any automated mating suggestions.
+
+8F drill-in/data-quality implementation state 2026-06-01:
+
+- Added read-only backend API `GET /api/pig-weights/breeding-analytics/<pig_id>`.
+- Added `/breeding-analytics/<pig_id>` detail page and changed the overview animal links to open that breeding analytics detail instead of the generic pig profile.
+- Detail page displays the selected sow/boar's current KPI summary, related mating rows, related litter rows, and data-quality flags gathered from `MATING_OVERVIEW` and `LITTER_OVERVIEW`.
+- Current flags are informational only: overdue pregnancy check, overdue farrowing, farrowed without linked litter, closed without clear litter/repeat-service outcome, missing born-alive count, missing weaned count, pig-record/born-alive mismatch, and existing litter attention reasons.
+- No automated mating suggestions, no Google Sheets writes, and no Supabase writes were added.
+- Local verification passed: `node --check static/js/breedingAnalytics.js`, `node --check static/js/breedingAnalyticsDetail.js`, focused breeding/frontend/mating tests at 33 tests, route smoke for `/breeding-analytics/<pig_id>`, route smoke for `GET /api/pig-weights/breeding-analytics`, and full local unittest suite at 312 tests.
+- Next action: deploy and browser-check `/breeding-analytics`, then open several sow/boar rows and confirm the detail view makes the data easy to understand before planning any suggestion engine.
 
 ## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test
 

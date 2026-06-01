@@ -331,6 +331,172 @@ def get_breeding_analytics():
     }
 
 
+def _animal_role_for_litter(row, pig_id):
+    if to_clean_string(row.get("Sow_Pig_ID", "")) == pig_id:
+        return "sow"
+    if to_clean_string(row.get("Boar_Pig_ID", "")) == pig_id:
+        return "boar"
+    return ""
+
+
+def _animal_role_for_mating(row, pig_id):
+    if to_clean_string(row.get("sow_pig_id", "")) == pig_id:
+        return "sow"
+    if to_clean_string(row.get("boar_pig_id", "")) == pig_id:
+        return "boar"
+    return ""
+
+
+def _litter_quality_flags(row):
+    flags = []
+    born_alive_raw = to_clean_string(row.get("Born_Alive", ""))
+    weaned_raw = to_clean_string(row.get("Weaned_Count", ""))
+    pig_master_count = to_float(row.get("Pig_Master_Row_Count", ""))
+    born_alive = to_float(row.get("Born_Alive", ""))
+
+    if not born_alive_raw:
+        flags.append("Missing born alive")
+    if not weaned_raw:
+        flags.append("Missing weaned count")
+    if born_alive is not None and pig_master_count is not None and pig_master_count != born_alive:
+        flags.append("Pig records do not match born alive")
+    if to_clean_string(row.get("Needs_Attention", "")) == "Yes":
+        reason = to_clean_string(row.get("Attention_Reason", "")) or "Needs attention"
+        flags.append(reason)
+
+    return flags
+
+
+def _mating_quality_flags(row):
+    flags = []
+    is_open = to_clean_string(row.get("is_open", ""))
+    linked_litter_id = to_clean_string(row.get("linked_litter_id", ""))
+    mating_status = to_clean_string(row.get("mating_status", ""))
+    pregnancy_result = to_clean_string(row.get("pregnancy_check_result", "")).lower().replace(" ", "_")
+
+    if is_open == "Yes" and to_clean_string(row.get("is_overdue_check", "")) == "Yes":
+        flags.append("Pregnancy check overdue")
+    if is_open == "Yes" and to_clean_string(row.get("is_overdue_farrowing", "")) == "Yes":
+        flags.append("Farrowing overdue")
+    if mating_status == "Farrowed" and not linked_litter_id:
+        flags.append("Farrowed without linked litter")
+    if is_open == "No" and not linked_litter_id and pregnancy_result != "not_pregnant":
+        flags.append("Closed without clear litter or repeat-service outcome")
+
+    return flags
+
+
+def get_breeding_animal_detail(pig_id: str):
+    pig_id = to_clean_string(pig_id)
+    if not pig_id:
+        return {
+            "success": False,
+            "errors": ["Pig ID is required."],
+        }, 400
+
+    analytics = get_breeding_analytics()
+    animal = None
+    animal_type = ""
+
+    for row in analytics["sows"]:
+        if row["pig_id"] == pig_id:
+            animal = row
+            animal_type = "sow"
+            break
+    if not animal:
+        for row in analytics["boars"]:
+            if row["pig_id"] == pig_id:
+                animal = row
+                animal_type = "boar"
+                break
+
+    if not animal:
+        return {
+            "success": False,
+            "errors": [f"Breeding analytics not found for pig '{pig_id}'."],
+        }, 404
+
+    mating_rows = []
+    for row in get_mating_overview():
+        role = _animal_role_for_mating(row, pig_id)
+        if not role:
+            continue
+
+        mating_rows.append({
+            "role": role,
+            "mating_id": row.get("mating_id", ""),
+            "mating_date": row.get("mating_date", ""),
+            "sow_pig_id": row.get("sow_pig_id", ""),
+            "sow_tag_number": row.get("sow_tag_number", ""),
+            "boar_pig_id": row.get("boar_pig_id", ""),
+            "boar_tag_number": row.get("boar_tag_number", ""),
+            "pregnancy_check_result": row.get("pregnancy_check_result", ""),
+            "mating_status": row.get("mating_status", ""),
+            "outcome": row.get("outcome", ""),
+            "linked_litter_id": row.get("linked_litter_id", ""),
+            "expected_farrowing_date": row.get("expected_farrowing_date", ""),
+            "actual_farrowing_date": row.get("actual_farrowing_date", ""),
+            "is_open": row.get("is_open", ""),
+            "quality_flags": _mating_quality_flags(row),
+        })
+
+    litter_rows = []
+    for row in get_all_records(LITTER_OVERVIEW_SHEET):
+        role = _animal_role_for_litter(row, pig_id)
+        if not role:
+            continue
+
+        born_alive = to_float(row.get("Born_Alive", ""))
+        weaned_count = to_float(row.get("Weaned_Count", ""))
+        survival_pct = None
+        if born_alive:
+            survival_pct = round(((weaned_count or 0) / born_alive) * 100, 1)
+
+        litter_rows.append({
+            "role": role,
+            "litter_id": to_clean_string(row.get("Litter_ID", "")),
+            "farrowing_date": format_date_for_json(row.get("Farrowing_Date", "")),
+            "sow_pig_id": to_clean_string(row.get("Sow_Pig_ID", "")),
+            "sow_tag_number": to_clean_string(row.get("Sow_Tag_Number", "")),
+            "boar_pig_id": to_clean_string(row.get("Boar_Pig_ID", "")),
+            "boar_tag_number": to_clean_string(row.get("Boar_Tag_Number", "")),
+            "born_alive": born_alive,
+            "weaned_count": weaned_count,
+            "active_pig_count": to_float(row.get("Active_Pig_Count", "")),
+            "exited_pig_count": to_float(row.get("Exited_Pig_Count", "")),
+            "average_current_weight_kg": to_float(row.get("Average_Current_Weight_Kg", "")),
+            "survival_pct": survival_pct,
+            "litter_status": to_clean_string(row.get("Litter_Status", "")),
+            "needs_attention": to_clean_string(row.get("Needs_Attention", "")),
+            "quality_flags": _litter_quality_flags(row),
+        })
+
+    data_quality_flags = []
+    for row in mating_rows:
+        data_quality_flags.extend(row["quality_flags"])
+    for row in litter_rows:
+        data_quality_flags.extend(row["quality_flags"])
+
+    return {
+        "success": True,
+        "mode": "read_only",
+        "animal_type": animal_type,
+        "animal": animal,
+        "matings": mating_rows,
+        "litters": litter_rows,
+        "data_quality": {
+            "flag_count": len(data_quality_flags),
+            "flags": sorted(set(data_quality_flags)),
+        },
+        "source": {
+            "mating_source": MATING_OVERVIEW_SHEET,
+            "litter_source": LITTER_OVERVIEW_SHEET,
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": False,
+        },
+    }, 200
+
+
 def save_new_mating(cleaned_data: dict):
     pig_lookup = _get_pig_lookup()
 

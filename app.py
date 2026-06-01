@@ -111,6 +111,11 @@ def breeding_analytics_page():
     return render_template("breeding-analytics.html")
 
 
+@app.route("/breeding-analytics/<pig_id>")
+def breeding_analytics_detail_page(pig_id):
+    return render_template("breeding-analytics-detail.html")
+
+
 @app.route("/pig/<pig_id>")
 def pig_detail_page(pig_id):
     return render_template("pig-detail.html")

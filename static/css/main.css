@@ -1384,6 +1384,53 @@ button:disabled {
   text-align: left;
 }
 
+.breeding-detail-summary {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.breeding-detail-table th,
+.breeding-detail-table td {
+  vertical-align: top;
+}
+
+.breeding-detail-table th:nth-child(3),
+.breeding-detail-table td:nth-child(3),
+.breeding-detail-table th:last-child,
+.breeding-detail-table td:last-child {
+  text-align: left;
+}
+
+.breeding-quality-list,
+.quality-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quality-flag,
+.quality-flag-muted {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.quality-flag {
+  background: #fff4e5;
+  color: #8a4d00;
+  border: 1px solid #ffd7a3;
+}
+
+.quality-flag-muted {
+  background: var(--bg-soft);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+}
+
 .blank-write-cell {
   min-width: 88px;
   height: 28px;

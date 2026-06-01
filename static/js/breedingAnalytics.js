@@ -53,7 +53,7 @@ function renderRows(container, rows, animalType) {
 
   container.innerHTML = rows.map((row) => `
     <tr>
-      <td><a class="detail-link" href="/pig/${encodeURIComponent(row.pig_id || "")}">${escapeHtml(animalLabel(row))}</a></td>
+      <td><a class="detail-link" href="/breeding-analytics/${encodeURIComponent(row.pig_id || "")}">${escapeHtml(animalLabel(row))}</a></td>
       <td>${escapeHtml(row.mating_count ?? 0)}</td>
       <td>${escapeHtml(row.confirmed_pregnant_count ?? 0)}</td>
       <td>${escapeHtml(row.repeat_service_count ?? 0)}</td>
