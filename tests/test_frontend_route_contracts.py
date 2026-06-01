@@ -42,6 +42,16 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("formatTagNumber(pig.tag_number || pig.pig_id)", js)
         self.assertIn("card.href = `/pig/${encodeURIComponent(pig.pig_id)}`", js)
 
+    def test_mating_board_uses_section_aware_sorting(self):
+        js = Path("static/js/matings.js").read_text(encoding="utf-8")
+
+        self.assertIn("action_priority", js)
+        self.assertIn("actualFarrowing || expectedFarrowing", js)
+        self.assertIn(".sort(compareMatingRecords)", js)
+        self.assertIn('a.action_section === "needs_action"', js)
+        self.assertIn('a.action_section === "closed"', js)
+        self.assertIn('compareByActionDate(a, b, "desc")', js)
+
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
         template = Path("templates/pig-weights.html").read_text(encoding="utf-8")
         js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")

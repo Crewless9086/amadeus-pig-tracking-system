@@ -71,6 +71,7 @@ async function loadMatingBoard() {
                 action_section: classification.section,
                 action_text: classification.actionText,
                 action_class: classification.actionClass,
+                action_priority: classification.actionPriority,
                 sort_date: classification.sortDate
             };
         });
@@ -335,7 +336,7 @@ function renderBoard(container, records) {
     const sections = SECTION_DEFINITIONS.map(section => {
         const sectionRecords = records
             .filter(record => record.action_section === section.id)
-            .sort(compareByActionDate);
+            .sort(compareMatingRecords);
 
         return renderSection(section, sectionRecords);
     });
@@ -584,11 +585,22 @@ function isEligibleForMarkNotPregnant(record) {
 function classifyMating(record) {
     const isClosed = record.is_open === "No" || Boolean(record.linked_litter_id);
     const expectedFarrowing = parseDate(record.expected_farrowing_date);
+    const actualFarrowing = parseDate(record.actual_farrowing_date);
     const expectedCheck = parseDate(record.expected_pregnancy_check_date);
     const checkResult = String(record.pregnancy_check_result || "").toLowerCase();
     const today = startOfDay(new Date());
     const daysToFarrowing = daysBetween(today, expectedFarrowing);
     const daysToCheck = daysBetween(today, expectedCheck);
+
+    if (isClosed) {
+        return {
+            section: "closed",
+            actionText: record.linked_litter_id ? "Litter linked" : "Closed",
+            actionClass: "neutral-text",
+            actionPriority: 0,
+            sortDate: actualFarrowing || expectedFarrowing || parseDate(record.mating_date)
+        };
+    }
 
     if (record.is_overdue_farrowing === "Yes") {
         // Feature C: no litter recorded more than 21 days past expected farrowing
@@ -598,6 +610,7 @@ function classifyMating(record) {
                 section: "needs_action",
                 actionText: "No litter after 3 weeks — review",
                 actionClass: "bad-text",
+                actionPriority: 1,
                 sortDate: expectedFarrowing
             };
         }
@@ -605,6 +618,7 @@ function classifyMating(record) {
             section: "needs_action",
             actionText: "Overdue farrowing",
             actionClass: "bad-text",
+            actionPriority: 2,
             sortDate: expectedFarrowing
         };
     }
@@ -614,16 +628,8 @@ function classifyMating(record) {
             section: "needs_action",
             actionText: "Check pregnancy",
             actionClass: "bad-text",
+            actionPriority: 3,
             sortDate: expectedCheck
-        };
-    }
-
-    if (isClosed) {
-        return {
-            section: "closed",
-            actionText: record.linked_litter_id ? "Litter linked" : "Closed",
-            actionClass: "neutral-text",
-            sortDate: expectedFarrowing || parseDate(record.mating_date)
         };
     }
 
@@ -632,6 +638,7 @@ function classifyMating(record) {
             section: "move_soon",
             actionText: "Prepare farrowing pen",
             actionClass: "neutral-text",
+            actionPriority: 4,
             sortDate: expectedFarrowing
         };
     }
@@ -641,6 +648,7 @@ function classifyMating(record) {
             section: "check_soon",
             actionText: "Pregnancy check soon",
             actionClass: "neutral-text",
+            actionPriority: 5,
             sortDate: expectedCheck
         };
     }
@@ -649,6 +657,7 @@ function classifyMating(record) {
         section: "open",
         actionText: "No movement needed yet",
         actionClass: "good-text",
+        actionPriority: 6,
         sortDate: expectedCheck || expectedFarrowing || parseDate(record.mating_date)
     };
 }
@@ -712,11 +721,27 @@ function getSowOptions(records) {
     return Array.from(sowMap.values()).sort((a, b) => a.label.localeCompare(b.label));
 }
 
-function compareByActionDate(a, b) {
+function compareMatingRecords(a, b) {
+    if (a.action_section === "needs_action" && b.action_section === "needs_action") {
+        const priorityCompare = Number(a.action_priority || 99) - Number(b.action_priority || 99);
+        if (priorityCompare !== 0) return priorityCompare;
+        return compareByActionDate(a, b, "asc");
+    }
+
+    if (a.action_section === "closed" && b.action_section === "closed") {
+        return compareByActionDate(a, b, "desc");
+    }
+
+    return compareByActionDate(a, b, "asc");
+}
+
+function compareByActionDate(a, b, direction = "asc") {
     const aDate = a.sort_date ? a.sort_date.getTime() : Number.MAX_SAFE_INTEGER;
     const bDate = b.sort_date ? b.sort_date.getTime() : Number.MAX_SAFE_INTEGER;
 
-    if (aDate !== bDate) return aDate - bDate;
+    if (aDate !== bDate) {
+        return direction === "desc" ? bDate - aDate : aDate - bDate;
+    }
 
     return String(a.sow_tag_number || a.sow_pig_id || "").localeCompare(String(b.sow_tag_number || b.sow_pig_id || ""));
 }

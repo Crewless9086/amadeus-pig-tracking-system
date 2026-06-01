@@ -24,8 +24,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
-| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E/8F Planned | Plan breeding-board sorting before the next breeding analytics work. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Selected | Next: plan and build bulk weight entry from the printable sheet workflow. |
+| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Local Complete; 8F Planned | Deploy/browser-check breeding-board sorting before the next breeding analytics work. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test | Next: owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`; choose next deliberate slice while waiting. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — 8D Live-Verified
+## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Local Complete
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1929,7 +1929,7 @@ When a sow has been in a farrowing pen too long with no litter, the next action 
 - After the dry-run, a live reread confirmed the real record was unchanged: still `Confirmed_Pregnant`, `Pregnant`, and `Updated_At = 2026-05-02`.
 - Live write verification passed on 2026-05-20: Baby's mating `MAT-2026-1565CF` was marked `Pregnancy_Check_Result = Not_Pregnant`, `Mating_Status = Repeat_Service`, `Outcome = Repeat_Required`, `is_open = No`, with no linked litter and no unintended pen move.
 
-### 8E Breeding Board Sorting - Planned
+### 8E Breeding Board Sorting - Local Complete
 
 Source note moved from `planning/ToDoList.md`.
 
@@ -1946,6 +1946,16 @@ Questions to answer when planning:
 - Which exact section names should be treated as operational priority sections?
 - For `Closed / Farrowed`, should `Farrowed`, `Repeat_Service`, `Cancelled`, and other closed outcomes be mixed together or grouped separately?
 - Should overdue pregnancy checks sort ahead of overdue farrowing checks when both appear in the same section?
+
+Implementation state 2026-06-01:
+
+- `/matings` now uses section-aware sorting instead of one generic date sort.
+- `Needs Action Now` sorts by operational urgency first: no litter after three weeks, overdue farrowing, then overdue pregnancy checks; ties sort by the relevant overdue date.
+- `Closed / Farrowed` sorts newest to oldest by actual farrowing date where available, then expected farrowing date, then mating date.
+- `Move Soon / Prepare`, `Upcoming Pregnancy Checks`, and `All Open Matings` continue to sort by the relevant upcoming action date.
+- Closed or linked-litter records are classified into `Closed / Farrowed` before overdue flags are considered, so completed records do not stay in action sections because of old formula flags.
+- Local verification passed: `node --check static/js/matings.js`, focused frontend/mating tests, `/matings` route smoke, and full local unittest suite at 306 tests.
+- Remaining closure step: deploy and browser-check `/matings` ordering with live records before marking 8E owner-verified.
 
 ### 8F Fertility, Bloodline, And Breeding Suggestions - Discovery Captured
 
@@ -1978,7 +1988,7 @@ Questions to answer when planning:
 - Should the first version be a read-only analytics page before any automated mating suggestions?
 - Owner note moved from scratch 2026-05-26: add clearer mating-level attention groups/reasons as well as litter-level attention. Matings and litters are intertwined, but they are not the same record; the app should make that distinction obvious and show what each mating or litter needs next.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Selected
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2510,6 +2520,8 @@ Follow-up idea:
 - Backend blocks invalid pigs, invalid dates, non-positive/invalid weights, invalid destination pens, duplicate rows in the batch, and existing same-pig/same-date weights before commit.
 - Optional pen movement reuses the existing weight-with-optional-move behavior.
 - Local verification passed: `node --check static/js/bulkWeights.js`, focused bulk/frontend tests, full local unittest suite at 305 tests, route smoke for `/bulk-weights`, and no-op batch upload guard.
+- Owner deployed the `/bulk-weights` changes on 2026-06-01.
+- 2026-06-01 owner decision: keep 9.6C open while the farm does a live bulk-weight test later today or soon after; close only after owner confirms the flow is correct with real data.
 - Remaining closure step: owner browser-test the local/deployed `/bulk-weights` flow with real weighing data before marking 9.6C deployed/browser-verified.
 
 Recommended 9.6 split:
