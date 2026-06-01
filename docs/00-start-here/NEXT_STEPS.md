@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test | Next: owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`; choose next deliberate slice while waiting. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7 Planned | Next: owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`; start 9.7 lifecycle outcome tracking as the next deliberate data-quality slice. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2014,7 +2014,7 @@ Questions to answer when planning:
 - Local verification passed: `node --check static/js/breedingAnalytics.js`, `node --check static/js/breedingAnalyticsDetail.js`, focused breeding/frontend/mating tests at 33 tests, route smoke for `/breeding-analytics/<pig_id>`, route smoke for `GET /api/pig-weights/breeding-analytics`, and full local unittest suite at 312 tests.
 - Next action: deploy and browser-check `/breeding-analytics`, then open several sow/boar rows and confirm the detail view makes the data easy to understand before planning any suggestion engine.
 
-## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test
+## Phase 9: Pig, Weight, And Reporting Improvements - 9.1A Live-Verified; 9.1B Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7 Planned
 
 Only after live order stability unless the operational need becomes urgent.
 
@@ -2425,6 +2425,13 @@ Recommended near-term decision:
 - Treat livestock sales as order transactions, not pig-count transactions.
 - Treat slaughter and meat as future transaction streams that need their own sale record before the dashboard can show honest Rand totals.
 
+Future stock valuation note moved from `planning/ToDoList.md` on 2026-06-01:
+
+- Later, add an estimated current farm stock value view that values active pigs by stage, purpose, weight band, and approved pricing assumptions.
+- This should be clearly labelled as estimated stock value, not actual income.
+- It can use piglets, weaners, growers, finishers, slaughter-ready animals, and later meat options once the pricing assumptions are trusted.
+- Do not build this until the lifecycle outcome and sales transaction paths are trustworthy enough that sold/dead/slaughtered/off-farm animals are not accidentally included.
+
 Questions to answer before implementation:
 
 - For the recent slaughter/abattoir sale that was not logged, what facts do we need to record: date, pig IDs/count, abattoir/customer, weight, price per kg, total amount, transport/fee deductions, and payment status?
@@ -2588,7 +2595,74 @@ Open planning questions before implementation:
 - Verification passed: `node --check static/js/printSheets.js`, focused frontend/route tests, and full local unittest suite at 129 tests.
 - Deployed and owner-verified on 2026-05-20; owner confirmed `/print-sheets` is good for now.
 
-### 9.7 Business Scenario Calculator — Future Planning
+### 9.7 Lifecycle Outcome Tracking — Planned Next
+
+Owner decision 2026-06-01:
+
+- Make lifecycle outcome tracking the next deliberate farm-efficiency slice after current live checks.
+- The goal is to make every important animal outcome feed the correct pig, litter, sow, boar, sales, slaughter, and dashboard reporting paths.
+- This should improve the truthfulness of the whole farm picture before automated recommendations are built.
+
+Required outcome:
+
+- Define and implement backend-owned lifecycle actions for the main outcomes instead of relying on disconnected manual sheet edits.
+- Start with the most operationally important outcomes:
+  - death/removal
+  - sale/live-stock exit
+  - slaughter/abattoir exit
+  - weaning outcome
+  - later meat-stream movement
+- Each action should update the correct source records/logs once and expose enough readback for the web app to show what happened.
+- Pig-level state should stay accurate: `Status`, `On_Farm`, exit/death/slaughter/sale fields, current pen, and relevant dates.
+- Litter-level and breeding-level reporting should receive the outcome context needed for survival, weaning, growth, retained/sold/slaughtered/dead counts, and future sow/boar performance.
+- Dashboard reporting should use these lifecycle outcomes rather than guessing from partial fields.
+- Pre-weaning deaths must keep the pig row/history because they are part of born-alive and survival history; do not delete or hide those rows as if they never existed.
+- Actions should be auditable and operator-controlled; do not silently rewrite historical outcomes or auto-classify animals without owner approval.
+
+Recommended first implementation slice:
+
+1. **9.7A Outcome map and current-state audit**
+   - Inventory current fields, formulas, pages, and write paths for death, sale, slaughter, weaning, and removal.
+   - Identify which outcomes already have a backend action and which still depend on manual edits.
+   - Produce a clear action matrix: event, source table/sheet, required inputs, records updated, reports affected, and unresolved questions.
+2. **9.7B Death/removal action**
+   - Add the first controlled action for death/removal if no complete backend-owned path exists.
+   - Capture date, reason/category, notes, recorded-by, and whether it happened pre-weaning or post-weaning.
+   - Update pig state and logs while preserving the pig row for survival history.
+3. **9.7C Sales/slaughter outcome linking**
+   - Make completed Supabase sales/slaughter transactions feed the pig/litter/breeding outcome views cleanly.
+   - Avoid double-counting exits already represented in `PIG_MASTER`.
+4. **9.7D Reporting feedback**
+   - Add read-only outcome summaries to relevant pig, litter, sow/boar, and dashboard views.
+
+Questions to answer during 9.7A:
+
+- Which current sheet fields are the source of truth for death date, exit date, exit reason, slaughter date, and sale stream?
+- Is there already a death/removal log sheet, or should the first implementation use existing `PIG_MASTER` fields plus a new audit log?
+- For pre-weaning deaths, should the action require selecting the litter and piglet row, or can it infer the litter from the pig record?
+- For slaughter outcomes, should completion of a paid/closed slaughter transaction update pig state automatically, or should there be an explicit operator confirmation step first?
+- What dashboard numbers should change immediately after each outcome type?
+
+9.7A audit state 2026-06-01:
+
+- Created `docs/02-backend/PIG_LIFECYCLE_OUTCOME_PLAN.md` as the planning source for lifecycle outcome tracking.
+- Current audit found that born-alive piglet creation, litter weaning, and order-based live-stock sale completion already have backend-owned actions.
+- Current audit found that Supabase slaughter transactions intentionally do not update `PIG_MASTER` yet, so slaughter pig/litter/breeding outcome linking remains a gap.
+- Current audit found no complete backend-owned death/removal action; this is the recommended first build slice because it directly affects survival, litter, sow/boar, and dashboard truth.
+- Recommended next implementation: 9.7B controlled death/removal action on pig detail, preserving the pig row and litter links for historical outcome reporting.
+
+9.7B local implementation state 2026-06-01:
+
+- Added backend service `mark_pig_death_or_removal()`.
+- Added route `POST /api/pig-weights/pig/<pig_id>/lifecycle/death`.
+- Added a controlled `Lifecycle Outcome` form to `/pig/<pig_id>`, visible only for active/on-farm pigs.
+- Supported reasons are `Died`, `Culled`, `Lost`, `Removed`, and `Other`.
+- Successful actions update `PIG_MASTER.Status`, `On_Farm`, `Exit_Date`, `Exit_Reason`, `General_Notes`, and `Updated_At` while preserving the pig row and litter/parent links.
+- Terminal/off-farm pigs are blocked; correction mode remains a future separate workflow.
+- Local verification passed: `node --check static/js/pigDetail.js`, focused pig lifecycle/frontend tests at 27 tests, route smoke for `/pig/<pig_id>` plus invalid lifecycle payload, and full local unittest suite at 316 tests.
+- Remaining closure step: deploy and browser-check with a safe known/test case before using it for a real farm death/removal event.
+
+### 9.8 Business Scenario Calculator — Future Planning
 
 Goal:
 

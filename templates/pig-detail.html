@@ -151,6 +151,41 @@
           <span id="detail_notes" class="detail-value">—</span>
         </div>
       </div>
+
+      <section id="lifecycle_action_panel" class="lifecycle-action-panel hidden">
+        <div class="section-subtitle">Lifecycle Outcome</div>
+        <form id="lifecycle_death_form" class="compact-form">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="lifecycle_event_date">Date</label>
+              <input id="lifecycle_event_date" type="date" required>
+            </div>
+            <div class="form-field">
+              <label for="lifecycle_reason">Reason</label>
+              <select id="lifecycle_reason" required>
+                <option value="">Select reason</option>
+                <option value="Died">Died</option>
+                <option value="Culled">Culled</option>
+                <option value="Lost">Lost</option>
+                <option value="Removed">Removed</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="lifecycle_changed_by">Recorded By</label>
+              <input id="lifecycle_changed_by" type="text" value="web_app" required>
+            </div>
+            <div class="form-field form-field-wide">
+              <label for="lifecycle_notes">Notes</label>
+              <textarea id="lifecycle_notes" rows="3"></textarea>
+            </div>
+          </div>
+          <p class="form-helper">This keeps the pig record and litter link for outcome history.</p>
+          <div class="form-actions">
+            <button id="lifecycle_submit_button" type="submit" class="button-danger">Record Death / Removal</button>
+          </div>
+        </form>
+      </section>
     </div>
   </div>
 

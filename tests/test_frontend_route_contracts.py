@@ -62,6 +62,18 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('params.get("mating_id")', js)
         self.assertIn("handleMatingSelect({ target: select })", js)
 
+    def test_pig_detail_has_controlled_lifecycle_death_action(self):
+        template = Path("templates/pig-detail.html").read_text(encoding="utf-8")
+        js = Path("static/js/pigDetail.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="lifecycle_action_panel"', template)
+        self.assertIn('id="lifecycle_death_form"', template)
+        self.assertIn("Record Death / Removal", template)
+        self.assertIn("/api/pig-weights/pig/${encodeURIComponent(currentPigId)}/lifecycle/death", js)
+        self.assertIn('method: "POST"', js)
+        self.assertIn("pig.status === \"Active\" && pig.on_farm === \"Yes\"", js)
+        self.assertIn("window.confirm", js)
+
     def test_breeding_analytics_page_is_read_only_kpi_overview(self):
         template = Path("templates/breeding-analytics.html").read_text(encoding="utf-8")
         js = Path("static/js/breedingAnalytics.js").read_text(encoding="utf-8")

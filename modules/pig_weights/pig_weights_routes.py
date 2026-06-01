@@ -10,6 +10,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_family_tree_profile,
     get_litter_profile,
     mark_litter_profile_weaned,
+    mark_pig_lifecycle_death,
     list_products,
     list_pens,
     get_pig_profile,
@@ -77,6 +78,13 @@ def pens():
 @pig_weights_bp.route("/pig/<pig_id>", methods=["GET"])
 def pig_profile(pig_id):
     result, status_code = get_pig_profile(pig_id)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/pig/<pig_id>/lifecycle/death", methods=["POST"])
+def pig_lifecycle_death(pig_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = mark_pig_lifecycle_death(pig_id, payload)
     return jsonify(result), status_code
 
 

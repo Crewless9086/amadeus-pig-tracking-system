@@ -9,6 +9,7 @@ from modules.pig_weights.pig_weights_service import (
     get_family_tree,
     get_litter_detail,
     mark_litter_weaned,
+    mark_pig_death_or_removal,
     get_pig_detail,
     get_products,
     get_pens,
@@ -122,6 +123,17 @@ def mark_litter_profile_weaned(litter_id: str, payload: dict):
         litter_id=litter_id,
         wean_date_value=(payload or {}).get("wean_date", ""),
         changed_by=(payload or {}).get("changed_by", "web_app"),
+    )
+
+
+def mark_pig_lifecycle_death(pig_id: str, payload: dict):
+    payload = payload or {}
+    return mark_pig_death_or_removal(
+        pig_id=pig_id,
+        event_date_value=payload.get("event_date", ""),
+        reason=payload.get("reason", ""),
+        changed_by=payload.get("changed_by", "web_app"),
+        notes=payload.get("notes", ""),
     )
 
 

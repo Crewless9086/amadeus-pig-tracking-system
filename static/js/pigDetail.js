@@ -1,4 +1,12 @@
 const messageBox = document.getElementById("pig_detail_message");
+const lifecyclePanel = document.getElementById("lifecycle_action_panel");
+const lifecycleForm = document.getElementById("lifecycle_death_form");
+const lifecycleEventDate = document.getElementById("lifecycle_event_date");
+const lifecycleReason = document.getElementById("lifecycle_reason");
+const lifecycleChangedBy = document.getElementById("lifecycle_changed_by");
+const lifecycleNotes = document.getElementById("lifecycle_notes");
+const lifecycleSubmitButton = document.getElementById("lifecycle_submit_button");
+let currentPigId = "";
 
 function getPigIdFromUrl() {
   const parts = window.location.pathname.split("/");
@@ -30,6 +38,25 @@ function setLinkedValue(id, label, href) {
   }
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function setLifecycleSubmitting(isSubmitting) {
+  if (!lifecycleSubmitButton) return;
+  lifecycleSubmitButton.disabled = isSubmitting;
+  lifecycleSubmitButton.textContent = isSubmitting ? "Saving..." : "Record Death / Removal";
+}
+
+function updateLifecyclePanel(pig) {
+  if (!lifecyclePanel) return;
+  const canRecordOutcome = pig.status === "Active" && pig.on_farm === "Yes";
+  lifecyclePanel.classList.toggle("hidden", !canRecordOutcome);
+  if (canRecordOutcome && lifecycleEventDate && !lifecycleEventDate.value) {
+    lifecycleEventDate.value = todayIsoDate();
+  }
+}
+
 async function loadPigDetail() {
   const pigId = getPigIdFromUrl();
 
@@ -48,6 +75,7 @@ async function loadPigDetail() {
     }
 
     const pig = data.pig;
+    currentPigId = pig.pig_id;
 
     document.getElementById("pig_detail_title").textContent = pig.tag_number || pig.pig_id;
     document.getElementById("pig_detail_subtitle").textContent = `Pig Profile • ${pig.pig_id}`;
@@ -99,9 +127,55 @@ async function loadPigDetail() {
     );
 
     setText("detail_notes", pig.general_notes);
+    updateLifecyclePanel(pig);
   } catch (error) {
     showMessage("Something went wrong while loading pig detail.", "error");
   }
+}
+
+async function submitLifecycleDeath(event) {
+  event.preventDefault();
+  if (!currentPigId) {
+    showMessage("Pig details have not loaded yet.", "error");
+    return;
+  }
+
+  if (!window.confirm("Record this lifecycle outcome? The pig row will be kept for history and reporting.")) {
+    return;
+  }
+
+  setLifecycleSubmitting(true);
+  try {
+    const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(currentPigId)}/lifecycle/death`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event_date: lifecycleEventDate.value,
+        reason: lifecycleReason.value,
+        changed_by: lifecycleChangedBy.value,
+        notes: lifecycleNotes.value,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || []).join(" ") || "Could not record lifecycle outcome.");
+    }
+
+    showMessage(data.message || "Lifecycle outcome recorded.", "success");
+    lifecycleForm.reset();
+    lifecycleEventDate.value = todayIsoDate();
+    lifecycleChangedBy.value = "web_app";
+    await loadPigDetail();
+  } catch (error) {
+    showMessage(error.message || "Something went wrong while recording lifecycle outcome.", "error");
+  } finally {
+    setLifecycleSubmitting(false);
+  }
+}
+
+if (lifecycleForm) {
+  lifecycleForm.addEventListener("submit", submitLifecycleDeath);
 }
 
 loadPigDetail();

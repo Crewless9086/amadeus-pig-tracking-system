@@ -25,6 +25,15 @@ from modules.pig_weights.pig_weights_utils import (
 from modules.pig_weights.mating_service import link_litter_to_mating
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 
+TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
+LIFECYCLE_REMOVAL_REASONS = {
+    "Died": "Dead",
+    "Culled": "Dead",
+    "Lost": "Dead",
+    "Removed": "Removed",
+    "Other": "Removed",
+}
+
 
 def _build_pig_lookup(rows, columns):
     pig_lookup = {}
@@ -468,6 +477,106 @@ def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_a
         "pig_rows_updated": pig_rows_updated,
         "changed_by": updated_by,
         "message": f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s).",
+    }, 200
+
+
+def _append_lifecycle_note(existing_notes, event_date, reason, changed_by, notes):
+    clean_existing = to_clean_string(existing_notes)
+    clean_notes = to_clean_string(notes)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    entry = f"{format_date_for_sheet(event_date)} lifecycle outcome: {reason} recorded by {changed_by}."
+    if clean_notes:
+        entry = f"{entry} Notes: {clean_notes}"
+    return f"{clean_existing}\n{entry}" if clean_existing else entry
+
+
+def mark_pig_death_or_removal(
+    pig_id: str,
+    event_date_value,
+    reason: str,
+    changed_by: str = "web_app",
+    notes: str = "",
+):
+    pig_id = to_clean_string(pig_id)
+    event_date = parse_sheet_date(event_date_value)
+    reason = to_clean_string(reason)
+    changed_by = to_clean_string(changed_by) or "web_app"
+
+    errors = []
+    if not pig_id:
+        errors.append("Pig ID is required.")
+    if not event_date:
+        errors.append("A valid event date is required.")
+    if reason not in LIFECYCLE_REMOVAL_REASONS:
+        errors.append("Reason must be Died, Culled, Lost, Removed, or Other.")
+    if not changed_by:
+        errors.append("changed_by is required.")
+    if errors:
+        return {"success": False, "errors": errors}, 400
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_rows = get_all_records(pig_master_sheet)
+    pig_lookup = _build_pig_lookup(pig_rows, columns)
+    pig = pig_lookup.get(pig_id)
+
+    if not pig:
+        return {
+            "success": False,
+            "errors": [f"Pig '{pig_id}' was not found."],
+        }, 404
+
+    current_status = to_clean_string(pig.get(columns["status"], ""))
+    current_on_farm = to_clean_string(pig.get(columns["on_farm"], ""))
+
+    if current_status in TERMINAL_PIG_STATUSES or current_on_farm != "Yes":
+        return {
+            "success": False,
+            "errors": ["Pig is already terminal or not on farm. Use a future correction workflow for historical fixes."],
+            "pig_id": pig_id,
+            "current_status": current_status,
+            "current_on_farm": current_on_farm,
+        }, 409
+
+    new_status = LIFECYCLE_REMOVAL_REASONS[reason]
+    event_date_sheet = format_date_for_sheet(event_date)
+    today = format_date_for_sheet(datetime.now().date())
+    updated_notes = _append_lifecycle_note(
+        pig.get("General_Notes", ""),
+        event_date,
+        reason,
+        changed_by,
+        notes,
+    )
+    rows_updated = batch_update_rows_by_id(
+        pig_master_sheet,
+        {
+            pig_id: {
+                "Status": new_status,
+                "On_Farm": "No",
+                "Exit_Date": event_date_sheet,
+                "Exit_Reason": reason,
+                "General_Notes": updated_notes,
+                "Updated_At": today,
+            }
+        },
+    )
+
+    return {
+        "success": True,
+        "action": "mark_pig_death_or_removal",
+        "pig_id": pig_id,
+        "status": new_status,
+        "on_farm": "No",
+        "exit_date": event_date.isoformat(),
+        "exit_reason": reason,
+        "rows_updated": rows_updated,
+        "previous": {
+            "status": current_status,
+            "on_farm": current_on_farm,
+        },
+        "changed_by": changed_by,
+        "message": f"Pig {pig_id} was marked as {new_status}.",
     }, 200
 
 
