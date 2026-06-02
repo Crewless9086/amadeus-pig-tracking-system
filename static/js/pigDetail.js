@@ -57,6 +57,20 @@ function updateLifecyclePanel(pig) {
   }
 }
 
+function renderLifecycleHistory(pig) {
+  const lifecycle = pig.lifecycle || {};
+  setText("detail_wean_date", lifecycle.wean_date);
+  setText("detail_wean_weight", lifecycle.wean_weight_kg, lifecycle.wean_weight_kg !== null && lifecycle.wean_weight_kg !== undefined && lifecycle.wean_weight_kg !== "" ? " kg" : "");
+  setText("detail_exit_date", lifecycle.exit_date);
+  setText("detail_exit_reason", lifecycle.exit_reason);
+  setText("detail_carcass_weight", lifecycle.carcass_weight_kg, lifecycle.carcass_weight_kg !== null && lifecycle.carcass_weight_kg !== undefined && lifecycle.carcass_weight_kg !== "" ? " kg" : "");
+  setLinkedValue(
+    "detail_exit_order",
+    lifecycle.exit_order_id,
+    lifecycle.exit_order_id ? `/orders/${encodeURIComponent(lifecycle.exit_order_id)}` : ""
+  );
+}
+
 async function loadPigDetail() {
   const pigId = getPigIdFromUrl();
 
@@ -127,6 +141,7 @@ async function loadPigDetail() {
     );
 
     setText("detail_notes", pig.general_notes);
+    renderLifecycleHistory(pig);
     updateLifecyclePanel(pig);
   } catch (error) {
     showMessage("Something went wrong while loading pig detail.", "error");

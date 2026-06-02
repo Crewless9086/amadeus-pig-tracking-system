@@ -134,6 +134,36 @@ def _lifecycle_outcome_for_exit(row):
     return ""
 
 
+def _empty_litter_lifecycle_outcomes():
+    return {
+        "active": 0,
+        "sold": 0,
+        "slaughtered": 0,
+        "dead": 0,
+        "removed": 0,
+        "other": 0,
+        "total": 0,
+    }
+
+
+def _litter_lifecycle_outcomes(litter_id, pig_master_rows):
+    outcomes = _empty_litter_lifecycle_outcomes()
+    for row in pig_master_rows:
+        if to_clean_string(row.get("Litter_ID", "")) != litter_id:
+            continue
+        outcomes["total"] += 1
+        outcome = _lifecycle_outcome_for_exit(row)
+        status = to_clean_string(row.get("Status", ""))
+        on_farm = to_clean_string(row.get("On_Farm", ""))
+        if outcome:
+            outcomes[outcome] += 1
+        elif status == "Active" and on_farm == "Yes":
+            outcomes["active"] += 1
+        else:
+            outcomes["other"] += 1
+    return outcomes
+
+
 def get_dashboard_summary():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -848,6 +878,8 @@ def get_litter_detail(litter_id: str):
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
     rows = get_all_records(sheet_name)
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+    lifecycle_outcomes = _litter_lifecycle_outcomes(litter_id, pig_master_rows)
 
     pig_lookup = {}
     litter_rows = []
@@ -878,6 +910,7 @@ def get_litter_detail(litter_id: str):
                     "average_weight_kg": None,
                     "piglets": [],
                     "attention": attention,
+                    "lifecycle_outcomes": lifecycle_outcomes,
                 }
         return None
 
@@ -947,6 +980,7 @@ def get_litter_detail(litter_id: str):
         "average_weight_kg": average_weight,
         "piglets": piglets,
         "attention": attention,
+        "lifecycle_outcomes": lifecycle_outcomes,
     }
 
 
@@ -957,6 +991,7 @@ def get_pig_detail(pig_id: str):
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
     rows = get_all_records(sheet_name)
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
 
     pig_lookup = {}
     for row in rows:
@@ -967,6 +1002,7 @@ def get_pig_detail(pig_id: str):
     pig = pig_lookup.get(pig_id)
     if not pig:
         return None
+    master_pig = _build_pig_lookup(pig_master_rows, columns).get(pig_id, {})
 
     mother_pig_id = to_clean_string(pig.get("Mother_Pig_ID", ""))
     father_pig_id = to_clean_string(pig.get("Father_Pig_ID", ""))
@@ -977,6 +1013,8 @@ def get_pig_detail(pig_id: str):
 
     mother_tag_number = to_clean_string(mother_row.get(columns["tag_number"], "")) if mother_row else ""
     father_tag_number = to_clean_string(father_row.get(columns["tag_number"], "")) if father_row else ""
+    lifecycle_status = to_clean_string(master_pig.get(columns["status"], pig.get(columns["status"], "")))
+    lifecycle_on_farm = to_clean_string(master_pig.get(columns["on_farm"], pig.get(columns["on_farm"], "")))
 
     return {
         "pig_id": to_clean_string(pig.get(columns["pig_id"], "")),
@@ -1005,6 +1043,16 @@ def get_pig_detail(pig_id: str):
         "last_product_name": to_clean_string(pig.get("Last_Product_Name", "")),
         "current_withdrawal_end_date": format_date_for_json(pig.get("Current_Withdrawal_End_Date", "")),
         "withdrawal_clear": to_clean_string(pig.get("Withdrawal_Clear", "")),
+        "lifecycle": {
+            "status": lifecycle_status,
+            "on_farm": lifecycle_on_farm,
+            "wean_date": format_date_for_json(master_pig.get("Wean_Date", "")),
+            "wean_weight_kg": to_float(master_pig.get("Wean_Weight_Kg", "")),
+            "exit_date": format_date_for_json(master_pig.get("Exit_Date", "")),
+            "exit_reason": to_clean_string(master_pig.get("Exit_Reason", "")),
+            "exit_order_id": to_clean_string(master_pig.get("Exit_Order_ID", "")),
+            "carcass_weight_kg": to_float(master_pig.get("Carcass_Weight_Kg", "")),
+        },
     }
 
 

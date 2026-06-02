@@ -69,6 +69,16 @@ function renderAttention(litter) {
   markWeanedDate.value = attention.wean_date || todayIsoDate();
 }
 
+function renderLifecycleOutcomes(litter) {
+  const outcomes = litter.lifecycle_outcomes || {};
+  setText("litter_outcome_active", outcomes.active);
+  setText("litter_outcome_sold", outcomes.sold);
+  setText("litter_outcome_slaughtered", outcomes.slaughtered);
+  setText("litter_outcome_dead", outcomes.dead);
+  setText("litter_outcome_removed", outcomes.removed);
+  setText("litter_outcome_other", outcomes.other);
+}
+
 function setMarkWeanedSubmitting(isSubmitting) {
   markWeanedButton.disabled = isSubmitting;
   markWeanedButton.textContent = isSubmitting ? "Saving..." : "Mark as Weaned";
@@ -206,6 +216,7 @@ async function loadLitterDetail(options = {}) {
     );
 
     renderAttention(litter);
+    renderLifecycleOutcomes(litter);
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {

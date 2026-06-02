@@ -31,8 +31,10 @@ def confirm_slaughter_pig_exits(sale_id, payload=None):
 
     if to_clean_string(sale.get("sale_stream", "")) != "Slaughter":
         return _failure(["Only Slaughter transactions can confirm slaughter pig exits."], 400)
-    if to_clean_string(sale.get("sale_status", "")) == "Cancelled":
-        return _failure(["Cancelled slaughter transactions cannot update pig exits."], 409)
+    sale_status = to_clean_string(sale.get("sale_status", ""))
+    payment_status = to_clean_string(sale.get("payment_status", ""))
+    if sale_status in {"Completed", "Cancelled"} or payment_status == "Paid":
+        return _failure(["Completed, cancelled, or paid slaughter transactions are closed for pig-exit confirmation."], 409)
 
     exit_date = parse_sheet_date(payload.get("exit_date", "")) or parse_sheet_date(sale.get("sale_date", ""))
     if not exit_date:

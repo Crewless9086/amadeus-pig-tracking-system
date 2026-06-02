@@ -55,7 +55,10 @@ function setExitSubmitting(isSubmitting) {
 function updateExitConfirmPanel(sale, items) {
   if (!exitConfirmPanel) return;
   const hasPigItems = items.some((item) => item.pig_id);
-  const canConfirm = sale.sale_stream === "Slaughter" && sale.sale_status !== "Cancelled" && hasPigItems;
+  const saleStatus = String(sale.sale_status || "").trim();
+  const paymentStatus = String(sale.payment_status || "").trim();
+  const isClosed = ["Completed", "Cancelled"].includes(saleStatus) || paymentStatus === "Paid";
+  const canConfirm = sale.sale_stream === "Slaughter" && !isClosed && hasPigItems;
   exitConfirmPanel.classList.toggle("hidden", !canConfirm);
   if (canConfirm && exitDateInput && !exitDateInput.value) {
     exitDateInput.value = dateOnly(sale.sale_date);

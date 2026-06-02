@@ -253,5 +253,86 @@ class PigLifecycleOutcomeTests(unittest.TestCase):
         get_records.assert_not_called()
 
 
+class LifecycleDetailReadTests(unittest.TestCase):
+    def test_pig_detail_includes_read_only_lifecycle_history_from_pig_master(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Tag_Number": "S10",
+                "Status": "Slaughtered",
+                "On_Farm": "No",
+                "Litter_ID": "LIT-1",
+            }
+        ]
+        master_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Status": "Slaughtered",
+                "On_Farm": "No",
+                "Wean_Date": "26 May 2026",
+                "Wean_Weight_Kg": "12.5",
+                "Exit_Date": "01 Jun 2026",
+                "Exit_Reason": "Sold to Abattoir",
+                "Exit_Order_ID": "SALE-1",
+                "Carcass_Weight_Kg": "68",
+            }
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["pig_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return master_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            detail = pig_weights_service.get_pig_detail("PIG-1")
+
+        self.assertEqual(detail["lifecycle"]["status"], "Slaughtered")
+        self.assertEqual(detail["lifecycle"]["on_farm"], "No")
+        self.assertEqual(detail["lifecycle"]["wean_date"], "2026-05-26")
+        self.assertEqual(detail["lifecycle"]["wean_weight_kg"], 12.5)
+        self.assertEqual(detail["lifecycle"]["exit_date"], "2026-06-01")
+        self.assertEqual(detail["lifecycle"]["exit_reason"], "Sold to Abattoir")
+        self.assertEqual(detail["lifecycle"]["exit_order_id"], "SALE-1")
+        self.assertEqual(detail["lifecycle"]["carcass_weight_kg"], 68)
+
+    def test_litter_detail_includes_lifecycle_outcome_counts_from_pig_master(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "001", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Male"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "002", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Sex": "Female"},
+            {"Pig_ID": "PIG-3", "Tag_Number": "003", "Litter_ID": "LIT-1", "Status": "Slaughtered", "On_Farm": "No", "Sex": "Male"},
+            {"Pig_ID": "PIG-4", "Tag_Number": "004", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Sex": "Female"},
+        ]
+        master_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Exit_Reason": "Sold"},
+            {"Pig_ID": "PIG-3", "Litter_ID": "LIT-1", "Status": "Slaughtered", "On_Farm": "No", "Exit_Reason": "Sold to Abattoir"},
+            {"Pig_ID": "PIG-4", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-5", "Litter_ID": "LIT-OTHER", "Status": "Removed", "On_Farm": "No", "Exit_Reason": "Removed"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_register"]:
+                return []
+            if sheet_name == sheet_names["pig_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return master_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            detail = pig_weights_service.get_litter_detail("LIT-1")
+
+        self.assertEqual(detail["lifecycle_outcomes"]["total"], 4)
+        self.assertEqual(detail["lifecycle_outcomes"]["active"], 1)
+        self.assertEqual(detail["lifecycle_outcomes"]["sold"], 1)
+        self.assertEqual(detail["lifecycle_outcomes"]["slaughtered"], 1)
+        self.assertEqual(detail["lifecycle_outcomes"]["dead"], 1)
+        self.assertEqual(detail["lifecycle_outcomes"]["removed"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

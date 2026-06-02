@@ -12,6 +12,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="litter_attention_panel"', template)
         self.assertIn('id="mark_weaned_form"', template)
         self.assertIn('id="mark_weaned_button"', template)
+        self.assertIn('id="litter_outcome_slaughtered"', template)
+        self.assertIn("renderLifecycleOutcomes", js)
+        self.assertIn("litter.lifecycle_outcomes", js)
         self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/mark-weaned", js)
         self.assertIn('method: "POST"', js)
         self.assertIn('attention.action_type === "mark_weaned"', js)
@@ -68,10 +71,14 @@ class FrontendRouteContractTests(unittest.TestCase):
 
         self.assertIn('id="lifecycle_action_panel"', template)
         self.assertIn('id="lifecycle_death_form"', template)
+        self.assertIn('id="detail_exit_reason"', template)
+        self.assertIn('id="detail_carcass_weight"', template)
         self.assertIn("Record Death / Removal", template)
         self.assertIn("/api/pig-weights/pig/${encodeURIComponent(currentPigId)}/lifecycle/death", js)
         self.assertIn('method: "POST"', js)
         self.assertIn("pig.status === \"Active\" && pig.on_farm === \"Yes\"", js)
+        self.assertIn("renderLifecycleHistory", js)
+        self.assertIn("pig.lifecycle", js)
         self.assertIn("window.confirm", js)
 
     def test_breeding_analytics_page_is_read_only_kpi_overview(self):
@@ -271,6 +278,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/sales-transactions/${encodeURIComponent(saleId)}", js)
         self.assertIn("/api/sales-transactions/${encodeURIComponent(saleId)}/confirm-pig-exits", js)
         self.assertIn('method: "POST"', js)
+        self.assertIn('["Completed", "Cancelled"].includes(saleStatus)', js)
+        self.assertIn('paymentStatus === "Paid"', js)
         self.assertIn("window.confirm", js)
         self.assertIn("window.history.back", js)
         self.assertIn("/sales/slaughter", js)

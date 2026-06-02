@@ -12,7 +12,8 @@ class SalesTransactionLifecycleTests(unittest.TestCase):
                 "sale_id": "SALE-1",
                 "sale_date": "2026-06-01",
                 "sale_stream": "Slaughter",
-                "sale_status": "Completed",
+                "sale_status": "Confirmed",
+                "payment_status": "Unpaid",
             },
             "items": [
                 {
@@ -78,7 +79,8 @@ class SalesTransactionLifecycleTests(unittest.TestCase):
                 "sale_id": "SALE-1",
                 "sale_date": "2026-06-01",
                 "sale_stream": "Slaughter",
-                "sale_status": "Completed",
+                "sale_status": "Confirmed",
+                "payment_status": "Unpaid",
             },
             "items": [{"pig_id": "PIG-1"}],
         }
@@ -93,6 +95,28 @@ class SalesTransactionLifecycleTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["blocked_pigs"][0]["pig_id"], "PIG-1")
         update_pigs.assert_not_called()
+
+    def test_confirm_slaughter_pig_exits_blocks_closed_or_paid_sales(self):
+        sale_result = {
+            "success": True,
+            "sales_transaction": {
+                "sale_id": "SALE-1",
+                "sale_date": "2026-06-01",
+                "sale_stream": "Slaughter",
+                "sale_status": "Completed",
+                "payment_status": "Paid",
+            },
+            "items": [{"pig_id": "PIG-1"}],
+        }
+
+        with patch.object(sales_transaction_lifecycle, "get_sales_transaction", return_value=(sale_result, 200)), \
+             patch.object(sales_transaction_lifecycle, "get_all_records") as get_pigs:
+            result, status_code = sales_transaction_lifecycle.confirm_slaughter_pig_exits("SALE-1", {})
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("closed", result["errors"][0])
+        get_pigs.assert_not_called()
 
     def test_confirm_slaughter_pig_exits_rejects_non_slaughter_transaction(self):
         sale_result = {

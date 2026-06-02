@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7 Planned | Next: owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`; start 9.7 lifecycle outcome tracking as the next deliberate data-quality slice. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7E Local | Next: deploy/browser-check 9.7E closed slaughter action visibility and pig/litter lifecycle detail readback; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2634,6 +2634,9 @@ Recommended first implementation slice:
    - Avoid double-counting exits already represented in `PIG_MASTER`.
 4. **9.7D Reporting feedback**
    - Add read-only outcome summaries to relevant pig, litter, sow/boar, and dashboard views.
+5. **9.7E Detail readback and closed-action cleanup**
+   - Hide outcome action panels when the underlying transaction is already closed/paid/completed.
+   - Add read-only lifecycle history to pig and litter detail pages so closed records still explain what happened.
 
 Questions to answer during 9.7A:
 
@@ -2688,6 +2691,24 @@ Questions to answer during 9.7A:
 - Remaining closure step: deploy and browser-check that the home dashboard shows the new outcome line correctly.
 - 2026-06-02 deploy feedback: outcome block made the neighboring dashboard cards look stretched/empty. Local layout refinement compacted the outcome counts into a strip and set dashboard grid items to align to their content height instead of stretching all cards to the tallest card.
 - Layout refinement verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests at 22 tests, dashboard route smoke, and full local unittest suite at 320 tests.
+
+9.7E local implementation state 2026-06-02:
+
+- Owner screenshot showed `/sales/slaughter/SALE-2026-1DE373` as `Completed` and `Paid`, while the `Pig Exit Confirmation` action still displayed.
+- Slaughter sale detail now treats `Completed`, `Cancelled`, or `Paid` slaughter sales as closed and hides the confirm action.
+- Backend `confirm_slaughter_pig_exits()` also blocks closed/paid/cancelled slaughter transactions, so a direct API call cannot update pigs through a closed sale.
+- `/pig/<pig_id>` now includes read-only lifecycle history from `PIG_MASTER`: wean date/weight, exit date/reason, linked exit order, and carcass weight.
+- `/litter/<litter_id>` now includes read-only lifecycle outcome counts from `PIG_MASTER`: active, sold, slaughtered, dead, removed, and other.
+- No historical correction workflow was added; if old data is inconsistent after a sale is closed, that should become a deliberate correction/audit slice rather than reopening the normal action button.
+- Local verification passed: `node --check static/js/slaughterSaleDetail.js`, `node --check static/js/pigDetail.js`, `node --check static/js/litterDetail.js`, focused lifecycle/frontend tests at 33 tests, and full local unittest suite at 323 tests.
+- Remaining closure step: deploy and browser-check that `SALE-2026-1DE373` no longer shows `Pig Exit Confirmation`, and that pig/litter detail pages show the read-only outcome history clearly.
+
+9.7F future litter health/reminder capture planning:
+
+- Owner note moved from scratch on 2026-06-02: litters need reminders for vaccination, earmarking, and deworming based on days since birth once the exact timing is confirmed with the farm.
+- Earmarks and deworming happen first; ear tags happen later around weaning because tags are too large for little piglets.
+- Preferred workflow is similar to bulk weights: printable capture sheet plus a digital bulk table where current live piglets/litters can be ticked off and fields captured in one batch.
+- Do not implement until the required day offsets, products/actions, and data destination are agreed.
 
 ### 9.8 Business Scenario Calculator — Future Planning
 
