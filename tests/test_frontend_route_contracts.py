@@ -10,6 +10,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}", js)
         self.assertNotIn("/api/pig-weights/litter/${encodeURIComponent(litterId)}/detail", js)
         self.assertIn('id="litter_attention_panel"', template)
+        self.assertIn("litter-detail-shell", template)
+        self.assertIn("litter-detail-page", template)
+        self.assertIn("litter-workspace", template)
+        self.assertIn("litter-summary-grid", template)
+        self.assertIn("litter-side-column", template)
         self.assertIn('id="mark_weaned_form"', template)
         self.assertIn('id="mark_weaned_button"', template)
         self.assertIn('id="newborn_health_form"', template)
@@ -28,6 +33,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('method: "POST"', js)
         self.assertIn('attention.action_type === "mark_weaned"', js)
         self.assertNotIn('attention.action_type === "review_or_wean"', js)
+        self.assertIn(".litter-detail-page", Path("static/css/main.css").read_text(encoding="utf-8"))
 
     def test_pig_dropdowns_pad_numeric_tags_for_display(self):
         paths = [

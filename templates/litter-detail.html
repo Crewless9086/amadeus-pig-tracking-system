@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
-  <div class="page-shell">
-    <div class="page-card">
+  <div class="page-shell litter-detail-shell">
+    <div class="page-card litter-detail-page">
       <div class="page-header page-header-with-link">
         <div>
           <h1 id="litter_title">Litter Detail</h1>
@@ -19,147 +19,164 @@
 
       <div id="litter_message" class="message-box hidden"></div>
 
-      <div class="detail-grid">
-        <div class="detail-card">
-          <span class="detail-label">Litter ID</span>
-          <span id="litter_id_value" class="detail-value">-</span>
-        </div>
+      <div class="litter-workspace">
+        <main class="litter-main-column">
+          <section class="litter-summary-panel">
+            <div class="section-title-row">
+              <div>
+                <h2>Litter Summary</h2>
+                <p>Core records and current linked piglet counts.</p>
+              </div>
+            </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Total Piglets</span>
-          <span id="litter_count_value" class="detail-value">-</span>
-        </div>
+            <div class="detail-grid litter-summary-grid">
+              <div class="detail-card">
+                <span class="detail-label">Litter ID</span>
+                <span id="litter_id_value" class="detail-value">-</span>
+              </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Male Count</span>
-          <span id="litter_male_count_value" class="detail-value">-</span>
-        </div>
+              <div class="detail-card">
+                <span class="detail-label">Total Piglets</span>
+                <span id="litter_count_value" class="detail-value">-</span>
+              </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Female Count</span>
-          <span id="litter_female_count_value" class="detail-value">-</span>
-        </div>
+              <div class="detail-card">
+                <span class="detail-label">Active Piglets</span>
+                <span id="litter_active_count_value" class="detail-value">-</span>
+              </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Active Piglets</span>
-          <span id="litter_active_count_value" class="detail-value">-</span>
-        </div>
+              <div class="detail-card">
+                <span class="detail-label">Average Weight</span>
+                <span id="litter_average_weight_value" class="detail-value">-</span>
+              </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Average Weight</span>
-          <span id="litter_average_weight_value" class="detail-value">-</span>
-        </div>
+              <div class="detail-card">
+                <span class="detail-label">Male Count</span>
+                <span id="litter_male_count_value" class="detail-value">-</span>
+              </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Mother</span>
-          <span id="litter_mother_value" class="detail-value">-</span>
-        </div>
+              <div class="detail-card">
+                <span class="detail-label">Female Count</span>
+                <span id="litter_female_count_value" class="detail-value">-</span>
+              </div>
 
-        <div class="detail-card">
-          <span class="detail-label">Father</span>
-          <span id="litter_father_value" class="detail-value">-</span>
-        </div>
+              <div class="detail-card">
+                <span class="detail-label">Mother</span>
+                <span id="litter_mother_value" class="detail-value">-</span>
+              </div>
+
+              <div class="detail-card">
+                <span class="detail-label">Father</span>
+                <span id="litter_father_value" class="detail-value">-</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="litter-piglet-section">
+            <div class="section-title-row">
+              <div>
+                <h2>Piglets in this Litter</h2>
+                <p>Click a piglet to open its full profile.</p>
+              </div>
+            </div>
+
+            <div id="litter_piglets_list" class="pig-list-grid"></div>
+          </section>
+        </main>
+
+        <aside class="litter-side-column">
+          <section class="litter-side-panel">
+            <div class="section-subtitle">Lifecycle Outcomes</div>
+            <div class="detail-grid litter-outcome-grid">
+              <div class="detail-card">
+                <span class="detail-label">Still Active</span>
+                <span id="litter_outcome_active" class="detail-value">-</span>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Sold</span>
+                <span id="litter_outcome_sold" class="detail-value">-</span>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Slaughtered</span>
+                <span id="litter_outcome_slaughtered" class="detail-value">-</span>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Dead</span>
+                <span id="litter_outcome_dead" class="detail-value">-</span>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Removed</span>
+                <span id="litter_outcome_removed" class="detail-value">-</span>
+              </div>
+              <div class="detail-card">
+                <span class="detail-label">Other</span>
+                <span id="litter_outcome_other" class="detail-value">-</span>
+              </div>
+            </div>
+          </section>
+
+          <section id="litter_attention_panel" class="attention-action-panel hidden">
+            <div class="attention-action-copy">
+              <span class="status-pill">Attention</span>
+              <h2 id="litter_attention_title">Review Litter</h2>
+              <p id="litter_attention_text">This litter needs a follow-up action.</p>
+            </div>
+            <form id="mark_weaned_form" class="attention-action-form hidden">
+              <div class="form-group">
+                <label for="mark_weaned_date">Wean Date</label>
+                <input type="date" id="mark_weaned_date" required />
+              </div>
+              <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
+            </form>
+            <form id="newborn_health_form" class="attention-action-form hidden">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="newborn_health_date">Action Date</label>
+                  <input type="date" id="newborn_health_date" required />
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_antiparasitic">Antiparasitic</label>
+                  <select id="newborn_health_antiparasitic">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_deworming">Deworming</label>
+                  <select id="newborn_health_deworming">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_vaccination">Vaccination</label>
+                  <select id="newborn_health_vaccination">
+                    <option value="">None</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="newborn_health_given_by">Recorded By</label>
+                  <input type="text" id="newborn_health_given_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="newborn_health_notes">Notes</label>
+                  <textarea id="newborn_health_notes" rows="3"></textarea>
+                </div>
+              </div>
+              <label class="checkbox-row">
+                <input type="checkbox" id="newborn_health_earmarked" checked />
+                <span>Mark all active piglets as earmarked</span>
+              </label>
+              <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="newborn_health_preview_button" class="button-link button-link-secondary">Preview</button>
+                <button type="submit" id="newborn_health_apply_button" disabled>Save Newborn Health</button>
+              </div>
+            </form>
+          </section>
+        </aside>
       </div>
-
-      <section class="lifecycle-action-panel">
-        <div class="section-subtitle">Lifecycle Outcomes</div>
-        <div class="detail-grid">
-          <div class="detail-card">
-            <span class="detail-label">Still Active</span>
-            <span id="litter_outcome_active" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Sold</span>
-            <span id="litter_outcome_sold" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Slaughtered</span>
-            <span id="litter_outcome_slaughtered" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Dead</span>
-            <span id="litter_outcome_dead" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Removed</span>
-            <span id="litter_outcome_removed" class="detail-value">-</span>
-          </div>
-          <div class="detail-card">
-            <span class="detail-label">Other</span>
-            <span id="litter_outcome_other" class="detail-value">-</span>
-          </div>
-        </div>
-      </section>
-
-      <section id="litter_attention_panel" class="attention-action-panel hidden">
-        <div class="attention-action-copy">
-          <span class="status-pill">Attention</span>
-          <h2 id="litter_attention_title">Review Litter</h2>
-          <p id="litter_attention_text">This litter needs a follow-up action.</p>
-        </div>
-        <form id="mark_weaned_form" class="attention-action-form hidden">
-          <div class="form-group">
-            <label for="mark_weaned_date">Wean Date</label>
-            <input type="date" id="mark_weaned_date" required />
-          </div>
-          <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
-        </form>
-        <form id="newborn_health_form" class="attention-action-form hidden">
-          <div class="form-grid">
-            <div class="form-field">
-              <label for="newborn_health_date">Action Date</label>
-              <input type="date" id="newborn_health_date" required />
-            </div>
-            <div class="form-field">
-              <label for="newborn_health_antiparasitic">Antiparasitic</label>
-              <select id="newborn_health_antiparasitic">
-                <option value="">None</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="newborn_health_deworming">Deworming</label>
-              <select id="newborn_health_deworming">
-                <option value="">None</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="newborn_health_vaccination">Vaccination</label>
-              <select id="newborn_health_vaccination">
-                <option value="">None</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label for="newborn_health_given_by">Recorded By</label>
-              <input type="text" id="newborn_health_given_by" value="web_app" required />
-            </div>
-            <div class="form-field form-field-wide">
-              <label for="newborn_health_notes">Notes</label>
-              <textarea id="newborn_health_notes" rows="3"></textarea>
-            </div>
-          </div>
-          <label class="checkbox-row">
-            <input type="checkbox" id="newborn_health_earmarked" checked />
-            <span>Mark all active piglets as earmarked</span>
-          </label>
-          <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
-          <div class="form-actions">
-            <button type="button" id="newborn_health_preview_button" class="button-link button-link-secondary">Preview</button>
-            <button type="submit" id="newborn_health_apply_button" disabled>Save Newborn Health</button>
-          </div>
-        </form>
-      </section>
-
-      <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
-        <div>
-          <h2 style="margin: 0 0 8px 0;">Piglets in this Litter</h2>
-          <p style="margin: 0; color: var(--text-soft);">Click a piglet to open its full profile.</p>
-        </div>
-      </div>
-
-      <div id="litter_piglets_list" class="pig-list-grid"></div>
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260602-newborn-health"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260602-litter-wide"></script>
 </body>
 </html>

@@ -56,7 +56,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             },
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows]):
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, [], [], []]):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["count"], 2)
@@ -79,7 +79,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             }
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, []]):
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
             result = pig_weights_service.get_litter_attention_summary()
 
         self.assertEqual(result["items"][0]["reason"], "Linked pig records do not match born alive count")
@@ -109,6 +109,47 @@ class LitterAttentionSummaryTests(unittest.TestCase):
         self.assertEqual(missing_tags["action_type"], "assign_tag_numbers")
         self.assertIn("Assign tag numbers", missing_tags["recommended_action"])
         self.assertEqual(ready_to_wean["action_type"], "mark_weaned")
+
+    def test_newborn_health_attention_takes_priority_before_tag_numbers(self):
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-NEWBORN",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Piglets need tag numbers",
+                "Active_Pig_Count": "2",
+            }
+        ]
+        pig_master_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-NEWBORN",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Earmarked": "",
+                "Earmark_Date": "",
+            }
+        ]
+        product_rows = [
+            {
+                "Product_ID": "PRD-001",
+                "Product_Name": "Ecomectin 1%",
+                "Product_Category": "Antiparasitic",
+                "Is_Active": "Yes",
+            },
+            {
+                "Product_ID": "PRD-002",
+                "Product_Name": "Panacur 4%",
+                "Product_Category": "Dewormer",
+                "Is_Active": "Yes",
+            },
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], pig_master_rows, [], product_rows]):
+            result = pig_weights_service.get_litter_attention_summary()
+
+        self.assertEqual(result["items"][0]["reason"], "Piglets need newborn health records")
+        self.assertEqual(result["items"][0]["action_type"], "record_litter_newborn_health")
 
     def test_weaned_litter_only_reviews_purpose_when_active_piglets_have_unknown_purpose(self):
         pig_rows = [
@@ -142,7 +183,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
             for i in range(7)
         ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, []]):
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
             result = pig_weights_service.get_litter_attention_summary(limit=3)
 
         self.assertEqual(result["count"], 7)

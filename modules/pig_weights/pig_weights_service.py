@@ -296,6 +296,9 @@ def get_dashboard_summary():
 def get_litter_attention_summary(limit: int = 5):
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+    medical_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"])
+    newborn_products = _newborn_health_product_ids()
     items = []
 
     for row in rows:
@@ -308,7 +311,19 @@ def get_litter_attention_summary(limit: int = 5):
         active_pig_count = to_float(row.get("Active_Pig_Count", "")) or 0
 
         reason = ""
-        if needs_attention == "Yes":
+        action_type = ""
+        newborn_attention = _litter_newborn_health_attention(
+            litter_id,
+            litter_status,
+            row.get("Wean_Date", ""),
+            pig_master_rows,
+            medical_rows,
+            newborn_products,
+        )
+        if newborn_attention:
+            reason = newborn_attention["reason"]
+            action_type = newborn_attention["action_type"]
+        elif needs_attention == "Yes":
             reason = _litter_attention_reason(row)
         elif litter_status == "Weaned" and _litter_needs_purpose_review(litter_id, pig_rows):
             reason = "Weaned - review purpose"
@@ -324,6 +339,7 @@ def get_litter_attention_summary(limit: int = 5):
             "litter_status": litter_status,
             "needs_attention": needs_attention,
             "reason": reason,
+            "action_type": action_type,
             "active_pig_count": active_pig_count,
             "weaned_count": to_float(row.get("Weaned_Count", "")),
             "youngest_age_days": row.get("Youngest_Age_Days", ""),
@@ -381,7 +397,71 @@ def _litter_needs_purpose_review(litter_id, pig_rows=None):
     return False
 
 
-def _build_litter_attention(row):
+def _newborn_health_product_ids(products=None):
+    products = products if products is not None else get_products()
+    result = {
+        "antiparasitic": set(),
+        "deworming": set(),
+    }
+    for product in products:
+        product_id = to_clean_string(product.get("product_id", ""))
+        if not product_id:
+            continue
+        text = f"{product.get('product_name', '')} {product.get('product_category', '')}".lower()
+        if "ecomectin" in text or "antiparasitic" in text or "parasite" in text:
+            result["antiparasitic"].add(product_id)
+        if "panacur" in text or "deworm" in text:
+            result["deworming"].add(product_id)
+    return result
+
+
+def _litter_newborn_health_attention(litter_id, litter_status, wean_date_value, pig_master_rows, medical_rows, newborn_products):
+    if to_clean_string(litter_status) == "Weaned" or parse_sheet_date(wean_date_value):
+        return None
+
+    active_piglets = [
+        row for row in pig_master_rows
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id
+        and to_clean_string(row.get("Status", "")) == "Active"
+        and to_clean_string(row.get("On_Farm", "")) == "Yes"
+    ]
+    if not active_piglets:
+        return None
+
+    treatments_by_pig = {}
+    for row in medical_rows:
+        pig_id = to_clean_string(row.get("Pig_ID", ""))
+        product_id = to_clean_string(row.get("Product_ID", ""))
+        if pig_id and product_id:
+            treatments_by_pig.setdefault(pig_id, set()).add(product_id)
+
+    antiparasitic_ids = newborn_products.get("antiparasitic", set())
+    deworming_ids = newborn_products.get("deworming", set())
+    missing_count = 0
+    for pig in active_piglets:
+        pig_id = to_clean_string(pig.get("Pig_ID", ""))
+        product_ids = treatments_by_pig.get(pig_id, set())
+        earmark_missing = (
+            to_clean_string(pig.get("Earmarked", "")) != "Yes"
+            or not to_clean_string(pig.get("Earmark_Date", ""))
+        )
+        antiparasitic_missing = bool(antiparasitic_ids) and product_ids.isdisjoint(antiparasitic_ids)
+        deworming_missing = bool(deworming_ids) and product_ids.isdisjoint(deworming_ids)
+        if earmark_missing or antiparasitic_missing or deworming_missing:
+            missing_count += 1
+
+    if not missing_count:
+        return None
+
+    return {
+        "reason": "Piglets need newborn health records",
+        "recommended_action": "Record earmarks, Ecomectin, and Panacur before tag numbers.",
+        "action_type": "record_litter_newborn_health",
+        "missing_piglet_count": missing_count,
+    }
+
+
+def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newborn_products=None):
     litter_id = to_clean_string(row.get("Litter_ID", ""))
     needs_attention = to_clean_string(row.get("Needs_Attention", ""))
     litter_status = to_clean_string(row.get("Litter_Status", ""))
@@ -391,7 +471,22 @@ def _build_litter_attention(row):
     recommended_action = ""
     action_type = ""
 
-    if needs_attention == "Yes":
+    newborn_attention = None
+    if pig_master_rows is not None and medical_rows is not None:
+        newborn_attention = _litter_newborn_health_attention(
+            litter_id,
+            litter_status,
+            row.get("Wean_Date", ""),
+            pig_master_rows,
+            medical_rows,
+            newborn_products or _newborn_health_product_ids(),
+        )
+
+    if newborn_attention:
+        reason = newborn_attention["reason"]
+        recommended_action = newborn_attention["recommended_action"]
+        action_type = newborn_attention["action_type"]
+    elif needs_attention == "Yes":
         reason = _litter_attention_reason(row)
         reason_lower = reason.lower()
         if "linked pig records" in reason_lower:
@@ -432,10 +527,13 @@ def _build_litter_attention(row):
 
 def _litter_attention_for_id(litter_id):
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+    medical_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"])
+    newborn_products = _newborn_health_product_ids()
 
     for row in rows:
         if to_clean_string(row.get("Litter_ID", "")) == litter_id:
-            return _build_litter_attention(row)
+            return _build_litter_attention(row, pig_master_rows, medical_rows, newborn_products)
 
     return {
         "needs_attention": "",
