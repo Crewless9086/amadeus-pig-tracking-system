@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Deploy/browser-check Phase 9.7E closed slaughter action visibility and lifecycle detail readback |
-| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is deployed and owner-verified. Phase 8F drill-in/data-quality slice is local and ready for deploy/browser acceptance. 9.7A lifecycle outcome audit is documented. 9.7B death/removal action is awaiting live test. 9.7C slaughter pig-exit confirmation is available for open slaughter sales only. 9.7D dashboard outcome feedback is deployed/layout-refined. 9.7E closed-action cleanup and pig/litter lifecycle detail readback is local and ready for deploy/browser acceptance. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
-| **Current focus** | Deploy/browser-check that `SALE-2026-1DE373` no longer shows `Pig Exit Confirmation`, and check `/pig/<pig_id>` plus `/litter/<litter_id>` read-only lifecycle history with known records. |
-| **Current last verified** | **2026-06-02** - Phase 9.7E passed JS syntax checks, focused lifecycle/frontend tests at 33 tests, and full unittest suite at 323 tests. |
+| **Today's focus** | Deploy/browser-check Phase 9.7E closed slaughter reconciliation/readback patch |
+| **Status** | Phase 8E breeding-board sorting/action loop is deployed and owner-verified. Phase 8F first read-only analytics slice is deployed and owner-verified. Phase 8F drill-in/data-quality slice is local and ready for deploy/browser acceptance. 9.7A lifecycle outcome audit is documented. 9.7B death/removal action is awaiting live test. 9.7C slaughter pig-exit confirmation is available for open slaughter sales only. 9.7D dashboard outcome feedback is deployed/layout-refined. 9.7E closed-action cleanup is deployed-visible; local API inspection/reconciliation now fixes incomplete closed slaughter lifecycle links. `/bulk-weights` remains open until the real farm weighing test passes. `/sales-dashboard` remains open until owner browser acceptance. |
+| **Current focus** | Deploy the 9.7E reconcile/readback patch, then browser-check `SALE-2026-1DE373` and `PIG-2026-C390` show a closed sale with clean read-only lifecycle history. |
+| **Current last verified** | **2026-06-02** - Phase 9.7E real-data reconcile/readback patch passed real API readback for `PIG-2026-C390`, JS syntax, and full unittest suite at 329 tests. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

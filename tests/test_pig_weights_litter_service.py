@@ -3,6 +3,7 @@ from datetime import date
 from unittest.mock import patch
 
 from modules.pig_weights import pig_weights_service
+from modules.pig_weights.pig_weights_utils import format_date_for_json
 
 
 PIG_MASTER_HEADERS = [
@@ -254,6 +255,18 @@ class PigLifecycleOutcomeTests(unittest.TestCase):
 
 
 class LifecycleDetailReadTests(unittest.TestCase):
+    def test_format_date_for_json_accepts_supabase_timestamp_with_timezone(self):
+        self.assertEqual(
+            format_date_for_json("2026-05-14T00:00:00+00:00"),
+            "2026-05-14",
+        )
+
+    def test_format_date_for_json_accepts_google_day_month_display_value(self):
+        self.assertEqual(
+            format_date_for_json("14 May"),
+            "2026-05-14",
+        )
+
     def test_pig_detail_includes_read_only_lifecycle_history_from_pig_master(self):
         sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
         overview_rows = [

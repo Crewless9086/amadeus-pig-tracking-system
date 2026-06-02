@@ -138,6 +138,103 @@ class SalesTransactionLifecycleTests(unittest.TestCase):
         self.assertFalse(result["success"])
         get_pigs.assert_not_called()
 
+    def test_reconcile_closed_slaughter_pig_exits_previews_missing_lifecycle_fields(self):
+        sale_result = {
+            "success": True,
+            "sales_transaction": {
+                "sale_id": "SALE-1",
+                "sale_date": "2026-06-01",
+                "sale_stream": "Slaughter",
+                "sale_status": "Completed",
+                "payment_status": "Paid",
+            },
+            "items": [{"pig_id": "PIG-1", "carcass_weight_kg": 68}],
+        }
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Status": "Slaughtered",
+                "On_Farm": "No",
+                "Exit_Date": "",
+                "Exit_Reason": "Slaughtered",
+                "Exit_Order_ID": "",
+                "General_Notes": "Existing note",
+            },
+        ]
+
+        with patch.object(sales_transaction_lifecycle, "get_sales_transaction", return_value=(sale_result, 200)), \
+             patch.object(sales_transaction_lifecycle, "get_all_records", return_value=pig_rows), \
+             patch.object(sales_transaction_lifecycle, "batch_update_rows_by_id") as update_pigs:
+            result, status_code = sales_transaction_lifecycle.reconcile_closed_slaughter_pig_exits(
+                "SALE-1",
+                {"dry_run": True, "changed_by": "Tester"},
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "pig_exits_reconcile_preview")
+        self.assertEqual(result["pigs_needing_updates"], 1)
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        updates = result["updates"]["PIG-1"]
+        self.assertEqual(updates["Exit_Date"], "01 Jun 2026")
+        self.assertEqual(updates["Exit_Reason"], "Sold to Abattoir")
+        self.assertEqual(updates["Exit_Order_ID"], "SALE-1")
+        self.assertEqual(updates["Carcass_Weight_Kg"], 68)
+        update_pigs.assert_not_called()
+
+    def test_reconcile_closed_slaughter_pig_exits_applies_clean_preview(self):
+        sale_result = {
+            "success": True,
+            "sales_transaction": {
+                "sale_id": "SALE-1",
+                "sale_date": "2026-06-01",
+                "sale_stream": "Slaughter",
+                "sale_status": "Completed",
+                "payment_status": "Paid",
+            },
+            "items": [{"pig_id": "PIG-1"}],
+        }
+        pig_rows = [{"Pig_ID": "PIG-1", "Status": "Slaughtered", "On_Farm": "No"}]
+
+        with patch.object(sales_transaction_lifecycle, "get_sales_transaction", return_value=(sale_result, 200)), \
+             patch.object(sales_transaction_lifecycle, "get_all_records", return_value=pig_rows), \
+             patch.object(sales_transaction_lifecycle, "batch_update_rows_by_id", return_value=1) as update_pigs:
+            result, status_code = sales_transaction_lifecycle.reconcile_closed_slaughter_pig_exits(
+                "SALE-1",
+                {"dry_run": False},
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "pig_exits_reconciled")
+        self.assertEqual(result["pigs_updated"], 1)
+        self.assertTrue(result["source"]["writes_to_sheets"])
+        update_pigs.assert_called_once()
+
+    def test_reconcile_closed_slaughter_pig_exits_blocks_active_pigs(self):
+        sale_result = {
+            "success": True,
+            "sales_transaction": {
+                "sale_id": "SALE-1",
+                "sale_date": "2026-06-01",
+                "sale_stream": "Slaughter",
+                "sale_status": "Completed",
+                "payment_status": "Paid",
+            },
+            "items": [{"pig_id": "PIG-1"}],
+        }
+        pig_rows = [{"Pig_ID": "PIG-1", "Status": "Active", "On_Farm": "Yes"}]
+
+        with patch.object(sales_transaction_lifecycle, "get_sales_transaction", return_value=(sale_result, 200)), \
+             patch.object(sales_transaction_lifecycle, "get_all_records", return_value=pig_rows), \
+             patch.object(sales_transaction_lifecycle, "batch_update_rows_by_id") as update_pigs:
+            result, status_code = sales_transaction_lifecycle.reconcile_closed_slaughter_pig_exits("SALE-1", {})
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["blocked_pigs"][0]["pig_id"], "PIG-1")
+        update_pigs.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

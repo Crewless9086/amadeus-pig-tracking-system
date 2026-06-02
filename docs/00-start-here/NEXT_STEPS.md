@@ -2702,6 +2702,14 @@ Questions to answer during 9.7A:
 - No historical correction workflow was added; if old data is inconsistent after a sale is closed, that should become a deliberate correction/audit slice rather than reopening the normal action button.
 - Local verification passed: `node --check static/js/slaughterSaleDetail.js`, `node --check static/js/pigDetail.js`, `node --check static/js/litterDetail.js`, focused lifecycle/frontend tests at 33 tests, and full local unittest suite at 323 tests.
 - Remaining closure step: deploy and browser-check that `SALE-2026-1DE373` no longer shows `Pig Exit Confirmation`, and that pig/litter detail pages show the read-only outcome history clearly.
+- Owner deployed and confirmed `Pig Exit Confirmation` no longer shows for the closed sale.
+- Local API inspection was fixed by loading `.env` at Flask app startup with `override=False`; Render env vars still take precedence.
+- Real data inspection found `SALE-2026-1DE373` linked to `PIG-2026-C390` / tag `S10`; the pig was already `Slaughtered` and `On_Farm = No`, but `PIG_MASTER.Exit_Date` was returned by Google as `14 May`, `Exit_Reason` was `Slaughtered`, and `Exit_Order_ID` was blank.
+- Added backend-only closed slaughter reconciliation endpoint `POST /api/sales-transactions/<sale_id>/reconcile-pig-exits`.
+- Reconciliation is dry-run-first by default, only works for completed/paid slaughter sales, refuses cancelled sales, and refuses any linked pig that is not already `Slaughtered` / off-farm.
+- Applied reconciliation for `SALE-2026-1DE373`: `PIG-2026-C390` now has `Exit_Order_ID = SALE-2026-1DE373`, `Exit_Reason = Sold to Abattoir`, and readback shows lifecycle `exit_date = 2026-05-14`.
+- Date parsing now handles Supabase ISO timestamps with timezone and Google Sheets day-month display values such as `14 May`.
+- Verification passed: real API readback for `PIG-2026-C390`, `node --check static/js/slaughterSaleDetail.js`, and full local unittest suite at 329 tests.
 
 9.7F future litter health/reminder capture planning:
 

@@ -35,6 +35,11 @@ def parse_sheet_date(value):
         return value
 
     value = str(value).strip()
+    iso_value = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(iso_value).date()
+    except ValueError:
+        pass
 
     formats = [
         "%d %b %Y %H:%M",
@@ -51,6 +56,13 @@ def parse_sheet_date(value):
     for fmt in formats:
         try:
             return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+
+    for fmt in ["%d %b", "%d %B"]:
+        try:
+            parsed = datetime.strptime(value, fmt).date()
+            return parsed.replace(year=datetime.now().year)
         except ValueError:
             continue
 

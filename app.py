@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
 from flask import Flask, render_template
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
@@ -16,6 +19,8 @@ from services.database_service import (
     check_telemetry_rollup_schema,
     check_telemetry_weather_schema,
 )
+
+load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
 app = Flask(__name__)
 app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
