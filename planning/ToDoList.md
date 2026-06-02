@@ -47,3 +47,17 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Future alert-preference page note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 
 Add new scratch bullets below, then move them into the correct canonical file.
+- Litter needs to send a reminder to be vaccinated and earmarked (determinet the days from born, I will ask my dad so this is clear to us all.), and we can do this bulk with all the once currently alive so it's easier to upload, similar to the weights a digital table that they can just tick off and add the fields. We will also have to do the same print sheet for these litters so we have the same layout and capture the data then bring it to the computer as we do with the weights. 
+Earmarks and deworming 1st then later on wean time they get ear tags. As we feel they are to big for the little piglets and looks ugly on them. 
+Current messaged on Telegram:
+
+Farm attention digest - 02 Jun 2026
+
+Total: 3
+Orders: 0
+Litters: 3
+
+Litter attention: 3
+- LIT-2026-8A0F: Piglets need tag numbers
+- LIT-2026-9E4A: Piglets need tag numbers
+- LIT-2026-EB92: Piglets need tag numbers

@@ -224,6 +224,10 @@ function renderFarmSummary() {
   setText("herd_weaners", numberOrDash(summary.weaners));
   setText("herd_growers", numberOrDash(summary.growers));
   setText("herd_finishers", numberOrDash(summary.finishers));
+  setText("outcome_sold", numberOrDash(summary.lifecycle_sold_this_month));
+  setText("outcome_slaughtered", numberOrDash(summary.lifecycle_slaughtered_this_month));
+  setText("outcome_dead", numberOrDash(summary.lifecycle_dead_this_month));
+  setText("outcome_removed", numberOrDash(summary.lifecycle_removed_this_month));
   setText("sales_available", numberOrDash(summary.available_for_sale_pigs));
   setText("sales_reserved", numberOrDash(summary.reserved_pigs));
   setText("sales_livestock", `${numberOrDash(summary.livestock_sales_this_month ?? 0)} / ${money(summary.livestock_sales_value_this_month)}`);

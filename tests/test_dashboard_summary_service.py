@@ -51,6 +51,18 @@ def dashboard_records(sheet_name):
                 "Exit_Date": "29 Apr 2026",
                 "Exit_Reason": "Sold",
             },
+            {
+                "Pig_ID": "PIG-DEAD",
+                "Status": "Dead",
+                "Exit_Date": "5 May 2026",
+                "Exit_Reason": "Died",
+            },
+            {
+                "Pig_ID": "PIG-REMOVED",
+                "Status": "Removed",
+                "Exit_Date": "6 May 2026",
+                "Exit_Reason": "Removed",
+            },
         ],
     }
     return data[sheet_name]
@@ -72,6 +84,11 @@ class DashboardSummaryServiceTests(unittest.TestCase):
         self.assertEqual(summary["livestock_sold_this_month"], 1)
         self.assertEqual(summary["slaughter_sold_this_month"], 1)
         self.assertEqual(summary["meat_sold_this_month"], 1)
+        self.assertEqual(summary["lifecycle_outcomes_this_month"], 5)
+        self.assertEqual(summary["lifecycle_sold_this_month"], 2)
+        self.assertEqual(summary["lifecycle_slaughtered_this_month"], 1)
+        self.assertEqual(summary["lifecycle_dead_this_month"], 1)
+        self.assertEqual(summary["lifecycle_removed_this_month"], 1)
         self.assertEqual(summary["slaughter_sales_this_month"], 0)
         self.assertEqual(summary["slaughter_sales_value_this_month"], 0.0)
 

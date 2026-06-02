@@ -117,6 +117,23 @@ def _sale_stream_for_exit(row):
     return ""
 
 
+def _lifecycle_outcome_for_exit(row):
+    status = to_clean_string(row.get("Status", "")).lower()
+    exit_reason = to_clean_string(row.get("Exit_Reason", "")).lower().replace("-", "_").replace(" ", "_")
+
+    if status == "dead" or exit_reason in {"died", "culled", "lost"}:
+        return "dead"
+    if status == "removed" or exit_reason in {"removed", "other"}:
+        return "removed"
+    if status == "slaughtered" or exit_reason in {"slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir"}:
+        return "slaughtered"
+    if status == "sold" or exit_reason in {"sold", "livestock", "livestock_sale", "live_sale", "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
+        return "sold"
+    if exit_reason:
+        return "other"
+    return ""
+
+
 def get_dashboard_summary():
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -176,17 +193,29 @@ def get_dashboard_summary():
         "slaughter": 0,
         "meat": 0,
     }
+    lifecycle_outcomes_this_month = {
+        "sold": 0,
+        "slaughtered": 0,
+        "dead": 0,
+        "removed": 0,
+        "other": 0,
+    }
 
     for row in pig_master_rows:
         exit_date = parse_sheet_date(row.get("Exit_Date", ""))
         if not exit_date or exit_date.year != now.year or exit_date.month != now.month:
             continue
 
+        lifecycle_outcome = _lifecycle_outcome_for_exit(row)
+        if lifecycle_outcome:
+            lifecycle_outcomes_this_month[lifecycle_outcome] += 1
+
         sale_stream = _sale_stream_for_exit(row)
         if sale_stream:
             sales_this_month[sale_stream] += 1
 
     sold_this_month = sum(sales_this_month.values())
+    total_lifecycle_outcomes_this_month = sum(lifecycle_outcomes_this_month.values())
     transaction_summary, _transaction_status_code = get_monthly_sales_transaction_summary(now.date())
     transaction_streams = transaction_summary.get("streams", {})
     transaction_totals = transaction_summary.get("totals", {})
@@ -211,6 +240,12 @@ def get_dashboard_summary():
         "pig_exit_livestock_sold_this_month": sales_this_month["livestock"],
         "pig_exit_slaughter_sold_this_month": sales_this_month["slaughter"],
         "pig_exit_meat_sold_this_month": sales_this_month["meat"],
+        "lifecycle_outcomes_this_month": total_lifecycle_outcomes_this_month,
+        "lifecycle_sold_this_month": lifecycle_outcomes_this_month["sold"],
+        "lifecycle_slaughtered_this_month": lifecycle_outcomes_this_month["slaughtered"],
+        "lifecycle_dead_this_month": lifecycle_outcomes_this_month["dead"],
+        "lifecycle_removed_this_month": lifecycle_outcomes_this_month["removed"],
+        "lifecycle_other_this_month": lifecycle_outcomes_this_month["other"],
         "sales_transaction_summary_status": transaction_summary.get("status", "unknown"),
         "sales_transaction_summary_configured": bool(transaction_summary.get("configured")),
         "sales_transaction_count_this_month": transaction_totals.get("transaction_count", 0),

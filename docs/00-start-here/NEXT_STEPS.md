@@ -2676,6 +2676,17 @@ Questions to answer during 9.7A:
 - Local verification passed: `node --check static/js/slaughterSaleDetail.js`, `node --check static/js/pigDetail.js`, focused sales lifecycle/routes/frontend/pig lifecycle tests at 38 tests, route smoke for `/sales/slaughter/<sale_id>` plus missing-config confirm endpoint, and full local unittest suite at 320 tests.
 - Remaining closure step: deploy and browser-check on an existing slaughter sale. If the linked pig was already manually marked slaughtered, the endpoint should block and report that no pig rows were updated.
 
+9.7D local implementation state 2026-06-02:
+
+- Added read-only monthly lifecycle outcome counts to `get_dashboard_summary()`.
+- Dashboard herd panel now shows `Outcomes This Month`.
+- Counts come from `PIG_MASTER.Exit_Date`, `Status`, and `Exit_Reason`.
+- Displayed counts: sold, slaughtered, dead, and removed.
+- This is intentionally separate from sales transaction values so animal outcome truth is not confused with income.
+- No new write path was added.
+- Local verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests at 22 tests, dashboard route smoke, and full local unittest suite at 320 tests.
+- Remaining closure step: deploy and browser-check that the home dashboard shows the new outcome line correctly.
+
 ### 9.8 Business Scenario Calculator — Future Planning
 
 Goal:

@@ -126,3 +126,14 @@ Tests to add:
 - If any linked pig is missing, terminal, or already off farm, no pig rows are updated and the action returns a blocking error.
 - Local verification passed: `node --check static/js/slaughterSaleDetail.js`, `node --check static/js/pigDetail.js`, focused sales lifecycle/routes/frontend/pig lifecycle tests at 38 tests, route smoke for `/sales/slaughter/<sale_id>` plus missing-config confirm endpoint, and full local unittest suite at 320 tests.
 - Next step: deploy and browser-check on an existing slaughter sale. Use caution if the linked pig was already manually marked slaughtered; the endpoint will block terminal/off-farm pigs by design.
+
+## 9.7D Local Implementation State - 2026-06-02
+
+- Added read-only monthly lifecycle outcome counts to `get_dashboard_summary()`.
+- Dashboard now shows `Outcomes This Month` in the herd panel.
+- Counts come from `PIG_MASTER.Exit_Date`, `Status`, and `Exit_Reason`.
+- Displayed counts: sold, slaughtered, dead, and removed.
+- This is separate from sales transaction values so animal movement/outcome truth is not confused with income.
+- No new write path was added.
+- Local verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests at 22 tests, dashboard route smoke, and full local unittest suite at 320 tests.
+- Next step: deploy and browser-check that the home dashboard shows the new outcome line correctly.
