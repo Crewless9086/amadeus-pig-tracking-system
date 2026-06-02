@@ -2686,6 +2686,8 @@ Questions to answer during 9.7A:
 - No new write path was added.
 - Local verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests at 22 tests, dashboard route smoke, and full local unittest suite at 320 tests.
 - Remaining closure step: deploy and browser-check that the home dashboard shows the new outcome line correctly.
+- 2026-06-02 deploy feedback: outcome block made the neighboring dashboard cards look stretched/empty. Local layout refinement compacted the outcome counts into a strip and set dashboard grid items to align to their content height instead of stretching all cards to the tallest card.
+- Layout refinement verification passed: `node --check static/js/dashboard.js`, focused dashboard/frontend tests at 22 tests, dashboard route smoke, and full local unittest suite at 320 tests.
 
 ### 9.8 Business Scenario Calculator — Future Planning
 

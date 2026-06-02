@@ -195,6 +195,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         for field in ["sold", "slaughtered", "dead", "removed"]:
             self.assertIn(f'id="outcome_{field}"', template)
             self.assertIn(f"lifecycle_{field}_this_month", js)
+        self.assertIn("ops-outcome-strip", template)
 
     def test_slaughter_sale_form_uses_supabase_sales_transaction_endpoints(self):
         template = Path("templates/slaughter-sale.html").read_text(encoding="utf-8")
