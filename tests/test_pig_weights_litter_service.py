@@ -240,6 +240,38 @@ class PigLifecycleOutcomeTests(unittest.TestCase):
         self.assertFalse(result["success"])
         update_pigs.assert_not_called()
 
+    def test_mark_pig_death_or_removal_dry_run_returns_planned_updates_without_writing(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "General_Notes": "",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.mark_pig_death_or_removal(
+                pig_id="PIG-1",
+                event_date_value="2026-06-01",
+                reason="Removed",
+                changed_by="Tester",
+                notes="Dry-run only.",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["rows_updated"], 0)
+        self.assertEqual(result["planned_updates"]["Status"], "Removed")
+        self.assertEqual(result["planned_updates"]["On_Farm"], "No")
+        self.assertEqual(result["planned_updates"]["Exit_Date"], "01 Jun 2026")
+        self.assertEqual(result["planned_updates"]["Exit_Reason"], "Removed")
+        update_pigs.assert_not_called()
+
     def test_mark_pig_death_or_removal_validates_reason(self):
         with patch.object(pig_weights_service, "get_all_records") as get_records:
             result, status_code = pig_weights_service.mark_pig_death_or_removal(
@@ -345,6 +377,136 @@ class LifecycleDetailReadTests(unittest.TestCase):
         self.assertEqual(detail["lifecycle_outcomes"]["slaughtered"], 1)
         self.assertEqual(detail["lifecycle_outcomes"]["dead"], 1)
         self.assertEqual(detail["lifecycle_outcomes"]["removed"], 0)
+
+
+class LitterNewbornHealthTests(unittest.TestCase):
+    def test_record_litter_newborn_health_dry_run_plans_earmarks_and_treatments_without_writing(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        product_rows = [
+            {
+                "Product_ID": "PRD-ANTIPARASITIC",
+                "Product_Name": "Piglet Antiparasitic",
+                "Product_Category": "Antiparasitic",
+                "Default_Dose": "1.5",
+                "Dose_Unit": "ml",
+                "Default_Withdrawal_Days": "7",
+                "Is_Active": "Yes",
+            },
+            {
+                "Product_ID": "PRD-DEWORM",
+                "Product_Name": "Piglet Dewormer",
+                "Product_Category": "Dewormer",
+                "Default_Dose": "2.5",
+                "Dose_Unit": "g",
+                "Default_Withdrawal_Days": "14",
+                "Is_Active": "Yes",
+            },
+            {
+                "Product_ID": "PRD-VACCINE",
+                "Product_Name": "Piglet Vaccine",
+                "Product_Category": "Vaccination",
+                "Default_Dose": "2",
+                "Dose_Unit": "ml",
+                "Default_Withdrawal_Days": "0",
+                "Is_Active": "Yes",
+            },
+        ]
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Earmarked": "",
+                "Earmark_Date": "",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Earmarked": "",
+                "Earmark_Date": "",
+            },
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["product_register"]:
+                return product_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs, \
+             patch.object(pig_weights_service, "append_row") as append_row:
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-06-02",
+                changed_by="Tester",
+                earmarked=True,
+                antiparasitic_product_id="PRD-ANTIPARASITIC",
+                deworming_product_id="PRD-DEWORM",
+                vaccination_product_id="PRD-VACCINE",
+                notes="All done on the same round.",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["piglet_count"], 2)
+        self.assertEqual(result["treatment_rows_planned"], 6)
+        self.assertEqual(set(result["planned_pig_updates"].keys()), {"PIG-1", "PIG-2"})
+        self.assertEqual(result["planned_pig_updates"]["PIG-1"]["Earmarked"], "Yes")
+        self.assertEqual(result["planned_pig_updates"]["PIG-1"]["Earmark_Date"], "02 Jun 2026")
+        treatment_row = result["planned_treatment_rows"][0]
+        self.assertEqual(treatment_row[1], "PIG-1")
+        self.assertEqual(treatment_row[2], "02 Jun 2026")
+        self.assertEqual(treatment_row[3], "Antiparasitic")
+        self.assertEqual(treatment_row[4], "PRD-ANTIPARASITIC")
+        self.assertEqual(treatment_row[5], "Piglet Antiparasitic")
+        self.assertEqual(treatment_row[12], "09 Jun 2026")
+        deworming_row = result["planned_treatment_rows"][1]
+        self.assertEqual(deworming_row[3], "Deworming")
+        self.assertEqual(deworming_row[4], "PRD-DEWORM")
+        self.assertEqual(deworming_row[5], "Piglet Dewormer")
+        self.assertEqual(deworming_row[12], "16 Jun 2026")
+        update_pigs.assert_not_called()
+        append_row.assert_not_called()
+
+    def test_record_litter_newborn_health_requires_earmark_columns_before_structured_write(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        product_rows = []
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+            }
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["product_register"]:
+                return product_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-06-02",
+                earmarked=True,
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["missing_columns"], ["Earmarked", "Earmark_Date"])
+        update_pigs.assert_not_called()
 
 
 if __name__ == "__main__":

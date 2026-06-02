@@ -2665,6 +2665,10 @@ Questions to answer during 9.7A:
 - Local verification passed: `node --check static/js/pigDetail.js`, focused pig lifecycle/frontend tests at 27 tests, route smoke for `/pig/<pig_id>` plus invalid lifecycle payload, and full local unittest suite at 316 tests.
 - Owner can see the action in the UI after deploy, but it has not been live-tested yet.
 - Remaining closure step: browser-check with a safe known/test case before using it for a real farm death/removal event.
+- 2026-06-02 dry-run verification added: `POST /api/pig-weights/pig/<pig_id>/lifecycle/death` accepts `dry_run = true`, validates the pig and returns planned updates without writing to Google Sheets.
+- Real dry-run check against active pig `PIG-2026-42B7` returned `rows_updated = 0` and planned `Status = Removed`, `On_Farm = No`, `Exit_Date = 02 Jun 2026`, `Exit_Reason = Removed`; immediate readback confirmed the pig remained `Active` / `On_Farm = Yes`.
+- Do not create/delete dummy live pig rows for this closure. Real write closure should wait for an actual farm case or an explicitly approved test pig row that can remain marked as test history.
+- Verification passed: focused pig lifecycle tests and full local unittest suite at 330 tests.
 
 9.7C local implementation state 2026-06-01:
 
@@ -2717,6 +2721,16 @@ Questions to answer during 9.7A:
 - Earmarks and deworming happen first; ear tags happen later around weaning because tags are too large for little piglets.
 - Preferred workflow is similar to bulk weights: printable capture sheet plus a digital bulk table where current live piglets/litters can be ticked off and fields captured in one batch.
 - Do not implement until the required day offsets, products/actions, and data destination are agreed.
+- Owner decisions 2026-06-02: this belongs inside the existing `Needs_Attention` litter flow; newborn health action is earmark + Ecomectin 1% as `Antiparasitic` + Panacur 4% as `Deworming`, plus vaccination only if/when a true vaccine product exists; this happens within about 3 days of birth; tag numbers remain a separate weaning-time attention action; product selection must come from `PRODUCT_REGISTER`; treatments must create normal `MEDICAL_LOG` treatment rows; earmarking should be structured pig-level truth, not only notes.
+- First backend slice is local: `POST /api/pig-weights/litter/<litter_id>/newborn-health` supports dry-run-first newborn health capture. It finds active/on-farm piglets in the litter, plans `Earmarked = Yes` / `Earmark_Date`, and plans/appends `MEDICAL_LOG` rows for selected antiparasitic/deworming/vaccination product IDs.
+- `PIG_MASTER` columns are set as `AK = Earmarked` and `AL = Earmark_Date`.
+- Current `PRODUCT_REGISTER` real readback has `PRD-001 Ecomectin 1%`, `PRD-002 Panacur 4%`, and `PRD-003 Electro Guard`; no vaccination product was visible yet.
+- Real dry-run against `LIT-2026-9E4A` with `PRD-001 Ecomectin 1%` and `PRD-002 Panacur 4%` previewed 10 piglet earmark updates and 20 `MEDICAL_LOG` rows: 10 `Antiparasitic` Ecomectin rows and 10 `Deworming` Panacur rows; `writes_to_sheets = false`.
+- Litter detail UI wiring is local: `/litter/<litter_id>` now has a hidden newborn health action form that appears when the litter attention reason/action indicates earmarking, antiparasitic/deworming, or newborn health. It loads products from `PRODUCT_REGISTER`, defaults Ecomectin/Panacur when present, previews first, invalidates stale previews when fields change, and applies only after operator confirmation.
+- Remaining next slice: compute newborn health as a first-class litter attention reason in the backend/dashboard digest instead of depending on the existing `LITTER_OVERVIEW` formula text to mention earmark/deworm/newborn health.
+- Supabase migration note: pig earmark fields and all `MEDICAL_LOG` treatment rows/products must be included in the future pig/medical migration so newborn health actions are not lost when operational data moves out of Google Sheets.
+- Future note: the first implementation applies to all active/on-farm piglets in the litter. Per-pig untick/exception handling is noted for later but intentionally not included yet because this action should normally apply to all linked live piglets.
+- Verification passed: focused litter service tests and full local unittest suite at 332 tests.
 
 ### 9.8 Business Scenario Calculator — Future Planning
 

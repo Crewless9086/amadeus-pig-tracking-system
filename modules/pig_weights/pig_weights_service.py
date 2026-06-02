@@ -33,6 +33,7 @@ LIFECYCLE_REMOVAL_REASONS = {
     "Removed": "Removed",
     "Other": "Removed",
 }
+LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
 
 
 def _build_pig_lookup(rows, columns):
@@ -561,6 +562,7 @@ def mark_pig_death_or_removal(
     reason: str,
     changed_by: str = "web_app",
     notes: str = "",
+    dry_run: bool = False,
 ):
     pig_id = to_clean_string(pig_id)
     event_date = parse_sheet_date(event_date_value)
@@ -613,36 +615,277 @@ def mark_pig_death_or_removal(
         changed_by,
         notes,
     )
-    rows_updated = batch_update_rows_by_id(
-        pig_master_sheet,
-        {
-            pig_id: {
-                "Status": new_status,
-                "On_Farm": "No",
-                "Exit_Date": event_date_sheet,
-                "Exit_Reason": reason,
-                "General_Notes": updated_notes,
-                "Updated_At": today,
-            }
-        },
-    )
+    updates = {
+        "Status": new_status,
+        "On_Farm": "No",
+        "Exit_Date": event_date_sheet,
+        "Exit_Reason": reason,
+        "General_Notes": updated_notes,
+        "Updated_At": today,
+    }
+    rows_updated = 0
+    if not dry_run:
+        rows_updated = batch_update_rows_by_id(
+            pig_master_sheet,
+            {
+                pig_id: updates
+            },
+        )
 
     return {
         "success": True,
         "action": "mark_pig_death_or_removal",
+        "dry_run": dry_run,
         "pig_id": pig_id,
         "status": new_status,
         "on_farm": "No",
         "exit_date": event_date.isoformat(),
         "exit_reason": reason,
         "rows_updated": rows_updated,
+        "planned_updates": updates,
         "previous": {
             "status": current_status,
             "on_farm": current_on_farm,
         },
         "changed_by": changed_by,
-        "message": f"Pig {pig_id} was marked as {new_status}.",
+        "message": (
+            f"Pig {pig_id} would be marked as {new_status}."
+            if dry_run
+            else f"Pig {pig_id} was marked as {new_status}."
+        ),
     }, 200
+
+
+def record_litter_newborn_health(
+    litter_id: str,
+    action_date_value,
+    changed_by: str = "web_app",
+    earmarked: bool = False,
+    antiparasitic_product_id: str = "",
+    deworming_product_id: str = "",
+    vaccination_product_id: str = "",
+    dose=None,
+    route: str = "",
+    batch_lot_number: str = "",
+    notes: str = "",
+    dry_run: bool = True,
+):
+    litter_id = to_clean_string(litter_id)
+    action_date = parse_sheet_date(action_date_value)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    antiparasitic_product_id = to_clean_string(antiparasitic_product_id)
+    deworming_product_id = to_clean_string(deworming_product_id)
+    vaccination_product_id = to_clean_string(vaccination_product_id)
+    route = to_clean_string(route)
+    batch_lot_number = to_clean_string(batch_lot_number)
+    notes = to_clean_string(notes)
+    dose_value = to_float(dose)
+    dry_run = dry_run is True
+
+    errors = []
+    if not litter_id:
+        errors.append("Litter ID is required.")
+    if not action_date:
+        errors.append("A valid action date is required.")
+    if not changed_by:
+        errors.append("changed_by is required.")
+    if not earmarked and not antiparasitic_product_id and not deworming_product_id and not vaccination_product_id:
+        errors.append("Select earmarking, antiparasitic/deworming product, or vaccination product before saving.")
+    if errors:
+        return {"success": False, "errors": errors}, 400
+
+    products = {
+        product["product_id"]: product
+        for product in get_products()
+    }
+    if antiparasitic_product_id and antiparasitic_product_id not in products:
+        errors.append(f"Antiparasitic product '{antiparasitic_product_id}' was not found or is inactive.")
+    if deworming_product_id and deworming_product_id not in products:
+        errors.append(f"Deworming product '{deworming_product_id}' was not found or is inactive.")
+    if vaccination_product_id and vaccination_product_id not in products:
+        errors.append(f"Vaccination product '{vaccination_product_id}' was not found or is inactive.")
+    if errors:
+        return {"success": False, "errors": errors}, 400
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    medical_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_rows = get_all_records(pig_master_sheet)
+    active_piglets = [
+        row for row in pig_rows
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id
+        and to_clean_string(row.get(columns["status"], "")) == "Active"
+        and to_clean_string(row.get(columns["on_farm"], "")) == "Yes"
+    ]
+
+    if not active_piglets:
+        return {
+            "success": False,
+            "errors": ["No active on-farm piglets were found for this litter."],
+            "litter_id": litter_id,
+        }, 409
+
+    if earmarked:
+        headers = set()
+        for row in pig_rows:
+            headers.update(row.keys())
+        missing_fields = [field for field in LITTER_HEALTH_EARMARK_FIELDS if field not in headers]
+        if missing_fields:
+            return {
+                "success": False,
+                "errors": [
+                    "PIG_MASTER is missing earmark columns: " + ", ".join(missing_fields) + "."
+                ],
+                "missing_columns": missing_fields,
+                "source": {
+                    "writes_to_sheets": False,
+                    "writes_to_supabase": False,
+                },
+            }, 409
+
+    action_date_sheet = format_date_for_sheet(action_date)
+    today = format_date_for_sheet(datetime.now().date())
+    pig_updates = {}
+    treatment_rows = []
+
+    for row in active_piglets:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if earmarked:
+            pig_updates[pig_id] = {
+                "Earmarked": "Yes",
+                "Earmark_Date": action_date_sheet,
+                "Updated_At": today,
+            }
+
+        if antiparasitic_product_id:
+            antiparasitic_product = products[antiparasitic_product_id]
+            treatment_rows.append(_build_litter_health_treatment_row(
+                pig_id=pig_id,
+                action_date=action_date,
+                treatment_type=_litter_health_treatment_type_for_product(antiparasitic_product, default_type="Antiparasitic"),
+                product=antiparasitic_product,
+                dose_value=dose_value,
+                route=route,
+                batch_lot_number=batch_lot_number,
+                given_by=changed_by,
+                notes=notes,
+                litter_id=litter_id,
+            ))
+        if deworming_product_id:
+            deworming_product = products[deworming_product_id]
+            treatment_rows.append(_build_litter_health_treatment_row(
+                pig_id=pig_id,
+                action_date=action_date,
+                treatment_type=_litter_health_treatment_type_for_product(deworming_product, default_type="Deworming"),
+                product=deworming_product,
+                dose_value=dose_value,
+                route=route,
+                batch_lot_number=batch_lot_number,
+                given_by=changed_by,
+                notes=notes,
+                litter_id=litter_id,
+            ))
+        if vaccination_product_id:
+            treatment_rows.append(_build_litter_health_treatment_row(
+                pig_id=pig_id,
+                action_date=action_date,
+                treatment_type="Vaccination",
+                product=products[vaccination_product_id],
+                dose_value=dose_value,
+                route=route,
+                batch_lot_number=batch_lot_number,
+                given_by=changed_by,
+                notes=notes,
+                litter_id=litter_id,
+            ))
+
+    pig_rows_updated = 0
+    treatment_rows_created = 0
+    if not dry_run:
+        pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
+        for row_values in treatment_rows:
+            append_row(medical_log_sheet, row_values)
+            treatment_rows_created += 1
+
+    return {
+        "success": True,
+        "action": "record_litter_newborn_health",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "piglet_count": len(active_piglets),
+        "pig_ids": [to_clean_string(row.get(columns["pig_id"], "")) for row in active_piglets],
+        "earmarked": earmarked,
+        "treatment_rows_planned": len(treatment_rows),
+        "pig_rows_updated": pig_rows_updated,
+        "treatment_rows_created": treatment_rows_created,
+        "planned_pig_updates": pig_updates,
+        "planned_treatment_rows": treatment_rows,
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+        },
+        "message": (
+            f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."
+            if dry_run
+            else f"Litter {litter_id} newborn health action saved for {len(active_piglets)} piglet(s)."
+        ),
+    }, 200
+
+
+def _build_litter_health_treatment_row(
+    pig_id,
+    action_date,
+    treatment_type,
+    product,
+    dose_value,
+    route,
+    batch_lot_number,
+    given_by,
+    notes,
+    litter_id,
+):
+    withdrawal_days = product.get("default_withdrawal_days")
+    withdrawal_days_int = int(withdrawal_days) if withdrawal_days not in (None, "") else ""
+    withdrawal_end_date = ""
+    if withdrawal_days_int != "":
+        withdrawal_end_date = action_date.fromordinal(action_date.toordinal() + withdrawal_days_int)
+
+    dose = dose_value if dose_value is not None else product.get("default_dose")
+    medical_notes = f"Litter {litter_id} newborn health action."
+    if notes:
+        medical_notes = f"{medical_notes} Notes: {notes}"
+
+    return [
+        generate_medical_log_id(),
+        pig_id,
+        format_date_for_sheet(action_date),
+        treatment_type,
+        product["product_id"],
+        product["product_name"],
+        dose if dose is not None else "",
+        product.get("dose_unit", ""),
+        route,
+        f"{treatment_type} during litter newborn health action",
+        batch_lot_number,
+        withdrawal_days_int,
+        format_date_for_sheet(withdrawal_end_date),
+        given_by,
+        "No",
+        "",
+        medical_notes,
+        format_date_for_sheet(action_date),
+    ]
+
+
+def _litter_health_treatment_type_for_product(product, default_type):
+    category = to_clean_string(product.get("product_category", "")).lower()
+    if "vacc" in category:
+        return "Vaccination"
+    if "deworm" in category:
+        return "Deworming"
+    if "parasite" in category or "antiparasitic" in category:
+        return "Antiparasitic"
+    return default_type
 
 
 def get_sales_stock_summary():

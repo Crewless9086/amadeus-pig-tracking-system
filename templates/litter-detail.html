@@ -104,6 +104,49 @@
           </div>
           <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
         </form>
+        <form id="newborn_health_form" class="attention-action-form hidden">
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="newborn_health_date">Action Date</label>
+              <input type="date" id="newborn_health_date" required />
+            </div>
+            <div class="form-field">
+              <label for="newborn_health_antiparasitic">Antiparasitic</label>
+              <select id="newborn_health_antiparasitic">
+                <option value="">None</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="newborn_health_deworming">Deworming</label>
+              <select id="newborn_health_deworming">
+                <option value="">None</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="newborn_health_vaccination">Vaccination</label>
+              <select id="newborn_health_vaccination">
+                <option value="">None</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="newborn_health_given_by">Recorded By</label>
+              <input type="text" id="newborn_health_given_by" value="web_app" required />
+            </div>
+            <div class="form-field form-field-wide">
+              <label for="newborn_health_notes">Notes</label>
+              <textarea id="newborn_health_notes" rows="3"></textarea>
+            </div>
+          </div>
+          <label class="checkbox-row">
+            <input type="checkbox" id="newborn_health_earmarked" checked />
+            <span>Mark all active piglets as earmarked</span>
+          </label>
+          <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
+          <div class="form-actions">
+            <button type="button" id="newborn_health_preview_button" class="button-link button-link-secondary">Preview</button>
+            <button type="submit" id="newborn_health_apply_button" disabled>Save Newborn Health</button>
+          </div>
+        </form>
       </section>
 
       <div class="page-header" style="margin-top: 28px; margin-bottom: 18px;">
@@ -117,6 +160,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260526-litter-actions"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260602-newborn-health"></script>
 </body>
 </html>

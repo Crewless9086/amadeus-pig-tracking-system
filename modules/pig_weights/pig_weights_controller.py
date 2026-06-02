@@ -10,6 +10,7 @@ from modules.pig_weights.pig_weights_service import (
     get_litter_detail,
     mark_litter_weaned,
     mark_pig_death_or_removal,
+    record_litter_newborn_health,
     get_pig_detail,
     get_products,
     get_pens,
@@ -126,6 +127,24 @@ def mark_litter_profile_weaned(litter_id: str, payload: dict):
     )
 
 
+def record_litter_profile_newborn_health(litter_id: str, payload: dict):
+    payload = payload or {}
+    return record_litter_newborn_health(
+        litter_id=litter_id,
+        action_date_value=payload.get("action_date", ""),
+        changed_by=payload.get("changed_by", "web_app"),
+        earmarked=payload.get("earmarked", False) is True,
+        antiparasitic_product_id=payload.get("antiparasitic_product_id", ""),
+        deworming_product_id=payload.get("deworming_product_id", ""),
+        vaccination_product_id=payload.get("vaccination_product_id", ""),
+        dose=payload.get("dose", None),
+        route=payload.get("route", ""),
+        batch_lot_number=payload.get("batch_lot_number", ""),
+        notes=payload.get("notes", ""),
+        dry_run=payload.get("dry_run", True) is True,
+    )
+
+
 def mark_pig_lifecycle_death(pig_id: str, payload: dict):
     payload = payload or {}
     return mark_pig_death_or_removal(
@@ -134,6 +153,7 @@ def mark_pig_lifecycle_death(pig_id: str, payload: dict):
         reason=payload.get("reason", ""),
         changed_by=payload.get("changed_by", "web_app"),
         notes=payload.get("notes", ""),
+        dry_run=payload.get("dry_run", False) is True,
     )
 
 

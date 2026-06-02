@@ -10,6 +10,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_family_tree_profile,
     get_litter_profile,
     mark_litter_profile_weaned,
+    record_litter_profile_newborn_health,
     mark_pig_lifecycle_death,
     list_products,
     list_pens,
@@ -144,6 +145,13 @@ def litter_profile(litter_id):
 def mark_litter_weaned_route(litter_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = mark_litter_profile_weaned(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/newborn-health", methods=["POST"])
+def litter_newborn_health_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_litter_profile_newborn_health(litter_id, payload)
     return jsonify(result), status_code
 
 
