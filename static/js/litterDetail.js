@@ -66,6 +66,15 @@ function formatNumber(value, decimals = 2) {
   return Number(value).toFixed(decimals);
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function productLabel(product) {
   const dose = product.default_dose !== null && product.default_dose !== undefined && product.default_dose !== ""
     ? ` / ${product.default_dose}${product.dose_unit ? ` ${product.dose_unit}` : ""}`
@@ -303,49 +312,69 @@ async function submitMarkWeaned(event) {
   }
 }
 
-function buildPigletCard(piglet) {
-  const card = document.createElement("a");
-  card.className = "pig-list-card";
-  card.href = `/pig/${encodeURIComponent(piglet.pig_id)}`;
+function pigletWeightText(piglet) {
+  return piglet.current_weight_kg !== null && piglet.current_weight_kg !== ""
+    ? `${formatNumber(piglet.current_weight_kg, 2)} kg`
+    : "No weight";
+}
 
-  const topRow = document.createElement("div");
-  topRow.className = "pig-list-top";
+function buildPigletTable(piglets) {
+  const rows = piglets.map((piglet) => {
+    const profileHref = `/pig/${encodeURIComponent(piglet.pig_id)}`;
+    const tagOrId = piglet.tag_number || piglet.pig_id;
+    return `
+      <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
+        <td>
+          <strong>${escapeHtml(tagOrId || "-")}</strong>
+          <span class="table-subtext">${escapeHtml(piglet.pig_id || "-")}</span>
+        </td>
+        <td>${escapeHtml(piglet.sex || "-")}</td>
+        <td>${escapeHtml(piglet.calculated_stage || "-")}</td>
+        <td>${escapeHtml(pigletWeightText(piglet))}</td>
+        <td>${escapeHtml(piglet.status || "-")}</td>
+        <td>${escapeHtml(piglet.on_farm || "-")}</td>
+        <td>${escapeHtml(piglet.age_days || "-")}</td>
+        <td>${escapeHtml(piglet.current_pen_id || "-")}</td>
+        <td><a class="small-action-button table-open-link" href="${profileHref}">Open</a></td>
+      </tr>
+    `;
+  }).join("");
 
-  const tag = document.createElement("div");
-  tag.className = "pig-list-tag";
-  tag.textContent = piglet.tag_number || piglet.pig_id;
-
-  const action = document.createElement("div");
-  action.className = "pig-list-action";
-  action.textContent = "Open Profile ->";
-
-  topRow.appendChild(tag);
-  topRow.appendChild(action);
-
-  const meta = document.createElement("div");
-  meta.className = "pig-list-meta";
-  meta.textContent = `Pig ID: ${piglet.pig_id}`;
-
-  const subMeta = document.createElement("div");
-  subMeta.className = "pig-list-submeta";
-  subMeta.textContent =
-    `${piglet.sex || "-"} / ${piglet.calculated_stage || "-"} / ${piglet.current_weight_kg !== null && piglet.current_weight_kg !== "" ? `${formatNumber(piglet.current_weight_kg, 2)} kg` : "No weight"}`;
-
-  const extra = document.createElement("div");
-  extra.className = "sales-meta-grid";
-  extra.innerHTML = `
-    <div><span class="history-label">Status</span><span class="history-value">${piglet.status || "-"}</span></div>
-    <div><span class="history-label">On Farm</span><span class="history-value">${piglet.on_farm || "-"}</span></div>
-    <div><span class="history-label">Age (Days)</span><span class="history-value">${piglet.age_days || "-"}</span></div>
-    <div><span class="history-label">Pen</span><span class="history-value">${piglet.current_pen_id || "-"}</span></div>
+  return `
+    <div class="simple-table-wrap litter-piglet-table">
+      <table class="simple-table">
+        <thead>
+          <tr>
+            <th>Piglet</th>
+            <th>Sex</th>
+            <th>Stage</th>
+            <th>Weight</th>
+            <th>Status</th>
+            <th>On Farm</th>
+            <th>Age</th>
+            <th>Pen</th>
+            <th>Profile</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `;
+}
 
-  card.appendChild(topRow);
-  card.appendChild(meta);
-  card.appendChild(subMeta);
-  card.appendChild(extra);
-
-  return card;
+function wirePigletTableRows() {
+  document.querySelectorAll("[data-pig-profile]").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("a")) return;
+      window.location.href = row.dataset.pigProfile;
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        window.location.href = row.dataset.pigProfile;
+      }
+    });
+  });
 }
 
 async function loadLitterDetail(options = {}) {
@@ -407,9 +436,8 @@ async function loadLitterDetail(options = {}) {
       return;
     }
 
-    litter.piglets.forEach((piglet) => {
-      litterPigletsList.appendChild(buildPigletCard(piglet));
-    });
+    litterPigletsList.innerHTML = buildPigletTable(litter.piglets);
+    wirePigletTableRows();
   } catch (error) {
     showLitterMessage("Something went wrong while loading litter detail.", "error");
   }

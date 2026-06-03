@@ -1112,6 +1112,38 @@ button:disabled {
   margin-bottom: 18px;
 }
 
+.litter-piglet-table-wrap {
+  min-width: 0;
+}
+
+.litter-piglet-table {
+  margin-top: 0;
+}
+
+.litter-piglet-table th,
+.litter-piglet-table td {
+  padding: 11px 12px;
+  vertical-align: middle;
+}
+
+.litter-piglet-row {
+  cursor: pointer;
+}
+
+.litter-piglet-row:focus {
+  outline: 3px solid rgba(125, 155, 125, 0.28);
+  outline-offset: -3px;
+}
+
+.table-open-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  text-decoration: none;
+}
+
 .pig-list-meta {
   font-size: 14px;
   color: var(--text-soft);
