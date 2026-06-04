@@ -346,10 +346,10 @@ class LifecycleDetailReadTests(unittest.TestCase):
     def test_litter_detail_includes_lifecycle_outcome_counts_from_pig_master(self):
         sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
         overview_rows = [
-            {"Pig_ID": "PIG-1", "Tag_Number": "001", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Male"},
-            {"Pig_ID": "PIG-2", "Tag_Number": "002", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Sex": "Female"},
-            {"Pig_ID": "PIG-3", "Tag_Number": "003", "Litter_ID": "LIT-1", "Status": "Slaughtered", "On_Farm": "No", "Sex": "Male"},
-            {"Pig_ID": "PIG-4", "Tag_Number": "004", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Sex": "Female"},
+            {"Pig_ID": "PIG-1", "Tag_Number": "001", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Male", "Date_Of_Birth": "01 May 2026"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "002", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Sex": "Female", "Date_Of_Birth": "01 May 2026"},
+            {"Pig_ID": "PIG-3", "Tag_Number": "003", "Litter_ID": "LIT-1", "Status": "Slaughtered", "On_Farm": "No", "Sex": "Male", "Date_Of_Birth": "01 May 2026"},
+            {"Pig_ID": "PIG-4", "Tag_Number": "004", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Sex": "Female", "Date_Of_Birth": "01 May 2026"},
         ]
         master_rows = [
             {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
@@ -377,6 +377,10 @@ class LifecycleDetailReadTests(unittest.TestCase):
         self.assertEqual(detail["lifecycle_outcomes"]["slaughtered"], 1)
         self.assertEqual(detail["lifecycle_outcomes"]["dead"], 1)
         self.assertEqual(detail["lifecycle_outcomes"]["removed"], 0)
+        self.assertEqual(detail["birth_date"], "2026-05-01")
+        self.assertEqual(detail["estimated_wean_date"], "2026-06-05")
+        self.assertEqual(detail["wean_tag_attention_start_date"], "2026-06-02")
+        self.assertEqual(detail["default_wean_age_days"], 35)
 
 
 class LitterNewbornHealthTests(unittest.TestCase):

@@ -409,6 +409,14 @@ async function loadLitterDetail(options = {}) {
     setText("litter_female_count_value", litter.female_count);
     setText("litter_active_count_value", litter.active_count);
     setText("litter_average_weight_value", litter.average_weight_kg, litter.average_weight_kg !== null ? " kg" : "");
+    setText("litter_birth_date_value", litter.birth_date);
+    setText("litter_estimated_wean_date_value", litter.estimated_wean_date);
+    setText("litter_wean_attention_start_value", litter.wean_tag_attention_start_date);
+    setText(
+      "litter_days_until_wean_value",
+      litter.days_until_estimated_wean,
+      litter.days_until_estimated_wean !== null && litter.days_until_estimated_wean !== undefined ? " days" : ""
+    );
 
     setLinkedValue(
       "litter_mother_value",

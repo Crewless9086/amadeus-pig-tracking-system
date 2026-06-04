@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7E Local | Next: deploy/browser-check 9.7E closed slaughter action visibility and pig/litter lifecycle detail readback; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Local | Next: deploy/browser-check 9.7G wean timing, then 9.7H fast pre-weaning death capture; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2715,13 +2715,13 @@ Questions to answer during 9.7A:
 - Date parsing now handles Supabase ISO timestamps with timezone and Google Sheets day-month display values such as `14 May`.
 - Verification passed: real API readback for `PIG-2026-C390`, `node --check static/js/slaughterSaleDetail.js`, and full local unittest suite at 329 tests.
 
-9.7F future litter health/reminder capture planning:
+9.7F litter newborn health action - Live-Tested Complete:
 
 - Owner note moved from scratch on 2026-06-02: litters need reminders for vaccination, earmarking, and deworming based on days since birth once the exact timing is confirmed with the farm.
-- Earmarks and deworming happen first; ear tags happen later around weaning because tags are too large for little piglets.
+- Corrected owner/farm process on 2026-06-03: in the first few days, the real newborn-health action is Panacur + Ecomectin only. Earmarks and eartags happen around weaning, because piglets are too young earlier and the sow is still too involved.
 - Preferred workflow is similar to bulk weights: printable capture sheet plus a digital bulk table where current live piglets/litters can be ticked off and fields captured in one batch.
-- Do not implement until the required day offsets, products/actions, and data destination are agreed.
-- Owner decisions 2026-06-02: this belongs inside the existing `Needs_Attention` litter flow; newborn health action is earmark + Ecomectin 1% as `Antiparasitic` + Panacur 4% as `Deworming`, plus vaccination only if/when a true vaccine product exists; this happens within about 3 days of birth; tag numbers remain a separate weaning-time attention action; product selection must come from `PRODUCT_REGISTER`; treatments must create normal `MEDICAL_LOG` treatment rows; earmarking should be structured pig-level truth, not only notes.
+- Do not implement broader bulk health capture until the required day offsets, products/actions, and data destination are agreed.
+- Owner decisions 2026-06-02/03: this belongs inside the existing `Needs_Attention` litter flow; newborn health action uses Ecomectin 1% as `Antiparasitic` + Panacur 4% as `Deworming`, plus vaccination only if/when a true vaccine product exists; product selection must come from `PRODUCT_REGISTER`; treatments must create normal `MEDICAL_LOG` treatment rows; earmarking should be structured pig-level truth, but belongs with the wean/tag action rather than the first-days treatment action.
 - First backend slice is local: `POST /api/pig-weights/litter/<litter_id>/newborn-health` supports dry-run-first newborn health capture. It finds active/on-farm piglets in the litter, plans `Earmarked = Yes` / `Earmark_Date`, and plans/appends `MEDICAL_LOG` rows for selected antiparasitic/deworming/vaccination product IDs.
 - `PIG_MASTER` columns are set as `AK = Earmarked` and `AL = Earmark_Date`.
 - Current `PRODUCT_REGISTER` real readback has `PRD-001 Ecomectin 1%`, `PRD-002 Panacur 4%`, and `PRD-003 Electro Guard`; no vaccination product was visible yet.
@@ -2732,6 +2732,70 @@ Questions to answer during 9.7A:
 - Supabase migration note: pig earmark fields and all `MEDICAL_LOG` treatment rows/products must be included in the future pig/medical migration so newborn health actions are not lost when operational data moves out of Google Sheets.
 - Future note: the first implementation applies to all active/on-farm piglets in the litter. Per-pig untick/exception handling is noted for later but intentionally not included yet because this action should normally apply to all linked live piglets.
 - Verification passed: focused litter service tests and full local unittest suite at 332 tests.
+- Live test passed on 2026-06-03 with `LIT-2026-9E4A`: 10 active/on-farm piglets were updated, the dead/off-farm piglet was skipped, 10 Ecomectin rows and 10 Panacur rows were written to `MEDICAL_LOG`, and litter attention moved on to tag-number attention.
+
+9.7G correct newborn/weaning attention timing - Local:
+
+- Problem found during 9.7F live test: newborn health, earmarks, tags, and weaning are not one action. The system should not keep showing a litter as needing tag numbers weeks before the tag/wean action is relevant.
+- Correct process target:
+  - First few days after birth: Panacur + Ecomectin treatment only.
+  - Around weaning: earmarks + eartags/tag numbers + wean date/count should be handled together.
+  - Dashboard and Telegram should show weaning/tag attention only when it becomes actionable.
+- Proposed attention timing:
+  - Use an estimated wean date per litter.
+  - Default weaning age is 35 days after birth.
+  - Start dashboard `Needs Attention` and Telegram attention for wean/tag action from 3 days before estimated wean date.
+  - Preferred planning option to evaluate during build: start showing the action from the closest Monday to the 3-day warning window, so weekly planning can catch the work cleanly.
+  - Do not show tag-number attention before that window, unless there is an explicit data-quality/reconciliation issue.
+- Required build slice:
+  - Add/backend-compute an estimated wean date for litter detail and attention output. - Local
+  - Change newborn health attention so it no longer requires `Earmarked` / `Earmark_Date`. - Local
+  - Move earmark/tag capture into the weaning/tag action path. - First local step: newborn-health UI no longer exposes the earmark checkbox; a full wean/tag action path remains future work.
+  - Keep old/historical litters from flooding attention. - Local
+  - Surface estimated/target wean date clearly on `/litter/<litter_id>`. - Local
+  - Make the litter detail page use the wide layout and table pattern already started in 9.7F. - Done in 9.7F; 9.7G added timing cards.
+- Telegram note: wean/tag reminders should use the farm attention digest path, not a separate one-off workflow, with useful timing such as morning planning and possibly midday/end-of-day reminders.
+- Local implementation details:
+  - Default estimated wean date is `Farrowing_Date` / piglet `Date_Of_Birth` + 35 days.
+  - Tag/wean attention starts 3 days before estimated wean date.
+  - If the system cannot parse a birth/farrowing date, it does not suppress the attention item because timing cannot be trusted.
+  - `/litter/<litter_id>` now returns/displays birth date, estimated wean date, wean/tag attention start date, planning Monday, days until estimated wean, default wean age, and attention window.
+  - Dashboard litter attention suppresses early tag-number reminders until the attention window, while still allowing data-quality/reconciliation reasons to show.
+  - Real-data check on 2026-06-04 for `LIT-2026-9E4A`: birth date `2026-05-18`, estimated wean date `2026-06-22`, attention start `2026-06-19`, days until wean `18`, and dashboard attention returned clean.
+  - Verification passed: `node --check static/js/litterDetail.js`, focused litter/dashboard/frontend tests, route smoke for `/litter/LIT-2026-9E4A`, and full local unittest suite at 336 tests.
+
+9.7H fast pre-weaning piglet death capture - Planned after 9.7G:
+
+- Problem found during mating-to-litter live use: adding a litter with `total born = 9`, `born alive = 7`, and `stillborn = 2` created too many live piglet rows. Stillborn piglets should be logged as dead/off-farm on date of birth, not require later manual death edits.
+- Required correction for Add Litter:
+  - Owner decision 2026-06-03: keep dead pig rows for history.
+  - Stillborn rows must be created as `Died` / `On_Farm = No` with exit/death date equal to birth date and reason `Stillborn`.
+  - Born-alive rows should remain active/on-farm unless later marked dead or removed.
+- Required litter detail action:
+  - Add a fast `Mark Piglets Dead` action on `/litter/<litter_id>` for pre-weaning cases.
+  - Before sex/tag data exists, allow count + date + reason and select from active untagged/unsexed piglets.
+  - If sex is available but tags are not, ask for male/female counts so the update can choose matching piglets.
+  - Once tag numbers exist, require selecting specific piglets or using the individual pig lifecycle form.
+  - Reason options should include `Stillborn`, `Died after birth`, `Crushed by sow`, `Weak piglet`, and `Unknown`.
+  - Update `PIG_MASTER` status/on-farm/exit fields and preserve litter/parent history.
+  - Keep this as dry-run-first or preview-before-apply.
+
+9.7H2 litter print/capture sheet alignment - Planned after owner sample:
+
+- Owner note 2026-06-03: father has a specific paper capture format for litters, and the system should eventually match that printout style more closely.
+- Future build should align the litter print sheet, litter detail table, and any bulk litter upload/capture form so the printed workflow and web workflow feel like the same process.
+- Owner will provide a sample before implementation.
+- Keep wide browser layouts and table format as the default for these operational pages.
+
+9.7I smart return/back navigation - Planned:
+
+- Problem found during litter table use: opening a pig from a litter works, but the pig profile only links back to Pig List, not the litter/page the user came from.
+- Preferred direction:
+  - Add a lightweight return-context system for internal links, for example query parameters or session/local storage.
+  - When navigating from a litter to a pig, show `Back to Litter` on the pig detail page.
+  - Keep normal `Back to Pig List` available when the user came from the pig list.
+  - Avoid browser-history-only behavior as the only solution, because direct links and refreshed pages should still show sensible actions.
+  - Apply the same pattern later to sales, reports, matings, and dashboards where drill-ins are used.
 
 ### 9.8 Business Scenario Calculator — Future Planning
 
@@ -3912,7 +3976,12 @@ Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 
   - Manual executions `49137` and `49138` reached `Telegram - Send Farm Attention Digest` and `Code - Record Sent Digest`; both sent the expected digest: `attention_total = 1`, `orders = 0`, `litters = 1`, `LIT-2026-8A0F: Piglets need tag numbers`.
   - Manual repeated sends are not valid duplicate-suppression proof because n8n manual executions do not reliably persist workflow static data.
   - Next action: observe the next scheduled execution. If the digest content is unchanged, it should stop at `Code - Extract Sendable Digest`; if content changes, a send is acceptable.
-- Telegram alert message polish: make alert messages easier to scan by adding clear symbols/emoji and consistent formatting by alert type/severity. Keep this as presentation polish only; do not change backend alert rules, cooldowns, or recipient safety while doing it.
+- Telegram alert/message usefulness polish:
+  - Make alert messages easier to scan by adding clear symbols/emoji and consistent formatting by alert type/severity. Power, current weather, forecast, and farm `Needs Attention` should be visually distinct in Telegram while still keeping readable text.
+  - Improve timing so Oom Sakkie stays useful without becoming spammy. Owner examples: farm `Needs Attention` digest around morning planning time, perhaps 06:30, again around 13:00, and possibly end-of-day if useful.
+  - Rain alerts should be practical: alert when meaningful rain starts during awake hours, avoid repeated spam while it continues, then send a rain-stopped/period-total summary and a daily total at a set time.
+  - This needs alert-rule planning, cooldown/change-detection, quiet-hours handling, and digest scheduling. Do not treat it as presentation-only once timing/rain rules are changed.
+  - Owner screenshot reference: `screenshots/Telegram Alerts.png`.
 - Dashboard visual cues: add weather and solar/power symbols or small visual states to the home dashboard so weather and energy status are easier to scan. Keep visuals functional, not decorative, and preserve readable text for exact values.
 - Farm task/reminder/project management: future planning item for important dates, reminders, task ownership, projects, and idea logging. This needs a proper model and should not be squeezed into the current attention list as ad hoc notes.
 - Weather station to Windy integration: research whether the local weather station can publish to Windy. Treat as an external integration planning task first; do not change the existing weather ingestion path until the Windy upload method, API requirements, station ID handling, and data ownership are understood.

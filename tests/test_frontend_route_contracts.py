@@ -16,6 +16,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("litter-summary-grid", template)
         self.assertIn("litter-side-column", template)
         self.assertIn("litter-piglet-table-wrap", template)
+        self.assertIn('id="litter_estimated_wean_date_value"', template)
+        self.assertIn('id="litter_wean_attention_start_value"', template)
         self.assertIn('id="mark_weaned_form"', template)
         self.assertIn('id="mark_weaned_button"', template)
         self.assertIn('id="newborn_health_form"', template)
@@ -37,6 +39,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("buildPigletTable", js)
         self.assertIn("wirePigletTableRows", js)
         self.assertIn("data-pig-profile", js)
+        self.assertIn("litter.estimated_wean_date", js)
+        self.assertIn("litter.wean_tag_attention_start_date", js)
         self.assertIn("litter-piglet-table", Path("static/css/main.css").read_text(encoding="utf-8"))
 
     def test_pig_dropdowns_pad_numeric_tags_for_display(self):

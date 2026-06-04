@@ -46,6 +46,8 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Windy weather-station integration research note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 - Future alert-preference page note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 - Litter vaccination, earmarking, deworming, printable sheet, and bulk capture note moved to `NEXT_STEPS.md` Phase 9.7F future litter health/reminder capture planning.
+- Litter newborn-health live-test result, wean/tag timing correction, fast piglet death capture, and smart return navigation moved to `NEXT_STEPS.md` Phase 9.7F-I.
+- 35-day weaning default, closest-Monday planning option, dead pig rows for history, accepted death reasons, and future litter print/capture sample note moved to `NEXT_STEPS.md` Phase 9.7G-H2.
+- Practical Telegram alert timing/rain summaries/formatting note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
 
 Add new scratch bullets below, then move them into the correct canonical file.
-- I need the Alerts to be more practical, When it starts to rain in the awake hours not quite hours it needs to alert us for instance, but then not everytime, then when it stops it can send a total rain for that period, and then total for the day, then for this needs to be at a set time every day? Say like 06h30 in the morning for instance and the "Need Attention" needs to be at time where we can plan the day, Say like 06h30 perhaps and then again at 13h00 and then perhaps the end of day so this stay on the top of our list. Or something use ful wiithout getting spammed by Telegram "Oom Sakkie" - See sample images in the Screenshots folder named " Telergram Alerts" and you will notice it's missing some colour or emojis or something to make them stand out compared to the others, Power is different tot currne tweather, to forecast and Need attentnion. 

@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 from modules.pig_weights import pig_weights_service
@@ -150,6 +151,89 @@ class LitterAttentionSummaryTests(unittest.TestCase):
 
         self.assertEqual(result["items"][0]["reason"], "Piglets need newborn health records")
         self.assertEqual(result["items"][0]["action_type"], "record_litter_newborn_health")
+
+    def test_newborn_health_attention_does_not_require_earmarks(self):
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-TREATED",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Piglets need tag numbers",
+                "Active_Pig_Count": "1",
+                "Farrowing_Date": "01 May 2026",
+            }
+        ]
+        pig_master_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-TREATED",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Earmarked": "",
+                "Earmark_Date": "",
+            }
+        ]
+        medical_rows = [
+            {"Pig_ID": "PIG-1", "Product_ID": "PRD-001"},
+            {"Pig_ID": "PIG-1", "Product_ID": "PRD-002"},
+        ]
+        product_rows = [
+            {
+                "Product_ID": "PRD-001",
+                "Product_Name": "Ecomectin 1%",
+                "Product_Category": "Antiparasitic",
+                "Is_Active": "Yes",
+            },
+            {
+                "Product_ID": "PRD-002",
+                "Product_Name": "Panacur 4%",
+                "Product_Category": "Dewormer",
+                "Is_Active": "Yes",
+            },
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], pig_master_rows, medical_rows, product_rows]):
+            result = pig_weights_service.get_litter_attention_summary(today=date(2026, 5, 2))
+
+        self.assertEqual(result["count"], 0)
+
+    def test_tag_number_attention_is_suppressed_until_wean_window(self):
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-EARLY",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Piglets need tag numbers",
+                "Active_Pig_Count": "8",
+                "Farrowing_Date": "01 May 2026",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+            result = pig_weights_service.get_litter_attention_summary(today=date(2026, 5, 20))
+
+        self.assertEqual(result["count"], 0)
+
+    def test_tag_number_attention_shows_from_three_days_before_estimated_wean(self):
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-DUE",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Piglets need tag numbers",
+                "Active_Pig_Count": "8",
+                "Farrowing_Date": "01 May 2026",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+            result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 2))
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["action_type"], "")
+        self.assertEqual(result["items"][0]["reason"], "Piglets need tag numbers")
+        self.assertEqual(result["items"][0]["estimated_wean_date"], "2026-06-05")
+        self.assertEqual(result["items"][0]["wean_tag_attention_start_date"], "2026-06-02")
 
     def test_weaned_litter_only_reviews_purpose_when_active_piglets_have_unknown_purpose(self):
         pig_rows = [

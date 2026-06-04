@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from services.google_sheets_service import (
     append_row,
@@ -34,6 +34,8 @@ LIFECYCLE_REMOVAL_REASONS = {
     "Other": "Removed",
 }
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
+DEFAULT_LITTER_WEAN_AGE_DAYS = 35
+WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
 
 
 def _build_pig_lookup(rows, columns):
@@ -145,6 +147,71 @@ def _empty_litter_lifecycle_outcomes():
         "other": 0,
         "total": 0,
     }
+
+
+def _estimated_wean_date_from_birth(birth_date):
+    if not birth_date:
+        return None
+    return birth_date + timedelta(days=DEFAULT_LITTER_WEAN_AGE_DAYS)
+
+
+def _wean_tag_attention_start_date(estimated_wean_date):
+    if not estimated_wean_date:
+        return None
+    return estimated_wean_date - timedelta(days=WEAN_TAG_ATTENTION_WINDOW_DAYS)
+
+
+def _litter_birth_date_from_row(row):
+    return (
+        parse_sheet_date(row.get("Farrowing_Date", ""))
+        or parse_sheet_date(row.get("Date_Of_Birth", ""))
+        or parse_sheet_date(row.get("Birth_Date", ""))
+    )
+
+
+def _litter_wean_timing(row, today=None):
+    today = today or datetime.now().date()
+    birth_date = _litter_birth_date_from_row(row)
+    estimated_wean_date = _estimated_wean_date_from_birth(birth_date)
+    attention_start_date = _wean_tag_attention_start_date(estimated_wean_date)
+    planning_monday = None
+    if estimated_wean_date:
+        planning_monday = estimated_wean_date - timedelta(days=estimated_wean_date.weekday())
+
+    return {
+        "birth_date": birth_date,
+        "estimated_wean_date": estimated_wean_date,
+        "wean_tag_attention_start_date": attention_start_date,
+        "wean_planning_monday": planning_monday,
+        "wean_tag_attention_due": bool(attention_start_date and today >= attention_start_date),
+        "days_until_estimated_wean": (estimated_wean_date - today).days if estimated_wean_date else None,
+    }
+
+
+def _format_optional_json_date(value):
+    return format_date_for_json(value) if value else ""
+
+
+def _litter_wean_timing_json(row, today=None):
+    timing = _litter_wean_timing(row, today=today)
+    return {
+        "birth_date": _format_optional_json_date(timing["birth_date"]),
+        "estimated_wean_date": _format_optional_json_date(timing["estimated_wean_date"]),
+        "wean_tag_attention_start_date": _format_optional_json_date(timing["wean_tag_attention_start_date"]),
+        "wean_planning_monday": _format_optional_json_date(timing["wean_planning_monday"]),
+        "wean_tag_attention_due": timing["wean_tag_attention_due"],
+        "days_until_estimated_wean": timing["days_until_estimated_wean"],
+        "default_wean_age_days": DEFAULT_LITTER_WEAN_AGE_DAYS,
+        "attention_window_days": WEAN_TAG_ATTENTION_WINDOW_DAYS,
+    }
+
+
+def _is_tag_number_attention(reason):
+    return "tag" in to_clean_string(reason).lower()
+
+
+def _wean_tag_attention_is_not_due(wean_timing):
+    return bool(wean_timing["wean_tag_attention_start_date"] and not wean_timing["wean_tag_attention_due"])
 
 
 def _litter_lifecycle_outcomes(litter_id, pig_master_rows):
@@ -293,7 +360,8 @@ def get_dashboard_summary():
     }
 
 
-def get_litter_attention_summary(limit: int = 5):
+def get_litter_attention_summary(limit: int = 5, today=None):
+    today = today or datetime.now().date()
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
@@ -309,6 +377,7 @@ def get_litter_attention_summary(limit: int = 5):
         needs_attention = to_clean_string(row.get("Needs_Attention", ""))
         litter_status = to_clean_string(row.get("Litter_Status", ""))
         active_pig_count = to_float(row.get("Active_Pig_Count", "")) or 0
+        wean_timing = _litter_wean_timing(row, today=today)
 
         reason = ""
         action_type = ""
@@ -325,6 +394,8 @@ def get_litter_attention_summary(limit: int = 5):
             action_type = newborn_attention["action_type"]
         elif needs_attention == "Yes":
             reason = _litter_attention_reason(row)
+            if _is_tag_number_attention(reason) and _wean_tag_attention_is_not_due(wean_timing):
+                reason = ""
         elif litter_status == "Weaned" and _litter_needs_purpose_review(litter_id, pig_rows):
             reason = "Weaned - review purpose"
 
@@ -344,6 +415,10 @@ def get_litter_attention_summary(limit: int = 5):
             "weaned_count": to_float(row.get("Weaned_Count", "")),
             "youngest_age_days": row.get("Youngest_Age_Days", ""),
             "oldest_age_days": row.get("Oldest_Age_Days", ""),
+            "estimated_wean_date": _format_optional_json_date(wean_timing["estimated_wean_date"]),
+            "wean_tag_attention_start_date": _format_optional_json_date(wean_timing["wean_tag_attention_start_date"]),
+            "wean_planning_monday": _format_optional_json_date(wean_timing["wean_planning_monday"]),
+            "days_until_estimated_wean": wean_timing["days_until_estimated_wean"],
         })
 
     return {
@@ -441,13 +516,9 @@ def _litter_newborn_health_attention(litter_id, litter_status, wean_date_value, 
     for pig in active_piglets:
         pig_id = to_clean_string(pig.get("Pig_ID", ""))
         product_ids = treatments_by_pig.get(pig_id, set())
-        earmark_missing = (
-            to_clean_string(pig.get("Earmarked", "")) != "Yes"
-            or not to_clean_string(pig.get("Earmark_Date", ""))
-        )
         antiparasitic_missing = bool(antiparasitic_ids) and product_ids.isdisjoint(antiparasitic_ids)
         deworming_missing = bool(deworming_ids) and product_ids.isdisjoint(deworming_ids)
-        if earmark_missing or antiparasitic_missing or deworming_missing:
+        if antiparasitic_missing or deworming_missing:
             missing_count += 1
 
     if not missing_count:
@@ -455,13 +526,14 @@ def _litter_newborn_health_attention(litter_id, litter_status, wean_date_value, 
 
     return {
         "reason": "Piglets need newborn health records",
-        "recommended_action": "Record earmarks, Ecomectin, and Panacur before tag numbers.",
+        "recommended_action": "Record Ecomectin and Panacur newborn treatments.",
         "action_type": "record_litter_newborn_health",
         "missing_piglet_count": missing_count,
     }
 
 
-def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newborn_products=None):
+def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newborn_products=None, today=None):
+    today = today or datetime.now().date()
     litter_id = to_clean_string(row.get("Litter_ID", ""))
     needs_attention = to_clean_string(row.get("Needs_Attention", ""))
     litter_status = to_clean_string(row.get("Litter_Status", ""))
@@ -470,6 +542,7 @@ def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newbor
     reason = ""
     recommended_action = ""
     action_type = ""
+    wean_timing = _litter_wean_timing(row, today=today)
 
     newborn_attention = None
     if pig_master_rows is not None and medical_rows is not None:
@@ -499,8 +572,13 @@ def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newbor
             recommended_action = "Complete the born-alive count before resolving this litter attention item."
             action_type = "complete_born_alive"
         elif "tag" in reason_lower:
-            recommended_action = "Assign tag numbers to the linked piglets that are still missing tags."
-            action_type = "assign_tag_numbers"
+            if not _wean_tag_attention_is_not_due(wean_timing):
+                recommended_action = "Assign tag numbers and earmarks to the linked piglets around weaning."
+                action_type = "assign_tag_numbers"
+            else:
+                reason = ""
+                recommended_action = ""
+                action_type = ""
         else:
             recommended_action = "Review this litter and correct the source data shown in the attention reason."
             action_type = "review_litter"
@@ -508,7 +586,7 @@ def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newbor
         reason = "Weaned - review purpose"
         recommended_action = "Litter is already weaned. Review linked piglet purpose/sales classification next."
         action_type = "review_purpose"
-    elif litter_status != "Weaned" and active_pig_count > 0:
+    elif litter_status != "Weaned" and active_pig_count > 0 and not _wean_tag_attention_is_not_due(wean_timing):
         reason = ""
         recommended_action = "Confirm the litter status and mark it as weaned once the weaning date is known."
         action_type = "mark_weaned"
@@ -522,6 +600,7 @@ def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newbor
         "wean_date": format_date_for_json(row.get("Wean_Date", "")),
         "active_pig_count": active_pig_count,
         "weaned_count": to_float(row.get("Weaned_Count", "")),
+        **_litter_wean_timing_json(row, today=today),
     }
 
 
@@ -1238,6 +1317,7 @@ def get_litter_detail(litter_id: str):
         litter_rows_sheet = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"])
         for row in litter_rows_sheet:
             if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+                wean_timing = _litter_wean_timing_json(row)
                 return {
                     "litter_id": litter_id,
                     "mother_pig_id": to_clean_string(row.get("Sow_Pig_ID", "")),
@@ -1252,10 +1332,12 @@ def get_litter_detail(litter_id: str):
                     "piglets": [],
                     "attention": attention,
                     "lifecycle_outcomes": lifecycle_outcomes,
+                    **wean_timing,
                 }
         return None
 
     first_row = litter_rows[0]
+    wean_timing = _litter_wean_timing_json(first_row)
 
     mother_pig_id = to_clean_string(first_row.get("Mother_Pig_ID", ""))
     father_pig_id = to_clean_string(first_row.get("Father_Pig_ID", ""))
@@ -1322,6 +1404,7 @@ def get_litter_detail(litter_id: str):
         "piglets": piglets,
         "attention": attention,
         "lifecycle_outcomes": lifecycle_outcomes,
+        **wean_timing,
     }
 
 

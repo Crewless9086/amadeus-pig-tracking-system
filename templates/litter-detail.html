@@ -51,6 +51,26 @@
               </div>
 
               <div class="detail-card">
+                <span class="detail-label">Birth Date</span>
+                <span id="litter_birth_date_value" class="detail-value">-</span>
+              </div>
+
+              <div class="detail-card">
+                <span class="detail-label">Est. Wean Date</span>
+                <span id="litter_estimated_wean_date_value" class="detail-value">-</span>
+              </div>
+
+              <div class="detail-card">
+                <span class="detail-label">Attention Starts</span>
+                <span id="litter_wean_attention_start_value" class="detail-value">-</span>
+              </div>
+
+              <div class="detail-card">
+                <span class="detail-label">Days to Wean</span>
+                <span id="litter_days_until_wean_value" class="detail-value">-</span>
+              </div>
+
+              <div class="detail-card">
                 <span class="detail-label">Male Count</span>
                 <span id="litter_male_count_value" class="detail-value">-</span>
               </div>
@@ -161,8 +181,8 @@
                   <textarea id="newborn_health_notes" rows="3"></textarea>
                 </div>
               </div>
-              <label class="checkbox-row">
-                <input type="checkbox" id="newborn_health_earmarked" checked />
+              <label class="checkbox-row hidden">
+                <input type="checkbox" id="newborn_health_earmarked" />
                 <span>Mark all active piglets as earmarked</span>
               </label>
               <div id="newborn_health_preview" class="bulk-review-panel hidden"></div>
@@ -177,6 +197,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260603-litter-table"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260604-wean-timing"></script>
 </body>
 </html>
