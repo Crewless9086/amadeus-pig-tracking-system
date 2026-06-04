@@ -42,6 +42,14 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function pigProfileHref(pigId, litterId) {
+  const params = new URLSearchParams({
+    return_to: `/litter/${litterId}`,
+    return_label: "Back to Litter",
+  });
+  return `/pig/${encodeURIComponent(pigId)}?${params.toString()}`;
+}
+
 function showLitterMessage(message, type = "error") {
   litterMessage.classList.remove("hidden", "message-success", "message-error");
   litterMessage.classList.add(type === "success" ? "message-success" : "message-error");
@@ -468,8 +476,9 @@ function pigletWeightText(piglet) {
 }
 
 function buildPigletTable(piglets) {
+  const litterId = getLitterIdFromUrl();
   const rows = piglets.map((piglet) => {
-    const profileHref = `/pig/${encodeURIComponent(piglet.pig_id)}`;
+    const profileHref = pigProfileHref(piglet.pig_id, litterId);
     const tagOrId = piglet.tag_number || piglet.pig_id;
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">

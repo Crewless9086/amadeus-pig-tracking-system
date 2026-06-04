@@ -6,6 +6,7 @@ const lifecycleReason = document.getElementById("lifecycle_reason");
 const lifecycleChangedBy = document.getElementById("lifecycle_changed_by");
 const lifecycleNotes = document.getElementById("lifecycle_notes");
 const lifecycleSubmitButton = document.getElementById("lifecycle_submit_button");
+const pigDetailBackLink = document.getElementById("pig_detail_back_link");
 let currentPigId = "";
 
 function getPigIdFromUrl() {
@@ -40,6 +41,25 @@ function setLinkedValue(id, label, href) {
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function safeInternalReturnPath(value) {
+  const path = String(value || "").trim();
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return "";
+  }
+  return path;
+}
+
+function updateBackLink() {
+  if (!pigDetailBackLink) return;
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = safeInternalReturnPath(params.get("return_to"));
+  const returnLabel = String(params.get("return_label") || "").trim();
+  if (!returnTo) return;
+
+  pigDetailBackLink.href = returnTo;
+  pigDetailBackLink.textContent = `← ${returnLabel || "Back"}`;
 }
 
 function setLifecycleSubmitting(isSubmitting) {
@@ -193,4 +213,5 @@ if (lifecycleForm) {
   lifecycleForm.addEventListener("submit", submitLifecycleDeath);
 }
 
+updateBackLink();
 loadPigDetail();
