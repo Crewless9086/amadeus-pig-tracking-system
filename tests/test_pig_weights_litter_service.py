@@ -74,6 +74,45 @@ class LitterPigletCreationTests(unittest.TestCase):
         self.assertEqual(by_header["On_Farm"], "Yes")
         self.assertEqual(by_header["Source"], "Born_on_Farm")
 
+    def test_litter_generated_piglets_keep_stillborn_rows_as_dead_history(self):
+        with patch.object(pig_weights_service, "get_all_records", return_value=[]), \
+             patch.object(pig_weights_service, "generate_pig_id", side_effect=["PIG-1", "PIG-2", "PIG-3"]), \
+             patch.object(pig_weights_service, "append_row") as append_row:
+
+            created_count = pig_weights_service._create_pig_rows_for_litter(
+                litter_id="LIT-1",
+                mother_pig_id="PIG-MOTHER",
+                father_pig_id="PIG-FATHER",
+                mother_tag="M1",
+                father_tag="B1",
+                farrowing_date=date(2026, 5, 19),
+                total_born=3,
+                current_pen_id="PEN-001",
+                born_alive=2,
+                stillborn_count=1,
+            )
+
+        self.assertEqual(created_count, 3)
+        self.assertEqual(append_row.call_count, 3)
+
+        live_rows = [
+            dict(zip(PIG_MASTER_HEADERS, call.args[1]))
+            for call in append_row.call_args_list[:2]
+        ]
+        stillborn_row = dict(zip(PIG_MASTER_HEADERS, append_row.call_args_list[2].args[1]))
+
+        for row in live_rows:
+            self.assertEqual(row["Status"], "Active")
+            self.assertEqual(row["On_Farm"], "Yes")
+            self.assertEqual(row["Exit_Date"], "")
+            self.assertEqual(row["Exit_Reason"], "")
+
+        self.assertEqual(stillborn_row["Status"], "Dead")
+        self.assertEqual(stillborn_row["On_Farm"], "No")
+        self.assertEqual(stillborn_row["Exit_Date"], "19 May 2026")
+        self.assertEqual(stillborn_row["Exit_Reason"], "Stillborn")
+        self.assertIn("Stillborn recorded", stillborn_row["General_Notes"])
+
     def test_litter_generated_piglets_are_not_duplicated_for_existing_litter(self):
         existing_rows = [{"Litter_ID": "LIT-1"}]
 
@@ -350,12 +389,14 @@ class LifecycleDetailReadTests(unittest.TestCase):
             {"Pig_ID": "PIG-2", "Tag_Number": "002", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Sex": "Female", "Date_Of_Birth": "01 May 2026"},
             {"Pig_ID": "PIG-3", "Tag_Number": "003", "Litter_ID": "LIT-1", "Status": "Slaughtered", "On_Farm": "No", "Sex": "Male", "Date_Of_Birth": "01 May 2026"},
             {"Pig_ID": "PIG-4", "Tag_Number": "004", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Sex": "Female", "Date_Of_Birth": "01 May 2026"},
+            {"Pig_ID": "PIG-5", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Sex": "", "Date_Of_Birth": "01 May 2026"},
         ]
         master_rows = [
             {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
             {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Sold", "On_Farm": "No", "Exit_Reason": "Sold"},
             {"Pig_ID": "PIG-3", "Litter_ID": "LIT-1", "Status": "Slaughtered", "On_Farm": "No", "Exit_Reason": "Sold to Abattoir"},
             {"Pig_ID": "PIG-4", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-5", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Stillborn"},
             {"Pig_ID": "PIG-5", "Litter_ID": "LIT-OTHER", "Status": "Removed", "On_Farm": "No", "Exit_Reason": "Removed"},
         ]
 
@@ -371,11 +412,11 @@ class LifecycleDetailReadTests(unittest.TestCase):
         with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
             detail = pig_weights_service.get_litter_detail("LIT-1")
 
-        self.assertEqual(detail["lifecycle_outcomes"]["total"], 4)
+        self.assertEqual(detail["lifecycle_outcomes"]["total"], 5)
         self.assertEqual(detail["lifecycle_outcomes"]["active"], 1)
         self.assertEqual(detail["lifecycle_outcomes"]["sold"], 1)
         self.assertEqual(detail["lifecycle_outcomes"]["slaughtered"], 1)
-        self.assertEqual(detail["lifecycle_outcomes"]["dead"], 1)
+        self.assertEqual(detail["lifecycle_outcomes"]["dead"], 2)
         self.assertEqual(detail["lifecycle_outcomes"]["removed"], 0)
         self.assertEqual(detail["birth_date"], "2026-05-01")
         self.assertEqual(detail["estimated_wean_date"], "2026-06-05")

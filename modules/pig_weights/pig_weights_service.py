@@ -30,6 +30,10 @@ LIFECYCLE_REMOVAL_REASONS = {
     "Died": "Dead",
     "Culled": "Dead",
     "Lost": "Dead",
+    "Stillborn": "Dead",
+    "Died after birth": "Dead",
+    "Crushed by sow": "Dead",
+    "Weak piglet": "Dead",
     "Removed": "Removed",
     "Other": "Removed",
 }
@@ -124,7 +128,7 @@ def _lifecycle_outcome_for_exit(row):
     status = to_clean_string(row.get("Status", "")).lower()
     exit_reason = to_clean_string(row.get("Exit_Reason", "")).lower().replace("-", "_").replace(" ", "_")
 
-    if status == "dead" or exit_reason in {"died", "culled", "lost"}:
+    if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet"}:
         return "dead"
     if status == "removed" or exit_reason in {"removed", "other"}:
         return "removed"
@@ -2203,6 +2207,8 @@ def _create_pig_rows_for_litter(
     farrowing_date,
     total_born,
     current_pen_id: str,
+    born_alive=None,
+    stillborn_count=None,
 ):
     if not litter_id or not mother_pig_id or not farrowing_date or total_born in (None, "", 0):
         return 0
@@ -2214,6 +2220,27 @@ def _create_pig_rows_for_litter(
 
     if total_born_int <= 0:
         return 0
+
+    def _positive_int_or_none(value):
+        if value in (None, ""):
+            return None
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max(parsed_value, 0)
+
+    born_alive_int = _positive_int_or_none(born_alive)
+    stillborn_int = _positive_int_or_none(stillborn_count) or 0
+
+    if born_alive_int is None:
+        born_alive_int = max(total_born_int - stillborn_int, 0)
+
+    if born_alive_int + stillborn_int > total_born_int:
+        stillborn_int = max(total_born_int - born_alive_int, 0)
+
+    if born_alive_int > total_born_int:
+        born_alive_int = total_born_int
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     existing_rows = get_all_records(pig_master_sheet)
@@ -2232,13 +2259,13 @@ def _create_pig_rows_for_litter(
 
     created_count = 0
 
-    for _ in range(total_born_int):
+    def _append_generated_piglet(status, on_farm, exit_date="", exit_reason="", notes=""):
         row_values = [
             generate_pig_id(),                                 # Pig_ID
             "",                                                # Tag_Number
             "",                                                # Pig_Name
-            "Active",                                          # Status
-            "Yes",                                             # On_Farm
+            status,                                            # Status
+            on_farm,                                           # On_Farm
             "Piglet",                                          # Animal_Type
             "",                                                # Sex
             format_date_for_sheet(farrowing_date),             # Date_Of_Birth
@@ -2263,17 +2290,33 @@ def _create_pig_rows_for_litter(
             "",                                                # Birth_Weight_Kg
             "",                                                # Wean_Date
             "",                                                # Wean_Weight_Kg
-            "",                                                # Exit_Date
-            "",                                                # Exit_Reason
+            exit_date,                                         # Exit_Date
+            exit_reason,                                       # Exit_Reason
             "",                                                # Exit_Order_ID
             "",                                                # Carcass_Weight_Kg
-            "",                                                # General_Notes
+            notes,                                             # General_Notes
             today_str,                                         # Created_At
             today_str,                                         # Updated_At
         ]
 
         append_row(pig_master_sheet, row_values)
-        created_count += 1
+        return 1
+
+    for _ in range(born_alive_int):
+        created_count += _append_generated_piglet(
+            status="Active",
+            on_farm="Yes",
+        )
+
+    stillborn_exit_date = format_date_for_sheet(farrowing_date)
+    for _ in range(stillborn_int):
+        created_count += _append_generated_piglet(
+            status="Dead",
+            on_farm="No",
+            exit_date=stillborn_exit_date,
+            exit_reason="Stillborn",
+            notes="Stillborn recorded at litter creation.",
+        )
 
     return created_count
 
@@ -2325,6 +2368,8 @@ def save_new_litter(cleaned_data: dict):
         farrowing_date=cleaned_data["farrowing_date"],
         total_born=cleaned_data["total_born"],
         current_pen_id=cleaned_data["current_pen_id"],
+        born_alive=cleaned_data["born_alive"],
+        stillborn_count=cleaned_data["stillborn_count"],
     )
 
     mating_id = str(cleaned_data.get("mating_id", "")).strip()

@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Local | Next: deploy/browser-check 9.7G wean timing, then 9.7H fast pre-weaning death capture; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H First Correction Local | Next: deploy/browser-check 9.7H Add Litter stillborn correction, then build fast litter-level pre-weaning death capture; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2734,7 +2734,7 @@ Questions to answer during 9.7A:
 - Verification passed: focused litter service tests and full local unittest suite at 332 tests.
 - Live test passed on 2026-06-03 with `LIT-2026-9E4A`: 10 active/on-farm piglets were updated, the dead/off-farm piglet was skipped, 10 Ecomectin rows and 10 Panacur rows were written to `MEDICAL_LOG`, and litter attention moved on to tag-number attention.
 
-9.7G correct newborn/weaning attention timing - Local:
+9.7G correct newborn/weaning attention timing - Deployed And Owner-Verified:
 
 - Problem found during 9.7F live test: newborn health, earmarks, tags, and weaning are not one action. The system should not keep showing a litter as needing tag numbers weeks before the tag/wean action is relevant.
 - Correct process target:
@@ -2763,14 +2763,17 @@ Questions to answer during 9.7A:
   - Dashboard litter attention suppresses early tag-number reminders until the attention window, while still allowing data-quality/reconciliation reasons to show.
   - Real-data check on 2026-06-04 for `LIT-2026-9E4A`: birth date `2026-05-18`, estimated wean date `2026-06-22`, attention start `2026-06-19`, days until wean `18`, and dashboard attention returned clean.
   - Verification passed: `node --check static/js/litterDetail.js`, focused litter/dashboard/frontend tests, route smoke for `/litter/LIT-2026-9E4A`, and full local unittest suite at 336 tests.
+  - Owner deployed and confirmed the feature is working on 2026-06-04.
 
-9.7H fast pre-weaning piglet death capture - Planned after 9.7G:
+9.7H fast pre-weaning piglet death capture - In Progress:
 
 - Problem found during mating-to-litter live use: adding a litter with `total born = 9`, `born alive = 7`, and `stillborn = 2` created too many live piglet rows. Stillborn piglets should be logged as dead/off-farm on date of birth, not require later manual death edits.
 - Required correction for Add Litter:
   - Owner decision 2026-06-03: keep dead pig rows for history.
-  - Stillborn rows must be created as `Died` / `On_Farm = No` with exit/death date equal to birth date and reason `Stillborn`.
+  - Stillborn rows must be created as `Dead` / `On_Farm = No` with exit/death date equal to birth date and reason `Stillborn`.
   - Born-alive rows should remain active/on-farm unless later marked dead or removed.
+  - Local correction is implemented: Add Litter now creates active/on-farm rows from `born_alive`, creates stillborn rows as dead/off-farm history rows, and keeps stillborn/death reasons in lifecycle outcome counts as `dead`.
+  - Verification passed on 2026-06-04: focused litter service tests and full local unittest suite at 337 tests.
 - Required litter detail action:
   - Add a fast `Mark Piglets Dead` action on `/litter/<litter_id>` for pre-weaning cases.
   - Before sex/tag data exists, allow count + date + reason and select from active untagged/unsexed piglets.
