@@ -7,6 +7,25 @@ function getPigIdFromMovementHistoryUrl() {
   return decodeURIComponent(parts[parts.length - 2] || "");
 }
 
+function pigProfileHref(pigId) {
+  return `/pig/${encodeURIComponent(pigId)}`;
+}
+
+function withPigReturnContext(path, pigId) {
+  const params = new URLSearchParams({
+    return_to: pigProfileHref(pigId),
+    return_label: "Back to Pig Profile",
+  });
+  return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+
+function updatePigProfileBackLink(elementId, pigId) {
+  const link = document.getElementById(elementId);
+  if (!link) return;
+  link.href = pigProfileHref(pigId);
+  link.textContent = "← Back to Pig Profile";
+}
+
 function showMovementHistoryMessage(message, type = "error") {
   movementHistoryMessageBox.classList.remove("hidden", "message-success", "message-error");
   movementHistoryMessageBox.classList.add(type === "success" ? "message-success" : "message-error");
@@ -68,8 +87,9 @@ async function loadMovementHistory() {
     return;
   }
 
-  document.getElementById("movement_history_profile_button").href = `/pig/${encodeURIComponent(pigId)}`;
-  document.getElementById("movement_history_record_button").href = `/pig/${encodeURIComponent(pigId)}/movement`;
+  updatePigProfileBackLink("movement_history_back_link", pigId);
+  document.getElementById("movement_history_profile_button").href = pigProfileHref(pigId);
+  document.getElementById("movement_history_record_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pigId)}/movement`, pigId);
 
   try {
     const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/movements`);

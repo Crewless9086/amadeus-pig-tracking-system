@@ -10,6 +10,17 @@ function getPigIdFromFamilyTreeUrl() {
   return decodeURIComponent(parts[parts.length - 2] || "");
 }
 
+function pigProfileHref(pigId) {
+  return `/pig/${encodeURIComponent(pigId)}`;
+}
+
+function updatePigProfileBackLink(elementId, pigId) {
+  const link = document.getElementById(elementId);
+  if (!link) return;
+  link.href = pigProfileHref(pigId);
+  link.textContent = "← Back to Pig Profile";
+}
+
 function showFamilyTreeMessage(message, type = "error") {
   familyTreeMessage.classList.remove("hidden", "message-success", "message-error");
   familyTreeMessage.classList.add(type === "success" ? "message-success" : "message-error");
@@ -97,7 +108,8 @@ async function loadFamilyTree() {
     return;
   }
 
-  document.getElementById("family_tree_profile_button").href = `/pig/${encodeURIComponent(pigId)}`;
+  updatePigProfileBackLink("family_tree_back_link", pigId);
+  document.getElementById("family_tree_profile_button").href = pigProfileHref(pigId);
 
   try {
     const response = await fetch(`/api/pig-weights/pig/${encodeURIComponent(pigId)}/family-tree`);

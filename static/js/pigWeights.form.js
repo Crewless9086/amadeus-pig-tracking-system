@@ -17,6 +17,7 @@ const form = document.getElementById("pig-weight-form");
 const submitButtons = Array.from(document.querySelectorAll(".submit-button"));
 const messageBox = document.getElementById("message_box");
 const weightsReferenceBody = document.getElementById("weights_reference_body");
+const weightFormBackLink = document.getElementById("weight_form_back_link");
 
 let selectedPigLatest = null;
 let allPigs = [];
@@ -25,6 +26,24 @@ let allPens = [];
 function getPreselectedPigId() {
   const params = new URLSearchParams(window.location.search);
   return params.get("pig_id") || "";
+}
+
+function safeInternalReturnPath(value) {
+  const path = String(value || "").trim();
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return "";
+  }
+  return path;
+}
+
+function updateBackLinkFromQuery() {
+  if (!weightFormBackLink) return;
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = safeInternalReturnPath(params.get("return_to"));
+  const returnLabel = String(params.get("return_label") || "").trim();
+  if (!returnTo) return;
+  weightFormBackLink.href = returnTo;
+  weightFormBackLink.textContent = `← ${returnLabel || "Back"}`;
 }
 
 function setTodayDate() {
@@ -496,6 +515,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 setTodayDate();
+updateBackLinkFromQuery();
 
 (async function initPage() {
   await loadPens();

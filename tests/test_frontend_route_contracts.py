@@ -12,6 +12,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="litter_attention_panel"', template)
         self.assertIn("litter-detail-shell", template)
         self.assertIn("litter-detail-page", template)
+        self.assertIn('href="/" class="secondary-link">&larr; Back to Dashboard</a>', template)
         self.assertIn("litter-workspace", template)
         self.assertIn("litter-summary-grid", template)
         self.assertIn("litter-side-column", template)
@@ -110,11 +111,46 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('method: "POST"', js)
         self.assertIn("safeInternalReturnPath", js)
         self.assertIn("updateBackLink", js)
+        self.assertIn("withPigReturnContext", js)
+        self.assertIn("return_label: \"Back to Pig Profile\"", js)
         self.assertIn('params.get("return_to")', js)
         self.assertIn("pig.status === \"Active\" && pig.on_farm === \"Yes\"", js)
         self.assertIn("renderLifecycleHistory", js)
         self.assertIn("pig.lifecycle", js)
         self.assertIn("window.confirm", js)
+
+    def test_pig_child_pages_return_to_pig_profile(self):
+        template_expectations = {
+            "templates/pig-weight-history.html": 'id="history_back_link"',
+            "templates/pig-treatment.html": 'id="treatment_back_link"',
+            "templates/pig-treatment-history.html": 'id="treatment_history_back_link"',
+            "templates/pig-movement.html": 'id="movement_back_link"',
+            "templates/pig-movement-history.html": 'id="movement_history_back_link"',
+            "templates/family-tree.html": 'id="family_tree_back_link"',
+            "templates/pig-weights.html": 'id="weight_form_back_link"',
+        }
+        for path, expected in template_expectations.items():
+            with self.subTest(path=path):
+                self.assertIn(expected, Path(path).read_text(encoding="utf-8"))
+
+        for path in [
+            "static/js/pigWeightHistory.js",
+            "static/js/pigTreatment.form.js",
+            "static/js/pigTreatmentHistory.js",
+            "static/js/pigMovement.form.js",
+            "static/js/pigMovementHistory.js",
+            "static/js/familyTree.js",
+        ]:
+            js = Path(path).read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertIn("pigProfileHref", js)
+                self.assertIn("updatePigProfileBackLink", js)
+                self.assertIn("Back to Pig Profile", js)
+
+        weight_js = Path("static/js/pigWeights.form.js").read_text(encoding="utf-8")
+        self.assertIn("weightFormBackLink", weight_js)
+        self.assertIn("safeInternalReturnPath", weight_js)
+        self.assertIn("updateBackLinkFromQuery", weight_js)
 
     def test_breeding_analytics_page_is_read_only_kpi_overview(self):
         template = Path("templates/breeding-analytics.html").read_text(encoding="utf-8")

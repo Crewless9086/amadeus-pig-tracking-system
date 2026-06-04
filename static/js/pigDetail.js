@@ -62,6 +62,14 @@ function updateBackLink() {
   pigDetailBackLink.textContent = `← ${returnLabel || "Back"}`;
 }
 
+function withPigReturnContext(path, pigId) {
+  const params = new URLSearchParams({
+    return_to: `/pig/${pigId}`,
+    return_label: "Back to Pig Profile",
+  });
+  return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+
 function setLifecycleSubmitting(isSubmitting) {
   if (!lifecycleSubmitButton) return;
   lifecycleSubmitButton.disabled = isSubmitting;
@@ -113,13 +121,13 @@ async function loadPigDetail() {
 
     document.getElementById("pig_detail_title").textContent = pig.tag_number || pig.pig_id;
     document.getElementById("pig_detail_subtitle").textContent = `Pig Profile • ${pig.pig_id}`;
-    document.getElementById("record_weight_button").href = `/pig-weights?pig_id=${encodeURIComponent(pig.pig_id)}`;
-    document.getElementById("view_weight_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/weights`;
-    document.getElementById("record_treatment_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/treatment`;
-    document.getElementById("view_treatment_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/treatments`;
-    document.getElementById("record_movement_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/movement`;
-    document.getElementById("view_movement_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/movements`;
-    document.getElementById("view_family_tree_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/family-tree`;
+    document.getElementById("record_weight_button").href = withPigReturnContext(`/pig-weights?pig_id=${encodeURIComponent(pig.pig_id)}`, pig.pig_id);
+    document.getElementById("view_weight_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/weights`, pig.pig_id);
+    document.getElementById("record_treatment_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/treatment`, pig.pig_id);
+    document.getElementById("view_treatment_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/treatments`, pig.pig_id);
+    document.getElementById("record_movement_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/movement`, pig.pig_id);
+    document.getElementById("view_movement_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/movements`, pig.pig_id);
+    document.getElementById("view_family_tree_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/family-tree`, pig.pig_id);
 
     setText("detail_tag_number", pig.tag_number);
     setText("detail_pig_id", pig.pig_id);

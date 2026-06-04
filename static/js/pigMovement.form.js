@@ -21,6 +21,25 @@ function getPigIdFromMovementUrl() {
   return decodeURIComponent(parts[parts.length - 2] || "");
 }
 
+function pigProfileHref(pigId) {
+  return `/pig/${encodeURIComponent(pigId)}`;
+}
+
+function withPigReturnContext(path, pigId) {
+  const params = new URLSearchParams({
+    return_to: pigProfileHref(pigId),
+    return_label: "Back to Pig Profile",
+  });
+  return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+
+function updatePigProfileBackLink(elementId, pigId) {
+  const link = document.getElementById(elementId);
+  if (!link) return;
+  link.href = pigProfileHref(pigId);
+  link.textContent = "← Back to Pig Profile";
+}
+
 function setTodayDate() {
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -69,8 +88,9 @@ async function loadMovementPig() {
     fromPenIdInput.value = currentPenIdValue;
     currentPenDisplay.textContent = currentPenIdValue || "No current pen";
 
-    document.getElementById("movement_profile_button").href = `/pig/${encodeURIComponent(pig.pig_id)}`;
-    document.getElementById("movement_history_button").href = `/pig/${encodeURIComponent(pig.pig_id)}/movements`;
+    updatePigProfileBackLink("movement_back_link", pig.pig_id);
+    document.getElementById("movement_profile_button").href = pigProfileHref(pig.pig_id);
+    document.getElementById("movement_history_button").href = withPigReturnContext(`/pig/${encodeURIComponent(pig.pig_id)}/movements`, pig.pig_id);
   } catch (error) {
     console.error("loadMovementPig error:", error);
     showMovementMessage("Something went wrong while loading pig detail.", "error");
