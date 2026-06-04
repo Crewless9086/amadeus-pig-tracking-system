@@ -34,8 +34,16 @@ LIFECYCLE_REMOVAL_REASONS = {
     "Died after birth": "Dead",
     "Crushed by sow": "Dead",
     "Weak piglet": "Dead",
+    "Unknown": "Dead",
     "Removed": "Removed",
     "Other": "Removed",
+}
+LITTER_PIGLET_DEATH_REASONS = {
+    "Stillborn",
+    "Died after birth",
+    "Crushed by sow",
+    "Weak piglet",
+    "Unknown",
 }
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
 DEFAULT_LITTER_WEAN_AGE_DAYS = 35
@@ -128,7 +136,7 @@ def _lifecycle_outcome_for_exit(row):
     status = to_clean_string(row.get("Status", "")).lower()
     exit_reason = to_clean_string(row.get("Exit_Reason", "")).lower().replace("-", "_").replace(" ", "_")
 
-    if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet"}:
+    if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
         return "dead"
     if status == "removed" or exit_reason in {"removed", "other"}:
         return "removed"
@@ -833,6 +841,194 @@ def mark_pig_death_or_removal(
             f"Pig {pig_id} would be marked as {new_status}."
             if dry_run
             else f"Pig {pig_id} was marked as {new_status}."
+        ),
+    }, 200
+
+
+def _selected_litter_piglet_death_candidates(active_piglets, count, male_count, female_count, pig_ids):
+    pig_ids = [to_clean_string(pig_id) for pig_id in (pig_ids or []) if to_clean_string(pig_id)]
+    by_id = {
+        to_clean_string(row.get("Pig_ID", "")): row
+        for row in active_piglets
+        if to_clean_string(row.get("Pig_ID", ""))
+    }
+
+    if pig_ids:
+        missing = [pig_id for pig_id in pig_ids if pig_id not in by_id]
+        if missing:
+            return None, [f"Selected piglet(s) are not active/on-farm in this litter: {', '.join(missing)}."]
+        return [by_id[pig_id] for pig_id in pig_ids], []
+
+    male_count = int(male_count or 0)
+    female_count = int(female_count or 0)
+    if male_count or female_count:
+        selected = []
+        for sex, required_count in (("Male", male_count), ("Female", female_count)):
+            if not required_count:
+                continue
+            matches = [
+                row for row in active_piglets
+                if to_clean_string(row.get("Sex", "")) == sex
+            ]
+            if len(matches) < required_count:
+                return None, [f"Only {len(matches)} active {sex.lower()} piglet(s) are available for this litter."]
+            selected.extend(matches[:required_count])
+        return selected, []
+
+    if count is None or int(count or 0) <= 0:
+        return None, ["Enter a piglet count or select specific piglets."]
+
+    tagged = [
+        row for row in active_piglets
+        if to_clean_string(row.get("Tag_Number", ""))
+    ]
+    if tagged:
+        return None, ["Tagged piglets must be selected specifically before recording a death."]
+
+    sexed = [
+        row for row in active_piglets
+        if to_clean_string(row.get("Sex", ""))
+    ]
+    if sexed:
+        return None, ["This litter has sexed piglets. Enter male/female counts or select specific piglets."]
+
+    if len(active_piglets) < count:
+        return None, [f"Only {len(active_piglets)} active untagged piglet(s) are available for this litter."]
+
+    return active_piglets[:count], []
+
+
+def mark_litter_piglets_dead(
+    litter_id: str,
+    event_date_value,
+    reason: str,
+    count=None,
+    male_count=None,
+    female_count=None,
+    pig_ids=None,
+    changed_by: str = "web_app",
+    notes: str = "",
+    dry_run: bool = True,
+):
+    litter_id = to_clean_string(litter_id)
+    event_date = parse_sheet_date(event_date_value)
+    reason = to_clean_string(reason)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    notes = to_clean_string(notes)
+    dry_run = dry_run is True
+
+    errors = []
+    if not litter_id:
+        errors.append("Litter ID is required.")
+    if not event_date:
+        errors.append("A valid event date is required.")
+    if reason not in LITTER_PIGLET_DEATH_REASONS:
+        errors.append("Reason must be Stillborn, Died after birth, Crushed by sow, Weak piglet, or Unknown.")
+
+    count_value = to_float(count)
+    male_count_value = to_float(male_count)
+    female_count_value = to_float(female_count)
+    if count not in (None, "") and (count_value is None or count_value <= 0):
+        errors.append("Count must be a positive number.")
+    if male_count not in (None, "") and (male_count_value is None or male_count_value < 0):
+        errors.append("Male count cannot be negative.")
+    if female_count not in (None, "") and (female_count_value is None or female_count_value < 0):
+        errors.append("Female count cannot be negative.")
+    if errors:
+        return {"success": False, "errors": errors}, 400
+
+    count_int = int(count_value) if count_value is not None else None
+    male_count_int = int(male_count_value) if male_count_value is not None else 0
+    female_count_int = int(female_count_value) if female_count_value is not None else 0
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_rows = get_all_records(pig_master_sheet)
+    active_piglets = [
+        row for row in pig_rows
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id
+        and to_clean_string(row.get(columns["status"], "")) == "Active"
+        and to_clean_string(row.get(columns["on_farm"], "")) == "Yes"
+    ]
+    active_piglets.sort(key=lambda row: (
+        to_clean_string(row.get("Tag_Number", "")),
+        to_clean_string(row.get(columns["pig_id"], "")),
+    ))
+
+    if not active_piglets:
+        return {
+            "success": False,
+            "errors": ["No active on-farm piglets were found for this litter."],
+            "litter_id": litter_id,
+        }, 409
+
+    selected, selection_errors = _selected_litter_piglet_death_candidates(
+        active_piglets,
+        count_int,
+        male_count_int,
+        female_count_int,
+        pig_ids,
+    )
+    if selection_errors:
+        return {
+            "success": False,
+            "errors": selection_errors,
+            "litter_id": litter_id,
+            "active_piglet_count": len(active_piglets),
+        }, 409
+
+    event_date_sheet = format_date_for_sheet(event_date)
+    today = format_date_for_sheet(datetime.now().date())
+    pig_updates = {}
+    selected_piglets = []
+    for row in selected:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        updated_notes = _append_lifecycle_note(
+            row.get("General_Notes", ""),
+            event_date,
+            reason,
+            changed_by,
+            notes,
+        )
+        pig_updates[pig_id] = {
+            "Status": "Dead",
+            "On_Farm": "No",
+            "Exit_Date": event_date_sheet,
+            "Exit_Reason": reason,
+            "General_Notes": updated_notes,
+            "Updated_At": today,
+        }
+        selected_piglets.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get("Tag_Number", "")),
+            "sex": to_clean_string(row.get("Sex", "")),
+        })
+
+    rows_updated = 0
+    if not dry_run:
+        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+
+    return {
+        "success": True,
+        "action": "mark_litter_piglets_dead",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "event_date": event_date.isoformat(),
+        "reason": reason,
+        "piglet_count": len(selected_piglets),
+        "selected_piglets": selected_piglets,
+        "pig_ids": [piglet["pig_id"] for piglet in selected_piglets],
+        "rows_updated": rows_updated,
+        "planned_updates": pig_updates,
+        "changed_by": changed_by,
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+        },
+        "message": (
+            f"Litter {litter_id} piglet death action previewed for {len(selected_piglets)} piglet(s)."
+            if dry_run
+            else f"Litter {litter_id} piglet death action saved for {len(selected_piglets)} piglet(s)."
         ),
     }, 200
 

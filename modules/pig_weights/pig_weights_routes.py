@@ -11,6 +11,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_litter_profile,
     mark_litter_profile_weaned,
     record_litter_profile_newborn_health,
+    mark_litter_profile_piglets_dead,
     mark_pig_lifecycle_death,
     list_products,
     list_pens,
@@ -152,6 +153,13 @@ def mark_litter_weaned_route(litter_id):
 def litter_newborn_health_route(litter_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_litter_profile_newborn_health(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/piglet-deaths", methods=["POST"])
+def litter_piglet_deaths_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = mark_litter_profile_piglets_dead(litter_id, payload)
     return jsonify(result), status_code
 
 

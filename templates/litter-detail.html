@@ -192,11 +192,59 @@
               </div>
             </form>
           </section>
+
+          <section id="litter_piglet_death_panel" class="litter-side-panel hidden">
+            <div class="section-subtitle">Piglet Death Capture</div>
+            <p class="form-helper">Use this for pre-weaning deaths before tag numbers are assigned.</p>
+            <form id="piglet_death_form" class="attention-action-form">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="piglet_death_date">Event Date</label>
+                  <input type="date" id="piglet_death_date" required />
+                </div>
+                <div class="form-field">
+                  <label for="piglet_death_reason">Reason</label>
+                  <select id="piglet_death_reason" required>
+                    <option value="Died after birth">Died after birth</option>
+                    <option value="Stillborn">Stillborn</option>
+                    <option value="Crushed by sow">Crushed by sow</option>
+                    <option value="Weak piglet">Weak piglet</option>
+                    <option value="Unknown">Unknown</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label for="piglet_death_count">Count</label>
+                  <input type="number" id="piglet_death_count" min="1" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="piglet_death_male_count">Male Count</label>
+                  <input type="number" id="piglet_death_male_count" min="0" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="piglet_death_female_count">Female Count</label>
+                  <input type="number" id="piglet_death_female_count" min="0" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="piglet_death_recorded_by">Recorded By</label>
+                  <input type="text" id="piglet_death_recorded_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="piglet_death_notes">Notes</label>
+                  <textarea id="piglet_death_notes" rows="3"></textarea>
+                </div>
+              </div>
+              <div id="piglet_death_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="piglet_death_preview_button" class="button-link button-link-secondary">Preview</button>
+                <button type="submit" id="piglet_death_apply_button" disabled>Save Piglet Deaths</button>
+              </div>
+            </form>
+          </section>
         </aside>
       </div>
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260604-wean-timing"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260604-piglet-deaths"></script>
 </body>
 </html>

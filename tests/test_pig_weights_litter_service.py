@@ -215,6 +215,128 @@ class LitterAttentionActionTests(unittest.TestCase):
         get_values.assert_not_called()
         update_pigs.assert_not_called()
 
+    def test_mark_litter_piglets_dead_dry_run_auto_selects_untagged_unsexed_piglets(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Tag_Number": "",
+                "Sex": "",
+                "General_Notes": "",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Tag_Number": "",
+                "Sex": "",
+                "General_Notes": "",
+            },
+            {
+                "Pig_ID": "PIG-3",
+                "Litter_ID": "LIT-1",
+                "Status": "Dead",
+                "On_Farm": "No",
+                "Tag_Number": "",
+                "Sex": "",
+            },
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+            result, status_code = pig_weights_service.mark_litter_piglets_dead(
+                litter_id="LIT-1",
+                event_date_value="2026-06-02",
+                reason="Died after birth",
+                count=1,
+                changed_by="Tester",
+                notes="Found during morning check.",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["piglet_count"], 1)
+        self.assertEqual(result["pig_ids"], ["PIG-1"])
+        updates = result["planned_updates"]["PIG-1"]
+        self.assertEqual(updates["Status"], "Dead")
+        self.assertEqual(updates["On_Farm"], "No")
+        self.assertEqual(updates["Exit_Date"], "02 Jun 2026")
+        self.assertEqual(updates["Exit_Reason"], "Died after birth")
+        self.assertIn("Found during morning check.", updates["General_Notes"])
+        update_pigs.assert_not_called()
+
+    def test_mark_litter_piglets_dead_applies_sex_counts(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-M1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Tag_Number": "",
+                "Sex": "Male",
+            },
+            {
+                "Pig_ID": "PIG-F1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Tag_Number": "",
+                "Sex": "Female",
+            },
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id", return_value=2) as update_pigs:
+            result, status_code = pig_weights_service.mark_litter_piglets_dead(
+                litter_id="LIT-1",
+                event_date_value="2026-06-02",
+                reason="Crushed by sow",
+                male_count=1,
+                female_count=1,
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["rows_updated"], 2)
+        update_map = update_pigs.call_args.args[1]
+        self.assertEqual(set(update_map.keys()), {"PIG-M1", "PIG-F1"})
+        self.assertEqual(update_map["PIG-M1"]["Exit_Reason"], "Crushed by sow")
+        self.assertEqual(update_map["PIG-F1"]["Status"], "Dead")
+
+    def test_mark_litter_piglets_dead_requires_specific_selection_for_tagged_piglets(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Tag_Number": "001",
+                "Sex": "Male",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+            result, status_code = pig_weights_service.mark_litter_piglets_dead(
+                litter_id="LIT-1",
+                event_date_value="2026-06-02",
+                reason="Unknown",
+                count=1,
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("Tagged piglets", result["errors"][0])
+        update_pigs.assert_not_called()
+
 
 class PigLifecycleOutcomeTests(unittest.TestCase):
     def test_mark_pig_death_or_removal_updates_active_on_farm_pig(self):

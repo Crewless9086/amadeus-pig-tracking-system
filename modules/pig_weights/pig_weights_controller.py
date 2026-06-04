@@ -10,6 +10,7 @@ from modules.pig_weights.pig_weights_service import (
     get_litter_detail,
     mark_litter_weaned,
     mark_pig_death_or_removal,
+    mark_litter_piglets_dead,
     record_litter_newborn_health,
     get_pig_detail,
     get_products,
@@ -140,6 +141,22 @@ def record_litter_profile_newborn_health(litter_id: str, payload: dict):
         dose=payload.get("dose", None),
         route=payload.get("route", ""),
         batch_lot_number=payload.get("batch_lot_number", ""),
+        notes=payload.get("notes", ""),
+        dry_run=payload.get("dry_run", True) is True,
+    )
+
+
+def mark_litter_profile_piglets_dead(litter_id: str, payload: dict):
+    payload = payload or {}
+    return mark_litter_piglets_dead(
+        litter_id=litter_id,
+        event_date_value=payload.get("event_date", ""),
+        reason=payload.get("reason", ""),
+        count=payload.get("count", None),
+        male_count=payload.get("male_count", None),
+        female_count=payload.get("female_count", None),
+        pig_ids=payload.get("pig_ids", []),
+        changed_by=payload.get("changed_by", "web_app"),
         notes=payload.get("notes", ""),
         dry_run=payload.get("dry_run", True) is True,
     )

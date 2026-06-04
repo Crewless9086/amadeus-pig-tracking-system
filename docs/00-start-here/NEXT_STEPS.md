@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H First Correction Local | Next: deploy/browser-check 9.7H Add Litter stillborn correction, then build fast litter-level pre-weaning death capture; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Local | Next: deploy/browser-check 9.7H stillborn correction and litter detail piglet-death action; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2782,6 +2782,15 @@ Questions to answer during 9.7A:
   - Reason options should include `Stillborn`, `Died after birth`, `Crushed by sow`, `Weak piglet`, and `Unknown`.
   - Update `PIG_MASTER` status/on-farm/exit fields and preserve litter/parent history.
   - Keep this as dry-run-first or preview-before-apply.
+- Local implementation details:
+  - Added `POST /api/pig-weights/litter/<litter_id>/piglet-deaths`.
+  - Added a litter detail side-panel `Piglet Death Capture` form with event date, reason, count, optional male/female counts, recorded-by, notes, preview, and save.
+  - Dry-run preview selects active/on-farm piglets only and shows exactly which rows will be updated.
+  - If no pig IDs are supplied, untagged/unsexed piglets can be selected by count.
+  - If sex exists, the action requires male/female counts.
+  - If tag numbers exist, the backend blocks count-based updates until a future specific-pig selection UI or the individual pig lifecycle form is used.
+  - Apply updates `PIG_MASTER.Status = Dead`, `On_Farm = No`, `Exit_Date`, `Exit_Reason`, `General_Notes`, and `Updated_At`.
+  - Verification passed on 2026-06-04: `node --check static/js/litterDetail.js`, focused litter/frontend tests at 38 tests, local route smoke for the new endpoint, and full local unittest suite at 340 tests.
 
 9.7H2 litter print/capture sheet alignment - Planned after owner sample:
 

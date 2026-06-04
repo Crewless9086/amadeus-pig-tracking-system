@@ -17,7 +17,20 @@ const newbornHealthNotes = document.getElementById("newborn_health_notes");
 const newbornHealthPreview = document.getElementById("newborn_health_preview");
 const newbornHealthPreviewButton = document.getElementById("newborn_health_preview_button");
 const newbornHealthApplyButton = document.getElementById("newborn_health_apply_button");
+const pigletDeathPanel = document.getElementById("litter_piglet_death_panel");
+const pigletDeathForm = document.getElementById("piglet_death_form");
+const pigletDeathDate = document.getElementById("piglet_death_date");
+const pigletDeathReason = document.getElementById("piglet_death_reason");
+const pigletDeathCount = document.getElementById("piglet_death_count");
+const pigletDeathMaleCount = document.getElementById("piglet_death_male_count");
+const pigletDeathFemaleCount = document.getElementById("piglet_death_female_count");
+const pigletDeathRecordedBy = document.getElementById("piglet_death_recorded_by");
+const pigletDeathNotes = document.getElementById("piglet_death_notes");
+const pigletDeathPreview = document.getElementById("piglet_death_preview");
+const pigletDeathPreviewButton = document.getElementById("piglet_death_preview_button");
+const pigletDeathApplyButton = document.getElementById("piglet_death_apply_button");
 let latestNewbornHealthPreview = null;
+let latestPigletDeathPreview = null;
 let productsLoaded = false;
 
 function getLitterIdFromUrl() {
@@ -203,6 +216,142 @@ function setNewbornHealthSubmitting(isSubmitting, mode = "preview") {
   newbornHealthApplyButton.disabled = isSubmitting || !latestNewbornHealthPreview;
   newbornHealthPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
   newbornHealthApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Newborn Health";
+}
+
+function renderPigletDeathPanel(litter) {
+  const hasActivePiglets = Number(litter.active_count || 0) > 0;
+  if (pigletDeathPanel) {
+    pigletDeathPanel.classList.toggle("hidden", !hasActivePiglets);
+  }
+  if (pigletDeathDate && !pigletDeathDate.value) {
+    pigletDeathDate.value = todayIsoDate();
+  }
+}
+
+function pigletDeathPayload(dryRun) {
+  return {
+    event_date: pigletDeathDate.value,
+    reason: pigletDeathReason.value,
+    count: pigletDeathCount.value,
+    male_count: pigletDeathMaleCount.value,
+    female_count: pigletDeathFemaleCount.value,
+    changed_by: pigletDeathRecordedBy.value || "web_app",
+    notes: pigletDeathNotes.value,
+    dry_run: dryRun,
+  };
+}
+
+function renderPigletDeathPreview(preview) {
+  if (!pigletDeathPreview) return;
+  pigletDeathPreview.classList.remove("hidden");
+  const selected = preview.selected_piglets || [];
+  const rows = selected.map((piglet) => `
+    <tr>
+      <td>${escapeHtml(piglet.tag_number || piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.sex || "-")}</td>
+    </tr>
+  `).join("");
+  pigletDeathPreview.innerHTML = `
+    <div class="bulk-review-header">
+      <strong>Preview ready</strong>
+      <span>${preview.piglet_count || 0} piglet${preview.piglet_count === 1 ? "" : "s"} will be marked dead</span>
+    </div>
+    <div class="simple-table-wrap">
+      <table class="simple-table compact-table">
+        <thead>
+          <tr>
+            <th>Piglet</th>
+            <th>Pig ID</th>
+            <th>Sex</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function resetPigletDeathPreview() {
+  latestPigletDeathPreview = null;
+  if (pigletDeathApplyButton) pigletDeathApplyButton.disabled = true;
+  if (pigletDeathPreview) pigletDeathPreview.classList.add("hidden");
+}
+
+function setPigletDeathSubmitting(isSubmitting, mode = "preview") {
+  pigletDeathPreviewButton.disabled = isSubmitting;
+  pigletDeathApplyButton.disabled = isSubmitting || !latestPigletDeathPreview;
+  pigletDeathPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
+  pigletDeathApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Piglet Deaths";
+}
+
+async function previewPigletDeath() {
+  clearLitterMessage();
+  latestPigletDeathPreview = null;
+  pigletDeathApplyButton.disabled = true;
+
+  if (!pigletDeathDate.value) {
+    showLitterMessage("Choose an event date before previewing.", "error");
+    return;
+  }
+  if (!pigletDeathCount.value && !pigletDeathMaleCount.value && !pigletDeathFemaleCount.value) {
+    showLitterMessage("Enter a count, or male/female counts if sex has already been captured.", "error");
+    return;
+  }
+
+  setPigletDeathSubmitting(true, "preview");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/piglet-deaths`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pigletDeathPayload(true)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not preview piglet death action."]).join(" "));
+    }
+    latestPigletDeathPreview = data;
+    renderPigletDeathPreview(data);
+  } catch (error) {
+    showLitterMessage(error.message || "Could not preview piglet death action.", "error");
+  } finally {
+    setPigletDeathSubmitting(false, "preview");
+  }
+}
+
+async function submitPigletDeath(event) {
+  event.preventDefault();
+  clearLitterMessage();
+
+  if (!latestPigletDeathPreview) {
+    showLitterMessage("Preview the piglet death action before saving.", "error");
+    return;
+  }
+  if (!window.confirm("Mark the previewed piglets as dead and off farm?")) {
+    return;
+  }
+
+  setPigletDeathSubmitting(true, "apply");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/piglet-deaths`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(pigletDeathPayload(false)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not save piglet death action."]).join(" "));
+    }
+    resetPigletDeathPreview();
+    showLitterMessage(data.message || "Piglet death action saved.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Could not save piglet death action.", "error");
+  } finally {
+    setPigletDeathSubmitting(false, "apply");
+  }
 }
 
 async function previewNewbornHealth() {
@@ -432,6 +581,7 @@ async function loadLitterDetail(options = {}) {
 
     renderAttention(litter);
     renderLifecycleOutcomes(litter);
+    renderPigletDeathPanel(litter);
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {
@@ -454,6 +604,8 @@ async function loadLitterDetail(options = {}) {
 markWeanedForm.addEventListener("submit", submitMarkWeaned);
 newbornHealthPreviewButton.addEventListener("click", previewNewbornHealth);
 newbornHealthForm.addEventListener("submit", submitNewbornHealth);
+pigletDeathPreviewButton.addEventListener("click", previewPigletDeath);
+pigletDeathForm.addEventListener("submit", submitPigletDeath);
 [
   newbornHealthDate,
   newbornHealthEarmarked,
@@ -463,5 +615,15 @@ newbornHealthForm.addEventListener("submit", submitNewbornHealth);
   newbornHealthNotes,
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetNewbornHealthPreview);
+});
+[
+  pigletDeathDate,
+  pigletDeathReason,
+  pigletDeathCount,
+  pigletDeathMaleCount,
+  pigletDeathFemaleCount,
+  pigletDeathNotes,
+].forEach((element) => {
+  if (element) element.addEventListener("change", resetPigletDeathPreview);
 });
 loadLitterDetail();
