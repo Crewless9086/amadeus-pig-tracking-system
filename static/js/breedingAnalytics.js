@@ -39,6 +39,14 @@ function animalLabel(row) {
   return id && id !== row.tag_number ? `${tag} (${id})` : tag;
 }
 
+function breedingDetailHref(pigId) {
+  const params = new URLSearchParams({
+    return_to: "/breeding-analytics",
+    return_label: "Back to Analytics",
+  });
+  return `/breeding-analytics/${encodeURIComponent(pigId || "")}?${params.toString()}`;
+}
+
 function setMessage(message) {
   messageBox.classList.remove("hidden", "message-success");
   messageBox.classList.add("message-error");
@@ -53,7 +61,7 @@ function renderRows(container, rows, animalType) {
 
   container.innerHTML = rows.map((row) => `
     <tr>
-      <td><a class="detail-link" href="/breeding-analytics/${encodeURIComponent(row.pig_id || "")}">${escapeHtml(animalLabel(row))}</a></td>
+      <td><a class="detail-link" href="${breedingDetailHref(row.pig_id)}">${escapeHtml(animalLabel(row))}</a></td>
       <td>${escapeHtml(row.mating_count ?? 0)}</td>
       <td>${escapeHtml(row.confirmed_pregnant_count ?? 0)}</td>
       <td>${escapeHtml(row.repeat_service_count ?? 0)}</td>

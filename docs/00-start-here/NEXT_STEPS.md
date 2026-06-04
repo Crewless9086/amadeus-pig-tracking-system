@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Deployed/Working + Quick Fix Local | Next: deploy/browser-check litter detail dashboard back-link quick fix; walk through other return-navigation paths; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I First Sweep Deployed/Working; Second Sweep Local | Next: deploy/browser-check sales/breeding return-navigation sweep; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
 | Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
 
@@ -2799,7 +2799,7 @@ Questions to answer during 9.7A:
 - Owner will provide a sample before implementation.
 - Keep wide browser layouts and table format as the default for these operational pages.
 
-9.7I smart return/back navigation - Deployed/Working; quick fix local:
+9.7I smart return/back navigation - First sweep deployed/working; second sweep local:
 
 - Problem found during litter table use: opening a pig from a litter works, but the pig profile only links back to Pig List, not the litter/page the user came from.
 - Preferred direction:
@@ -2808,15 +2808,16 @@ Questions to answer during 9.7A:
   - Keep normal `Back to Pig List` available when the user came from the pig list.
   - Avoid browser-history-only behavior as the only solution, because direct links and refreshed pages should still show sensible actions.
   - Apply the same pattern later to sales, reports, matings, and dashboards where drill-ins are used.
-- Local implementation details:
+- Implementation details:
   - Litter piglet table links now include `return_to=/litter/<litter_id>` and `return_label=Back to Litter`.
   - Pig detail header link now reads safe internal return context and changes the main back action to `Back to Litter` when opened from a litter.
   - Unsafe return paths are ignored so the link cannot become an external redirect.
   - Verification passed on 2026-06-04: `node --check static/js/litterDetail.js`, `node --check static/js/pigDetail.js`, frontend route contract tests, and full local unittest suite at 340 tests.
   - Owner deployed and tested the litter-to-pig `Back to Litter` path; it is working.
-  - Quick fix local: `/litter/<litter_id>` header link now goes back to Dashboard instead of Pig List.
-  - First return-navigation sweep local: pig profile child links now pass `Back to Pig Profile` return context into weight capture, weight history, treatment, treatment history, movement, movement history, and family tree. Those child pages update their header link back to the pig profile when opened in that flow.
-  - Remaining follow-up note: apply the same smart return-context pattern to other drill-in pages after walking through them deliberately, including sales drill-ins, reports, matings, dashboard-origin paths, and list/detail paths that do not start from a pig profile.
+  - Owner confirmed the next deployed slice is working on 2026-06-04: `/litter/<litter_id>` header link goes back to Dashboard by default, and pig profile child links pass `Back to Pig Profile` return context into weight capture, weight history, treatment, treatment history, movement, movement history, and family tree.
+  - Second sweep local and ready for deploy/browser check: sales dashboard rows pass `Back to Sales Dashboard`; slaughter sale ledger rows pass `Back to Slaughter Sales`; sale detail reads safe return context with sensible fallback; breeding analytics drill-ins pass `Back to Analytics`; breeding detail litter links pass `Back to Breeding Detail`; and breeding board pig/litter links pass `Back to Breeding Board`.
+  - Verification passed on 2026-06-04 for the second sweep: `node --check` on all touched JS files, frontend route contract tests, and full local unittest suite at 341 tests.
+  - Remaining follow-up note: after browser acceptance, walk through reports and any remaining dashboard/list/detail paths that do not start from these pages.
 
 ### 9.8 Business Scenario Calculator — Future Planning
 

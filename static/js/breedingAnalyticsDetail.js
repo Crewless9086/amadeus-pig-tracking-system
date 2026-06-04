@@ -8,6 +8,7 @@ const flagsValue = document.getElementById("breeding_detail_flags");
 const qualityList = document.getElementById("breeding_quality_list");
 const matingsBody = document.getElementById("breeding_detail_matings_body");
 const littersBody = document.getElementById("breeding_detail_litters_body");
+const breedingDetailBackLink = document.getElementById("breeding_detail_back_link");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -36,6 +37,32 @@ function formatPercent(value) {
 
 function formatDate(value) {
   return value || "-";
+}
+
+function safeInternalReturnPath(value) {
+  const path = String(value || "").trim();
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return "";
+  }
+  return path;
+}
+
+function updateBackLinkFromQuery() {
+  if (!breedingDetailBackLink) return;
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = safeInternalReturnPath(params.get("return_to"));
+  const returnLabel = String(params.get("return_label") || "").trim();
+  if (!returnTo) return;
+  breedingDetailBackLink.href = returnTo;
+  breedingDetailBackLink.textContent = returnLabel || "Back";
+}
+
+function litterDetailHref(litterId) {
+  const params = new URLSearchParams({
+    return_to: window.location.pathname,
+    return_label: "Back to Breeding Detail",
+  });
+  return `/litter/${encodeURIComponent(litterId)}?${params.toString()}`;
 }
 
 function animalLabel(pigId, tagNumber) {
@@ -79,7 +106,7 @@ function renderMatings(rows) {
 
   matingsBody.innerHTML = rows.map((row) => {
     const litter = row.linked_litter_id
-      ? `<a class="detail-link" href="/litter/${encodeURIComponent(row.linked_litter_id)}">${escapeHtml(row.linked_litter_id)}</a>`
+      ? `<a class="detail-link" href="${litterDetailHref(row.linked_litter_id)}">${escapeHtml(row.linked_litter_id)}</a>`
       : "-";
     return `
       <tr>
@@ -103,7 +130,7 @@ function renderLitters(rows) {
 
   littersBody.innerHTML = rows.map((row) => {
     const litter = row.litter_id
-      ? `<a class="detail-link" href="/litter/${encodeURIComponent(row.litter_id)}">${escapeHtml(row.litter_id)}</a>`
+      ? `<a class="detail-link" href="${litterDetailHref(row.litter_id)}">${escapeHtml(row.litter_id)}</a>`
       : "-";
     return `
       <tr>
@@ -156,4 +183,7 @@ async function loadBreedingAnimalDetail() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", loadBreedingAnimalDetail);
+document.addEventListener("DOMContentLoaded", () => {
+  updateBackLinkFromQuery();
+  loadBreedingAnimalDetail();
+});

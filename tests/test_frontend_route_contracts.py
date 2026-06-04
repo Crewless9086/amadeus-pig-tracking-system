@@ -12,6 +12,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="litter_attention_panel"', template)
         self.assertIn("litter-detail-shell", template)
         self.assertIn("litter-detail-page", template)
+        self.assertIn('id="litter_detail_back_link"', template)
         self.assertIn('href="/" class="secondary-link">&larr; Back to Dashboard</a>', template)
         self.assertIn("litter-workspace", template)
         self.assertIn("litter-summary-grid", template)
@@ -48,6 +49,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("pigProfileHref", js)
         self.assertIn("return_to", js)
         self.assertIn("return_label", js)
+        self.assertIn("updateBackLinkFromQuery", js)
+        self.assertIn("safeInternalReturnPath", js)
+        self.assertIn('params.get("return_to")', js)
         self.assertIn("litter.estimated_wean_date", js)
         self.assertIn("litter.wean_tag_attention_start_date", js)
         self.assertIn("litter-piglet-table", Path("static/css/main.css").read_text(encoding="utf-8"))
@@ -88,6 +92,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('compareByActionDate(a, b, "desc")', js)
         self.assertIn("isEligibleForAddLitter", js)
         self.assertIn('/master/add-litter?mating_id=', js)
+        self.assertIn("withReturnContext", js)
+        self.assertIn('"Back to Breeding Board"', js)
+        self.assertIn("return_to", js)
 
     def test_add_litter_can_prefill_from_mating_query_param(self):
         js = Path("static/js/addLitter.js").read_text(encoding="utf-8")
@@ -161,7 +168,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Sow Performance", template)
         self.assertIn("Boar Performance", template)
         self.assertIn("/api/pig-weights/breeding-analytics", js)
-        self.assertIn('/breeding-analytics/${encodeURIComponent(row.pig_id || "")}', js)
+        self.assertIn("breedingDetailHref", js)
+        self.assertIn('return_to: "/breeding-analytics"', js)
+        self.assertIn('return_label: "Back to Analytics"', js)
         self.assertNotIn('method: "POST"', js)
         self.assertIn("/breeding-analytics", matings_template)
 
@@ -170,6 +179,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         js = Path("static/js/breedingAnalyticsDetail.js").read_text(encoding="utf-8")
 
         self.assertIn("Breeding Analytics Detail", template)
+        self.assertIn('id="breeding_detail_back_link"', template)
         self.assertIn('id="breeding_quality_list"', template)
         self.assertIn('id="breeding_detail_matings_body"', template)
         self.assertIn('id="breeding_detail_litters_body"', template)
@@ -178,6 +188,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("renderQuality", js)
         self.assertIn("renderMatings", js)
         self.assertIn("renderLitters", js)
+        self.assertIn("updateBackLinkFromQuery", js)
+        self.assertIn("safeInternalReturnPath", js)
+        self.assertIn("litterDetailHref", js)
+        self.assertIn('"Back to Breeding Detail"', js)
         self.assertNotIn('method: "POST"', js)
 
     def test_weight_form_shows_current_pen_helper_without_changing_payload(self):
@@ -326,7 +340,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("table-subtext", js)
         self.assertIn('colspan="6"', js)
         self.assertIn("data-sale-row", js)
-        self.assertIn("/sales/slaughter/${encodeURIComponent(row.dataset.saleRow)}", js)
+        self.assertIn("slaughterSaleDetailHref", js)
+        self.assertIn('return_to: "/sales/slaughter"', js)
+        self.assertIn('return_label: "Back to Slaughter Sales"', js)
         self.assertIn('item.sale_status === "Completed"', js)
         self.assertIn('item.payment_status === "Paid"', js)
         self.assertIn("table-action-button", js)
@@ -352,8 +368,12 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('["Completed", "Cancelled"].includes(saleStatus)', js)
         self.assertIn('paymentStatus === "Paid"', js)
         self.assertIn("window.confirm", js)
-        self.assertIn("window.history.back", js)
+        self.assertIn("updateBackButtonFromQuery", js)
+        self.assertIn("safeInternalReturnPath", js)
+        self.assertIn("saleDetailFallbackPath", js)
+        self.assertIn('params.get("return_to")', js)
         self.assertIn("/sales/slaughter", js)
+        self.assertIn("/sales-dashboard", js)
         self.assertIn("renderItems", js)
 
     def test_sales_dashboard_is_transaction_overview_with_filters_and_drill_in(self):
@@ -372,7 +392,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("filteredTransactions", js)
         self.assertIn("renderSalesTotals", js)
         self.assertIn("data-sale-row", js)
-        self.assertIn("/sales/transactions/${encodeURIComponent(row.dataset.saleRow)}", js)
+        self.assertIn("saleDetailHref", js)
+        self.assertIn('return_to: "/sales-dashboard"', js)
+        self.assertIn('return_label: "Back to Sales Dashboard"', js)
         self.assertIn("selected_month", js)
         self.assertIn("selected_year", js)
 

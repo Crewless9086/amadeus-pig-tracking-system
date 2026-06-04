@@ -37,6 +37,30 @@ function valueOrDash(value) {
   return text || "-";
 }
 
+function safeInternalReturnPath(value) {
+  const path = String(value || "").trim();
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return "";
+  }
+  return path;
+}
+
+function saleDetailFallbackPath() {
+  if (window.location.pathname.startsWith("/sales/transactions/")) {
+    return "/sales-dashboard";
+  }
+  return "/sales/slaughter";
+}
+
+function updateBackButtonFromQuery() {
+  if (!backButton) return;
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = safeInternalReturnPath(params.get("return_to"));
+  const returnLabel = String(params.get("return_label") || "").trim();
+  backButton.dataset.returnTo = returnTo || saleDetailFallbackPath();
+  backButton.textContent = returnLabel || "Back";
+}
+
 function renderDetailList(element, rows) {
   element.innerHTML = rows.map(([label, value]) => `
     <div>
@@ -171,19 +195,12 @@ async function submitExitConfirmation(event) {
 }
 
 backButton.addEventListener("click", () => {
-  if (document.referrer && document.referrer !== window.location.href) {
-    window.history.back();
-    return;
-  }
-  if (window.location.pathname.startsWith("/sales/transactions/")) {
-    window.location.href = "/sales-dashboard";
-    return;
-  }
-  window.location.href = "/sales/slaughter";
+  window.location.href = safeInternalReturnPath(backButton.dataset.returnTo) || saleDetailFallbackPath();
 });
 
 if (exitConfirmForm) {
   exitConfirmForm.addEventListener("submit", submitExitConfirmation);
 }
 
+updateBackButtonFromQuery();
 loadSaleDetail();

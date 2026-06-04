@@ -373,7 +373,7 @@ function renderMatingCard(record) {
     const sowPen = formatPen(record.sow_current_pen_name, record.sow_current_pen_id);
     const boarPen = formatPen(record.boar_current_pen_name, record.boar_current_pen_id);
     const litterLink = record.linked_litter_id
-        ? `<a class="detail-link" href="/litter/${encodeURIComponent(record.linked_litter_id)}">${escapeHtml(record.linked_litter_id)}</a>`
+        ? `<a class="detail-link" href="${withReturnContext(`/litter/${encodeURIComponent(record.linked_litter_id)}`, "/matings", "Back to Breeding Board")}">${escapeHtml(record.linked_litter_id)}</a>`
         : "-";
 
     const showAssumeButton = isEligibleForAssumePregnant(record);
@@ -796,7 +796,15 @@ function renderPigLink(pigId, tagNumber) {
     if (!pigId) return "";
 
     const label = tagNumber || pigId;
-    return `<a class="detail-link" href="/pig/${encodeURIComponent(pigId)}">${escapeHtml(label)}</a>`;
+    return `<a class="detail-link" href="${withReturnContext(`/pig/${encodeURIComponent(pigId)}`, "/matings", "Back to Breeding Board")}">${escapeHtml(label)}</a>`;
+}
+
+function withReturnContext(path, returnTo, returnLabel) {
+    const params = new URLSearchParams({
+        return_to: returnTo,
+        return_label: returnLabel
+    });
+    return `${path}${path.includes("?") ? "&" : "?"}${params.toString()}`;
 }
 
 function formatPen(penName, penId) {

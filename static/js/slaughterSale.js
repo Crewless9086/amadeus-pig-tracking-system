@@ -298,6 +298,14 @@ function todayIsoDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function slaughterSaleDetailHref(saleId) {
+  const params = new URLSearchParams({
+    return_to: "/sales/slaughter",
+    return_label: "Back to Slaughter Sales",
+  });
+  return `/sales/slaughter/${encodeURIComponent(saleId)}?${params.toString()}`;
+}
+
 async function loadTransactions() {
   try {
     const response = await fetch("/api/sales-transactions?sale_stream=Slaughter&limit=25");
@@ -566,7 +574,7 @@ transactionsBody.addEventListener("click", (event) => {
 
   const row = event.target.closest("[data-sale-row]");
   if (!row) return;
-  window.location.href = `/sales/slaughter/${encodeURIComponent(row.dataset.saleRow)}`;
+  window.location.href = slaughterSaleDetailHref(row.dataset.saleRow);
 });
 
 transactionsBody.addEventListener("keydown", (event) => {
@@ -574,7 +582,7 @@ transactionsBody.addEventListener("keydown", (event) => {
   const row = event.target.closest("[data-sale-row]");
   if (!row) return;
   event.preventDefault();
-  window.location.href = `/sales/slaughter/${encodeURIComponent(row.dataset.saleRow)}`;
+  window.location.href = slaughterSaleDetailHref(row.dataset.saleRow);
 });
 
 pigRowsContainer.addEventListener("change", (event) => {

@@ -1,5 +1,6 @@
 const litterMessage = document.getElementById("litter_message");
 const litterPigletsList = document.getElementById("litter_piglets_list");
+const litterDetailBackLink = document.getElementById("litter_detail_back_link");
 const attentionPanel = document.getElementById("litter_attention_panel");
 const attentionTitle = document.getElementById("litter_attention_title");
 const attentionText = document.getElementById("litter_attention_text");
@@ -40,6 +41,24 @@ function getLitterIdFromUrl() {
 
 function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function safeInternalReturnPath(value) {
+  const path = String(value || "").trim();
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return "";
+  }
+  return path;
+}
+
+function updateBackLinkFromQuery() {
+  if (!litterDetailBackLink) return;
+  const params = new URLSearchParams(window.location.search);
+  const returnTo = safeInternalReturnPath(params.get("return_to"));
+  const returnLabel = String(params.get("return_label") || "").trim();
+  if (!returnTo) return;
+  litterDetailBackLink.href = returnTo;
+  litterDetailBackLink.textContent = `← ${returnLabel || "Back"}`;
 }
 
 function pigProfileHref(pigId, litterId) {
@@ -636,3 +655,4 @@ pigletDeathForm.addEventListener("submit", submitPigletDeath);
   if (element) element.addEventListener("change", resetPigletDeathPreview);
 });
 loadLitterDetail();
+updateBackLinkFromQuery();

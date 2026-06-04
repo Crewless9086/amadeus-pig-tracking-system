@@ -257,9 +257,17 @@ function renderStockAvailability(totals, summary) {
     : '<div class="empty-state"><div>No weight band summary available.</div></div>';
 }
 
+function saleDetailHref(saleId) {
+  const params = new URLSearchParams({
+    return_to: "/sales-dashboard",
+    return_label: "Back to Sales Dashboard",
+  });
+  return `/sales/transactions/${encodeURIComponent(saleId)}?${params.toString()}`;
+}
+
 function openTransactionRow(row) {
   if (!row) return;
-  window.location.href = `/sales/transactions/${encodeURIComponent(row.dataset.saleRow)}`;
+  window.location.href = saleDetailHref(row.dataset.saleRow);
 }
 
 transactionsBody.addEventListener("click", (event) => {
