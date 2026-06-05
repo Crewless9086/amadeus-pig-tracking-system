@@ -24,10 +24,10 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 5: Safe Order Review For Sam | Complete through 5.8.1 one-turn quote delivery; Phase 5.9 cleanup slice 2 live-verified | Continue Phase 5.9 cleanup only if another narrow cleanup slice is chosen deliberately. |
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
-| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local | Next: deploy/browser-check breeding analytics drill-ins before any mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Owner Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I First Sweep Deployed/Working; Second Sweep Local | Next: deploy/browser-check sales/breeding return-navigation sweep; owner live-test `/bulk-weights`; owner browser-accept `/sales-dashboard`. |
+| Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Real Weight Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now | Next: keep live-test-dependent items open, then choose the next practical business-module-aligned slice. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
-| Phase 11: Pork Sales Business Module | Discovery Source Captured | Refine business model doc before implementation planning. |
+| Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
 
 ### Staying on track (Cursor + Claude Code)
 
@@ -1889,7 +1889,7 @@ Recommended direction:
 - Medium-term hardening: route irrigation start/stop through backend-controlled endpoints so the backend owns secrets, zone validation, cooldowns, audit logs, safety locks, and error handling.
 - Do not expand irrigation commands through Oom Sakkie until this hardware-control secret/safety plan is addressed.
 
-## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Slice Local
+## Phase 8: Breeding Board Improvements — 8D Live-Verified; 8E Owner-Verified; 8F Browser-Accepted For Now
 
 ### 8A Optional Pen Movement On Add Mating — Complete
 
@@ -1960,7 +1960,7 @@ Implementation state 2026-06-01:
 - Local verification passed: `node --check static/js/matings.js`, `node --check static/js/addLitter.js`, focused frontend/mating/litter tests, `/matings` and `/master/add-litter?mating_id=...` route smoke, and full local unittest suite at 307 tests.
 - Owner deployed and browser-tested on 2026-06-01. Sorting and the `Add Litter` closed-loop shortcut are working and accepted for now.
 
-### 8F Fertility, Bloodline, And Breeding Suggestions - First Slice Owner-Verified; Drill-In Slice Local
+### 8F Fertility, Bloodline, And Breeding Suggestions - Browser-Accepted For Now
 
 Source note moved from `planning/ToDoList.md`.
 
@@ -2555,7 +2555,7 @@ Follow-up idea:
 - Local verification passed: `node --check static/js/bulkWeights.js`, focused bulk/frontend tests, full local unittest suite at 305 tests, route smoke for `/bulk-weights`, and no-op batch upload guard.
 - Owner deployed the `/bulk-weights` changes on 2026-06-01.
 - 2026-06-01 owner decision: keep 9.6C open while the farm does a live bulk-weight test later today or soon after; close only after owner confirms the flow is correct with real data.
-- Remaining closure step: owner browser-test the local/deployed `/bulk-weights` flow with real weighing data before marking 9.6C deployed/browser-verified.
+- Remaining closure step: owner browser-test the local/deployed `/bulk-weights` flow with real weighing data before marking 9.6C deployed/browser-verified. Owner confirmed on 2026-06-04 that this must wait until real weights are available.
 
 Recommended 9.6 split:
 
@@ -2799,7 +2799,7 @@ Questions to answer during 9.7A:
 - Owner will provide a sample before implementation.
 - Keep wide browser layouts and table format as the default for these operational pages.
 
-9.7I smart return/back navigation - First sweep deployed/working; second sweep local:
+9.7I smart return/back navigation - Deployed/working:
 
 - Problem found during litter table use: opening a pig from a litter works, but the pig profile only links back to Pig List, not the litter/page the user came from.
 - Preferred direction:
@@ -2815,7 +2815,7 @@ Questions to answer during 9.7A:
   - Verification passed on 2026-06-04: `node --check static/js/litterDetail.js`, `node --check static/js/pigDetail.js`, frontend route contract tests, and full local unittest suite at 340 tests.
   - Owner deployed and tested the litter-to-pig `Back to Litter` path; it is working.
   - Owner confirmed the next deployed slice is working on 2026-06-04: `/litter/<litter_id>` header link goes back to Dashboard by default, and pig profile child links pass `Back to Pig Profile` return context into weight capture, weight history, treatment, treatment history, movement, movement history, and family tree.
-  - Second sweep local and ready for deploy/browser check: sales dashboard rows pass `Back to Sales Dashboard`; slaughter sale ledger rows pass `Back to Slaughter Sales`; sale detail reads safe return context with sensible fallback; breeding analytics drill-ins pass `Back to Analytics`; breeding detail litter links pass `Back to Breeding Detail`; and breeding board pig/litter links pass `Back to Breeding Board`.
+  - Second sweep deployed and owner browser-checked as working on 2026-06-04: sales dashboard rows pass `Back to Sales Dashboard`; slaughter sale ledger rows pass `Back to Slaughter Sales`; sale detail reads safe return context with sensible fallback; breeding analytics drill-ins pass `Back to Analytics`; breeding detail litter links pass `Back to Breeding Detail`; and breeding board pig/litter links pass `Back to Breeding Board`.
   - Verification passed on 2026-06-04 for the second sweep: `node --check` on all touched JS files, frontend route contract tests, and full local unittest suite at 341 tests.
   - Remaining follow-up note: after browser acceptance, walk through reports and any remaining dashboard/list/detail paths that do not start from these pages.
 
@@ -4095,6 +4095,7 @@ Goal: incorporate the new Amadeus Farm pork sales model without breaking the cur
 Source document:
 
 - `docs/08-business-modules/PORK_SALES_MODEL.md`
+- `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`
 
 Current decision:
 
@@ -4121,9 +4122,87 @@ Planning rule:
 
 Immediate next action:
 
-- Keep refining `docs/08-business-modules/PORK_SALES_MODEL.md`.
-- When ready, ask for a dedicated planning pass to split the module into safe implementation phases.
+- Start Phase 11A with a practical integration/readiness map before building new meat-sales workflow screens.
+- Keep refining `docs/08-business-modules/PORK_SALES_MODEL.md` as the owner source, but use Phase 11A to translate it into safe implementation slices.
 - This is cross-cutting enough that a Claude Code review should be used before implementation starts.
+
+### 11A Pork Business Integration Readiness Map - Local Ready
+
+Purpose:
+
+- Make the pork business module useful without creating disconnected screens.
+- Show how current farm data should flow from litter/weaning to pig growth, purpose/allocation, sale/slaughter/meat stream, revenue, and reporting.
+- Keep this read-only/planning-first until the ownership of each action and data source is clear.
+
+Recommended first output:
+
+- Implementation bridge document:
+  - Created `docs/08-business-modules/PORK_BUSINESS_INTEGRATION_READINESS_MAP.md` as the Phase 11A source.
+  - Defines the current sources, allocation/readiness buckets, first read-only route/API, backend-owned future actions, open thresholds, and non-goals.
+
+- A simple implementation bridge that defines:
+  - current sources already working: `PIG_MASTER`, `LITTERS`, `WEIGHT_LOG`, `MATING_LOG`, Supabase `sales_transactions`, Supabase `sales_transaction_items`, and current order tables.
+  - business decisions needed before writes: when a pig becomes livestock-sale candidate, slaughter candidate, meat candidate, retained breeding candidate, or not for sale.
+  - the first useful read-only screen/API: a “Pig Allocation Readiness” view using existing pig status, purpose, age/stage, latest weight, pen, litter/parent, and sale/slaughter state.
+  - data gaps that must wait for real use: bulk weights, actual carcass weights, butchery/packaging costs, customer meat-order deposits, and cold-chain/delivery rules.
+  - which actions must remain backend-owned: mark weaned, classify purpose/allocation, confirm slaughter exit, create meat order/deposit, assign pig to meat order, record processing yield, complete delivery/payment.
+
+Practical build direction after 11A:
+
+- Build read-only readiness/reporting first.
+- Add write actions only when the farm process is clear and the user can test them in real scenarios.
+- Do not start with a complex calculator or full meat order form; those should use the readiness map and real farm data as inputs.
+
+Next build candidate:
+
+- `GET /api/pig-weights/pig-allocation-readiness`
+- `/pig-allocation`
+- Read-only, full-width table with filters and explainable readiness buckets.
+
+Local implementation state 2026-06-04:
+
+- Added `GET /api/pig-weights/pig-allocation-readiness`.
+- Added `/pig-allocation` as a read-only, full-width planning table.
+- Added dashboard shortcut `Pig Allocation`.
+- First conservative readiness buckets are `Needs Data`, `Growing`, `Livestock Candidate`, `Slaughter Candidate`, `Meat Candidate`, `Retain / Breeding Candidate`, `Allocated`, and `Exited`.
+- The API returns explicit `writes_to_sheets = false` and `writes_to_supabase = false`.
+- No purpose/status/allocation writes were added.
+- Local verification passed: `node --check static/js/pigAllocation.js`, Python compile check for touched backend files, focused allocation service test, frontend route contract tests, full local unittest suite at 343 tests, and local route smoke for `/pig-allocation` plus `/api/pig-weights/pig-allocation-readiness`.
+
+Owner model clarification 2026-06-04:
+
+- The allocation model must be growth- and quality-based, not a hard static weight split.
+- Purpose should be suggested after weaning from wean weight, average daily gain, and litter/parent quality.
+- Fast growers from good litters should first be reviewed as breeding candidates, then meat candidates if not retained.
+- Current grow-out pigs mainly go to slaughter/abattoir until the meat business is active; livestock sale is the fallback for slow growers/underperformers to reduce feed cost.
+- Meat candidates should be young and within the configured meat weight window; if not pre-sold before exceeding the window, they should fall back to slaughter/abattoir.
+- Unknown purpose should stay as a classification/data issue and should not silently become a candidate bucket.
+- Next practical code slice should add growth context and litter-quality context to `/pig-allocation` before adding settings pages, write actions, or meat-order forms.
+
+Local refinement state 2026-06-04:
+
+- Added `Needs Classification` as a separate bucket for pigs that have identity/weight data but still have unknown purpose.
+- Added read-only growth context to the API/page: wean date, wean weight, days since wean, latest weight, days since latest weight, average daily gain, and growth class.
+- Added read-only litter quality context to the API/page: born alive, weaned count, survival rate, sow/boar IDs/tags, litter quality, and reason.
+- Fast growers from good litters are now flagged as `Retain / Breeding Candidate` for review before meat/slaughter allocation.
+- Slow growers are flagged toward `Livestock Candidate` before static weight rules.
+- Still no writes, no settings page, and no automatic purpose changes.
+- Verification passed: `node --check static/js/pigAllocation.js`, Python compile check for allocation service, focused allocation/frontend tests at 24 tests, full local unittest suite at 344 tests, and route/API smoke confirmed the new fields are present.
+
+Growth band refinement 2026-06-05:
+
+- Growth class should be clearer than only slow/normal/fast.
+- Use lifetime average daily gain as the main growth signal where possible: latest weight divided by age/days on farm.
+- Keep post-wean ADG visible as secondary context.
+- First bands are `Extremely Slow` under `0.100 kg/day`, `Slow` under `0.200`, `Below Target` under `0.300`, `Steady` under `0.400`, `Good` under `0.500`, and `Exceptional` at/above `0.500`.
+- UI should display both the class and the actual kg/day value so owner can tune the model from real use.
+
+Readiness timing refinement 2026-06-05:
+
+- Add read-only estimated meat and abattoir ready dates from lifetime ADG.
+- Meat readiness uses the configured meat minimum weight.
+- Abattoir readiness uses the configured abattoir/slaughter minimum weight.
+- First abattoir range adjusted to `80-95 kg` to match the current fallback outlet rather than overlapping the meat window.
 
 ## Current Choice Point
 

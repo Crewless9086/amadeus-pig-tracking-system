@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta
 
 from services.google_sheets_service import (
@@ -48,6 +49,28 @@ LITTER_PIGLET_DEATH_REASONS = {
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
 DEFAULT_LITTER_WEAN_AGE_DAYS = 35
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
+LIVE_SALE_TARGET_KG = 60
+MEAT_TARGET_MIN_KG = 55
+MEAT_TARGET_MAX_KG = 70
+SLAUGHTER_TARGET_MIN_KG = 80
+SLAUGHTER_TARGET_MAX_KG = 95
+ALLOCATION_BUCKET_ORDER = {
+    "Needs Data": 0,
+    "Needs Classification": 1,
+    "Growing": 2,
+    "Livestock Candidate": 3,
+    "Slaughter Candidate": 4,
+    "Meat Candidate": 5,
+    "Retain / Breeding Candidate": 6,
+    "Allocated": 7,
+    "Exited": 8,
+}
+EXCEPTIONAL_GROWER_ADG_KG_DAY = 0.50
+GOOD_GROWER_ADG_KG_DAY = 0.40
+STEADY_GROWER_ADG_KG_DAY = 0.30
+SLOW_GROWER_ADG_KG_DAY = 0.20
+EXTREMELY_SLOW_GROWER_ADG_KG_DAY = 0.10
+GOOD_LITTER_SURVIVAL_RATE = 0.80
 
 
 def _build_pig_lookup(rows, columns):
@@ -1436,6 +1459,422 @@ def get_sales_availability():
         })
 
     return sales_rows
+
+
+def _latest_weights_by_pig(weight_rows, columns):
+    latest = {}
+    for row in weight_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        weight_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+        weight_kg = to_float(row.get(columns["weight_kg"], ""))
+
+        if not pig_id or not weight_date or weight_kg is None:
+            continue
+
+        current = latest.get(pig_id)
+        if not current or weight_date > current["weight_date"]:
+            latest[pig_id] = {
+                "weight_date": weight_date,
+                "weight_kg": weight_kg,
+                "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+            }
+
+    return latest
+
+
+def _sales_availability_by_pig(rows, columns):
+    lookup = {}
+    for row in rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+        lookup[pig_id] = {
+            "available_for_sale": to_clean_string(row.get(columns["available_for_sale"], "")),
+            "reserved_status": to_clean_string(row.get(columns["reserved_status"], "")),
+            "reserved_for_order_id": to_clean_string(row.get(columns["reserved_for_order_id"], "")),
+            "sale_category": to_clean_string(row.get(columns["sale_category"], "")),
+            "suggested_price_category": to_clean_string(row.get(columns["suggested_price_category"], "")),
+            "sales_notes": to_clean_string(row.get(columns["sales_notes"], "")),
+        }
+    return lookup
+
+
+def _pig_sort_key(value):
+    raw = to_clean_string(value)
+    if raw.isdigit():
+        return (0, int(raw))
+    return (1, raw)
+
+
+def _litter_overview_by_id(rows):
+    lookup = {}
+    for row in rows:
+        litter_id = to_clean_string(row.get("Litter_ID", ""))
+        if litter_id:
+            lookup[litter_id] = row
+    return lookup
+
+
+def _litter_quality_summary(litter_row):
+    if not litter_row:
+        return {
+            "litter_quality": "Unknown",
+            "litter_quality_reason": "No litter overview row found.",
+            "litter_survival_rate": None,
+            "born_alive": None,
+            "weaned_count": None,
+            "sow_pig_id": "",
+            "sow_tag_number": "",
+            "boar_pig_id": "",
+            "boar_tag_number": "",
+        }
+
+    born_alive = to_float(litter_row.get("Born_Alive", ""))
+    weaned_count = to_float(litter_row.get("Weaned_Count", ""))
+    survival_rate = None
+    if born_alive and born_alive > 0 and weaned_count is not None:
+        survival_rate = round(weaned_count / born_alive, 3)
+
+    if survival_rate is None:
+        quality = "Unknown"
+        reason = "Missing born-alive or weaned count."
+    elif survival_rate >= GOOD_LITTER_SURVIVAL_RATE:
+        quality = "Good"
+        reason = f"Survival to weaning is {round(survival_rate * 100)}%."
+    else:
+        quality = "Review"
+        reason = f"Survival to weaning is {round(survival_rate * 100)}%, below the first good-litter threshold."
+
+    return {
+        "litter_quality": quality,
+        "litter_quality_reason": reason,
+        "litter_survival_rate": survival_rate,
+        "born_alive": born_alive,
+        "weaned_count": weaned_count,
+        "sow_pig_id": to_clean_string(litter_row.get("Sow_Pig_ID", "")),
+        "sow_tag_number": to_clean_string(litter_row.get("Sow_Tag_Number", "")),
+        "boar_pig_id": to_clean_string(litter_row.get("Boar_Pig_ID", "")),
+        "boar_tag_number": to_clean_string(litter_row.get("Boar_Tag_Number", "")),
+    }
+
+
+def _growth_class_for_adg(average_daily_gain):
+    if average_daily_gain is None:
+        return "Unknown", "Missing enough weight/age history to calculate growth rate."
+    if average_daily_gain < EXTREMELY_SLOW_GROWER_ADG_KG_DAY:
+        return "Extremely Slow", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.100 kg/day."
+    if average_daily_gain < SLOW_GROWER_ADG_KG_DAY:
+        return "Slow", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.200 kg/day."
+    if average_daily_gain < STEADY_GROWER_ADG_KG_DAY:
+        return "Below Target", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.300 kg/day."
+    if average_daily_gain < GOOD_GROWER_ADG_KG_DAY:
+        return "Steady", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.400 kg/day."
+    if average_daily_gain < EXCEPTIONAL_GROWER_ADG_KG_DAY:
+        return "Good", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below the 0.500 kg/day target."
+    return "Exceptional", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, at or above the 0.500 kg/day target."
+
+
+def _estimated_target_date(current_weight_kg, target_weight_kg, daily_gain_kg, basis_date, today):
+    if current_weight_kg is None or daily_gain_kg is None or daily_gain_kg <= 0 or not basis_date:
+        return {
+            "target_weight_kg": target_weight_kg,
+            "estimated_date": "",
+            "days_until": None,
+            "status": "Unknown",
+        }
+
+    if current_weight_kg >= target_weight_kg:
+        return {
+            "target_weight_kg": target_weight_kg,
+            "estimated_date": today.isoformat(),
+            "days_until": 0,
+            "status": "Ready now",
+        }
+
+    days_needed = math.ceil((target_weight_kg - current_weight_kg) / daily_gain_kg)
+    estimated_date = basis_date + timedelta(days=days_needed)
+    return {
+        "target_weight_kg": target_weight_kg,
+        "estimated_date": estimated_date.isoformat(),
+        "days_until": (estimated_date - today).days,
+        "status": "Estimated",
+    }
+
+
+def _readiness_timing(growth, today):
+    latest_weight_kg = growth.get("latest_weight_kg")
+    daily_gain = growth.get("average_daily_gain_kg")
+    latest_weight_date = growth.get("latest_weight_date")
+
+    meat_ready = _estimated_target_date(latest_weight_kg, MEAT_TARGET_MIN_KG, daily_gain, latest_weight_date, today)
+    slaughter_ready = _estimated_target_date(latest_weight_kg, SLAUGHTER_TARGET_MIN_KG, daily_gain, latest_weight_date, today)
+
+    if latest_weight_kg is None:
+        meat_status = "Unknown"
+    elif latest_weight_kg < MEAT_TARGET_MIN_KG:
+        meat_status = "Before meat window"
+    elif latest_weight_kg <= MEAT_TARGET_MAX_KG:
+        meat_status = "In meat window"
+    else:
+        meat_status = "Past meat window"
+
+    if latest_weight_kg is None:
+        slaughter_status = "Unknown"
+    elif latest_weight_kg < SLAUGHTER_TARGET_MIN_KG:
+        slaughter_status = "Before abattoir window"
+    elif latest_weight_kg <= SLAUGHTER_TARGET_MAX_KG:
+        slaughter_status = "In abattoir window"
+    else:
+        slaughter_status = "Past abattoir window"
+
+    return {
+        "meat_window_status": meat_status,
+        "estimated_meat_ready_date": meat_ready["estimated_date"],
+        "days_until_meat_ready": meat_ready["days_until"],
+        "meat_target_min_kg": MEAT_TARGET_MIN_KG,
+        "meat_target_max_kg": MEAT_TARGET_MAX_KG,
+        "abattoir_window_status": slaughter_status,
+        "estimated_abattoir_ready_date": slaughter_ready["estimated_date"],
+        "days_until_abattoir_ready": slaughter_ready["days_until"],
+        "abattoir_target_min_kg": SLAUGHTER_TARGET_MIN_KG,
+        "abattoir_target_max_kg": SLAUGHTER_TARGET_MAX_KG,
+    }
+
+
+def _growth_profile(row, latest_weight, today):
+    latest_weight_date = latest_weight.get("weight_date") or parse_sheet_date(row.get("Last_Weight_Date", ""))
+    latest_weight_kg = latest_weight.get("weight_kg")
+    if latest_weight_kg is None:
+        latest_weight_kg = to_float(row.get("Current_Weight_Kg", ""))
+
+    birth_date = parse_sheet_date(row.get("Date_Of_Birth", ""))
+    age_days = to_float(row.get("Age_Days", ""))
+    if age_days is None and birth_date:
+        age_days = (today - birth_date).days
+    wean_date = parse_sheet_date(row.get("Wean_Date", ""))
+    wean_weight_kg = to_float(row.get("Wean_Weight_Kg", ""))
+    lifetime_daily_gain = None
+    if latest_weight_kg is not None and age_days and age_days > 0:
+        lifetime_daily_gain = round(latest_weight_kg / age_days, 3)
+
+    post_wean_daily_gain = to_float(row.get("Average_Daily_Gain_Kg", ""))
+    if post_wean_daily_gain is None and latest_weight_kg is not None and wean_weight_kg is not None and latest_weight_date and wean_date:
+        days_since_wean = (latest_weight_date - wean_date).days
+        if days_since_wean > 0:
+            post_wean_daily_gain = round((latest_weight_kg - wean_weight_kg) / days_since_wean, 3)
+
+    growth_class, growth_reason = _growth_class_for_adg(lifetime_daily_gain)
+
+    return {
+        "latest_weight_kg": latest_weight_kg,
+        "latest_weight_date": latest_weight_date,
+        "days_since_weight": (today - latest_weight_date).days if latest_weight_date else None,
+        "birth_date": birth_date,
+        "age_days": age_days,
+        "wean_date": wean_date,
+        "wean_weight_kg": wean_weight_kg,
+        "days_since_wean": (today - wean_date).days if wean_date else None,
+        "average_daily_gain_kg": lifetime_daily_gain,
+        "post_wean_daily_gain_kg": post_wean_daily_gain,
+        "growth_basis": "Lifetime ADG",
+        "growth_class": growth_class,
+        "growth_reason": growth_reason,
+    }
+
+
+def _readiness_bucket(row, growth, sales_meta, litter_quality, today):
+    status = to_clean_string(row.get("Status", ""))
+    on_farm = to_clean_string(row.get("On_Farm", ""))
+    purpose = to_clean_string(row.get("Purpose", ""))
+    animal_type = to_clean_string(row.get("Animal_Type", ""))
+    sex = to_clean_string(row.get("Sex", ""))
+    tag_number = to_clean_string(row.get("Tag_Number", ""))
+    weight_kg = growth.get("latest_weight_kg")
+    last_weight_date = growth.get("latest_weight_date")
+    growth_class = growth.get("growth_class", "Unknown")
+    reserved_status = to_clean_string(sales_meta.get("reserved_status", ""))
+    reserved_for_order_id = to_clean_string(sales_meta.get("reserved_for_order_id", ""))
+    available_for_sale = to_clean_string(sales_meta.get("available_for_sale", ""))
+    normalized_purpose = purpose.lower().replace("-", "_").replace(" ", "_")
+    normalized_status = status.lower()
+
+    if normalized_status in {value.lower() for value in TERMINAL_PIG_STATUSES} or on_farm.lower() != "yes":
+        return "Exited", "Pig is not active/on farm, or already has a terminal status."
+
+    if reserved_status.lower() == "reserved" or reserved_for_order_id:
+        return "Allocated", "Pig is already reserved or linked to an order."
+
+    if normalized_purpose in {"breeding", "retain", "retained", "breeding_candidate"}:
+        return "Retain / Breeding Candidate", "Current purpose is breeding or retention."
+
+    missing = []
+    if not tag_number:
+        missing.append("tag")
+    if not sex:
+        missing.append("sex")
+    if weight_kg is None:
+        missing.append("weight")
+    if missing:
+        return "Needs Data", f"Missing {', '.join(missing)} before allocation can be trusted."
+
+    if not purpose or normalized_purpose == "unknown":
+        return "Needs Classification", "Purpose is still unknown; review wean weight, growth class, litter quality, and current outlet demand."
+
+    if last_weight_date:
+        days_since_weight = (today - last_weight_date).days
+        if days_since_weight > 45:
+            return "Needs Data", f"Latest weight is {days_since_weight} days old."
+
+    if growth_class in {"Good", "Exceptional"} and litter_quality.get("litter_quality") == "Good":
+        return "Retain / Breeding Candidate", "Good or exceptional lifetime grower from a good litter; review for breeding before meat/slaughter allocation."
+
+    if growth_class in {"Extremely Slow", "Slow"} and animal_type in {"Grower", "Finisher", "Weaner"}:
+        return "Livestock Candidate", "Slow lifetime grower; consider live sale to reduce feed cost and free capacity."
+
+    if available_for_sale.lower() == "yes" and weight_kg >= LIVE_SALE_TARGET_KG:
+        return "Livestock Candidate", "Sales availability says this pig is available and weight is at or above live-sale target."
+
+    if MEAT_TARGET_MIN_KG <= weight_kg <= MEAT_TARGET_MAX_KG:
+        return "Meat Candidate", "Weight is in the first planned meat-candidate range."
+
+    if SLAUGHTER_TARGET_MIN_KG <= weight_kg <= SLAUGHTER_TARGET_MAX_KG:
+        return "Slaughter Candidate", "Weight is in the first planned slaughter-candidate range."
+
+    if animal_type in {"Grower", "Finisher", "Weaner"}:
+        return "Growing", "Pig is active/on farm but not in a current candidate range."
+
+    return "Needs Data", "No trusted allocation rule matched this pig yet."
+
+
+def get_pig_allocation_readiness(today=None):
+    today = today or datetime.now().date()
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+    sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
+    litter_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    pen_lookup = _build_pen_lookup()
+    latest_weights = _latest_weights_by_pig(weight_rows, columns)
+    sales_lookup = _sales_availability_by_pig(sales_rows, columns)
+    litter_lookup = _litter_overview_by_id(litter_rows)
+
+    buckets = {
+        "Needs Data": 0,
+        "Needs Classification": 0,
+        "Growing": 0,
+        "Livestock Candidate": 0,
+        "Slaughter Candidate": 0,
+        "Meat Candidate": 0,
+        "Retain / Breeding Candidate": 0,
+        "Allocated": 0,
+        "Exited": 0,
+    }
+    rows = []
+
+    for row in overview_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+
+        latest_weight = latest_weights.get(pig_id, {})
+        sales_meta = sales_lookup.get(pig_id, {})
+        growth = _growth_profile(row, latest_weight, today)
+        timing = _readiness_timing(growth, today)
+        litter_id = to_clean_string(row.get("Litter_ID", ""))
+        litter_quality = _litter_quality_summary(litter_lookup.get(litter_id))
+        bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today)
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+
+        current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+
+        rows.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get(columns["tag_number"], "")),
+            "animal_type": to_clean_string(row.get("Animal_Type", "")),
+            "sex": to_clean_string(row.get(columns["sex"], "")),
+            "status": to_clean_string(row.get(columns["status"], "")),
+            "on_farm": to_clean_string(row.get(columns["on_farm"], "")),
+            "purpose": to_clean_string(row.get("Purpose", "")),
+            "current_pen_id": current_pen_id,
+            "current_pen_name": _pen_name_for_id(pen_lookup, current_pen_id),
+            "latest_weight_kg": growth["latest_weight_kg"],
+            "latest_weight_date": growth["latest_weight_date"].isoformat() if growth["latest_weight_date"] else "",
+            "days_since_weight": growth["days_since_weight"],
+            "birth_date": growth["birth_date"].isoformat() if growth["birth_date"] else "",
+            "age_days": growth["age_days"],
+            "wean_date": growth["wean_date"].isoformat() if growth["wean_date"] else "",
+            "wean_weight_kg": growth["wean_weight_kg"],
+            "days_since_wean": growth["days_since_wean"],
+            "average_daily_gain_kg": growth["average_daily_gain_kg"],
+            "post_wean_daily_gain_kg": growth["post_wean_daily_gain_kg"],
+            "growth_basis": growth["growth_basis"],
+            "growth_class": growth["growth_class"],
+            "growth_reason": growth["growth_reason"],
+            "meat_window_status": timing["meat_window_status"],
+            "estimated_meat_ready_date": timing["estimated_meat_ready_date"],
+            "days_until_meat_ready": timing["days_until_meat_ready"],
+            "meat_target_min_kg": timing["meat_target_min_kg"],
+            "meat_target_max_kg": timing["meat_target_max_kg"],
+            "abattoir_window_status": timing["abattoir_window_status"],
+            "estimated_abattoir_ready_date": timing["estimated_abattoir_ready_date"],
+            "days_until_abattoir_ready": timing["days_until_abattoir_ready"],
+            "abattoir_target_min_kg": timing["abattoir_target_min_kg"],
+            "abattoir_target_max_kg": timing["abattoir_target_max_kg"],
+            "calculated_stage": to_clean_string(row.get(columns["calculated_stage"], "")),
+            "weight_band": to_clean_string(row.get(columns["weight_band"], "")),
+            "litter_id": litter_id,
+            "mother_id": to_clean_string(row.get("Mother_Pig_ID", "")),
+            "father_id": to_clean_string(row.get("Father_Pig_ID", "")),
+            "sow_pig_id": litter_quality["sow_pig_id"],
+            "sow_tag_number": litter_quality["sow_tag_number"],
+            "boar_pig_id": litter_quality["boar_pig_id"],
+            "boar_tag_number": litter_quality["boar_tag_number"],
+            "litter_quality": litter_quality["litter_quality"],
+            "litter_quality_reason": litter_quality["litter_quality_reason"],
+            "litter_survival_rate": litter_quality["litter_survival_rate"],
+            "born_alive": litter_quality["born_alive"],
+            "weaned_count": litter_quality["weaned_count"],
+            "readiness_bucket": bucket,
+            "readiness_reason": reason,
+            "available_for_sale": sales_meta.get("available_for_sale", ""),
+            "reserved_status": sales_meta.get("reserved_status", ""),
+            "reserved_for_order_id": sales_meta.get("reserved_for_order_id", ""),
+            "sale_category": sales_meta.get("sale_category", ""),
+            "suggested_price_category": sales_meta.get("suggested_price_category", ""),
+            "existing_link": sales_meta.get("reserved_for_order_id", ""),
+        })
+
+    rows.sort(key=lambda item: (
+        ALLOCATION_BUCKET_ORDER.get(item["readiness_bucket"], 99),
+        item["current_pen_name"] or item["current_pen_id"],
+        _pig_sort_key(item["tag_number"] or item["pig_id"]),
+    ))
+
+    return {
+        "success": True,
+        "generated_date": today.isoformat(),
+        "thresholds": {
+            "live_sale_target_kg": LIVE_SALE_TARGET_KG,
+            "meat_target_min_kg": MEAT_TARGET_MIN_KG,
+            "meat_target_max_kg": MEAT_TARGET_MAX_KG,
+            "slaughter_target_min_kg": SLAUGHTER_TARGET_MIN_KG,
+            "slaughter_target_max_kg": SLAUGHTER_TARGET_MAX_KG,
+            "exceptional_grower_adg_kg_day": EXCEPTIONAL_GROWER_ADG_KG_DAY,
+            "good_grower_adg_kg_day": GOOD_GROWER_ADG_KG_DAY,
+            "steady_grower_adg_kg_day": STEADY_GROWER_ADG_KG_DAY,
+            "slow_grower_adg_kg_day": SLOW_GROWER_ADG_KG_DAY,
+            "extremely_slow_grower_adg_kg_day": EXTREMELY_SLOW_GROWER_ADG_KG_DAY,
+            "good_litter_survival_rate": GOOD_LITTER_SURVIVAL_RATE,
+            "stale_weight_days": 45,
+        },
+        "summary": {
+            "total": len(rows),
+            "buckets": buckets,
+        },
+        "pigs": rows,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+    }
 
 
 def get_family_tree(pig_id: str):

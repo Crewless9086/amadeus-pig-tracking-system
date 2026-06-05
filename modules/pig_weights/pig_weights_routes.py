@@ -4,6 +4,7 @@ from modules.pig_weights.pig_weights_controller import (
     get_status,
     get_dashboard_data,
     get_sales_dashboard_data,
+    get_pig_allocation_readiness_data,
     list_parent_options,
     list_active_pigs,
     list_sales_availability,
@@ -50,6 +51,11 @@ def dashboard():
 @pig_weights_bp.route("/sales-dashboard", methods=["GET"])
 def sales_dashboard():
     return jsonify(get_sales_dashboard_data())
+
+
+@pig_weights_bp.route("/pig-allocation-readiness", methods=["GET"])
+def pig_allocation_readiness():
+    return jsonify(get_pig_allocation_readiness_data())
 
 
 @pig_weights_bp.route("/parent-options", methods=["GET"])

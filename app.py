@@ -51,6 +51,11 @@ def sales_dashboard_page():
     return render_template("sales-dashboard.html")
 
 
+@app.route("/pig-allocation")
+def pig_allocation_page():
+    return render_template("pig-allocation.html")
+
+
 @app.route("/sales/slaughter")
 def slaughter_sale_page():
     return render_template("slaughter-sale.html")

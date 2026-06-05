@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pig Allocation Readiness</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell allocation-shell">
+    <div class="page-card allocation-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Pig Allocation Readiness</h1>
+          <p id="allocation_subtitle">Read-only planning view for livestock, slaughter, meat, and breeding decisions.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/sales-dashboard">Sales Overview</a>
+          <a href="/weight-report">Weight Report</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="allocation_message" class="message-box hidden"></div>
+
+      <section class="allocation-filters">
+        <div class="form-group">
+          <label for="bucket_filter">Bucket</label>
+          <select id="bucket_filter">
+            <option value="">All buckets</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="pen_filter">Pen</label>
+          <select id="pen_filter">
+            <option value="">All pens</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="type_filter">Type</label>
+          <select id="type_filter">
+            <option value="">All types</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sex_filter">Sex</label>
+          <select id="sex_filter">
+            <option value="">All sexes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="purpose_filter">Purpose</label>
+          <select id="purpose_filter">
+            <option value="">All purposes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="search_filter">Search</label>
+          <input type="search" id="search_filter" placeholder="Pig, tag, litter, reason" />
+        </div>
+        <div class="form-group slaughter-filter-actions">
+          <label>&nbsp;</label>
+          <button type="button" id="reset_allocation_filters" class="button-link button-link-secondary">Reset</button>
+        </div>
+      </section>
+
+      <section id="allocation_summary" class="summary-metric-grid allocation-summary"></section>
+
+      <section class="allocation-table-section">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Readiness Table</h2>
+            <p id="allocation_count">Loading pig allocation readiness...</p>
+          </div>
+        </div>
+
+        <div class="simple-table-wrap allocation-table-wrap">
+          <table class="simple-table allocation-table">
+            <thead>
+              <tr>
+                <th>Pig</th>
+                <th>Bucket</th>
+                <th>Reason</th>
+                <th>Weight</th>
+                <th>Growth</th>
+                <th>Timing</th>
+                <th>Weaning</th>
+                <th>Pen</th>
+                <th>Type / Sex</th>
+                <th>Purpose</th>
+                <th>Litter / Parents</th>
+                <th>Existing Link</th>
+              </tr>
+            </thead>
+            <tbody id="allocation_body">
+              <tr><td colspan="12" class="table-empty">Loading pig allocation readiness...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/pigAllocation.js') }}"></script>
+</body>
+</html>
