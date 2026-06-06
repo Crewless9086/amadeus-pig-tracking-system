@@ -138,16 +138,27 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertFalse(result["writes_to_supabase"])
         self.assertEqual(by_id["PIG-1"]["readiness_bucket"], "Needs Classification")
         self.assertIn("Purpose is still unknown", by_id["PIG-1"]["readiness_reason"])
+        self.assertEqual(by_id["PIG-1"]["suggested_purpose"], "Needs Review")
         self.assertEqual(by_id["PIG-1"]["growth_class"], "Exceptional")
         self.assertEqual(by_id["PIG-1"]["average_daily_gain_kg"], 0.5)
         self.assertEqual(result["thresholds"]["slaughter_target_min_kg"], 80)
+        self.assertEqual(result["thresholds"]["source"], "code_defaults")
+        self.assertFalse(result["thresholds"]["writes_enabled"])
+        self.assertEqual(result["business_rules"]["meat_window_label"], "55-70 kg")
+        self.assertEqual(result["business_rules"]["abattoir_window_label"], "80-95 kg")
+        self.assertEqual(result["business_rules"]["target_growth_label"], "0.500 kg/day target")
         self.assertEqual(by_id["PIG-1"]["litter_quality"], "Good")
         self.assertEqual(by_id["PIG-1"]["litter_survival_rate"], 0.9)
         self.assertEqual(by_id["PIG-2"]["readiness_bucket"], "Allocated")
+        self.assertEqual(by_id["PIG-2"]["suggested_purpose"], "Already Allocated")
         self.assertEqual(by_id["PIG-2"]["existing_link"], "ORD-1")
         self.assertEqual(by_id["PIG-3"]["readiness_bucket"], "Retain / Breeding Candidate")
+        self.assertEqual(by_id["PIG-3"]["suggested_purpose"], "Breeding Review")
         self.assertEqual(by_id["PIG-4"]["readiness_bucket"], "Growing")
+        self.assertEqual(by_id["PIG-4"]["outlet_priority"], "Keep Growing")
+        self.assertEqual(by_id["PIG-4"]["suggested_purpose"], "Grow Out")
         self.assertEqual(by_id["PIG-5"]["readiness_bucket"], "Exited")
+        self.assertEqual(by_id["PIG-5"]["suggested_purpose"], "Closed")
         self.assertEqual(result["summary"]["buckets"]["Allocated"], 1)
 
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
@@ -204,6 +215,9 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(row["meat_window_status"], "In meat window")
         self.assertEqual(row["estimated_abattoir_ready_date"], "2026-07-02")
         self.assertEqual(row["days_until_abattoir_ready"], 28)
+        self.assertEqual(row["outlet_priority"], "Breeding Review")
+        self.assertEqual(row["suggested_purpose"], "Breeding Review")
+        self.assertIn("retention", row["suggested_purpose_reason"])
 
     def test_growth_class_bands_use_lifetime_average_daily_gain(self):
         cases = [
@@ -211,7 +225,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             ("PIG-SLOW", "15.0", "100", "Slow"),
             ("PIG-BELOW", "25.0", "100", "Below Target"),
             ("PIG-STEADY", "35.0", "100", "Steady"),
-            ("PIG-GOOD", "44.55", "99", "Good"),
+            ("PIG-GOOD", "60", "140", "Good"),
             ("PIG-EXCEPTIONAL", "49.5", "99", "Exceptional"),
         ]
         overview_rows = [
@@ -255,6 +269,152 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
             with self.subTest(pig_id=pig_id):
                 self.assertEqual(by_id[pig_id]["growth_class"], expected)
                 self.assertEqual(by_id[pig_id]["growth_basis"], "Lifetime ADG")
+
+        self.assertEqual(by_id["PIG-EXTREME"]["outlet_priority"], "Livestock Sale")
+        self.assertEqual(by_id["PIG-EXTREME"]["suggested_purpose"], "Livestock Sale")
+        self.assertEqual(by_id["PIG-SLOW"]["outlet_priority"], "Livestock Sale")
+        self.assertIn("livestock sale", by_id["PIG-SLOW"]["recommended_action"].lower())
+        self.assertEqual(by_id["PIG-GOOD"]["outlet_priority"], "Meat Preorder")
+        self.assertEqual(by_id["PIG-GOOD"]["suggested_purpose"], "Meat")
+
+    def test_allocation_settings_can_be_overridden_without_ui_writes(self):
+        overview_rows = [{
+            "Pig_ID": "PIG-CUSTOM",
+            "Tag_Number": "30",
+            "Animal_Type": "Grower",
+            "Sex": "Male",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Grow_Out",
+            "Current_Pen_ID": "PEN-1",
+            "Current_Weight_Kg": "72",
+            "Last_Weight_Date": "2026-06-04",
+            "Age_Days": "180",
+        }]
+        settings = dict(pig_weights_service.DEFAULT_ALLOCATION_SETTINGS)
+        settings.update({
+            "source": "test_override",
+            "meat_target_min_kg": 65,
+            "meat_target_max_kg": 75,
+            "slaughter_target_min_kg": 90,
+            "slaughter_target_max_kg": 105,
+        })
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "WEIGHT_LOG":
+                return [{"Pig_ID": "PIG-CUSTOM", "Weight_Date": "2026-06-04", "Weight_Kg": "72"}]
+            if sheet_name == "SALES_AVAILABILITY":
+                return []
+            if sheet_name == "PEN_REGISTER":
+                return [{"Pen_ID": "PEN-1", "Pen_Name": "Grower Pen"}]
+            if sheet_name == "LITTER_OVERVIEW":
+                return []
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+                patch.object(pig_weights_service, "_allocation_settings", return_value=settings):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 4))
+
+        row = result["pigs"][0]
+        self.assertEqual(row["readiness_bucket"], "Meat Candidate")
+        self.assertEqual(row["suggested_purpose"], "Meat")
+        self.assertEqual(row["meat_target_min_kg"], 65)
+        self.assertEqual(row["meat_target_max_kg"], 75)
+        self.assertEqual(row["abattoir_target_min_kg"], 90)
+        self.assertEqual(result["business_rules"]["source"], "test_override")
+        self.assertEqual(result["business_rules"]["meat_window_label"], "65-75 kg")
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+
+
+class MeatPlanningServiceTests(unittest.TestCase):
+    def test_meat_planning_groups_allocation_signals_without_writes(self):
+        allocation_result = {
+            "success": True,
+            "generated_date": "2026-06-05",
+            "business_rules": {"meat_window_label": "55-70 kg"},
+            "thresholds": {"meat_target_min_kg": 55},
+            "pigs": [
+                {
+                    "pig_id": "PIG-MEAT-NOW",
+                    "tag_number": "1",
+                    "planning_bucket": "",
+                    "suggested_purpose": "Meat",
+                    "outlet_priority": "Meat Preorder",
+                    "meat_window_status": "In meat window",
+                    "days_until_meat_ready": 0,
+                    "estimated_meat_ready_date": "2026-06-05",
+                    "estimated_abattoir_ready_date": "2026-07-01",
+                    "days_until_abattoir_ready": 26,
+                    "latest_weight_kg": 62,
+                    "average_daily_gain_kg": 0.45,
+                    "growth_class": "Good",
+                },
+                {
+                    "pig_id": "PIG-MEAT-14",
+                    "tag_number": "2",
+                    "suggested_purpose": "Meat",
+                    "outlet_priority": "Meat Preorder",
+                    "meat_window_status": "Before meat window",
+                    "days_until_meat_ready": 10,
+                    "estimated_meat_ready_date": "2026-06-15",
+                },
+                {
+                    "pig_id": "PIG-MEAT-30",
+                    "tag_number": "3",
+                    "suggested_purpose": "Meat",
+                    "outlet_priority": "Meat Preorder",
+                    "meat_window_status": "Before meat window",
+                    "days_until_meat_ready": 25,
+                    "estimated_meat_ready_date": "2026-06-30",
+                },
+                {
+                    "pig_id": "PIG-MEAT-FUTURE",
+                    "tag_number": "4",
+                    "suggested_purpose": "Meat",
+                    "outlet_priority": "Meat Preorder",
+                    "meat_window_status": "Before meat window",
+                    "days_until_meat_ready": 45,
+                },
+                {
+                    "pig_id": "PIG-FALLBACK",
+                    "tag_number": "5",
+                    "suggested_purpose": "Abattoir Slaughter",
+                    "outlet_priority": "Abattoir Slaughter",
+                    "meat_window_status": "Past meat window",
+                    "days_until_meat_ready": 0,
+                },
+                {
+                    "pig_id": "PIG-GROWING",
+                    "tag_number": "6",
+                    "suggested_purpose": "Grow Out",
+                    "outlet_priority": "Keep Growing",
+                    "meat_window_status": "Before meat window",
+                    "days_until_meat_ready": 60,
+                },
+            ],
+        }
+
+        with patch.object(pig_weights_service, "get_pig_allocation_readiness", return_value=allocation_result):
+            result = pig_weights_service.get_meat_planning_summary(today=date(2026, 6, 5))
+
+        by_id = {row["pig_id"]: row for row in result["pigs"]}
+        self.assertTrue(result["success"])
+        self.assertEqual(result["source"], "pig_allocation_readiness")
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+        self.assertEqual(by_id["PIG-MEAT-NOW"]["planning_bucket"], "ready_now")
+        self.assertEqual(by_id["PIG-MEAT-14"]["planning_bucket"], "next_14_days")
+        self.assertEqual(by_id["PIG-MEAT-30"]["planning_bucket"], "next_30_days")
+        self.assertEqual(by_id["PIG-MEAT-FUTURE"]["planning_bucket"], "future")
+        self.assertEqual(by_id["PIG-FALLBACK"]["planning_bucket"], "fallback_abattoir")
+        self.assertNotIn("PIG-GROWING", by_id)
+        self.assertEqual(result["summary"]["meat_pipeline_count"], 4)
+        self.assertEqual(result["summary"]["minimum_preorder_needed_now"], 1)
+        self.assertEqual(result["summary"]["minimum_preorder_needed_30_days"], 3)
+        self.assertEqual(result["summary"]["fallback_abattoir"], 1)
 
 
 if __name__ == "__main__":

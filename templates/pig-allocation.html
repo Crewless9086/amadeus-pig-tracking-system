@@ -15,6 +15,7 @@
           <p id="allocation_subtitle">Read-only planning view for livestock, slaughter, meat, and breeding decisions.</p>
         </div>
         <div class="ops-header-actions">
+          <a href="/meat-planning">Meat Planning</a>
           <a href="/sales-dashboard">Sales Overview</a>
           <a href="/weight-report">Weight Report</a>
           <a href="/">Dashboard</a>
@@ -65,6 +66,7 @@
       </section>
 
       <section id="allocation_summary" class="summary-metric-grid allocation-summary"></section>
+      <section id="allocation_rules" class="allocation-rules" aria-label="Active allocation rules"></section>
 
       <section class="allocation-table-section">
         <div class="page-header section-header-compact">
@@ -80,6 +82,7 @@
               <tr>
                 <th>Pig</th>
                 <th>Bucket</th>
+                <th>Recommended Action</th>
                 <th>Reason</th>
                 <th>Weight</th>
                 <th>Growth</th>
@@ -88,12 +91,13 @@
                 <th>Pen</th>
                 <th>Type / Sex</th>
                 <th>Purpose</th>
+                <th>Suggested Purpose</th>
                 <th>Litter / Parents</th>
                 <th>Existing Link</th>
               </tr>
             </thead>
             <tbody id="allocation_body">
-              <tr><td colspan="12" class="table-empty">Loading pig allocation readiness...</td></tr>
+              <tr><td colspan="14" class="table-empty">Loading pig allocation readiness...</td></tr>
             </tbody>
           </table>
         </div>

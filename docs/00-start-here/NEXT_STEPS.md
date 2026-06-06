@@ -26,7 +26,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Real Weight Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now | Next: keep live-test-dependent items open, then choose the next practical business-module-aligned slice. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified | Next: choose the next deliberate slice. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Planned | Next: resolve Oom Sakkie orchestrator-location decision, then build the read-only kiosk MVP. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -2877,6 +2877,7 @@ Recommended Phase 10 sequence:
 4. **10.3 Farm telemetry review** - inventory weather, Sunsynk, irrigation, and alert data. Decide whether telemetry should move to Supabase before rebuilding Oom Sakkie solar/power answers.
 5. **10.4 Operating dashboard / farm home** - only after the core data contracts are clear, build the web app home/dashboard that brings orders, piggery, weather, power, irrigation, and alerts together.
 6. **10.5 Workflow integration cleanup** - update n8n workflows to call backend APIs/Supabase-backed endpoints instead of direct sheet reads/writes where appropriate.
+7. **10.6 Oom Sakkie operating agent** - plan and build the conversational farm operator as a backend-owned orchestrator, not a direct-write chatbot. PRD added at `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`.
 
 Recommendation:
 
@@ -4008,6 +4009,126 @@ Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 
 - Farm task/reminder/project management: future planning item for important dates, reminders, task ownership, projects, and idea logging. This needs a proper model and should not be squeezed into the current attention list as ad hoc notes.
 - Weather station to Windy integration: research whether the local weather station can publish to Windy. Treat as an external integration planning task first; do not change the existing weather ingestion path until the Windy upload method, API requirements, station ID handling, and data ownership are understood.
 - Future alert preferences page: once the web app has login/user identity, add a preferences screen where each user can choose which alert/update types they receive, digest timing, repeat/cooldown intervals, quiet hours, and summary schedule. Keep this later-later; do not build before auth, recipient configuration, and alert delivery safety are settled.
+- Slack architecture assessment moved from scratch notes to `docs/01-architecture/SLACK_ARCHITECTURE_ASSESSMENT.md` on 2026-06-05. Recommendation: do not implement Slack now; keep it as a future optional human visibility/notification adapter only, never as agent memory, event bus, or source of truth.
+- Oom Sakkie voice operating agent PRD added on 2026-06-06: `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`. Recommendation after reviewing the Trillion public site and owner goal for a local farm PC: build the backend text orchestrator plus local `/oom-sakkie` kiosk page first (`POST /api/oom-sakkie/message` + `GET /oom-sakkie`) using approved read-only tools. The kiosk should show what Oom Sakkie heard, what tool/agent it called, the answer, trace ID, and links/cards for the relevant farm screens. Then add push-to-talk/Telegram voice notes, then consider wake-word/Home Assistant/custom local voice gateway. Do not start with always-on hardware, public posting, direct writes, or physical controls. Prompt backbone added at `docs/01-architecture/OOM_SAKKIE_AGENT_PROMPT_LIBRARY.md`; Trillion's private prompt playbook was not publicly accessible, so the library is Amadeus-specific and inspired only by public product patterns. Owner-provided Trillion-style playbooks are now logged and adapted in the prompt library: repo/code sentinel, cloud/local memory, read-only Supabase connector, Chief of Staff helper, context handoff, mobile voice PWA, personality persistence, voice latency streaming, security hardening, head-of-design sub-agent, living self-knowledge, cost dashboard, and sub-agent factory. These are backlog layers behind the read-only kiosk/orchestrator MVP, not immediate build scope.
+
+### 10.6A Oom Sakkie Kiosk MVP - Planned
+
+Source documents:
+
+- `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
+- `docs/01-architecture/OOM_SAKKIE_AGENT_PROMPT_LIBRARY.md`
+
+Claude architecture review result on 2026-06-06:
+
+- Revise first, then build a narrow OS-1 + OS-4 slice.
+- Do not create a second uncoordinated Oom Sakkie brain next to live n8n `2.0`.
+- Decide the long-term orchestrator location before code.
+
+Architecture decision before implementation:
+
+- Recommended direction: Flask/backend becomes the single long-term Oom Sakkie brain. n8n/GateKeeper stays Telegram ingress and later forwards Telegram messages to `/api/oom-sakkie/message`.
+- First implementation may leave live Telegram routing unchanged until the kiosk endpoint is proven.
+- If Flask is intentionally kiosk-only for the first slice, document it as temporary and avoid duplicated prompt/tool drift.
+
+Required first slice:
+
+- `GET /oom-sakkie` - local kiosk page, text-only.
+- `POST /api/oom-sakkie/message` - text-only read-only orchestrator endpoint.
+- No mic, no TTS, no wake word, no writes.
+- Three tools only:
+  - `farm_attention_summary`
+  - `power_current`
+  - `weather_today`
+
+Required response contract:
+
+```json
+{
+  "answer": "",
+  "tool_used": "",
+  "trace_id": "",
+  "risk_level": 0,
+  "links": [],
+  "stale_warnings": [],
+  "needs_clarification": false
+}
+```
+
+Required backend design:
+
+- Add typed `OomSakkieTool` registry in code, likely under `modules/oom_sakkie/`.
+- Every tool declares:
+  - `name`
+  - `input_schema`
+  - `output_schema`
+  - `risk_level`
+  - `requires_confirmation`
+  - `handler`
+- Use a typed risk enum, with read-only as level `0`.
+- Tool selection must have a confidence floor.
+- Low-confidence tool selection returns `needs_clarification = true` rather than guessing.
+- Stale-data fields from power/weather endpoints must be surfaced in `stale_warnings`.
+- No multi-turn memory promise in this slice.
+
+Trace store:
+
+- Preferred: Supabase `oom_sakkie_traces`.
+- Trace rows should be append-only.
+- Minimum fields:
+  - `trace_id`
+  - `channel`
+  - `session_id`
+  - `user_text`
+  - `intent`
+  - `confidence`
+  - `tool_name`
+  - `tool_args_json`
+  - `tool_result_summary`
+  - `tool_result_hash`
+  - `answer`
+  - `risk_level`
+  - `stale_warnings_json`
+  - `links_json`
+  - `created_at`
+
+Kiosk UX:
+
+- Large readable room-screen UI: roughly `18px` body, `32px` answer baseline.
+- Kiosk shows only: user text, checking status, answer, links, stale warnings, collapsed trace ID.
+- Keep the first page operational, not decorative.
+- No 3D avatar, particles, or animated character in MVP.
+- Future confirmation panel pattern: exact backend payload preview, not paraphrased text.
+
+Tests required:
+
+- Tool registry contract test: every tool has schema, risk level, confirmation flag, and handler.
+- Orchestrator route tests: representative phrasing maps to the three expected tools.
+- Stale-data test: stale power/weather markers become `stale_warnings`.
+- Low-confidence test: returns `needs_clarification = true`.
+- Route/page smoke: `/oom-sakkie` and `/api/oom-sakkie/message`.
+
+Live verification before expanding:
+
+- Use kiosk on the actual farm PC or local browser.
+- Ask at least 20 real text questions across attention, power, and weather.
+- Log failures/surprises before adding tools or voice.
+- Do not start push-to-talk, TTS, more agents, more tools, or any write tool until the read-only loop has been used daily and behaves boringly.
+
+Do not build yet:
+
+- always-on wake word
+- always-on room microphone
+- browser push-to-talk
+- TTS
+- Afrikaans/multi-language behavior
+- customer-facing message generation
+- Meta/Facebook posting
+- auto-purpose-classification writes
+- irrigation start/stop or `2.3.2` activation
+- direct Google Sheets/Supabase writes from the orchestrator
+- autonomous agent loops
+- new Telegram trigger workflows
 
 Supabase RLS hardening verification:
 
@@ -4203,6 +4324,46 @@ Readiness timing refinement 2026-06-05:
 - Meat readiness uses the configured meat minimum weight.
 - Abattoir readiness uses the configured abattoir/slaughter minimum weight.
 - First abattoir range adjusted to `80-95 kg` to match the current fallback outlet rather than overlapping the meat window.
+
+Outlet recommendation refinement 2026-06-05:
+
+- Added read-only `Recommended Action`/`Outlet Priority` to `/pig-allocation`.
+- Extremely slow and slow growers point toward livestock sale as soon as practical.
+- Meat-window pigs point toward meat preorder/interest generation.
+- Abattoir stays the fallback for grow-out pigs that miss the meat opportunity or reach the heavier abattoir window.
+- Added `Marketing Readiness` so the system can later separate internal planning, ready-for-listing, ready-for-interest, blocked, and closed cases.
+- Future weekly Telegram summaries and Meta-compliant Facebook/Instagram post drafts should use these same signals, but no auto-posting, auto-message, Supabase write, or Google Sheets write automation is approved yet.
+- Keep the approval path explicit: first system-generated recommendations, then owner-approved wording/compliance rules, then optional scheduled draft generation, and only much later approved publishing automation.
+
+Allocation settings read-model refinement 2026-06-05:
+
+- Centralized Phase 11A allocation thresholds in backend-owned `DEFAULT_ALLOCATION_SETTINGS`.
+- `/api/pig-weights/pig-allocation-readiness` now returns raw `thresholds` plus human-readable `business_rules`.
+- `/pig-allocation` now shows the active rules above the table: meat window, abattoir window, livestock trigger, growth target, slow-growth trigger, good-litter threshold, stale-weight window, and rule source.
+- This keeps the rules visible and easy to tune later without adding a settings write page yet.
+- Still no purpose/status/allocation writes, no Google Sheets writes, no Supabase writes, and no Telegram/Meta automation.
+
+Suggested-purpose signal refinement 2026-06-05:
+
+- Added read-only `Suggested Purpose`, `Suggested Purpose Reason`, and `Suggested Purpose Confidence` to the allocation API/page.
+- This sits beside the stored `Purpose` so the owner can compare what the sheet currently says against what the system recommends.
+- Current suggestions are advisory only: `Needs Review`, `Grow Out`, `Livestock Sale`, `Meat`, `Abattoir Slaughter`, `Breeding Review`, `Already Allocated`, and `Closed`.
+- This is the bridge before any future backend-owned classify/update action.
+
+Meat planning read-model refinement 2026-06-05:
+
+- Added `GET /api/pig-weights/meat-planning`.
+- Added `/meat-planning` as a read-only planning page linked from dashboard and pig allocation.
+- The endpoint uses allocation readiness as its source and groups pigs into `ready_now`, `next_14_days`, `next_30_days`, `future`, and `fallback_abattoir`.
+- The page shows meat pipeline count, ready-now count, near-term counts, fallback abattoir count, and minimum preorder demand needed now/within 30 days.
+- Still no meat orders, deposits, customer records, pig allocations, Telegram messages, Meta posts, Supabase writes, or Google Sheets writes.
+
+Temporary demand scenario refinement 2026-06-05:
+
+- Added local-only expected demand inputs to `/meat-planning` for demand now and demand within 30 days.
+- The page calculates surplus/shortfall against the read-only meat pipeline.
+- This is deliberately not saved and does not create demand, preorder, deposit, customer, allocation, Supabase, or Google Sheets records.
+- Use this during browser/live review to decide what the first real demand/preorder data contract should contain.
 
 ## Current Choice Point
 

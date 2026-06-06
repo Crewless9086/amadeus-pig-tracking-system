@@ -424,8 +424,74 @@ textarea {
   margin-bottom: 18px;
 }
 
+.meat-planning-filters {
+  grid-template-columns: minmax(180px, 0.8fr) minmax(180px, 0.8fr) minmax(280px, 1.4fr) auto;
+}
+
+.meat-demand-panel {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 18px 0;
+  margin-bottom: 18px;
+}
+
+.meat-demand-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 0.9fr) minmax(160px, 0.65fr) minmax(160px, 0.65fr);
+  gap: 14px;
+  align-items: end;
+}
+
+.meat-demand-result {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.meat-demand-result span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.meat-demand-result strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 18px;
+}
+
 .allocation-summary {
   margin-bottom: 22px;
+}
+
+.allocation-rules {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.allocation-rule {
+  background: #f7faf5;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.allocation-rule span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.allocation-rule strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+  line-height: 1.3;
 }
 
 .allocation-table-section {
@@ -443,6 +509,11 @@ textarea {
 
 .allocation-table th:nth-child(3),
 .allocation-table td:nth-child(3) {
+  min-width: 240px;
+}
+
+.allocation-table th:nth-child(12),
+.allocation-table td:nth-child(12) {
   min-width: 240px;
 }
 
@@ -2045,6 +2116,8 @@ button:disabled {
   .attention-action-panel,
   .info-grid,
   .detail-grid,
+  .allocation-rules,
+  .meat-demand-grid,
   .summary-metric-grid,
   .history-summary-grid,
   .history-item-grid,

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meat Planning</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell allocation-shell">
+    <div class="page-card allocation-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Meat Planning</h1>
+          <p id="meat_planning_subtitle">Read-only planning view for meat-window demand, preorder timing, and abattoir fallback.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/pig-allocation">Pig Allocation</a>
+          <a href="/sales-dashboard">Sales Overview</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="meat_planning_message" class="message-box hidden"></div>
+
+      <section id="meat_planning_summary" class="summary-metric-grid allocation-summary"></section>
+      <section id="meat_planning_rules" class="allocation-rules" aria-label="Active meat planning rules"></section>
+
+      <section class="meat-demand-panel" aria-label="Temporary meat demand scenario">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Demand Scenario</h2>
+            <p>Temporary calculation only. Nothing is saved.</p>
+          </div>
+        </div>
+        <div class="meat-demand-grid">
+          <div class="form-group">
+            <label for="demand_now_input">Expected demand now</label>
+            <input type="number" id="demand_now_input" min="0" step="1" value="0" />
+          </div>
+          <div class="form-group">
+            <label for="demand_30_input">Expected demand next 30 days</label>
+            <input type="number" id="demand_30_input" min="0" step="1" value="0" />
+          </div>
+          <div class="meat-demand-result">
+            <span>Now</span>
+            <strong id="demand_now_result">--</strong>
+          </div>
+          <div class="meat-demand-result">
+            <span>30 Days</span>
+            <strong id="demand_30_result">--</strong>
+          </div>
+        </div>
+        <p id="demand_scenario_note" class="ops-footnote">Use this to test demand assumptions before any meat order workflow exists.</p>
+      </section>
+
+      <section class="allocation-filters meat-planning-filters">
+        <div class="form-group">
+          <label for="meat_bucket_filter">Planning Bucket</label>
+          <select id="meat_bucket_filter">
+            <option value="">All buckets</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="meat_pen_filter">Pen</label>
+          <select id="meat_pen_filter">
+            <option value="">All pens</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="meat_search_filter">Search</label>
+          <input type="search" id="meat_search_filter" placeholder="Pig, tag, litter, reason" />
+        </div>
+        <div class="form-group slaughter-filter-actions">
+          <label>&nbsp;</label>
+          <button type="button" id="reset_meat_filters" class="button-link button-link-secondary">Reset</button>
+        </div>
+      </section>
+
+      <section class="allocation-table-section">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Meat Pipeline</h2>
+            <p id="meat_planning_count">Loading meat planning...</p>
+          </div>
+        </div>
+
+        <div class="simple-table-wrap allocation-table-wrap">
+          <table class="simple-table meat-planning-table">
+            <thead>
+              <tr>
+                <th>Pig</th>
+                <th>Planning Bucket</th>
+                <th>Meat Timing</th>
+                <th>Abattoir Fallback</th>
+                <th>Weight / Growth</th>
+                <th>Recommended Action</th>
+                <th>Pen</th>
+                <th>Litter</th>
+              </tr>
+            </thead>
+            <tbody id="meat_planning_body">
+              <tr><td colspan="8" class="table-empty">Loading meat planning...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/meatPlanning.js') }}"></script>
+</body>
+</html>

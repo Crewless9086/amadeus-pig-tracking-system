@@ -4,6 +4,7 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_stock_summary,
     get_sales_stock_totals,
     get_pig_allocation_readiness,
+    get_meat_planning_summary,
     get_parent_options,
     get_active_pigs,
     get_sales_availability,
@@ -70,6 +71,10 @@ def get_sales_dashboard_data():
 
 def get_pig_allocation_readiness_data():
     return get_pig_allocation_readiness()
+
+
+def get_meat_planning_data():
+    return get_meat_planning_summary()
 
 
 def list_parent_options():

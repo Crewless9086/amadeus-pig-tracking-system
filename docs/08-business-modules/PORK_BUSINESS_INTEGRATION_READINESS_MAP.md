@@ -161,6 +161,35 @@ First useful settings:
 
 Do not build a settings write page until the first read-only rules are visible and owner-reviewed. The first implementation can show the thresholds it is using and keep them easy to change in code or config.
 
+Settings read-model decision 2026-06-05:
+
+- Added a backend-owned allocation settings object for the first active rules.
+- `/api/pig-weights/pig-allocation-readiness` now returns both raw `thresholds` and human-readable `business_rules`.
+- `/pig-allocation` displays the active rule labels above the table so the owner can see exactly which meat, abattoir, livestock, growth, litter-quality, and stale-weight thresholds produced the view.
+- Settings source is currently `code_defaults`; no settings write page, no Google Sheets setting write, no Supabase write, and no automated allocation action was added.
+- This is the bridge toward a later approved settings page or `SYSTEM_SETTINGS` integration once the owner has enough live evidence to tune the values.
+
+Suggested-purpose signal decision 2026-06-05:
+
+- Added a read-only suggested-purpose signal beside the current stored `Purpose`.
+- Suggested purpose values currently include `Needs Review`, `Grow Out`, `Livestock Sale`, `Meat`, `Abattoir Slaughter`, `Breeding Review`, `Already Allocated`, and `Closed`.
+- Each suggestion includes a reason and confidence level so the owner can review the model before any backend-owned classification action is added.
+- This does not update `PIG_MASTER`, `PIG_OVERVIEW`, Supabase, Google Sheets, Telegram, or Meta channels.
+
+Meat planning read-model decision 2026-06-05:
+
+- Added first read-only meat planning layer from the allocation readiness signals.
+- `/api/pig-weights/meat-planning` groups candidate pigs into `ready_now`, `next_14_days`, `next_30_days`, `future`, and `fallback_abattoir`.
+- `/meat-planning` shows meat pipeline counts, minimum preorder demand needed now/within 30 days, active meat/abattoir rules, and the candidate table.
+- This is not a meat order system yet. It creates no preorders, deposits, customer records, pig allocations, Telegram messages, Meta posts, Supabase writes, or Google Sheets writes.
+
+Temporary demand scenario decision 2026-06-05:
+
+- Added browser-only expected demand inputs to `/meat-planning` for demand now and demand within 30 days.
+- The page calculates visible surplus/shortfall against the read-only meat pipeline and warns when demand is higher than the current 30-day pipeline.
+- These values are not saved to browser storage, Supabase, Google Sheets, orders, or any backend table.
+- This is only for testing demand assumptions before designing real preorder/deposit records.
+
 Growth band decision 2026-06-05:
 
 - Use kg/day in the UI and API, where `0.100 kg/day` means 100 g/day.
@@ -182,6 +211,15 @@ Readiness timing decision 2026-06-05:
 - Estimate abattoir readiness from the configured abattoir minimum weight.
 - Keep these estimates read-only and explainable; they are planning signals, not promises.
 - First abattoir/slaughter target range should reflect the current fallback outlet: `80` to `95 kg`, with `80-90 kg` treated as the practical sweet spot during owner review.
+
+Self-selling system direction 2026-06-05:
+
+- Long-term goal: the system should become a weekly selling engine, not only an internal report.
+- Extremely slow and slow growers should feed livestock-sale recommendations as soon as practical, because the business goal is to reduce feed cost and move underperformers.
+- Meat-window pigs should feed meat preorder/interest generation first once the meat business is active.
+- Abattoir/slaughter remains the fallback outlet for grow-out pigs that are not sold through meat in time.
+- Future Telegram summaries and Meta-compliant Facebook/Instagram post drafts should be generated from the same read-only allocation signals.
+- Do not auto-post or auto-message yet. First build read-only outlet priorities and recommended actions, then review compliance wording and approval flow before any automation.
 
 ## Backend-Owned Actions Later
 

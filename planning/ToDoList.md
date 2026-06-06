@@ -49,5 +49,8 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 - Litter newborn-health live-test result, wean/tag timing correction, fast piglet death capture, and smart return navigation moved to `NEXT_STEPS.md` Phase 9.7F-I.
 - 35-day weaning default, closest-Monday planning option, dead pig rows for history, accepted death reasons, and future litter print/capture sample note moved to `NEXT_STEPS.md` Phase 9.7G-H2.
 - Practical Telegram alert timing/rain summaries/formatting note moved to `NEXT_STEPS.md` Phase 10 farm home/dashboard follow-ups.
+- Slack multi-agent collaboration architecture assessment moved to `docs/01-architecture/SLACK_ARCHITECTURE_ASSESSMENT.md`; recommendation is keep for future phase as optional human visibility layer only, not agent memory or source of truth.
+- Oom Sakkie Trillion-style prompt/playbook pack moved to `docs/01-architecture/OOM_SAKKIE_AGENT_PROMPT_LIBRARY.md`, `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`, `docs/00-start-here/NEXT_STEPS.md`, and `docs/00-start-here/CURRENT_STATE.md`; immediate build remains read-only `/oom-sakkie` kiosk plus orchestrator before voice/PWA/security/factory layers.
+- Claude review of the Oom Sakkie PRD moved to `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`, `docs/00-start-here/NEXT_STEPS.md` Phase 10.6A, and `docs/00-start-here/CURRENT_STATE.md`; key decision before code is whether Flask/backend becomes the single long-term Oom Sakkie brain and n8n later forwards Telegram into it.
 
 Add new scratch bullets below, then move them into the correct canonical file.

@@ -56,6 +56,11 @@ def pig_allocation_page():
     return render_template("pig-allocation.html")
 
 
+@app.route("/meat-planning")
+def meat_planning_page():
+    return render_template("meat-planning.html")
+
+
 @app.route("/sales/slaughter")
 def slaughter_sale_page():
     return render_template("slaughter-sale.html")

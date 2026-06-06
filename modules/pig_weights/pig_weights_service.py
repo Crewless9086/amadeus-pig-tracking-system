@@ -54,6 +54,7 @@ MEAT_TARGET_MIN_KG = 55
 MEAT_TARGET_MAX_KG = 70
 SLAUGHTER_TARGET_MIN_KG = 80
 SLAUGHTER_TARGET_MAX_KG = 95
+STALE_WEIGHT_DAYS = 45
 ALLOCATION_BUCKET_ORDER = {
     "Needs Data": 0,
     "Needs Classification": 1,
@@ -71,6 +72,27 @@ STEADY_GROWER_ADG_KG_DAY = 0.30
 SLOW_GROWER_ADG_KG_DAY = 0.20
 EXTREMELY_SLOW_GROWER_ADG_KG_DAY = 0.10
 GOOD_LITTER_SURVIVAL_RATE = 0.80
+
+DEFAULT_ALLOCATION_SETTINGS = {
+    "source": "code_defaults",
+    "writes_enabled": False,
+    "live_sale_target_kg": LIVE_SALE_TARGET_KG,
+    "meat_target_min_kg": MEAT_TARGET_MIN_KG,
+    "meat_target_max_kg": MEAT_TARGET_MAX_KG,
+    "slaughter_target_min_kg": SLAUGHTER_TARGET_MIN_KG,
+    "slaughter_target_max_kg": SLAUGHTER_TARGET_MAX_KG,
+    "exceptional_grower_adg_kg_day": EXCEPTIONAL_GROWER_ADG_KG_DAY,
+    "good_grower_adg_kg_day": GOOD_GROWER_ADG_KG_DAY,
+    "steady_grower_adg_kg_day": STEADY_GROWER_ADG_KG_DAY,
+    "slow_grower_adg_kg_day": SLOW_GROWER_ADG_KG_DAY,
+    "extremely_slow_grower_adg_kg_day": EXTREMELY_SLOW_GROWER_ADG_KG_DAY,
+    "good_litter_survival_rate": GOOD_LITTER_SURVIVAL_RATE,
+    "stale_weight_days": STALE_WEIGHT_DAYS,
+}
+
+
+def _allocation_settings():
+    return dict(DEFAULT_ALLOCATION_SETTINGS)
 
 
 def _build_pig_lookup(rows, columns):
@@ -1515,7 +1537,8 @@ def _litter_overview_by_id(rows):
     return lookup
 
 
-def _litter_quality_summary(litter_row):
+def _litter_quality_summary(litter_row, settings=None):
+    settings = settings or _allocation_settings()
     if not litter_row:
         return {
             "litter_quality": "Unknown",
@@ -1538,7 +1561,7 @@ def _litter_quality_summary(litter_row):
     if survival_rate is None:
         quality = "Unknown"
         reason = "Missing born-alive or weaned count."
-    elif survival_rate >= GOOD_LITTER_SURVIVAL_RATE:
+    elif survival_rate >= settings["good_litter_survival_rate"]:
         quality = "Good"
         reason = f"Survival to weaning is {round(survival_rate * 100)}%."
     else:
@@ -1558,20 +1581,21 @@ def _litter_quality_summary(litter_row):
     }
 
 
-def _growth_class_for_adg(average_daily_gain):
+def _growth_class_for_adg(average_daily_gain, settings=None):
+    settings = settings or _allocation_settings()
     if average_daily_gain is None:
         return "Unknown", "Missing enough weight/age history to calculate growth rate."
-    if average_daily_gain < EXTREMELY_SLOW_GROWER_ADG_KG_DAY:
-        return "Extremely Slow", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.100 kg/day."
-    if average_daily_gain < SLOW_GROWER_ADG_KG_DAY:
-        return "Slow", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.200 kg/day."
-    if average_daily_gain < STEADY_GROWER_ADG_KG_DAY:
-        return "Below Target", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.300 kg/day."
-    if average_daily_gain < GOOD_GROWER_ADG_KG_DAY:
-        return "Steady", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below 0.400 kg/day."
-    if average_daily_gain < EXCEPTIONAL_GROWER_ADG_KG_DAY:
-        return "Good", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below the 0.500 kg/day target."
-    return "Exceptional", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, at or above the 0.500 kg/day target."
+    if average_daily_gain < settings["extremely_slow_grower_adg_kg_day"]:
+        return "Extremely Slow", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below {settings['extremely_slow_grower_adg_kg_day']:.3f} kg/day."
+    if average_daily_gain < settings["slow_grower_adg_kg_day"]:
+        return "Slow", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below {settings['slow_grower_adg_kg_day']:.3f} kg/day."
+    if average_daily_gain < settings["steady_grower_adg_kg_day"]:
+        return "Below Target", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below {settings['steady_grower_adg_kg_day']:.3f} kg/day."
+    if average_daily_gain < settings["good_grower_adg_kg_day"]:
+        return "Steady", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below {settings['good_grower_adg_kg_day']:.3f} kg/day."
+    if average_daily_gain < settings["exceptional_grower_adg_kg_day"]:
+        return "Good", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, below the {settings['exceptional_grower_adg_kg_day']:.3f} kg/day target."
+    return "Exceptional", f"Lifetime ADG is {average_daily_gain:.3f} kg/day, at or above the {settings['exceptional_grower_adg_kg_day']:.3f} kg/day target."
 
 
 def _estimated_target_date(current_weight_kg, target_weight_kg, daily_gain_kg, basis_date, today):
@@ -1601,28 +1625,29 @@ def _estimated_target_date(current_weight_kg, target_weight_kg, daily_gain_kg, b
     }
 
 
-def _readiness_timing(growth, today):
+def _readiness_timing(growth, today, settings=None):
+    settings = settings or _allocation_settings()
     latest_weight_kg = growth.get("latest_weight_kg")
     daily_gain = growth.get("average_daily_gain_kg")
     latest_weight_date = growth.get("latest_weight_date")
 
-    meat_ready = _estimated_target_date(latest_weight_kg, MEAT_TARGET_MIN_KG, daily_gain, latest_weight_date, today)
-    slaughter_ready = _estimated_target_date(latest_weight_kg, SLAUGHTER_TARGET_MIN_KG, daily_gain, latest_weight_date, today)
+    meat_ready = _estimated_target_date(latest_weight_kg, settings["meat_target_min_kg"], daily_gain, latest_weight_date, today)
+    slaughter_ready = _estimated_target_date(latest_weight_kg, settings["slaughter_target_min_kg"], daily_gain, latest_weight_date, today)
 
     if latest_weight_kg is None:
         meat_status = "Unknown"
-    elif latest_weight_kg < MEAT_TARGET_MIN_KG:
+    elif latest_weight_kg < settings["meat_target_min_kg"]:
         meat_status = "Before meat window"
-    elif latest_weight_kg <= MEAT_TARGET_MAX_KG:
+    elif latest_weight_kg <= settings["meat_target_max_kg"]:
         meat_status = "In meat window"
     else:
         meat_status = "Past meat window"
 
     if latest_weight_kg is None:
         slaughter_status = "Unknown"
-    elif latest_weight_kg < SLAUGHTER_TARGET_MIN_KG:
+    elif latest_weight_kg < settings["slaughter_target_min_kg"]:
         slaughter_status = "Before abattoir window"
-    elif latest_weight_kg <= SLAUGHTER_TARGET_MAX_KG:
+    elif latest_weight_kg <= settings["slaughter_target_max_kg"]:
         slaughter_status = "In abattoir window"
     else:
         slaughter_status = "Past abattoir window"
@@ -1631,17 +1656,136 @@ def _readiness_timing(growth, today):
         "meat_window_status": meat_status,
         "estimated_meat_ready_date": meat_ready["estimated_date"],
         "days_until_meat_ready": meat_ready["days_until"],
-        "meat_target_min_kg": MEAT_TARGET_MIN_KG,
-        "meat_target_max_kg": MEAT_TARGET_MAX_KG,
+        "meat_target_min_kg": settings["meat_target_min_kg"],
+        "meat_target_max_kg": settings["meat_target_max_kg"],
         "abattoir_window_status": slaughter_status,
         "estimated_abattoir_ready_date": slaughter_ready["estimated_date"],
         "days_until_abattoir_ready": slaughter_ready["days_until"],
-        "abattoir_target_min_kg": SLAUGHTER_TARGET_MIN_KG,
-        "abattoir_target_max_kg": SLAUGHTER_TARGET_MAX_KG,
+        "abattoir_target_min_kg": settings["slaughter_target_min_kg"],
+        "abattoir_target_max_kg": settings["slaughter_target_max_kg"],
     }
 
 
-def _growth_profile(row, latest_weight, today):
+def _recommended_outlet_action(bucket, growth, timing, litter_quality):
+    growth_class = growth.get("growth_class", "Unknown")
+    meat_status = timing.get("meat_window_status", "Unknown")
+    abattoir_status = timing.get("abattoir_window_status", "Unknown")
+
+    if bucket == "Allocated":
+        return {
+            "outlet_priority": "Already Allocated",
+            "recommended_action": "Do not market. Pig is already linked or reserved.",
+            "marketing_readiness": "Blocked",
+        }
+    if bucket == "Exited":
+        return {
+            "outlet_priority": "Exited",
+            "recommended_action": "No sale action. Pig is no longer active/on farm.",
+            "marketing_readiness": "Closed",
+        }
+    if bucket in {"Needs Data", "Needs Classification"}:
+        return {
+            "outlet_priority": "Fix Data First",
+            "recommended_action": "Complete missing data/classification before selling or marketing.",
+            "marketing_readiness": "Not Ready",
+        }
+    if bucket == "Retain / Breeding Candidate":
+        return {
+            "outlet_priority": "Breeding Review",
+            "recommended_action": "Review for retention before offering as meat or slaughter.",
+            "marketing_readiness": "Internal Review",
+        }
+    if growth_class in {"Extremely Slow", "Slow"}:
+        return {
+            "outlet_priority": "Livestock Sale",
+            "recommended_action": "Prepare for livestock sale as soon as practical to reduce feed cost.",
+            "marketing_readiness": "Ready For Listing",
+        }
+    if bucket == "Meat Candidate" or meat_status == "In meat window":
+        return {
+            "outlet_priority": "Meat Preorder",
+            "recommended_action": "Prioritize for meat preorder marketing before the pig passes the meat window.",
+            "marketing_readiness": "Ready For Interest",
+        }
+    if meat_status == "Past meat window" or bucket == "Slaughter Candidate" or abattoir_status == "In abattoir window":
+        return {
+            "outlet_priority": "Abattoir Slaughter",
+            "recommended_action": "Plan for abattoir/slaughter unless a better confirmed sale exists.",
+            "marketing_readiness": "Internal Planning",
+        }
+    if bucket == "Growing":
+        return {
+            "outlet_priority": "Keep Growing",
+            "recommended_action": "Monitor growth and wait for meat, abattoir, or livestock trigger.",
+            "marketing_readiness": "Not Ready",
+        }
+
+    return {
+        "outlet_priority": "Review",
+        "recommended_action": "Review manually before marketing or allocation.",
+        "marketing_readiness": "Review",
+    }
+
+
+def _suggested_purpose_signal(bucket, outlet_action, growth, timing, litter_quality):
+    if bucket == "Allocated":
+        return {
+            "suggested_purpose": "Already Allocated",
+            "suggested_purpose_reason": "Pig is already linked or reserved; do not change purpose from this view.",
+            "suggested_purpose_confidence": "High",
+        }
+    if bucket == "Exited":
+        return {
+            "suggested_purpose": "Closed",
+            "suggested_purpose_reason": "Pig is no longer active/on farm.",
+            "suggested_purpose_confidence": "High",
+        }
+    if bucket in {"Needs Data", "Needs Classification"}:
+        return {
+            "suggested_purpose": "Needs Review",
+            "suggested_purpose_reason": "Complete missing data or confirm classification before assigning a business purpose.",
+            "suggested_purpose_confidence": "Low",
+        }
+    if bucket == "Retain / Breeding Candidate":
+        return {
+            "suggested_purpose": "Breeding Review",
+            "suggested_purpose_reason": "Growth and litter quality justify reviewing retention before meat, slaughter, or livestock sale.",
+            "suggested_purpose_confidence": "Medium",
+        }
+    if bucket == "Livestock Candidate" or outlet_action.get("outlet_priority") == "Livestock Sale":
+        return {
+            "suggested_purpose": "Livestock Sale",
+            "suggested_purpose_reason": "Slow-growth or sale-availability signal suggests moving this pig as livestock.",
+            "suggested_purpose_confidence": "Medium",
+        }
+    if bucket == "Meat Candidate" or outlet_action.get("outlet_priority") == "Meat Preorder":
+        return {
+            "suggested_purpose": "Meat",
+            "suggested_purpose_reason": "Pig is in or near the meat window and should be prioritised for preorder demand.",
+            "suggested_purpose_confidence": "Medium",
+        }
+    if bucket == "Slaughter Candidate" or outlet_action.get("outlet_priority") == "Abattoir Slaughter":
+        return {
+            "suggested_purpose": "Abattoir Slaughter",
+            "suggested_purpose_reason": "Pig is in or past the abattoir planning window, or has missed the meat opportunity.",
+            "suggested_purpose_confidence": "Medium",
+        }
+    if bucket == "Growing":
+        return {
+            "suggested_purpose": "Grow Out",
+            "suggested_purpose_reason": "Pig is active/on farm but not yet in a current outlet window.",
+            "suggested_purpose_confidence": "Medium",
+        }
+
+    return {
+        "suggested_purpose": "Manual Review",
+        "suggested_purpose_reason": "No trusted suggested-purpose rule matched this pig.",
+        "suggested_purpose_confidence": "Low",
+    }
+
+
+def _growth_profile(row, latest_weight, today, settings=None):
+    settings = settings or _allocation_settings()
     latest_weight_date = latest_weight.get("weight_date") or parse_sheet_date(row.get("Last_Weight_Date", ""))
     latest_weight_kg = latest_weight.get("weight_kg")
     if latest_weight_kg is None:
@@ -1663,7 +1807,7 @@ def _growth_profile(row, latest_weight, today):
         if days_since_wean > 0:
             post_wean_daily_gain = round((latest_weight_kg - wean_weight_kg) / days_since_wean, 3)
 
-    growth_class, growth_reason = _growth_class_for_adg(lifetime_daily_gain)
+    growth_class, growth_reason = _growth_class_for_adg(lifetime_daily_gain, settings)
 
     return {
         "latest_weight_kg": latest_weight_kg,
@@ -1682,7 +1826,8 @@ def _growth_profile(row, latest_weight, today):
     }
 
 
-def _readiness_bucket(row, growth, sales_meta, litter_quality, today):
+def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=None):
+    settings = settings or _allocation_settings()
     status = to_clean_string(row.get("Status", ""))
     on_farm = to_clean_string(row.get("On_Farm", ""))
     purpose = to_clean_string(row.get("Purpose", ""))
@@ -1722,7 +1867,7 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today):
 
     if last_weight_date:
         days_since_weight = (today - last_weight_date).days
-        if days_since_weight > 45:
+        if days_since_weight > settings["stale_weight_days"]:
             return "Needs Data", f"Latest weight is {days_since_weight} days old."
 
     if growth_class in {"Good", "Exceptional"} and litter_quality.get("litter_quality") == "Good":
@@ -1731,13 +1876,13 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today):
     if growth_class in {"Extremely Slow", "Slow"} and animal_type in {"Grower", "Finisher", "Weaner"}:
         return "Livestock Candidate", "Slow lifetime grower; consider live sale to reduce feed cost and free capacity."
 
-    if available_for_sale.lower() == "yes" and weight_kg >= LIVE_SALE_TARGET_KG:
+    if available_for_sale.lower() == "yes" and weight_kg >= settings["live_sale_target_kg"]:
         return "Livestock Candidate", "Sales availability says this pig is available and weight is at or above live-sale target."
 
-    if MEAT_TARGET_MIN_KG <= weight_kg <= MEAT_TARGET_MAX_KG:
+    if settings["meat_target_min_kg"] <= weight_kg <= settings["meat_target_max_kg"]:
         return "Meat Candidate", "Weight is in the first planned meat-candidate range."
 
-    if SLAUGHTER_TARGET_MIN_KG <= weight_kg <= SLAUGHTER_TARGET_MAX_KG:
+    if settings["slaughter_target_min_kg"] <= weight_kg <= settings["slaughter_target_max_kg"]:
         return "Slaughter Candidate", "Weight is in the first planned slaughter-candidate range."
 
     if animal_type in {"Grower", "Finisher", "Weaner"}:
@@ -1748,6 +1893,7 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today):
 
 def get_pig_allocation_readiness(today=None):
     today = today or datetime.now().date()
+    settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
     overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
@@ -1778,11 +1924,13 @@ def get_pig_allocation_readiness(today=None):
 
         latest_weight = latest_weights.get(pig_id, {})
         sales_meta = sales_lookup.get(pig_id, {})
-        growth = _growth_profile(row, latest_weight, today)
-        timing = _readiness_timing(growth, today)
+        growth = _growth_profile(row, latest_weight, today, settings)
+        timing = _readiness_timing(growth, today, settings)
         litter_id = to_clean_string(row.get("Litter_ID", ""))
-        litter_quality = _litter_quality_summary(litter_lookup.get(litter_id))
-        bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today)
+        litter_quality = _litter_quality_summary(litter_lookup.get(litter_id), settings)
+        bucket, reason = _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings)
+        outlet_action = _recommended_outlet_action(bucket, growth, timing, litter_quality)
+        suggested_purpose = _suggested_purpose_signal(bucket, outlet_action, growth, timing, litter_quality)
         buckets[bucket] = buckets.get(bucket, 0) + 1
 
         current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
@@ -1836,6 +1984,12 @@ def get_pig_allocation_readiness(today=None):
             "weaned_count": litter_quality["weaned_count"],
             "readiness_bucket": bucket,
             "readiness_reason": reason,
+            "outlet_priority": outlet_action["outlet_priority"],
+            "recommended_action": outlet_action["recommended_action"],
+            "marketing_readiness": outlet_action["marketing_readiness"],
+            "suggested_purpose": suggested_purpose["suggested_purpose"],
+            "suggested_purpose_reason": suggested_purpose["suggested_purpose_reason"],
+            "suggested_purpose_confidence": suggested_purpose["suggested_purpose_confidence"],
             "available_for_sale": sales_meta.get("available_for_sale", ""),
             "reserved_status": sales_meta.get("reserved_status", ""),
             "reserved_for_order_id": sales_meta.get("reserved_for_order_id", ""),
@@ -1853,25 +2007,129 @@ def get_pig_allocation_readiness(today=None):
     return {
         "success": True,
         "generated_date": today.isoformat(),
-        "thresholds": {
-            "live_sale_target_kg": LIVE_SALE_TARGET_KG,
-            "meat_target_min_kg": MEAT_TARGET_MIN_KG,
-            "meat_target_max_kg": MEAT_TARGET_MAX_KG,
-            "slaughter_target_min_kg": SLAUGHTER_TARGET_MIN_KG,
-            "slaughter_target_max_kg": SLAUGHTER_TARGET_MAX_KG,
-            "exceptional_grower_adg_kg_day": EXCEPTIONAL_GROWER_ADG_KG_DAY,
-            "good_grower_adg_kg_day": GOOD_GROWER_ADG_KG_DAY,
-            "steady_grower_adg_kg_day": STEADY_GROWER_ADG_KG_DAY,
-            "slow_grower_adg_kg_day": SLOW_GROWER_ADG_KG_DAY,
-            "extremely_slow_grower_adg_kg_day": EXTREMELY_SLOW_GROWER_ADG_KG_DAY,
-            "good_litter_survival_rate": GOOD_LITTER_SURVIVAL_RATE,
-            "stale_weight_days": 45,
+        "thresholds": settings,
+        "business_rules": {
+            "source": settings["source"],
+            "writes_enabled": settings["writes_enabled"],
+            "meat_window_label": f"{settings['meat_target_min_kg']}-{settings['meat_target_max_kg']} kg",
+            "abattoir_window_label": f"{settings['slaughter_target_min_kg']}-{settings['slaughter_target_max_kg']} kg",
+            "live_sale_label": f"{settings['live_sale_target_kg']} kg+ when available for sale, or slow-growth fallback",
+            "target_growth_label": f"{settings['exceptional_grower_adg_kg_day']:.3f} kg/day target",
+            "slow_growth_label": f"Under {settings['slow_grower_adg_kg_day']:.3f} kg/day",
+            "good_litter_label": f"{round(settings['good_litter_survival_rate'] * 100)}%+ survival to weaning",
+            "stale_weight_label": f"{settings['stale_weight_days']} days",
         },
         "summary": {
             "total": len(rows),
             "buckets": buckets,
         },
         "pigs": rows,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+    }
+
+
+def _meat_planning_bucket(row):
+    suggested_purpose = to_clean_string(row.get("suggested_purpose", ""))
+    meat_status = to_clean_string(row.get("meat_window_status", ""))
+    days_until_meat_ready = row.get("days_until_meat_ready")
+    outlet_priority = to_clean_string(row.get("outlet_priority", ""))
+
+    if suggested_purpose == "Meat" or outlet_priority == "Meat Preorder":
+        if meat_status == "In meat window" or days_until_meat_ready == 0:
+            return "ready_now"
+        if isinstance(days_until_meat_ready, (int, float)):
+            if days_until_meat_ready <= 14:
+                return "next_14_days"
+            if days_until_meat_ready <= 30:
+                return "next_30_days"
+        return "future"
+
+    if suggested_purpose == "Abattoir Slaughter" or outlet_priority == "Abattoir Slaughter":
+        return "fallback_abattoir"
+
+    return ""
+
+
+def _meat_planning_row(row, planning_bucket):
+    return {
+        "planning_bucket": planning_bucket,
+        "pig_id": row.get("pig_id", ""),
+        "tag_number": row.get("tag_number", ""),
+        "current_pen_id": row.get("current_pen_id", ""),
+        "current_pen_name": row.get("current_pen_name", ""),
+        "latest_weight_kg": row.get("latest_weight_kg"),
+        "latest_weight_date": row.get("latest_weight_date", ""),
+        "average_daily_gain_kg": row.get("average_daily_gain_kg"),
+        "growth_class": row.get("growth_class", ""),
+        "meat_window_status": row.get("meat_window_status", ""),
+        "estimated_meat_ready_date": row.get("estimated_meat_ready_date", ""),
+        "days_until_meat_ready": row.get("days_until_meat_ready"),
+        "estimated_abattoir_ready_date": row.get("estimated_abattoir_ready_date", ""),
+        "days_until_abattoir_ready": row.get("days_until_abattoir_ready"),
+        "suggested_purpose": row.get("suggested_purpose", ""),
+        "suggested_purpose_reason": row.get("suggested_purpose_reason", ""),
+        "outlet_priority": row.get("outlet_priority", ""),
+        "recommended_action": row.get("recommended_action", ""),
+        "marketing_readiness": row.get("marketing_readiness", ""),
+        "litter_id": row.get("litter_id", ""),
+        "litter_quality": row.get("litter_quality", ""),
+        "litter_survival_rate": row.get("litter_survival_rate"),
+        "sex": row.get("sex", ""),
+        "animal_type": row.get("animal_type", ""),
+    }
+
+
+def get_meat_planning_summary(today=None):
+    allocation = get_pig_allocation_readiness(today=today)
+    planning_rows = []
+    buckets = {
+        "ready_now": 0,
+        "next_14_days": 0,
+        "next_30_days": 0,
+        "future": 0,
+        "fallback_abattoir": 0,
+    }
+
+    for row in allocation.get("pigs", []):
+        planning_bucket = _meat_planning_bucket(row)
+        if not planning_bucket:
+            continue
+        buckets[planning_bucket] += 1
+        planning_rows.append(_meat_planning_row(row, planning_bucket))
+
+    planning_rows.sort(key=lambda item: (
+        {
+            "ready_now": 0,
+            "next_14_days": 1,
+            "next_30_days": 2,
+            "future": 3,
+            "fallback_abattoir": 4,
+        }.get(item["planning_bucket"], 99),
+        item["days_until_meat_ready"] if item["days_until_meat_ready"] is not None else 9999,
+        _pig_sort_key(item["tag_number"] or item["pig_id"]),
+    ))
+
+    meat_pipeline_count = buckets["ready_now"] + buckets["next_14_days"] + buckets["next_30_days"] + buckets["future"]
+
+    return {
+        "success": True,
+        "generated_date": allocation.get("generated_date", ""),
+        "source": "pig_allocation_readiness",
+        "business_rules": allocation.get("business_rules", {}),
+        "thresholds": allocation.get("thresholds", {}),
+        "summary": {
+            "meat_pipeline_count": meat_pipeline_count,
+            "ready_now": buckets["ready_now"],
+            "next_14_days": buckets["next_14_days"],
+            "next_30_days": buckets["next_30_days"],
+            "future": buckets["future"],
+            "fallback_abattoir": buckets["fallback_abattoir"],
+            "minimum_preorder_needed_now": buckets["ready_now"],
+            "minimum_preorder_needed_30_days": buckets["ready_now"] + buckets["next_14_days"] + buckets["next_30_days"],
+        },
+        "buckets": buckets,
+        "pigs": planning_rows,
         "writes_to_sheets": False,
         "writes_to_supabase": False,
     }

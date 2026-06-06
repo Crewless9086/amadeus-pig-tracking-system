@@ -1,6 +1,7 @@
 const messageBox = document.getElementById("allocation_message");
 const subtitle = document.getElementById("allocation_subtitle");
 const summaryEl = document.getElementById("allocation_summary");
+const rulesEl = document.getElementById("allocation_rules");
 const countEl = document.getElementById("allocation_count");
 const bodyEl = document.getElementById("allocation_body");
 const bucketFilter = document.getElementById("bucket_filter");
@@ -127,12 +128,40 @@ function renderSummary(summary) {
   `).join("");
 }
 
+function renderRules(rules) {
+  if (!rules) {
+    rulesEl.innerHTML = "";
+    return;
+  }
+
+  const items = [
+    ["Meat window", rules.meat_window_label],
+    ["Abattoir window", rules.abattoir_window_label],
+    ["Livestock sale", rules.live_sale_label],
+    ["Growth target", rules.target_growth_label],
+    ["Slow-growth trigger", rules.slow_growth_label],
+    ["Good litter", rules.good_litter_label],
+    ["Stale weight", rules.stale_weight_label],
+    ["Rule source", rules.source],
+  ].filter(([, value]) => value);
+
+  rulesEl.innerHTML = items.map(([label, value]) => `
+    <div class="allocation-rule">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `).join("");
+}
+
 function rowSearchText(row) {
   return [
     row.pig_id,
     row.tag_number,
     row.readiness_bucket,
     row.readiness_reason,
+    row.outlet_priority,
+    row.recommended_action,
+    row.marketing_readiness,
     row.growth_class,
     row.growth_reason,
     row.meat_window_status,
@@ -146,6 +175,9 @@ function rowSearchText(row) {
     row.animal_type,
     row.sex,
     row.purpose,
+    row.suggested_purpose,
+    row.suggested_purpose_reason,
+    row.suggested_purpose_confidence,
     row.litter_id,
     row.mother_id,
     row.father_id,
@@ -183,7 +215,7 @@ function bucketClass(bucket) {
 
 function renderRows(rows) {
   if (!rows.length) {
-    bodyEl.innerHTML = '<tr><td colspan="12" class="table-empty">No pigs match the selected filters.</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="14" class="table-empty">No pigs match the selected filters.</td></tr>';
     countEl.textContent = "No pigs in this view.";
     return;
   }
@@ -200,6 +232,11 @@ function renderRows(rows) {
           <span class="table-subtext">${escapeHtml(row.pig_id || "-")}</span>
         </td>
         <td><span class="${bucketClass(row.readiness_bucket)}">${escapeHtml(row.readiness_bucket || "-")}</span></td>
+        <td>
+          <strong>${escapeHtml(row.outlet_priority || "-")}</strong>
+          <span class="table-subtext">${escapeHtml(row.recommended_action || "-")}</span>
+          <span class="table-subtext">${escapeHtml(row.marketing_readiness || "-")}</span>
+        </td>
         <td>${escapeHtml(row.readiness_reason || "-")}</td>
         <td>
           <strong>${escapeHtml(formatKg(row.latest_weight_kg))}</strong>
@@ -225,6 +262,11 @@ function renderRows(rows) {
           <span class="table-subtext">${escapeHtml(row.sex || "-")}</span>
         </td>
         <td>${escapeHtml(row.purpose || "Unknown")}</td>
+        <td>
+          <strong>${escapeHtml(row.suggested_purpose || "-")}</strong>
+          <span class="table-subtext">${escapeHtml(row.suggested_purpose_reason || "-")}</span>
+          <span class="table-subtext">Confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
+        </td>
         <td>
           <strong>${escapeHtml(row.litter_id || "-")}</strong>
           <span class="table-subtext">${escapeHtml(parentText || "No parent links")}</span>
@@ -253,11 +295,12 @@ async function loadAllocationReadiness() {
     subtitle.textContent = `Read-only planning view generated ${data.generated_date || "today"}. No writes are made from this page.`;
     populateFilters(allocationRows);
     renderSummary(allocationSummary);
+    renderRules(data.business_rules || {});
     applyFilters();
   } catch (error) {
     console.error("Pig allocation readiness error:", error);
     showMessage(error.message || "Something went wrong while loading pig allocation readiness.");
-    bodyEl.innerHTML = '<tr><td colspan="12" class="table-empty">Could not load pig allocation readiness.</td></tr>';
+    bodyEl.innerHTML = '<tr><td colspan="14" class="table-empty">Could not load pig allocation readiness.</td></tr>';
   }
 }
 
