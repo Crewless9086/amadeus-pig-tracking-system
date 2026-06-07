@@ -16,6 +16,7 @@ from modules.oom_sakkie.trace_store import (
     _trace_list_where_clause,
     get_trace_review_summary,
     hash_tool_result,
+    list_review_advisor_traces,
     list_recent_traces,
     record_trace_feedback,
     write_trace,
@@ -468,6 +469,23 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "not_configured")
         self.assertEqual(result["traces"], [])
+
+    def test_review_advisor_trace_list_not_configured_is_safe(self):
+        result, status = list_review_advisor_traces(database_url="")
+
+        self.assertEqual(status, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertEqual(result["issue_traces"], [])
+        self.assertEqual(result["unreviewed_traces"], [])
+
+    def test_review_advisor_trace_list_uses_combined_ranked_query(self):
+        query = "\n".join(value for value in list_review_advisor_traces.__code__.co_consts if isinstance(value, str))
+
+        self.assertIn("issue_traces", str(list_review_advisor_traces(database_url="")[0]))
+        self.assertIn("union all", query.lower())
+        self.assertIn("row_number() over", query.lower())
+        self.assertIn("partition by queue_kind", query.lower())
 
     def test_trace_feedback_rejects_invalid_type_before_db(self):
         result, status = record_trace_feedback(

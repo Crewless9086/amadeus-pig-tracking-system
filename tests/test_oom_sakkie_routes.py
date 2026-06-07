@@ -136,6 +136,16 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
 
+        response = self.client.get(
+            "/api/oom-sakkie/policy",
+            environ_base={
+                "REMOTE_ADDR": "203.0.113.10",
+                "HTTP_X_FORWARDED_FOR": "127.0.0.1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

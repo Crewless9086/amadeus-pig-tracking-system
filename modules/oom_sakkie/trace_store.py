@@ -395,6 +395,117 @@ def get_trace_review_summary(channel="", days=14, database_url=None):
     }, 200
 
 
+def list_review_advisor_traces(limit=12, channel="", database_url=None):
+    parsed_limit = _bounded_limit(limit)
+    channel = _clean_text(channel, 40)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "issue_traces": [],
+            "unreviewed_traces": [],
+        }, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dependency_missing",
+            "issue_traces": [],
+            "unreviewed_traces": [],
+        }, 500
+
+    params = {"channel": channel, "limit": parsed_limit}
+    channel_filter = "where t.channel = %(channel)s" if channel else ""
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    with recent as (
+                        select t.trace_id, t.channel, t.session_id, t.user_text, t.intent,
+                               t.confidence, t.tool_name, t.tool_result_summary,
+                               t.tool_result_hash, t.answer, t.risk_level,
+                               t.stale_warnings_json, t.safety_notes_json, t.links_json, t.created_at,
+                               fb.feedback_type, fb.notes as feedback_notes,
+                               fb.reviewed_by as feedback_reviewed_by,
+                               fb.created_at as feedback_created_at
+                        from public.oom_sakkie_traces t
+                        left join lateral (
+                            select feedback_type, notes, reviewed_by, created_at
+                            from public.oom_sakkie_trace_feedback f
+                            where f.trace_id = t.trace_id
+                            order by created_at desc
+                            limit 1
+                        ) fb on true
+                        {channel_filter}
+                    ),
+                    candidates as (
+                        select 'issues' as queue_kind, *
+                        from recent
+                        where feedback_type is not null and feedback_type <> 'correct'
+                        union all
+                        select 'unreviewed' as queue_kind, *
+                        from recent
+                        where feedback_type is null
+                    ),
+                    ranked as (
+                        select *,
+                               row_number() over (
+                                   partition by queue_kind
+                                   order by coalesce(feedback_created_at, created_at) desc nulls last,
+                                            created_at desc
+                               ) as rn
+                        from candidates
+                    )
+                    select queue_kind, trace_id, channel, session_id, user_text, intent, confidence,
+                           tool_name, tool_result_summary, tool_result_hash, answer,
+                           risk_level, stale_warnings_json, safety_notes_json, links_json, created_at,
+                           feedback_type, feedback_notes, feedback_reviewed_by, feedback_created_at
+                    from ranked
+                    where rn <= %(limit)s
+                    order by case when queue_kind = 'issues' then 0 else 1 end,
+                             coalesce(feedback_created_at, created_at) desc nulls last,
+                             created_at desc
+                    """,
+                    params,
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "advisor_trace_read_failed",
+            "error_type": exc.__class__.__name__,
+            "issue_traces": [],
+            "unreviewed_traces": [],
+        }, 503
+
+    issue_traces = []
+    unreviewed_traces = []
+    for row in rows:
+        queue_kind = row[0]
+        trace = _trace_row(row[1:])
+        if queue_kind == "issues":
+            issue_traces.append(trace)
+        else:
+            unreviewed_traces.append(trace)
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "channel": channel,
+        "limit": parsed_limit,
+        "issue_traces": issue_traces,
+        "unreviewed_traces": unreviewed_traces,
+    }, 200
+
+
 def _bounded_limit(value):
     try:
         limit = int(value)

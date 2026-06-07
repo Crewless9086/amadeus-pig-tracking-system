@@ -27,7 +27,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Real Weight Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now | Next: keep live-test-dependent items open, then choose the next practical business-module-aligned slice. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
-| Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7D Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, and manual kiosk advisor panel exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
+| Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7F Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, and combined advisor trace reader exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -5289,7 +5289,11 @@ Goal:
 Implemented locally:
 
 - Added a `Review Advisor` panel under the review summary on `/oom-sakkie`.
-- The panel has a manual `Refresh` button and does not auto-poll.
+- The panel is user-action-triggered and does not auto-poll:
+  - it loads on page open,
+  - refreshes after a kiosk question,
+  - refreshes with the Recent Checks refresh,
+  - and has its own manual `Refresh` button.
 - It calls `GET /api/oom-sakkie/review-advisor?channel=kiosk&days=14&limit=12`.
 - It shows:
   - the advisory guard line (`advisory_only`, auto-marking off, feedback writes off),
@@ -5311,6 +5315,59 @@ Browser-check next:
 - Click `Refresh`.
 - Confirm it shows the guard line plus useful suggestions or a clear empty state.
 - Use the panel only to guide manual feedback decisions.
+
+### 10.7E Oom Sakkie Advisor Wording And Proxy-Test Tightening - Local Ready
+
+Source:
+
+- Claude review after 10.7D found the advisor implementation was safe, but the wording said `manual refresh only` while the code refreshes after page load, kiosk questions, and review refreshes. Claude also asked for the inverse forwarded-header regression test.
+
+Implemented locally:
+
+- Updated roadmap/current-review wording to describe the advisor as `user-action-triggered, no auto-polling`.
+- Kept the current behavior because it gives immediate post-question advisor feedback without timers, writes, model calls, or hidden automation.
+- Added the inverse `X-Forwarded-For` regression test:
+  - `REMOTE_ADDR = 203.0.113.10`
+  - `HTTP_X_FORWARDED_FOR = 127.0.0.1`
+  - expected result: review endpoint denied with `403`.
+- Frontend contract now pins that the advisor guard line displays backend `data.mode`, `data.autonomous_marking_enabled`, and `data.writes_feedback`.
+
+Verification:
+
+- Focused route/frontend tests passed locally.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm `Review Advisor` appears after page load.
+- Ask a kiosk question and confirm the advisor refreshes after the answer.
+- Confirm there is no timed/background polling.
+
+### 10.7F Oom Sakkie Advisor Trace Read Consolidation - Local Ready
+
+Source:
+
+- Claude noted the advisor still used multiple trace-list reads. This was not a blocker at home volume, but consolidating the two trace-list reads is cheap and reduces unnecessary DB pressure from the kiosk advisor panel.
+
+Implemented locally:
+
+- Added `list_review_advisor_traces()` in `modules/oom_sakkie/trace_store.py`.
+- It reads reviewed issue traces and unreviewed traces in one combined ranked query.
+- It returns separate `issue_traces` and `unreviewed_traces` arrays.
+- Updated `modules/oom_sakkie/review_advisor.py` to use the combined trace reader.
+- Kept the public `/api/oom-sakkie/review-advisor` response shape unchanged.
+- No auto-polling, auto-marking, model call, tool execution, Telegram change, write tool, physical control, backend STT/TTS vendor, wake word, always-on mic, or second user-facing brain was added.
+
+Verification:
+
+- Service tests cover safe unconfigured behavior and the combined ranked query shape.
+- Focused Oom Sakkie service and route tests passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm the Review Advisor still loads and shows the same queue/suggestions.
+- If the panel ever feels slow after trace volume grows, the next optimization is combining review summary and advisor traces into one endpoint-specific query.
 
 Supabase RLS hardening verification:
 

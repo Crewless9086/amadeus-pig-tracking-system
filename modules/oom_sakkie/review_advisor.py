@@ -1,21 +1,20 @@
-from modules.oom_sakkie.trace_store import get_trace_review_summary, list_recent_traces
+from modules.oom_sakkie.trace_store import get_trace_review_summary, list_review_advisor_traces
 
 
 def get_review_advisor(channel="kiosk", days=14, limit=12):
     channel = str(channel or "kiosk").strip()[:40] or "kiosk"
     summary, summary_status = get_trace_review_summary(channel=channel, days=days)
-    issue_traces, issues_status = list_recent_traces(
-        limit=limit,
-        channel=channel,
-        review="issues",
-        search="",
-    )
-    unreviewed_traces, unreviewed_status = list_recent_traces(
-        limit=limit,
-        channel=channel,
-        review="unreviewed",
-        search="",
-    )
+    advisor_traces, advisor_traces_status = list_review_advisor_traces(limit=limit, channel=channel)
+    issue_traces = {
+        "success": advisor_traces.get("success", False),
+        "configured": advisor_traces.get("configured", False),
+        "traces": advisor_traces.get("issue_traces", []),
+    }
+    unreviewed_traces = {
+        "success": advisor_traces.get("success", False),
+        "configured": advisor_traces.get("configured", False),
+        "traces": advisor_traces.get("unreviewed_traces", []),
+    }
 
     advisor = build_review_advice(
         summary=summary,
@@ -23,13 +22,12 @@ def get_review_advisor(channel="kiosk", days=14, limit=12):
         unreviewed_traces=unreviewed_traces,
         statuses={
             "review_summary": summary_status,
-            "issue_traces": issues_status,
-            "unreviewed_traces": unreviewed_status,
+            "advisor_traces": advisor_traces_status,
         },
     )
     advisor["channel"] = channel
     advisor["days"] = summary.get("days", days) if isinstance(summary, dict) else days
-    return advisor, max(summary_status, issues_status, unreviewed_status)
+    return advisor, max(summary_status, advisor_traces_status)
 
 
 def build_review_advice(summary, issue_traces, unreviewed_traces, statuses):
