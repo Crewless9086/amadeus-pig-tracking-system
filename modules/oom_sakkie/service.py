@@ -101,6 +101,11 @@ def handle_message(payload):
             "stale_warnings": [],
             "safety_notes": [],
             "needs_clarification": True,
+            "pipeline": _pipeline(
+                route_source="empty",
+                answer_source="local",
+                state="needs_input",
+            ),
             "trace_store": {"stored": False, "status": "not_written_empty_text"},
         }, 400
 
@@ -137,6 +142,11 @@ def handle_message(payload):
             "safety_notes": ["No write, control, message, or physical action was performed."],
             "needs_clarification": True,
             "action_blocked": True,
+            "pipeline": _pipeline(
+                route_source="action_guard",
+                answer_source="local",
+                state="blocked",
+            ),
             "trace_store": trace_status,
         }, 200
 
@@ -173,6 +183,11 @@ def handle_message(payload):
             "stale_warnings": [],
             "safety_notes": safety_notes,
             "needs_clarification": False,
+            "pipeline": _pipeline(
+                route_source="capability",
+                answer_source="local",
+                state="answered",
+            ),
             "trace_store": trace_status,
             "intent": {
                 "name": "capabilities",
@@ -212,6 +227,12 @@ def handle_message(payload):
                     "stale_warnings": [],
                     "safety_notes": [],
                     "needs_clarification": True,
+                    "pipeline": _pipeline(
+                        route_source="llm_router",
+                        answer_source="local",
+                        state="needs_clarification",
+                        llm_router_used=True,
+                    ),
                     "trace_store": trace_status,
                     "intent": {
                         "name": llm_match.intent,
@@ -254,6 +275,11 @@ def handle_message(payload):
             "stale_warnings": [],
             "safety_notes": [],
             "needs_clarification": True,
+            "pipeline": _pipeline(
+                route_source="unknown",
+                answer_source="local",
+                state="needs_clarification",
+            ),
             "trace_store": trace_status,
         }, 200
 
@@ -274,6 +300,11 @@ def handle_message(payload):
             "stale_warnings": [],
             "safety_notes": [],
             "needs_clarification": True,
+            "pipeline": _pipeline(
+                route_source=_route_source(match),
+                answer_source="local",
+                state="error",
+            ),
             "trace_store": trace_status,
         }, 500
 
@@ -284,16 +315,15 @@ def handle_message(payload):
     if is_unsupported_action_request(text):
         safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
     deterministic_answer = build_answer(tool_result, stale_warnings, safety_notes)
-    answer = (
-        compose_answer_with_llm(
-            user_text=text,
-            tool_name=tool.name,
-            deterministic_answer=deterministic_answer,
-            stale_warnings=stale_warnings,
-            safety_notes=safety_notes,
-        )
-        or deterministic_answer
+    composed_answer = compose_answer_with_llm(
+        user_text=text,
+        tool_name=tool.name,
+        deterministic_answer=deterministic_answer,
+        stale_warnings=stale_warnings,
+        safety_notes=safety_notes,
     )
+    answer = composed_answer or deterministic_answer
+    answer_source = "llm_composer" if composed_answer else "deterministic"
     trace = _trace_payload(
         trace_id=trace_id,
         channel=channel,
@@ -321,6 +351,14 @@ def handle_message(payload):
         "stale_warnings": stale_warnings,
         "safety_notes": safety_notes,
         "needs_clarification": False,
+        "pipeline": _pipeline(
+            route_source=_route_source(match),
+            answer_source=answer_source,
+            state="answered",
+            llm_router_used=_route_source(match) == "llm_router",
+            llm_answer_used=answer_source == "llm_composer",
+            tool_checked=True,
+        ),
         "trace_store": trace_status,
         "intent": {
             "name": match.intent,
@@ -357,6 +395,30 @@ def build_answer(tool_result, stale_warnings, safety_notes=None):
     if safety_notes:
         return f"{summary} Note: {safety_notes[0]}"
     return summary
+
+
+def _route_source(match):
+    if not match:
+        return "unknown"
+    return "rule" if str(match.reason or "").startswith("rule:") else "llm_router"
+
+
+def _pipeline(
+    route_source,
+    answer_source,
+    state,
+    llm_router_used=False,
+    llm_answer_used=False,
+    tool_checked=False,
+):
+    return {
+        "route_source": route_source,
+        "answer_source": answer_source,
+        "state": state,
+        "llm_router_used": bool(llm_router_used),
+        "llm_answer_used": bool(llm_answer_used),
+        "tool_checked": bool(tool_checked),
+    }
 
 
 def _trace_payload(

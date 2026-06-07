@@ -246,6 +246,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("cannot send messages", result["answer"])
         self.assertIn("Capabilities only", result["safety_notes"][0])
         self.assertEqual(result["intent"]["name"], "capabilities")
+        self.assertEqual(result["pipeline"]["route_source"], "capability")
+        self.assertEqual(result["pipeline"]["answer_source"], "local")
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.tools.get_current_power_state")
@@ -282,6 +284,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["tool_used"], "power_current")
         self.assertEqual(result["intent"]["reason"], "test:llm_selected_power")
         self.assertEqual(result["risk_level"], 0)
+        self.assertEqual(result["pipeline"]["route_source"], "llm_router")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertTrue(result["pipeline"]["llm_router_used"])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.route_with_llm")
@@ -304,6 +309,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["needs_clarification"])
         self.assertEqual(result["tool_used"], "")
         self.assertIn("power, weather, pigs", result["answer"])
+        self.assertEqual(result["pipeline"]["route_source"], "llm_router")
+        self.assertEqual(result["pipeline"]["state"], "needs_clarification")
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.route_with_llm")
@@ -315,6 +322,8 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertTrue(result["action_blocked"])
+        self.assertEqual(result["pipeline"]["route_source"], "action_guard")
+        self.assertEqual(result["pipeline"]["state"], "blocked")
         mock_llm.assert_not_called()
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
@@ -400,6 +409,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["needs_clarification"])
         self.assertEqual(result["tool_used"], "")
         self.assertIn("not sure", result["answer"])
+        self.assertEqual(result["pipeline"]["route_source"], "unknown")
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.route_with_llm", return_value=None)
@@ -489,6 +499,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Grid: 0 W", result["answer"])
         self.assertIn("Data age: 42 minute(s)", result["answer"])
         self.assertIn("Note:", result["answer"])
+        self.assertEqual(result["pipeline"]["route_source"], "rule")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertTrue(result["pipeline"]["tool_checked"])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.tools.get_current_power_state")
@@ -518,6 +531,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["tool_used"], "power_current")
         self.assertEqual(result["answer"], mock_compose.return_value)
+        self.assertEqual(result["pipeline"]["answer_source"], "llm_composer")
+        self.assertTrue(result["pipeline"]["llm_answer_used"])
         mock_compose.assert_called_once()
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})

@@ -5709,6 +5709,52 @@ Operational rule:
 - Keep router/composer traces under review during the local experiment.
 - If answers become too fluffy, turn this one env var off and the system falls back to deterministic wording.
 
+### 10.7P Oom Sakkie Alive State And Provenance Strip - Local Ready
+
+Source:
+
+- Owner wanted the kiosk to feel more alive and useful, inspired by the Usejarvis reference.
+- External Usejarvis source was inspected read-only and documented at `docs/01-architecture/JARVIS_EXTERNAL_REFERENCE_REVIEW.md`.
+- Decision: borrow the state/provenance ideas, not the runtime, installer, sidecar, or desktop-control code.
+
+Implemented locally:
+
+- Added `pipeline` metadata to `/api/oom-sakkie/message` responses:
+  - `route_source`,
+  - `answer_source`,
+  - `state`,
+  - `llm_router_used`,
+  - `llm_answer_used`,
+  - `tool_checked`.
+- Added a visible answer pipeline strip on `/oom-sakkie`:
+  - Route,
+  - Answer,
+  - State.
+- Added trace details for intent confidence and route reason.
+- Made the top status pill stateful with visual differences for:
+  - listening,
+  - checking,
+  - speaking,
+  - answered,
+  - blocked/error.
+- Added frontend contract tests so the provenance strip and state metadata do not disappear silently.
+- Added service tests so rule routing, LLM routing, action blocking, capability answers, deterministic answers, and LLM-composed answers expose the correct pipeline metadata.
+
+Verified locally:
+
+- Focused Oom Sakkie service/frontend tests passed.
+- Full local unittest suite passed at 402 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Operational rule:
+
+- This is visibility only. It does not add new tools, writes, Telegram cutover, physical control, wake word, always-on mic, or specialist delegation.
+- Use this strip during testing to tell whether a basic answer is basic because:
+  - the route was rule-based,
+  - the answer composer was off,
+  - the answer composer fell back,
+  - or the LLM router selected the tool.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

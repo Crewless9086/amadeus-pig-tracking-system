@@ -42,6 +42,20 @@
         </div>
         <div id="oom_warnings" class="oom-warnings" hidden></div>
         <div id="oom_safety_notes" class="oom-safety-notes" hidden></div>
+        <div class="oom-pipeline-strip" aria-label="Answer pipeline">
+          <div>
+            <span>Route</span>
+            <strong id="oom_route_source">Waiting</strong>
+          </div>
+          <div>
+            <span>Answer</span>
+            <strong id="oom_answer_source">Waiting</strong>
+          </div>
+          <div>
+            <span>State</span>
+            <strong id="oom_pipeline_state">Idle</strong>
+          </div>
+        </div>
         <div id="oom_links" class="oom-links"></div>
       </div>
 
@@ -59,6 +73,14 @@
           <div>
             <dt>Risk</dt>
             <dd id="oom_risk_level">0</dd>
+          </div>
+          <div>
+            <dt>Confidence</dt>
+            <dd id="oom_intent_confidence">None</dd>
+          </div>
+          <div>
+            <dt>Reason</dt>
+            <dd id="oom_intent_reason">None</dd>
           </div>
         </dl>
       </details>

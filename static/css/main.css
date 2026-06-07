@@ -2456,6 +2456,40 @@ button:disabled {
   box-shadow: 0 0 18px rgba(45, 212, 168, 0.7);
 }
 
+.oom-status[data-state="listening"] .oom-status-dot,
+.oom-status[data-state="checking"] .oom-status-dot,
+.oom-status[data-state="speaking"] .oom-status-dot {
+  animation: oom-status-pulse 1.2s ease-in-out infinite;
+}
+
+.oom-status[data-state="checking"] .oom-status-dot {
+  background: #f5b64b;
+  box-shadow: 0 0 18px rgba(245, 182, 75, 0.74);
+}
+
+.oom-status[data-state="speaking"] .oom-status-dot {
+  background: #7dd3fc;
+  box-shadow: 0 0 18px rgba(125, 211, 252, 0.74);
+}
+
+.oom-status[data-state="blocked"] .oom-status-dot,
+.oom-status[data-state="error"] .oom-status-dot {
+  background: #f87171;
+  box-shadow: 0 0 18px rgba(248, 113, 113, 0.74);
+}
+
+@keyframes oom-status-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.45);
+    opacity: 1;
+  }
+}
+
 .oom-workspace {
   display: grid;
   grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.4fr);
@@ -2502,6 +2536,39 @@ button:disabled {
   gap: 10px;
   align-items: center;
   margin-top: 18px;
+}
+
+.oom-pipeline-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.oom-pipeline-strip > div {
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid rgba(45, 212, 168, 0.22);
+  border-radius: 8px;
+  background: rgba(45, 212, 168, 0.07);
+}
+
+.oom-pipeline-strip span {
+  display: block;
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.oom-pipeline-strip strong {
+  display: block;
+  margin-top: 6px;
+  color: #9ef2db;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .oom-speech-control,

@@ -1,6 +1,7 @@
 (function () {
   const form = document.getElementById("oom_form");
   const input = document.getElementById("oom_text");
+  const statusBadge = document.getElementById("oom_status");
   const statusText = document.getElementById("oom_status_text");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
@@ -10,6 +11,11 @@
   const traceId = document.getElementById("oom_trace_id");
   const toolUsed = document.getElementById("oom_tool_used");
   const riskLevel = document.getElementById("oom_risk_level");
+  const routeSource = document.getElementById("oom_route_source");
+  const answerSource = document.getElementById("oom_answer_source");
+  const pipelineState = document.getElementById("oom_pipeline_state");
+  const intentConfidence = document.getElementById("oom_intent_confidence");
+  const intentReason = document.getElementById("oom_intent_reason");
   const voiceButton = document.getElementById("oom_voice_button");
   const voiceAskButton = document.getElementById("oom_voice_ask_button");
   const voiceStatus = document.getElementById("oom_voice_status");
@@ -61,8 +67,50 @@
     ["needs_follow_up", "Needs follow-up"],
   ];
 
-  function setStatus(value) {
+  function setStatus(value, state) {
     statusText.textContent = value;
+    if (statusBadge && state) statusBadge.dataset.state = state;
+  }
+
+  function prettySource(value) {
+    const labels = {
+      rule: "Rule",
+      llm_router: "LLM router",
+      deterministic: "Deterministic",
+      llm_composer: "LLM composer",
+      capability: "Capability",
+      action_guard: "Action guard",
+      local: "Local",
+      unknown: "Unknown",
+      empty: "Empty",
+      answered: "Answered",
+      blocked: "Blocked",
+      needs_clarification: "Needs clarification",
+      needs_input: "Needs input",
+      error: "Error",
+    };
+    return labels[value] || value || "Waiting";
+  }
+
+  function renderPipeline(data) {
+    const pipeline = (data && data.pipeline) || {};
+    const intent = (data && data.intent) || {};
+    if (routeSource) routeSource.textContent = prettySource(pipeline.route_source);
+    if (answerSource) answerSource.textContent = prettySource(pipeline.answer_source);
+    if (pipelineState) pipelineState.textContent = prettySource(pipeline.state);
+    if (intentConfidence) {
+      const confidence = Number(intent.confidence);
+      intentConfidence.textContent = Number.isFinite(confidence) ? confidence.toFixed(2) : "None";
+    }
+    if (intentReason) intentReason.textContent = intent.reason || "None";
+  }
+
+  function resetPipelineForCheck() {
+    if (routeSource) routeSource.textContent = "Routing";
+    if (answerSource) answerSource.textContent = "Waiting";
+    if (pipelineState) pipelineState.textContent = "Checking";
+    if (intentConfidence) intentConfidence.textContent = "None";
+    if (intentReason) intentReason.textContent = "None";
   }
 
   function getSessionId() {
@@ -208,7 +256,7 @@
       } else if (voiceButton) {
         voiceButton.textContent = "Listening";
       }
-      setStatus("Listening");
+      setStatus("Listening", "listening");
       logVoiceEvent("Listening", voiceAutoSubmitMode ? "Talk & Ask capture started" : "Draft capture started");
       setVoiceStatus(
         voiceAutoSubmitMode
@@ -222,7 +270,7 @@
       if (voiceButton) voiceButton.textContent = "Talk";
       if (voiceAskButton) voiceAskButton.textContent = "Talk & Ask";
       voiceAutoSubmitMode = false;
-      setStatus("Voice error");
+      setStatus("Voice error", "error");
       logVoiceEvent("Recognition error", event.error || "unknown error");
       setVoiceStatus(`Speech recognition stopped: ${event.error || "unknown error"}.`);
     };
@@ -245,7 +293,7 @@
         }
         setVoiceStatus("No speech was captured. Try again or type the question.");
       }
-      if (statusText.textContent === "Listening") setStatus("Idle");
+      if (statusText.textContent === "Listening") setStatus("Idle", "idle");
     };
 
     recognition.onresult = (event) => {
@@ -382,7 +430,7 @@
     if (voiceButton) voiceButton.textContent = "Talk";
     if (voiceAskButton) voiceAskButton.textContent = "Talk & Ask";
     if (statusText.textContent === "Speaking" || statusText.textContent === "Listening") {
-      setStatus("Idle");
+      setStatus("Idle", "idle");
     }
     setVoiceStatus(message || "Conversation stopped. Mic stayed off.");
     renderVoiceLoopCounter();
@@ -405,7 +453,7 @@
         answer.textContent = "Oom Sakkie could not check that right now.";
         traceId.textContent = "Request failed";
         toolUsed.textContent = error && error.name ? error.name : "Error";
-        setStatus("Error");
+        setStatus("Error", "error");
       });
     }, 2000);
   }
@@ -449,7 +497,7 @@
     speechUtterance.pitch = 1;
     speechUtterance.volume = 1;
     speechUtterance.onstart = () => {
-      setStatus("Speaking");
+      setStatus("Speaking", "speaking");
       logVoiceEvent("Speaking", automatic ? "automatic reply playback" : "manual answer playback");
       setVoiceStatus(`${automatic ? "Auto-speaking" : "Speaking"} answer. Mic is not listening.`);
     };
@@ -473,7 +521,7 @@
       }
       voiceLoopTurnCount = 0;
       renderVoiceLoopCounter();
-      if (statusText.textContent === "Speaking") setStatus("Answered");
+      if (statusText.textContent === "Speaking") setStatus("Answered", "answered");
       logVoiceEvent("Speech finished", "mic stayed off");
       setVoiceStatus("Speech finished. Mic stayed off.");
       updateConversationStopVisibility();
@@ -483,7 +531,7 @@
       speechUtterance = null;
       voiceLoopTurnCount = 0;
       renderVoiceLoopCounter();
-      setStatus("Speech error");
+      setStatus("Speech error", "error");
       logVoiceEvent("Speech error", "browser playback stopped");
       setVoiceStatus("Browser speech playback stopped before finishing.");
       updateConversationStopVisibility();
@@ -502,7 +550,7 @@
     speechUtterance = null;
     voiceLoopTurnCount = 0;
     renderVoiceLoopCounter();
-    if (statusText.textContent === "Speaking") setStatus("Answered");
+    if (statusText.textContent === "Speaking") setStatus("Answered", "answered");
     logVoiceEvent("Speech stopped", "manual stop");
     setVoiceStatus("Speech stopped. Mic stayed off.");
     updateConversationStopVisibility();
@@ -518,9 +566,10 @@
       speechRunId += 1;
       speechSynthesisApi.cancel();
     }
-    setStatus("Checking");
+    setStatus("Checking", "checking");
     userText.textContent = text;
     answer.textContent = "Checking the farm system...";
+    resetPipelineForCheck();
     renderWarnings([]);
     renderSafetyNotes([]);
     renderLinks([]);
@@ -540,10 +589,18 @@
     traceId.textContent = data.trace_id || "None";
     toolUsed.textContent = data.tool_used || "None";
     riskLevel.textContent = String(data.risk_level ?? 0);
+    renderPipeline(data);
     renderWarnings(data.stale_warnings || []);
     renderSafetyNotes(data.safety_notes || []);
     renderLinks(data.links || []);
-    setStatus(data.needs_clarification ? "Needs clarification" : "Answered");
+    if (data.action_blocked) {
+      setStatus("Blocked", "blocked");
+    } else {
+      setStatus(
+        data.needs_clarification ? "Needs clarification" : "Answered",
+        data.needs_clarification ? "clarifying" : "answered"
+      );
+    }
     logVoiceEvent("Backend answered", data.tool_used || "clarification");
     refreshReviewData();
     if (autoSpeak && autoSpeak.checked) {
@@ -1000,7 +1057,7 @@
         answer.textContent = "Oom Sakkie could not check that right now.";
         traceId.textContent = "Request failed";
         toolUsed.textContent = error && error.name ? error.name : "Error";
-        setStatus("Error");
+        setStatus("Error", "error");
       });
     });
   }
@@ -1119,7 +1176,7 @@
         answer.textContent = "Oom Sakkie could not check that right now.";
         traceId.textContent = "Request failed";
         toolUsed.textContent = error && error.name ? error.name : "Error";
-        setStatus("Error");
+        setStatus("Error", "error");
       });
     });
   });
