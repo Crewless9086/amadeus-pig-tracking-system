@@ -5473,6 +5473,35 @@ Browser-check next:
 - Confirm `what can you do` gives a useful current-scope answer.
 - Confirm current power now gives more operational context than only battery/solar/load.
 
+### 10.7J Oom Sakkie Capability Fallback Precedence Fix - Local Ready
+
+Source:
+
+- Claude review after 10.7I found that `help` / `help me` capability detection ran before domain rule classification.
+- That meant natural prompts such as `help me with the weather` could return the generic capabilities answer instead of routing to the intended read-only tool.
+
+Implemented locally:
+
+- Moved the capabilities response after deterministic tool classification and after the unsupported-action block.
+- Domain-specific help prompts now route to the domain tool first:
+  - `help me with the weather` -> `weather_today`
+  - `I need help with the power` -> `power_current`
+  - `can you help me check irrigation` -> `irrigation_status`
+  - `help me understand sales` -> `sales_dashboard`
+- Bare capability/help prompts still return the read-only capability answer.
+- Capability trace confidence now uses `1.0` for consistency with other float confidence values.
+- No LLM router, endpoint expansion, auto-polling, auto-marking, write tool, physical control, backend STT/TTS vendor, wake word, always-on mic, Telegram change, live specialist delegation, or second user-facing brain was added.
+
+Verification:
+
+- Focused Oom Sakkie service and route tests passed.
+- Full local unittest suite passed at 390 tests.
+
+Browser-check next:
+
+- Ask `help me with the weather`; confirm it routes to weather rather than the capability answer.
+- Ask `what can you do`; confirm it still returns the capability answer.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

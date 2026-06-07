@@ -48,7 +48,7 @@ RULES = [
         IntentMatch("pig_allocation", "pig_allocation_readiness", 0.95, "rule:pig_allocation_readiness"),
     ),
     (
-        re.compile(r"\b(sales dashboard|sales overview|sales issues|sales problem|sales problems|stock availability|available stock|sales stock|what.*available.*sale)\b", re.I),
+        re.compile(r"\b(sales|sales dashboard|sales overview|sales issues|sales problem|sales problems|stock availability|available stock|sales stock|what.*available.*sale)\b", re.I),
         IntentMatch("sales_dashboard", "sales_dashboard", 0.95, "rule:sales_dashboard"),
     ),
     (
@@ -102,47 +102,6 @@ def handle_message(payload):
             "trace_store": {"stored": False, "status": "not_written_empty_text"},
         }, 400
 
-    if is_capability_request(text):
-        answer = (
-            "I can do read-only farm checks right now: farm attention, current or recent power, "
-            "weather now/today/forecast, irrigation status, farm dashboard, pig allocation, meat planning, and sales stock. "
-            "I cannot send messages, change records, start irrigation, post publicly, or perform physical actions."
-        )
-        safety_notes = ["Capabilities only. No tool, write, control, message, or physical action was performed."]
-        trace = _trace_payload(
-            trace_id=trace_id,
-            channel=channel,
-            session_id=session_id,
-            user_text=text,
-            intent="capabilities",
-            confidence=1,
-            tool_name="",
-            tool_result={"summary": answer},
-            answer=answer,
-            risk_level=RiskLevel.READ_ONLY,
-            stale_warnings=[],
-            safety_notes=safety_notes,
-            links=[],
-        )
-        trace_status = write_trace(trace)
-        return {
-            "success": True,
-            "answer": answer,
-            "tool_used": "",
-            "trace_id": trace_id,
-            "risk_level": int(RiskLevel.READ_ONLY),
-            "links": [],
-            "stale_warnings": [],
-            "safety_notes": safety_notes,
-            "needs_clarification": False,
-            "trace_store": trace_status,
-            "intent": {
-                "name": "capabilities",
-                "confidence": 1,
-                "reason": "rule:capabilities",
-            },
-        }, 200
-
     match = classify_intent(text)
     if not match and is_unsupported_action_request(text):
         answer = (
@@ -177,6 +136,47 @@ def handle_message(payload):
             "needs_clarification": True,
             "action_blocked": True,
             "trace_store": trace_status,
+        }, 200
+
+    if not match and is_capability_request(text):
+        answer = (
+            "I can do read-only farm checks right now: farm attention, current or recent power, "
+            "weather now/today/forecast, irrigation status, farm dashboard, pig allocation, meat planning, and sales stock. "
+            "I cannot send messages, change records, start irrigation, post publicly, or perform physical actions."
+        )
+        safety_notes = ["Capabilities only. No tool, write, control, message, or physical action was performed."]
+        trace = _trace_payload(
+            trace_id=trace_id,
+            channel=channel,
+            session_id=session_id,
+            user_text=text,
+            intent="capabilities",
+            confidence=1.0,
+            tool_name="",
+            tool_result={"summary": answer},
+            answer=answer,
+            risk_level=RiskLevel.READ_ONLY,
+            stale_warnings=[],
+            safety_notes=safety_notes,
+            links=[],
+        )
+        trace_status = write_trace(trace)
+        return {
+            "success": True,
+            "answer": answer,
+            "tool_used": "",
+            "trace_id": trace_id,
+            "risk_level": int(RiskLevel.READ_ONLY),
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": safety_notes,
+            "needs_clarification": False,
+            "trace_store": trace_status,
+            "intent": {
+                "name": "capabilities",
+                "confidence": 1.0,
+                "reason": "rule:capabilities",
+            },
         }, 200
 
     if not match or match.confidence < CONFIDENCE_FLOOR:

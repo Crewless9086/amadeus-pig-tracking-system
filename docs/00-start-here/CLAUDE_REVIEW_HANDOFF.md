@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-I specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, and trace-driven router/power-answer tightening.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-J specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, and capability-fallback precedence fix.
 
 Out of scope unless explicitly asked:
 
@@ -63,6 +63,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Advisor trace time-window and SQL/test hardening
 - Visible Review Advisor time window and Continue Conversation turn counter
 - Trace-driven routing aliases, capability answer, control-phrase guard, and richer current-power answer
+- Capability/help fallback precedence so domain-specific help prompts route to the right read-only tool
 
 ## Files/folders to inspect
 
@@ -116,6 +117,13 @@ Summary:
 - Added a read-only `what can you do` capabilities answer that states current checks and blocked actions.
 - Hardened dynamic control phrase detection for separated wording such as `turn the pump on`.
 - Enriched `power_current` wording with battery state, grid watts/state, and data age from the existing power backend response.
+- Moved capability/help handling after deterministic tool classification and unsupported-action blocking.
+- Added domain-specific help routing coverage:
+  - `help me with the weather` -> `weather_today`
+  - `I need help with the power` -> `power_current`
+  - `can you help me check irrigation` -> `irrigation_status`
+  - `help me understand sales` -> `sales_dashboard`
+- Kept bare `what can you do` on the capability answer path.
 
 Known verification from Codex:
 
@@ -153,7 +161,8 @@ Please inspect specifically:
 14. **Trace row mapping:** Is the positional `_trace_row` mapping sufficiently guarded by tests?
 15. **Kiosk honesty polish:** Does Phase 10.7H accurately surface the Review Advisor's 14-day window and the 5-turn continue-conversation cap without changing behavior?
 16. **Trace-driven router tightening:** Does Phase 10.7I improve only deterministic read-only routing/wording from real traces, and does `turn the pump on` stay safe?
-17. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+17. **Capability fallback precedence:** Does Phase 10.7J prevent `help me with <domain>` prompts from being swallowed by the generic capability answer while keeping bare `what can you do` useful?
+18. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

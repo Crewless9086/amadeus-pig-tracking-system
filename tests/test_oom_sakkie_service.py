@@ -177,12 +177,15 @@ class OomSakkieServiceTests(unittest.TestCase):
         cases = {
             "what needs attention today": "farm_attention_summary",
             "what is the power like now": "power_current",
+            "I need help with the power": "power_current",
             "show me the recent power profile": "power_recent",
             "weather now please": "weather_now",
             "weather today please": "weather_today",
+            "help me with the weather": "weather_today",
             "weather forecast for the next few days": "weather_forecast",
             "what is the irrigation status": "irrigation_status",
             "start irrigation": "irrigation_status",
+            "can you help me check irrigation": "irrigation_status",
             "do we need to water anything": "irrigation_status",
             "how is the farm": "dashboard_summary",
             "what animals do we have on the farm": "dashboard_summary",
@@ -192,6 +195,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "show me pig allocation": "pig_allocation_readiness",
             "sales dashboard overview": "sales_dashboard",
             "are there any sales issues": "sales_dashboard",
+            "help me understand sales": "sales_dashboard",
             "do I need to worry about anything today": "farm_attention_summary",
         }
         for text, expected_tool in cases.items():
