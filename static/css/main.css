@@ -2498,6 +2498,164 @@ button:disabled {
   align-content: start;
 }
 
+.oom-presence-panel {
+  grid-column: 1 / -1;
+  min-height: 340px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(45, 212, 168, 0.2), rgba(14, 15, 19, 0) 38%),
+    linear-gradient(180deg, rgba(22, 23, 29, 0.88), rgba(8, 10, 14, 0.92));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.32);
+}
+
+.oom-presence-panel::before {
+  content: "";
+  position: absolute;
+  inset: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.oom-presence-orb {
+  width: min(48vw, 320px);
+  aspect-ratio: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 0 38px rgba(45, 212, 168, 0.42));
+}
+
+.oom-orb-ring,
+.oom-orb-core,
+.oom-orb-scan {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.oom-orb-ring-outer {
+  inset: 4%;
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  border-top-color: rgba(45, 212, 168, 0.92);
+  border-bottom-color: rgba(245, 182, 75, 0.32);
+  animation: oom-orb-spin 9s linear infinite;
+}
+
+.oom-orb-ring-middle {
+  inset: 15%;
+  border: 2px solid rgba(45, 212, 168, 0.28);
+  border-left-color: rgba(125, 211, 252, 0.8);
+  border-right-color: rgba(255, 255, 255, 0.1);
+  animation: oom-orb-spin 5.5s linear infinite reverse;
+}
+
+.oom-orb-core {
+  inset: 29%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.9), rgba(125, 211, 252, 0.24) 22%, rgba(45, 212, 168, 0.76) 54%, rgba(8, 10, 14, 0.9) 100%);
+  box-shadow:
+    inset 0 0 32px rgba(255, 255, 255, 0.2),
+    0 0 42px rgba(45, 212, 168, 0.55);
+  animation: oom-orb-breathe 2.9s ease-in-out infinite;
+}
+
+.oom-orb-scan {
+  inset: 8%;
+  border: 1px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.5);
+  transform: rotate(20deg);
+  animation: oom-orb-scan 3.4s ease-in-out infinite;
+}
+
+.oom-presence-orb[data-state="listening"] .oom-orb-core {
+  animation-duration: 1.15s;
+  box-shadow:
+    inset 0 0 36px rgba(255, 255, 255, 0.24),
+    0 0 58px rgba(45, 212, 168, 0.78);
+}
+
+.oom-presence-orb[data-state="checking"] {
+  filter: drop-shadow(0 0 42px rgba(245, 182, 75, 0.48));
+}
+
+.oom-presence-orb[data-state="checking"] .oom-orb-ring-outer,
+.oom-presence-orb[data-state="checking"] .oom-orb-ring-middle {
+  animation-duration: 2.2s;
+}
+
+.oom-presence-orb[data-state="checking"] .oom-orb-core {
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.86), rgba(245, 182, 75, 0.28) 25%, rgba(45, 212, 168, 0.62) 56%, rgba(8, 10, 14, 0.92) 100%);
+}
+
+.oom-presence-orb[data-state="speaking"] {
+  filter: drop-shadow(0 0 48px rgba(125, 211, 252, 0.58));
+}
+
+.oom-presence-orb[data-state="speaking"] .oom-orb-core {
+  animation-duration: 0.82s;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.92), rgba(125, 211, 252, 0.36) 24%, rgba(45, 212, 168, 0.52) 56%, rgba(8, 10, 14, 0.92) 100%);
+}
+
+.oom-presence-orb[data-state="blocked"] {
+  filter: drop-shadow(0 0 40px rgba(248, 113, 113, 0.44));
+}
+
+.oom-presence-orb[data-state="blocked"] .oom-orb-ring-outer,
+.oom-presence-orb[data-state="error"] .oom-orb-ring-outer {
+  border-top-color: rgba(248, 113, 113, 0.86);
+  animation-duration: 12s;
+}
+
+.oom-presence-copy {
+  position: absolute;
+  left: 28px;
+  bottom: 24px;
+  max-width: min(520px, calc(100% - 56px));
+}
+
+.oom-presence-copy p:last-child {
+  margin: 6px 0 0;
+  color: rgba(244, 247, 246, 0.86);
+  font-size: 18px;
+}
+
+@keyframes oom-orb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes oom-orb-breathe {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.82;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes oom-orb-scan {
+  0%,
+  100% {
+    transform: rotate(20deg) scale(0.94);
+    opacity: 0.18;
+  }
+  50% {
+    transform: rotate(200deg) scale(1.03);
+    opacity: 0.72;
+  }
+}
+
 .oom-question-panel,
 .oom-answer-panel,
 .oom-trace-panel {

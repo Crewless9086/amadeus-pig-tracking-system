@@ -3,6 +3,8 @@
   const input = document.getElementById("oom_text");
   const statusBadge = document.getElementById("oom_status");
   const statusText = document.getElementById("oom_status_text");
+  const presenceOrb = document.getElementById("oom_presence_orb");
+  const presenceLine = document.getElementById("oom_presence_line");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
   const warnings = document.getElementById("oom_warnings");
@@ -70,6 +72,23 @@
   function setStatus(value, state) {
     statusText.textContent = value;
     if (statusBadge && state) statusBadge.dataset.state = state;
+    setPresenceState(state || "idle", value);
+  }
+
+  function setPresenceState(state, label) {
+    const normalized = state || "idle";
+    const lines = {
+      idle: "Standing by for a read-only farm check.",
+      listening: "Listening now. One utterance at a time.",
+      checking: "Checking the farm systems.",
+      answered: "Answer ready.",
+      speaking: "Speaking. Mic is paused.",
+      blocked: "Blocked safely. No action was taken.",
+      clarifying: "I need a clearer target before checking.",
+      error: "Something failed. No farm action was taken.",
+    };
+    if (presenceOrb) presenceOrb.dataset.state = normalized;
+    if (presenceLine) presenceLine.textContent = lines[normalized] || label || lines.idle;
   }
 
   function prettySource(value) {

@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-P specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, and kiosk alive-state/provenance strip.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Q specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, and animated presence orb.
 
 Out of scope unless explicitly asked:
 
@@ -70,6 +70,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Env-gated LLM answer composer that rewrites only the final answer after read-only tool execution
 - Usejarvis external-reference review: ideas logged, source ignored, nothing installed or run
 - Kiosk answer pipeline/provenance strip and stateful status display
+- Kiosk animated presence orb and stronger answer-composer voice
 
 ## Files/folders to inspect
 
@@ -165,6 +166,21 @@ Summary:
 - Added `pipeline` metadata to `/api/oom-sakkie/message` responses: route source, answer source, state, LLM-router-used flag, LLM-answer-used flag, and tool-checked flag.
 - Added a visible `/oom-sakkie` pipeline strip showing Route / Answer / State, plus Trace confidence and reason.
 - Made the top status pill visually stateful for listening, checking, speaking, answered, blocked, and error.
+- Strengthened `modules/oom_sakkie/llm_answer.py` so the answer composer:
+  - identifies as Oom Sakkie, the farm operating co-pilot,
+  - avoids generic assistant/table-reader wording,
+  - leads with operational meaning before facts,
+  - preserves the hard fact boundary to backend answer, stale warnings, and safety notes,
+  - still rejects output claiming actions such as saved/sent/started/stopped/changed,
+  - uses temperature `0.55` instead of `0.2` for less flat wording.
+- Added a central `/oom-sakkie` agent presence panel:
+  - `oom_presence_orb`,
+  - ring/core/scan layers,
+  - `oom_presence_line`,
+  - state-specific behavior for idle, listening, checking, answered, speaking, blocked, and error.
+- Wired the presence orb to the existing status state machine; it does not open the mic, call tools, or run independently.
+- Added frontend contract tests for the presence markup, JS state wiring, and CSS animation hooks.
+- Added a backend prompt contract test so the answer composer does not drift back to generic/read-the-table wording.
 
 Known verification from Codex:
 
@@ -179,6 +195,8 @@ Known verification from Codex:
 - Full local unittest suite after answer composer: `402 tests OK`
 - Full local unittest suite after provenance strip: `402 tests OK`
 - `node --check static/js/oomSakkie.js` passed after provenance strip
+- Focused service/frontend tests after presence/voice slice: `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 68 tests OK, 1 skipped
+- `node --check static/js/oomSakkie.js` passed after presence/voice slice
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -216,7 +234,8 @@ Please inspect specifically:
 21. **LLM answer composer:** Does Phase 10.7O improve wording only after read-only tool execution, preserve safety/stale notes, reject unsafe action-claiming output, and expose outbound text/summary behavior honestly?
 22. **Usejarvis reference:** Does the review correctly avoid installing/running/copying the external source while extracting safe architecture lessons only?
 23. **Alive/provenance UI:** Does Phase 10.7P surface route source, answer source, pipeline state, confidence, and reason honestly without adding autonomy or unsafe behavior?
-24. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+24. **Presence/voice layer:** Does Phase 10.7Q make the kiosk feel more like a live agent and improve answer tone while keeping all authority, facts, and safety boundaries unchanged?
+25. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

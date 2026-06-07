@@ -5755,6 +5755,43 @@ Operational rule:
   - the answer composer fell back,
   - or the LLM router selected the tool.
 
+### 10.7Q Oom Sakkie Presence Orb And Stronger Spoken Voice - Local Ready
+
+Source:
+
+- Owner tested 10.7P and reported that answers still felt like the system was reading raw results, not speaking like an agent.
+- Owner also clarified the desired kiosk feel: a futuristic living circle/entity that moves while listening, thinking, and speaking, then brings the information forward.
+
+Implemented locally:
+
+- Strengthened `modules/oom_sakkie/llm_answer.py`:
+  - answer composer now identifies as Oom Sakkie, the farm operating co-pilot,
+  - explicitly says not to read tables back like a clerk,
+  - leads with operational meaning before facts,
+  - avoids generic assistant openers,
+  - keeps the same hard fact boundary: use only backend answer, stale warnings, and safety notes,
+  - still rejects output that claims actions such as saved/sent/started/stopped/changed,
+  - raised answer-composer temperature from `0.2` to `0.55` for less flat wording.
+- Added a central `/oom-sakkie` agent presence panel:
+  - animated orb,
+  - ring/core/scan layers,
+  - visible presence line,
+  - state-specific behavior for idle/listening/checking/answered/speaking/blocked/error.
+- Wired the orb to the existing status state machine in `static/js/oomSakkie.js`; it does not open the mic, call tools, or run anything independently.
+- Added frontend contract tests for the presence markup, JS state wiring, and CSS animation hooks.
+- Added a backend prompt contract test so the answer composer does not drift back to generic/read-the-table wording.
+
+Verified locally:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 68 tests OK, 1 skipped.
+- `node --check static/js/oomSakkie.js` passed.
+
+Operational rule:
+
+- This is presentation and voice only. It adds no new authority, no write path, no physical control, no wake word, no always-on mic, no Telegram cutover, and no live specialist delegation.
+- To hear the improved wording, `OOM_SAKKIE_LLM_ANSWER_ENABLED=true` must be set and Flask must be restarted.
+- If the composer ever gets too fluffy, turn off `OOM_SAKKIE_LLM_ANSWER_ENABLED`; deterministic wording remains the fallback.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

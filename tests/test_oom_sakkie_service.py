@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.llm_answer import (
+    _build_payload,
     compose_answer_with_llm,
     parse_llm_answer_response,
 )
@@ -389,6 +390,24 @@ class OomSakkieServiceTests(unittest.TestCase):
             }]
         }
         self.assertIsNone(parse_llm_answer_response(__import__("json").dumps(unsafe)))
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model"}, clear=True)
+    def test_llm_answer_prompt_is_spoken_copilot_not_generic_reader(self):
+        payload = _build_payload(
+            user_text="what needs attention",
+            tool_name="farm_attention_summary",
+            deterministic_answer="There are 2 litters needing attention.",
+            stale_warnings=[],
+            safety_notes=["No write, control, message, or physical action was performed."],
+        )
+
+        system = payload["messages"][0]["content"]
+        self.assertEqual(payload["temperature"], 0.55)
+        self.assertIn("farm operating co-pilot", system)
+        self.assertIn("do not read tables back like a clerk", system)
+        self.assertIn("Lead with the operational meaning", system)
+        self.assertIn("Avoid assistant openers", system)
+        self.assertIn("Never claim that anything was saved", system)
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.route_with_llm")

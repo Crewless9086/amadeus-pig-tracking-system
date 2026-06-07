@@ -20,6 +20,19 @@
     </header>
 
     <section class="oom-workspace" aria-live="polite">
+      <section class="oom-presence-panel" aria-label="Oom Sakkie presence">
+        <div class="oom-presence-orb" id="oom_presence_orb" data-state="idle" aria-hidden="true">
+          <span class="oom-orb-ring oom-orb-ring-outer"></span>
+          <span class="oom-orb-ring oom-orb-ring-middle"></span>
+          <span class="oom-orb-core"></span>
+          <span class="oom-orb-scan"></span>
+        </div>
+        <div class="oom-presence-copy">
+          <p class="oom-label">Agent Presence</p>
+          <p id="oom_presence_line">Standing by for a read-only farm check.</p>
+        </div>
+      </section>
+
       <div class="oom-question-panel">
         <p class="oom-label">You Asked</p>
         <p id="oom_user_text" class="oom-user-text">Ask what needs attention, what the power is doing, or what the weather looks like today.</p>
