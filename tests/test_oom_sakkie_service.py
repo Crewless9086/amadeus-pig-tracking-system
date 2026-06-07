@@ -1,11 +1,12 @@
 import unittest
 import os
+from urllib import error as urllib_error
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
-from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response
+from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -65,6 +66,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Never starts or stops irrigation", irrigation["description"])
         self.assertEqual(irrigation["input_schema"]["additionalProperties"], False)
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
         policy = get_runtime_policy()
 
@@ -80,6 +82,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["llm_router"]["enabled"])
         self.assertFalse(policy["llm_router"]["configured"])
         self.assertFalse(policy["llm_router"]["can_write"])
+        self.assertTrue(policy["llm_router"]["sends_user_text_when_enabled"])
+        self.assertIn("chat/completions", policy["llm_router"]["outbound_endpoint_when_enabled"])
         self.assertEqual(policy["browser_speech_mode"], "push_to_talk_only")
         self.assertEqual(policy["continue_conversation_max_turns"], 5)
         self.assertEqual(policy["voice_auto_send_ms"], 2000)
@@ -326,8 +330,47 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertIsNone(parse_llm_route_response(__import__("json").dumps(body)))
 
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("modules.oom_sakkie.llm_router.urllib_request.urlopen")
+    def test_llm_router_env_gate_returns_none_without_network(self, mock_urlopen):
+        self.assertIsNone(route_with_llm("test routing"))
+        mock_urlopen.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LLM_ROUTER_ENABLED": "true",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model",
+    }, clear=True)
+    @patch("modules.oom_sakkie.llm_router.urllib_request.urlopen", side_effect=urllib_error.URLError("offline"))
+    def test_llm_router_network_failure_fails_closed(self, _urlopen):
+        self.assertIsNone(route_with_llm("test routing"))
+
+    def test_llm_route_parser_invalid_json_returns_none(self):
+        self.assertIsNone(parse_llm_route_response("not json"))
+
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_low_confidence_returns_needs_clarification(self, _write_trace):
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    def test_llm_low_confidence_tool_selection_asks_clarification(self, mock_llm, _write_trace):
+        mock_llm.return_value = LlmRouteResult(
+            intent="llm_power_current",
+            tool_name="power_current",
+            confidence=0.4,
+            reason="test:low_confidence_llm",
+        )
+
+        result, status = handle_message({
+            "text": "give me the energy situation",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["needs_clarification"])
+        self.assertEqual(result["tool_used"], "")
+        self.assertIn("not sure", result["answer"])
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.route_with_llm", return_value=None)
+    def test_low_confidence_returns_needs_clarification(self, _llm, _write_trace):
         result, status = handle_message({
             "text": "tell me something clever",
             "channel": "kiosk",

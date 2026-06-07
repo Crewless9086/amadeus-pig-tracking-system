@@ -39,6 +39,8 @@ def llm_router_policy():
         "enabled": llm_router_enabled(),
         "configured": llm_router_configured(),
         "provider": "openai_compatible_chat_completions",
+        "outbound_endpoint_when_enabled": os.getenv(API_URL_ENV, DEFAULT_API_URL).strip() or DEFAULT_API_URL,
+        "sends_user_text_when_enabled": True,
         "model_env": MODEL_ENV,
         "api_key_env": API_KEY_ENV,
         "allowed_tools": sorted(_allowed_tool_names()),
@@ -115,10 +117,16 @@ def _build_payload(text):
     system = (
         "You are the Oom Sakkie read-only tool router. "
         "Choose exactly one approved read-only tool for the user's farm question, or ask for clarification. "
+        "Prefer the best safe read-only tool when a broad operational question reasonably maps to one: "
+        "inspection, priority, worry, or what-to-check-first questions usually map to farm_attention_summary; "
+        "outside conditions usually map to weather_today unless the user asks for future conditions; "
+        "energy, inverter, solar, battery, or grid questions map to power_current. "
         "Never invent tools. Never choose writes, messages, public posting, hardware control, or customer actions. "
         "Return only compact JSON with keys: intent, tool_name, confidence, reason, needs_clarification, clarification_question. "
-        "Use tool_name='clarification' and needs_clarification=true if the request is ambiguous."
+        "Use tool_name='clarification' and needs_clarification=true only when no approved read-only tool is a reasonable fit."
     )
+    # The tool list sent to the LLM is guidance only; parse-time allowlist
+    # validation against _allowed_tool_names() is the real safety gate.
     user = {
         "user_text": str(text or "")[:2000],
         "allowed_tools": allowed,

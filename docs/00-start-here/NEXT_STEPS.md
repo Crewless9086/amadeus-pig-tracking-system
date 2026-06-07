@@ -5555,6 +5555,114 @@ Browser-check next after review and env setup:
 - Ask an ambiguous phrase and confirm it asks one clarification question.
 - Ask a write/control phrase and confirm the LLM is not used and the action is blocked.
 
+### 10.7L Oom Sakkie LLM Fallback Privacy And Failure-Mode Hardening - Local Ready
+
+Source:
+
+- Claude review after 10.7K passed the bounded LLM architecture, but flagged that enabling the router changes the privacy posture because unrouted user text would be sent to the configured LLM endpoint.
+- Claude also asked for direct tests of env gating, network/parse failure, and low-confidence LLM tool selection.
+
+Implemented locally:
+
+- `llm_router_policy()` now exposes:
+  - `outbound_endpoint_when_enabled`
+  - `sends_user_text_when_enabled = true`
+- The kiosk Safety Status panel now shows:
+  - `LLM fallback`
+  - `LLM configured`
+  - `LLM sends text`
+  - `LLM endpoint`
+- Added an inline router comment stating that the LLM-visible tool list is guidance only; parse-time registry allowlist validation remains the real safety gate.
+- Added tests that prove:
+  - disabled/missing env configuration returns `None` without making a network call,
+  - network failure returns `None`,
+  - invalid JSON returns `None`,
+  - low-confidence LLM tool selection falls back to clarification instead of executing a tool,
+  - the frontend policy panel renders the LLM privacy fields.
+- No behavior widening, write tool, physical control, Telegram cutover, backend STT/TTS vendor, wake word, always-on mic, live specialist delegation, autonomous loop, or second user-facing brain was added.
+
+Verification:
+
+- Focused Oom Sakkie service, route, and frontend contract tests passed.
+- Full local unittest suite passed at 399 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm Safety Status shows LLM fallback off, LLM configured no, LLM sends text off, and LLM endpoint not used.
+- Do not enable the router until a deliberate local experiment window is chosen.
+
+### 10.7M Oom Sakkie LLM Router Smoke Harness - Local Ready
+
+Source:
+
+- Owner agreed to run a local LLM fallback experiment before asking for another Claude review.
+- Current `.env` does not yet contain `OOM_SAKKIE_LLM_ROUTER_ENABLED`, `OPENAI_API_KEY`, or `OOM_SAKKIE_LLM_ROUTER_MODEL`, so a live outbound test cannot run yet.
+
+Implemented locally:
+
+- Added `scripts/oom_sakkie_llm_router_smoke.py`.
+- The script loads `.env`, prints router enabled/configured/can-write/privacy status without printing secrets, and refuses to call the network unless the router is fully configured.
+- When configured, it sends a small fixed prompt set through `handle_message()` with channel `kiosk_llm_smoke`, so traces are separated from normal kiosk use.
+- The prompt set includes:
+  - ambiguous read-only routing prompts,
+  - an unsafe delete request that must stay blocked,
+  - a capability prompt that must stay off the LLM path.
+
+Verification:
+
+- Smoke harness dry run confirmed router disabled/unconfigured and skipped without an outbound call.
+- `python -m py_compile scripts/oom_sakkie_llm_router_smoke.py` passed.
+- Focused Oom Sakkie service, route, and frontend contract tests passed.
+
+How to run after env setup:
+
+```powershell
+.\venv\Scripts\python.exe -c "from scripts.oom_sakkie_llm_router_smoke import main; raise SystemExit(main())"
+```
+
+Required `.env` values, set locally only and never pasted into chat:
+
+```text
+OOM_SAKKIE_LLM_ROUTER_ENABLED=true
+OPENAI_API_KEY=<secret>
+OOM_SAKKIE_LLM_ROUTER_MODEL=<approved OpenAI-compatible chat model>
+```
+
+### 10.7N Oom Sakkie LLM Router Local Smoke - Verified
+
+Source:
+
+- Owner added a valid `OPENAI_API_KEY`, enabled the router, and set `OOM_SAKKIE_LLM_ROUTER_MODEL=gpt-5.4-mini`.
+
+Verified locally:
+
+- Diagnostic script reached `https://api.openai.com/v1/chat/completions` and returned `HTTP 200`.
+- The API resolved the model to `gpt-5.4-mini-2026-03-17`.
+- Smoke harness with router enabled returned:
+  - `give me the energy situation` -> `power_current`
+  - `check if the outside conditions are a problem` -> `weather_now`
+  - `which farm area should I inspect first` -> `farm_attention_summary`
+  - `delete a pig record` -> action blocked before LLM/tool execution
+  - `what can you do` -> capability answer, no LLM tool
+- Router prompt was tuned to prefer the best safe read-only tool for broad operational questions, while still using clarification when no approved tool is a reasonable fit.
+- Tests were hardened so local `.env` router enablement does not make unit tests spend API calls or depend on external state.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` passed.
+- Full local unittest suite passed at 399 tests with router env enabled locally.
+- `node --check static/js/oomSakkie.js` passed.
+- Smoke traces are separated under channel `kiosk_llm_smoke`.
+
+Operational rule:
+
+- Keep the router on only for the local experiment window until traces are reviewed.
+- Keep Telegram unchanged.
+- Keep all tools read-only.
+- Mark any bad LLM-routed traces honestly so the Review Advisor can drive the next tuning pass.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

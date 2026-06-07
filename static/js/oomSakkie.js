@@ -699,11 +699,16 @@
     const policy = data.kiosk_policy || {};
     const reviewAccess = data.review_endpoints_access || {};
     const messageAccess = data.message_endpoint_access || {};
+    const llmRouter = data.llm_router || {};
     [
       ["Mode", data.mode || "unknown"],
       ["Backend brain", data.backend_as_brain ? "on" : "off"],
       ["Kiosk max risk", `${policy.max_risk_level ?? 0}: ${policy.allowed_risk_label || "READ_ONLY"}`],
       ["Tools", `${toolCounts.read_only || 0}/${toolCounts.total || 0} read-only`],
+      ["LLM fallback", llmRouter.enabled ? "enabled" : "off"],
+      ["LLM configured", llmRouter.configured ? "yes" : "no"],
+      ["LLM sends text", llmRouter.enabled && llmRouter.sends_user_text_when_enabled ? "yes - outbound" : "off"],
+      ["LLM endpoint", llmRouter.enabled ? (llmRouter.outbound_endpoint_when_enabled || "unknown") : "not used"],
       ["Review access", reviewAccess.default || "unknown"],
       ["Message access", messageAccess.default || "unknown"],
       ["Write tools", data.write_tools_enabled ? "enabled" : "off"],

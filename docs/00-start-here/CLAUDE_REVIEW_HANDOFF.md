@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-K specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, and bounded LLM fallback router.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-N specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, and verified local LLM smoke.
 
 Out of scope unless explicitly asked:
 
@@ -65,6 +65,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Trace-driven routing aliases, capability answer, control-phrase guard, and richer current-power answer
 - Capability/help fallback precedence so domain-specific help prompts route to the right read-only tool
 - Env-gated bounded LLM fallback router that can only select approved read-only tools or ask for clarification
+- LLM fallback privacy visibility plus env-gate/network/parse/low-confidence tests
+- LLM router smoke scripts and verified local smoke with `gpt-5.4-mini`
 
 ## Files/folders to inspect
 
@@ -75,6 +77,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `tests/test_oom_sakkie_service.py`
 - `tests/test_oom_sakkie_routes.py`
 - `tests/test_frontend_route_contracts.py`
+- `scripts/oom_sakkie_llm_router_diagnostic.py`
+- `scripts/oom_sakkie_llm_router_smoke.py`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `supabase/migrations/202606060001_create_oom_sakkie_traces.sql`
 - `supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql`
@@ -131,13 +135,30 @@ Summary:
 - LLM output is JSON-validated and may only select existing read-only registry tools or ask for clarification.
 - Unknown/write tool names are rejected.
 - `/api/oom-sakkie/policy` exposes `llm_router` status and `can_write = false`.
+- `/api/oom-sakkie/policy` and the kiosk Safety Status now expose the outbound endpoint and whether user text would be sent when the LLM router is enabled.
+- Added tests for env-gating without network calls, network failure, invalid JSON, and low-confidence LLM tool selection.
+- Added `scripts/oom_sakkie_llm_router_diagnostic.py` for a minimal OpenAI-compatible API check that reports URL/model/key presence/status without printing the key.
+- Added `scripts/oom_sakkie_llm_router_smoke.py` for a full Oom Sakkie `handle_message()` smoke using channel `kiosk_llm_smoke`.
+- Verified the owner-provided router env locally:
+  - `OOM_SAKKIE_LLM_ROUTER_ENABLED=true`
+  - `OOM_SAKKIE_LLM_ROUTER_MODEL=gpt-5.4-mini`
+  - direct diagnostic returned HTTP 200 and resolved to `gpt-5.4-mini-2026-03-17`
+- Verified smoke prompts:
+  - `give me the energy situation` -> `power_current`
+  - `check if the outside conditions are a problem` -> `weather_now`
+  - `which farm area should I inspect first` -> `farm_attention_summary`
+  - `delete a pig record` -> action-blocked, no tool
+  - `what can you do` -> local capability answer, no tool
 
 Known verification from Codex:
 
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
-- Full local unittest suite: `395 tests OK`
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 74 tests OK
+- Full local unittest suite: `399 tests OK`
+- `python -c "from scripts.oom_sakkie_llm_router_diagnostic import main; raise SystemExit(main())"` -> HTTP 200, model `gpt-5.4-mini-2026-03-17`, response `{"ok":true}`
+- `python -c "from scripts.oom_sakkie_llm_router_smoke import main; raise SystemExit(main())"` -> read-only smart routing smoke passed as listed above
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -170,7 +191,9 @@ Please inspect specifically:
 16. **Trace-driven router tightening:** Does Phase 10.7I improve only deterministic read-only routing/wording from real traces, and does `turn the pump on` stay safe?
 17. **Capability fallback precedence:** Does Phase 10.7J prevent `help me with <domain>` prompts from being swallowed by the generic capability answer while keeping bare `what can you do` useful?
 18. **Bounded LLM fallback:** Does Phase 10.7K keep the LLM behind deterministic rules/action guards/capability fallback, validate tool names against read-only registry, reject unknown/write tools, and expose honest policy state?
-19. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+19. **LLM privacy/failure hardening:** Does Phase 10.7L make outbound user-text behavior visible before enablement, and do the new tests pin env-gating, network failure, parse failure, and low-confidence clarification?
+20. **LLM local smoke:** Does Phase 10.7M/N prove the configured router works as a bounded read-only fallback without weakening action/capability guards?
+21. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 
