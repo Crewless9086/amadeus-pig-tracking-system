@@ -206,6 +206,7 @@ Classifier policy:
 
 - Use exact-match/rule routing before any LLM classifier.
 - Known live phrasings for power/weather/farm-attention skip the LLM and go straight to the matching tool.
+- Deterministic rules may intentionally over-route broad domain words such as `sales`, `power`, or `weather` to existing read-only tools rather than fail to route; this is safe because current tools are read-only, and bad matches should be corrected through trace feedback before any write-capable tools exist.
 - The LLM classifier only runs when deterministic rules do not match.
 - Low confidence returns `needs_clarification = true`; it must not guess.
 

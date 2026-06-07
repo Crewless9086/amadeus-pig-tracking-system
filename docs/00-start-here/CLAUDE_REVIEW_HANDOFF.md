@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-J specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, and capability-fallback precedence fix.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-K specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, and bounded LLM fallback router.
 
 Out of scope unless explicitly asked:
 
@@ -64,6 +64,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Visible Review Advisor time window and Continue Conversation turn counter
 - Trace-driven routing aliases, capability answer, control-phrase guard, and richer current-power answer
 - Capability/help fallback precedence so domain-specific help prompts route to the right read-only tool
+- Env-gated bounded LLM fallback router that can only select approved read-only tools or ask for clarification
 
 ## Files/folders to inspect
 
@@ -124,13 +125,19 @@ Summary:
   - `can you help me check irrigation` -> `irrigation_status`
   - `help me understand sales` -> `sales_dashboard`
 - Kept bare `what can you do` on the capability answer path.
+- Added `modules/oom_sakkie/llm_router.py`.
+- LLM fallback is off by default and requires `OOM_SAKKIE_LLM_ROUTER_ENABLED`, `OPENAI_API_KEY`, and `OOM_SAKKIE_LLM_ROUTER_MODEL`.
+- LLM fallback runs only after deterministic rules, unsupported-action blocking, and capability/help fallback have declined.
+- LLM output is JSON-validated and may only select existing read-only registry tools or ask for clarification.
+- Unknown/write tool names are rejected.
+- `/api/oom-sakkie/policy` exposes `llm_router` status and `can_write = false`.
 
 Known verification from Codex:
 
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
-- Full local unittest suite: `390 tests OK`
+- Full local unittest suite: `395 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -162,7 +169,8 @@ Please inspect specifically:
 15. **Kiosk honesty polish:** Does Phase 10.7H accurately surface the Review Advisor's 14-day window and the 5-turn continue-conversation cap without changing behavior?
 16. **Trace-driven router tightening:** Does Phase 10.7I improve only deterministic read-only routing/wording from real traces, and does `turn the pump on` stay safe?
 17. **Capability fallback precedence:** Does Phase 10.7J prevent `help me with <domain>` prompts from being swallowed by the generic capability answer while keeping bare `what can you do` useful?
-18. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+18. **Bounded LLM fallback:** Does Phase 10.7K keep the LLM behind deterministic rules/action guards/capability fallback, validate tool names against read-only registry, reject unknown/write tools, and expose honest policy state?
+19. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

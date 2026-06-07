@@ -5502,6 +5502,59 @@ Browser-check next:
 - Ask `help me with the weather`; confirm it routes to weather rather than the capability answer.
 - Ask `what can you do`; confirm it still returns the capability answer.
 
+### 10.7K Oom Sakkie Bounded LLM Fallback Router - Local Ready
+
+Source:
+
+- Owner wants Oom Sakkie to become a smarter operating system instead of only a basic rule reader.
+- The safe next step is not tool autonomy or writes. It is a bounded fallback classifier that runs only after deterministic rules, unsupported-action blocking, and capability/help fallback have declined.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/llm_router.py`.
+- The LLM router is off unless `OOM_SAKKIE_LLM_ROUTER_ENABLED` is truthy and both `OPENAI_API_KEY` and `OOM_SAKKIE_LLM_ROUTER_MODEL` are configured.
+- It uses an OpenAI-compatible chat-completions endpoint, configurable through `OOM_SAKKIE_LLM_ROUTER_URL`, with a bounded timeout.
+- The LLM may only return one of the existing approved read-only tools, or a clarification request.
+- Returned tool names are validated against the runtime read-only registry; unknown/write tool names are rejected.
+- `/api/oom-sakkie/policy` now exposes `llm_router` status, provider shape, env names, allowed tools, max risk, and `can_write = false`.
+- `handle_message()` precedence is now:
+  1. deterministic rule match,
+  2. unsupported action block when no rule matched,
+  3. capability/help fallback when no rule matched,
+  4. bounded LLM fallback when no rule matched,
+  5. normal low-confidence clarification.
+- Tests prove:
+  - the default router policy is disabled/unconfigured and cannot write,
+  - the LLM fallback can select an existing read-only tool,
+  - LLM clarification does not call a tool,
+  - unsupported actions do not call the LLM,
+  - capability requests do not call the LLM,
+  - parser rejects unknown/write tool names.
+- No write tool, physical control, Telegram cutover, backend STT/TTS vendor, wake word, always-on mic, live specialist delegation, autonomous loop, or second user-facing brain was added.
+
+Verification:
+
+- Focused Oom Sakkie service and route tests passed.
+- Full local unittest suite passed at 395 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Activation notes:
+
+- Do not enable this on the kiosk until Claude reviews the slice.
+- When enabled, start with local testing only:
+  - `OOM_SAKKIE_LLM_ROUTER_ENABLED=true`
+  - `OPENAI_API_KEY=<secret in .env, never chat>`
+  - `OOM_SAKKIE_LLM_ROUTER_MODEL=<approved model>`
+- Keep Telegram unchanged.
+- Keep all tools read-only.
+
+Browser-check next after review and env setup:
+
+- Ask a phrase that no deterministic rule handles but should map to an existing read-only tool.
+- Confirm the response includes an intent reason beginning with the LLM route reason.
+- Ask an ambiguous phrase and confirm it asks one clarification question.
+- Ask a write/control phrase and confirm the LLM is not used and the action is blocked.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

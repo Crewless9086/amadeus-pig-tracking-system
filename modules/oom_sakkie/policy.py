@@ -1,3 +1,4 @@
+from modules.oom_sakkie.llm_router import llm_router_policy
 from modules.oom_sakkie.tools import TOOL_REGISTRY, RiskLevel
 
 
@@ -23,7 +24,8 @@ def get_runtime_policy():
         "mode": "local_kiosk_read_only",
         "backend_as_brain": True,
         "telegram_cutover_enabled": False,
-        "llm_router_enabled": False,
+        "llm_router_enabled": llm_router_policy()["enabled"],
+        "llm_router": llm_router_policy(),
         "write_tools_enabled": False,
         "physical_controls_enabled": False,
         "backend_voice_vendors_enabled": False,
@@ -62,7 +64,7 @@ def get_runtime_policy():
             "backend STT/TTS vendors",
             "wake word",
             "always-on microphone",
-            "LLM default router",
+            "Ungated LLM router",
             "customer-facing messages",
         ],
     }

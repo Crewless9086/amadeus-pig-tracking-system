@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from modules.oom_sakkie.llm_router import route_with_llm
 from modules.oom_sakkie.tools import RiskLevel, get_tool
 from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, write_trace
 
@@ -178,6 +179,51 @@ def handle_message(payload):
                 "reason": "rule:capabilities",
             },
         }, 200
+
+    if not match:
+        llm_match = route_with_llm(text)
+        if llm_match:
+            if llm_match.needs_clarification:
+                answer = llm_match.clarification_question or "Which farm system should I check?"
+                trace = _trace_payload(
+                    trace_id=trace_id,
+                    channel=channel,
+                    session_id=session_id,
+                    user_text=text,
+                    intent=llm_match.intent,
+                    confidence=llm_match.confidence,
+                    tool_name="",
+                    tool_result={},
+                    answer=answer,
+                    risk_level=RiskLevel.READ_ONLY,
+                    stale_warnings=[],
+                    safety_notes=[],
+                    links=[],
+                )
+                trace_status = write_trace(trace)
+                return {
+                    "success": True,
+                    "answer": answer,
+                    "tool_used": "",
+                    "trace_id": trace_id,
+                    "risk_level": int(RiskLevel.READ_ONLY),
+                    "links": [],
+                    "stale_warnings": [],
+                    "safety_notes": [],
+                    "needs_clarification": True,
+                    "trace_store": trace_status,
+                    "intent": {
+                        "name": llm_match.intent,
+                        "confidence": llm_match.confidence,
+                        "reason": llm_match.reason,
+                    },
+                }, 200
+            match = IntentMatch(
+                llm_match.intent,
+                llm_match.tool_name,
+                llm_match.confidence,
+                llm_match.reason,
+            )
 
     if not match or match.confidence < CONFIDENCE_FLOOR:
         answer = "I am not sure which farm system to check. Ask about farm attention, power, or weather for this first version."

@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
+from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -76,6 +77,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["physical_controls_enabled"])
         self.assertFalse(policy["backend_voice_vendors_enabled"])
         self.assertFalse(policy["always_on_mic_enabled"])
+        self.assertFalse(policy["llm_router"]["enabled"])
+        self.assertFalse(policy["llm_router"]["configured"])
+        self.assertFalse(policy["llm_router"]["can_write"])
         self.assertEqual(policy["browser_speech_mode"], "push_to_talk_only")
         self.assertEqual(policy["continue_conversation_max_turns"], 5)
         self.assertEqual(policy["voice_auto_send_ms"], 2000)
@@ -228,6 +232,99 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("cannot send messages", result["answer"])
         self.assertIn("Capabilities only", result["safety_notes"][0])
         self.assertEqual(result["intent"]["name"], "capabilities")
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.tools.get_current_power_state")
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    def test_llm_fallback_can_select_existing_read_only_tool(self, mock_llm, mock_power, _write_trace):
+        mock_llm.return_value = LlmRouteResult(
+            intent="llm_power_current",
+            tool_name="power_current",
+            confidence=0.82,
+            reason="test:llm_selected_power",
+        )
+        mock_power.return_value = ({
+            "success": True,
+            "status": "ok",
+            "source": {"is_stale": False, "data_age_minutes": 2},
+            "current": {
+                "battery_soc_pct": 90,
+                "battery_state": "charging",
+                "solar_power_w": 2400,
+                "load_power_w": 800,
+                "grid_power_w": 0,
+                "grid_state": "not_using_grid",
+            },
+            "summary": {"headline": "Solar is carrying the farm load."},
+        }, 200)
+
+        result, status = handle_message({
+            "text": "give me the energy situation",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["tool_used"], "power_current")
+        self.assertEqual(result["intent"]["reason"], "test:llm_selected_power")
+        self.assertEqual(result["risk_level"], 0)
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    def test_llm_fallback_clarification_does_not_call_tool(self, mock_llm, _write_trace):
+        mock_llm.return_value = LlmRouteResult(
+            intent="llm_clarification",
+            tool_name="",
+            confidence=0.5,
+            reason="test:ambiguous",
+            needs_clarification=True,
+            clarification_question="Should I check power, weather, pigs, sales, or irrigation?",
+        )
+
+        result, status = handle_message({
+            "text": "check the thing",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["needs_clarification"])
+        self.assertEqual(result["tool_used"], "")
+        self.assertIn("power, weather, pigs", result["answer"])
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    def test_unsupported_action_does_not_call_llm_router(self, mock_llm, _write_trace):
+        result, status = handle_message({
+            "text": "delete a pig record",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["action_blocked"])
+        mock_llm.assert_not_called()
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    def test_capability_request_does_not_call_llm_router(self, mock_llm, _write_trace):
+        result, status = handle_message({
+            "text": "what can you do",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["intent"]["name"], "capabilities")
+        mock_llm.assert_not_called()
+
+    def test_llm_route_parser_rejects_unknown_or_write_tool(self):
+        body = {
+            "choices": [{
+                "message": {
+                    "content": "{\"intent\":\"write\",\"tool_name\":\"send_customer_message\",\"confidence\":0.99}"
+                }
+            }]
+        }
+
+        self.assertIsNone(parse_llm_route_response(__import__("json").dumps(body)))
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     def test_low_confidence_returns_needs_clarification(self, _write_trace):
