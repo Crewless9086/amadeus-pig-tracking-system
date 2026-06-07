@@ -1,3 +1,4 @@
+from modules.oom_sakkie.llm_answer import llm_answer_policy
 from modules.oom_sakkie.llm_router import llm_router_policy
 from modules.oom_sakkie.tools import TOOL_REGISTRY, RiskLevel
 
@@ -24,6 +25,8 @@ def get_runtime_policy():
         "mode": "local_kiosk_read_only",
         "backend_as_brain": True,
         "telegram_cutover_enabled": False,
+        "llm_answer_enabled": llm_answer_policy()["enabled"],
+        "llm_answer": llm_answer_policy(),
         "llm_router_enabled": llm_router_policy()["enabled"],
         "llm_router": llm_router_policy(),
         "write_tools_enabled": False,

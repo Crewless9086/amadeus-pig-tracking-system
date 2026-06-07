@@ -700,6 +700,7 @@
     const reviewAccess = data.review_endpoints_access || {};
     const messageAccess = data.message_endpoint_access || {};
     const llmRouter = data.llm_router || {};
+    const llmAnswer = data.llm_answer || {};
     [
       ["Mode", data.mode || "unknown"],
       ["Backend brain", data.backend_as_brain ? "on" : "off"],
@@ -709,6 +710,8 @@
       ["LLM configured", llmRouter.configured ? "yes" : "no"],
       ["LLM sends text", llmRouter.enabled && llmRouter.sends_user_text_when_enabled ? "yes - outbound" : "off"],
       ["LLM endpoint", llmRouter.enabled ? (llmRouter.outbound_endpoint_when_enabled || "unknown") : "not used"],
+      ["LLM answer", llmAnswer.enabled ? "enabled" : "off"],
+      ["Answer sends summary", llmAnswer.enabled && llmAnswer.sends_tool_summary_when_enabled ? "yes - outbound" : "off"],
       ["Review access", reviewAccess.default || "unknown"],
       ["Message access", messageAccess.default || "unknown"],
       ["Write tools", data.write_tools_enabled ? "enabled" : "off"],

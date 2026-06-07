@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from modules.oom_sakkie.llm_answer import compose_answer_with_llm
 from modules.oom_sakkie.llm_router import route_with_llm
 from modules.oom_sakkie.tools import RiskLevel, get_tool
 from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, write_trace
@@ -282,7 +283,17 @@ def handle_message(payload):
     links = list(tool_result.get("links") or [])
     if is_unsupported_action_request(text):
         safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
-    answer = build_answer(tool_result, stale_warnings, safety_notes)
+    deterministic_answer = build_answer(tool_result, stale_warnings, safety_notes)
+    answer = (
+        compose_answer_with_llm(
+            user_text=text,
+            tool_name=tool.name,
+            deterministic_answer=deterministic_answer,
+            stale_warnings=stale_warnings,
+            safety_notes=safety_notes,
+        )
+        or deterministic_answer
+    )
     trace = _trace_payload(
         trace_id=trace_id,
         channel=channel,

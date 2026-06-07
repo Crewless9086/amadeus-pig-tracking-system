@@ -6,6 +6,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
+from modules.oom_sakkie.llm_answer import (
+    compose_answer_with_llm,
+    parse_llm_answer_response,
+)
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
@@ -74,6 +78,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["mode"], "local_kiosk_read_only")
         self.assertTrue(policy["backend_as_brain"])
         self.assertFalse(policy["telegram_cutover_enabled"])
+        self.assertFalse(policy["llm_answer_enabled"])
         self.assertFalse(policy["llm_router_enabled"])
         self.assertFalse(policy["write_tools_enabled"])
         self.assertFalse(policy["physical_controls_enabled"])
@@ -84,6 +89,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["llm_router"]["can_write"])
         self.assertTrue(policy["llm_router"]["sends_user_text_when_enabled"])
         self.assertIn("chat/completions", policy["llm_router"]["outbound_endpoint_when_enabled"])
+        self.assertFalse(policy["llm_answer"]["enabled"])
+        self.assertFalse(policy["llm_answer"]["configured"])
+        self.assertFalse(policy["llm_answer"]["can_write"])
+        self.assertTrue(policy["llm_answer"]["sends_user_text_when_enabled"])
+        self.assertTrue(policy["llm_answer"]["sends_tool_summary_when_enabled"])
         self.assertEqual(policy["browser_speech_mode"], "push_to_talk_only")
         self.assertEqual(policy["continue_conversation_max_turns"], 5)
         self.assertEqual(policy["voice_auto_send_ms"], 2000)
@@ -348,6 +358,29 @@ class OomSakkieServiceTests(unittest.TestCase):
     def test_llm_route_parser_invalid_json_returns_none(self):
         self.assertIsNone(parse_llm_route_response("not json"))
 
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("modules.oom_sakkie.llm_answer.urllib_request.urlopen")
+    def test_llm_answer_env_gate_returns_none_without_network(self, mock_urlopen):
+        self.assertIsNone(compose_answer_with_llm(
+            user_text="what is the power doing",
+            tool_name="power_current",
+            deterministic_answer="Power is fine.",
+            stale_warnings=[],
+            safety_notes=[],
+        ))
+        mock_urlopen.assert_not_called()
+
+    def test_llm_answer_parser_rejects_invalid_or_unsafe_output(self):
+        self.assertIsNone(parse_llm_answer_response("not json"))
+        unsafe = {
+            "choices": [{
+                "message": {
+                    "content": "{\"answer\":\"I started the pump for you.\"}"
+                }
+            }]
+        }
+        self.assertIsNone(parse_llm_answer_response(__import__("json").dumps(unsafe)))
+
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.route_with_llm")
     def test_llm_low_confidence_tool_selection_asks_clarification(self, mock_llm, _write_trace):
@@ -425,7 +458,8 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.tools.get_current_power_state")
-    def test_stale_power_warning_is_returned(self, mock_power, _write_trace):
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
+    def test_stale_power_warning_is_returned(self, _compose, mock_power, _write_trace):
         mock_power.return_value = ({
             "success": True,
             "status": "stale",
@@ -455,6 +489,36 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Grid: 0 W", result["answer"])
         self.assertIn("Data age: 42 minute(s)", result["answer"])
         self.assertIn("Note:", result["answer"])
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.tools.get_current_power_state")
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    def test_llm_answer_composer_can_rewrite_after_tool_result(self, mock_compose, mock_power, _write_trace):
+        mock_compose.return_value = "Power looks healthy: the battery is high and solar is carrying the load."
+        mock_power.return_value = ({
+            "success": True,
+            "status": "ok",
+            "source": {"is_stale": False, "data_age_minutes": 2},
+            "current": {
+                "battery_soc_pct": 90,
+                "battery_state": "charging",
+                "solar_power_w": 2400,
+                "load_power_w": 800,
+                "grid_power_w": 0,
+                "grid_state": "not_using_grid",
+            },
+            "summary": {"headline": "Solar is carrying the farm load."},
+        }, 200)
+
+        result, status = handle_message({
+            "text": "what is the power doing now",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "power_current")
+        self.assertEqual(result["answer"], mock_compose.return_value)
+        mock_compose.assert_called_once()
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.tools.get_meat_planning_data")

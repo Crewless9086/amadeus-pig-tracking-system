@@ -2,6 +2,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from modules.oom_sakkie.llm_answer import llm_answer_policy
 from modules.oom_sakkie.llm_router import llm_router_policy
 from modules.oom_sakkie.service import handle_message
 
@@ -18,9 +19,14 @@ PROMPTS = [
 def main():
     load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     policy = llm_router_policy()
+    answer_policy = llm_answer_policy()
     print("LLM router enabled:", policy["enabled"])
     print("LLM router configured:", policy["configured"])
     print("LLM router can write:", policy["can_write"])
+    print("LLM answer enabled:", answer_policy["enabled"])
+    print("LLM answer configured:", answer_policy["configured"])
+    print("LLM answer can write:", answer_policy["can_write"])
+    print("LLM answer sends tool summary:", answer_policy["sends_tool_summary_when_enabled"])
     print("Outbound endpoint when enabled:", policy["outbound_endpoint_when_enabled"])
     print("Sends user text when enabled:", policy["sends_user_text_when_enabled"])
     print("Allowed tool count:", len(policy["allowed_tools"]))
@@ -43,6 +49,7 @@ def main():
         print("needs_clarification:", result.get("needs_clarification"))
         print("action_blocked:", result.get("action_blocked", False))
         print("intent:", intent.get("name"), intent.get("confidence"), intent.get("reason"))
+        print("answer:", result.get("answer"))
         print("safety_notes:", result.get("safety_notes") or [])
 
     return 0

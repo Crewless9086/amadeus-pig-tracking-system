@@ -5663,6 +5663,52 @@ Operational rule:
 - Keep all tools read-only.
 - Mark any bad LLM-routed traces honestly so the Review Advisor can drive the next tuning pass.
 
+### 10.7O Oom Sakkie LLM Answer Composer - Local Ready
+
+Source:
+
+- Owner tested the LLM router but the kiosk still felt basic.
+- Diagnosis: the LLM router only improves tool selection for questions that deterministic rules do not catch. Questions already matched by rules still use the same deterministic formatter.
+- The next safe step is answer composition after tool execution, not letting the LLM choose actions or modify tool results.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/llm_answer.py`.
+- Added independent env gate `OOM_SAKKIE_LLM_ANSWER_ENABLED`.
+- The answer composer runs only after a read-only tool has already returned a deterministic answer.
+- It receives only user text, tool name, deterministic answer, stale warnings, and safety notes.
+- It cannot choose tools, call tools, write records, send messages, or perform control actions.
+- Unsafe model output claiming a write/control action such as saved/sent/started/stopped is rejected and the deterministic answer is used instead.
+- Runtime policy and kiosk Safety Status now expose:
+  - `LLM answer`,
+  - `Answer sends summary`,
+  - composer configured/enabled/can-write state.
+- Smoke script now prints final answers and composer enabled/configured state.
+
+Verified locally:
+
+- With composer off, smoke still returned the old deterministic summaries.
+- With `OOM_SAKKIE_LLM_ANSWER_ENABLED=true` for the smoke process:
+  - `give me the energy situation` produced a smoother power answer while preserving the same facts.
+  - `check if the outside conditions are a problem` produced a smoother weather answer while preserving the same facts.
+  - `which farm area should I inspect first` changed from a raw attention list to an operator-style answer: start with litter attention because piglets need newborn health records.
+  - `delete a pig record` remained action-blocked.
+  - `what can you do` remained the local capability answer.
+- Full local unittest suite passed at 402 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+How to enable locally after review:
+
+```text
+OOM_SAKKIE_LLM_ANSWER_ENABLED=true
+```
+
+Operational rule:
+
+- Treat this as presentation-only. It may improve wording, but the deterministic tool result remains the source of truth.
+- Keep router/composer traces under review during the local experiment.
+- If answers become too fluffy, turn this one env var off and the system falls back to deterministic wording.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

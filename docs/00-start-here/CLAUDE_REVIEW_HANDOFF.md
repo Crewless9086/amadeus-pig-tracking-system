@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-N specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, and verified local LLM smoke.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-O specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, and env-gated LLM answer composer.
 
 Out of scope unless explicitly asked:
 
@@ -67,6 +67,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Env-gated bounded LLM fallback router that can only select approved read-only tools or ask for clarification
 - LLM fallback privacy visibility plus env-gate/network/parse/low-confidence tests
 - LLM router smoke scripts and verified local smoke with `gpt-5.4-mini`
+- Env-gated LLM answer composer that rewrites only the final answer after read-only tool execution
 
 ## Files/folders to inspect
 
@@ -149,6 +150,14 @@ Summary:
   - `which farm area should I inspect first` -> `farm_attention_summary`
   - `delete a pig record` -> action-blocked, no tool
   - `what can you do` -> local capability answer, no tool
+- Added `modules/oom_sakkie/llm_answer.py` behind independent env gate `OOM_SAKKIE_LLM_ANSWER_ENABLED`.
+- The answer composer runs only after a read-only tool returns a deterministic answer; it cannot choose tools, call tools, write records, send messages, or perform controls.
+- Runtime policy and kiosk Safety Status expose composer enabled/configured/can-write state and whether user text/tool summary are sent outbound when enabled.
+- Invalid composer output or output claiming actions such as saved/sent/started/stopped is rejected; deterministic wording is used instead.
+- Smoke with `OOM_SAKKIE_LLM_ANSWER_ENABLED=true` showed visible wording improvement while preserving safety:
+  - power/weather answers were smoother while preserving facts,
+  - farm-attention answer changed from a raw list into `Start with litter attention...`,
+  - unsafe delete request and local capability answer remained off the composer path.
 
 Known verification from Codex:
 
@@ -159,6 +168,8 @@ Known verification from Codex:
 - Full local unittest suite: `399 tests OK`
 - `python -c "from scripts.oom_sakkie_llm_router_diagnostic import main; raise SystemExit(main())"` -> HTTP 200, model `gpt-5.4-mini-2026-03-17`, response `{"ok":true}`
 - `python -c "from scripts.oom_sakkie_llm_router_smoke import main; raise SystemExit(main())"` -> read-only smart routing smoke passed as listed above
+- `OOM_SAKKIE_LLM_ANSWER_ENABLED=true` for a smoke process showed improved final answers while preserving read-only safety
+- Full local unittest suite after answer composer: `402 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -193,7 +204,8 @@ Please inspect specifically:
 18. **Bounded LLM fallback:** Does Phase 10.7K keep the LLM behind deterministic rules/action guards/capability fallback, validate tool names against read-only registry, reject unknown/write tools, and expose honest policy state?
 19. **LLM privacy/failure hardening:** Does Phase 10.7L make outbound user-text behavior visible before enablement, and do the new tests pin env-gating, network failure, parse failure, and low-confidence clarification?
 20. **LLM local smoke:** Does Phase 10.7M/N prove the configured router works as a bounded read-only fallback without weakening action/capability guards?
-21. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+21. **LLM answer composer:** Does Phase 10.7O improve wording only after read-only tool execution, preserve safety/stale notes, reject unsafe action-claiming output, and expose outbound text/summary behavior honestly?
+22. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 
