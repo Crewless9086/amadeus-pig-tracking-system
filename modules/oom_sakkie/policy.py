@@ -36,6 +36,13 @@ def get_runtime_policy():
         "review_endpoints_access": {
             "default": "loopback_only",
             "private_lan_env": "OOM_SAKKIE_REVIEW_ALLOW_PRIVATE_LAN",
+            "reverse_proxy_assumption": "remote_addr_must_be_the_real_client_ip",
+            "reverse_proxy_caveat": "If Flask sits behind nginx, Caddy, Cloudflare, Render, or another proxy, configure trusted proxy handling before relying on loopback review protection.",
+        },
+        "message_endpoint_access": {
+            "default": "reachable_wherever_flask_is_reachable",
+            "route": "POST /api/oom-sakkie/message",
+            "note": "This is the local brain endpoint, not an admin/review endpoint. Keep Flask bound to trusted local/LAN surfaces until channel auth is added.",
         },
         "kiosk_policy": {
             "channel": "kiosk",

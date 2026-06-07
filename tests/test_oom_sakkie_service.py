@@ -1,4 +1,5 @@
 import unittest
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,10 +9,13 @@ from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_mess
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.trace_store import (
     FEEDBACK_TYPES,
+    build_feedback_id,
+    build_trace_id,
     _trace_params,
     _review_filter,
     _trace_list_where_clause,
     get_trace_review_summary,
+    hash_tool_result,
     list_recent_traces,
     record_trace_feedback,
     write_trace,
@@ -72,6 +76,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["browser_speech_mode"], "push_to_talk_only")
         self.assertEqual(policy["continue_conversation_max_turns"], 5)
         self.assertEqual(policy["voice_auto_send_ms"], 2000)
+        self.assertEqual(policy["message_endpoint_access"]["default"], "reachable_wherever_flask_is_reachable")
+        self.assertEqual(policy["message_endpoint_access"]["route"], "POST /api/oom-sakkie/message")
+        self.assertIn("reverse_proxy_assumption", policy["review_endpoints_access"])
         self.assertEqual(policy["kiosk_policy"]["max_risk_level"], 0)
         self.assertEqual(policy["kiosk_policy"]["requires_confirmation_tools"], [])
         self.assertEqual(policy["tool_counts"]["write_or_confirmation"], 0)
@@ -80,6 +87,7 @@ class OomSakkieServiceTests(unittest.TestCase):
     def test_specialist_manifests_are_planned_and_approval_gated(self):
         manifests = list_specialist_manifests()
         names = {item["name"] for item in manifests}
+        allowed_modes = {"read_only_advisory", "draft_only", "internal_planning_only"}
 
         self.assertIn("Sentinel", names)
         self.assertIn("Forge", names)
@@ -92,7 +100,13 @@ class OomSakkieServiceTests(unittest.TestCase):
                 self.assertEqual(item["status"], "planned")
                 self.assertLessEqual(item["risk_level"], 1)
                 self.assertTrue(item["approval_required_for"])
+                self.assertTrue(item["first_inputs"])
+                self.assertTrue(item["first_outputs"])
+                self.assertIn(item["allowed_mode"], allowed_modes)
                 self.assertNotIn("autonomous", item["allowed_mode"])
+        beacon = next(item for item in manifests if item["slug"] == "beacon")
+        self.assertEqual(beacon["risk_level"], 1)
+        self.assertEqual(beacon["allowed_mode"], "draft_only")
 
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
@@ -384,6 +398,68 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("before update on public.oom_sakkie_trace_feedback", migration)
         self.assertIn("before delete on public.oom_sakkie_trace_feedback", migration)
         self.assertIn("append-only", migration)
+
+    def test_append_only_triggers_block_updates_when_database_url_is_configured(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for append-only integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        trace_id = build_trace_id()
+        feedback_id = build_feedback_id(trace_id, "correct")
+        trace = {
+            "trace_id": trace_id,
+            "channel": "test",
+            "session_id": "append-only-test",
+            "user_text": "append only trigger test",
+            "intent": "test",
+            "confidence": 1.0,
+            "tool_name": "test_tool",
+            "tool_args_json": {},
+            "tool_result_summary": "integration test row",
+            "tool_result_hash": hash_tool_result({"test": True}),
+            "answer": "integration test answer",
+            "risk_level": 0,
+            "stale_warnings_json": [],
+            "safety_notes_json": [],
+            "links_json": [],
+        }
+        stored = write_trace(trace, database_url=database_url)
+        if not stored.get("stored"):
+            self.skipTest(f"trace insert unavailable: {stored.get('status')}")
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_trace_feedback (
+                        feedback_id, trace_id, feedback_type, notes, reviewed_by, channel, created_at
+                    )
+                    values (%s, %s, 'correct', 'append-only integration test', 'unittest', 'test', now())
+                    """,
+                    (feedback_id, trace_id),
+                )
+                connection.commit()
+                with self.assertRaises(Exception) as trace_update:
+                    cursor.execute(
+                        "update public.oom_sakkie_traces set answer = answer where trace_id = %s",
+                        (trace_id,),
+                    )
+                connection.rollback()
+                self.assertIn("append-only", str(trace_update.exception).lower())
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as feedback_update:
+                    cursor.execute(
+                        "update public.oom_sakkie_trace_feedback set notes = notes where feedback_id = %s",
+                        (feedback_id,),
+                    )
+                connection.rollback()
+                self.assertIn("append-only", str(feedback_update.exception).lower())
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")

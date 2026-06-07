@@ -302,6 +302,8 @@ Trace fields:
 - Trace ID is visible but collapsed by default.
 - Confirmation UI pattern should be designed now for future writes: exact backend payload preview, not paraphrased text.
 - Kiosk access must be LAN/IP/device controlled before it is treated as trusted.
+- Current local review endpoints rely on Flask `request.remote_addr`. That is acceptable only while Flask is directly reachable without a reverse proxy in front. If nginx, Caddy, Cloudflare, Render, Waitress behind a proxy, or any other proxy is introduced, configure trusted proxy handling first and make review access checks use the validated client IP, not the proxy loopback address.
+- `POST /api/oom-sakkie/message` is intentionally reachable wherever the local Flask app is reachable during the kiosk MVP. It is not an admin/review endpoint. Keep Flask bound to trusted local/LAN surfaces until channel auth or a device policy is added.
 
 ### First Hardware Sequence
 
@@ -710,6 +712,13 @@ Do not use:
 - raw chat history as truth
 - Slack/Telegram messages as agent state
 - hidden memory for operational decisions
+
+Trace correction policy:
+
+- Oom Sakkie traces and feedback are append-only audit records.
+- Corrections must be represented by new rows or new feedback entries, not by editing or deleting the original trace.
+- If a trace captures an embarrassing mistranscription, accidental private data, or a later-corrected answer, the normal correction path is a superseding record/feedback note that explains the correction.
+- Any future legal/privacy deletion process must be designed explicitly; do not quietly weaken the append-only trigger model in application code.
 
 ## PRD Requirements
 

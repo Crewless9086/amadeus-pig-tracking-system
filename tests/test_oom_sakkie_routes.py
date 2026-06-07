@@ -40,6 +40,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["kiosk_policy"]["max_risk_level"], 0)
         self.assertEqual(data["continue_conversation_max_turns"], 5)
         self.assertEqual(data["voice_auto_send_ms"], 2000)
+        self.assertEqual(data["message_endpoint_access"]["default"], "reachable_wherever_flask_is_reachable")
+        self.assertIn("reverse_proxy_caveat", data["review_endpoints_access"])
 
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(
@@ -115,11 +117,24 @@ class OomSakkieRouteTests(unittest.TestCase):
     def test_review_access_policy_is_loopback_by_default(self):
         self.assertTrue(is_review_request_allowed("127.0.0.1"))
         self.assertTrue(is_review_request_allowed("::1"))
+        self.assertFalse(is_review_request_allowed(None))
+        self.assertFalse(is_review_request_allowed(""))
         self.assertFalse(is_review_request_allowed("192.168.1.44", environ={}))
         self.assertTrue(is_review_request_allowed(
             "192.168.1.44",
             environ={"OOM_SAKKIE_REVIEW_ALLOW_PRIVATE_LAN": "true"},
         ))
+
+    def test_review_access_currently_uses_remote_addr_not_forwarded_for(self):
+        response = self.client.get(
+            "/api/oom-sakkie/policy",
+            environ_base={
+                "REMOTE_ADDR": "127.0.0.1",
+                "HTTP_X_FORWARDED_FOR": "203.0.113.10",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":

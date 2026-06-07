@@ -12,7 +12,7 @@ You are working in the **Amadeus Pig Tracking & Sales** repo. Read **`CLAUDE.md`
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A specialist manifest scaffolding and 10.7B trace review advisor.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-D specialist manifest, advisory trace-review, access caveat hardening, and kiosk review-advisor panel work.
 
 Out of scope unless explicitly asked:
 
@@ -40,6 +40,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - DB append-only trace guards
 - Planned-only specialist manifest roster
 - Advisory-only trace review advisor
+- Message/review access policy split and reverse-proxy caveat
+- Manual kiosk Review Advisor panel
 
 ## Files/folders to inspect
 
@@ -75,13 +77,15 @@ Summary:
 - Added runtime policy, tool catalog, local-access review guard, append-only DB triggers.
 - Added planned-only specialist manifests and `/api/oom-sakkie/specialists`.
 - Added advisory-only `/api/oom-sakkie/review-advisor`; it prepares a queue and suggestions but does not mark feedback or run autonomously.
+- Added explicit `message_endpoint_access` policy and reverse-proxy caveat for review endpoint IP checks.
+- Added a manual kiosk Review Advisor panel that renders the advisor queue/suggestions without auto-polling or marking anything.
 
 Known verification from Codex:
 
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
-- Full local unittest suite: `379 tests OK`
+- Full local unittest suite: `385 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -90,6 +94,7 @@ Known verification from Codex:
   - `/api/oom-sakkie/message` is not blocked by the review endpoint guard.
   - `send weather to John` answers the read-only weather check and returns a safety note.
   - `start irrigation` remains read-only and does not issue control.
+  - `/api/oom-sakkie/review-advisor` returns `mode = advisory_only`, `writes_feedback = false`, and denies non-local requests.
 
 ## Design checks
 
@@ -105,7 +110,9 @@ Please inspect specifically:
 8. **Safety/stale split:** Are `stale_warnings` and `safety_notes` separated cleanly through tools, API response, trace storage, and UI?
 9. **Specialist roster:** Is Phase 10.7A safely planned-only, with no live delegation, autonomous loops, or second user-facing brain?
 10. **Review advisor:** Is Phase 10.7B advisory-only, with no automatic feedback marking, no hidden write path, no model call, and no autonomous loop?
-11. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+11. **Access policy:** Does Phase 10.7C document the message endpoint and reverse-proxy assumptions clearly enough, and are the tests honest about current `remote_addr` behavior?
+12. **Kiosk advisor panel:** Is Phase 10.7D useful and still safe: manual refresh only, no auto-marking, no HTML injection from trace text, no hidden writes?
+13. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

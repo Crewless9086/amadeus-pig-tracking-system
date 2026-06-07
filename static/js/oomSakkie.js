@@ -23,6 +23,8 @@
   const autoSpeak = document.getElementById("oom_auto_speak");
   const continueConversation = document.getElementById("oom_continue_conversation");
   const reviewSummary = document.getElementById("oom_review_summary");
+  const reviewAdvisor = document.getElementById("oom_review_advisor");
+  const refreshAdvisor = document.getElementById("oom_refresh_advisor");
   const toolCatalog = document.getElementById("oom_tool_catalog");
   const refreshTools = document.getElementById("oom_refresh_tools");
   const policyStatus = document.getElementById("oom_policy_status");
@@ -580,6 +582,61 @@
     reviewSummary.appendChild(problemList);
   }
 
+  function renderReviewAdvisor(data) {
+    if (!reviewAdvisor) return;
+    if (!data || !data.success) {
+      reviewAdvisor.innerHTML = '<p class="oom-empty">Review advisor is unavailable.</p>';
+      return;
+    }
+    reviewAdvisor.innerHTML = "";
+
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "advisory_only"} | auto-marking ${data.autonomous_marking_enabled ? "enabled" : "off"} | writes feedback ${data.writes_feedback ? "yes" : "no"}`;
+    reviewAdvisor.appendChild(guard);
+
+    const suggestions = Array.isArray(data.suggested_actions) ? data.suggested_actions : [];
+    const suggestionList = document.createElement("ul");
+    suggestionList.className = "oom-advisor-suggestions";
+    if (!suggestions.length) {
+      const item = document.createElement("li");
+      item.textContent = "No advisor suggestions returned.";
+      suggestionList.appendChild(item);
+    } else {
+      suggestions.slice(0, 4).forEach((suggestion) => {
+        const item = document.createElement("li");
+        item.textContent = suggestion;
+        suggestionList.appendChild(item);
+      });
+    }
+    reviewAdvisor.appendChild(suggestionList);
+
+    const queue = Array.isArray(data.review_queue) ? data.review_queue : [];
+    const queueList = document.createElement("div");
+    queueList.className = "oom-advisor-queue";
+    if (!queue.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No review queue items right now.";
+      queueList.appendChild(empty);
+    } else {
+      queue.slice(0, 6).forEach((item) => {
+        const row = document.createElement("article");
+        const title = document.createElement("strong");
+        const meta = document.createElement("span");
+        const question = document.createElement("p");
+        title.textContent = `${item.priority || "normal"} - ${item.reason || "review"}`;
+        meta.textContent = `${item.tool_name || "clarification"} | ${item.trace_id || ""}`;
+        question.textContent = item.user_text || "(empty)";
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.appendChild(question);
+        queueList.appendChild(row);
+      });
+    }
+    reviewAdvisor.appendChild(queueList);
+  }
+
   function renderToolCatalog(data) {
     if (!toolCatalog) return;
     const tools = data && Array.isArray(data.tools) ? data.tools : [];
@@ -625,12 +682,14 @@
     const toolCounts = data.tool_counts || {};
     const policy = data.kiosk_policy || {};
     const reviewAccess = data.review_endpoints_access || {};
+    const messageAccess = data.message_endpoint_access || {};
     [
       ["Mode", data.mode || "unknown"],
       ["Backend brain", data.backend_as_brain ? "on" : "off"],
       ["Kiosk max risk", `${policy.max_risk_level ?? 0}: ${policy.allowed_risk_label || "READ_ONLY"}`],
       ["Tools", `${toolCounts.read_only || 0}/${toolCounts.total || 0} read-only`],
       ["Review access", reviewAccess.default || "unknown"],
+      ["Message access", messageAccess.default || "unknown"],
       ["Write tools", data.write_tools_enabled ? "enabled" : "off"],
       ["Telegram cutover", data.telegram_cutover_enabled ? "enabled" : "off"],
       ["Voice", data.browser_speech_mode || "unknown"],
@@ -869,6 +928,17 @@
     }
   }
 
+  async function loadReviewAdvisor() {
+    if (!reviewAdvisor) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/review-advisor?channel=kiosk&days=14&limit=12");
+      const data = await response.json();
+      renderReviewAdvisor(data);
+    } catch (error) {
+      reviewAdvisor.innerHTML = '<p class="oom-empty">Review advisor is unavailable.</p>';
+    }
+  }
+
   async function loadToolCatalog() {
     if (!toolCatalog) return;
     try {
@@ -894,6 +964,7 @@
   function refreshReviewData() {
     loadReviewSummary();
     loadRecentTraces();
+    loadReviewAdvisor();
   }
 
   if (form) {
@@ -912,6 +983,10 @@
 
   if (refreshTraces) {
     refreshTraces.addEventListener("click", refreshReviewData);
+  }
+
+  if (refreshAdvisor) {
+    refreshAdvisor.addEventListener("click", loadReviewAdvisor);
   }
 
   if (refreshTools) {
