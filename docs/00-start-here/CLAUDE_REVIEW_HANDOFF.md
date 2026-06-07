@@ -1,13 +1,30 @@
-# Claude Code review handoff (copy-paste)
+# Claude Review Handoff
 
-Use when you want **Claude Code** to double-check Cursor’s plan or implementation against this repo’s design — especially **n8n + Flask + Sheets** boundaries.
+## How Charl Should Use This
 
-## Current filled handoff - Oom Sakkie local kiosk and specialist roster review
+In Claude Code, say exactly:
 
-Copy-paste this block into Claude Code when reviewing the current Oom Sakkie batch:
+```text
+Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.
+```
 
-```markdown
-You are working in the **Amadeus Pig Tracking & Sales** repo. Read **`CLAUDE.md`** first, then inspect the files listed below.
+Claude should not need any extra pasted prompt. The current review scope, files, questions, commands, and output format are all listed below.
+
+## Instructions For Claude
+
+You are working in the **Amadeus Pig Tracking & Sales** repo.
+
+If the user asks you to read this file and review, do this:
+
+1. Read `CLAUDE.md` first.
+2. Read the **Current Review Packet** below.
+3. Inspect the files listed in **Files/folders to inspect**.
+4. Run or recommend the verification commands listed in **Known verification from Codex** as appropriate for your environment.
+5. Answer every item in **Design checks**.
+6. Use the exact **Deliverable format**.
+7. Treat the **Archive / reusable templates** section as background only. Do not review old archived examples unless the user explicitly asks.
+
+## Current Review Packet - Oom Sakkie Local Kiosk And Specialist Roster
 
 ## Authority and scope
 
@@ -125,7 +142,14 @@ Please inspect specifically:
 - **Findings first:** severity ordered, with file/line references where possible.
 - **Open questions:** only if a decision is required before continuing.
 - **Recommended next slice:** keep it safe and local; do not recommend Telegram cutover, writes, physical controls, always-on mic, wake word, or live specialist delegation unless you explicitly justify why the current daily-use trial is insufficient.
-```
+
+---
+
+## Archive / Reusable Templates
+
+The sections below are older reusable prompt templates and examples for other review types.
+
+For the current Oom Sakkie review, Claude should use only the **Current Review Packet** above unless Charl explicitly asks for another review scope.
 
 ## Before you paste anything
 
