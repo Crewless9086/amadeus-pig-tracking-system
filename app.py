@@ -8,6 +8,7 @@ from modules.orders.order_routes import orders_bp
 from modules.reports.report_routes import reports_bp
 from modules.sales.sales_transaction_routes import sales_bp
 from modules.telemetry.telemetry_routes import telemetry_bp
+from modules.oom_sakkie.routes import oom_sakkie_bp
 from services.database_service import (
     check_irrigation_schema,
     check_database_foundation,
@@ -29,6 +30,7 @@ app.register_blueprint(orders_bp, url_prefix="/api")
 app.register_blueprint(reports_bp, url_prefix="/api")
 app.register_blueprint(sales_bp, url_prefix="/api")
 app.register_blueprint(telemetry_bp, url_prefix="/api")
+app.register_blueprint(oom_sakkie_bp, url_prefix="/api")
 
 
 @app.route("/")
@@ -59,6 +61,11 @@ def pig_allocation_page():
 @app.route("/meat-planning")
 def meat_planning_page():
     return render_template("meat-planning.html")
+
+
+@app.route("/oom-sakkie")
+def oom_sakkie_page():
+    return render_template("oom-sakkie.html")
 
 
 @app.route("/sales/slaughter")

@@ -1,0 +1,280 @@
+import re
+from dataclasses import dataclass
+
+from modules.oom_sakkie.tools import RiskLevel, get_tool
+from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, write_trace
+
+
+CONFIDENCE_FLOOR = 0.65
+MAX_USER_TEXT_CHARS = 2000
+
+
+ACTION_GUARD_PATTERN = re.compile(
+    r"\b("
+    r"delete|remove|save|create|update|edit|change|send|email|message|post|publish|"
+    r"start|stop|switch on|switch off|turn on|turn off|open|close|run|activate|deactivate"
+    r")\b",
+    re.I,
+)
+
+
+@dataclass(frozen=True)
+class IntentMatch:
+    intent: str
+    tool_name: str
+    confidence: float
+    reason: str
+
+
+RULES = [
+    (
+        re.compile(r"\b(irrigation|water zone|water zones|watering|sprinkler|sprinklers)\b", re.I),
+        IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
+    ),
+    (
+        re.compile(r"\b(meat planning|meat pipeline|ready for meat|meat candidate|preorder|preorders|abattoir fallback|fallback abattoir)\b", re.I),
+        IntentMatch("meat_planning", "meat_planning", 0.95, "rule:meat_planning"),
+    ),
+    (
+        re.compile(r"\b(pig allocation|allocation|allocate|purpose|livestock candidate|slow grower|slow growers|growth class|breeding candidate|which pigs.*sell|what pigs.*sell)\b", re.I),
+        IntentMatch("pig_allocation", "pig_allocation_readiness", 0.95, "rule:pig_allocation_readiness"),
+    ),
+    (
+        re.compile(r"\b(sales dashboard|sales overview|stock availability|available stock|sales stock|what.*available.*sale)\b", re.I),
+        IntentMatch("sales_dashboard", "sales_dashboard", 0.95, "rule:sales_dashboard"),
+    ),
+    (
+        re.compile(r"\b(how'?s the farm|how is the farm|farm overview|farm dashboard|dashboard summary|farm status|overall farm)\b", re.I),
+        IntentMatch("dashboard_summary", "dashboard_summary", 0.95, "rule:dashboard_summary"),
+    ),
+    (
+        re.compile(r"\b(attention|need(s)? attention|what needs|to do|todo|today.*farm)\b", re.I),
+        IntentMatch("farm_attention", "farm_attention_summary", 0.95, "rule:farm_attention"),
+    ),
+    (
+        re.compile(r"\b(power.*(24|recent|yesterday|profile|trend)|battery.*(24|recent|yesterday|profile|trend)|solar.*(24|recent|yesterday|profile|trend))\b", re.I),
+        IntentMatch("power_recent", "power_recent", 0.95, "rule:power_recent"),
+    ),
+    (
+        re.compile(r"\b(power|battery|solar|sunsynk|grid|loadshedding|load shedding|inverter)\b", re.I),
+        IntentMatch("power_current", "power_current", 0.95, "rule:power_current"),
+    ),
+    (
+        re.compile(r"\b(weather forecast|forecast|next few days|next 3 days|rain forecast|wind forecast)\b", re.I),
+        IntentMatch("weather_forecast", "weather_forecast", 0.95, "rule:weather_forecast"),
+    ),
+    (
+        re.compile(r"\b(weather now|weather current|current weather|rain now|wind now|temperature now|temp now)\b", re.I),
+        IntentMatch("weather_now", "weather_now", 0.95, "rule:weather_now"),
+    ),
+    (
+        re.compile(r"\b(weather|rain|wind|temperature|temp|forecast today|today.*weather)\b", re.I),
+        IntentMatch("weather_today", "weather_today", 0.95, "rule:weather_today"),
+    ),
+]
+
+
+def handle_message(payload):
+    text = str((payload or {}).get("text") or "").strip()[:MAX_USER_TEXT_CHARS]
+    channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]
+    session_id = str((payload or {}).get("session_id") or "").strip()[:120]
+    trace_id = build_trace_id()
+
+    if not text:
+        return {
+            "success": False,
+            "answer": "Ask me a farm question first.",
+            "tool_used": "",
+            "trace_id": trace_id,
+            "risk_level": int(RiskLevel.READ_ONLY),
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": [],
+            "needs_clarification": True,
+            "trace_store": {"stored": False, "status": "not_written_empty_text"},
+        }, 400
+
+    match = classify_intent(text)
+    if not match and is_unsupported_action_request(text):
+        answer = (
+            "This Oom Sakkie kiosk is read-only right now. "
+            "Ask me to check farm attention, power, weather, irrigation status, pig readiness, meat planning, or sales stock."
+        )
+        trace = _trace_payload(
+            trace_id=trace_id,
+            channel=channel,
+            session_id=session_id,
+            user_text=text,
+            intent="unsupported_action",
+            confidence=0,
+            tool_name="",
+            tool_result={},
+            answer=answer,
+            risk_level=RiskLevel.READ_ONLY,
+            stale_warnings=[],
+            safety_notes=["No write, control, message, or physical action was performed."],
+            links=[],
+        )
+        trace_status = write_trace(trace)
+        return {
+            "success": True,
+            "answer": answer,
+            "tool_used": "",
+            "trace_id": trace_id,
+            "risk_level": int(RiskLevel.READ_ONLY),
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["No write, control, message, or physical action was performed."],
+            "needs_clarification": True,
+            "action_blocked": True,
+            "trace_store": trace_status,
+        }, 200
+
+    if not match or match.confidence < CONFIDENCE_FLOOR:
+        answer = "I am not sure which farm system to check. Ask about farm attention, power, or weather for this first version."
+        trace = _trace_payload(
+            trace_id=trace_id,
+            channel=channel,
+            session_id=session_id,
+            user_text=text,
+            intent="unknown",
+            confidence=0,
+            tool_name="",
+            tool_result={},
+            answer=answer,
+            risk_level=RiskLevel.READ_ONLY,
+            stale_warnings=[],
+            safety_notes=[],
+            links=[],
+        )
+        trace_status = write_trace(trace)
+        return {
+            "success": True,
+            "answer": answer,
+            "tool_used": "",
+            "trace_id": trace_id,
+            "risk_level": int(RiskLevel.READ_ONLY),
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": [],
+            "needs_clarification": True,
+            "trace_store": trace_status,
+        }, 200
+
+    tool = get_tool(match.tool_name)
+    if not tool:
+        answer = "That tool is not available in this Oom Sakkie build."
+        trace_status = write_trace(_trace_payload(
+            trace_id, channel, session_id, text, match.intent, match.confidence,
+            match.tool_name, {}, answer, RiskLevel.READ_ONLY, [], [], []
+        ))
+        return {
+            "success": False,
+            "answer": answer,
+            "tool_used": match.tool_name,
+            "trace_id": trace_id,
+            "risk_level": int(RiskLevel.READ_ONLY),
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": [],
+            "needs_clarification": True,
+            "trace_store": trace_status,
+        }, 500
+
+    tool_result = tool.handler({})
+    stale_warnings = list(tool_result.get("stale_warnings") or [])
+    safety_notes = list(tool_result.get("safety_notes") or [])
+    links = list(tool_result.get("links") or [])
+    if is_unsupported_action_request(text):
+        safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
+    answer = build_answer(tool_result, stale_warnings, safety_notes)
+    trace = _trace_payload(
+        trace_id=trace_id,
+        channel=channel,
+        session_id=session_id,
+        user_text=text,
+        intent=match.intent,
+        confidence=match.confidence,
+        tool_name=tool.name,
+        tool_result=tool_result,
+        answer=answer,
+        risk_level=tool.risk_level,
+        stale_warnings=stale_warnings,
+        safety_notes=safety_notes,
+        links=links,
+    )
+    trace_status = write_trace(trace)
+
+    return {
+        "success": True,
+        "answer": answer,
+        "tool_used": tool.name,
+        "trace_id": trace_id,
+        "risk_level": int(tool.risk_level),
+        "links": links,
+        "stale_warnings": stale_warnings,
+        "safety_notes": safety_notes,
+        "needs_clarification": False,
+        "trace_store": trace_status,
+        "intent": {
+            "name": match.intent,
+            "confidence": match.confidence,
+            "reason": match.reason,
+        },
+    }, 200
+
+
+def classify_intent(text):
+    for pattern, match in RULES:
+        if pattern.search(text or ""):
+            return match
+    return None
+
+
+def is_unsupported_action_request(text):
+    return bool(ACTION_GUARD_PATTERN.search(text or ""))
+
+
+def build_answer(tool_result, stale_warnings, safety_notes=None):
+    summary = str(tool_result.get("summary") or "").strip()
+    if not summary:
+        summary = "I checked the farm system, but it did not return a summary."
+    if stale_warnings:
+        return f"{summary} Note: {stale_warnings[0]}"
+    if safety_notes:
+        return f"{summary} Note: {safety_notes[0]}"
+    return summary
+
+
+def _trace_payload(
+    trace_id,
+    channel,
+    session_id,
+    user_text,
+    intent,
+    confidence,
+    tool_name,
+    tool_result,
+    answer,
+    risk_level,
+    stale_warnings,
+    safety_notes,
+    links,
+):
+    return {
+        "trace_id": trace_id,
+        "channel": channel,
+        "session_id": session_id,
+        "user_text": user_text,
+        "intent": intent,
+        "confidence": confidence,
+        "tool_name": tool_name,
+        "tool_args_json": {},
+        "tool_result_summary": str((tool_result or {}).get("summary") or "")[:1000],
+        "tool_result_hash": hash_tool_result((tool_result or {}).get("raw") or tool_result),
+        "answer": answer,
+        "risk_level": int(risk_level),
+        "stale_warnings_json": stale_warnings,
+        "safety_notes_json": safety_notes,
+        "links_json": links,
+    }

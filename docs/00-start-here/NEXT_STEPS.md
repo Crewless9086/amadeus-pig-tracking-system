@@ -26,7 +26,8 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Real Weight Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now | Next: keep live-test-dependent items open, then choose the next practical business-module-aligned slice. |
-| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Planned | Next: resolve Oom Sakkie orchestrator-location decision, then build the read-only kiosk MVP. |
+| Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
+| Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7B Local Ready | Planned-only specialist manifests and advisory trace-review endpoint exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -4012,7 +4013,7 @@ Dashboard and notification follow-up notes moved from `planning/ToDoList.md` on 
 - Slack architecture assessment moved from scratch notes to `docs/01-architecture/SLACK_ARCHITECTURE_ASSESSMENT.md` on 2026-06-05. Recommendation: do not implement Slack now; keep it as a future optional human visibility/notification adapter only, never as agent memory, event bus, or source of truth.
 - Oom Sakkie voice operating agent PRD added on 2026-06-06: `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`. Recommendation after reviewing the Trillion public site and owner goal for a local farm PC: build the backend text orchestrator plus local `/oom-sakkie` kiosk page first (`POST /api/oom-sakkie/message` + `GET /oom-sakkie`) using approved read-only tools. The kiosk should show what Oom Sakkie heard, what tool/agent it called, the answer, trace ID, and links/cards for the relevant farm screens. Then add push-to-talk/Telegram voice notes, then consider wake-word/Home Assistant/custom local voice gateway. Do not start with always-on hardware, public posting, direct writes, or physical controls. Prompt backbone added at `docs/01-architecture/OOM_SAKKIE_AGENT_PROMPT_LIBRARY.md`; Trillion's private prompt playbook was not publicly accessible, so the library is Amadeus-specific and inspired only by public product patterns. Owner-provided Trillion-style playbooks are now logged and adapted in the prompt library: repo/code sentinel, cloud/local memory, read-only Supabase connector, Chief of Staff helper, context handoff, mobile voice PWA, personality persistence, voice latency streaming, security hardening, head-of-design sub-agent, living self-knowledge, cost dashboard, and sub-agent factory. These are backlog layers behind the read-only kiosk/orchestrator MVP, not immediate build scope.
 
-### 10.6A Oom Sakkie Kiosk MVP - Planned
+### 10.6A Oom Sakkie Kiosk MVP - Owner-Tested
 
 Source documents:
 
@@ -4027,9 +4028,27 @@ Claude architecture review result on 2026-06-06:
 
 Architecture decision before implementation:
 
-- Recommended direction: Flask/backend becomes the single long-term Oom Sakkie brain. n8n/GateKeeper stays Telegram ingress and later forwards Telegram messages to `/api/oom-sakkie/message`.
+- Confirmed direction on 2026-06-06: Flask/backend becomes the single long-term Oom Sakkie brain. n8n/GateKeeper stays Telegram I/O, callback routing, and scheduled work, then later forwards Telegram messages to `/api/oom-sakkie/message`.
 - First implementation may leave live Telegram routing unchanged until the kiosk endpoint is proven.
-- If Flask is intentionally kiosk-only for the first slice, document it as temporary and avoid duplicated prompt/tool drift.
+- `2.0 - OOM SAKKIE` should eventually become a thin forwarder, not a second routing brain.
+- Do not cut Telegram over until the kiosk/backend path is boring.
+
+Determinism during migration:
+
+- Use exact-match/rule routing before the LLM classifier.
+- Known live phrasings for power/weather/farm attention should skip the LLM and route directly to tools.
+- LLM classification runs only after rules do not match.
+- Low confidence still returns `needs_clarification = true`.
+
+Telegram migration gates:
+
+1. Build endpoint and kiosk; leave Telegram unchanged.
+2. Run kiosk daily for about two weeks and inspect traces for wrong tool selection, dropped stale warnings, and ambiguity.
+3. Add a parallel Telegram route to `/api/oom-sakkie/message`, feature-flagged and limited to Charl's chat ID first.
+4. Run parallel for about one week and compare old n8n answers with backend answers.
+5. Treat disagreements as new-path bugs until proven otherwise.
+6. Cut over `2.0` to a thin forwarder only after the parallel run is clean.
+7. Keep `2.1`, `2.2`, and `2.3.3` exports as references for about 30 days after cutover, then archive.
 
 Required first slice:
 
@@ -4129,6 +4148,1096 @@ Do not build yet:
 - direct Google Sheets/Supabase writes from the orchestrator
 - autonomous agent loops
 - new Telegram trigger workflows
+
+Local implementation status 2026-06-06:
+
+- Added `modules/oom_sakkie/` backend-owned read-only orchestrator.
+- Added typed `OomSakkieTool` registry with the three MVP tools.
+- Added rule-first classifier for farm attention, power, and weather.
+- Added `POST /api/oom-sakkie/message`.
+- Added `GET /oom-sakkie` text-only kiosk page.
+- Added Supabase migration `202606060001_create_oom_sakkie_traces.sql`.
+- Applied the trace-table migration locally against Supabase using `scripts/apply_supabase_migration.py`.
+- Confirmed trace writes return `stored = true`.
+- Confirmed local HTTP smoke:
+  - `hello` returns `needs_clarification = true`.
+  - `what needs attention today` routes to `farm_attention_summary`.
+  - `what is the power like now` routes to `power_current`.
+  - `weather today please` routes to `weather_today`.
+- Full local unittest suite passed at 353 tests.
+
+Deploy/browser-check next:
+
+- Deploy backend and static/template changes.
+- Open `/oom-sakkie`.
+- Ask the same three smoke questions.
+- Confirm traces are written in Supabase.
+- Leave Telegram unchanged.
+
+Owner test result:
+
+- Owner tested `/oom-sakkie` after implementation and confirmed it answered the expected questions correctly.
+- Keep Telegram unchanged until later parallel-run migration.
+
+### 10.6B Oom Sakkie Read-Only Tool Expansion - Owner-Tested
+
+Goal:
+
+- Make the backend-as-brain kiosk useful beyond the first three MVP questions while keeping the same safety posture.
+
+Scope:
+
+- Add only read-only backend tools.
+- Keep deterministic rule-first routing.
+- Keep trace writes for every request.
+- Keep `needs_clarification = true` on ambiguous requests.
+- Do not add LLM routing yet unless a question cannot be handled safely with rules.
+- Do not touch Telegram routing.
+
+Recommended next tools:
+
+1. `dashboard_summary` - wraps the existing dashboard/home read model for broad "how is the farm?" questions.
+2. `pig_allocation_readiness` - wraps the Phase 11A allocation readiness endpoint/service.
+3. `meat_planning` - wraps the Phase 11A meat planning endpoint/service.
+4. `sales_dashboard` - wraps the sales dashboard read model.
+
+Why this order:
+
+- These tools already have backend read models.
+- They make the kiosk immediately useful for the farm owner.
+- They support the business goal without adding writes, Telegram changes, customer messages, public posting, or voice complexity.
+
+Tests required:
+
+- Registry contract still passes for all tools.
+- Representative phrasing routes to each new tool.
+- Unknown or ambiguous text still returns `needs_clarification = true`.
+- Stale/limitation warnings are surfaced when the wrapped read model provides them.
+- Full local unittest suite passes.
+
+Do not build in 10.6B:
+
+- Telegram cutover.
+- Push-to-talk or TTS.
+- LLM classifier as the default path.
+- Write tools or confirmation actions.
+- Customer-facing/Sam actions.
+- Meta/Facebook post drafting.
+
+Local implementation status 2026-06-06:
+
+- Added `dashboard_summary`, `pig_allocation_readiness`, `meat_planning`, and `sales_dashboard` to the typed Oom Sakkie registry.
+- Added rule-first routing for broad farm overview, pig allocation, meat planning, and sales dashboard phrasing.
+- Direct local smoke with `.env` loaded returned:
+  - `how is the farm` -> `dashboard_summary`, trace stored.
+  - `show me pig allocation` -> `pig_allocation_readiness`, trace stored.
+  - `what pigs are ready for meat` -> `meat_planning`, trace stored.
+  - `sales dashboard overview` -> `sales_dashboard`, trace stored.
+- The meat planning answer surfaces the read-only/no-save warning.
+- Telegram remains unchanged.
+
+Deploy/browser-check next:
+
+- Deploy backend changes.
+- Open `/oom-sakkie`.
+- Ask the four new smoke questions above.
+- Confirm traces store in Supabase.
+- Keep Telegram unchanged.
+
+Owner test result:
+
+- Owner tested the expanded kiosk questions and confirmed they answered as expected.
+
+### 10.6C Oom Sakkie Trace Visibility - Local Ready
+
+Goal:
+
+- Make daily review practical before any Telegram migration by showing recent backend brain traces in the kiosk and through a read-only API.
+
+Implemented locally:
+
+- Added `GET /api/oom-sakkie/traces`.
+- Added recent trace readback from Supabase `oom_sakkie_traces`.
+- Added a Recent Checks panel on `/oom-sakkie`.
+- Recent rows show question, chosen tool, created time, and trace ID.
+- Added refresh button.
+- Kept trace display read-only.
+- No Telegram changes, no writes beyond existing trace inserts, no voice, no LLM router.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused Oom Sakkie/frontend tests passed.
+- Full local unittest suite passed at 356 tests.
+- Local HTTP smoke for `/api/oom-sakkie/traces?channel=kiosk&limit=3` returned `success = true` and recent trace rows.
+
+Deploy/browser-check next:
+
+- Deploy backend/static/template changes.
+- Open `/oom-sakkie`.
+- Confirm Recent Checks loads.
+- Ask a new question.
+- Confirm the new trace appears after answer or refresh.
+
+### 10.6D Oom Sakkie Trace Feedback - Local Ready
+
+Goal:
+
+- Make the two-week kiosk review window measurable by letting the owner mark whether each backend-brain trace was correct before any Telegram cutover.
+
+Implemented locally:
+
+- Added Supabase migration `202606060002_create_oom_sakkie_trace_feedback.sql`.
+- Added append-only table `public.oom_sakkie_trace_feedback` linked to `oom_sakkie_traces`.
+- Added validated feedback types: `correct`, `wrong_tool`, `stale_or_missing_data`, `bad_wording`, and `needs_follow_up`.
+- Added `POST /api/oom-sakkie/traces/<trace_id>/feedback`.
+- Extended `GET /api/oom-sakkie/traces` to return the latest feedback summary for each trace.
+- Added compact feedback controls to the Recent Checks panel on `/oom-sakkie`.
+- No Telegram changes, no voice, no LLM router, no farm-data writes, and no customer-facing/Sam actions.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused Oom Sakkie/frontend tests passed at 33 tests.
+- Supabase migration applied locally.
+- Local HTTP smoke fetched one recent trace, posted `correct` feedback, and confirmed `latest_feedback` returned on the next trace read.
+
+Deploy/browser-check next:
+
+- Deploy backend/static/template/migration changes.
+- Open `/oom-sakkie`.
+- Confirm Recent Checks still loads.
+- Mark one trace as `Correct` and save.
+- Refresh Recent Checks and confirm the reviewed status remains visible.
+- Keep Telegram unchanged.
+
+### 10.6E Oom Sakkie Review Summary - Local Ready
+
+Goal:
+
+- Give the kiosk trial a simple quality signal before Telegram migration: total checks, reviewed checks, issue rate, unreviewed count, and recent reviewed problem traces.
+
+Implemented locally:
+
+- Added `GET /api/oom-sakkie/traces/review-summary`.
+- Summary reads latest feedback per trace so repeated review changes do not inflate counts.
+- Added 14-day kiosk summary metrics on `/oom-sakkie`: checks, reviewed, issues, and unreviewed.
+- Added recent reviewed problem trace list below the metric strip.
+- Summary refreshes after new answers, manual refresh, and feedback saves.
+- No Telegram changes, no voice, no LLM router, no farm-data writes, and no customer-facing/Sam actions.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused Oom Sakkie/frontend tests passed at 34 tests.
+- Local HTTP smoke for `/api/oom-sakkie/traces/review-summary?channel=kiosk&days=14` returned `status = ok`, 20 kiosk traces, 1 reviewed trace, 0 problem traces, and per-tool counts.
+
+Deploy/browser-check next:
+
+- Deploy backend/static/template changes.
+- Open `/oom-sakkie`.
+- Confirm the review summary strip appears above Recent Checks.
+- Save feedback on a trace and confirm counts update after refresh.
+- Keep Telegram unchanged.
+
+### 10.6F Oom Sakkie Trace Review Filters - Local Ready
+
+Goal:
+
+- Make daily trace review faster by filtering Recent Checks to all, unreviewed, issue, or reviewed traces during the kiosk trial.
+
+Implemented locally:
+
+- Extended `GET /api/oom-sakkie/traces` with `review=all|unreviewed|issues|reviewed`.
+- Invalid review filter values fall back to `all`.
+- Added filter buttons to `/oom-sakkie` above Recent Checks.
+- Active filter stays selected when traces refresh after a feedback save.
+- No Telegram changes, no voice, no LLM router, no farm-data writes, and no customer-facing/Sam actions.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused Oom Sakkie/frontend tests passed at 35 tests.
+- Local HTTP smoke confirmed:
+  - `review=all` returned mixed reviewed/unreviewed rows.
+  - `review=unreviewed` returned only unreviewed rows.
+  - `review=issues` returned zero rows with current data.
+  - `review=reviewed` returned reviewed rows.
+
+Deploy/browser-check next:
+
+- Deploy backend/static/template changes.
+- Open `/oom-sakkie`.
+- Click All, Unreviewed, Issues, and Reviewed.
+- Confirm rows change as expected.
+- Keep Telegram unchanged.
+
+### 10.6G Oom Sakkie Trace Detail Expanders - Local Ready
+
+Goal:
+
+- Let the owner inspect a saved trace answer, tool-result summary, stale warnings, and links directly from Recent Checks without re-asking the question or opening the database.
+
+Implemented locally:
+
+- Added an expandable `Show saved answer` details area to each recent trace row.
+- Detail area renders the stored answer, tool result summary, stale warnings, and links already returned by `GET /api/oom-sakkie/traces`.
+- No backend schema changes were needed.
+- No Telegram changes, no voice, no LLM router, no farm-data writes, and no customer-facing/Sam actions.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed at 24 tests.
+- Local HTTP smoke confirmed trace rows include `answer`, `tool_result_summary`, `stale_warnings`, `links`, and `latest_feedback`.
+
+Deploy/browser-check next:
+
+- Deploy static/template changes.
+- Open `/oom-sakkie`.
+- Expand `Show saved answer` on a few recent traces.
+- Confirm answer, warnings, and links render clearly.
+- Keep Telegram unchanged.
+
+### 10.6H Oom Sakkie Trace Search - Local Ready
+
+Goal:
+
+- Make it easy to find a past kiosk trace by question text, saved answer text, tool name, or trace ID during the review window.
+
+Implemented locally:
+
+- Extended `GET /api/oom-sakkie/traces` with `q=<search text>`.
+- Search combines with the existing `review` filter.
+- Search text is bounded before it reaches the query.
+- Added a debounced search box and Clear button above Recent Checks.
+- No Telegram changes, no voice, no LLM router, no farm-data writes, and no customer-facing/Sam actions.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused Oom Sakkie/frontend tests passed at 36 tests.
+- Local HTTP smoke confirmed `q=power` returned matching trace rows and a nonsense term returned zero rows.
+
+Deploy/browser-check next:
+
+- Deploy backend/static/template changes.
+- Open `/oom-sakkie`.
+- Search for `power`, `weather`, and a trace ID fragment.
+- Confirm filters still combine correctly with search.
+- Keep Telegram unchanged.
+
+### 10.6I Oom Sakkie Voice Readiness Preflight - Local Ready
+
+Goal:
+
+- Show whether the current kiosk browser is ready for the later push-to-talk voice slice before opening the microphone or adding STT/TTS vendors.
+
+Implemented locally:
+
+- Added a `Voice Readiness` preflight panel to `/oom-sakkie`.
+- Browser-side checks show:
+  - secure origin status (`window.isSecureContext`)
+  - microphone API availability (`navigator.mediaDevices.getUserMedia` capability only)
+  - browser TTS availability (`speechSynthesis`)
+- The panel does not request microphone permission and does not start audio capture.
+- No Telegram changes, no push-to-talk, no TTS playback, no wake word, no LLM router, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed at 24 tests.
+- Local route smoke confirmed `/oom-sakkie` serves the `Voice Readiness` panel and states that no microphone is opened yet.
+
+Deploy/browser-check next:
+
+- Deploy static/template changes.
+- Open `/oom-sakkie` on the target kiosk browser.
+- Confirm `Secure origin`, `Mic API`, and `Browser TTS` statuses.
+- If `Secure origin` is blocked, finish LAN HTTPS (`farm-pc.local` or equivalent) before any push-to-talk work.
+- Keep Telegram unchanged.
+
+### 10.6J Oom Sakkie Browser Speech Draft - Local Ready
+
+Goal:
+
+- Let the owner draft a kiosk question by speaking into the browser, while still requiring explicit review and pressing `Ask` before the backend brain runs.
+
+Implemented locally:
+
+- Added a `Talk` button beside the existing text input.
+- Uses browser `SpeechRecognition` / `webkitSpeechRecognition` when available.
+- Recognition language is set to `en-ZA`.
+- Recognized speech fills the existing text input and updates `You Asked`.
+- Speech recognition is single-utterance (`continuous = false`) and interim results are allowed.
+- The browser does not auto-submit recognized text. Owner must still press `Ask`.
+- Browser SpeechRecognition support is now shown in Voice Readiness.
+- No backend STT vendor, no Deepgram/OpenAI Whisper, no TTS playback, no wake word, no always-on mic, no Telegram changes, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed at 24 tests.
+- Local route smoke confirmed `/oom-sakkie` serves the Talk button, voice status line, and draft-before-send copy.
+
+Browser-check next:
+
+- Open `/oom-sakkie` in Chrome on the laptop.
+- Click `Talk`; approve mic permission if the browser prompts.
+- Say one short question.
+- Confirm the transcript appears in the text input.
+- Edit the transcript if needed.
+- Press `Ask` manually.
+- Confirm the normal backend answer and trace flow still work.
+- Keep Telegram unchanged.
+
+### 10.6K Oom Sakkie Browser TTS Playback - Local Ready
+
+Goal:
+
+- Let the owner hear the latest kiosk answer through local browser text-to-speech without adding a TTS vendor, wake word, always-on microphone, or automatic listen/speak loop.
+
+Implemented locally:
+
+- Added answer-panel controls: `Speak Answer`, `Stop Speech`, and an opt-in `Speak replies` checkbox.
+- Uses browser `speechSynthesis` and `SpeechSynthesisUtterance` when available.
+- Speech playback language is set to `en-ZA`, with a conservative speaking rate.
+- Manual `Speak Answer` reads the currently displayed answer.
+- `Speak replies` auto-speaks backend answers only after the explicit `Ask` action returns.
+- `Stop Speech` cancels current playback.
+- Starting a new backend question cancels any active speech.
+- Speaking an answer stops any active browser speech-recognition capture first and does not restart the mic afterwards.
+- No backend TTS vendor, no Deepgram/OpenAI Whisper, no wake word, no always-on mic, no Telegram changes, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Local route smoke confirmed `/oom-sakkie` serves the speech controls and `Speak replies` toggle.
+
+Browser-check next:
+
+- Open `/oom-sakkie` in Chrome on the laptop.
+- Ask a normal text or drafted voice question.
+- Click `Speak Answer` and confirm the answer plays through the laptop speakers.
+- Click `Stop Speech` and confirm playback stops.
+- Enable `Speak replies`, ask another question, and confirm the answer speaks only after the backend returns.
+- Confirm the mic does not start automatically after speech finishes.
+- Keep Telegram unchanged.
+
+### 10.6L Oom Sakkie Talk & Ask Correction Window - Local Ready
+
+Goal:
+
+- Add a faster optional local voice turn while preserving a short human correction/cancel window before the backend brain runs.
+
+Implemented locally:
+
+- Added `Talk & Ask` beside the existing tested `Talk` and `Ask` controls.
+- `Talk` still only drafts speech into the text box and never submits.
+- `Talk & Ask` starts one browser speech-recognition capture, writes the transcript into the existing input, then waits 2 seconds before submitting.
+- Added `Cancel Send`, visible only during the 2-second correction window.
+- Editing the text during the correction window cancels the pending send.
+- Pressing `Ask` manually during the correction window cancels the pending auto-send first, preventing duplicate submissions.
+- Browser TTS playback is cancelled before a new backend question starts.
+- No always-on microphone, no wake word, no backend STT vendor, no Telegram changes, no LLM default router, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/oom-sakkie` serves `Talk & Ask` and `Cancel Send`.
+
+Browser-check next:
+
+- Open `/oom-sakkie` in Chrome on the laptop.
+- Click `Talk & Ask`.
+- Say one short question.
+- Confirm the transcript appears and `Cancel Send` shows during the 2-second window.
+- Let it send once and confirm the answer/trace flow works.
+- Repeat, then click `Cancel Send` and confirm no backend request is sent.
+- Repeat, edit the text during the 2-second window, and confirm auto-send is cancelled.
+- Keep Telegram unchanged.
+
+Owner test result:
+
+- Owner tested `Talk & Ask` and confirmed it worked as expected.
+
+### 10.6M Oom Sakkie Optional Continue Conversation - Local Ready
+
+Goal:
+
+- Let the kiosk behave like a simple local voice assistant for consecutive turns, while staying opt-in, half-duplex, and browser-local.
+
+Implemented locally:
+
+- Added `Continue conversation` beside the answer speech controls.
+- The toggle is off by default.
+- Enabling it also enables `Speak replies`, because continuation is tied to the browser finishing a spoken backend answer.
+- Continuation only runs after an automatic spoken backend reply finishes.
+- Manual `Speak Answer` does not trigger another listening cycle.
+- `Stop Speech`, a new manual `Ask`, or starting a new voice capture cancels continuation for the current spoken reply.
+- A speech-run guard prevents a cancelled old utterance from starting a new listen cycle later.
+- The next listen cycle uses the existing `Talk & Ask` path, including the 2-second cancel/edit window before sending.
+- No always-on microphone, no wake word, no backend STT vendor, no vendor TTS, no Telegram changes, no LLM default router, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/oom-sakkie` serves `Continue conversation`.
+
+Browser-check next:
+
+- Open `/oom-sakkie` in Chrome on the laptop.
+- Enable `Continue conversation`.
+- Confirm `Speak replies` turns on.
+- Use `Talk & Ask` for a question.
+- Let Oom Sakkie answer and speak.
+- Confirm it starts listening again only after the spoken answer finishes.
+- Confirm the next recognized question still shows the 2-second `Cancel Send` window.
+- Click `Stop Speech` during a spoken reply and confirm it does not start listening again.
+- Keep Telegram unchanged.
+
+Owner test result:
+
+- Owner tested optional `Continue conversation` and confirmed it worked.
+
+### 10.6N Oom Sakkie Voice Loop Stop And Cap Guard - Local Ready
+
+Goal:
+
+- Add an explicit hard stop and a bounded loop limit before making the local voice experience any more autonomous.
+
+Implemented locally:
+
+- Added `Stop Conversation`, visible while continuation/listening/speaking/pending-send voice behavior is active.
+- `Stop Conversation` cancels pending auto-send, active browser speech recognition, and active browser TTS.
+- It turns off `Continue conversation` and resets the continuation counter.
+- `Stop Speech`, manual `Ask`, and new voice capture still cancel continuation for the current reply.
+- Added a maximum of 5 continued turns before the browser pauses the conversation automatically.
+- Added a speech-run guard so a cancelled old utterance cannot trigger another listen cycle later.
+- No always-on microphone, no wake word, no backend STT vendor, no vendor TTS, no Telegram changes, no LLM default router, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/oom-sakkie` serves `Stop Conversation`.
+
+Browser-check next:
+
+- Enable `Continue conversation` and ask a spoken question.
+- Click `Stop Conversation` while the loop is active and confirm it turns off continuation.
+- Confirm no mic capture restarts after stopping.
+- Let the loop run several short turns and confirm it pauses after 5 continued turns.
+- Keep Telegram unchanged.
+
+Owner test result:
+
+- Owner tested voice loop stop/cap behavior and confirmed it worked.
+
+### 10.6O Oom Sakkie Spoken Stop Commands - Local Ready
+
+Goal:
+
+- Let the owner stop the local voice loop hands-free without sending stop/cancel wording to the backend as a farm question.
+
+Implemented locally:
+
+- Added browser-only spoken stop command detection during the `Talk & Ask` auto-submit path.
+- Recognized stop phrases include `stop`, `stop conversation`, `stop listening`, `cancel`, `cancel send`, `never mind`, `nevermind`, `pause`, and `pause conversation`.
+- When a stop phrase is heard, the browser calls the existing `Stop Conversation` behavior.
+- The recognized stop phrase is not submitted to `/api/oom-sakkie/message`.
+- Added a small kiosk hint listing practical stop words.
+- No always-on microphone, no wake word, no backend STT vendor, no vendor TTS, no Telegram changes, no LLM default router, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/oom-sakkie` serves the spoken stop hint.
+
+Browser-check next:
+
+- Enable `Continue conversation`.
+- Let Oom Sakkie start the next listening cycle.
+- Say `stop conversation`.
+- Confirm it stops locally and does not send a backend request.
+- Repeat with `cancel` or `never mind`.
+- Keep Telegram unchanged.
+
+### 10.6P Oom Sakkie Local Voice Session Log - Local Ready
+
+Goal:
+
+- Make local browser voice-loop testing reviewable without sending browser voice lifecycle events to Supabase or changing backend traces.
+
+Implemented locally:
+
+- Added a `Voice Session` panel under Voice Readiness.
+- The panel records the latest 12 browser-local voice events only.
+- Events include listening start, transcript drafts, auto-send scheduled/cancelled, backend answered, speaking, speech finished, continuation, stop phrase heard, loop paused, and speech errors.
+- Added `Clear` for the local event log.
+- The panel explicitly states: `Local browser events only. Nothing here is sent to Supabase.`
+- No backend endpoint, no Supabase table, no Telegram changes, no backend STT/TTS vendor, no wake word, no always-on mic, no LLM default router, and no farm-data writes.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/oom-sakkie` serves the `Voice Session` panel.
+
+Browser-check next:
+
+- Use `Talk`, `Talk & Ask`, `Speak Answer`, `Continue conversation`, and spoken stop commands.
+- Confirm the `Voice Session` panel logs the browser lifecycle events.
+- Confirm `Clear` empties the panel.
+- Keep Telegram unchanged.
+
+### 10.6Q Oom Sakkie Quick Read-Only Checks - Local Ready
+
+Goal:
+
+- Make the kiosk useful from across the room or on a touchscreen without requiring typing or voice for common safe checks.
+
+Implemented locally:
+
+- Added quick-check buttons under the ask bar:
+  - `Attention`
+  - `Power`
+  - `Weather Today`
+  - `Meat Ready`
+  - `Sales`
+- Each button fills the existing input and calls the existing `ask()` path.
+- Quick checks use the same `/api/oom-sakkie/message` endpoint, trace writes, stale warnings, links, and review refresh as typed questions.
+- No new backend tools, no write actions, no Telegram changes, no backend STT/TTS vendor, no wake word, no always-on mic, no LLM default router, and no farm-data writes beyond existing Oom Sakkie trace inserts.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/oom-sakkie` serves the quick-check buttons.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Click each quick-check button.
+- Confirm the answer panel, trace ID, tool used, warnings, links, Recent Checks, and Voice Session log behave normally.
+- Keep Telegram unchanged.
+
+### 10.6R Oom Sakkie Read-Only Telemetry Tool Expansion - Local Ready
+
+Goal:
+
+- Expand Oom Sakkie's backend-as-brain tool catalog with approved read-only telemetry/status wrappers that already exist in the Flask backend.
+
+Implemented locally:
+
+- Added typed read-only tools:
+  - `power_recent` - wraps the 24-hour power profile.
+  - `weather_now` - wraps current weather state.
+  - `weather_forecast` - wraps 3-day weather forecast.
+  - `irrigation_status` - wraps read-only irrigation status.
+- Added rule-first deterministic routing for:
+  - recent power/profile/trend questions,
+  - current weather questions,
+  - forecast/next-few-days weather questions,
+  - irrigation/watering status questions.
+- Control-style irrigation wording such as `start irrigation` routes to the read-only status tool and returns the explicit warning: no start/stop command was sent.
+- Added `Irrigation` to kiosk quick checks.
+- No new backend endpoint, no write tool, no hardware command, no Telegram change, no backend STT/TTS vendor, no wake word, no always-on mic, no LLM default router, and no farm-data writes beyond existing Oom Sakkie trace inserts.
+
+Verification:
+
+- Focused Oom Sakkie service tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Ask:
+  - `show me the recent power profile`
+  - `weather now please`
+  - `weather forecast for the next few days`
+  - `what is the irrigation status`
+  - `start irrigation`
+- Confirm every response is read-only, risk level `0`, and traces store normally.
+- Confirm `start irrigation` does not perform any control action and says no start/stop command was sent.
+- Keep Telegram unchanged.
+
+### 10.6S Oom Sakkie Tool Catalog Transparency - Local Ready
+
+Goal:
+
+- Make the backend-as-brain registry visible in the kiosk and through a read-only API so operators and review sessions can see exactly which tools are active, their risk levels, and whether confirmation is required.
+
+Implemented locally:
+
+- Added `list_tool_catalog()` to serialize the runtime `TOOL_REGISTRY`.
+- Added `GET /api/oom-sakkie/tools`.
+- The endpoint returns tool names, descriptions, risk labels, numeric risk levels, confirmation flags, input schemas, output schemas, and a kiosk policy block:
+  - `max_risk_level = 0`
+  - `write_tools_enabled = false`
+- Added an `Available Checks` kiosk panel that renders the registry and can be refreshed manually.
+- No tool is executed by this endpoint.
+- No trace is written by this endpoint.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, hardware command, or farm-data write was added.
+
+Verification:
+
+- Focused Oom Sakkie service tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm `Available Checks` lists the current runtime tools.
+- Confirm all current tools show `risk 0: READ_ONLY`.
+- Confirm no current tool says `confirmation required`.
+- Refresh the panel and confirm the same list returns.
+- Keep Telegram unchanged.
+
+### 10.6T Oom Sakkie Unsupported Action Guard - Local Ready
+
+Goal:
+
+- Make unsupported write/control/message-style requests fail closed with explicit read-only wording instead of a vague clarification, while preserving approved read-only deterministic routes.
+
+Implemented locally:
+
+- Added an unsupported action guard inside `/api/oom-sakkie/message`.
+- The guard catches write/control/message-style wording such as:
+  - `delete`
+  - `send`
+  - `post`
+  - `start`
+  - `stop`
+  - `turn on`
+  - `turn off`
+- The guard only fires after approved read-only rules fail to match.
+- Result: `start irrigation` still routes to read-only `irrigation_status` and warns that no start/stop command was sent.
+- Unsupported action requests return:
+  - `needs_clarification = true`
+  - `action_blocked = true`
+  - `risk_level = 0`
+  - no `tool_used`
+  - warning that no write/control/message/physical action was performed.
+- The request is still traceable through the existing Oom Sakkie trace path.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, physical control, or farm-data write beyond existing trace inserts was added.
+
+Verification:
+
+- Focused Oom Sakkie service tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Ask `send the customer an order message`.
+- Confirm the answer says the kiosk is read-only.
+- Confirm `action_blocked` behavior through the response/trace if inspecting API output.
+- Ask `start irrigation`.
+- Confirm it still returns read-only irrigation status and says no start/stop command was sent.
+- Keep Telegram unchanged.
+
+### 10.6U Oom Sakkie Browser-Local Session ID - Local Ready
+
+Goal:
+
+- Give Oom Sakkie traces a stable local kiosk session ID so repeated checks from the same browser profile can be grouped during review, without adding login, cookies, or a memory model.
+
+Implemented locally:
+
+- Added `SESSION_STORAGE_KEY = "oom_sakkie_session_id"` in the kiosk JS.
+- Added `getSessionId()`:
+  - reuses the existing local `oom_sakkie_session_id` when present,
+  - creates a `kiosk-<timestamp>-<suffix>` ID when missing,
+  - stores it in `window.localStorage`,
+  - falls back to an empty string if local storage is unavailable.
+- `/api/oom-sakkie/message` now receives `session_id: getSessionId()`.
+- This is trace grouping only.
+- This is not authentication, not user identity, and not multi-turn memory.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, physical control, or farm-data write beyond existing trace inserts was added.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie` in the kiosk Chrome profile.
+- Ask two checks.
+- Inspect recent trace records and confirm they carry the same `session_id`.
+- Refresh the page and ask another check.
+- Confirm the same local session ID is reused.
+- Keep Telegram unchanged.
+
+### 10.6V Oom Sakkie Runtime Policy Visibility - Local Ready
+
+Goal:
+
+- Make the current Oom Sakkie safety posture visible from the backend and kiosk so review sessions can confirm the assistant is still local, read-only, and not quietly routing through Telegram, write tools, physical controls, or vendor voice.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/policy.py`.
+- Added `GET /api/oom-sakkie/policy`.
+- The endpoint returns:
+  - `mode = local_kiosk_read_only`
+  - `backend_as_brain = true`
+  - `telegram_cutover_enabled = false`
+  - `llm_router_enabled = false`
+  - `write_tools_enabled = false`
+  - `physical_controls_enabled = false`
+  - `backend_voice_vendors_enabled = false`
+  - `always_on_mic_enabled = false`
+  - `browser_speech_mode = push_to_talk_only`
+  - `trace_writes_enabled = true`
+  - kiosk max risk `0`
+  - read-only/write tool counts
+  - blocked capabilities list.
+- Added a `Safety Status` kiosk panel that renders the policy and can be refreshed manually.
+- This is visibility only.
+- No tool is executed by this endpoint.
+- No trace is written by this endpoint.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, physical control, or farm-data write was added.
+
+Verification:
+
+- Focused Oom Sakkie service tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm `Safety Status` shows:
+  - local read-only mode,
+  - backend brain on,
+  - max risk `0: READ_ONLY`,
+  - all tools read-only,
+  - write tools off,
+  - Telegram cutover off,
+  - always-on mic off.
+- Refresh the panel and confirm values remain stable.
+- Keep Telegram unchanged.
+
+### 10.6W Oom Sakkie Review Packet - Local Ready
+
+Goal:
+
+- Give the owner and Claude a single read-only JSON packet for morning review instead of asking them to manually collect policy, tool registry, review summary, and recent traces from separate endpoints.
+
+Implemented locally:
+
+- Added `GET /api/oom-sakkie/review-packet`.
+- The packet includes:
+  - runtime policy,
+  - typed tool catalog,
+  - trace review summary,
+  - recent kiosk traces,
+  - component status codes.
+- Added a `Review Packet` link in the kiosk trace filter row.
+- This endpoint executes no tools.
+- This endpoint writes no traces.
+- It only reuses existing read-only registry, policy, and trace-read functions.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, physical control, or farm-data write was added.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed the endpoint returns policy, tools, review summary, and recent traces.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Click `Review Packet`.
+- Confirm the JSON includes `policy`, `tools`, `review_summary`, and `recent_traces`.
+- Use this packet as part of the Claude review prompt.
+- Keep Telegram unchanged.
+
+### 10.6X Oom Sakkie Claude-Review Hardening - Local Ready
+
+Source:
+
+- Claude review after 10.6W flagged small hardening items before daily kiosk use:
+  - cap `user_text`,
+  - split stale warnings from safety notes,
+  - surface continue-conversation settings in policy,
+  - derive confirmation-required tools,
+  - test low-confidence routing,
+  - add a Flask route test that does not require DB config.
+
+Implemented locally:
+
+- Capped incoming `text` in `/api/oom-sakkie/message` to 2,000 chars before trace writing.
+- Split tool output and API response fields:
+  - `stale_warnings` now stays for stale/limited data warnings,
+  - `safety_notes` now carries read-only/no-write/no-control disclaimers.
+- Added migration `supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql`.
+- Applied the migration locally; `oom_sakkie_traces` now has `safety_notes_json`.
+- Updated trace insert/readback so recent traces and review packets include `safety_notes`.
+- Updated kiosk answer and trace-detail rendering to show safety notes separately from stale warnings.
+- Mixed action/read requests such as `send weather to John` now answer the read-only weather check but add a safety note that no write/message/control/physical action was performed.
+- `/api/oom-sakkie/policy` now:
+  - derives `requires_confirmation_tools` from the registry,
+  - exposes `continue_conversation_max_turns = 5`,
+  - exposes `voice_auto_send_ms = 2000`.
+- Added tests for:
+  - text cap before trace writing,
+  - synthetic low-confidence match,
+  - mixed action/read safety note,
+  - trace SQL placeholder drift,
+  - route-level `/api/oom-sakkie/message` shape without DB config,
+  - policy route shape.
+- No auth was added to `/api/oom-sakkie/review-packet`; this remains acceptable only under the current local/trusted-LAN kiosk assumption and must be revisited before exposing another device or cutting Telegram over.
+
+Verification:
+
+- Applied `supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql`.
+- Focused Oom Sakkie service tests passed.
+- Focused route tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed:
+  - unsupported `send the customer an order message` is blocked with `safety_notes`,
+  - mixed `send weather to John` answers `weather_today` with a safety note,
+  - `start irrigation` remains read-only and has safety notes, not stale warnings,
+  - policy exposes `5` continue turns and `2000` auto-send ms,
+  - review packet returns expected keys.
+
+Browser-check next:
+
+- Ask `send weather to John`.
+- Confirm Oom Sakkie answers the weather check but shows a safety note that no message/action was performed.
+- Ask `start irrigation`.
+- Confirm it returns irrigation status and safety notes, with no stale warning unless actual data is stale.
+- Confirm `Safety Status` shows continue cap `5 turns` and auto-send `2000 ms`.
+- Open `Review Packet` and confirm recent traces include `safety_notes`.
+- Keep Telegram unchanged.
+
+### 10.6Y Oom Sakkie Review Endpoint Local-Access Guard - Local Ready
+
+Source:
+
+- Claude review flagged `/api/oom-sakkie/review-packet` as useful but sensitive because it exposes recent questions, answers, trace IDs, policy, and tool state.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/access.py`.
+- Sensitive review/admin-style endpoints now require loopback access by default:
+  - `GET /api/oom-sakkie/tools`
+  - `GET /api/oom-sakkie/policy`
+  - `GET /api/oom-sakkie/review-packet`
+  - `GET /api/oom-sakkie/traces`
+  - `GET /api/oom-sakkie/traces/review-summary`
+  - `POST /api/oom-sakkie/traces/<trace_id>/feedback`
+- Non-loopback requests receive:
+  - HTTP `403`
+  - `status = review_access_denied`
+- Private LAN review access is denied by default.
+- To explicitly allow private LAN review access later, set:
+  - `OOM_SAKKIE_REVIEW_ALLOW_PRIVATE_LAN=true`
+- `/api/oom-sakkie/message` remains unchanged.
+- `/api/oom-sakkie/policy` now reports:
+  - review endpoint default: `loopback_only`
+  - private LAN override env var name.
+- The kiosk `Safety Status` panel shows review access mode.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, physical control, or farm-data write beyond existing trace inserts was added.
+
+Verification:
+
+- Route tests cover loopback allow, non-local denial, and private-LAN env override.
+- Focused Oom Sakkie route tests passed.
+- Focused Oom Sakkie service tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Use the kiosk from the local browser on the same machine.
+- Confirm `Available Checks`, `Safety Status`, trace review, feedback, and `Review Packet` still work locally.
+- Confirm `Safety Status` shows review access as `loopback_only`.
+- Do not enable `OOM_SAKKIE_REVIEW_ALLOW_PRIVATE_LAN` unless explicitly deciding to review from another trusted LAN device.
+- Keep Telegram unchanged.
+
+### 10.6Z Oom Sakkie Trace Append-Only DB Guard - Local Ready
+
+Source:
+
+- Claude review noted that trace append-only behavior was enforced by application code only. This was acceptable for local-only kiosk use, but cheap to harden at the DB layer before wider exposure.
+
+Implemented locally:
+
+- Added migration `supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql`.
+- The migration creates `public.prevent_oom_sakkie_trace_mutation()`.
+- Added triggers that block:
+  - `UPDATE` on `public.oom_sakkie_traces`
+  - `DELETE` on `public.oom_sakkie_traces`
+  - `UPDATE` on `public.oom_sakkie_trace_feedback`
+  - `DELETE` on `public.oom_sakkie_trace_feedback`
+- Inserts remain allowed.
+- This protects the trace and feedback audit trail from accidental mutation through any DB client using normal table access.
+- No Telegram change, backend STT/TTS vendor, wake word, always-on mic, LLM default router, write tool, physical control, or farm-data write beyond existing trace inserts was added.
+
+Verification:
+
+- Applied `supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql`.
+- Focused Oom Sakkie service and route tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+- Local route smoke confirmed `/api/oom-sakkie/message` can still insert a new trace after the triggers were applied.
+
+Browser-check next:
+
+- Ask a normal kiosk question.
+- Confirm Recent Checks still refresh and show the new trace.
+- Keep Telegram unchanged.
+
+### 10.7 Oom Sakkie Specialist Agent Roster - Planned
+
+Source:
+
+- Owner scratch note in `planning/ToDoList.md` requested a future self-sustaining crew of named agents feeding Oom Sakkie/Jarvis: media, developer/code, design, delegation, security, business, analytics, crop/plant specialist, and other growth roles.
+- Public Trillion positioning uses a crew model around revenue, code, customers, data, communications, and intelligence. The Amadeus version should be farm-first and governed by the local safety model.
+
+Canonical planning doc:
+
+- `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
+
+Planned roster:
+
+- `Oom Sakkie` - user-facing farm brain.
+- `Sentinel` - security and safety advisor.
+- `Forge` - code steward.
+- `Prism` - design director.
+- `Ledger` - business and profit advisor.
+- `Atlas` - farm data analyst.
+- `Rootline` - crop and plant specialist.
+- `Herdmaster` - pig management specialist.
+- `Butcher` - pork pipeline specialist.
+- `Beacon` - media and market voice.
+- `Quartermaster` - operations and inventory planner.
+- `Gatekeeper` - routing and approval controller.
+
+Hard constraints:
+
+- Oom Sakkie remains the user-facing brain.
+- Specialists feed Oom Sakkie; they do not become separate user-facing assistants.
+- Every specialist starts read-only or draft-only.
+- Human approval is mandatory before writes, customer messages, public posts, Telegram cutover, or physical controls.
+- No autonomous loops until trace review and approval policy are stable.
+
+First build candidate:
+
+- Phase 10.7A should create manifest/review scaffolding only:
+  - typed specialist manifest schema,
+  - runtime-readable roster document or context file,
+  - read-only list endpoint or CLI,
+  - tests for risk levels and approval flags.
+- Do not implement live LLM delegation yet.
+- Do not implement the Agent Factory yet.
+
+### 10.7A Oom Sakkie Specialist Manifest Scaffolding - Local Ready
+
+Goal:
+
+- Make the future agent crew concrete and reviewable without creating live agents, autonomous loops, second brains, or tool execution.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/specialists.py`.
+- Added typed `SpecialistManifest` records for:
+  - `Sentinel`
+  - `Forge`
+  - `Prism`
+  - `Ledger`
+  - `Atlas`
+  - `Rootline`
+  - `Herdmaster`
+  - `Butcher`
+  - `Beacon`
+  - `Quartermaster`
+  - `Gatekeeper`
+- Added loopback-protected `GET /api/oom-sakkie/specialists`.
+- The endpoint returns:
+  - `status = planned_only`
+  - `delegation_enabled = false`
+  - `autonomous_loops_enabled = false`
+  - the specialist manifests.
+- Added specialists to `/api/oom-sakkie/review-packet`.
+- Added a local `Specialists` kiosk link beside `Review Packet`.
+- No live LLM delegation, autonomous worker, write tool, Telegram change, public posting, physical control, or second user-facing brain was added.
+
+Verification:
+
+- Focused Oom Sakkie service and route tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+- Full local unittest suite passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie` from the local browser.
+- Click `Specialists`.
+- Confirm the JSON says `planned_only`, `delegation_enabled = false`, and `autonomous_loops_enabled = false`.
+- Confirm the names and roles feel right before building any real specialist behavior.
+
+### 10.7B Oom Sakkie Trace Review Advisor - Local Ready
+
+Source:
+
+- Owner scratch note requested an analyst-style helper that can review conversations and suggest what to do next so the system can improve without the owner manually inspecting every trace.
+
+Goal:
+
+- Add the first safe analyst/reviewer slice without creating an autonomous agent, automatic feedback marking, live LLM delegation, or a second user-facing brain.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/review_advisor.py`.
+- Added loopback-protected `GET /api/oom-sakkie/review-advisor`.
+- The advisor reads existing trace review summary, reviewed issue traces, and unreviewed traces.
+- The endpoint returns:
+  - `mode = advisory_only`
+  - `autonomous_marking_enabled = false`
+  - `writes_feedback = false`
+  - a prioritized `review_queue`
+  - `suggested_actions`
+  - source endpoint statuses.
+- Added a local `Review Advisor` kiosk link beside `Review Packet` and `Specialists`.
+- The advisor never calls a model, never executes tools, never writes feedback, never changes trace rows, and never marks a conversation correct or incorrect by itself.
+- No live LLM delegation, autonomous worker, write tool, Telegram change, public posting, physical control, backend STT/TTS vendor, wake word, always-on mic, or second user-facing brain was added.
+
+Verification:
+
+- Service tests cover advisory-only output, queue prioritization, high problem-rate suggestions, and unconfigured trace-store behavior.
+- Route tests cover the local advisor endpoint and non-local denial.
+- Frontend contract tests cover the route and kiosk link.
+
+Browser-check next:
+
+- Open `/oom-sakkie` locally.
+- Click `Review Advisor`.
+- Confirm it opens JSON with `mode = advisory_only`, `writes_feedback = false`, and a useful review queue.
+- Use it as a guide for manual trace feedback; do not treat it as automatic review.
 
 Supabase RLS hardening verification:
 

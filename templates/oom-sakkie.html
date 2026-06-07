@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oom Sakkie</title>
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body class="oom-sakkie-body">
+  <main class="oom-shell">
+    <header class="oom-header">
+      <div>
+        <p class="oom-kicker">Farm Operating Kiosk</p>
+        <h1>Oom Sakkie</h1>
+      </div>
+      <div class="oom-status" id="oom_status">
+        <span class="oom-status-dot" aria-hidden="true"></span>
+        <span id="oom_status_text">Idle</span>
+      </div>
+    </header>
+
+    <section class="oom-workspace" aria-live="polite">
+      <div class="oom-question-panel">
+        <p class="oom-label">You Asked</p>
+        <p id="oom_user_text" class="oom-user-text">Ask what needs attention, what the power is doing, or what the weather looks like today.</p>
+      </div>
+
+      <div class="oom-answer-panel">
+        <p class="oom-label">Answer</p>
+        <p id="oom_answer" class="oom-answer">Ready.</p>
+        <div class="oom-answer-controls" aria-label="Answer speech controls">
+          <button type="button" id="oom_speak_answer" class="oom-speech-control">Speak Answer</button>
+          <button type="button" id="oom_stop_speech" class="oom-speech-control">Stop Speech</button>
+          <label class="oom-speech-toggle" for="oom_auto_speak">
+            <input type="checkbox" id="oom_auto_speak">
+            <span>Speak replies</span>
+          </label>
+          <label class="oom-speech-toggle" for="oom_continue_conversation">
+            <input type="checkbox" id="oom_continue_conversation">
+            <span>Continue conversation</span>
+          </label>
+        </div>
+        <div id="oom_warnings" class="oom-warnings" hidden></div>
+        <div id="oom_safety_notes" class="oom-safety-notes" hidden></div>
+        <div id="oom_links" class="oom-links"></div>
+      </div>
+
+      <details class="oom-trace-panel">
+        <summary>Trace</summary>
+        <dl>
+          <div>
+            <dt>Trace ID</dt>
+            <dd id="oom_trace_id">Not checked yet</dd>
+          </div>
+          <div>
+            <dt>Tool</dt>
+            <dd id="oom_tool_used">None</dd>
+          </div>
+          <div>
+            <dt>Risk</dt>
+            <dd id="oom_risk_level">0</dd>
+          </div>
+        </dl>
+      </details>
+
+      <section class="oom-recent-panel">
+        <div class="oom-section-heading">
+          <p class="oom-label">Recent Checks</p>
+          <button type="button" id="oom_refresh_traces">Refresh</button>
+        </div>
+        <div class="oom-voice-readiness">
+          <div>
+            <p class="oom-label">Voice Readiness</p>
+            <p class="oom-empty">Preflight only. No microphone is opened yet.</p>
+          </div>
+          <div id="oom_voice_checks" class="oom-voice-checks">
+            <span>Checking browser...</span>
+          </div>
+        </div>
+        <div class="oom-voice-session">
+          <div class="oom-section-heading">
+            <div>
+              <p class="oom-label">Voice Session</p>
+              <p class="oom-empty">Local browser events only. Nothing here is sent to Supabase.</p>
+            </div>
+            <button type="button" id="oom_clear_voice_events">Clear</button>
+          </div>
+          <div id="oom_voice_events" class="oom-voice-events">
+            <p class="oom-empty">No voice events yet.</p>
+          </div>
+        </div>
+        <div class="oom-tool-catalog">
+          <div class="oom-section-heading">
+            <div>
+              <p class="oom-label">Available Checks</p>
+              <p class="oom-empty">Runtime tool registry. This kiosk is read-only.</p>
+            </div>
+            <button type="button" id="oom_refresh_tools">Refresh</button>
+          </div>
+          <div id="oom_tool_catalog" class="oom-tool-list">
+            <p class="oom-empty">Tool registry not loaded yet.</p>
+          </div>
+        </div>
+        <div class="oom-policy-panel">
+          <div class="oom-section-heading">
+            <div>
+              <p class="oom-label">Safety Status</p>
+              <p class="oom-empty">Runtime guardrails for this local kiosk.</p>
+            </div>
+            <button type="button" id="oom_refresh_policy">Refresh</button>
+          </div>
+          <div id="oom_policy_status" class="oom-policy-grid">
+            <p class="oom-empty">Safety policy not loaded yet.</p>
+          </div>
+        </div>
+        <div id="oom_review_summary" class="oom-review-summary">
+          <p class="oom-empty">Review summary not loaded yet.</p>
+        </div>
+        <div class="oom-trace-filters" aria-label="Recent trace review filters">
+          <button type="button" data-review-filter="all" class="is-active">All</button>
+          <button type="button" data-review-filter="unreviewed">Unreviewed</button>
+          <button type="button" data-review-filter="issues">Issues</button>
+          <button type="button" data-review-filter="reviewed">Reviewed</button>
+          <a href="/api/oom-sakkie/review-packet?channel=kiosk&limit=12&days=14" target="_blank" rel="noopener">Review Packet</a>
+          <a href="/api/oom-sakkie/review-advisor?channel=kiosk&limit=12&days=14" target="_blank" rel="noopener">Review Advisor</a>
+          <a href="/api/oom-sakkie/specialists" target="_blank" rel="noopener">Specialists</a>
+        </div>
+        <div class="oom-trace-search">
+          <label class="sr-only" for="oom_trace_search">Search recent traces</label>
+          <input id="oom_trace_search" type="search" autocomplete="off" placeholder="Search question, answer, tool, or trace ID">
+          <button type="button" id="oom_clear_trace_search">Clear</button>
+        </div>
+        <div id="oom_recent_traces" class="oom-recent-list">
+          <p class="oom-empty">No trace history loaded yet.</p>
+        </div>
+      </section>
+    </section>
+
+    <form id="oom_form" class="oom-input-bar">
+      <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
+      <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
+      <button type="button" id="oom_voice_button">Talk</button>
+      <button type="button" id="oom_voice_ask_button">Talk & Ask</button>
+      <button type="submit">Ask</button>
+    </form>
+    <div class="oom-quick-checks" aria-label="Quick read-only farm checks">
+      <button type="button" data-quick-ask="What needs attention today?">Attention</button>
+      <button type="button" data-quick-ask="What is the power doing now?">Power</button>
+      <button type="button" data-quick-ask="What happened with the weather today?">Weather Today</button>
+      <button type="button" data-quick-ask="What pigs are ready for meat?">Meat Ready</button>
+      <button type="button" data-quick-ask="Show me the sales dashboard overview.">Sales</button>
+      <button type="button" data-quick-ask="What is the irrigation status?">Irrigation</button>
+    </div>
+    <div class="oom-voice-status-row">
+      <p id="oom_voice_status" class="oom-voice-status">Voice draft idle. Spoken text will appear in the input before you send it.</p>
+      <button type="button" id="oom_cancel_voice_send" class="oom-cancel-voice-send" hidden>Cancel Send</button>
+      <button type="button" id="oom_stop_conversation" class="oom-cancel-voice-send" hidden>Stop Conversation</button>
+    </div>
+    <p class="oom-voice-hint">Voice loop stop words: "stop conversation", "cancel", or "never mind".</p>
+  </main>
+  <script src="/static/js/oomSakkie.js"></script>
+</body>
+</html>

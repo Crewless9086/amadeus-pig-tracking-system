@@ -2,6 +2,119 @@
 
 Use when you want **Claude Code** to double-check Cursor’s plan or implementation against this repo’s design — especially **n8n + Flask + Sheets** boundaries.
 
+## Current filled handoff - Oom Sakkie local kiosk and specialist roster review
+
+Copy-paste this block into Claude Code when reviewing the current Oom Sakkie batch:
+
+```markdown
+You are working in the **Amadeus Pig Tracking & Sales** repo. Read **`CLAUDE.md`** first, then inspect the files listed below.
+
+## Authority and scope
+
+- **Build order:** `docs/00-start-here/NEXT_STEPS.md`
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A specialist manifest scaffolding and 10.7B trace review advisor.
+
+Out of scope unless explicitly asked:
+
+- Telegram cutover
+- write tools
+- physical controls
+- backend STT/TTS vendors
+- always-on mic
+- wake word
+- live LLM delegation to specialists
+- Agent Factory
+- public posting/customer messaging
+
+## Goal
+
+Review the current Oom Sakkie local-only read path and planning scaffolding before daily kiosk use continues:
+
+- Local `/oom-sakkie` kiosk
+- Backend-owned `/api/oom-sakkie/message`
+- Typed read-only tool registry
+- Trace/review/feedback flow
+- Browser-only speech controls
+- Safety policy and review packet
+- Loopback-only review endpoint guard
+- DB append-only trace guards
+- Planned-only specialist manifest roster
+- Advisory-only trace review advisor
+
+## Files/folders to inspect
+
+- `modules/oom_sakkie/`
+- `templates/oom-sakkie.html`
+- `static/js/oomSakkie.js`
+- `static/css/main.css`
+- `tests/test_oom_sakkie_service.py`
+- `tests/test_oom_sakkie_routes.py`
+- `tests/test_frontend_route_contracts.py`
+- `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
+- `supabase/migrations/202606060001_create_oom_sakkie_traces.sql`
+- `supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql`
+- `supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql`
+- `supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql`
+- `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
+- `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
+- `docs/00-start-here/CURRENT_STATE.md`
+- `docs/00-start-here/NEXT_STEPS.md`
+
+## What changed
+
+Summary:
+
+- Flask/backend is confirmed as the long-term Oom Sakkie brain.
+- n8n/GateKeeper remains Telegram I/O and scheduled workflow; Telegram is not cut over.
+- Added local `/oom-sakkie` kiosk and `/api/oom-sakkie/message`.
+- Added read-only Oom Sakkie tool registry and deterministic routing.
+- Added trace storage, feedback, review summary, filters, search, detail expanders, and review packet.
+- Added browser-only speech draft/TTS/continue-conversation controls with stop/cap guards.
+- Added quick checks and expanded read-only telemetry/status tools.
+- Added safety notes split from stale warnings.
+- Added runtime policy, tool catalog, local-access review guard, append-only DB triggers.
+- Added planned-only specialist manifests and `/api/oom-sakkie/specialists`.
+- Added advisory-only `/api/oom-sakkie/review-advisor`; it prepares a queue and suggestions but does not mark feedback or run autonomously.
+
+Known verification from Codex:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
+- `node --check static/js/oomSakkie.js`
+- `python -m unittest tests.test_frontend_route_contracts`
+- Full local unittest suite: `379 tests OK`
+- Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
+- Route smokes confirmed:
+  - `/api/oom-sakkie/message` stores traces.
+  - `/api/oom-sakkie/tools`, `/policy`, `/review-packet`, `/specialists`, `/review-advisor` work locally.
+  - review/admin endpoints deny non-local requests with `403 review_access_denied`.
+  - `/api/oom-sakkie/message` is not blocked by the review endpoint guard.
+  - `send weather to John` answers the read-only weather check and returns a safety note.
+  - `start irrigation` remains read-only and does not issue control.
+
+## Design checks
+
+Please inspect specifically:
+
+1. **Split-brain:** Does the implementation preserve backend-as-brain without changing Telegram/n8n routing?
+2. **Read-only tools:** Are all current Oom Sakkie tools truly read-only?
+3. **Action safety:** Do unsupported write/control/message requests fail closed or produce safety notes?
+4. **Irrigation safety:** Does control wording such as `start irrigation` stay read-only and never invoke physical control?
+5. **Voice safety:** Is browser voice still opt-in, browser-local, half-duplex enough, and not always-on?
+6. **Review endpoint protection:** Is the loopback/private-LAN guard appropriate for `/tools`, `/policy`, `/review-packet`, `/review-advisor`, `/traces`, feedback, and `/specialists`?
+7. **Trace audit:** Are trace and feedback tables sufficiently append-only after the DB triggers?
+8. **Safety/stale split:** Are `stale_warnings` and `safety_notes` separated cleanly through tools, API response, trace storage, and UI?
+9. **Specialist roster:** Is Phase 10.7A safely planned-only, with no live delegation, autonomous loops, or second user-facing brain?
+10. **Review advisor:** Is Phase 10.7B advisory-only, with no automatic feedback marking, no hidden write path, no model call, and no autonomous loop?
+11. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+
+## Deliverable format
+
+- **Verdict:** pass / pass-with-nits / block.
+- **Findings first:** severity ordered, with file/line references where possible.
+- **Open questions:** only if a decision is required before continuing.
+- **Recommended next slice:** keep it safe and local; do not recommend Telegram cutover, writes, physical controls, always-on mic, wake word, or live specialist delegation unless you explicitly justify why the current daily-use trial is insufficient.
+```
+
 ## Before you paste anything
 
 1. Open **`docs/00-start-here/NEXT_STEPS.md`** and note the **single phase / subsection** that is in scope (e.g. **Phase 4.1**). Everything outside that is **out of scope** for this review unless you explicitly widen it.

@@ -171,22 +171,56 @@ Claude reviewed the PRD and recommended: **revise first, then build a narrow OS-
 
 The review agreed with the safety posture, but flagged a key architecture risk: the farm already has `2.0 - OOM SAKKIE` in n8n, with deterministic sub-agent routing for weather (`2.1`), power (`2.2`), and irrigation status (`2.3.3`). A new Flask endpoint can become a second brain if it has its own prompt/tool catalog and answers the same questions differently.
 
-### Orchestrator Decision Required Before Code
+### Orchestrator Decision
 
-Decision to make before implementing `/api/oom-sakkie/message`:
+Decision confirmed by owner on 2026-06-06:
 
-1. **Recommended long-term option: Flask/backend becomes the single Oom Sakkie brain.**
-   - n8n/GateKeeper remains the Telegram ingress and callback router.
-   - Telegram messages eventually forward to `/api/oom-sakkie/message`.
-   - Backend owns typed tools, risk levels, trace IDs, stale-data handling, and future confirmation/write guards.
-   - This avoids split-brain behavior across kiosk, web, Telegram, and future voice.
+**Flask/backend becomes the single long-term Oom Sakkie brain.**
 
-2. **Short-term option: Flask endpoint is kiosk/web only, n8n remains Telegram brain.**
-   - Faster to prototype the kiosk.
-   - Higher maintenance cost because tool/prompt behavior must be kept in lockstep.
-   - Must be explicitly documented as temporary if chosen.
+- n8n/GateKeeper remains Telegram I/O, callback routing, and scheduled-work infrastructure.
+- Telegram messages eventually forward to `/api/oom-sakkie/message`.
+- Backend owns typed tools, risk levels, ACL, trace IDs, stale-data handling, confirmation payloads, and future write guards.
+- `2.0 - OOM SAKKIE` routing should eventually become a thin forwarder instead of a second routing brain.
+- This avoids split-brain behavior across kiosk, web, Telegram, mobile PWA, and future voice channels.
 
-Current recommendation: choose option 1 as the direction, but the first implementation may leave Telegram unchanged until the kiosk endpoint is proven.
+Implementation sequence:
+
+- First implementation leaves live Telegram routing unchanged.
+- The kiosk/backend endpoint must be proven first.
+- Telegram cutover must use a parallel-run window before `2.0` routing is replaced.
+
+Long-term OS-1 rule:
+
+```text
+Backend is the single Oom Sakkie brain.
+n8n GateKeeper remains Telegram I/O and scheduled work.
+Once /api/oom-sakkie/message is trusted, 2.0's routing layer is replaced by a forwarder.
+Cutover requires a parallel-run window.
+```
+
+### Determinism During Migration
+
+The current Telegram power/weather behavior is deterministic. The backend endpoint must preserve that when Telegram is later routed through it.
+
+Classifier policy:
+
+- Use exact-match/rule routing before any LLM classifier.
+- Known live phrasings for power/weather/farm-attention skip the LLM and go straight to the matching tool.
+- The LLM classifier only runs when deterministic rules do not match.
+- Low confidence returns `needs_clarification = true`; it must not guess.
+
+This keeps the proven Telegram behavior stable while still allowing the backend brain to become more flexible over time.
+
+### Telegram Migration Sequence
+
+Do not cut Telegram over immediately.
+
+1. Build `/api/oom-sakkie/message` and `/oom-sakkie`; leave Telegram unchanged.
+2. Use the kiosk daily for about two weeks; log every trace and watch for wrong tool selection, dropped stale warnings, and ambiguity.
+3. Add a parallel Telegram route to `/api/oom-sakkie/message`, feature-flagged and limited to Charl's chat ID first.
+4. Run parallel for about one week; compare old n8n path answers against backend path answers. Any disagreement is treated as a new-path bug until proven otherwise.
+5. Cut over `2.0` to a thin forwarder only after the parallel run is clean.
+6. Keep `2.1`, `2.2`, and `2.3.3` exports in the repo as references for about 30 days after cutover, then archive.
 
 ### Revised First Slice
 
@@ -855,17 +889,16 @@ Use the prompt library for the Oom Sakkie master prompt, kiosk prompt, tool-sele
 
 ## Open Questions
 
-1. Should Flask/backend become the single long-term Oom Sakkie brain, with n8n/GateKeeper forwarding Telegram to it later? Current recommendation: yes, but leave Telegram unchanged until the kiosk endpoint is proven.
-2. Should the first trace store be Supabase `oom_sakkie_traces`, or should a temporary sheet tab be used if the Supabase migration is too much for the first slice? Current recommendation: Supabase.
-3. What LAN/device access guard should protect the kiosk MVP before it is trusted? Options: local-only during development, LAN/IP allowlist, or device cookie.
-4. Should the public/final name remain `Oom Sakkie`, or should the house voice have another name?
-5. Should the assistant speak English only first, or English and Afrikaans? Current recommendation: English first.
-6. Should the first voice test be Telegram voice notes, web push-to-talk, or a local speaker/mic? Current recommendation: web push-to-talk after text kiosk is stable.
-7. Is the home computer always on and reliable enough, or should a mini PC be used?
-8. Should Home Assistant be introduced now, or only after the backend orchestrator works? Current recommendation: later.
-9. What actions should Oom Sakkie be allowed to perform first, if any? Current recommendation: no writes in MVP.
-10. Who besides Charl may talk to Oom Sakkie?
-11. Should household/farm voice access require a spoken PIN for sensitive actions?
+1. Should the first trace store be Supabase `oom_sakkie_traces`, or should a temporary sheet tab be used if the Supabase migration is too much for the first slice? Current recommendation: Supabase.
+2. What LAN/device access guard should protect the kiosk MVP before it is trusted? Options: local-only during development, LAN/IP allowlist, or device cookie.
+3. Should the public/final name remain `Oom Sakkie`, or should the house voice have another name?
+4. Should the assistant speak English only first, or English and Afrikaans? Current recommendation: English first.
+5. Should the first voice test be Telegram voice notes, web push-to-talk, or a local speaker/mic? Current recommendation: web push-to-talk after text kiosk is stable.
+6. Is the home computer always on and reliable enough, or should a mini PC be used?
+7. Should Home Assistant be introduced now, or only after the backend orchestrator works? Current recommendation: later.
+8. What actions should Oom Sakkie be allowed to perform first, if any? Current recommendation: no writes in MVP.
+9. Who besides Charl may talk to Oom Sakkie?
+10. Should household/farm voice access require a spoken PIN for sensitive actions?
 
 ## Recommended Immediate Next Step
 
