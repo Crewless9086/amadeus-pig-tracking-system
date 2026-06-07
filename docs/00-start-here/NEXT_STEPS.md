@@ -5404,6 +5404,33 @@ Browser-check next:
 - Confirm the Review Advisor still loads.
 - Open `/api/oom-sakkie/review-advisor?channel=kiosk&days=14&limit=12` locally and confirm the response remains `advisory_only`.
 
+### 10.7H Oom Sakkie Kiosk Advisor Window And Voice Loop Counter - Local Ready
+
+Source:
+
+- Claude review after 10.7G passed the hardening work and flagged two small UI honesty nits:
+  - the Review Advisor used a 14-day window but the kiosk did not say that,
+  - the continue-conversation cap was in policy but the running turn count was not visible.
+
+Implemented locally:
+
+- The Review Advisor guard line now shows `last 14 days` from the backend `days` payload.
+- The voice status row now has a `Voice loop 0 of 5` counter that appears only while Continue Conversation is enabled.
+- The counter updates after each continued spoken turn and hides again when continuation is stopped or disabled.
+- Frontend route contracts pin the advisor window label, voice-loop counter element, JS counter renderer, and CSS class.
+- No endpoint change, auto-polling, auto-marking, model call, tool execution, Telegram change, write tool, physical control, backend STT/TTS vendor, wake word, always-on mic, or second user-facing brain was added.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm the Review Advisor guard line says `last 14 days`.
+- Enable `Speak replies` and `Continue conversation`; confirm the voice-loop counter appears and increments during continued turns.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

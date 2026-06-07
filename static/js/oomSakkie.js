@@ -13,6 +13,7 @@
   const voiceButton = document.getElementById("oom_voice_button");
   const voiceAskButton = document.getElementById("oom_voice_ask_button");
   const voiceStatus = document.getElementById("oom_voice_status");
+  const voiceLoopCounter = document.getElementById("oom_voice_loop_counter");
   const cancelVoiceSendButton = document.getElementById("oom_cancel_voice_send");
   const stopConversationButton = document.getElementById("oom_stop_conversation");
   const voiceChecks = document.getElementById("oom_voice_checks");
@@ -146,6 +147,15 @@
 
   function setVoiceStatus(value) {
     if (voiceStatus) voiceStatus.textContent = value;
+  }
+
+  function renderVoiceLoopCounter() {
+    if (!voiceLoopCounter) return;
+    const active = !!(continueConversation && continueConversation.checked);
+    voiceLoopCounter.hidden = !active;
+    voiceLoopCounter.textContent = active
+      ? `Voice loop ${Math.min(voiceLoopTurnCount, MAX_CONTINUE_TURNS)} of ${MAX_CONTINUE_TURNS}`
+      : "";
   }
 
   function logVoiceEvent(label, detail) {
@@ -375,6 +385,7 @@
       setStatus("Idle");
     }
     setVoiceStatus(message || "Conversation stopped. Mic stayed off.");
+    renderVoiceLoopCounter();
     updateConversationStopVisibility();
   }
 
@@ -453,6 +464,7 @@
           stopConversation("Conversation paused after 5 continued turns. Press Talk & Ask to continue.");
           return;
         }
+        renderVoiceLoopCounter();
         setVoiceStatus("Speech finished. Listening for the next question.");
         logVoiceEvent("Continuing", `turn ${voiceLoopTurnCount} of ${MAX_CONTINUE_TURNS}`);
         updateConversationStopVisibility();
@@ -460,6 +472,7 @@
         return;
       }
       voiceLoopTurnCount = 0;
+      renderVoiceLoopCounter();
       if (statusText.textContent === "Speaking") setStatus("Answered");
       logVoiceEvent("Speech finished", "mic stayed off");
       setVoiceStatus("Speech finished. Mic stayed off.");
@@ -469,6 +482,7 @@
       if (currentSpeechRunId !== speechRunId) return;
       speechUtterance = null;
       voiceLoopTurnCount = 0;
+      renderVoiceLoopCounter();
       setStatus("Speech error");
       logVoiceEvent("Speech error", "browser playback stopped");
       setVoiceStatus("Browser speech playback stopped before finishing.");
@@ -487,6 +501,7 @@
     speechSynthesisApi.cancel();
     speechUtterance = null;
     voiceLoopTurnCount = 0;
+    renderVoiceLoopCounter();
     if (statusText.textContent === "Speaking") setStatus("Answered");
     logVoiceEvent("Speech stopped", "manual stop");
     setVoiceStatus("Speech stopped. Mic stayed off.");
@@ -497,6 +512,7 @@
     clearVoiceAutoSubmit();
     if (!preserveVoiceLoopCountForAsk()) {
       voiceLoopTurnCount = 0;
+      renderVoiceLoopCounter();
     }
     if (speechSynthesisApi) {
       speechRunId += 1;
@@ -592,7 +608,7 @@
 
     const guard = document.createElement("p");
     guard.className = "oom-advisor-guard";
-    guard.textContent = `${data.mode || "advisory_only"} | auto-marking ${data.autonomous_marking_enabled ? "enabled" : "off"} | writes feedback ${data.writes_feedback ? "yes" : "no"}`;
+    guard.textContent = `${data.mode || "advisory_only"} | last ${data.days || 14} days | auto-marking ${data.autonomous_marking_enabled ? "enabled" : "off"} | writes feedback ${data.writes_feedback ? "yes" : "no"}`;
     reviewAdvisor.appendChild(guard);
 
     const suggestions = Array.isArray(data.suggested_actions) ? data.suggested_actions : [];
@@ -1045,14 +1061,18 @@
       if (continueConversation.checked && autoSpeak) {
         autoSpeak.checked = true;
         voiceLoopTurnCount = 0;
+        renderVoiceLoopCounter();
         setVoiceStatus("Continue conversation is on. Spoken replies will listen for the next question after they finish.");
       } else {
         voiceLoopTurnCount = 0;
+        renderVoiceLoopCounter();
         setVoiceStatus("Continue conversation is off.");
       }
       updateConversationStopVisibility();
     });
   }
+
+  renderVoiceLoopCounter();
 
   reviewFilterButtons.forEach((button) => {
     button.addEventListener("click", () => {

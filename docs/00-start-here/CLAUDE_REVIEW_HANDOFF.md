@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-G specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, and advisor SQL/test hardening.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-H specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, and kiosk advisor-window/voice-loop counter polish.
 
 Out of scope unless explicitly asked:
 
@@ -61,6 +61,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - User-action-triggered kiosk Review Advisor panel
 - Combined advisor trace reader
 - Advisor trace time-window and SQL/test hardening
+- Visible Review Advisor time window and Continue Conversation turn counter
 
 ## Files/folders to inspect
 
@@ -103,6 +104,8 @@ Summary:
 - Added `list_review_advisor_traces()` so the advisor reads issue traces and unreviewed traces in one combined ranked trace query instead of two separate trace-list reads.
 - Added `days` windowing to `list_review_advisor_traces()` so advisor trace reads default to the same 14-day window as the review summary.
 - Added `_trace_row` positional mapping coverage and replaced the advisor SQL compiled-constant test with a mocked `psycopg.connect` SQL-capture test.
+- Added a visible `last 14 days` label to the kiosk Review Advisor guard line.
+- Added a `Voice loop 0 of 5` counter that appears only when Continue Conversation is enabled and updates during continued spoken turns.
 
 Known verification from Codex:
 
@@ -138,7 +141,8 @@ Please inspect specifically:
 12. **Kiosk advisor panel:** Is Phase 10.7D/E useful and still safe: user-action-triggered only, no timed/background polling, no auto-marking, no HTML injection from trace text, no hidden writes?
 13. **Advisor trace reader:** Does Phase 10.7F/G preserve the advisor response shape while reducing duplicate trace-list reads, adding the days window, and avoiding SQL footguns?
 14. **Trace row mapping:** Is the positional `_trace_row` mapping sufficiently guarded by tests?
-15. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+15. **Kiosk honesty polish:** Does Phase 10.7H accurately surface the Review Advisor's 14-day window and the 5-turn continue-conversation cap without changing behavior?
+16. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

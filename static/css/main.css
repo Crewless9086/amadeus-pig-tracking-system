@@ -3223,6 +3223,17 @@ button:disabled {
   font-weight: 700;
 }
 
+.oom-voice-loop-counter {
+  margin: 0;
+  border: 1px solid rgba(45, 212, 168, 0.28);
+  border-radius: 999px;
+  background: rgba(45, 212, 168, 0.08);
+  color: rgba(179, 255, 226, 0.86);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
 .oom-voice-hint {
   margin: -2px 0 0;
   color: rgba(255, 255, 255, 0.38);
