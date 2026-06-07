@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-H specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, and kiosk advisor-window/voice-loop counter polish.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-I specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, and trace-driven router/power-answer tightening.
 
 Out of scope unless explicitly asked:
 
@@ -62,6 +62,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Combined advisor trace reader
 - Advisor trace time-window and SQL/test hardening
 - Visible Review Advisor time window and Continue Conversation turn counter
+- Trace-driven routing aliases, capability answer, control-phrase guard, and richer current-power answer
 
 ## Files/folders to inspect
 
@@ -106,13 +107,22 @@ Summary:
 - Added `_trace_row` positional mapping coverage and replaced the advisor SQL compiled-constant test with a mocked `psycopg.connect` SQL-capture test.
 - Added a visible `last 14 days` label to the kiosk Review Advisor guard line.
 - Added a `Voice loop 0 of 5` counter that appears only when Continue Conversation is enabled and updates during continued spoken turns.
+- Added trace-driven deterministic aliases from owner test traces:
+  - slaughter wording -> `meat_planning`
+  - sales issue wording -> `sales_dashboard`
+  - water/pump wording -> read-only `irrigation_status`
+  - worry/anything-today wording -> `farm_attention_summary`
+  - broad animal/pig-on-farm wording -> `dashboard_summary`
+- Added a read-only `what can you do` capabilities answer that states current checks and blocked actions.
+- Hardened dynamic control phrase detection for separated wording such as `turn the pump on`.
+- Enriched `power_current` wording with battery state, grid watts/state, and data age from the existing power backend response.
 
 Known verification from Codex:
 
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
-- Full local unittest suite: `388 tests OK`
+- Full local unittest suite: `390 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -142,7 +152,8 @@ Please inspect specifically:
 13. **Advisor trace reader:** Does Phase 10.7F/G preserve the advisor response shape while reducing duplicate trace-list reads, adding the days window, and avoiding SQL footguns?
 14. **Trace row mapping:** Is the positional `_trace_row` mapping sufficiently guarded by tests?
 15. **Kiosk honesty polish:** Does Phase 10.7H accurately surface the Review Advisor's 14-day window and the 5-turn continue-conversation cap without changing behavior?
-16. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+16. **Trace-driven router tightening:** Does Phase 10.7I improve only deterministic read-only routing/wording from real traces, and does `turn the pump on` stay safe?
+17. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

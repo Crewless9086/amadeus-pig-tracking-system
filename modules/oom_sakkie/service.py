@@ -16,6 +16,14 @@ ACTION_GUARD_PATTERN = re.compile(
     r")\b",
     re.I,
 )
+ACTION_GUARD_DYNAMIC_PATTERN = re.compile(
+    r"\b(turn|switch)\s+(?:\w+\s+){0,4}(on|off)\b",
+    re.I,
+)
+CAPABILITY_PATTERN = re.compile(
+    r"\b(what can you do|what can i ask|available checks|help|help me|how do i use)\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -28,11 +36,11 @@ class IntentMatch:
 
 RULES = [
     (
-        re.compile(r"\b(irrigation|water zone|water zones|watering|sprinkler|sprinklers)\b", re.I),
+        re.compile(r"\b(irrigation|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
         IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
     ),
     (
-        re.compile(r"\b(meat planning|meat pipeline|ready for meat|meat candidate|preorder|preorders|abattoir fallback|fallback abattoir)\b", re.I),
+        re.compile(r"\b(meat planning|meat pipeline|ready for meat|meat candidate|preorder|preorders|abattoir fallback|fallback abattoir|slaughter|slaughtering)\b", re.I),
         IntentMatch("meat_planning", "meat_planning", 0.95, "rule:meat_planning"),
     ),
     (
@@ -40,15 +48,15 @@ RULES = [
         IntentMatch("pig_allocation", "pig_allocation_readiness", 0.95, "rule:pig_allocation_readiness"),
     ),
     (
-        re.compile(r"\b(sales dashboard|sales overview|stock availability|available stock|sales stock|what.*available.*sale)\b", re.I),
+        re.compile(r"\b(sales dashboard|sales overview|sales issues|sales problem|sales problems|stock availability|available stock|sales stock|what.*available.*sale)\b", re.I),
         IntentMatch("sales_dashboard", "sales_dashboard", 0.95, "rule:sales_dashboard"),
     ),
     (
-        re.compile(r"\b(how'?s the farm|how is the farm|farm overview|farm dashboard|dashboard summary|farm status|overall farm)\b", re.I),
+        re.compile(r"\b(how'?s the farm|how is the farm|farm overview|farm dashboard|dashboard summary|farm status|overall farm|what animals|animals.*farm|pigs.*farm|how many pigs|what about the pigs)\b", re.I),
         IntentMatch("dashboard_summary", "dashboard_summary", 0.95, "rule:dashboard_summary"),
     ),
     (
-        re.compile(r"\b(attention|need(s)? attention|what needs|to do|todo|today.*farm)\b", re.I),
+        re.compile(r"\b(attention|need(s)? attention|what needs|to do|todo|worry|anything today|problems today|today.*farm)\b", re.I),
         IntentMatch("farm_attention", "farm_attention_summary", 0.95, "rule:farm_attention"),
     ),
     (
@@ -93,6 +101,47 @@ def handle_message(payload):
             "needs_clarification": True,
             "trace_store": {"stored": False, "status": "not_written_empty_text"},
         }, 400
+
+    if is_capability_request(text):
+        answer = (
+            "I can do read-only farm checks right now: farm attention, current or recent power, "
+            "weather now/today/forecast, irrigation status, farm dashboard, pig allocation, meat planning, and sales stock. "
+            "I cannot send messages, change records, start irrigation, post publicly, or perform physical actions."
+        )
+        safety_notes = ["Capabilities only. No tool, write, control, message, or physical action was performed."]
+        trace = _trace_payload(
+            trace_id=trace_id,
+            channel=channel,
+            session_id=session_id,
+            user_text=text,
+            intent="capabilities",
+            confidence=1,
+            tool_name="",
+            tool_result={"summary": answer},
+            answer=answer,
+            risk_level=RiskLevel.READ_ONLY,
+            stale_warnings=[],
+            safety_notes=safety_notes,
+            links=[],
+        )
+        trace_status = write_trace(trace)
+        return {
+            "success": True,
+            "answer": answer,
+            "tool_used": "",
+            "trace_id": trace_id,
+            "risk_level": int(RiskLevel.READ_ONLY),
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": safety_notes,
+            "needs_clarification": False,
+            "trace_store": trace_status,
+            "intent": {
+                "name": "capabilities",
+                "confidence": 1,
+                "reason": "rule:capabilities",
+            },
+        }, 200
 
     match = classify_intent(text)
     if not match and is_unsupported_action_request(text):
@@ -232,7 +281,14 @@ def classify_intent(text):
 
 
 def is_unsupported_action_request(text):
-    return bool(ACTION_GUARD_PATTERN.search(text or ""))
+    return bool(
+        ACTION_GUARD_PATTERN.search(text or "")
+        or ACTION_GUARD_DYNAMIC_PATTERN.search(text or "")
+    )
+
+
+def is_capability_request(text):
+    return bool(CAPABILITY_PATTERN.search(text or ""))
 
 
 def build_answer(tool_result, stale_warnings, safety_notes=None):

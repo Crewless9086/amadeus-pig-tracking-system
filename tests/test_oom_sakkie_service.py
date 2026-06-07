@@ -183,10 +183,16 @@ class OomSakkieServiceTests(unittest.TestCase):
             "weather forecast for the next few days": "weather_forecast",
             "what is the irrigation status": "irrigation_status",
             "start irrigation": "irrigation_status",
+            "do we need to water anything": "irrigation_status",
             "how is the farm": "dashboard_summary",
+            "what animals do we have on the farm": "dashboard_summary",
+            "what about the pigs": "dashboard_summary",
             "which pigs are ready for meat": "meat_planning",
+            "which pigs should I look at for slaughter": "meat_planning",
             "show me pig allocation": "pig_allocation_readiness",
             "sales dashboard overview": "sales_dashboard",
+            "are there any sales issues": "sales_dashboard",
+            "do I need to worry about anything today": "farm_attention_summary",
         }
         for text, expected_tool in cases.items():
             with self.subTest(text=text):
@@ -199,7 +205,25 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(is_unsupported_action_request("delete that pig record"))
         self.assertTrue(is_unsupported_action_request("send the order message"))
         self.assertTrue(is_unsupported_action_request("turn off the pump"))
+        self.assertTrue(is_unsupported_action_request("turn the pump on"))
+        self.assertTrue(is_unsupported_action_request("switch the inverter off"))
         self.assertFalse(is_unsupported_action_request("what is the power doing now"))
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_capability_request_returns_current_read_only_scope(self, _write_trace):
+        result, status = handle_message({
+            "text": "what can you do",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["tool_used"], "")
+        self.assertEqual(result["risk_level"], 0)
+        self.assertIn("read-only farm checks", result["answer"])
+        self.assertIn("cannot send messages", result["answer"])
+        self.assertIn("Capabilities only", result["safety_notes"][0])
+        self.assertEqual(result["intent"]["name"], "capabilities")
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     def test_low_confidence_returns_needs_clarification(self, _write_trace):
@@ -264,8 +288,11 @@ class OomSakkieServiceTests(unittest.TestCase):
             "source": {"is_stale": True, "data_age_minutes": 42},
             "current": {
                 "battery_soc_pct": 55,
+                "battery_state": "charging",
                 "solar_power_w": 1200,
                 "load_power_w": 800,
+                "grid_power_w": 0,
+                "grid_state": "not_using_grid",
             },
             "summary": {"headline": "Power data is stale."},
         }, 200)
@@ -280,6 +307,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["tool_used"], "power_current")
         self.assertEqual(result["risk_level"], 0)
         self.assertIn("42 minutes old", result["stale_warnings"][0])
+        self.assertIn("charging", result["answer"])
+        self.assertIn("Grid: 0 W", result["answer"])
+        self.assertIn("Data age: 42 minute(s)", result["answer"])
         self.assertIn("Note:", result["answer"])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
@@ -354,6 +384,28 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["risk_level"], 0)
         self.assertEqual(result["stale_warnings"], [])
         self.assertIn("read-only", result["safety_notes"][0])
+        self.assertIn("No start/stop command was sent", result["answer"])
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.tools.get_irrigation_status")
+    def test_pump_control_phrase_is_read_only_with_safety_note(self, mock_irrigation, _write_trace):
+        mock_irrigation.return_value = ({
+            "success": True,
+            "current": {"status": "IDLE", "zone_id": "Z1", "zone_name": "Zone 1"},
+            "today": {"done_count": 2, "next_zone_id": "Z2", "next_zone_name": "Zone 2"},
+            "operator_summary": {"headline": "Irrigation has a plan for today.", "notes": []},
+        }, 200)
+
+        result, status = handle_message({
+            "text": "turn the pump on",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "irrigation_status")
+        self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["risk_level"], 0)
+        self.assertTrue(any("No write" in note for note in result["safety_notes"]))
         self.assertIn("No start/stop command was sent", result["answer"])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})

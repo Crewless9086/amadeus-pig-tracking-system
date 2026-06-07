@@ -5431,6 +5431,48 @@ Browser-check next:
 - Confirm the Review Advisor guard line says `last 14 days`.
 - Enable `Speak replies` and `Continue conversation`; confirm the voice-loop counter appears and increments during continued turns.
 
+### 10.7I Oom Sakkie Trace-Driven Router And Power Answer Tightening - Local Ready
+
+Source:
+
+- Owner tested the kiosk question set and confirmed the mic/voice-loop safety behavior worked, but the assistant felt too basic.
+- A direct trace review showed the safety path was holding, but several natural phrasings from the test set fell into generic clarification:
+  - `which pigs should I look at for slaughter`
+  - `are there any sales issues`
+  - `do we need to water anything`
+  - `do I need to worry about anything today`
+  - `what animals do we have on the farm`
+  - `what can you do`
+- The trace review also exposed a safety wording gap: `turn the pump on` was not detected by the action guard phrase shape.
+- Owner feedback marked current power wording as too blunt and less useful than the dashboard.
+
+Implemented locally:
+
+- Added trace-driven deterministic aliases:
+  - slaughter wording routes to `meat_planning`,
+  - sales issue wording routes to `sales_dashboard`,
+  - water/pump wording routes to read-only `irrigation_status`,
+  - worry/anything-today wording routes to `farm_attention_summary`,
+  - broad animal/pig-on-farm wording routes to `dashboard_summary`.
+- Added a read-only capabilities response for `what can you do` / help-style prompts. It lists current checks and explicitly says it cannot send messages, change records, start irrigation, post publicly, or perform physical actions.
+- Hardened the action guard for separated control phrases such as `turn the pump on` and `switch the inverter off`.
+- Enriched `power_current` wording with battery state, grid watts/state, and data age using fields already returned by the existing backend endpoint.
+- Added tests for the new aliases, capability response, dynamic control phrase detection, pump-control read-only behavior, and enriched power-current wording.
+- No LLM router, endpoint expansion, auto-polling, auto-marking, tool execution beyond the selected read-only tool, Telegram change, write tool, physical control, backend STT/TTS vendor, wake word, always-on mic, or second user-facing brain was added.
+
+Verification:
+
+- Focused Oom Sakkie service and route tests passed.
+- Full local unittest suite passed at 390 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Browser-check next:
+
+- Re-ask the previously weak natural phrasings above.
+- Confirm `turn the pump on` remains read-only and reports that no write/control/physical action was performed.
+- Confirm `what can you do` gives a useful current-scope answer.
+- Confirm current power now gives more operational context than only battery/solar/load.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

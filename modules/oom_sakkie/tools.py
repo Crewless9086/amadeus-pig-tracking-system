@@ -108,12 +108,20 @@ def power_current_handler(_args):
         battery = current.get("battery_soc_pct")
         solar = current.get("solar_power_w")
         load = current.get("load_power_w")
+        grid = current.get("grid_power_w")
+        battery_state = str(current.get("battery_state") or "unknown").replace("_", " ")
+        grid_state = str(current.get("grid_state") or "unknown").replace("_", " ")
+        data_age = source.get("data_age_minutes")
         headline = summary_data.get("headline") or "Power state loaded."
-        summary = "{} Battery: {}%. Solar: {} W. Load: {} W.".format(
+        summary = "{} Battery: {}% and {}. Solar: {} W. Load: {} W. Grid: {} W ({}). Data age: {} minute(s).".format(
             headline,
             _display_value(battery),
+            battery_state,
             _display_value(solar),
             _display_value(load),
+            _display_value(grid),
+            grid_state,
+            _display_value(data_age),
         )
     else:
         summary = result.get("message") or "Power data is unavailable."
