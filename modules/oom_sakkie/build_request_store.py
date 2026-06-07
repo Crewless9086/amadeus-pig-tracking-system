@@ -132,6 +132,66 @@ def list_build_requests(limit=20, database_url=None):
     }, 200
 
 
+def get_build_request(build_request_id, database_url=None):
+    build_request_id = _clean_text(build_request_id, 80)
+    if not build_request_id:
+        return {"success": False, "status": "build_request_id_required"}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing"}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select br.build_request_id, br.status, br.mode, br.approved_by, br.proposal_json,
+                           br.brief, br.recommended_files_json, br.verification_json, br.next_gate,
+                           br.builder_enabled, br.writes_code_now, br.applies_changes_now, br.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_build_requests br
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_build_request_events e
+                        where e.build_request_id = br.build_request_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where br.build_request_id = %(build_request_id)s
+                    limit 1
+                    """,
+                    {"build_request_id": build_request_id},
+                )
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "build_request_read_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    if not row:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "build_request_not_found",
+            "build_request_id": build_request_id,
+        }, 404
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "build_request": _build_request_row(row),
+    }, 200
+
+
 def record_build_request_event(build_request_id, payload, database_url=None):
     build_request_id = _clean_text(build_request_id, 80)
     payload = payload if isinstance(payload, dict) else {}

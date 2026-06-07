@@ -43,6 +43,11 @@
   const buildRequests = document.getElementById("oom_build_requests");
   const forgeHandoff = document.getElementById("oom_forge_handoff");
   const refreshBuildRequests = document.getElementById("oom_refresh_build_requests");
+  const patchBuildRequestId = document.getElementById("oom_patch_build_request_id");
+  const patchProposalText = document.getElementById("oom_patch_proposal_text");
+  const recordPatchProposalButton = document.getElementById("oom_record_patch_proposal");
+  const patchProposals = document.getElementById("oom_patch_proposals");
+  const refreshPatchProposals = document.getElementById("oom_refresh_patch_proposals");
   const toolCatalog = document.getElementById("oom_tool_catalog");
   const refreshTools = document.getElementById("oom_refresh_tools");
   const policyStatus = document.getElementById("oom_policy_status");
@@ -904,6 +909,7 @@
         const next = document.createElement("p");
         const event = document.createElement("p");
         const handoffButton = document.createElement("button");
+        const proposalButton = document.createElement("button");
         const ignoreButton = document.createElement("button");
         const proposal = item.proposal || {};
         const latestEvent = item.latest_event || {};
@@ -917,7 +923,13 @@
         handoffButton.className = "oom-build-brief-button";
         handoffButton.textContent = "Forge Handoff";
         handoffButton.addEventListener("click", () => {
-          buildForgeHandoff(item, handoffButton);
+          buildForgeHandoff(item.build_request_id, handoffButton);
+        });
+        proposalButton.type = "button";
+        proposalButton.className = "oom-build-brief-button";
+        proposalButton.textContent = "Record Patch Proposal";
+        proposalButton.addEventListener("click", () => {
+          preparePatchProposalForm(item.build_request_id);
         });
         ignoreButton.type = "button";
         ignoreButton.className = "oom-build-brief-button";
@@ -930,6 +942,7 @@
         row.appendChild(next);
         row.appendChild(event);
         row.appendChild(handoffButton);
+        row.appendChild(proposalButton);
         row.appendChild(ignoreButton);
         list.appendChild(row);
       });
@@ -964,6 +977,87 @@
     prompt.className = "oom-build-brief";
     prompt.textContent = data.prompt || "No handoff prompt returned.";
     forgeHandoff.appendChild(prompt);
+  }
+
+  function preparePatchProposalForm(buildRequestId) {
+    if (patchBuildRequestId) patchBuildRequestId.value = buildRequestId || "";
+    if (patchProposalText) {
+      patchProposalText.focus();
+      patchProposalText.placeholder = `Paste Builder/Forge proposal for ${buildRequestId || "this build request"}. This records review data only; it does not apply a patch.`;
+    }
+  }
+
+  function renderPatchProposals(data) {
+    if (!patchProposals) return;
+    if (!data || !data.success) {
+      const status = data && data.status ? data.status : "unavailable";
+      patchProposals.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = `Patch proposal store: ${status}.`;
+      patchProposals.appendChild(empty);
+      return;
+    }
+    patchProposals.innerHTML = "";
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "patch_proposal_review_only"} | applies patches ${data.applies_patches ? "yes" : "no"} | deploys ${data.deploys ? "yes" : "no"} | manual owner gate required`;
+    patchProposals.appendChild(guard);
+
+    const items = Array.isArray(data.patch_proposals) ? data.patch_proposals : [];
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No patch proposals recorded yet.";
+      list.appendChild(empty);
+    } else {
+      items.slice(0, 8).forEach((item) => {
+        const row = document.createElement("article");
+        const title = document.createElement("strong");
+        const meta = document.createElement("span");
+        const text = document.createElement("p");
+        const risk = document.createElement("p");
+        const event = document.createElement("p");
+        const approveButton = document.createElement("button");
+        const rejectButton = document.createElement("button");
+        const latestEvent = item.latest_event || {};
+        title.textContent = item.patch_proposal_id || "Patch proposal";
+        meta.textContent = `${item.build_request_id || ""} | proposed by ${item.proposed_by || "builder"} | ${item.created_at || ""}`;
+        text.textContent = (item.proposal_text || "").slice(0, 500);
+        risk.textContent = item.risk_notes ? `Risks: ${item.risk_notes}` : "Risks: not supplied";
+        event.textContent = latestEvent.event_type
+          ? `Latest event: ${latestEvent.event_type} ${latestEvent.notes ? "- " + latestEvent.notes : ""}`
+          : "Latest event: none";
+        approveButton.type = "button";
+        approveButton.className = "oom-build-brief-button";
+        approveButton.textContent = "Approve Patch";
+        approveButton.addEventListener("click", () => {
+          recordPatchProposalEvent(
+            item.patch_proposal_id,
+            "approved_for_patch",
+            "Approved for manual patch application outside the kiosk. No patch was applied here.",
+            approveButton
+          );
+        });
+        rejectButton.type = "button";
+        rejectButton.className = "oom-build-brief-button";
+        rejectButton.textContent = "Reject";
+        rejectButton.addEventListener("click", () => {
+          recordPatchProposalEvent(item.patch_proposal_id, "rejected", "Rejected from kiosk review.", rejectButton);
+        });
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.appendChild(text);
+        row.appendChild(risk);
+        row.appendChild(event);
+        row.appendChild(approveButton);
+        row.appendChild(rejectButton);
+        list.appendChild(row);
+      });
+    }
+    patchProposals.appendChild(list);
   }
 
   function renderImplementationQueue(data) {
@@ -1436,7 +1530,19 @@
     }
   }
 
-  async function buildForgeHandoff(buildRequest, button) {
+  async function loadPatchProposals() {
+    if (!patchProposals) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/patch-proposals?limit=8");
+      const data = await response.json();
+      renderPatchProposals(data);
+    } catch (error) {
+      patchProposals.innerHTML = '<p class="oom-empty">Patch proposal store is unavailable.</p>';
+    }
+  }
+
+  async function buildForgeHandoff(buildRequestId, button) {
+    if (!buildRequestId) return;
     if (!forgeHandoff) return;
     const originalText = button ? button.textContent : "";
     if (button) {
@@ -1449,7 +1555,7 @@
       const response = await fetch("/api/oom-sakkie/build-requests/forge-handoff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ build_request: buildRequest }),
+        body: JSON.stringify({ build_request_id: buildRequestId }),
       });
       const data = await response.json();
       renderForgeHandoff(data);
@@ -1492,6 +1598,86 @@
     }
   }
 
+  async function recordPatchProposal(button) {
+    if (!patchBuildRequestId || !patchProposalText) return;
+    const buildRequestId = patchBuildRequestId.value.trim();
+    const proposalText = patchProposalText.value.trim();
+    if (!buildRequestId || !proposalText) {
+      if (patchProposals) {
+        patchProposals.innerHTML = '<p class="oom-empty">Build request ID and proposal text are required. This does not apply a patch.</p>';
+      }
+      return;
+    }
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      const response = await fetch(`/api/oom-sakkie/build-requests/${encodeURIComponent(buildRequestId)}/patch-proposals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposal_text: proposalText,
+          proposed_by: "builder",
+          risk_notes: "Owner review required before manual patch application.",
+          files_touched: [],
+          verification: [],
+        }),
+      });
+      const data = await response.json();
+      if (patchProposals && !data.success) {
+        patchProposals.innerHTML = "";
+        const line = document.createElement("p");
+        line.className = "oom-empty";
+        line.textContent = `Patch proposal could not be recorded: ${data.status || "unknown"}.`;
+        patchProposals.appendChild(line);
+      }
+      if (data.success) {
+        patchProposalText.value = "";
+      }
+      loadPatchProposals();
+    } catch (error) {
+      if (patchProposals) {
+        patchProposals.innerHTML = '<p class="oom-empty">Patch proposal could not be recorded.</p>';
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Record Patch Proposal";
+      }
+    }
+  }
+
+  async function recordPatchProposalEvent(patchProposalId, eventType, notes, button) {
+    if (!patchProposalId) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      await fetch(`/api/oom-sakkie/patch-proposals/${encodeURIComponent(patchProposalId)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: eventType, notes, recorded_by: "owner" }),
+      });
+      loadPatchProposals();
+    } catch (error) {
+      if (patchProposals) {
+        const line = document.createElement("p");
+        line.className = "oom-empty";
+        line.textContent = "Patch proposal event could not be recorded.";
+        patchProposals.appendChild(line);
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Review";
+      }
+    }
+  }
+
   async function loadToolCatalog() {
     if (!toolCatalog) return;
     try {
@@ -1521,6 +1707,7 @@
     loadLearningAdvisor();
     loadImplementationQueue();
     loadBuildRequests();
+    loadPatchProposals();
   }
 
   if (form) {
@@ -1559,6 +1746,14 @@
 
   if (refreshBuildRequests) {
     refreshBuildRequests.addEventListener("click", loadBuildRequests);
+  }
+
+  if (refreshPatchProposals) {
+    refreshPatchProposals.addEventListener("click", loadPatchProposals);
+  }
+
+  if (recordPatchProposalButton) {
+    recordPatchProposalButton.addEventListener("click", () => recordPatchProposal(recordPatchProposalButton));
   }
 
   if (refreshTools) {

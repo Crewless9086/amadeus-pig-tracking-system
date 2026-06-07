@@ -209,6 +209,21 @@
           <div id="oom_forge_handoff" class="oom-learning-packet" hidden>
             <p class="oom-empty">No Forge handoff generated yet.</p>
           </div>
+          <div class="oom-patch-proposal-form">
+            <div class="oom-section-heading">
+              <div>
+                <p class="oom-label">Patch Proposal Gate</p>
+                <p class="oom-empty">Paste Builder output here for review. This does not apply a patch.</p>
+              </div>
+              <button type="button" id="oom_refresh_patch_proposals">Refresh</button>
+            </div>
+            <input id="oom_patch_build_request_id" type="text" autocomplete="off" placeholder="Build request ID">
+            <textarea id="oom_patch_proposal_text" rows="6" placeholder="Paste the Builder/Forge proposed plan, diff summary, risks, and exact tests here."></textarea>
+            <button type="button" id="oom_record_patch_proposal">Record Patch Proposal</button>
+            <div id="oom_patch_proposals" class="oom-advisor-panel">
+              <p class="oom-empty">Patch proposals not loaded yet.</p>
+            </div>
+          </div>
         </div>
         <div class="oom-trace-filters" aria-label="Recent trace review filters">
           <button type="button" data-review-filter="all" class="is-active">All</button>

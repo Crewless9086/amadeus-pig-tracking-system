@@ -6284,6 +6284,90 @@ Claude review gate:
 - This is the right checkpoint before building actual Builder/Forge execution.
 - Ask Claude to review `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` before the next step.
 
+### 10.8E Oom Sakkie Forge Handoff Persisted-ID Hardening - Local Ready
+
+Source:
+
+- Claude review flagged that `POST /api/oom-sakkie/build-requests/forge-handoff` accepted an arbitrary `build_request` payload.
+- The output was text-only and not directly unsafe, but it weakened the invariant that only persisted approved requests can generate Forge handoffs.
+
+Implemented locally:
+
+- Added `get_build_request()` to `modules/oom_sakkie/build_request_store.py`.
+- Changed Forge Handoff route to accept `build_request_id` only.
+- Route now loads the persisted build request before generating the handoff.
+- Kiosk now sends only `build_request_id` for Forge Handoff.
+- Added tests for:
+  - missing DB config lookup behavior,
+  - route lookup through persisted store,
+  - 404 when the build request is not found,
+  - frontend contract that only the ID is sent.
+
+Safety:
+
+- Browser payload is no longer treated as the build-request source of truth.
+- Forge Handoff can only be generated for a persisted build request.
+- Still does not run a builder, edit files, apply patches, deploy, mutate prompts/tools, or touch farm data.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 114 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 439 tests OK.
+
+### 10.8F Oom Sakkie Patch Proposal Gate - Local Ready
+
+Source:
+
+- Claude review recommended adding a patch-review gate before the first real Builder/Forge run.
+- The existing Forge Handoff packet already says patch review is required, but no persisted patch proposal/review surface existed yet.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/patch_proposal_store.py`.
+- Added Supabase migration `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`.
+- Added append-only `public.oom_sakkie_patch_proposals`.
+- Added append-only `public.oom_sakkie_patch_proposal_events`.
+- Added DB constraints that keep `applies_patch = false` and `deploys = false`.
+- Added protected `POST /api/oom-sakkie/build-requests/<build_request_id>/patch-proposals`.
+- Added protected `GET /api/oom-sakkie/patch-proposals`.
+- Added protected `POST /api/oom-sakkie/patch-proposals/<patch_proposal_id>/events`.
+- Added kiosk `Patch Proposal Gate` panel where the owner can paste Builder/Forge output.
+- Added `Record Patch Proposal` action on approved build request rows.
+- Added patch review events:
+  - `approved_for_patch`,
+  - `rejected`,
+  - `review_note`.
+
+Safety:
+
+- `Approve Patch` means approved for manual patch application outside the kiosk.
+- Does not run a builder.
+- Does not edit files.
+- Does not apply patches.
+- Does not deploy.
+- Does not mutate prompts/tools/farm data.
+- Stores proposals and review decisions append-only.
+
+Verification:
+
+- Applied migration `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 124 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 449 tests OK.
+
+Next gate:
+
+- Ask Claude to review `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` before the first real Builder/Forge run.
+- First real Builder/Forge run remains manual:
+  1. Generate Forge Handoff.
+  2. Paste prompt into separate Builder/Forge tool.
+  3. Read Builder plan/output.
+  4. Paste proposal into Patch Proposal Gate.
+  5. Approve or reject the proposal.
+  6. Apply any patch manually outside the kiosk only after approval.
+  7. Run verification before commit/deploy.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

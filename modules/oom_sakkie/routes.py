@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from modules.oom_sakkie.access import is_review_request_allowed, review_access_denied_response
 from modules.oom_sakkie.build_request_store import (
+    get_build_request,
     list_build_requests,
     record_build_request,
     record_build_request_event,
@@ -12,6 +13,11 @@ from modules.oom_sakkie.learning_packet import (
     approve_build_request,
     build_learning_packet,
     get_implementation_queue,
+)
+from modules.oom_sakkie.patch_proposal_store import (
+    list_patch_proposals,
+    record_patch_proposal,
+    record_patch_proposal_event,
 )
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
@@ -227,8 +233,44 @@ def oom_sakkie_build_request_forge_handoff():
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
-    build_request = payload.get("build_request") if isinstance(payload, dict) else {}
+    build_request_id = str(payload.get("build_request_id") or "").strip()
+    loaded, load_status = get_build_request(build_request_id)
+    if load_status != 200:
+        return jsonify(loaded), load_status
+    build_request = loaded.get("build_request", {})
     result, status_code = build_forge_handoff(build_request)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/build-requests/<build_request_id>/patch-proposals", methods=["POST"])
+def oom_sakkie_patch_proposal_create(build_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_patch_proposal(build_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/patch-proposals", methods=["GET"])
+def oom_sakkie_patch_proposals():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_patch_proposals(
+        build_request_id=request.args.get("build_request_id", "").strip(),
+        limit=request.args.get("limit", 20),
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/patch-proposals/<patch_proposal_id>/events", methods=["POST"])
+def oom_sakkie_patch_proposal_events(patch_proposal_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_patch_proposal_event(patch_proposal_id, payload)
     return jsonify(result), status_code
 
 

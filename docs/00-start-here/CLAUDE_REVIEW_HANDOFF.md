@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z and 10.8A-D specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, and Forge Handoff packet.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z and 10.8A-F specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, and Patch Proposal Gate.
 
 Out of scope unless explicitly asked:
 
@@ -84,6 +84,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Persistent append-only approved build request queue
 - Append-only build request event log for ignore/review-note corrections
 - Forge Handoff packet for future Builder/Forge execution review
+- Forge Handoff now looks up persisted build requests by ID before generating packets
+- Patch Proposal Gate for recording Builder/Forge proposals and owner review decisions before any manual patch application
 
 ## Files/folders to inspect
 
@@ -92,6 +94,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `modules/oom_sakkie/learning_llm.py`
 - `modules/oom_sakkie/learning_packet.py`
 - `modules/oom_sakkie/forge_handoff.py`
+- `modules/oom_sakkie/patch_proposal_store.py`
 - `templates/oom-sakkie.html`
 - `static/js/oomSakkie.js`
 - `static/css/main.css`
@@ -108,6 +111,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql`
 - `supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql`
 - `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`
+- `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`
 - `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `docs/00-start-here/CURRENT_STATE.md`
@@ -301,6 +305,25 @@ Summary:
   - `deploys = false`,
   - requires owner to explicitly run Builder/Forge later,
   - requires separate patch review and deploy approval.
+- Added Forge Handoff persisted-ID hardening:
+  - `get_build_request()` in `modules/oom_sakkie/build_request_store.py`,
+  - Forge Handoff route now accepts `build_request_id` only,
+  - route loads the persisted build request before generating the packet,
+  - kiosk sends only `build_request_id`,
+  - closes Claude's L-3 synthetic payload finding.
+- Added Patch Proposal Gate:
+  - `modules/oom_sakkie/patch_proposal_store.py`,
+  - migration `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`,
+  - protected `POST /api/oom-sakkie/build-requests/<build_request_id>/patch-proposals`,
+  - protected `GET /api/oom-sakkie/patch-proposals`,
+  - protected `POST /api/oom-sakkie/patch-proposals/<patch_proposal_id>/events`,
+  - kiosk `Patch Proposal Gate` panel under Approved Build Requests,
+  - `Record Patch Proposal` action on build request rows,
+  - append-only patch proposal rows,
+  - append-only patch proposal review events,
+  - event types `approved_for_patch`, `rejected`, and `review_note`,
+  - DB and application constraints keep `applies_patch = false` and `deploys = false`,
+  - `Approve Patch` records approval for manual patch application outside the kiosk; it does not apply a patch.
 - Added trace-driven composer lane guard:
   - live feedback showed single-tool answers mentioning unrelated systems,
   - prompt now tells non-brief tools to stay in their own lane,
@@ -368,6 +391,13 @@ Known verification from Codex:
 - Forge Handoff focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 113 tests OK
 - `node --check static/js/oomSakkie.js` passed after Forge Handoff
 - Full local unittest suite after Forge Handoff: `438 tests OK`
+- Forge Handoff persisted-ID hardening focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 114 tests OK
+- `node --check static/js/oomSakkie.js` passed after persisted-ID hardening
+- Full local unittest suite after persisted-ID hardening: `439 tests OK`
+- Patch Proposal Gate focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 124 tests OK
+- `node --check static/js/oomSakkie.js` passed after Patch Proposal Gate
+- Applied migration `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`
+- Full local unittest suite after Patch Proposal Gate: `449 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -419,7 +449,9 @@ Please inspect specifically:
 35. **Persistent Build Requests:** Does Phase 10.8B persist approved build requests append-only, preserve no-builder/no-write flags at DB and application layers, and expose history without triggering a Builder/Forge step?
 36. **Build Request Events:** Does Phase 10.8C provide an append-only correction/review path for build requests without editing/deleting requests or creating any builder/deploy authority?
 37. **Forge Handoff:** Does Phase 10.8D prepare a useful Builder/Forge instruction packet while still not running a builder, editing files, applying patches, deploying, or weakening the future patch/deploy approval gates?
-38. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+38. **Forge Handoff persisted-ID hardening:** Does Phase 10.8E close the synthetic-payload gap by requiring a stored `build_request_id` lookup before handoff generation?
+39. **Patch Proposal Gate:** Does Phase 10.8F record Builder/Forge patch proposals and owner review decisions append-only while still not applying patches, editing files, running subprocesses, deploying, or weakening the later manual approval gates?
+40. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

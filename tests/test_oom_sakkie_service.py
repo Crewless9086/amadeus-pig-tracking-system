@@ -16,6 +16,7 @@ from modules.oom_sakkie.learning_llm import analyze_learning_with_llm, parse_lea
 from modules.oom_sakkie.build_request_store import (
     _build_request_params,
     _build_request_row,
+    get_build_request,
     list_build_requests,
     record_build_request_event,
     record_build_request,
@@ -25,6 +26,13 @@ from modules.oom_sakkie.learning_packet import (
     approve_build_request,
     build_learning_packet,
     get_implementation_queue,
+)
+from modules.oom_sakkie.patch_proposal_store import (
+    _patch_proposal_params,
+    _patch_proposal_row,
+    record_patch_proposal,
+    record_patch_proposal_event,
+    list_patch_proposals,
 )
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
@@ -339,6 +347,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "not_configured")
 
+        result, status_code = get_build_request("OSK-BUILD-TEST", database_url="")
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
         result, status_code = record_build_request_event(
             "OSK-BUILD-TEST",
             {"event_type": "ignored"},
@@ -445,6 +458,110 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertFalse(handoff["success"])
         self.assertEqual(handoff["status"], "unsafe_build_request_rejected")
+
+    def test_patch_proposal_params_are_review_only(self):
+        params = _patch_proposal_params("OSK-BUILD-TEST", {
+            "proposal_text": "Proposed diff summary.",
+            "proposed_by": "builder",
+            "risk_notes": "Small route change.",
+            "files_touched": ["modules/oom_sakkie/service.py"],
+            "verification": ["python -m unittest tests.test_oom_sakkie_service"],
+            "applies_patch": True,
+            "deploys": True,
+        })
+
+        self.assertEqual(params["build_request_id"], "OSK-BUILD-TEST")
+        self.assertTrue(params["patch_proposal_id"].startswith("OSK-PATCH-"))
+        self.assertEqual(params["proposal_text"], "Proposed diff summary.")
+        self.assertIn("service.py", params["files_touched_json"])
+        self.assertFalse(params["applies_patch"])
+        self.assertFalse(params["deploys"])
+
+    def test_patch_proposal_store_returns_not_configured_without_database_url(self):
+        result, status_code = record_patch_proposal(
+            "OSK-BUILD-TEST",
+            {"proposal_text": "Plan only."},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+        result, status_code = list_patch_proposals(database_url="")
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+        result, status_code = record_patch_proposal_event(
+            "OSK-PATCH-TEST",
+            {"event_type": "approved_for_patch"},
+            database_url="",
+        )
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+    def test_patch_proposal_rejects_missing_text_and_unknown_event_type(self):
+        result, status_code = record_patch_proposal(
+            "OSK-BUILD-TEST",
+            {"proposal_text": ""},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "proposal_text_required")
+
+        result, status_code = record_patch_proposal_event(
+            "OSK-PATCH-TEST",
+            {"event_type": "apply_patch_now"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_event_type")
+
+    def test_patch_proposal_row_maps_select_tuple_positions(self):
+        row = (
+            "OSK-PATCH-ABC",
+            "OSK-BUILD-ABC",
+            "Patch summary.",
+            "builder",
+            "Low risk.",
+            ["modules/oom_sakkie/service.py"],
+            ["python -m unittest"],
+            False,
+            False,
+            datetime(2026, 6, 7, tzinfo=timezone.utc),
+            "approved_for_patch",
+            "Approved manually.",
+            "owner",
+            datetime(2026, 6, 7, 1, tzinfo=timezone.utc),
+        )
+
+        item = _patch_proposal_row(row)
+
+        self.assertEqual(item["patch_proposal_id"], "OSK-PATCH-ABC")
+        self.assertEqual(item["build_request_id"], "OSK-BUILD-ABC")
+        self.assertEqual(item["mode"], "patch_proposal_review_only")
+        self.assertEqual(item["proposal_text"], "Patch summary.")
+        self.assertFalse(item["applies_patch"])
+        self.assertFalse(item["deploys"])
+        self.assertEqual(item["files_touched"], ["modules/oom_sakkie/service.py"])
+        self.assertEqual(item["latest_event"]["event_type"], "approved_for_patch")
+
+    def test_patch_proposal_migration_is_append_only_and_review_only(self):
+        migration = Path("supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_patch_proposals", migration)
+        self.assertIn("applies_patch = false and deploys = false", migration)
+        self.assertIn("event_type in ('approved_for_patch', 'rejected', 'review_note')", migration)
+        self.assertIn("before update on public.oom_sakkie_patch_proposals", migration)
+        self.assertIn("before delete on public.oom_sakkie_patch_proposals", migration)
+        self.assertIn("before update on public.oom_sakkie_patch_proposal_events", migration)
+        self.assertIn("before delete on public.oom_sakkie_patch_proposal_events", migration)
 
     @patch("modules.oom_sakkie.learning_packet.list_review_advisor_traces")
     @patch("modules.oom_sakkie.learning_packet.get_trace_review_summary")

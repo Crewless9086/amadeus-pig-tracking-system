@@ -382,28 +382,34 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
-    def test_forge_handoff_route_returns_non_executing_packet(self):
+    @patch("modules.oom_sakkie.routes.get_build_request")
+    def test_forge_handoff_route_returns_non_executing_packet(self, mock_get_request):
+        mock_get_request.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "build_request": {
+                "build_request_id": "OSK-BUILD-TEST",
+                "status": "approved_for_build",
+                "mode": "build_request_only",
+                "approved_by": "owner",
+                "builder_enabled": False,
+                "writes_code_now": False,
+                "applies_changes_now": False,
+                "proposal": {
+                    "title": "Review routing aliases",
+                    "evidence": "Two traces.",
+                    "recommended_action": "Add one alias.",
+                },
+                "brief": "# Brief",
+                "recommended_files": ["modules/oom_sakkie/service.py"],
+                "verification": ["python -m unittest tests.test_oom_sakkie_service"],
+            },
+        }, 200)
+
         response = self.client.post(
             "/api/oom-sakkie/build-requests/forge-handoff",
-            json={
-                "build_request": {
-                    "build_request_id": "OSK-BUILD-TEST",
-                    "status": "approved_for_build",
-                    "mode": "build_request_only",
-                    "approved_by": "owner",
-                    "builder_enabled": False,
-                    "writes_code_now": False,
-                    "applies_changes_now": False,
-                    "proposal": {
-                        "title": "Review routing aliases",
-                        "evidence": "Two traces.",
-                        "recommended_action": "Add one alias.",
-                    },
-                    "brief": "# Brief",
-                    "recommended_files": ["modules/oom_sakkie/service.py"],
-                    "verification": ["python -m unittest tests.test_oom_sakkie_service"],
-                }
-            },
+            json={"build_request_id": "OSK-BUILD-TEST"},
         )
         data = response.get_json()
 
@@ -415,11 +421,132 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["applies_changes"])
         self.assertFalse(data["deploys"])
         self.assertIn("Do not change code yet", data["prompt"])
+        mock_get_request.assert_called_once_with("OSK-BUILD-TEST")
+
+    @patch("modules.oom_sakkie.routes.get_build_request")
+    def test_forge_handoff_route_requires_persisted_build_request(self, mock_get_request):
+        mock_get_request.return_value = ({
+            "success": False,
+            "configured": True,
+            "status": "build_request_not_found",
+            "build_request_id": "OSK-BUILD-FAKE",
+        }, 404)
+
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/forge-handoff",
+            json={"build_request_id": "OSK-BUILD-FAKE"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "build_request_not_found")
 
     def test_forge_handoff_route_denies_non_local_review_access(self):
         response = self.client.post(
             "/api/oom-sakkie/build-requests/forge-handoff",
             json={"build_request": {"mode": "build_request_only"}},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.record_patch_proposal")
+    def test_patch_proposal_route_records_review_only_proposal(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "patch_proposal_review_only",
+            "patch_proposal_id": "OSK-PATCH-TEST",
+            "build_request_id": "OSK-BUILD-TEST",
+            "applies_patch": False,
+            "deploys": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/OSK-BUILD-TEST/patch-proposals",
+            json={"proposal_text": "Plan only.", "proposed_by": "builder"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "patch_proposal_review_only")
+        self.assertFalse(data["applies_patch"])
+        self.assertFalse(data["deploys"])
+        mock_record.assert_called_once_with("OSK-BUILD-TEST", {
+            "proposal_text": "Plan only.",
+            "proposed_by": "builder",
+        })
+
+    def test_patch_proposal_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/OSK-BUILD-TEST/patch-proposals",
+            json={"proposal_text": "Plan only."},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.list_patch_proposals")
+    def test_patch_proposals_route_lists_review_only_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "patch_proposal_review_only",
+            "applies_patches": False,
+            "deploys": False,
+            "patch_proposals": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/patch-proposals?build_request_id=OSK-BUILD-TEST&limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "patch_proposal_review_only")
+        self.assertFalse(data["applies_patches"])
+        self.assertFalse(data["deploys"])
+        mock_list.assert_called_once_with(build_request_id="OSK-BUILD-TEST", limit="8")
+
+    @patch("modules.oom_sakkie.routes.record_patch_proposal_event")
+    def test_patch_proposal_event_route_records_review_decision(self, mock_event):
+        mock_event.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "event_type": "approved_for_patch",
+            "applies_patch": False,
+            "deploys": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/patch-proposals/OSK-PATCH-TEST/events",
+            json={"event_type": "approved_for_patch", "notes": "Approved manually.", "recorded_by": "owner"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["event_type"], "approved_for_patch")
+        self.assertFalse(data["applies_patch"])
+        self.assertFalse(data["deploys"])
+        mock_event.assert_called_once_with("OSK-PATCH-TEST", {
+            "event_type": "approved_for_patch",
+            "notes": "Approved manually.",
+            "recorded_by": "owner",
+        })
+
+    def test_patch_proposal_event_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/patch-proposals/OSK-PATCH-TEST/events",
+            json={"event_type": "approved_for_patch"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()
