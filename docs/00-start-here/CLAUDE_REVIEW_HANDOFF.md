@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-F specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, and advisor trace-read consolidation.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-G specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, and advisor SQL/test hardening.
 
 Out of scope unless explicitly asked:
 
@@ -60,6 +60,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Message/review access policy split and reverse-proxy caveat
 - User-action-triggered kiosk Review Advisor panel
 - Combined advisor trace reader
+- Advisor trace time-window and SQL/test hardening
 
 ## Files/folders to inspect
 
@@ -100,13 +101,15 @@ Summary:
 - Updated advisor wording from `manual refresh only` to `user-action-triggered, no auto-polling`, matching the implementation.
 - Added the inverse forwarded-header test: public `REMOTE_ADDR` plus loopback `X-Forwarded-For` still denies review access.
 - Added `list_review_advisor_traces()` so the advisor reads issue traces and unreviewed traces in one combined ranked trace query instead of two separate trace-list reads.
+- Added `days` windowing to `list_review_advisor_traces()` so advisor trace reads default to the same 14-day window as the review summary.
+- Added `_trace_row` positional mapping coverage and replaced the advisor SQL compiled-constant test with a mocked `psycopg.connect` SQL-capture test.
 
 Known verification from Codex:
 
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
-- Full local unittest suite: `387 tests OK`
+- Full local unittest suite: `388 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -133,8 +136,9 @@ Please inspect specifically:
 10. **Review advisor:** Is Phase 10.7B advisory-only, with no automatic feedback marking, no hidden write path, no model call, and no autonomous loop?
 11. **Access policy:** Does Phase 10.7C document the message endpoint and reverse-proxy assumptions clearly enough, and are the tests honest about current `remote_addr` behavior?
 12. **Kiosk advisor panel:** Is Phase 10.7D/E useful and still safe: user-action-triggered only, no timed/background polling, no auto-marking, no HTML injection from trace text, no hidden writes?
-13. **Advisor trace reader:** Does Phase 10.7F preserve the advisor response shape while reducing duplicate trace-list reads? Any SQL footguns?
-14. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+13. **Advisor trace reader:** Does Phase 10.7F/G preserve the advisor response shape while reducing duplicate trace-list reads, adding the days window, and avoiding SQL footguns?
+14. **Trace row mapping:** Is the positional `_trace_row` mapping sufficiently guarded by tests?
+15. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

@@ -4,7 +4,11 @@ from modules.oom_sakkie.trace_store import get_trace_review_summary, list_review
 def get_review_advisor(channel="kiosk", days=14, limit=12):
     channel = str(channel or "kiosk").strip()[:40] or "kiosk"
     summary, summary_status = get_trace_review_summary(channel=channel, days=days)
-    advisor_traces, advisor_traces_status = list_review_advisor_traces(limit=limit, channel=channel)
+    advisor_traces, advisor_traces_status = list_review_advisor_traces(
+        limit=limit,
+        channel=channel,
+        days=days,
+    )
     issue_traces = {
         "success": advisor_traces.get("success", False),
         "configured": advisor_traces.get("configured", False),

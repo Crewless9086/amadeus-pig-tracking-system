@@ -27,7 +27,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Real Weight Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now | Next: keep live-test-dependent items open, then choose the next practical business-module-aligned slice. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
-| Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7F Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, and combined advisor trace reader exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
+| Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
 
 ### Staying on track (Cursor + Claude Code)
@@ -5368,6 +5368,41 @@ Browser-check next:
 - Open `/oom-sakkie`.
 - Confirm the Review Advisor still loads and shows the same queue/suggestions.
 - If the panel ever feels slow after trace volume grows, the next optimization is combining review summary and advisor traces into one endpoint-specific query.
+
+### 10.7G Oom Sakkie Advisor SQL Window And Test Hardening - Local Ready
+
+Source:
+
+- Claude review after 10.7F flagged one real low-risk issue and two test tightenings:
+  - advisor trace reader had no created-at time window,
+  - `_trace_row` positional mapping had no guard,
+  - advisor SQL test inspected compiled string constants instead of captured executed SQL.
+
+Implemented locally:
+
+- `list_review_advisor_traces()` now accepts `days` with default `14`.
+- The advisor trace CTE now filters:
+  - `t.created_at >= now() - (%(days)s::text || ' days')::interval`
+- `get_review_advisor()` passes the same `days` value into both review summary and advisor trace reads.
+- Added an inline comment documenting that `channel_filter` is a constant SQL fragment and the channel value is still parameter-bound.
+- Added tests for:
+  - `_trace_row` 19-field positional mapping,
+  - captured advisor SQL via a mocked `psycopg.connect`,
+  - `union all`, `row_number() over`, `partition by queue_kind`, and the created-at window,
+  - route-level `days` argument plumbing into `get_review_advisor`.
+- No response-shape change, auto-polling, auto-marking, model call, tool execution, Telegram change, write tool, physical control, backend STT/TTS vendor, wake word, always-on mic, or second user-facing brain was added.
+
+Verification:
+
+- Focused Oom Sakkie service and route tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend contract tests passed.
+
+Browser-check next:
+
+- Open `/oom-sakkie`.
+- Confirm the Review Advisor still loads.
+- Open `/api/oom-sakkie/review-advisor?channel=kiosk&days=14&limit=12` locally and confirm the response remains `advisory_only`.
 
 Supabase RLS hardening verification:
 

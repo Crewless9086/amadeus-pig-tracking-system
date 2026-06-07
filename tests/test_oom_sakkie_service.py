@@ -1,7 +1,8 @@
 import unittest
 import os
+from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import build_review_advice
@@ -12,6 +13,7 @@ from modules.oom_sakkie.trace_store import (
     build_feedback_id,
     build_trace_id,
     _trace_params,
+    _trace_row,
     _review_filter,
     _trace_list_where_clause,
     get_trace_review_summary,
@@ -390,6 +392,51 @@ class OomSakkieServiceTests(unittest.TestCase):
         for key in params:
             self.assertIn(f"%({key})s", insert_sql)
 
+    def test_trace_row_maps_select_tuple_positions_to_expected_keys(self):
+        created_at = datetime(2026, 6, 7, 8, 0, tzinfo=timezone.utc)
+        feedback_at = datetime(2026, 6, 7, 8, 5, tzinfo=timezone.utc)
+        mapped = _trace_row((
+            "OSK-row",
+            "kiosk",
+            "session-1",
+            "question",
+            "weather_today",
+            0.95,
+            "weather_today",
+            "summary",
+            "hash",
+            "answer",
+            0,
+            ["stale"],
+            ["safe"],
+            [{"label": "Weather", "href": "/weather"}],
+            created_at,
+            "wrong_tool",
+            "note",
+            "Charl",
+            feedback_at,
+        ))
+
+        self.assertEqual(mapped["trace_id"], "OSK-row")
+        self.assertEqual(mapped["channel"], "kiosk")
+        self.assertEqual(mapped["session_id"], "session-1")
+        self.assertEqual(mapped["user_text"], "question")
+        self.assertEqual(mapped["intent"], "weather_today")
+        self.assertEqual(mapped["confidence"], 0.95)
+        self.assertEqual(mapped["tool_name"], "weather_today")
+        self.assertEqual(mapped["tool_result_summary"], "summary")
+        self.assertEqual(mapped["tool_result_hash"], "hash")
+        self.assertEqual(mapped["answer"], "answer")
+        self.assertEqual(mapped["risk_level"], 0)
+        self.assertEqual(mapped["stale_warnings"], ["stale"])
+        self.assertEqual(mapped["safety_notes"], ["safe"])
+        self.assertEqual(mapped["links"], [{"label": "Weather", "href": "/weather"}])
+        self.assertEqual(mapped["created_at"], created_at.isoformat())
+        self.assertEqual(mapped["latest_feedback"]["feedback_type"], "wrong_tool")
+        self.assertEqual(mapped["latest_feedback"]["notes"], "note")
+        self.assertEqual(mapped["latest_feedback"]["reviewed_by"], "Charl")
+        self.assertEqual(mapped["latest_feedback"]["created_at"], feedback_at.isoformat())
+
     def test_append_only_migration_locks_trace_tables(self):
         migration = Path("supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql").read_text(encoding="utf-8")
 
@@ -479,13 +526,46 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["issue_traces"], [])
         self.assertEqual(result["unreviewed_traces"], [])
 
+    @patch.dict("sys.modules", {"psycopg": Mock()})
     def test_review_advisor_trace_list_uses_combined_ranked_query(self):
-        query = "\n".join(value for value in list_review_advisor_traces.__code__.co_consts if isinstance(value, str))
+        import sys
 
-        self.assertIn("issue_traces", str(list_review_advisor_traces(database_url="")[0]))
-        self.assertIn("union all", query.lower())
-        self.assertIn("row_number() over", query.lower())
-        self.assertIn("partition by queue_kind", query.lower())
+        executed = {}
+        cursor = Mock()
+        cursor.fetchall.return_value = []
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=False)
+        connection = Mock()
+        connection.cursor.return_value = cursor
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        sys.modules["psycopg"].connect.return_value = connection
+
+        def capture_execute(sql, params):
+            executed["sql"] = sql
+            executed["params"] = params
+
+        cursor.execute.side_effect = capture_execute
+
+        result, status = list_review_advisor_traces(
+            limit=12,
+            channel="kiosk",
+            days=14,
+            database_url="postgresql://example",
+        )
+
+        query = executed["sql"].lower()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["days"], 14)
+        self.assertIn("union all", query)
+        self.assertIn("row_number() over", query)
+        self.assertIn("partition by queue_kind", query)
+        self.assertIn("t.created_at >= now()", query)
+        self.assertEqual(executed["params"]["channel"], "kiosk")
+        self.assertEqual(executed["params"]["limit"], 12)
+        self.assertEqual(executed["params"]["days"], 14)
 
     def test_trace_feedback_rejects_invalid_type_before_db(self):
         result, status = record_trace_feedback(

@@ -94,6 +94,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["mode"], "advisory_only")
         self.assertFalse(data["autonomous_marking_enabled"])
         self.assertFalse(data["writes_feedback"])
+        mock_advisor.assert_called_once_with(channel="kiosk", days="14", limit=12)
 
     def test_review_advisor_route_denies_non_local_review_access(self):
         response = self.client.get(

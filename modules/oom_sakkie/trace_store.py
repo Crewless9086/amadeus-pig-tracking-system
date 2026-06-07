@@ -395,8 +395,9 @@ def get_trace_review_summary(channel="", days=14, database_url=None):
     }, 200
 
 
-def list_review_advisor_traces(limit=12, channel="", database_url=None):
+def list_review_advisor_traces(limit=12, channel="", days=14, database_url=None):
     parsed_limit = _bounded_limit(limit)
+    parsed_days = _bounded_days(days)
     channel = _clean_text(channel, 40)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
@@ -419,8 +420,9 @@ def list_review_advisor_traces(limit=12, channel="", database_url=None):
             "unreviewed_traces": [],
         }, 500
 
-    params = {"channel": channel, "limit": parsed_limit}
-    channel_filter = "where t.channel = %(channel)s" if channel else ""
+    params = {"channel": channel, "limit": parsed_limit, "days": parsed_days}
+    # channel_filter is a constant fragment; the channel value itself is bound via %(channel)s.
+    channel_filter = "and t.channel = %(channel)s" if channel else ""
     try:
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
@@ -442,6 +444,7 @@ def list_review_advisor_traces(limit=12, channel="", database_url=None):
                             order by created_at desc
                             limit 1
                         ) fb on true
+                        where t.created_at >= now() - (%(days)s::text || ' days')::interval
                         {channel_filter}
                     ),
                     candidates as (
@@ -501,6 +504,7 @@ def list_review_advisor_traces(limit=12, channel="", database_url=None):
         "status": "ok",
         "channel": channel,
         "limit": parsed_limit,
+        "days": parsed_days,
         "issue_traces": issue_traces,
         "unreviewed_traces": unreviewed_traces,
     }, 200
