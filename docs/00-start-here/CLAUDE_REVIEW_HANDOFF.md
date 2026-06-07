@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-S specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, and read-only operating brief tool.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z and 10.8A-D specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, and Forge Handoff packet.
 
 Out of scope unless explicitly asked:
 
@@ -73,10 +73,25 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Kiosk animated presence orb and stronger answer-composer voice
 - Capped structured read-only tool context sent to the answer composer when enabled
 - `farm_operating_brief` composite read-only tool and kiosk `Brief` quick action
+- Required operating-brief sections: attention/priority, power, weather, irrigation
+- Top `Talk` / `Talk & Ask` placement inside the presence panel
+- Human-approved Learning Queue from reviewed trace feedback
+- Explicit `Analyze` action for env-gated LLM Learning Analyst
+- Trace-driven composer lane guard for single-tool answers
+- `Build Brief` action for proposal-specific review packets
+- Auto-prepared Implementation Queue for strong learning signals
+- `Approve for Build` gate that creates a non-applying build request object
+- Persistent append-only approved build request queue
+- Append-only build request event log for ignore/review-note corrections
+- Forge Handoff packet for future Builder/Forge execution review
 
 ## Files/folders to inspect
 
 - `modules/oom_sakkie/`
+- `modules/oom_sakkie/learning_advisor.py`
+- `modules/oom_sakkie/learning_llm.py`
+- `modules/oom_sakkie/learning_packet.py`
+- `modules/oom_sakkie/forge_handoff.py`
 - `templates/oom-sakkie.html`
 - `static/js/oomSakkie.js`
 - `static/css/main.css`
@@ -91,6 +106,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql`
 - `supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql`
 - `supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql`
+- `supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql`
+- `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`
 - `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `docs/00-start-here/CURRENT_STATE.md`
@@ -198,6 +215,100 @@ Summary:
   - LLM-router guidance for broad briefing prompts,
   - kiosk `Brief` quick action,
   - answer-composer rule to keep operating briefs to at most three short spoken sentences.
+- Added operating brief required-section hardening:
+  - `farm_operating_brief` returns compact `llm_context` with `required_sections = ["attention", "power", "weather", "irrigation"]`,
+  - compact context includes per-section status, summary, stale warnings, and safety notes,
+  - `handle_message()` prefers `tool_result["llm_context"]` over verbose raw payload for the composer,
+  - answer-composer prompt explicitly requires attention/priority, power, weather, and irrigation for `farm_operating_brief`,
+  - unsafe-output filter still rejects positive action claims but allows negated safety statements such as `No start or stop command was sent`.
+- Moved kiosk voice controls:
+  - `Talk` and `Talk & Ask` now live inside the top `oom-presence-panel`,
+  - bottom `oom_form` keeps text input and `Ask`,
+  - `.oom-presence-actions` provides touch-friendly first-viewport controls,
+  - frontend contract asserts the voice buttons stay in the presence panel and not the bottom form.
+- Added human-approved Learning Queue:
+  - `modules/oom_sakkie/learning_advisor.py`,
+  - protected `GET /api/oom-sakkie/learning-advisor`,
+  - kiosk `Learning Queue` panel,
+  - deterministic proposals from reviewed issue feedback,
+  - no LLM call,
+  - no code write,
+  - no feedback write,
+  - no prompt/tool/farm-data mutation,
+  - human approval required for follow-up implementation.
+- Added explicit LLM Learning Analyst:
+  - `modules/oom_sakkie/learning_llm.py`,
+  - env gate `OOM_SAKKIE_LLM_LEARNING_ENABLED`,
+  - protected `POST /api/oom-sakkie/learning-advisor/analyze`,
+  - kiosk `Analyze` button,
+  - sends capped reviewed issue trace excerpts and deterministic proposals only when explicitly triggered,
+  - validates allowed proposal kinds,
+  - forces `approval_required = true`,
+  - does not write code, feedback, prompts, tools, routes, or farm data.
+- Added deterministic Learning Build Brief packet:
+  - `modules/oom_sakkie/learning_packet.py`,
+  - protected `POST /api/oom-sakkie/learning-advisor/build-packet`,
+  - `Build Brief` buttons on Learning Queue proposals,
+  - text-only kiosk packet render target,
+  - no LLM call,
+  - no code write or patch application,
+  - no feedback write,
+  - no prompt/tool/farm-data mutation,
+  - human approval required before implementation.
+- Added human-approved Implementation Queue:
+  - protected `GET /api/oom-sakkie/learning-advisor/implementation-queue`,
+  - kiosk `Implementation Queue` panel,
+  - deterministic auto-preparation from strong Learning Queue signals,
+  - threshold: high priority, repeated tool pattern, or evidence with two or more issue traces,
+  - `Open Brief` displays an in-memory packet in the text-only build-brief panel,
+  - no LLM call,
+  - no code write or patch application,
+  - no feedback write,
+  - no prompt/tool/farm-data mutation,
+  - human approval required before implementation.
+- Added Approve For Build gate:
+  - protected `POST /api/oom-sakkie/learning-advisor/approve-build`,
+  - `Approve for Build` button on generated build briefs,
+  - returns a structured `build_request_only` object,
+  - `builder_enabled = false`,
+  - `writes_code_now = false`,
+  - `applies_changes_now = false`,
+  - next gate is `builder_agent_review_and_patch_approval`,
+  - no builder run, file edit, patch application, deploy, prompt/tool mutation, feedback write, or farm-data write.
+- Added persistent build request queue:
+  - `modules/oom_sakkie/build_request_store.py`,
+  - migration `supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql`,
+  - protected `GET /api/oom-sakkie/build-requests`,
+  - kiosk `Approved Build Requests` panel,
+  - `approve-build` attempts to persist approved build requests,
+  - table is append-only with update/delete blockers,
+  - DB constraints keep `builder_enabled`, `writes_code_now`, and `applies_changes_now` false.
+- Added build request event log:
+  - migration `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`,
+  - `record_build_request_event()` in `modules/oom_sakkie/build_request_store.py`,
+  - protected `POST /api/oom-sakkie/build-requests/<build_request_id>/events`,
+  - build request list returns latest event,
+  - kiosk `Ignore` action records an append-only `ignored` event,
+  - allowed event types are `approved`, `ignored`, and `review_note`.
+- Added Forge Handoff packet:
+  - `modules/oom_sakkie/forge_handoff.py`,
+  - protected `POST /api/oom-sakkie/build-requests/forge-handoff`,
+  - kiosk `Forge Handoff` button and text-only panel,
+  - returns objective, evidence, approved scope, verification, no-go rules, original brief, and required pre-patch output,
+  - `runs_builder = false`,
+  - `writes_code = false`,
+  - `applies_changes = false`,
+  - `deploys = false`,
+  - requires owner to explicitly run Builder/Forge later,
+  - requires separate patch review and deploy approval.
+- Added trace-driven composer lane guard:
+  - live feedback showed single-tool answers mentioning unrelated systems,
+  - prompt now tells non-brief tools to stay in their own lane,
+  - prompt bans filler such as `no stale warning` when there is no warning,
+  - post-composer guard rejects off-topic disclaimer fragments for non-brief tools,
+  - smart apostrophes are normalized before checking,
+  - `farm_operating_brief` is exempt because it intentionally covers multiple systems,
+  - rejected composed answers fall back to deterministic wording.
 
 Known verification from Codex:
 
@@ -227,6 +338,36 @@ Known verification from Codex:
   - `give me the farm operating brief` -> `tool = farm_operating_brief`, `answer_source = llm_composer`,
   - `bring me up to speed` -> `tool = farm_operating_brief`, `answer_source = llm_composer`,
   - `what should i know before i go outside` -> `tool = farm_operating_brief`, `answer_source = llm_composer`.
+- Focused service/frontend tests after required-section hardening: `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 70 tests OK, 1 skipped
+- `node --check static/js/oomSakkie.js` passed after required-section hardening
+- Direct repeated live diagnostic hit Google Sheets quota `429`; avoid repeated live operating-brief smokes until the quota cools down.
+- Top voice control verification pending current full-suite run in this batch.
+- Learning Queue focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 83 tests OK
+- `node --check static/js/oomSakkie.js` passed after Learning Queue
+- LLM Learning Analyst focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 87 tests OK
+- `node --check static/js/oomSakkie.js` passed after LLM Learning Analyst
+- Composer lane guard focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 88 tests OK
+- `node --check static/js/oomSakkie.js` passed after composer lane guard
+- Learning Build Brief packet focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 92 tests OK
+- `node --check static/js/oomSakkie.js` passed after Learning Build Brief packet
+- Full local unittest suite after Learning Build Brief packet: `417 tests OK`
+- Implementation Queue focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 95 tests OK
+- `node --check static/js/oomSakkie.js` passed after Implementation Queue
+- Full local unittest suite after Implementation Queue: `420 tests OK`
+- Approve For Build focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 99 tests OK
+- `node --check static/js/oomSakkie.js` passed after Approve For Build
+- Full local unittest suite after Approve For Build: `424 tests OK`
+- Persistent build request queue focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 105 tests OK
+- `node --check static/js/oomSakkie.js` passed after persistent build request queue
+- Full local unittest suite after persistent build request queue: `430 tests OK`
+- Build request event log focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 109 tests OK
+- `node --check static/js/oomSakkie.js` passed after build request event log
+- Applied migration `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`
+- Marked synthetic persistence smoke request `OSK-BUILD-7073A29F701E` as `ignored` through append-only event route
+- Full local unittest suite after build request event log: `434 tests OK`
+- Forge Handoff focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 113 tests OK
+- `node --check static/js/oomSakkie.js` passed after Forge Handoff
+- Full local unittest suite after Forge Handoff: `438 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -267,7 +408,18 @@ Please inspect specifically:
 24. **Presence/voice layer:** Does Phase 10.7Q make the kiosk feel more like a live agent and improve answer tone while keeping all authority, facts, and safety boundaries unchanged?
 25. **Capped context composer:** Does Phase 10.7R improve briefing quality by giving the composer structured read-only context while keeping context capped, disclosed, post-tool-only, and unable to choose actions/tools?
 26. **Operating brief tool:** Does Phase 10.7S safely aggregate existing read-only checks into one user-initiated brief without adding autonomy, writes, controls, or hidden tool authority?
-27. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+27. **Operating brief required sections:** Does Phase 10.7T prevent weather/irrigation/power/attention from being silently dropped while keeping context compact and the safety filter honest?
+28. **Top voice controls:** Does Phase 10.7U improve first-viewport usability without changing mic safety, always-on behavior, or voice authority?
+29. **Learning Queue:** Does Phase 10.7V create useful human-approved improvement proposals from reviewed traces without self-editing, hidden writes, LLM calls, or prompt/tool mutation?
+30. **LLM Learning Analyst:** Does Phase 10.7W keep LLM trace analysis explicit, env-gated, protected, capped, proposal-only, and unable to write or apply changes?
+31. **Composer lane guard:** Does Phase 10.7X correctly stop single-tool answers from discussing unrelated systems while preserving operating-brief multi-system behavior?
+32. **Learning Build Brief:** Does Phase 10.7Y create useful implementation packets from learning proposals while remaining review-only: no LLM call, no code write, no prompt/tool mutation, no feedback write, protected route only?
+33. **Implementation Queue:** Does Phase 10.7Z safely auto-prepare review briefs only from strong signals while remaining review-only: no LLM call, no code write, no prompt/tool mutation, no feedback write, protected route only, and human approval still required?
+34. **Approve For Build:** Does Phase 10.8A create a clear build-request object without running a builder, editing files, applying patches, deploying, or weakening the later patch/deploy approval gates?
+35. **Persistent Build Requests:** Does Phase 10.8B persist approved build requests append-only, preserve no-builder/no-write flags at DB and application layers, and expose history without triggering a Builder/Forge step?
+36. **Build Request Events:** Does Phase 10.8C provide an append-only correction/review path for build requests without editing/deleting requests or creating any builder/deploy authority?
+37. **Forge Handoff:** Does Phase 10.8D prepare a useful Builder/Forge instruction packet while still not running a builder, editing files, applying patches, deploying, or weakening the future patch/deploy approval gates?
+38. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

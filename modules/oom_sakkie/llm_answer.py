@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -14,6 +15,11 @@ from modules.oom_sakkie.llm_router import (
 
 
 ANSWER_ENABLED_ENV = "OOM_SAKKIE_LLM_ANSWER_ENABLED"
+UNSAFE_ACTION_RE = re.compile(
+    r"\b(saved|sent|switched|started|stopped|posted|published|changed|updated|deleted|created)\b",
+    re.I,
+)
+NEGATED_SAFETY_RE = re.compile(r"\b(no|not|never|nothing|did not|didn't|was not|wasn't|is not|isn't)\b", re.I)
 
 
 def llm_answer_enabled():
@@ -68,7 +74,10 @@ def compose_answer_with_llm(*, user_text, tool_name, deterministic_answer, stale
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
         return None
 
-    return parse_llm_answer_response(body)
+    answer = parse_llm_answer_response(body)
+    if _looks_off_topic(answer, tool_name):
+        return None
+    return answer
 
 
 def parse_llm_answer_response(body):
@@ -99,6 +108,10 @@ def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings
         "Lead with the operational meaning, then the key facts. "
         "If backend_context includes multiple items, prioritize what the owner should look at first and why. "
         "Do not recite every ID unless the ID is useful for inspection. "
+        "For farm_operating_brief, mention all required sections: attention or priority, power, weather, and irrigation. "
+        "For every other tool, stay in that tool's lane. Do not mention unrelated systems that were not checked. "
+        "Never say things like 'power is not part of this' or 'weather was not evaluated' unless a safety note explicitly says it. "
+        "If there are no stale warnings or safety notes, do not say 'no stale warning' or 'no safety note'. "
         "For operating briefs, use at most three short sentences: first priority, system status, and any safety/stale note. "
         "Sound calm, direct, and present: 'I'd look at the litter queue first; power is fine for now.' "
         "Avoid assistant openers like 'Based on the data', 'Here is', 'I can help', and 'Certainly'. "
@@ -125,13 +138,35 @@ def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings
 
 
 def _looks_unsafe(answer):
-    return bool(
-        __import__("re").search(
-            r"\b(saved|sent|switched|started|stopped|posted|published|changed|updated|deleted|created)\b",
-            answer or "",
-            __import__("re").I,
-        )
+    text = answer or ""
+    for match in UNSAFE_ACTION_RE.finditer(text):
+        prefix = text[max(0, match.start() - 40):match.start()]
+        if NEGATED_SAFETY_RE.search(prefix):
+            continue
+        return True
+    return False
+
+
+def _looks_off_topic(answer, tool_name):
+    if not answer:
+        return False
+    if str(tool_name or "") == "farm_operating_brief":
+        return False
+    text = answer.lower().replace("’", "'").replace("‘", "'")
+    blocked_fragments = (
+        "not part of this",
+        "not evaluated",
+        "weren't evaluated",
+        "wasn't evaluated",
+        "aren't evaluated",
+        "isn't evaluated",
+        "not provided here",
+        "not reported here",
+        "not checked here",
+        "no stale warning",
+        "no safety note",
     )
+    return any(fragment in text for fragment in blocked_fragments)
 
 
 def _timeout_seconds():

@@ -31,6 +31,10 @@
           <p class="oom-label">Agent Presence</p>
           <p id="oom_presence_line">Standing by for a read-only farm check.</p>
         </div>
+        <div class="oom-presence-actions" aria-label="Primary voice controls">
+          <button type="button" id="oom_voice_button">Talk</button>
+          <button type="button" id="oom_voice_ask_button">Talk & Ask</button>
+        </div>
       </section>
 
       <div class="oom-question-panel">
@@ -163,6 +167,49 @@
             <p class="oom-empty">Review advisor not loaded yet.</p>
           </div>
         </div>
+        <div class="oom-learning-advisor">
+          <div class="oom-section-heading">
+            <div>
+              <p class="oom-label">Learning Queue</p>
+              <p class="oom-empty">Human-approved improvement proposals from reviewed traces.</p>
+            </div>
+            <button type="button" id="oom_run_learning_analysis">Analyze</button>
+            <button type="button" id="oom_refresh_learning">Refresh</button>
+          </div>
+          <div id="oom_learning_advisor" class="oom-advisor-panel">
+            <p class="oom-empty">Learning queue not loaded yet.</p>
+          </div>
+          <div id="oom_learning_packet" class="oom-learning-packet" hidden>
+            <p class="oom-empty">No build brief generated yet.</p>
+          </div>
+        </div>
+        <div class="oom-implementation-queue">
+          <div class="oom-section-heading">
+            <div>
+              <p class="oom-label">Implementation Queue</p>
+              <p class="oom-empty">Auto-prepared briefs from strong learning signals. Approval is still manual.</p>
+            </div>
+            <button type="button" id="oom_refresh_implementation_queue">Refresh</button>
+          </div>
+          <div id="oom_implementation_queue" class="oom-advisor-panel">
+            <p class="oom-empty">Implementation queue not loaded yet.</p>
+          </div>
+        </div>
+        <div class="oom-build-requests-panel">
+          <div class="oom-section-heading">
+            <div>
+              <p class="oom-label">Approved Build Requests</p>
+              <p class="oom-empty">Persistent queue for future Builder/Forge work. No builder runs here.</p>
+            </div>
+            <button type="button" id="oom_refresh_build_requests">Refresh</button>
+          </div>
+          <div id="oom_build_requests" class="oom-advisor-panel">
+            <p class="oom-empty">Build requests not loaded yet.</p>
+          </div>
+          <div id="oom_forge_handoff" class="oom-learning-packet" hidden>
+            <p class="oom-empty">No Forge handoff generated yet.</p>
+          </div>
+        </div>
         <div class="oom-trace-filters" aria-label="Recent trace review filters">
           <button type="button" data-review-filter="all" class="is-active">All</button>
           <button type="button" data-review-filter="unreviewed">Unreviewed</button>
@@ -186,8 +233,6 @@
     <form id="oom_form" class="oom-input-bar">
       <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
       <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
-      <button type="button" id="oom_voice_button">Talk</button>
-      <button type="button" id="oom_voice_ask_button">Talk & Ask</button>
       <button type="submit">Ask</button>
     </form>
     <div class="oom-quick-checks" aria-label="Quick read-only farm checks">

@@ -34,6 +34,15 @@
   const reviewSummary = document.getElementById("oom_review_summary");
   const reviewAdvisor = document.getElementById("oom_review_advisor");
   const refreshAdvisor = document.getElementById("oom_refresh_advisor");
+  const learningAdvisor = document.getElementById("oom_learning_advisor");
+  const learningPacket = document.getElementById("oom_learning_packet");
+  const refreshLearning = document.getElementById("oom_refresh_learning");
+  const runLearningAnalysis = document.getElementById("oom_run_learning_analysis");
+  const implementationQueue = document.getElementById("oom_implementation_queue");
+  const refreshImplementationQueue = document.getElementById("oom_refresh_implementation_queue");
+  const buildRequests = document.getElementById("oom_build_requests");
+  const forgeHandoff = document.getElementById("oom_forge_handoff");
+  const refreshBuildRequests = document.getElementById("oom_refresh_build_requests");
   const toolCatalog = document.getElementById("oom_tool_catalog");
   const refreshTools = document.getElementById("oom_refresh_tools");
   const policyStatus = document.getElementById("oom_policy_status");
@@ -729,6 +738,288 @@
     reviewAdvisor.appendChild(queueList);
   }
 
+  function renderLearningAdvisor(data) {
+    if (!learningAdvisor) return;
+    if (!data || !data.success) {
+      learningAdvisor.innerHTML = '<p class="oom-empty">Learning queue is unavailable.</p>';
+      return;
+    }
+    learningAdvisor.innerHTML = "";
+
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "advisory_only"} | runs LLM ${data.runs_llm ? "yes" : "no"} | writes code ${data.writes_code ? "yes" : "no"} | approval ${data.requires_human_approval ? "required" : "not required"}`;
+    learningAdvisor.appendChild(guard);
+
+    const next = document.createElement("p");
+    next.className = "oom-learning-next";
+    next.textContent = data.suggested_next_step || "No learning step suggested yet.";
+    learningAdvisor.appendChild(next);
+
+    learningAdvisor.appendChild(renderLearningProposalList(Array.isArray(data.proposals) ? data.proposals : []));
+  }
+
+  function renderLearningAnalysis(data) {
+    if (!learningAdvisor) return;
+    if (!data || !data.status) {
+      learningAdvisor.innerHTML = '<p class="oom-empty">Learning analysis did not return a result.</p>';
+      return;
+    }
+    learningAdvisor.innerHTML = "";
+
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "advisory_only"} | runs LLM ${data.runs_llm ? "yes" : "no"} | writes code ${data.writes_code ? "yes" : "no"} | approval ${data.requires_human_approval ? "required" : "not required"} | status ${data.status}`;
+    learningAdvisor.appendChild(guard);
+
+    const proposals = Array.isArray(data.llm_proposals) && data.llm_proposals.length
+      ? data.llm_proposals
+      : (Array.isArray(data.deterministic_proposals) ? data.deterministic_proposals : []);
+    learningAdvisor.appendChild(renderLearningProposalList(proposals));
+  }
+
+  function renderLearningProposalList(proposals) {
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!proposals.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No learning proposals returned. Mark issue traces first or enable the learning analyst.";
+      list.appendChild(empty);
+    } else {
+      proposals.slice(0, 6).forEach((proposal) => {
+        const row = document.createElement("article");
+        const title = document.createElement("strong");
+        const evidence = document.createElement("span");
+        const action = document.createElement("p");
+        const buildButton = document.createElement("button");
+        title.textContent = `${proposal.priority || "normal"} - ${proposal.title || proposal.kind || "learning proposal"}`;
+        evidence.textContent = proposal.evidence || "";
+        action.textContent = proposal.recommended_action || "";
+        buildButton.type = "button";
+        buildButton.className = "oom-build-brief-button";
+        buildButton.textContent = "Build Brief";
+        buildButton.addEventListener("click", () => {
+          buildLearningPacket(proposal, buildButton);
+        });
+        row.appendChild(title);
+        row.appendChild(evidence);
+        row.appendChild(action);
+        row.appendChild(buildButton);
+        list.appendChild(row);
+      });
+    }
+    return list;
+  }
+
+  function renderLearningPacket(data) {
+    if (!learningPacket) return;
+    if (!data || !data.success) {
+      learningPacket.innerHTML = '<p class="oom-empty">Build brief could not be generated.</p>';
+      return;
+    }
+    learningPacket.innerHTML = "";
+    learningPacket.hidden = false;
+
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "build_brief_only"} | writes code ${data.writes_code ? "yes" : "no"} | applies changes ${data.applies_changes ? "yes" : "no"} | approval ${data.requires_human_approval ? "required" : "not required"}`;
+    learningPacket.appendChild(guard);
+
+    const title = document.createElement("strong");
+    title.textContent = ((data.proposal || {}).title) || "Learning Build Brief";
+    learningPacket.appendChild(title);
+
+    const files = document.createElement("p");
+    files.textContent = `Files: ${(data.recommended_files || []).slice(0, 6).join(", ")}`;
+    learningPacket.appendChild(files);
+
+    const brief = document.createElement("pre");
+    brief.className = "oom-build-brief";
+    brief.textContent = data.brief || "No brief text returned.";
+    learningPacket.appendChild(brief);
+
+    const approveButton = document.createElement("button");
+    approveButton.type = "button";
+    approveButton.className = "oom-approve-build-button";
+    approveButton.textContent = "Approve for Build";
+    approveButton.addEventListener("click", () => {
+      approveBuildRequest(data, approveButton);
+    });
+    learningPacket.appendChild(approveButton);
+  }
+
+  function renderBuildApproval(data) {
+    if (!learningPacket) return;
+    const panel = document.createElement("div");
+    panel.className = "oom-build-approval";
+    const guard = document.createElement("p");
+    const id = document.createElement("strong");
+    const handoff = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.status || "approved_for_build"} | builder enabled ${data.builder_enabled ? "yes" : "no"} | writes now ${data.writes_code_now ? "yes" : "no"} | applies now ${data.applies_changes_now ? "yes" : "no"}`;
+    id.textContent = data.build_request_id || "Build request created";
+    handoff.textContent = data.handoff || "Approved for a future builder step. No files changed.";
+    panel.appendChild(guard);
+    panel.appendChild(id);
+    panel.appendChild(handoff);
+    if (data.build_request_store) {
+      const store = document.createElement("p");
+      store.textContent = `Store: ${data.build_request_store.status || "unknown"}`;
+      panel.appendChild(store);
+    }
+    learningPacket.appendChild(panel);
+  }
+
+  function renderBuildRequests(data) {
+    if (!buildRequests) return;
+    if (!data || !data.success) {
+      const status = data && data.status ? data.status : "unavailable";
+      buildRequests.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = `Build request store: ${status}.`;
+      buildRequests.appendChild(empty);
+      return;
+    }
+    buildRequests.innerHTML = "";
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "persistent queue | builder enabled no | writes now no | applies now no";
+    buildRequests.appendChild(guard);
+
+    const items = Array.isArray(data.build_requests) ? data.build_requests : [];
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No approved build requests yet.";
+      list.appendChild(empty);
+    } else {
+      items.slice(0, 8).forEach((item) => {
+        const row = document.createElement("article");
+        const title = document.createElement("strong");
+        const meta = document.createElement("span");
+        const next = document.createElement("p");
+        const event = document.createElement("p");
+        const handoffButton = document.createElement("button");
+        const ignoreButton = document.createElement("button");
+        const proposal = item.proposal || {};
+        const latestEvent = item.latest_event || {};
+        title.textContent = proposal.title || item.build_request_id || "Build request";
+        meta.textContent = `${item.build_request_id || ""} | ${item.status || ""} | ${item.created_at || ""}`;
+        next.textContent = item.requires_next_gate || "builder_agent_review_and_patch_approval";
+        event.textContent = latestEvent.event_type
+          ? `Latest event: ${latestEvent.event_type} ${latestEvent.notes ? "- " + latestEvent.notes : ""}`
+          : "Latest event: none";
+        handoffButton.type = "button";
+        handoffButton.className = "oom-build-brief-button";
+        handoffButton.textContent = "Forge Handoff";
+        handoffButton.addEventListener("click", () => {
+          buildForgeHandoff(item, handoffButton);
+        });
+        ignoreButton.type = "button";
+        ignoreButton.className = "oom-build-brief-button";
+        ignoreButton.textContent = "Ignore";
+        ignoreButton.addEventListener("click", () => {
+          recordBuildRequestEvent(item.build_request_id, "ignored", "Ignored from kiosk review.", ignoreButton);
+        });
+        row.appendChild(title);
+        row.appendChild(meta);
+        row.appendChild(next);
+        row.appendChild(event);
+        row.appendChild(handoffButton);
+        row.appendChild(ignoreButton);
+        list.appendChild(row);
+      });
+    }
+    buildRequests.appendChild(list);
+  }
+
+  function renderForgeHandoff(data) {
+    if (!forgeHandoff) return;
+    if (!data || !data.success) {
+      forgeHandoff.innerHTML = '<p class="oom-empty">Forge handoff could not be generated.</p>';
+      forgeHandoff.hidden = false;
+      return;
+    }
+    forgeHandoff.innerHTML = "";
+    forgeHandoff.hidden = false;
+
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "forge_handoff_only"} | runs builder ${data.runs_builder ? "yes" : "no"} | writes code ${data.writes_code ? "yes" : "no"} | applies changes ${data.applies_changes ? "yes" : "no"} | deploys ${data.deploys ? "yes" : "no"}`;
+    forgeHandoff.appendChild(guard);
+
+    const title = document.createElement("strong");
+    title.textContent = `${data.build_request_id || "Build request"} - ${data.objective || "Forge handoff"}`;
+    forgeHandoff.appendChild(title);
+
+    const next = document.createElement("p");
+    next.textContent = "Next gate: owner must explicitly run Builder/Forge, then separately approve the patch and deploy.";
+    forgeHandoff.appendChild(next);
+
+    const prompt = document.createElement("pre");
+    prompt.className = "oom-build-brief";
+    prompt.textContent = data.prompt || "No handoff prompt returned.";
+    forgeHandoff.appendChild(prompt);
+  }
+
+  function renderImplementationQueue(data) {
+    if (!implementationQueue) return;
+    if (!data || !data.success) {
+      implementationQueue.innerHTML = '<p class="oom-empty">Implementation queue is unavailable.</p>';
+      return;
+    }
+    implementationQueue.innerHTML = "";
+
+    const policy = data.auto_prepare_policy || {};
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "auto_prepared_review_queue"} | writes code ${policy.writes_code ? "yes" : "no"} | applies changes ${policy.applies_changes ? "yes" : "no"} | approval ${policy.requires_human_approval ? "required" : "not required"}`;
+    implementationQueue.appendChild(guard);
+
+    const threshold = document.createElement("p");
+    threshold.className = "oom-learning-next";
+    threshold.textContent = `Auto-prepare threshold: ${policy.threshold || "strong reviewed evidence only"}.`;
+    implementationQueue.appendChild(threshold);
+
+    const packets = Array.isArray(data.packets) ? data.packets : [];
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!packets.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No implementation briefs are strong enough yet. Keep marking traces.";
+      list.appendChild(empty);
+    } else {
+      packets.forEach((packet) => {
+        const row = document.createElement("article");
+        const title = document.createElement("strong");
+        const evidence = document.createElement("span");
+        const action = document.createElement("p");
+        const openButton = document.createElement("button");
+        const proposal = packet.proposal || {};
+        title.textContent = `${proposal.priority || "normal"} - ${proposal.title || "implementation brief"}`;
+        evidence.textContent = proposal.evidence || "";
+        action.textContent = proposal.recommended_action || "";
+        openButton.type = "button";
+        openButton.className = "oom-build-brief-button";
+        openButton.textContent = "Open Brief";
+        openButton.addEventListener("click", () => {
+          renderLearningPacket(packet);
+        });
+        row.appendChild(title);
+        row.appendChild(evidence);
+        row.appendChild(action);
+        row.appendChild(openButton);
+        list.appendChild(row);
+      });
+    }
+    implementationQueue.appendChild(list);
+  }
+
   function renderToolCatalog(data) {
     if (!toolCatalog) return;
     const tools = data && Array.isArray(data.tools) ? data.tools : [];
@@ -1040,6 +1331,167 @@
     }
   }
 
+  async function loadLearningAdvisor() {
+    if (!learningAdvisor) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/learning-advisor?channel=kiosk&days=14&limit=12");
+      const data = await response.json();
+      renderLearningAdvisor(data);
+    } catch (error) {
+      learningAdvisor.innerHTML = '<p class="oom-empty">Learning queue is unavailable.</p>';
+    }
+  }
+
+  async function analyzeLearningAdvisor() {
+    if (!learningAdvisor) return;
+    learningAdvisor.innerHTML = '<p class="oom-empty">Running learning analysis...</p>';
+    try {
+      const response = await fetch("/api/oom-sakkie/learning-advisor/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channel: "kiosk", days: 14, limit: 12 }),
+      });
+      const data = await response.json();
+      renderLearningAnalysis(data);
+    } catch (error) {
+      learningAdvisor.innerHTML = '<p class="oom-empty">Learning analysis is unavailable.</p>';
+    }
+  }
+
+  async function buildLearningPacket(proposal, button) {
+    if (!learningPacket) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Building...";
+    }
+    learningPacket.hidden = false;
+    learningPacket.innerHTML = '<p class="oom-empty">Building review brief...</p>';
+    try {
+      const response = await fetch("/api/oom-sakkie/learning-advisor/build-packet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proposal }),
+      });
+      const data = await response.json();
+      renderLearningPacket(data);
+    } catch (error) {
+      learningPacket.innerHTML = '<p class="oom-empty">Build brief is unavailable.</p>';
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Build Brief";
+      }
+    }
+  }
+
+  async function approveBuildRequest(packet, button) {
+    if (!learningPacket) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Approving...";
+    }
+    try {
+      const response = await fetch("/api/oom-sakkie/learning-advisor/approve-build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ packet, approved_by: "owner" }),
+      });
+      const data = await response.json();
+      renderBuildApproval(data);
+      loadBuildRequests();
+    } catch (error) {
+      const line = document.createElement("p");
+      line.className = "oom-empty";
+      line.textContent = "Build approval is unavailable.";
+      learningPacket.appendChild(line);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Approve for Build";
+      }
+    }
+  }
+
+  async function loadImplementationQueue() {
+    if (!implementationQueue) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/learning-advisor/implementation-queue?channel=kiosk&days=14&limit=12");
+      const data = await response.json();
+      renderImplementationQueue(data);
+    } catch (error) {
+      implementationQueue.innerHTML = '<p class="oom-empty">Implementation queue is unavailable.</p>';
+    }
+  }
+
+  async function loadBuildRequests() {
+    if (!buildRequests) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/build-requests?limit=8");
+      const data = await response.json();
+      renderBuildRequests(data);
+    } catch (error) {
+      buildRequests.innerHTML = '<p class="oom-empty">Build request store is unavailable.</p>';
+    }
+  }
+
+  async function buildForgeHandoff(buildRequest, button) {
+    if (!forgeHandoff) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Preparing...";
+    }
+    forgeHandoff.hidden = false;
+    forgeHandoff.innerHTML = '<p class="oom-empty">Preparing Forge handoff...</p>';
+    try {
+      const response = await fetch("/api/oom-sakkie/build-requests/forge-handoff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ build_request: buildRequest }),
+      });
+      const data = await response.json();
+      renderForgeHandoff(data);
+    } catch (error) {
+      forgeHandoff.innerHTML = '<p class="oom-empty">Forge handoff is unavailable.</p>';
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Forge Handoff";
+      }
+    }
+  }
+
+  async function recordBuildRequestEvent(buildRequestId, eventType, notes, button) {
+    if (!buildRequestId) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      await fetch(`/api/oom-sakkie/build-requests/${encodeURIComponent(buildRequestId)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: eventType, notes, recorded_by: "owner" }),
+      });
+      loadBuildRequests();
+    } catch (error) {
+      if (buildRequests) {
+        const line = document.createElement("p");
+        line.className = "oom-empty";
+        line.textContent = "Build request event could not be recorded.";
+        buildRequests.appendChild(line);
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Ignore";
+      }
+    }
+  }
+
   async function loadToolCatalog() {
     if (!toolCatalog) return;
     try {
@@ -1066,6 +1518,9 @@
     loadReviewSummary();
     loadRecentTraces();
     loadReviewAdvisor();
+    loadLearningAdvisor();
+    loadImplementationQueue();
+    loadBuildRequests();
   }
 
   if (form) {
@@ -1088,6 +1543,22 @@
 
   if (refreshAdvisor) {
     refreshAdvisor.addEventListener("click", loadReviewAdvisor);
+  }
+
+  if (refreshLearning) {
+    refreshLearning.addEventListener("click", loadLearningAdvisor);
+  }
+
+  if (runLearningAnalysis) {
+    runLearningAnalysis.addEventListener("click", analyzeLearningAdvisor);
+  }
+
+  if (refreshImplementationQueue) {
+    refreshImplementationQueue.addEventListener("click", loadImplementationQueue);
+  }
+
+  if (refreshBuildRequests) {
+    refreshBuildRequests.addEventListener("click", loadBuildRequests);
   }
 
   if (refreshTools) {

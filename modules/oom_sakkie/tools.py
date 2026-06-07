@@ -119,6 +119,15 @@ def farm_operating_brief_handler(_args):
 
     failed = [name for name, section in sections.items() if not section.get("success")]
     status = "partial" if failed else "ok"
+    brief_sections = {
+        name: {
+            "status": section.get("status"),
+            "summary": section.get("summary"),
+            "stale_warnings": list(section.get("stale_warnings") or [])[:3],
+            "safety_notes": list(section.get("safety_notes") or [])[:3],
+        }
+        for name, section in sections.items()
+    }
     summary = (
         "Operating brief loaded. "
         f"Attention: {sections['attention'].get('summary', 'unavailable')} "
@@ -136,6 +145,12 @@ def farm_operating_brief_handler(_args):
         "links": unique_links[:8],
         "stale_warnings": stale_warnings[:6],
         "safety_notes": safety_notes[:6],
+        "llm_context": {
+            "kind": "farm_operating_brief",
+            "required_sections": ["attention", "power", "weather", "irrigation"],
+            "sections": brief_sections,
+            "failed_sections": failed,
+        },
         "raw": {
             "kind": "farm_operating_brief",
             "sections": sections,

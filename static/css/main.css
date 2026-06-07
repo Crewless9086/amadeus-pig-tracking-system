@@ -2626,6 +2626,38 @@ button:disabled {
   font-size: 18px;
 }
 
+.oom-presence-actions {
+  position: absolute;
+  right: 28px;
+  bottom: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  max-width: min(420px, calc(100% - 56px));
+}
+
+.oom-presence-actions button {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid rgba(45, 212, 168, 0.42);
+  border-radius: 999px;
+  background: rgba(45, 212, 168, 0.14);
+  color: #f4f7f6;
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 0 30px rgba(45, 212, 168, 0.14);
+}
+
+.oom-presence-actions button:hover {
+  background: rgba(45, 212, 168, 0.22);
+}
+
+.oom-presence-actions button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 @keyframes oom-orb-spin {
   to {
     transform: rotate(360deg);
@@ -3076,6 +3108,55 @@ button:disabled {
   line-height: 1.35;
 }
 
+.oom-build-brief-button {
+  align-self: flex-start;
+  border: 1px solid rgba(129, 230, 217, 0.35);
+  background: rgba(20, 184, 166, 0.12);
+  color: #e6fffb;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.65rem;
+}
+
+.oom-approve-build-button {
+  margin-top: 0.8rem;
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  background: rgba(250, 204, 21, 0.12);
+  color: #fef3c7;
+  font-weight: 700;
+  padding: 0.55rem 0.8rem;
+}
+
+.oom-build-approval {
+  margin-top: 0.8rem;
+  border-top: 1px solid rgba(250, 204, 21, 0.25);
+  padding-top: 0.75rem;
+}
+
+.oom-build-approval strong,
+.oom-build-approval p {
+  display: block;
+  margin: 0.25rem 0 0;
+}
+
+.oom-learning-packet {
+  margin-top: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.54);
+  padding: 0.85rem;
+}
+
+.oom-build-brief {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0.7rem 0 0;
+  color: #dbeafe;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .oom-voice-readiness .oom-label,
 .oom-voice-readiness .oom-empty {
   margin: 0;
@@ -3504,6 +3585,22 @@ button:disabled {
   .oom-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .oom-presence-panel {
+    min-height: 360px;
+    padding-bottom: 96px;
+  }
+
+  .oom-presence-copy,
+  .oom-presence-actions {
+    left: 18px;
+    right: 18px;
+    max-width: none;
+  }
+
+  .oom-presence-actions {
+    justify-content: flex-start;
   }
 
   .oom-answer {

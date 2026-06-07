@@ -11,6 +11,21 @@ from modules.oom_sakkie.llm_answer import (
     compose_answer_with_llm,
     parse_llm_answer_response,
 )
+from modules.oom_sakkie.learning_advisor import build_learning_advice
+from modules.oom_sakkie.learning_llm import analyze_learning_with_llm, parse_learning_response
+from modules.oom_sakkie.build_request_store import (
+    _build_request_params,
+    _build_request_row,
+    list_build_requests,
+    record_build_request_event,
+    record_build_request,
+)
+from modules.oom_sakkie.forge_handoff import build_forge_handoff
+from modules.oom_sakkie.learning_packet import (
+    approve_build_request,
+    build_learning_packet,
+    get_implementation_queue,
+)
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
@@ -194,6 +209,337 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(advisor["writes_feedback"])
         self.assertIn("Trace storage is not configured", advisor["suggested_actions"][0])
 
+    def test_learning_advisor_builds_human_approved_proposals_from_feedback(self):
+        advisor = build_learning_advice(
+            summary={
+                "success": True,
+                "configured": True,
+                "summary": {"reviewed_traces": 3, "problem_traces": 2},
+            },
+            issue_traces=[
+                {
+                    "trace_id": "OSK-WRONG",
+                    "tool_name": "weather_today",
+                    "user_text": "help me with the power",
+                    "latest_feedback": {"feedback_type": "wrong_tool"},
+                },
+                {
+                    "trace_id": "OSK-WORDING",
+                    "tool_name": "farm_operating_brief",
+                    "user_text": "bring me up to speed",
+                    "latest_feedback": {"feedback_type": "bad_wording"},
+                },
+            ],
+            statuses={"review_summary": 200, "advisor_traces": 200},
+        )
+
+        self.assertTrue(advisor["success"])
+        self.assertEqual(advisor["mode"], "advisory_only")
+        self.assertFalse(advisor["writes_code"])
+        self.assertFalse(advisor["writes_feedback"])
+        self.assertFalse(advisor["runs_llm"])
+        self.assertTrue(advisor["requires_human_approval"])
+        kinds = {item["kind"] for item in advisor["proposals"]}
+        self.assertIn("routing_review", kinds)
+        self.assertIn("answer_style_review", kinds)
+        self.assertIn("Pick one proposal", advisor["suggested_next_step"])
+
+    def test_learning_packet_builds_advisory_brief_without_apply_authority(self):
+        packet, status_code = build_learning_packet({
+            "kind": "answer_style_review",
+            "priority": "medium",
+            "title": "Review answer wording and composer instructions",
+            "evidence": "Two traces were marked bad_wording for power_current.",
+            "recommended_action": "Tighten the answer-composer prompt and add a regression test.",
+        })
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(packet["success"])
+        self.assertEqual(packet["mode"], "build_brief_only")
+        self.assertFalse(packet["writes_code"])
+        self.assertFalse(packet["applies_changes"])
+        self.assertFalse(packet["runs_llm"])
+        self.assertFalse(packet["writes_feedback"])
+        self.assertFalse(packet["changes_tools"])
+        self.assertFalse(packet["changes_prompts"])
+        self.assertTrue(packet["requires_human_approval"])
+        self.assertIn("modules/oom_sakkie/llm_answer.py", packet["recommended_files"])
+        self.assertIn("tests.test_oom_sakkie_service", " ".join(packet["verification"]))
+        self.assertIn("Oom Sakkie Learning Build Brief", packet["brief"])
+
+    def test_learning_packet_rejects_unknown_proposal_kind(self):
+        packet, status_code = build_learning_packet({"kind": "unsafe_self_edit"})
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(packet["success"])
+        self.assertEqual(packet["status"], "invalid_proposal_kind")
+
+    def test_approve_build_request_creates_non_applying_request(self):
+        packet, _ = build_learning_packet({
+            "kind": "routing_review",
+            "priority": "high",
+            "title": "Review routing aliases",
+            "evidence": "Two wrong-tool traces.",
+            "recommended_action": "Add one deterministic alias and regression test.",
+        })
+
+        request, status_code = approve_build_request(packet, approved_by="owner")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(request["success"])
+        self.assertEqual(request["status"], "approved_for_build")
+        self.assertEqual(request["mode"], "build_request_only")
+        self.assertTrue(request["build_request_id"].startswith("OSK-BUILD-"))
+        self.assertFalse(request["builder_enabled"])
+        self.assertFalse(request["writes_code_now"])
+        self.assertFalse(request["applies_changes_now"])
+        self.assertEqual(request["requires_next_gate"], "builder_agent_review_and_patch_approval")
+        self.assertIn("Do not edit files", request["handoff"])
+
+    def test_approve_build_request_rejects_unsafe_packet(self):
+        request, status_code = approve_build_request({
+            "success": True,
+            "mode": "build_brief_only",
+            "writes_code": True,
+            "applies_changes": False,
+        })
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(request["success"])
+        self.assertEqual(request["status"], "unsafe_packet_rejected")
+
+    def test_build_request_store_params_preserve_no_apply_flags(self):
+        packet, _ = build_learning_packet({
+            "kind": "routing_review",
+            "priority": "high",
+            "title": "Review routing aliases",
+            "evidence": "Two traces.",
+            "recommended_action": "Add one alias.",
+        })
+        request, _ = approve_build_request(packet)
+        params = _build_request_params(request)
+
+        self.assertEqual(params["build_request_id"], request["build_request_id"])
+        self.assertEqual(params["status"], "approved_for_build")
+        self.assertEqual(params["mode"], "build_request_only")
+        self.assertFalse(params["builder_enabled"])
+        self.assertFalse(params["writes_code_now"])
+        self.assertFalse(params["applies_changes_now"])
+        self.assertIn("routing_review", params["proposal_json"])
+
+    def test_build_request_store_returns_not_configured_without_database_url(self):
+        result, status_code = record_build_request({"build_request_id": "OSK-BUILD-TEST"}, database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["stored"])
+        self.assertEqual(result["status"], "not_configured")
+
+        result, status_code = list_build_requests(database_url="")
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+        result, status_code = record_build_request_event(
+            "OSK-BUILD-TEST",
+            {"event_type": "ignored"},
+            database_url="",
+        )
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+    def test_build_request_row_maps_select_tuple_positions(self):
+        row = (
+            "OSK-BUILD-ABC",
+            "approved_for_build",
+            "build_request_only",
+            "owner",
+            {"title": "Proposal"},
+            "# Brief",
+            ["modules/oom_sakkie/service.py"],
+            ["python -m unittest"],
+            "builder_agent_review_and_patch_approval",
+            False,
+            False,
+            False,
+            datetime(2026, 6, 7, tzinfo=timezone.utc),
+            "ignored",
+            "Smoke request.",
+            "owner",
+            datetime(2026, 6, 7, 1, tzinfo=timezone.utc),
+        )
+
+        item = _build_request_row(row)
+
+        self.assertEqual(item["build_request_id"], "OSK-BUILD-ABC")
+        self.assertEqual(item["status"], "approved_for_build")
+        self.assertEqual(item["mode"], "build_request_only")
+        self.assertFalse(item["builder_enabled"])
+        self.assertFalse(item["writes_code_now"])
+        self.assertFalse(item["applies_changes_now"])
+        self.assertEqual(item["proposal"]["title"], "Proposal")
+        self.assertEqual(item["recommended_files"], ["modules/oom_sakkie/service.py"])
+        self.assertEqual(item["latest_event"]["event_type"], "ignored")
+        self.assertEqual(item["latest_event"]["notes"], "Smoke request.")
+
+    def test_build_request_migration_is_append_only_and_no_live_builder(self):
+        migration = Path("supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_build_requests", migration)
+        self.assertIn("builder_enabled = false and writes_code_now = false and applies_changes_now = false", migration)
+        self.assertIn("before update on public.oom_sakkie_build_requests", migration)
+        self.assertIn("before delete on public.oom_sakkie_build_requests", migration)
+
+    def test_build_request_event_migration_is_append_only(self):
+        migration = Path("supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_build_request_events", migration)
+        self.assertIn("event_type in ('approved', 'ignored', 'review_note')", migration)
+        self.assertIn("before update on public.oom_sakkie_build_request_events", migration)
+        self.assertIn("before delete on public.oom_sakkie_build_request_events", migration)
+
+    def test_build_request_event_rejects_unknown_type(self):
+        result, status_code = record_build_request_event(
+            "OSK-BUILD-TEST",
+            {"event_type": "apply_patch_now"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_event_type")
+
+    def test_forge_handoff_builds_non_executing_prompt_from_build_request(self):
+        packet, _ = build_learning_packet({
+            "kind": "routing_review",
+            "priority": "high",
+            "title": "Review routing aliases",
+            "evidence": "Two wrong-tool traces.",
+            "recommended_action": "Add one deterministic alias and regression test.",
+        })
+        request, _ = approve_build_request(packet)
+
+        handoff, status_code = build_forge_handoff(request)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(handoff["success"])
+        self.assertEqual(handoff["mode"], "forge_handoff_only")
+        self.assertFalse(handoff["runs_builder"])
+        self.assertFalse(handoff["writes_code"])
+        self.assertFalse(handoff["applies_changes"])
+        self.assertFalse(handoff["deploys"])
+        self.assertTrue(handoff["requires_owner_to_run_builder"])
+        self.assertTrue(handoff["requires_patch_review"])
+        self.assertTrue(handoff["requires_deploy_approval"])
+        self.assertIn("Do not change code yet", handoff["prompt"])
+        self.assertIn("Wait for owner approval before editing", handoff["prompt"])
+
+    def test_forge_handoff_rejects_unsafe_build_request(self):
+        handoff, status_code = build_forge_handoff({
+            "mode": "build_request_only",
+            "builder_enabled": True,
+            "writes_code_now": False,
+            "applies_changes_now": False,
+        })
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(handoff["success"])
+        self.assertEqual(handoff["status"], "unsafe_build_request_rejected")
+
+    @patch("modules.oom_sakkie.learning_packet.list_review_advisor_traces")
+    @patch("modules.oom_sakkie.learning_packet.get_trace_review_summary")
+    def test_implementation_queue_auto_prepares_only_strong_review_signals(self, mock_summary, mock_traces):
+        mock_summary.return_value = ({
+            "success": True,
+            "configured": True,
+            "days": 14,
+            "summary": {"reviewed_traces": 4, "problem_traces": 3},
+        }, 200)
+        mock_traces.return_value = ({
+            "success": True,
+            "configured": True,
+            "issue_traces": [
+                {
+                    "trace_id": "OSK-1",
+                    "tool_name": "weather_today",
+                    "user_text": "help me with the power",
+                    "latest_feedback": {"feedback_type": "wrong_tool"},
+                },
+                {
+                    "trace_id": "OSK-2",
+                    "tool_name": "farm_attention_summary",
+                    "user_text": "what should I look at",
+                    "latest_feedback": {"feedback_type": "bad_wording"},
+                },
+                {
+                    "trace_id": "OSK-3",
+                    "tool_name": "farm_attention_summary",
+                    "user_text": "what should I inspect",
+                    "latest_feedback": {"feedback_type": "bad_wording"},
+                },
+            ],
+        }, 200)
+
+        queue, status_code = get_implementation_queue(channel="kiosk", days=14, limit=12)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(queue["success"])
+        self.assertEqual(queue["mode"], "auto_prepared_review_queue")
+        self.assertFalse(queue["auto_prepare_policy"]["writes_code"])
+        self.assertFalse(queue["auto_prepare_policy"]["applies_changes"])
+        self.assertFalse(queue["auto_prepare_policy"]["runs_llm"])
+        self.assertTrue(queue["auto_prepare_policy"]["requires_human_approval"])
+        self.assertGreaterEqual(len(queue["packets"]), 2)
+        self.assertTrue(all(packet["mode"] == "build_brief_only" for packet in queue["packets"]))
+        titles = [packet["proposal"]["title"] for packet in queue["packets"]]
+        self.assertIn("Review routing aliases or LLM fallback guidance", titles)
+        self.assertTrue(any("Repeated bad_wording" in title for title in titles))
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("modules.oom_sakkie.learning_llm.urllib_request.urlopen")
+    def test_learning_llm_env_gate_returns_disabled_without_network(self, mock_urlopen):
+        result = analyze_learning_with_llm(summary={}, issue_traces=[], deterministic_proposals=[])
+
+        self.assertFalse(result["ran"])
+        self.assertEqual(result["status"], "disabled")
+        mock_urlopen.assert_not_called()
+
+    def test_learning_llm_parser_validates_human_approved_proposals(self):
+        body = {
+            "choices": [{
+                "message": {
+                    "content": __import__("json").dumps({
+                        "proposals": [
+                            {
+                                "kind": "routing_review",
+                                "priority": "high",
+                                "title": "Add power wording alias",
+                                "evidence": "Two wrong-tool traces used the same phrase.",
+                                "recommended_action": "Add one deterministic alias and a regression test.",
+                                "approval_required": False,
+                            },
+                            {
+                                "kind": "unsafe_self_edit",
+                                "priority": "high",
+                                "title": "Bad",
+                                "evidence": "Bad",
+                                "recommended_action": "Bad",
+                            },
+                        ]
+                    })
+                }
+            }]
+        }
+
+        parsed = parse_learning_response(__import__("json").dumps(body))
+
+        self.assertTrue(parsed["ran"])
+        self.assertEqual(parsed["status"], "ok")
+        self.assertEqual(len(parsed["proposals"]), 1)
+        self.assertEqual(parsed["proposals"][0]["kind"], "routing_review")
+        self.assertTrue(parsed["proposals"][0]["approval_required"])
+        self.assertEqual(parsed["proposals"][0]["source"], "llm_learning_analyst")
+
     def test_rule_routing_known_phrases(self):
         cases = {
             "what needs attention today": "farm_attention_summary",
@@ -265,6 +611,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Operating brief loaded", result["summary"])
         self.assertIn("Power stable", result["summary"])
         self.assertIn("Irrigation is read-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "farm_operating_brief")
+        self.assertEqual(result["llm_context"]["required_sections"], ["attention", "power", "weather", "irrigation"])
+        self.assertEqual(set(result["llm_context"]["sections"]), {"attention", "power", "weather", "irrigation"})
+        self.assertIn("Weather steady", result["llm_context"]["sections"]["weather"]["summary"])
         self.assertEqual(result["raw"]["kind"], "farm_operating_brief")
         self.assertEqual(set(result["raw"]["sections"]), {"attention", "power", "weather", "irrigation"})
 
@@ -435,6 +785,47 @@ class OomSakkieServiceTests(unittest.TestCase):
             }]
         }
         self.assertIsNone(parse_llm_answer_response(__import__("json").dumps(unsafe)))
+        safe_negated = {
+            "choices": [{
+                "message": {
+                    "content": "{\"answer\":\"Irrigation is read-only here. No start or stop command was sent.\"}"
+                }
+            }]
+        }
+        self.assertEqual(
+            parse_llm_answer_response(__import__("json").dumps(safe_negated)),
+            "Irrigation is read-only here. No start or stop command was sent.",
+        )
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LLM_ANSWER_ENABLED": "true",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model",
+    }, clear=True)
+    @patch("modules.oom_sakkie.llm_answer.urllib_request.urlopen")
+    def test_llm_answer_rejects_off_topic_single_tool_disclaimer(self, mock_urlopen):
+        response = Mock()
+        response.read.return_value = __import__("json").dumps({
+            "choices": [{
+                "message": {
+                    "content": "{\"answer\":\"Irrigation is idle. Power and weather weren’t evaluated here.\"}"
+                }
+            }]
+        }).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = response
+
+        answer = compose_answer_with_llm(
+            user_text="what is irrigation doing",
+            tool_name="irrigation_status",
+            deterministic_answer="Irrigation is idle.",
+            stale_warnings=[],
+            safety_notes=[],
+            raw_context={"summary": "Irrigation is idle."},
+        )
+
+        self.assertIsNone(answer)
 
     @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model"}, clear=True)
     def test_llm_answer_prompt_is_spoken_copilot_not_generic_reader(self):
@@ -455,6 +846,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Lead with the operational meaning", system)
         self.assertIn("backend_context", system)
         self.assertIn("prioritize what the owner should look at first", system)
+        self.assertIn("mention all required sections", system)
+        self.assertIn("stay in that tool's lane", system)
+        self.assertIn("Do not mention unrelated systems", system)
+        self.assertIn("do not say 'no stale warning'", system)
         self.assertIn("For operating briefs, use at most three short sentences", system)
         self.assertIn("Avoid assistant openers", system)
         self.assertIn("Never claim that anything was saved", system)
@@ -607,8 +1002,49 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_compose.assert_called_once()
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    @patch("modules.oom_sakkie.service.get_tool")
+    def test_operating_brief_passes_compact_llm_context_to_composer(self, mock_get_tool, mock_compose, _write_trace):
+        compact_context = {
+            "kind": "farm_operating_brief",
+            "required_sections": ["attention", "power", "weather", "irrigation"],
+            "sections": {
+                "attention": {"summary": "Attention summary."},
+                "power": {"summary": "Power summary."},
+                "weather": {"summary": "Weather summary."},
+                "irrigation": {"summary": "Irrigation summary."},
+            },
+        }
+        fake_tool = Mock()
+        fake_tool.name = "farm_operating_brief"
+        fake_tool.risk_level = RiskLevel.READ_ONLY
+        fake_tool.handler.return_value = {
+            "success": True,
+            "status": "ok",
+            "summary": "Operating brief loaded.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": [],
+            "llm_context": compact_context,
+            "raw": {"large": "raw payload should not be preferred"},
+        }
+        mock_get_tool.return_value = fake_tool
+        mock_compose.return_value = "Attention first. Power, weather, and irrigation are covered."
+
+        result, status = handle_message({
+            "text": "give me the farm operating brief",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "farm_operating_brief")
+        self.assertEqual(result["answer"], mock_compose.return_value)
+        self.assertEqual(mock_compose.call_args.kwargs["raw_context"], compact_context)
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.tools.get_meat_planning_data")
-    def test_meat_planning_warning_is_returned(self, mock_meat, _write_trace):
+    def test_meat_planning_warning_is_returned(self, mock_meat, _compose, _write_trace):
         mock_meat.return_value = {
             "success": True,
             "source": "pig_allocation_readiness",
@@ -632,8 +1068,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("read-only planning", result["safety_notes"][0])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.tools.get_pig_allocation_readiness_data")
-    def test_pig_allocation_routes_without_write(self, mock_allocation, _write_trace):
+    def test_pig_allocation_routes_without_write(self, mock_allocation, _compose, _write_trace):
         mock_allocation.return_value = {
             "success": True,
             "summary": {
@@ -657,8 +1094,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("12 pigs", result["answer"])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.tools.get_irrigation_status")
-    def test_irrigation_status_is_read_only_even_for_control_phrase(self, mock_irrigation, _write_trace):
+    def test_irrigation_status_is_read_only_even_for_control_phrase(self, mock_irrigation, _compose, _write_trace):
         mock_irrigation.return_value = ({
             "success": True,
             "status": "ok",
@@ -681,8 +1119,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("No start/stop command was sent", result["answer"])
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.tools.get_irrigation_status")
-    def test_pump_control_phrase_is_read_only_with_safety_note(self, mock_irrigation, _write_trace):
+    def test_pump_control_phrase_is_read_only_with_safety_note(self, mock_irrigation, _compose, _write_trace):
         mock_irrigation.return_value = ({
             "success": True,
             "current": {"status": "IDLE", "zone_id": "Z1", "zone_name": "Zone 1"},

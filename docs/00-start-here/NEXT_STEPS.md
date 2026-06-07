@@ -5883,6 +5883,407 @@ Operational rule:
 - This is not autonomy. It is one user-initiated read-only turn that aggregates existing read-only checks.
 - No write tools, physical controls, Telegram cutover, always-on mic, wake word, or specialist delegation were added.
 
+### 10.7T Oom Sakkie Operating Brief Required Sections - Local Ready
+
+Source:
+
+- Owner tested the operating brief and reported that weather was omitted from the spoken answer.
+- Diagnosis:
+  - The composite tool did call weather, but the composer could treat sections as optional.
+  - The previous capped context used the full nested raw payload, so important sections could be crowded by verbose earlier sections.
+  - The safety filter could reject valid negated safety wording such as `No start/stop command was sent` because it matched `sent`.
+
+Implemented locally:
+
+- `farm_operating_brief` now returns compact `llm_context`:
+  - `kind = farm_operating_brief`,
+  - `required_sections = ["attention", "power", "weather", "irrigation"]`,
+  - compact per-section status, summary, stale warnings, and safety notes.
+- `handle_message()` now prefers `tool_result["llm_context"]` over verbose raw payload when calling the answer composer.
+- Composer prompt now explicitly says: for `farm_operating_brief`, mention all required sections: attention/priority, power, weather, and irrigation.
+- Unsafe-output filter now still rejects positive action claims, but allows negated safety statements such as `No start or stop command was sent`.
+- Added tests for:
+  - compact `llm_context` shape,
+  - weather included in compact context,
+  - service passes compact context to composer,
+  - prompt includes required-section rule,
+  - negated safety wording is accepted while unsafe positive action claims remain rejected.
+
+Verified locally:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 70 tests OK, 1 skipped.
+- `node --check static/js/oomSakkie.js` passed.
+- Note: a direct live diagnostic hit Google Sheets quota `429` while repeatedly checking the operating brief. Avoid repeated live smokes until the quota cools down; use the browser once for confirmation.
+
+Operational rule:
+
+- The operating brief must include all four sections, even if one section is only a short `no issue` line.
+- This remains read-only and user-initiated only.
+
+### 10.7U Oom Sakkie Top Voice Controls - Local Ready
+
+Source:
+
+- Owner confirmed the operating brief works, but the `Talk` controls were too low on the page and required scrolling.
+
+Implemented locally:
+
+- Moved `Talk` and `Talk & Ask` into the top presence panel.
+- Kept the text input and `Ask` submit button in the bottom input bar.
+- Added `.oom-presence-actions` styling so voice controls are visible in the first viewport and touch-friendly.
+- Added responsive CSS so the controls stay usable on narrow screens.
+- Added a frontend contract assertion that the voice buttons are inside the presence panel and not inside the bottom form.
+
+Verified locally:
+
+- Pending current full-suite run in this batch.
+
+Operational rule:
+
+- This is placement only. The microphone still opens only after an explicit button press; no always-on mic, wake word, backend STT/TTS, write tool, or physical control was added.
+
+### 10.7V Oom Sakkie Human-Approved Learning Queue - Local Ready
+
+Source:
+
+- Owner wants the system to become more sustainable and learn from itself, but under human approval.
+- Safe first slice: convert reviewed trace feedback into improvement proposals without changing code, prompts, tools, routes, or farm data automatically.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/learning_advisor.py`.
+- Added protected endpoint `GET /api/oom-sakkie/learning-advisor`.
+- Added kiosk `Learning Queue` panel.
+- Learning Queue is deterministic and advisory-only:
+  - no LLM call,
+  - no code write,
+  - no feedback write,
+  - no farm-data write,
+  - human approval required.
+- Proposal types:
+  - `routing_review` for `wrong_tool`,
+  - `data_freshness_review` for `stale_or_missing_data`,
+  - `answer_style_review` for `bad_wording`,
+  - `tool_gap_review` for `needs_follow_up`,
+  - `tool_pattern_review` when repeated issue patterns appear for one tool.
+- UI renders proposals with `.textContent`; trace/user text is not inserted as HTML.
+- Learning Queue refreshes with the existing review data and also has its own Refresh button.
+- Added tests for:
+  - proposal generation,
+  - advisory-only safety flags,
+  - protected route success and non-local denial,
+  - frontend panel/JS contract.
+
+Verified locally:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 83 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+
+Operational rule:
+
+- This is not self-modifying software. It is an evidence queue. Codex/the owner still decide and apply any code or prompt change manually.
+- Do not let the Learning Queue auto-approve, auto-edit, or auto-run a code-generation step without a separate explicit approval gate.
+
+### 10.7W Oom Sakkie Explicit LLM Learning Analyst - Local Ready
+
+Source:
+
+- Owner confirmed the long-term plan: one specialist should learn/analyze traces with an LLM, another builder specialist can later prepare patches, and all changes stay human-approved.
+- Safe next slice: build the LLM analyst as an explicit protected action, not an automatic loop.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/learning_llm.py`.
+- Added env gate `OOM_SAKKIE_LLM_LEARNING_ENABLED`.
+- Added protected endpoint `POST /api/oom-sakkie/learning-advisor/analyze`.
+- Added `Analyze` button to the kiosk Learning Queue.
+- The endpoint:
+  - reads the same reviewed issue traces as the deterministic Learning Queue,
+  - sends capped issue trace excerpts and deterministic proposals to the configured OpenAI-compatible model only when explicitly triggered,
+  - returns validated learning proposals,
+  - rejects unknown proposal kinds,
+  - forces `approval_required = true`,
+  - never writes code, feedback, prompts, tools, routes, or farm data.
+- The kiosk renders LLM proposals in the same Learning Queue panel using `.textContent`.
+
+Policy and safety:
+
+- Disabled unless `OOM_SAKKIE_LLM_LEARNING_ENABLED=true`.
+- Uses existing model/key envs: `OOM_SAKKIE_LLM_ROUTER_MODEL` and `OPENAI_API_KEY`.
+- Protected by the same review endpoint access guard.
+- `GET /learning-advisor` stays deterministic and free; the LLM only runs on explicit `POST /analyze`.
+
+Verified locally:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 87 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+
+Operational rule:
+
+- This is still not the builder. It is the Learning Analyst only.
+- A future Forge/Builder specialist may prepare a patch from an approved proposal, but this endpoint must never apply code changes.
+
+### 10.7X Oom Sakkie Trace-Driven Composer Lane Guard - Local Ready
+
+Source:
+
+- Owner marked several traces as `bad_wording`.
+- Pattern found in live traces: single-tool answers were adding cross-system disclaimers such as `Power and weather were not evaluated here`.
+- That is safe but not human; Oom Sakkie sounded like an audit log instead of an operator.
+
+Implemented locally:
+
+- Tightened the answer-composer prompt:
+  - non-brief tools must stay in their own lane,
+  - do not mention unrelated systems that were not checked,
+  - do not say `no stale warning` or `no safety note` when there are none.
+- Added post-composer guard:
+  - for non-`farm_operating_brief` tools, reject answers containing off-topic disclaimer fragments such as `not part of this`, `not evaluated`, `weren't evaluated`, `not provided here`, `no stale warning`, or `no safety note`,
+  - normalizes curly apostrophes before checking,
+  - falls back to deterministic wording when rejected.
+- Kept `farm_operating_brief` exempt because it is allowed to discuss multiple systems.
+- Added tests for:
+  - prompt rule,
+  - off-topic single-tool disclaimer rejection,
+  - curly-apostrophe `weren’t evaluated` case,
+  - safe negated action wording remains accepted.
+
+Verified locally:
+
+- Focused Oom Sakkie service/routes/frontend tests: `88 tests OK`.
+- `node --check static/js/oomSakkie.js` passed.
+- Live style check after guard:
+  - meat answer no longer mentions weather/power,
+  - weather forecast no longer says `No stale warning`,
+  - irrigation answer with off-topic cross-system wording is rejected and falls back to deterministic wording.
+
+Operational rule:
+
+- This is trace-driven wording hardening only. It adds no tool authority, writes, controls, or autonomy.
+
+### 10.7Y Oom Sakkie Learning Build Brief Packet - Local Ready
+
+Purpose:
+
+- Bridge the Learning Queue toward a future Forge/Builder workflow without allowing the kiosk to edit code.
+- Turn one human-reviewed learning proposal into a scoped engineering packet that Codex, Claude, or a human can inspect.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/learning_packet.py`.
+- Added protected endpoint `POST /api/oom-sakkie/learning-advisor/build-packet`.
+- Added `Build Brief` buttons to Learning Queue proposals.
+- Added hidden kiosk panel `oom_learning_packet` that renders the generated packet with `.textContent`.
+- The packet includes:
+  - proposal summary,
+  - recommended files to inspect,
+  - verification commands,
+  - out-of-scope constraints,
+  - a markdown brief suitable for review.
+
+Safety:
+
+- No LLM call.
+- No code write.
+- No tool/prompt mutation.
+- No feedback write.
+- No farm-data write.
+- Review endpoint access guard applies.
+- Human approval remains required before any implementation.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 92 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 417 tests OK.
+
+### 10.7Z Oom Sakkie Human-Approved Implementation Queue - Local Ready
+
+Purpose:
+
+- Make the system more proactive without giving it implementation authority.
+- Auto-prepare review briefs when the Learning Queue has strong enough evidence.
+- Keep the owner in control: briefs can be opened, ignored, or manually approved for a future coding session.
+
+Implemented locally:
+
+- Added deterministic implementation-queue builder in `modules/oom_sakkie/learning_packet.py`.
+- Added protected endpoint `GET /api/oom-sakkie/learning-advisor/implementation-queue`.
+- Added kiosk `Implementation Queue` panel.
+- The queue auto-prepares in-memory build briefs only when:
+  - a proposal is high priority,
+  - a repeated tool pattern is detected,
+  - or evidence mentions two or more issue traces.
+- Added `Open Brief` buttons that display the generated packet in the existing text-only build-brief panel.
+
+Safety:
+
+- No LLM call.
+- No code write.
+- No patch application.
+- No prompt/tool mutation.
+- No feedback write.
+- No farm-data write.
+- Review endpoint access guard applies.
+- Human approval remains required before implementation.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 95 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 420 tests OK.
+
+### 10.8A Oom Sakkie Approve For Build Gate - Local Ready
+
+Purpose:
+
+- Add the first explicit approval gate after a build brief.
+- Create a structured build request object that a future Forge/Builder agent can consume.
+- Keep approval separate from code generation and deployment.
+
+Implemented locally:
+
+- Added `approve_build_request()` in `modules/oom_sakkie/learning_packet.py`.
+- Added protected endpoint `POST /api/oom-sakkie/learning-advisor/approve-build`.
+- Added `Approve for Build` button to the build brief panel.
+- Added approval result rendering with:
+  - build request ID,
+  - `builder_enabled = false`,
+  - `writes_code_now = false`,
+  - `applies_changes_now = false`,
+  - next gate: `builder_agent_review_and_patch_approval`.
+
+Safety:
+
+- Approval does not edit files.
+- Approval does not run a builder.
+- Approval does not apply a patch.
+- Approval does not deploy.
+- Approval does not change prompts/tools.
+- Approval does not write farm data.
+- The future Builder/Forge step must still be explicitly run and separately reviewed.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 99 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 424 tests OK.
+
+### 10.8B Oom Sakkie Persistent Build Request Queue - Local Ready
+
+Purpose:
+
+- Make approved build requests durable so they survive refresh and can become the input queue for a future Forge/Builder agent.
+- Keep approval separate from implementation, patch review, and deploy approval.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/build_request_store.py`.
+- Added Supabase migration `supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql`.
+- Added append-only table `public.oom_sakkie_build_requests`.
+- Added DB checks that force:
+  - `mode = build_request_only`,
+  - `status = approved_for_build`,
+  - `builder_enabled = false`,
+  - `writes_code_now = false`,
+  - `applies_changes_now = false`.
+- Added append-only update/delete blocking triggers.
+- `POST /api/oom-sakkie/learning-advisor/approve-build` now attempts to persist the build request.
+- Added protected `GET /api/oom-sakkie/build-requests`.
+- Added kiosk `Approved Build Requests` panel.
+
+Safety:
+
+- Persistence records approval only.
+- No Builder/Forge agent is run.
+- No code is written.
+- No patch is applied.
+- No deploy is triggered.
+- No prompt/tool/farm-data mutation occurs.
+- If `DATABASE_URL` is missing or migration is not applied, the store reports that clearly instead of pretending persistence worked.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 105 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 430 tests OK.
+
+### 10.8C Oom Sakkie Build Request Event Log - Local Ready
+
+Purpose:
+
+- Preserve append-only build request history while still allowing corrections such as `ignored` or `review_note`.
+- Avoid deleting or editing approved build requests, including smoke/test records.
+
+Implemented locally:
+
+- Added migration `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`.
+- Added append-only table `public.oom_sakkie_build_request_events`.
+- Added `record_build_request_event()` in `modules/oom_sakkie/build_request_store.py`.
+- `approve-build` now records an `approved` event after successful persistence.
+- `GET /api/oom-sakkie/build-requests` returns the latest event per request.
+- Added protected `POST /api/oom-sakkie/build-requests/<build_request_id>/events`.
+- Added kiosk `Ignore` action for build requests.
+
+Safety:
+
+- Events are append-only.
+- No original request is edited or deleted.
+- Allowed event types are `approved`, `ignored`, and `review_note`.
+- Event recording does not run a builder, edit files, apply patches, deploy, mutate prompts/tools, or touch farm data.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 109 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- Applied migration `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`.
+- Marked synthetic persistence smoke request `OSK-BUILD-7073A29F701E` as `ignored` through append-only event route.
+- `python -m unittest` -> 434 tests OK.
+
+### 10.8D Oom Sakkie Forge Handoff Packet - Local Ready
+
+Purpose:
+
+- Prepare the exact packet a future Builder/Forge agent would consume.
+- Stop one step before execution so Claude can review the safety boundary.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/forge_handoff.py`.
+- Added protected endpoint `POST /api/oom-sakkie/build-requests/forge-handoff`.
+- Added kiosk `Forge Handoff` button on approved build requests.
+- Added text-only handoff panel.
+- The handoff contains:
+  - build request ID,
+  - objective,
+  - evidence,
+  - approved scope,
+  - verification commands,
+  - no-go rules,
+  - original build brief,
+  - required pre-patch output.
+
+Safety:
+
+- Does not run a Builder/Forge agent.
+- Does not edit files.
+- Does not apply patches.
+- Does not deploy.
+- Requires owner to explicitly run the future Builder step.
+- Requires separate patch review.
+- Requires separate deploy approval.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 113 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 438 tests OK.
+
+Claude review gate:
+
+- This is the right checkpoint before building actual Builder/Forge execution.
+- Ask Claude to review `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` before the next step.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

@@ -106,6 +106,327 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    @patch("modules.oom_sakkie.routes.get_learning_advisor")
+    def test_learning_advisor_route_is_advisory_only(self, mock_learning):
+        mock_learning.return_value = ({
+            "success": True,
+            "mode": "advisory_only",
+            "writes_code": False,
+            "writes_feedback": False,
+            "runs_llm": False,
+            "requires_human_approval": True,
+            "proposals": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/learning-advisor?channel=kiosk&days=14")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "advisory_only")
+        self.assertFalse(data["writes_code"])
+        self.assertFalse(data["writes_feedback"])
+        self.assertFalse(data["runs_llm"])
+        self.assertTrue(data["requires_human_approval"])
+        mock_learning.assert_called_once_with(channel="kiosk", days="14", limit=12)
+
+    def test_learning_advisor_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/learning-advisor",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.run_learning_analysis")
+    def test_learning_analysis_route_is_explicit_post_and_advisory(self, mock_analysis):
+        mock_analysis.return_value = ({
+            "success": True,
+            "mode": "advisory_only",
+            "writes_code": False,
+            "writes_feedback": False,
+            "runs_llm": True,
+            "requires_human_approval": True,
+            "llm_proposals": [],
+        }, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/learning-advisor/analyze",
+            json={"channel": "kiosk", "days": 14},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "advisory_only")
+        self.assertFalse(data["writes_code"])
+        self.assertFalse(data["writes_feedback"])
+        self.assertTrue(data["requires_human_approval"])
+        mock_analysis.assert_called_once_with(channel="kiosk", days=14, limit=12)
+
+    def test_learning_analysis_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/learning-advisor/analyze",
+            json={"channel": "kiosk"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    def test_learning_build_packet_route_is_advisory_only(self):
+        response = self.client.post(
+            "/api/oom-sakkie/learning-advisor/build-packet",
+            json={
+                "proposal": {
+                    "kind": "routing_review",
+                    "priority": "high",
+                    "title": "Review routing aliases",
+                    "evidence": "Owner phrase routed to clarification.",
+                    "recommended_action": "Add one deterministic alias and test.",
+                }
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "build_brief_only")
+        self.assertFalse(data["writes_code"])
+        self.assertFalse(data["applies_changes"])
+        self.assertFalse(data["runs_llm"])
+        self.assertFalse(data["writes_feedback"])
+        self.assertTrue(data["requires_human_approval"])
+        self.assertIn("Oom Sakkie Learning Build Brief", data["brief"])
+
+    def test_learning_build_packet_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/learning-advisor/build-packet",
+            json={"proposal": {"kind": "routing_review"}},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.get_implementation_queue")
+    def test_implementation_queue_route_is_review_only_and_does_not_apply_changes(self, mock_queue):
+        mock_queue.return_value = ({
+            "success": True,
+            "mode": "auto_prepared_review_queue",
+            "auto_prepare_policy": {
+                "writes_code": False,
+                "applies_changes": False,
+                "runs_llm": False,
+                "requires_human_approval": True,
+            },
+            "packets": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/learning-advisor/implementation-queue?channel=kiosk&days=14")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "auto_prepared_review_queue")
+        self.assertFalse(data["auto_prepare_policy"]["writes_code"])
+        self.assertFalse(data["auto_prepare_policy"]["applies_changes"])
+        self.assertFalse(data["auto_prepare_policy"]["runs_llm"])
+        self.assertTrue(data["auto_prepare_policy"]["requires_human_approval"])
+        mock_queue.assert_called_once_with(channel="kiosk", days="14", limit=12)
+
+    def test_implementation_queue_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/learning-advisor/implementation-queue",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.record_build_request_event")
+    @patch("modules.oom_sakkie.routes.record_build_request")
+    def test_approve_build_route_creates_non_applying_request(self, mock_record, mock_event):
+        mock_record.return_value = ({
+            "stored": True,
+            "configured": True,
+            "status": "ok",
+            "build_request_id": "OSK-BUILD-TEST",
+        }, 201)
+        mock_event.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "event_type": "approved",
+        }, 201)
+        packet = {
+            "success": True,
+            "mode": "build_brief_only",
+            "writes_code": False,
+            "applies_changes": False,
+            "proposal": {
+                "kind": "routing_review",
+                "priority": "high",
+                "title": "Review routing aliases",
+                "evidence": "Two wrong-tool traces.",
+                "recommended_action": "Add one deterministic alias.",
+            },
+            "brief": "# Brief",
+            "recommended_files": ["modules/oom_sakkie/service.py"],
+            "verification": ["python -m unittest tests.test_oom_sakkie_service"],
+        }
+
+        response = self.client.post(
+            "/api/oom-sakkie/learning-advisor/approve-build",
+            json={"packet": packet, "approved_by": "owner"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "approved_for_build")
+        self.assertEqual(data["mode"], "build_request_only")
+        self.assertFalse(data["builder_enabled"])
+        self.assertFalse(data["writes_code_now"])
+        self.assertFalse(data["applies_changes_now"])
+        self.assertEqual(data["requires_next_gate"], "builder_agent_review_and_patch_approval")
+        self.assertEqual(data["build_request_store"]["status"], "ok")
+        self.assertEqual(data["build_request_event"]["event_type"], "approved")
+        mock_record.assert_called_once()
+        mock_event.assert_called_once()
+
+    def test_approve_build_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/learning-advisor/approve-build",
+            json={"packet": {"success": True}},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.list_build_requests")
+    def test_build_requests_route_returns_persistent_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "build_requests": [{
+                "build_request_id": "OSK-BUILD-TEST",
+                "status": "approved_for_build",
+                "mode": "build_request_only",
+                "builder_enabled": False,
+                "writes_code_now": False,
+                "applies_changes_now": False,
+            }],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/build-requests?limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["build_requests"][0]["status"], "approved_for_build")
+        self.assertFalse(data["build_requests"][0]["builder_enabled"])
+        mock_list.assert_called_once_with(limit="8")
+
+    def test_build_requests_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/build-requests",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.record_build_request_event")
+    def test_build_request_event_route_records_append_only_event(self, mock_event):
+        mock_event.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "build_request_id": "OSK-BUILD-TEST",
+            "event_type": "ignored",
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/OSK-BUILD-TEST/events",
+            json={"event_type": "ignored", "notes": "Smoke request.", "recorded_by": "owner"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["event_type"], "ignored")
+        mock_event.assert_called_once_with("OSK-BUILD-TEST", {
+            "event_type": "ignored",
+            "notes": "Smoke request.",
+            "recorded_by": "owner",
+        })
+
+    def test_build_request_event_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/OSK-BUILD-TEST/events",
+            json={"event_type": "ignored"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    def test_forge_handoff_route_returns_non_executing_packet(self):
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/forge-handoff",
+            json={
+                "build_request": {
+                    "build_request_id": "OSK-BUILD-TEST",
+                    "status": "approved_for_build",
+                    "mode": "build_request_only",
+                    "approved_by": "owner",
+                    "builder_enabled": False,
+                    "writes_code_now": False,
+                    "applies_changes_now": False,
+                    "proposal": {
+                        "title": "Review routing aliases",
+                        "evidence": "Two traces.",
+                        "recommended_action": "Add one alias.",
+                    },
+                    "brief": "# Brief",
+                    "recommended_files": ["modules/oom_sakkie/service.py"],
+                    "verification": ["python -m unittest tests.test_oom_sakkie_service"],
+                }
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "forge_handoff_only")
+        self.assertFalse(data["runs_builder"])
+        self.assertFalse(data["writes_code"])
+        self.assertFalse(data["applies_changes"])
+        self.assertFalse(data["deploys"])
+        self.assertIn("Do not change code yet", data["prompt"])
+
+    def test_forge_handoff_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/build-requests/forge-handoff",
+            json={"build_request": {"mode": "build_request_only"}},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     def test_message_route_remains_available_for_non_local_access_policy(self):
         response = self.client.post(
             "/api/oom-sakkie/message",

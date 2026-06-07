@@ -325,7 +325,7 @@ def handle_message(payload):
         deterministic_answer=deterministic_answer,
         stale_warnings=stale_warnings,
         safety_notes=safety_notes,
-        raw_context=tool_result.get("raw") or tool_result,
+        raw_context=tool_result.get("llm_context") or tool_result.get("raw") or tool_result,
     )
     answer = composed_answer or deterministic_answer
     answer_source = "llm_composer" if composed_answer else "deterministic"

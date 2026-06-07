@@ -1,6 +1,18 @@
 from flask import Blueprint, jsonify, request
 
 from modules.oom_sakkie.access import is_review_request_allowed, review_access_denied_response
+from modules.oom_sakkie.build_request_store import (
+    list_build_requests,
+    record_build_request,
+    record_build_request_event,
+)
+from modules.oom_sakkie.forge_handoff import build_forge_handoff
+from modules.oom_sakkie.learning_advisor import get_learning_advisor, run_learning_analysis
+from modules.oom_sakkie.learning_packet import (
+    approve_build_request,
+    build_learning_packet,
+    get_implementation_queue,
+)
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.service import handle_message
@@ -107,6 +119,116 @@ def oom_sakkie_review_advisor():
         days=request.args.get("days", 14),
         limit=request.args.get("limit", 12),
     )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/learning-advisor", methods=["GET"])
+def oom_sakkie_learning_advisor():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = get_learning_advisor(
+        channel=request.args.get("channel", "kiosk").strip(),
+        days=request.args.get("days", 14),
+        limit=request.args.get("limit", 12),
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/learning-advisor/analyze", methods=["POST"])
+def oom_sakkie_learning_advisor_analyze():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = run_learning_analysis(
+        channel=str(payload.get("channel") or "kiosk").strip(),
+        days=payload.get("days", 14),
+        limit=payload.get("limit", 12),
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/learning-advisor/build-packet", methods=["POST"])
+def oom_sakkie_learning_advisor_build_packet():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    proposal = payload.get("proposal") if isinstance(payload, dict) else {}
+    result, status_code = build_learning_packet(proposal)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/learning-advisor/implementation-queue", methods=["GET"])
+def oom_sakkie_learning_advisor_implementation_queue():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = get_implementation_queue(
+        channel=request.args.get("channel", "kiosk").strip(),
+        days=request.args.get("days", 14),
+        limit=request.args.get("limit", 12),
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/learning-advisor/approve-build", methods=["POST"])
+def oom_sakkie_learning_advisor_approve_build():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    packet = payload.get("packet") if isinstance(payload, dict) else {}
+    result, status_code = approve_build_request(
+        packet,
+        approved_by=str(payload.get("approved_by") or "owner").strip()[:80],
+    )
+    if status_code == 200:
+        store_result, store_status = record_build_request(result)
+        result["build_request_store"] = store_result
+        if store_status < 500 and store_result.get("stored"):
+            event_result, _event_status = record_build_request_event(
+                result.get("build_request_id", ""),
+                {
+                    "event_type": "approved",
+                    "notes": "Approved from Oom Sakkie kiosk.",
+                    "recorded_by": result.get("approved_by", "owner"),
+                },
+            )
+            result["build_request_event"] = event_result
+        if store_status >= 500:
+            status_code = store_status
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/build-requests", methods=["GET"])
+def oom_sakkie_build_requests():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_build_requests(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/build-requests/<build_request_id>/events", methods=["POST"])
+def oom_sakkie_build_request_events(build_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_build_request_event(build_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/build-requests/forge-handoff", methods=["POST"])
+def oom_sakkie_build_request_forge_handoff():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    build_request = payload.get("build_request") if isinstance(payload, dict) else {}
+    result, status_code = build_forge_handoff(build_request)
     return jsonify(result), status_code
 
 
