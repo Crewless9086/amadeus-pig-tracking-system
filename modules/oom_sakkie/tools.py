@@ -93,6 +93,57 @@ def farm_attention_summary_handler(_args):
     }
 
 
+def farm_operating_brief_handler(_args):
+    sections = {
+        "attention": farm_attention_summary_handler({}),
+        "power": power_current_handler({}),
+        "weather": weather_today_handler({}),
+        "irrigation": irrigation_status_handler({}),
+    }
+    stale_warnings = []
+    safety_notes = []
+    links = [{"label": "Farm Dashboard", "href": "/"}]
+    for section in sections.values():
+        stale_warnings.extend(section.get("stale_warnings") or [])
+        safety_notes.extend(section.get("safety_notes") or [])
+        links.extend(section.get("links") or [])
+
+    unique_links = []
+    seen_hrefs = set()
+    for link in links:
+        href = link.get("href")
+        if href in seen_hrefs:
+            continue
+        seen_hrefs.add(href)
+        unique_links.append(link)
+
+    failed = [name for name, section in sections.items() if not section.get("success")]
+    status = "partial" if failed else "ok"
+    summary = (
+        "Operating brief loaded. "
+        f"Attention: {sections['attention'].get('summary', 'unavailable')} "
+        f"Power: {sections['power'].get('summary', 'unavailable')} "
+        f"Weather: {sections['weather'].get('summary', 'unavailable')} "
+        f"Irrigation: {sections['irrigation'].get('summary', 'unavailable')}"
+    )
+    if failed:
+        stale_warnings.append("Operating brief has unavailable section(s): {}.".format(", ".join(failed)))
+
+    return {
+        "success": not bool(failed),
+        "status": status,
+        "summary": summary,
+        "links": unique_links[:8],
+        "stale_warnings": stale_warnings[:6],
+        "safety_notes": safety_notes[:6],
+        "raw": {
+            "kind": "farm_operating_brief",
+            "sections": sections,
+            "failed_sections": failed,
+        },
+    }
+
+
 def power_current_handler(_args):
     result, status_code = get_current_power_state()
     source = result.get("source", {}) if isinstance(result, dict) else {}
@@ -419,6 +470,15 @@ def _limitation_warnings(result):
 
 
 TOOL_REGISTRY = {
+    "farm_operating_brief": OomSakkieTool(
+        name="farm_operating_brief",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=farm_operating_brief_handler,
+        description="Read-only combined operating brief across attention, power, weather, and irrigation.",
+    ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",
         input_schema=_empty_object_schema(),

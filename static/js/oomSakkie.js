@@ -788,6 +788,7 @@
       ["LLM endpoint", llmRouter.enabled ? (llmRouter.outbound_endpoint_when_enabled || "unknown") : "not used"],
       ["LLM answer", llmAnswer.enabled ? "enabled" : "off"],
       ["Answer sends summary", llmAnswer.enabled && llmAnswer.sends_tool_summary_when_enabled ? "yes - outbound" : "off"],
+      ["Answer sends context", llmAnswer.enabled && llmAnswer.sends_capped_tool_context_when_enabled ? "yes - capped outbound" : "off"],
       ["Review access", reviewAccess.default || "unknown"],
       ["Message access", messageAccess.default || "unknown"],
       ["Write tools", data.write_tools_enabled ? "enabled" : "off"],

@@ -38,6 +38,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(
             set(TOOL_REGISTRY),
             {
+                "farm_operating_brief",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -95,6 +96,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["llm_answer"]["can_write"])
         self.assertTrue(policy["llm_answer"]["sends_user_text_when_enabled"])
         self.assertTrue(policy["llm_answer"]["sends_tool_summary_when_enabled"])
+        self.assertTrue(policy["llm_answer"]["sends_capped_tool_context_when_enabled"])
         self.assertEqual(policy["browser_speech_mode"], "push_to_talk_only")
         self.assertEqual(policy["continue_conversation_max_turns"], 5)
         self.assertEqual(policy["voice_auto_send_ms"], 2000)
@@ -195,6 +197,8 @@ class OomSakkieServiceTests(unittest.TestCase):
     def test_rule_routing_known_phrases(self):
         cases = {
             "what needs attention today": "farm_attention_summary",
+            "give me the farm operating brief": "farm_operating_brief",
+            "bring me up to speed": "farm_operating_brief",
             "what is the power like now": "power_current",
             "I need help with the power": "power_current",
             "show me the recent power profile": "power_recent",
@@ -224,6 +228,46 @@ class OomSakkieServiceTests(unittest.TestCase):
                 self.assertEqual(match.tool_name, expected_tool)
                 self.assertGreaterEqual(match.confidence, 0.9)
 
+    def test_farm_operating_brief_combines_read_only_sections(self):
+        from modules.oom_sakkie.tools import farm_operating_brief_handler
+
+        with patch("modules.oom_sakkie.tools.farm_attention_summary_handler") as attention, \
+                patch("modules.oom_sakkie.tools.power_current_handler") as power, \
+                patch("modules.oom_sakkie.tools.weather_today_handler") as weather, \
+                patch("modules.oom_sakkie.tools.irrigation_status_handler") as irrigation:
+            attention.return_value = {
+                "success": True, "status": "ok", "summary": "Attention clear.",
+                "links": [{"label": "Dashboard", "href": "/"}],
+                "stale_warnings": [], "safety_notes": [], "raw": {"attention": True},
+            }
+            power.return_value = {
+                "success": True, "status": "ok", "summary": "Power stable.",
+                "links": [{"label": "Power", "href": "/#power_panel"}],
+                "stale_warnings": [], "safety_notes": [], "raw": {"power": True},
+            }
+            weather.return_value = {
+                "success": True, "status": "ok", "summary": "Weather steady.",
+                "links": [{"label": "Weather", "href": "/#weather_panel"}],
+                "stale_warnings": [], "safety_notes": [], "raw": {"weather": True},
+            }
+            irrigation.return_value = {
+                "success": True, "status": "ok", "summary": "Irrigation idle.",
+                "links": [{"label": "Irrigation", "href": "/#irrigation_panel"}],
+                "stale_warnings": [],
+                "safety_notes": ["Irrigation is read-only here. No start/stop command was sent."],
+                "raw": {"irrigation": True},
+            }
+
+            result = farm_operating_brief_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Operating brief loaded", result["summary"])
+        self.assertIn("Power stable", result["summary"])
+        self.assertIn("Irrigation is read-only", result["safety_notes"][0])
+        self.assertEqual(result["raw"]["kind"], "farm_operating_brief")
+        self.assertEqual(set(result["raw"]["sections"]), {"attention", "power", "weather", "irrigation"})
+
     def test_unsupported_action_guard_identifies_write_or_control_phrases(self):
         self.assertTrue(is_unsupported_action_request("delete that pig record"))
         self.assertTrue(is_unsupported_action_request("send the order message"))
@@ -252,8 +296,9 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.tools.get_current_power_state")
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.service.route_with_llm")
-    def test_llm_fallback_can_select_existing_read_only_tool(self, mock_llm, mock_power, _write_trace):
+    def test_llm_fallback_can_select_existing_read_only_tool(self, mock_llm, _compose, mock_power, _write_trace):
         mock_llm.return_value = LlmRouteResult(
             intent="llm_power_current",
             tool_name="power_current",
@@ -397,17 +442,24 @@ class OomSakkieServiceTests(unittest.TestCase):
             user_text="what needs attention",
             tool_name="farm_attention_summary",
             deterministic_answer="There are 2 litters needing attention.",
+            raw_context={"sections": {"litter_attention": [{"litter_id": "LIT-1", "reason": "Piglets need records"}]}},
             stale_warnings=[],
             safety_notes=["No write, control, message, or physical action was performed."],
         )
 
         system = payload["messages"][0]["content"]
+        user = __import__("json").loads(payload["messages"][1]["content"])
         self.assertEqual(payload["temperature"], 0.55)
         self.assertIn("farm operating co-pilot", system)
         self.assertIn("do not read tables back like a clerk", system)
         self.assertIn("Lead with the operational meaning", system)
+        self.assertIn("backend_context", system)
+        self.assertIn("prioritize what the owner should look at first", system)
+        self.assertIn("For operating briefs, use at most three short sentences", system)
         self.assertIn("Avoid assistant openers", system)
         self.assertIn("Never claim that anything was saved", system)
+        self.assertIn("LIT-1", user["backend_context"])
+        self.assertLessEqual(len(user["backend_context"]), 3000)
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.route_with_llm")

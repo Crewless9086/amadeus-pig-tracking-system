@@ -32,13 +32,14 @@ def llm_answer_policy():
         "outbound_endpoint_when_enabled": os.getenv(API_URL_ENV, DEFAULT_API_URL).strip() or DEFAULT_API_URL,
         "sends_user_text_when_enabled": True,
         "sends_tool_summary_when_enabled": True,
+        "sends_capped_tool_context_when_enabled": True,
         "model_env": MODEL_ENV,
         "api_key_env": API_KEY_ENV,
         "can_write": False,
     }
 
 
-def compose_answer_with_llm(*, user_text, tool_name, deterministic_answer, stale_warnings, safety_notes):
+def compose_answer_with_llm(*, user_text, tool_name, deterministic_answer, stale_warnings, safety_notes, raw_context=None):
     if not llm_answer_enabled():
         return None
     if not llm_answer_configured():
@@ -50,6 +51,7 @@ def compose_answer_with_llm(*, user_text, tool_name, deterministic_answer, stale
         deterministic_answer=deterministic_answer,
         stale_warnings=stale_warnings,
         safety_notes=safety_notes,
+        raw_context=raw_context,
     )
     req = urllib_request.Request(
         os.getenv(API_URL_ENV, DEFAULT_API_URL).strip() or DEFAULT_API_URL,
@@ -85,16 +87,19 @@ def parse_llm_answer_response(body):
     return answer[:900]
 
 
-def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings, safety_notes):
+def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings, safety_notes, raw_context=None):
     system = (
         "You are Oom Sakkie, the farm operating co-pilot. "
         "You are not a generic assistant and you do not read tables back like a clerk. "
         "Rewrite the provided backend answer into a useful spoken briefing for the farm owner. "
-        "Use only the facts in backend_answer, stale_warnings, and safety_notes. "
+        "Use only the facts in backend_answer, backend_context, stale_warnings, and safety_notes. "
         "Do not invent numbers, dates, statuses, causes, recommendations, or actions. "
         "Never claim that anything was saved, sent, switched, started, stopped, posted, or changed. "
         "If a safety note or stale warning exists, preserve it plainly. "
         "Lead with the operational meaning, then the key facts. "
+        "If backend_context includes multiple items, prioritize what the owner should look at first and why. "
+        "Do not recite every ID unless the ID is useful for inspection. "
+        "For operating briefs, use at most three short sentences: first priority, system status, and any safety/stale note. "
         "Sound calm, direct, and present: 'I'd look at the litter queue first; power is fine for now.' "
         "Avoid assistant openers like 'Based on the data', 'Here is', 'I can help', and 'Certainly'. "
         "Keep the answer to one to three short spoken sentences unless the backend answer already needs a list. "
@@ -104,6 +109,7 @@ def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings
         "user_text": str(user_text or "")[:2000],
         "tool_name": str(tool_name or "")[:80],
         "backend_answer": str(deterministic_answer or "")[:1200],
+        "backend_context": _safe_json_excerpt(raw_context),
         "stale_warnings": [str(item)[:240] for item in (stale_warnings or [])[:3]],
         "safety_notes": [str(item)[:240] for item in (safety_notes or [])[:3]],
     }
@@ -145,3 +151,11 @@ def _strip_code_fence(value):
             lines = lines[:-1]
         return "\n".join(lines).strip()
     return text.strip("`").strip()
+
+
+def _safe_json_excerpt(value):
+    try:
+        text = json.dumps(value or {}, default=str, ensure_ascii=True, sort_keys=True)
+    except (TypeError, ValueError):
+        text = json.dumps({"unavailable": True}, separators=(",", ":"))
+    return text[:3000]

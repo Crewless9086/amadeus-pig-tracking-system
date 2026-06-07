@@ -5792,6 +5792,97 @@ Operational rule:
 - To hear the improved wording, `OOM_SAKKIE_LLM_ANSWER_ENABLED=true` must be set and Flask must be restarted.
 - If the composer ever gets too fluffy, turn off `OOM_SAKKIE_LLM_ANSWER_ENABLED`; deterministic wording remains the fallback.
 
+### 10.7R Oom Sakkie Capped Context Briefing Composer - Local Ready
+
+Source:
+
+- Owner confirmed the orb was visible but known-tool answers still felt like raw backend summaries.
+- Diagnosis: the LLM answer composer was active, but it only received the deterministic one-line summary, stale warnings, and safety notes. It could rephrase but not brief from structured read-only data.
+
+Implemented locally:
+
+- `compose_answer_with_llm()` now accepts `raw_context`.
+- `handle_message()` passes the read-only tool result's `raw` payload, or the tool result itself, into the composer.
+- The answer payload includes capped `backend_context` via `_safe_json_excerpt()`:
+  - JSON serialized with `default=str`,
+  - ASCII-safe,
+  - capped at 3000 characters,
+  - still after read-only tool execution only.
+- Composer prompt now says:
+  - use only backend answer/context/warnings/notes,
+  - prioritize what the owner should look at first when multiple items exist,
+  - do not recite every ID unless useful for inspection.
+- Runtime policy and kiosk Safety Status now disclose `Answer sends context` / `sends_capped_tool_context_when_enabled`.
+- Added tests for:
+  - policy disclosure,
+  - prompt/context contract,
+  - frontend policy field rendering.
+
+Verified locally:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 68 tests OK, 1 skipped.
+- `node --check static/js/oomSakkie.js` passed.
+- Local smoke with `OOM_SAKKIE_LLM_ANSWER_ENABLED=true`:
+  - `what needs attention today?` -> answer source `llm_composer`; prioritizes litter queue.
+  - `which farm area should I inspect first?` -> route `llm_router`, answer source `llm_composer`; identifies litter area first and highlights the most urgent litter from structured context.
+  - `what is the power doing now?` -> answer source `llm_composer`; concise power briefing.
+  - `what happened with the weather today?` -> answer source `llm_composer`; includes rain, temperature, and wind from structured context.
+
+Operational rule:
+
+- This is still read-only presentation. The composer cannot select tools, call tools, write records, send messages, or control equipment.
+- It does send more farm context outbound when enabled, so keep the Safety Status disclosure visible and rotate/disable the env var if testing should stop.
+
+### 10.7S Oom Sakkie Read-Only Operating Brief Tool - Local Ready
+
+Source:
+
+- Owner wants Oom Sakkie to do more work per turn instead of answering one narrow backend read at a time.
+- Safe next slice: one composite read-only tool that gathers existing read-only checks and lets the briefing composer summarize them.
+
+Implemented locally:
+
+- Added `farm_operating_brief` to the Oom Sakkie tool registry.
+- The tool calls existing read-only wrappers only:
+  - `farm_attention_summary`,
+  - `power_current`,
+  - `weather_today`,
+  - `irrigation_status`.
+- It combines summaries, links, stale warnings, safety notes, and raw per-section context into one tool result.
+- Added deterministic routing for:
+  - `farm operating brief`,
+  - `farm brief`,
+  - `daily brief`,
+  - `morning brief`,
+  - `status report`,
+  - `jarvis check`,
+  - `full farm check`,
+  - `what should I know`,
+  - `bring me up to speed`.
+- Added a kiosk quick action: `Brief`.
+- Updated LLM-router guidance so broad briefing/status-report prompts choose `farm_operating_brief`.
+- Tightened the answer-composer prompt for operating briefs: at most three short sentences covering first priority, system status, and safety/stale note.
+- Added tests for:
+  - registry contract,
+  - deterministic routing,
+  - composite brief output,
+  - quick-action markup,
+  - voice prompt length rule.
+
+Verified locally:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 69 tests OK, 1 skipped.
+- `node --check static/js/oomSakkie.js` passed.
+- Local smoke with `OOM_SAKKIE_LLM_ANSWER_ENABLED=true`:
+  - `give me the farm operating brief` -> `tool = farm_operating_brief`, `answer_source = llm_composer`.
+  - `bring me up to speed` -> `tool = farm_operating_brief`, `answer_source = llm_composer`.
+  - `what should i know before i go outside` -> `tool = farm_operating_brief`, `answer_source = llm_composer`.
+
+Operational rule:
+
+- This is not autonomy. It is one user-initiated read-only turn that aggregates existing read-only checks.
+- No write tools, physical controls, Telegram cutover, always-on mic, wake word, or specialist delegation were added.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

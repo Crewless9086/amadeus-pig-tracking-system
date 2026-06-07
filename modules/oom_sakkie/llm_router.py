@@ -118,6 +118,7 @@ def _build_payload(text):
         "You are the Oom Sakkie read-only tool router. "
         "Choose exactly one approved read-only tool for the user's farm question, or ask for clarification. "
         "Prefer the best safe read-only tool when a broad operational question reasonably maps to one: "
+        "briefing, status-report, bring-me-up-to-speed, or whole-farm summary questions map to farm_operating_brief; "
         "inspection, priority, worry, or what-to-check-first questions usually map to farm_attention_summary; "
         "outside conditions usually map to weather_today unless the user asks for future conditions; "
         "energy, inverter, solar, battery, or grid questions map to power_current. "

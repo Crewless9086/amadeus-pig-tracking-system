@@ -38,6 +38,10 @@ class IntentMatch:
 
 RULES = [
     (
+        re.compile(r"\b(operating brief|farm brief|daily brief|morning brief|status report|jarvis check|full farm check|what should i know|bring me up to speed)\b", re.I),
+        IntentMatch("farm_operating_brief", "farm_operating_brief", 0.95, "rule:farm_operating_brief"),
+    ),
+    (
         re.compile(r"\b(irrigation|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
         IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
     ),
@@ -321,6 +325,7 @@ def handle_message(payload):
         deterministic_answer=deterministic_answer,
         stale_warnings=stale_warnings,
         safety_notes=safety_notes,
+        raw_context=tool_result.get("raw") or tool_result,
     )
     answer = composed_answer or deterministic_answer
     answer_source = "llm_composer" if composed_answer else "deterministic"

@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Q specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, and animated presence orb.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-S specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, and read-only operating brief tool.
 
 Out of scope unless explicitly asked:
 
@@ -71,6 +71,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Usejarvis external-reference review: ideas logged, source ignored, nothing installed or run
 - Kiosk answer pipeline/provenance strip and stateful status display
 - Kiosk animated presence orb and stronger answer-composer voice
+- Capped structured read-only tool context sent to the answer composer when enabled
+- `farm_operating_brief` composite read-only tool and kiosk `Brief` quick action
 
 ## Files/folders to inspect
 
@@ -181,6 +183,21 @@ Summary:
 - Wired the presence orb to the existing status state machine; it does not open the mic, call tools, or run independently.
 - Added frontend contract tests for the presence markup, JS state wiring, and CSS animation hooks.
 - Added a backend prompt contract test so the answer composer does not drift back to generic/read-the-table wording.
+- Added capped context briefing composer behavior:
+  - `compose_answer_with_llm()` accepts `raw_context`,
+  - `handle_message()` passes `tool_result["raw"]` or the tool result after read-only tool execution,
+  - `_safe_json_excerpt()` serializes context with `default=str`, ASCII-safe JSON, and a 3000-character cap,
+  - prompt tells the composer to prioritize what the owner should inspect first when multiple items exist,
+  - prompt tells the composer not to recite every ID unless useful for inspection,
+  - runtime policy and kiosk Safety Status disclose `sends_capped_tool_context_when_enabled`.
+- Added `farm_operating_brief`:
+  - read-only registry tool,
+  - calls existing read-only wrappers for farm attention, current power, today's weather, and irrigation status,
+  - combines summaries, links, stale warnings, safety notes, and raw per-section context,
+  - deterministic routing for brief/status-report/bring-me-up-to-speed prompts,
+  - LLM-router guidance for broad briefing prompts,
+  - kiosk `Brief` quick action,
+  - answer-composer rule to keep operating briefs to at most three short spoken sentences.
 
 Known verification from Codex:
 
@@ -197,6 +214,19 @@ Known verification from Codex:
 - `node --check static/js/oomSakkie.js` passed after provenance strip
 - Focused service/frontend tests after presence/voice slice: `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 68 tests OK, 1 skipped
 - `node --check static/js/oomSakkie.js` passed after presence/voice slice
+- Focused service/frontend tests after capped context composer: `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 68 tests OK, 1 skipped
+- `node --check static/js/oomSakkie.js` passed after capped context composer
+- Local smoke after capped context composer with `OOM_SAKKIE_LLM_ANSWER_ENABLED=true`:
+  - `what needs attention today?` -> `answer_source = llm_composer`, prioritizes litter queue,
+  - `which farm area should I inspect first?` -> `route_source = llm_router`, `answer_source = llm_composer`, identifies litter area and most urgent litter from structured context,
+  - `what is the power doing now?` -> concise LLM-composed power briefing,
+  - `what happened with the weather today?` -> LLM-composed weather briefing using structured context.
+- Focused service/frontend tests after operating brief tool: `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts` -> 69 tests OK, 1 skipped
+- `node --check static/js/oomSakkie.js` passed after operating brief tool
+- Local smoke after operating brief tool with `OOM_SAKKIE_LLM_ANSWER_ENABLED=true`:
+  - `give me the farm operating brief` -> `tool = farm_operating_brief`, `answer_source = llm_composer`,
+  - `bring me up to speed` -> `tool = farm_operating_brief`, `answer_source = llm_composer`,
+  - `what should i know before i go outside` -> `tool = farm_operating_brief`, `answer_source = llm_composer`.
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -235,7 +265,9 @@ Please inspect specifically:
 22. **Usejarvis reference:** Does the review correctly avoid installing/running/copying the external source while extracting safe architecture lessons only?
 23. **Alive/provenance UI:** Does Phase 10.7P surface route source, answer source, pipeline state, confidence, and reason honestly without adding autonomy or unsafe behavior?
 24. **Presence/voice layer:** Does Phase 10.7Q make the kiosk feel more like a live agent and improve answer tone while keeping all authority, facts, and safety boundaries unchanged?
-25. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+25. **Capped context composer:** Does Phase 10.7R improve briefing quality by giving the composer structured read-only context while keeping context capped, disclosed, post-tool-only, and unable to choose actions/tools?
+26. **Operating brief tool:** Does Phase 10.7S safely aggregate existing read-only checks into one user-initiated brief without adding autonomy, writes, controls, or hidden tool authority?
+27. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 
