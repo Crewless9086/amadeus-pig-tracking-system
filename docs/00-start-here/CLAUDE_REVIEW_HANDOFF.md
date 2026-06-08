@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z and 10.8A-L specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, and Business quick action.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-H specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, and Sentinel Dry-Run Review.
 
 Out of scope unless explicitly asked:
 
@@ -96,6 +96,18 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Read-only `business_growth_brief` Business Advisor seed across sales stock and meat pipeline
 - Workbench `Next action` card and stronger section/card visual separation
 - `Business` quick action for `What should we sell next?`
+- Work-status stale warning/degraded status when build/patch/deploy stores are unavailable
+- Richer read-only Business Advisor context: marketable stock, young/not-ready stock, ready meat candidates, and owner follow-up question
+- Role-specific answer-composer rules for Business Advisor and work-status answers
+- Internal-only Business Offer Outline from read-only sales/meat-planning context
+- Agent Runtime Foundation for planned specialist personalities, tool allowlists, routing hints, and recommendation-only dispatch
+- `agent_crew_status` read-only tool and `Agents` quick action for recommendation-only crew questions
+- Agent Activity Stage that visually opens the current planned specialist workspace and changes color by selected agent without enabling live dispatch
+- Agent Handoff Lane that shows controller -> specialist workspace -> read-only tool -> owner gate for each successful tool answer
+- Agent Crew Brief that returns a plan-only multi-specialist sequence for broad requests without dispatching agents
+- Visible Crew Sequence that renders crew-plan specialists as cards on the Agent Activity Stage
+- Agent Activation Plan that exposes the locked path from planned agents to future live agents without enabling runtime flags
+- Sentinel Dry-Run Review that rehearses the first specialist candidate as an advisory-only safety/readiness review without enabling dispatch, specialist LLM execution, specialist tool execution, autonomous loops, or writes
 
 ## Files/folders to inspect
 
@@ -104,6 +116,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `modules/oom_sakkie/learning_llm.py`
 - `modules/oom_sakkie/learning_packet.py`
 - `modules/oom_sakkie/forge_handoff.py`
+- `modules/oom_sakkie/agent_runtime.py`
 - `modules/oom_sakkie/patch_proposal_store.py`
 - `modules/oom_sakkie/deploy_decision_store.py`
 - `templates/oom-sakkie.html`
@@ -116,6 +129,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `scripts/oom_sakkie_llm_router_smoke.py`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `docs/01-architecture/JARVIS_EXTERNAL_REFERENCE_REVIEW.md`
+- `screenshots/Jarvis screen layout.mp4` (owner-provided visual reference; if local video tooling is unavailable, use the documented design intent in `NEXT_STEPS.md`)
 - `supabase/migrations/202606060001_create_oom_sakkie_traces.sql`
 - `supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql`
 - `supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql`
@@ -383,6 +397,102 @@ Summary:
   - section headings and work records have stronger visual separation,
   - added `Business` quick action for `What should we sell next?`,
   - guidance only; no Builder/Forge execution, patch application, deploy, prompt/tool mutation, or farm-data mutation.
+- Added Work Status honesty fix:
+  - `system_work_status` now adds stale warnings for unavailable build/patch/deploy stores,
+  - returns `not_configured` or `degraded` instead of a confident empty queue when stores fail,
+  - still reports best-effort counts from readable stores,
+  - `record_deploy_decision()` checks local `psycopg` availability before loading a patch proposal,
+  - no behavior widens beyond read-only/status-only reporting.
+- Added Business Advisor context upgrade:
+  - separates total listed stock from marketable stock and young/not-ready stock,
+  - excludes `Not For Sale` and `Out of Stock` rows from marketable stock,
+  - includes ready meat candidates by pig/tag/pen/weight/action,
+  - includes owner follow-up question for the next approved business step,
+  - live read-only smoke showed 21 marketable pigs, 34 young/not-ready pigs, and ready D1 candidates tag 2/tag 3,
+  - still does not draft, post, message, sell, reserve, invoice, mutate stock, run Builder/Forge, apply patches, or deploy.
+- Added internal-only Business Offer Outline:
+  - `business_growth_brief` now returns `llm_context.offer_brief_outline`,
+  - the outline is `mode = internal_outline_only`,
+  - it may name the opportunity, target buyer type, stock basis, evidence, approval-needed next step, and no-action list,
+  - it explicitly does not draft customer copy, draft public posts, create quotes, sell, reserve stock, or mutate farm data,
+  - deterministic routing maps `offer brief`, `commercial brief`, and `prepare ... offer` to the same read-only Business Advisor tool,
+  - kiosk quick checks include `Offer Brief` with prompt `Prepare an internal offer brief.`,
+  - answer-composer prompt says any summary must stay internal-only and not customer-facing copy.
+- Added Agent Runtime Foundation:
+  - `modules/oom_sakkie/agent_runtime.py`,
+  - `AgentRuntimeManifest` wraps planned specialist manifests with personality, memory sources, allowed tools, risk limit, output contract, approval rules, and routing hints,
+  - `GET /api/oom-sakkie/agents` returns `mode = advisory_runtime_foundation`,
+  - `runtime_enabled = false`, `dispatch_enabled = false`, `autonomous_loops_enabled = false`, and `writes_enabled = false`,
+  - `POST /api/oom-sakkie/agents/recommend` returns only which planned agent would handle the text and why,
+  - recommendation output has `mode = dispatch_recommendation_only`, `runs_agent = false`, and `writes = false`,
+  - review packet includes `agent_runtime`,
+  - kiosk `Agent Crew Foundation` panel renders personalities, roles, allowed tools, and an explicit off/off/off runtime guard.
+- Added Agent Crew Status Tool:
+  - `agent_crew_status` is in the read-only tool registry,
+  - deterministic routing catches agent/crew/specialist questions,
+  - `handle_message()` passes bounded `user_text` into tool handlers as context,
+  - `agent_crew_status` uses the recommendation-only runtime helper to choose a planned agent,
+  - output states no specialist was dispatched, no specialist tool ran, and no write was performed,
+  - kiosk quick checks include `Agents` with prompt `Which agent should handle this?`.
+- Added Agent Activity Stage:
+  - owner-provided visual reference retained at `screenshots/Jarvis screen layout.mp4`,
+  - target design intent is Oom Sakkie as controller with specialist workspaces opening visibly and colors changing by active agent,
+  - `build_agent_activity()` maps successful read-only tool results to a visual-only active planned agent/workspace payload,
+  - `/api/oom-sakkie/message` includes `agent_activity` on successful tool responses,
+  - payload safety flags remain `runs_agent = false`, `dispatch_enabled = false`, `autonomous_loops_enabled = false`, and `writes = false`,
+  - kiosk adds first-viewport `Agent Activity Stage` with controller state, active specialist name/personality, workspace title/detail, and guard text,
+  - presence orb and workspace border color shift by active specialist,
+  - CSS stacks the controller/workspace cleanly on narrow screens,
+  - this is visual coordination only: no live specialist dispatch, no specialist LLM call, no autonomous loop, and no new authority.
+- Added Agent Handoff Lane:
+  - `agent_activity.handoff_lane` returns controller, specialist workspace, read-only tool, and owner gate steps,
+  - the lane explicitly says no write, post, sale, control, patch, or deploy can run here,
+  - kiosk renders the lane as process cards under the active specialist workspace,
+  - dynamic lane content is rendered with DOM nodes and `.textContent`,
+  - responsive CSS stacks lane cards on narrow screens,
+  - this is visual process explanation only and does not dispatch specialists or grant any action authority.
+- Added Agent Crew Brief:
+  - `build_agent_crew_brief(text)` selects a plan-only crew scenario from broad owner text,
+  - scenarios include commercial growth, farm operations, pig pipeline, system build, weather/irrigation, and general fallback,
+  - added read-only `agent_crew_brief`,
+  - deterministic routing catches crew/team/multi-agent plan phrasing,
+  - kiosk quick checks include `Team Brief`,
+  - output is `mode = crew_plan_only`,
+  - every planned sequence item has `runs_agent = false` and `writes = false`,
+  - no specialist dispatch, specialist LLM call, specialist tool execution, autonomous loop, or write authority was added.
+- Added Visible Crew Sequence:
+  - `agent_activity.crew_sequence` is included when `agent_crew_brief` returns a crew plan,
+  - sequence is bounded to six planned agents,
+  - kiosk renders sequence cards under the Agent Activity Stage,
+  - cards show order, name/personality, what the planned specialist would inspect, and `runs no | writes no`,
+  - sequence area is hidden for normal single-tool checks,
+  - dynamic sequence content is rendered with DOM nodes and `.textContent`,
+  - no live dispatch, specialist LLM call, specialist tool execution, autonomous loop, or write authority was added.
+- Added Agent Activation Plan:
+  - `get_agent_activation_plan()` returns `mode = activation_plan_only`,
+  - runtime/dispatch/autonomous-loop/write flags remain false,
+  - activation stages are foundation visible, read-only dry-run, human-approved dispatch, draft-only outputs, and controlled writes,
+  - recommended next stage is `read_only_dry_run`,
+  - recommended first candidate is Sentinel,
+  - added read-only `agent_activation_plan`,
+  - deterministic routing catches activation/roadmap/live-agent phrasing,
+  - kiosk quick checks include `Agent Roadmap`,
+  - no specialist dispatch, specialist LLM call, runtime flag enablement, autonomous loop, specialist tool execution, or write authority was added.
+- Added Sentinel Dry-Run Review:
+  - `build_sentinel_dry_run_review(tool_catalog)` returns `mode = sentinel_dry_run_review_only`,
+  - selected agent is Sentinel,
+  - runtime/dispatch/autonomous-loop/write/specialist-LLM flags remain false,
+  - current tool registry is audited for read-only, non-read-only, and confirmation-required tools,
+  - blockers before any live specialist dry-run are listed,
+  - added read-only `sentinel_dry_run_review`,
+  - deterministic routing catches Sentinel/safety/first-agent/specialist dry-run phrasing,
+  - kiosk quick checks include `Sentinel Dry Run`,
+  - Agent Activity Stage maps the tool to Sentinel,
+  - no specialist dispatch, specialist LLM call, runtime flag enablement, autonomous loop, specialist tool execution, or write authority was added.
+- Added role-specific spoken composer rules:
+  - `business_growth_brief` answers should lead with the commercial move, name supporting stock/ready pigs, and ask one approval-style follow-up question,
+  - `system_work_status` answers should lead with the next owner action before counts,
+  - composer remains env-gated and unable to choose/call tools or perform actions.
 - Added trace-driven composer lane guard:
   - live feedback showed single-tool answers mentioning unrelated systems,
   - prompt now tells non-brief tools to stay in their own lane,
@@ -476,6 +586,42 @@ Known verification from Codex:
 - Workbench Next Action focused verification: `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_service tests.test_oom_sakkie_routes` -> 138 tests OK
 - `node --check static/js/oomSakkie.js` passed after Workbench Next Action
 - Full local unittest suite after Workbench Next Action: `463 tests OK`
+- Work Status honesty focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK
+- `node --check static/js/oomSakkie.js` passed after Work Status honesty
+- Full local unittest suite after Work Status honesty: `464 tests OK`
+- Business Advisor context focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK
+- `node --check static/js/oomSakkie.js` passed after Business Advisor context upgrade
+- Full local unittest suite after Business Advisor context upgrade: `464 tests OK`
+- Role-specific composer focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK
+- `node --check static/js/oomSakkie.js` passed after role-specific composer rules
+- Full local unittest suite after role-specific composer rules: `464 tests OK`
+- Business Offer Outline focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK
+- `node --check static/js/oomSakkie.js` passed after Business Offer Outline
+- Full local unittest suite after Business Offer Outline: `464 tests OK`
+- Agent Runtime Foundation focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 145 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Runtime Foundation
+- Full local unittest suite after Agent Runtime Foundation: `470 tests OK`
+- Agent Crew Status Tool focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 147 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Crew Status Tool
+- Full local unittest suite after Agent Crew Status Tool: `472 tests OK`
+- Agent Activity Stage focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 149 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Activity Stage
+- Full local unittest suite after Agent Activity Stage: `474 tests OK`
+- Agent Handoff Lane focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 149 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Handoff Lane
+- Full local unittest suite after Agent Handoff Lane: `474 tests OK`
+- Agent Crew Brief focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 151 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Crew Brief
+- Full local unittest suite after Agent Crew Brief: `476 tests OK`
+- Visible Crew Sequence focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 152 tests OK
+- `node --check static/js/oomSakkie.js` passed after Visible Crew Sequence
+- Full local unittest suite after Visible Crew Sequence: `477 tests OK`
+- Agent Activation Plan focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 154 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Activation Plan
+- Full local unittest suite after Agent Activation Plan: `479 tests OK`
+- Sentinel Dry-Run Review focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 155 tests OK
+- `node --check static/js/oomSakkie.js` passed after Sentinel Dry-Run Review
+- Full local unittest suite after Sentinel Dry-Run Review: `480 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -538,7 +684,19 @@ Please inspect specifically:
 46. **Deploy-ready instructions:** Does Phase 10.8K explain the approved-patch/deploy-decision step clearly without implying the kiosk applies patches or deploys?
 47. **Business Advisor seed:** Is `business_growth_brief` read-only, commercially useful, and safely blocked from drafting/posting/messaging/selling/reserving/changing stock?
 48. **Workbench Next Action:** Does Phase 10.8L reduce owner confusion by surfacing the next action and visually separating sections without hiding audit data or adding hidden execution?
-49. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+49. **Work Status honesty:** Does Phase 10.8M close the outage-honesty gap so `system_work_status` never confidently reports no approval work when a build/patch/deploy store is unavailable?
+50. **Business Advisor context:** Does Phase 10.8N make `business_growth_brief` materially more useful while staying read-only and approval-safe?
+51. **Role-specific composer:** Does Phase 10.8O improve Business Advisor and work-status delivery without giving the LLM tool-selection, write, send, sell, patch, or deploy authority?
+52. **Business Offer Outline:** Does Phase 10.8P provide a useful internal commercial outline while still not drafting customer/public copy, creating quotes, selling, reserving stock, mutating data, or bypassing owner approval?
+53. **Agent Runtime Foundation:** Does Phase 10.9A create a useful platform for named specialist agents while keeping live runtime, dispatch, autonomous loops, writes, tool execution, specialist LLM calls, customer/public output, Builder/Forge execution, patch application, and deploy disabled?
+54. **Agent Crew Status Tool:** Does Phase 10.9B make crew recommendations available through normal Oom Sakkie chat while still not dispatching specialists, running specialist LLM calls, executing specialist tools, writing data, or bypassing owner approval?
+55. **Agent Activity Stage:** Does Phase 10.9C move the kiosk toward the controller/specialist-workspace visual model while staying display-only: no live dispatch, no specialist LLM, no autonomous loop, no new tool authority, no writes, and honest visible guard text?
+56. **Agent Handoff Lane:** Does Phase 10.9D make the controller -> specialist -> read-only tool -> owner-gate process clearer without implying live agent execution, hidden delegation, writes, customer/public output, physical control, Builder/Forge execution, patch application, or deploy?
+57. **Agent Crew Brief:** Does Phase 10.9E provide a useful plan-only multi-specialist sequence while keeping live dispatch, specialist LLM calls, specialist tool execution, autonomous loops, writes, customer/public output, Builder/Forge execution, patch application, and deploy disabled?
+58. **Visible Crew Sequence:** Does Phase 10.9F render the crew plan visibly and safely on the kiosk while keeping normal single-tool checks uncluttered and preserving all `runs no` / `writes no` guardrails?
+59. **Agent Activation Plan:** Does Phase 10.9G make the future live-agent path explicit while keeping runtime/dispatch/autonomous-loop/write flags false and preserving all owner approval/audit gates before any dry-run or live dispatch?
+60. **Sentinel Dry-Run Review:** Does Phase 10.9H rehearse the first specialist candidate as deterministic/read-only/advisory-only review while keeping live dispatch, specialist LLM execution, specialist tool execution, autonomous loops, writes, customer/public output, Builder/Forge execution, patch application, and deploy disabled?
+61. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

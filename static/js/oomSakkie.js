@@ -5,6 +5,14 @@
   const statusText = document.getElementById("oom_status_text");
   const presenceOrb = document.getElementById("oom_presence_orb");
   const presenceLine = document.getElementById("oom_presence_line");
+  const agentControllerState = document.getElementById("oom_agent_controller_state");
+  const activeAgentWorkspace = document.getElementById("oom_active_agent_workspace");
+  const activeAgentName = document.getElementById("oom_active_agent_name");
+  const activeAgentTitle = document.getElementById("oom_active_agent_title");
+  const activeAgentDetail = document.getElementById("oom_active_agent_detail");
+  const activeAgentGuard = document.getElementById("oom_active_agent_guard");
+  const agentHandoffLane = document.getElementById("oom_agent_handoff_lane");
+  const agentCrewSequence = document.getElementById("oom_agent_crew_sequence");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
   const warnings = document.getElementById("oom_warnings");
@@ -59,6 +67,8 @@
   const refreshTools = document.getElementById("oom_refresh_tools");
   const policyStatus = document.getElementById("oom_policy_status");
   const refreshPolicy = document.getElementById("oom_refresh_policy");
+  const agentCrew = document.getElementById("oom_agent_crew");
+  const refreshAgents = document.getElementById("oom_refresh_agents");
   const recentTraces = document.getElementById("oom_recent_traces");
   const refreshTraces = document.getElementById("oom_refresh_traces");
   const traceSearch = document.getElementById("oom_trace_search");
@@ -113,6 +123,99 @@
     };
     if (presenceOrb) presenceOrb.dataset.state = normalized;
     if (presenceLine) presenceLine.textContent = lines[normalized] || label || lines.idle;
+  }
+
+  function renderAgentActivity(data) {
+    const activity = (data && data.agent_activity) || null;
+    if (!activeAgentWorkspace || !activeAgentName || !activeAgentTitle || !activeAgentDetail || !activeAgentGuard) return;
+    if (!activity || !activity.active_agent) {
+      activeAgentWorkspace.dataset.agent = "none";
+      if (presenceOrb) presenceOrb.dataset.agent = "none";
+      if (agentControllerState) agentControllerState.textContent = "Controller standing by";
+      activeAgentName.textContent = "No specialist workspace open";
+      activeAgentTitle.textContent = "Ask a question to open a read-only workspace.";
+      activeAgentDetail.textContent = "Specialists are visible here before they become live dispatch agents.";
+      activeAgentGuard.textContent = "dispatch off | writes off";
+      renderAgentHandoffLane([]);
+      renderAgentCrewSequence([]);
+      return;
+    }
+
+    const agent = activity.active_agent || {};
+    const workspace = activity.workspace || {};
+    const safety = activity.safety || {};
+    const slug = agent.slug || "none";
+    const color = agent.color || "white";
+    activeAgentWorkspace.dataset.agent = color;
+    if (presenceOrb) presenceOrb.dataset.agent = color;
+    if (agentControllerState) agentControllerState.textContent = `Coordinating ${agent.name || slug}`;
+    activeAgentName.textContent = `${agent.name || slug} | ${agent.personality || "specialist"}`;
+    activeAgentTitle.textContent = workspace.title || `${agent.name || "Agent"} workspace`;
+    activeAgentDetail.textContent = `${workspace.state || "reviewing"} via ${workspace.tool_name || "read-only tool"}; ${workspace.reason || "routing"}.`;
+    activeAgentGuard.textContent = `dispatch ${safety.dispatch_enabled ? "on" : "off"} | loops ${safety.autonomous_loops_enabled ? "on" : "off"} | writes ${safety.writes ? "on" : "off"}`;
+    renderAgentHandoffLane(activity.handoff_lane || []);
+    renderAgentCrewSequence(activity.crew_sequence || []);
+  }
+
+  function renderAgentHandoffLane(items) {
+    if (!agentHandoffLane) return;
+    agentHandoffLane.innerHTML = "";
+    if (!items || !items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "Handoff lane opens after a read-only check.";
+      agentHandoffLane.appendChild(empty);
+      return;
+    }
+    items.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "oom-agent-handoff-card";
+      const step = document.createElement("span");
+      const actor = document.createElement("strong");
+      const detail = document.createElement("p");
+      const status = document.createElement("code");
+      step.textContent = item.step || "step";
+      actor.textContent = item.actor || "Unknown";
+      detail.textContent = item.detail || "";
+      status.textContent = item.status || "visible";
+      card.appendChild(step);
+      card.appendChild(actor);
+      card.appendChild(detail);
+      card.appendChild(status);
+      agentHandoffLane.appendChild(card);
+    });
+  }
+
+  function renderAgentCrewSequence(items) {
+    if (!agentCrewSequence) return;
+    agentCrewSequence.innerHTML = "";
+    if (!items || !items.length) {
+      agentCrewSequence.hidden = true;
+      return;
+    }
+    agentCrewSequence.hidden = false;
+    const heading = document.createElement("p");
+    heading.className = "oom-agent-sequence-heading";
+    heading.textContent = "Planned specialist sequence";
+    agentCrewSequence.appendChild(heading);
+    items.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "oom-agent-sequence-card";
+      card.dataset.agent = item.color || "white";
+      const order = document.createElement("span");
+      const name = document.createElement("strong");
+      const detail = document.createElement("p");
+      const guard = document.createElement("code");
+      order.textContent = `Step ${item.order || "?"}`;
+      name.textContent = `${item.name || item.slug || "Agent"} | ${item.personality || "specialist"}`;
+      detail.textContent = item.would_inspect || item.role || "planned read-only review";
+      guard.textContent = `runs ${item.runs_agent ? "yes" : "no"} | writes ${item.writes ? "yes" : "no"}`;
+      card.appendChild(order);
+      card.appendChild(name);
+      card.appendChild(detail);
+      card.appendChild(guard);
+      agentCrewSequence.appendChild(card);
+    });
   }
 
   function prettySource(value) {
@@ -613,6 +716,7 @@
     userText.textContent = text;
     answer.textContent = "Checking the farm system...";
     resetPipelineForCheck();
+    renderAgentActivity(null);
     renderWarnings([]);
     renderSafetyNotes([]);
     renderLinks([]);
@@ -633,6 +737,7 @@
     toolUsed.textContent = data.tool_used || "None";
     riskLevel.textContent = String(data.risk_level ?? 0);
     renderPipeline(data);
+    renderAgentActivity(data);
     renderWarnings(data.stale_warnings || []);
     renderSafetyNotes(data.safety_notes || []);
     renderLinks(data.links || []);
@@ -1454,6 +1559,50 @@
     }
   }
 
+  function renderAgentCrew(data) {
+    if (!agentCrew) return;
+    const agents = data && Array.isArray(data.agents) ? data.agents : [];
+    if (!agents.length) {
+      agentCrew.innerHTML = '<p class="oom-empty">Agent crew foundation is unavailable.</p>';
+      return;
+    }
+    agentCrew.innerHTML = "";
+
+    const guard = document.createElement("p");
+    guard.className = "oom-policy-blocked";
+    guard.textContent = `Runtime ${data.runtime_enabled ? "on" : "off"} | dispatch ${data.dispatch_enabled ? "on" : "off"} | autonomous loops ${data.autonomous_loops_enabled ? "on" : "off"}`;
+    agentCrew.appendChild(guard);
+
+    agents.forEach((agent) => {
+      const row = document.createElement("article");
+      row.className = "oom-tool-row";
+
+      const main = document.createElement("div");
+      const name = document.createElement("strong");
+      const role = document.createElement("span");
+      const tools = document.createElement("span");
+      name.textContent = `${agent.name || agent.slug || "Agent"} (${agent.personality || "specialist"})`;
+      role.textContent = agent.role || "No role registered.";
+      tools.textContent = `Tools: ${(agent.allowed_tools || []).join(", ") || "none yet"}`;
+      main.appendChild(name);
+      main.appendChild(role);
+      main.appendChild(tools);
+
+      const meta = document.createElement("div");
+      meta.className = "oom-tool-meta";
+      const mode = document.createElement("code");
+      const risk = document.createElement("code");
+      mode.textContent = agent.dispatch_enabled ? "dispatch enabled" : "advisory only";
+      risk.textContent = `risk limit ${agent.risk_limit ?? 0}`;
+      meta.appendChild(mode);
+      meta.appendChild(risk);
+
+      row.appendChild(main);
+      row.appendChild(meta);
+      agentCrew.appendChild(row);
+    });
+  }
+
   function renderRecentTraces(items) {
     if (!recentTraces) return;
     if (!items || !items.length) {
@@ -2028,6 +2177,17 @@
     }
   }
 
+  async function loadAgentCrew() {
+    if (!agentCrew) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/agents");
+      const data = await response.json();
+      renderAgentCrew(data);
+    } catch (error) {
+      agentCrew.innerHTML = '<p class="oom-empty">Agent crew foundation is unavailable.</p>';
+    }
+  }
+
   function refreshReviewData() {
     loadReviewSummary();
     loadRecentTraces();
@@ -2107,6 +2267,10 @@
 
   if (refreshPolicy) {
     refreshPolicy.addEventListener("click", loadPolicyStatus);
+  }
+
+  if (refreshAgents) {
+    refreshAgents.addEventListener("click", loadAgentCrew);
   }
 
   if (voiceButton) {
@@ -2217,5 +2381,6 @@
   renderVoiceEvents();
   loadToolCatalog();
   loadPolicyStatus();
+  loadAgentCrew();
   refreshReviewData();
 })();

@@ -6,6 +6,7 @@ external_sources/**/*token*
 external_sources/**/*key*
 external_sources/**/*service_account*.json
 external_sources/jarvis-main/
+screenshots/*.mp4
 service_account.json
 __pycache__/
 *.pyc

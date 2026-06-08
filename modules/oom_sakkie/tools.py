@@ -2,6 +2,13 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Callable
 
+from modules.oom_sakkie.agent_runtime import (
+    build_agent_crew_brief,
+    build_sentinel_dry_run_review,
+    get_agent_activation_plan,
+    get_agent_runtime_status,
+    recommend_agent_for_text,
+)
 from modules.oom_sakkie.build_request_store import list_build_requests
 from modules.oom_sakkie.deploy_decision_store import list_deploy_decisions
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
@@ -181,14 +188,32 @@ def business_growth_brief_handler(_args):
     meat_raw = sections["meat"].get("raw") or {}
     sales_totals = sales_raw.get("totals", []) if isinstance(sales_raw, dict) else []
     meat_summary = meat_raw.get("summary", {}) if isinstance(meat_raw, dict) else {}
+    meat_pigs = meat_raw.get("pigs", []) if isinstance(meat_raw, dict) else []
     stock_total = sum(float(item.get("qty_available") or 0) for item in sales_totals)
+    marketable_stock = _business_marketable_stock(sales_totals)
+    young_stock = _business_young_stock(sales_totals)
     ready_now = int(meat_summary.get("ready_now") or 0)
     next_14 = int(meat_summary.get("next_14_days") or 0)
-    focus = _business_growth_focus(stock_total, ready_now, next_14)
+    ready_candidates = _business_ready_candidates(meat_pigs)
+    focus = _business_growth_focus(marketable_stock["total"], ready_now, next_14)
+    owner_question = _business_owner_question(marketable_stock, ready_candidates, ready_now, next_14)
+    offer_outline = _business_offer_brief_outline(
+        focus=focus,
+        marketable_stock=marketable_stock,
+        ready_candidates=ready_candidates,
+        ready_now=ready_now,
+        next_14=next_14,
+    )
+    marketable_label = _business_category_label(marketable_stock["categories"])
+    ready_label = _business_ready_label(ready_candidates)
     summary = (
         "Business advisor brief: "
-        f"{focus} Sales stock shows {int(stock_total)} available pig(s). "
-        f"Meat planning shows {ready_now} ready now and {next_14} due in the next 14 days."
+        f"{focus} Marketable listed stock is {marketable_stock['total']} pig(s)"
+        f"{' across ' + marketable_label if marketable_label else ''}. "
+        f"Young/not-ready stock is {young_stock['total']} pig(s). "
+        f"Meat planning has {ready_now} ready now"
+        f"{' (' + ready_label + ')' if ready_label else ''} and {next_14} due in the next 14 days. "
+        f"Question: {owner_question}"
     )
 
     unique_links = []
@@ -211,10 +236,17 @@ def business_growth_brief_handler(_args):
         "llm_context": {
             "kind": "business_growth_brief",
             "commercial_focus": focus,
+            "owner_question": owner_question,
             "sales_summary": sections["sales"].get("summary"),
             "meat_summary": sections["meat"].get("summary"),
+            "marketable_stock": marketable_stock,
+            "young_or_not_ready_stock": young_stock,
+            "ready_meat_candidates": ready_candidates,
+            "offer_brief_outline": offer_outline,
             "counts": {
                 "available_sales_stock": int(stock_total),
+                "marketable_sales_stock": marketable_stock["total"],
+                "young_or_not_ready_stock": young_stock["total"],
                 "meat_ready_now": ready_now,
                 "meat_next_14_days": next_14,
             },
@@ -227,6 +259,81 @@ def business_growth_brief_handler(_args):
     }
 
 
+def _business_marketable_stock(sales_totals):
+    categories = []
+    total = 0
+    for item in sales_totals:
+        qty = int(float(item.get("qty_available") or 0))
+        if qty <= 0:
+            continue
+        status = str(item.get("status") or "")
+        if status.lower() in {"not for sale", "out of stock"}:
+            continue
+        category = str(item.get("sale_category") or "Unknown")
+        categories.append({
+            "category": category,
+            "qty": qty,
+            "status": status,
+            "price_range": str(item.get("price_range") or ""),
+        })
+        total += qty
+    return {"total": total, "categories": categories[:6]}
+
+
+def _business_young_stock(sales_totals):
+    categories = []
+    total = 0
+    for item in sales_totals:
+        qty = int(float(item.get("qty_available") or 0))
+        if qty <= 0:
+            continue
+        status = str(item.get("status") or "")
+        category = str(item.get("sale_category") or "Unknown")
+        if status.lower() == "not for sale" or category.lower() in {"newborn", "young piglets"}:
+            categories.append({
+                "category": category,
+                "qty": qty,
+                "status": status,
+            })
+            total += qty
+    return {"total": total, "categories": categories[:6]}
+
+
+def _business_ready_candidates(meat_pigs):
+    candidates = []
+    for pig in meat_pigs:
+        if pig.get("planning_bucket") != "ready_now":
+            continue
+        candidates.append({
+            "pig_id": pig.get("pig_id"),
+            "tag_number": pig.get("tag_number"),
+            "pen": pig.get("current_pen_name") or pig.get("current_pen_id"),
+            "weight_kg": pig.get("latest_weight_kg"),
+            "action": pig.get("recommended_action"),
+            "readiness": pig.get("marketing_readiness"),
+        })
+    return candidates[:5]
+
+
+def _business_category_label(categories):
+    return ", ".join(
+        f"{item['category']} {item['qty']}"
+        for item in categories[:4]
+        if item.get("category")
+    )
+
+
+def _business_ready_label(candidates):
+    return ", ".join(
+        "tag {} in {} at {} kg".format(
+            _display_value(item.get("tag_number")),
+            _display_value(item.get("pen")),
+            _display_value(item.get("weight_kg")),
+        )
+        for item in candidates[:3]
+    )
+
+
 def _business_growth_focus(stock_total, ready_now, next_14):
     if stock_total > 0 and ready_now > 0:
         return "Prioritize converting ready meat stock into paid orders before adding new offers."
@@ -237,6 +344,66 @@ def _business_growth_focus(stock_total, ready_now, next_14):
     if stock_total > 0:
         return "Prioritize moving available listed stock and checking whether the offer wording is clear."
     return "No immediate commercial push is obvious from the read-only sales and meat signals."
+
+
+def _business_owner_question(marketable_stock, ready_candidates, ready_now, next_14):
+    if ready_candidates:
+        return "Should I help prepare a draft offer brief for the ready meat candidates for your approval?"
+    if marketable_stock["total"] > 0:
+        return "Which buyer segment should we target first for the listed stock?"
+    if next_14 > 0:
+        return "Do you want a buyer warm-up plan for the pigs due in the next 14 days?"
+    return "Do you want me to check orders and customer demand next before suggesting an offer?"
+
+
+def _business_offer_brief_outline(*, focus, marketable_stock, ready_candidates, ready_now, next_14):
+    if ready_candidates:
+        basis_items = [
+            "tag {} in {} at {} kg".format(
+                _display_value(item.get("tag_number")),
+                _display_value(item.get("pen")),
+                _display_value(item.get("weight_kg")),
+            )
+            for item in ready_candidates[:3]
+        ]
+        title = "Ready meat preorder opportunity"
+        target = "Existing meat buyers or known customers who can confirm interest before processing."
+        evidence = "{} ready now; {} due in the next 14 days.".format(ready_now, next_14)
+        next_step = "Approve a future draft-only customer offer brief after checking price, cut set, collection/delivery, and availability."
+    elif marketable_stock["total"] > 0:
+        basis_items = [
+            "{}: {} available".format(item.get("category"), item.get("qty"))
+            for item in marketable_stock["categories"][:3]
+            if item.get("category")
+        ]
+        title = "Listed-stock sales push"
+        target = "Buyer segment to be chosen by the owner before any customer-facing wording."
+        evidence = "{} marketable listed pig(s).".format(marketable_stock["total"])
+        next_step = "Choose the buyer segment first, then approve a future draft-only offer brief."
+    else:
+        basis_items = []
+        title = "Demand discovery before selling"
+        target = "No customer-facing target yet."
+        evidence = "No immediate marketable stock or ready meat opportunity is clear from the current read-only signals."
+        next_step = "Review orders and customer demand before preparing any offer brief."
+
+    return {
+        "mode": "internal_outline_only",
+        "title": title,
+        "commercial_focus": focus,
+        "target": target,
+        "stock_basis": basis_items,
+        "evidence": evidence,
+        "approval_needed": "Owner approval is required before any customer-facing draft, public post, quote, reservation, sale, or stock change.",
+        "next_step": next_step,
+        "not_done": [
+            "No customer message drafted.",
+            "No public post drafted.",
+            "No quote created.",
+            "No sale, reservation, or stock change made.",
+        ],
+    }
+
 
 
 def power_current_handler(_args):
@@ -562,6 +729,7 @@ def system_work_status_handler(_args):
         "patch_proposals": patch_status,
         "deploy_decisions": deploy_status,
     }
+    store_warnings = _system_work_store_warnings(statuses)
     configured = all(
         result.get("configured", True)
         for result in (build_result, patch_result, deploy_result)
@@ -592,7 +760,19 @@ def system_work_status_handler(_args):
         if item.get("patch_proposal_id") not in deploy_decided_patch_ids
     ]
 
-    if not configured:
+    if store_warnings:
+        base_summary = (
+            f"{len(pending_build)} item(s) need Forge Handoff or a Builder plan, "
+            f"{len(patch_without_decision)} patch proposal(s) need approve/reject review, "
+            f"and {len(deploy_ready_patch)} approved patch proposal(s) need verification plus a deploy decision from the stores I could read."
+        )
+        if not configured:
+            summary = "System work status is incomplete because one or more approval stores are not configured. " + base_summary
+            status = "not_configured"
+        else:
+            summary = "System work status is incomplete because one or more approval stores could not be read. " + base_summary
+            status = "degraded"
+    elif not configured:
         summary = "System work status is not configured in this process. The approval tables may still be available in the running kiosk environment."
         status = "not_configured"
     else:
@@ -605,11 +785,11 @@ def system_work_status_handler(_args):
         status = "ok"
 
     return {
-        "success": configured,
+        "success": configured and not store_warnings,
         "status": status,
         "summary": summary,
         "links": [{"label": "Oom Sakkie Workbench", "href": "/oom-sakkie"}],
-        "stale_warnings": [],
+        "stale_warnings": store_warnings,
         "safety_notes": ["System work status is read-only. No build, patch, or deploy was run."],
         "llm_context": {
             "kind": "system_work_status",
@@ -632,6 +812,161 @@ def system_work_status_handler(_args):
             "statuses": statuses,
         },
 }
+
+
+def _system_work_store_warnings(statuses):
+    warnings = []
+    for name, status_code in statuses.items():
+        if status_code != 200:
+            warnings.append(
+                f"System work status is incomplete: {name} unavailable (status {status_code})."
+            )
+    return warnings
+
+
+def agent_crew_status_handler(args):
+    status = get_agent_runtime_status()
+    recommendation = recommend_agent_for_text((args or {}).get("user_text") or "")
+    selected = recommendation.get("selected_agent") or {}
+    agents = status.get("agents") or []
+    agent_names = ", ".join(agent.get("name", agent.get("slug", "")) for agent in agents[:6])
+    if len(agents) > 6:
+        agent_names = f"{agent_names}, and {len(agents) - 6} more"
+    summary = (
+        f"Agent crew foundation has {status.get('agent_count', 0)} planned agent(s): {agent_names}. "
+        f"For this question, I would route to {selected.get('name', 'Gatekeeper')} because {recommendation.get('reason', 'fallback')}. "
+        "This is a recommendation only; no specialist agent was run."
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent crew status is advisory only. No specialist was dispatched, no tool was executed by a specialist, and no write was performed."
+        ],
+        "llm_context": {
+            "kind": "agent_crew_status",
+            "runtime": {
+                "runtime_enabled": status.get("runtime_enabled"),
+                "dispatch_enabled": status.get("dispatch_enabled"),
+                "autonomous_loops_enabled": status.get("autonomous_loops_enabled"),
+                "writes_enabled": status.get("writes_enabled"),
+            },
+            "selected_agent": selected,
+            "recommendation": {
+                "mode": recommendation.get("mode"),
+                "reason": recommendation.get("reason"),
+                "runs_agent": recommendation.get("runs_agent"),
+                "writes": recommendation.get("writes"),
+                "next_gate": recommendation.get("next_gate"),
+            },
+            "agent_count": status.get("agent_count", 0),
+        },
+        "raw": {
+            "agent_runtime": status,
+            "recommendation": recommendation,
+        },
+    }
+
+
+def agent_crew_brief_handler(args):
+    brief = build_agent_crew_brief((args or {}).get("user_text") or "")
+    names = [item.get("name") for item in brief.get("sequence", [])[:4] if item.get("name")]
+    summary = (
+        "Crew brief prepared: Oom Sakkie would coordinate {} for this request. "
+        "This is a plan only; no specialist was dispatched and no action was taken."
+    ).format(", ".join(names) if names else "the planned specialist crew")
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Crew brief is plan-only. No specialist was dispatched, no specialist LLM ran, no tool was executed by a specialist, and no write was performed."
+        ],
+        "llm_context": {
+            "kind": "agent_crew_brief",
+            "crew_brief": brief,
+            "selected_agent": (brief.get("sequence") or [{}])[0],
+        },
+        "raw": brief,
+    }
+
+
+def agent_activation_plan_handler(_args):
+    plan = get_agent_activation_plan()
+    candidate = plan.get("recommended_first_candidate") or {}
+    summary = (
+        "Agent activation plan: foundation is visible now; next safe stage is a read-only dry-run. "
+        "Recommended first candidate is {} because {} "
+        "Nothing is enabled yet; owner approval and audit gates are still required."
+    ).format(candidate.get("name", "Sentinel"), candidate.get("reason", "it has the smallest safe surface."))
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent activation plan is read-only. No specialist was dispatched, no runtime flag was enabled, and no write was performed."
+        ],
+        "llm_context": {
+            "kind": "agent_activation_plan",
+            "activation_plan": plan,
+            "selected_agent": candidate,
+        },
+        "raw": plan,
+    }
+
+
+def sentinel_dry_run_review_handler(_args):
+    catalog = [
+        {
+            "name": tool.name,
+            "risk_level": int(tool.risk_level),
+            "requires_confirmation": bool(tool.requires_confirmation),
+        }
+        for tool in TOOL_REGISTRY.values()
+    ]
+    review = build_sentinel_dry_run_review(catalog)
+    tool_audit = review.get("tool_audit") or {}
+    summary = (
+        "Sentinel dry-run review: advisory-only rehearsal is allowed, but live specialist dispatch remains locked. "
+        "{} read-only tool(s) are visible; {} non-read-only tool(s) and {} confirmation-required tool(s) are outside authority. "
+        "Next gate: {}."
+    ).format(
+        len(tool_audit.get("read_only_tools") or []),
+        len(tool_audit.get("non_read_only_tools") or []),
+        len(tool_audit.get("requires_confirmation_tools") or []),
+        review.get("next_gate", "owner approval"),
+    )
+    stale_warnings = []
+    if tool_audit.get("non_read_only_tools"):
+        stale_warnings.append("Sentinel dry-run found non-read-only tools in the catalog; they remain blocked.")
+    if tool_audit.get("requires_confirmation_tools"):
+        stale_warnings.append("Sentinel dry-run found confirmation-required tools in the catalog; they remain blocked.")
+
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
+        "stale_warnings": stale_warnings,
+        "safety_notes": [
+            "Sentinel dry-run review is advisory-only. No specialist was dispatched, no specialist LLM ran, no specialist tool executed, and no write was performed."
+        ],
+        "llm_context": {
+            "kind": "sentinel_dry_run_review",
+            "sentinel_review": review,
+            "selected_agent": review.get("selected_agent"),
+            "runtime_flags": review.get("runtime_flags"),
+            "tool_audit": review.get("tool_audit"),
+        },
+        "raw": review,
+    }
 
 
 def _system_work_build_stage(item):
@@ -671,6 +1006,42 @@ def _limitation_warnings(result):
 
 
 TOOL_REGISTRY = {
+    "sentinel_dry_run_review": OomSakkieTool(
+        name="sentinel_dry_run_review",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=sentinel_dry_run_review_handler,
+        description="Read-only Sentinel specialist dry-run readiness review. Never dispatches specialists or enables runtime flags.",
+    ),
+    "agent_activation_plan": OomSakkieTool(
+        name="agent_activation_plan",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_activation_plan_handler,
+        description="Read-only activation ladder for planned Oom Sakkie agents. Never enables dispatch.",
+    ),
+    "agent_crew_brief": OomSakkieTool(
+        name="agent_crew_brief",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_crew_brief_handler,
+        description="Read-only multi-agent crew plan. Shows which planned specialists would work together; never dispatches agents.",
+    ),
+    "agent_crew_status": OomSakkieTool(
+        name="agent_crew_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_crew_status_handler,
+        description="Read-only agent crew status and recommendation-only specialist routing. Never dispatches agents.",
+    ),
     "system_work_status": OomSakkieTool(
         name="system_work_status",
         input_schema=_empty_object_schema(),

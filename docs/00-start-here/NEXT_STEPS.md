@@ -6687,6 +6687,163 @@ Manual check:
 4. Scroll and confirm each group has a clear heading and separated cards.
 5. Click `Business` and confirm it asks `What should we sell next?`.
 
+### 10.8M Oom Sakkie Work Status Honesty - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Close Claude's Low finding that `system_work_status` could say "0 items" during a DB/store outage.
+- Keep approval-status answers honest before the owner starts relying on the `Approvals` quick action.
+- Clean up deploy-decision dependency-check ordering.
+
+Implemented locally:
+
+- `system_work_status` now inspects the HTTP/status code from:
+  - `list_build_requests`,
+  - `list_patch_proposals`,
+  - `list_deploy_decisions`.
+- Any non-200 sub-call produces a stale warning:
+  - `System work status is incomplete: <store> unavailable (status <code>).`
+- If a store is unavailable because it is not configured, the tool returns `status = not_configured`.
+- If a configured store fails, the tool returns `status = degraded`.
+- Summary wording now says the status is incomplete when any store could not be read.
+- Counts are still best-effort from the stores that were readable.
+- `record_deploy_decision()` now checks local `psycopg` availability before loading the patch proposal.
+
+Safety:
+
+- No builder execution.
+- No file edits.
+- No patch application.
+- No deploy.
+- No prompt/tool/farm-data mutation.
+- This is failure visibility only.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 464 tests OK.
+
+Manual check:
+
+1. Ask `What needs my approval?` under normal DB configuration.
+2. Temporarily run a process without `DATABASE_URL` and ask the same question.
+3. Confirm the answer includes a stale warning/incomplete status instead of confidently saying nothing is waiting.
+
+### 10.8N Oom Sakkie Business Advisor Context Upgrade - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Make the Business Advisor less dumb by separating real marketable stock from young/not-ready stock.
+- Give the owner a concrete commercial recommendation backed by pig/category details.
+- Keep the output read-only and approval-friendly.
+
+Implemented locally:
+
+- `business_growth_brief` now computes:
+  - total listed stock,
+  - marketable listed stock,
+  - young/not-ready stock,
+  - ready meat candidates.
+- Marketable stock excludes `Not For Sale` and `Out of Stock` rows.
+- Ready meat candidates include:
+  - pig ID,
+  - tag number,
+  - pen,
+  - latest weight,
+  - recommended action,
+  - marketing readiness.
+- Summary now includes:
+  - commercial focus,
+  - marketable category breakdown,
+  - young/not-ready count,
+  - ready candidate tags/pen/weights,
+  - one owner-facing follow-up question.
+- `llm_context` now exposes:
+  - `owner_question`,
+  - `marketable_stock`,
+  - `young_or_not_ready_stock`,
+  - `ready_meat_candidates`.
+
+Safety:
+
+- Still read-only advice.
+- Does not draft an offer yet.
+- Does not post.
+- Does not message customers.
+- Does not sell, reserve, invoice, or mutate stock.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 464 tests OK.
+- Live read-only smoke returned:
+  - 21 marketable pigs,
+  - 34 young/not-ready pigs,
+  - ready meat candidates tag 2 and tag 3 in D1.
+
+Manual check:
+
+1. Ask `What should we sell next?`
+2. Confirm the answer distinguishes marketable stock from young/not-ready stock.
+3. Confirm it names the ready meat candidates.
+4. Confirm it asks a follow-up question instead of sending/posting/selling anything.
+
+### 10.8O Oom Sakkie Role-Specific Spoken Composer Rules - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Move Oom Sakkie closer to the intended Jarvis-style interaction without adding tool authority.
+- Make LLM-composed Business Advisor answers sound like advice instead of table narration.
+- Make approval-status answers lead with what the owner should do next.
+
+Implemented locally:
+
+- Updated `modules/oom_sakkie/llm_answer.py` prompt contract.
+- For `business_growth_brief`, the composer must:
+  - sound like a business advisor,
+  - lead with the commercial move,
+  - name the stock or ready pigs that justify it,
+  - ask exactly one approval-style follow-up question from `backend_context.owner_question` when present.
+- For `system_work_status`, the composer must:
+  - state the next owner action first,
+  - mention build/patch/deploy counts only if useful.
+- Existing hard boundaries remain:
+  - use only backend facts,
+  - do not invent numbers,
+  - do not claim saved/sent/started/stopped/posted/changed,
+  - preserve stale warnings and safety notes.
+
+Safety:
+
+- Composer remains env-gated by `OOM_SAKKIE_LLM_ANSWER_ENABLED`.
+- It cannot choose tools.
+- It cannot call tools.
+- It cannot write records.
+- It cannot send messages, post, sell, reserve, apply patches, or deploy.
+- If composer output is unsafe/off-topic/invalid, deterministic backend wording is used.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 139 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Ensure `OOM_SAKKIE_LLM_ANSWER_ENABLED=true` in the local environment.
+2. Ask `What should we sell next?`
+3. Confirm the answer sounds advisory and asks one approval-style follow-up question.
+4. Ask `What needs my approval?`
+5. Confirm it leads with the next owner action.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.
@@ -7018,6 +7175,523 @@ Recommended next:
 - Phase 7.3D is complete and live-verified.
 
 Pick the next item deliberately before implementation so docs, workflow exports, and tests stay aligned.
+
+### 10.8P Oom Sakkie Business Offer Outline - Local Ready
+
+Purpose:
+
+- Move the Business Advisor from a basic data reader toward a useful commercial co-pilot without crossing into customer/public action.
+- Let Oom Sakkie explain the internal shape of a possible offer opportunity from existing read-only sales and meat-planning facts.
+- Keep the owner in control before any future draft-only customer copy, public post, quote, reservation, sale, or stock change.
+
+What changed:
+
+- `business_growth_brief` now adds `llm_context.offer_brief_outline`.
+- The outline is explicitly `mode = internal_outline_only`.
+- For ready meat candidates, the outline names:
+  - opportunity title,
+  - target buyer type,
+  - ready-stock evidence,
+  - ready tags/pen/weight as stock basis,
+  - owner approval requirement,
+  - next step before any customer-facing draft.
+- For listed marketable stock, the outline names the listed-stock sales push and asks for a buyer segment before any customer wording.
+- If no obvious stock opportunity exists, the outline says demand discovery should happen first.
+- The outline records what was not done:
+  - no customer message drafted,
+  - no public post drafted,
+  - no quote created,
+  - no sale/reservation/stock change made.
+- Deterministic routing now treats `offer brief`, `commercial brief`, and `prepare ... offer` as `business_growth_brief`.
+- Added an `Offer Brief` quick action on the kiosk with prompt `Prepare an internal offer brief.`
+- The env-gated answer composer now has a Business Advisor rule: if `backend_context.offer_brief_outline` exists, summarize it as an internal offer brief outline only, not customer-facing copy.
+
+Verification:
+
+- Focused Oom Sakkie tests confirmed:
+  - `business_growth_brief` still stays `RiskLevel.READ_ONLY`,
+  - `offer_brief_outline.mode == internal_outline_only`,
+  - ready candidates appear in the outline basis,
+  - approval and no-action language is present,
+  - `prepare an offer brief` routes to `business_growth_brief`,
+  - the kiosk exposes `Prepare an internal offer brief.` as a quick action,
+  - answer-composer prompt pins `internal offer brief outline only` and `not customer-facing copy`.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` passed at 139 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 464 tests.
+
+Safety status:
+
+- Still no customer message drafting.
+- Still no public post drafting.
+- Still no quote/order creation.
+- Still no stock reservation or sale.
+- Still no Supabase/Google Sheets farm-data write from this tool.
+- Still no Builder/Forge execution, patch application, or deploy.
+
+North-star tracking:
+
+- End goal remains a farm operating/business interface that feels alive and useful, with Oom Sakkie as the user-facing brain.
+- Build path remains staged:
+  1. read-only operating visibility,
+  2. read-only specialist/business advice,
+  3. internal proposal outlines,
+  4. draft-only customer/media/business packets behind human approval,
+  5. human-approved builder/patch/deploy gates,
+  6. carefully gated write/post/sell/control actions only after repeated review.
+
+### 10.9A Oom Sakkie Agent Runtime Foundation - Local Ready
+
+Purpose:
+
+- Shift the work from patching single answers toward a real Jarvis-like agent platform for the farm.
+- Give the planned specialist crew a runtime shape: identity, personality, role, memory sources, tool allowlist, risk limit, output contract, approval rules, and routing hints.
+- Keep the first runtime slice advisory only. It must not run live agent delegation, autonomous loops, writes, posts, sales, controls, Builder/Forge, patch application, or deploy.
+
+What changed:
+
+- Added `modules/oom_sakkie/agent_runtime.py`.
+- Added `AgentRuntimeManifest` for the planned crew.
+- Added read-only runtime status:
+  - `mode = advisory_runtime_foundation`,
+  - `runtime_enabled = false`,
+  - `dispatch_enabled = false`,
+  - `autonomous_loops_enabled = false`,
+  - `writes_enabled = false`.
+- Added per-agent fields:
+  - `personality`,
+  - `memory_sources`,
+  - `allowed_tools`,
+  - `risk_limit`,
+  - `output_contract`,
+  - `approval_rules`,
+  - `routing_hints`.
+- Added recommendation-only routing:
+  - `recommend_agent_for_text(text)`,
+  - returns `mode = dispatch_recommendation_only`,
+  - returns `runs_agent = false`,
+  - returns `writes = false`,
+  - explains which planned agent would handle the question and why.
+- Added protected endpoints:
+  - `GET /api/oom-sakkie/agents`,
+  - `POST /api/oom-sakkie/agents/recommend`.
+- Added `agent_runtime` into `/api/oom-sakkie/review-packet`.
+- Added kiosk `Agent Crew Foundation` panel that renders the crew and states dispatch/autonomous loops are off.
+- Added `Agents` review link.
+
+Initial crew platform:
+
+- Sentinel: safety/security reviewer.
+- Forge: builder/code/test planner.
+- Prism: UI/design advisor.
+- Ledger: business/profit advisor.
+- Atlas: analytics/trends/anomaly advisor.
+- Rootline: weather/crop/irrigation advisor.
+- Herdmaster: pig lifecycle/herd specialist.
+- Butcher: pork/meat/slaughter pipeline specialist.
+- Beacon: marketing/media draft specialist.
+- Quartermaster: tasks/supplies/operations planner.
+- Gatekeeper: routing/approval controller.
+
+Safety status:
+
+- No live delegation.
+- No autonomous loops.
+- No specialist LLM calls.
+- No tool execution through `/agents/recommend`.
+- No write tools.
+- No customer/public output.
+- No Builder/Forge execution.
+- No patch/deploy automation.
+- This is a platform foundation and visibility layer only.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 145 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 470 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Confirm `Agent Crew Foundation` loads named agents with personalities, roles, and allowed tools.
+4. Confirm guard line says runtime/dispatch/autonomous loops are off.
+5. Open `/api/oom-sakkie/agents` locally and confirm all runtime/write flags are false.
+6. Optional local POST to `/api/oom-sakkie/agents/recommend` with text such as `should we post a marketing update?`; confirm it recommends Beacon but says `runs_agent = false`.
+
+### 10.9B Oom Sakkie Agent Crew Status Tool - Local Ready
+
+Purpose:
+
+- Let the owner ask Oom Sakkie about the agent crew from the normal chat path.
+- Make the agent platform visible as an assistant capability, not only a hidden workbench/API panel.
+- Keep this recommendation-only: no live specialist dispatch, no agent LLM calls, no specialist tool execution, and no writes.
+
+What changed:
+
+- Added read-only registry tool `agent_crew_status`.
+- Added deterministic routing for phrases such as:
+  - `which agent should handle ...`,
+  - `show me the agent crew`,
+  - `who handles ...`,
+  - `agent platform`,
+  - `jarvis agents`.
+- `handle_message()` now passes bounded `user_text` into tool handlers as context. Existing handlers ignore it; `agent_crew_status` uses it only for recommendation.
+- `agent_crew_status` calls the same recommendation-only runtime helper from Phase 10.9A.
+- Tool output states:
+  - which planned agent would handle the question,
+  - why it was selected,
+  - that no specialist was dispatched,
+  - that no specialist tool ran,
+  - that no write was performed.
+- Added `Agents` quick action with prompt `Which agent should handle this?`
+
+Safety status:
+
+- Tool remains `RiskLevel.READ_ONLY`.
+- No specialist runtime execution.
+- No autonomous loop.
+- No write, post, sale, message, control, Builder/Forge, patch, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 147 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 472 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Agents`.
+3. Ask `which agent should handle a marketing post?`
+4. Confirm the answer names Beacon but says no specialist was dispatched.
+
+### 10.9C Oom Sakkie Agent Activity Stage - Local Ready
+
+Purpose:
+
+- Move the kiosk toward the Jarvis-style controller/team model captured in `screenshots/Jarvis screen layout.mp4`.
+- Make Oom Sakkie visibly act as the controller while the relevant planned specialist opens a read-only workspace.
+- Show color changes by active specialist so the owner can follow who is "working" without enabling live dispatch yet.
+
+Design reference note:
+
+- The owner-provided MP4 is retained as a visual target: Oom Sakkie controls the interaction, specialist agents open their own visible work areas, colors shift as work moves between agents, and the owner can see what each agent is doing.
+- Local frame extraction was not available in this environment because no video reader/ffmpeg stack is installed, so this phase logs and implements from the owner's described design intent.
+
+What changed:
+
+- Added `build_agent_activity()` in `modules/oom_sakkie/agent_runtime.py`.
+- `handle_message()` now adds an `agent_activity` payload to successful read-only tool responses.
+- The payload includes:
+  - `controller = oom_sakkie`,
+  - active planned agent slug/name/personality/role/color,
+  - workspace title/state/tool/reason/owner text,
+  - hard safety flags: `runs_agent = false`, `dispatch_enabled = false`, `autonomous_loops_enabled = false`, `writes = false`.
+- Mapped current read-only tools to visible primary agents:
+  - business/sales tools -> Ledger,
+  - power/farm operating brief -> Atlas,
+  - weather/irrigation -> Rootline,
+  - pig dashboard/allocation -> Herdmaster,
+  - meat planning -> Butcher,
+  - system work -> Forge,
+  - farm attention -> Quartermaster,
+  - crew recommendation -> selected recommended agent when available, otherwise Gatekeeper.
+- Added a first-viewport `Agent Activity Stage` under the Oom Sakkie presence orb.
+- The stage shows:
+  - controller state,
+  - active specialist workspace,
+  - current read-only tool,
+  - routing reason,
+  - dispatch/loop/write guard.
+- The presence orb and workspace border now change color by active specialist.
+- Added responsive CSS so the controller/workspace stack cleanly on narrow screens.
+
+Safety status:
+
+- This is a display/activity layer only.
+- No live specialist dispatch.
+- No specialist LLM call.
+- No autonomous loop.
+- No specialist tool execution beyond the existing single read-only tool path.
+- No write, post, sale, message, control, Builder/Forge run, patch application, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 149 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 474 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Ask `what is the power doing now`; confirm Atlas opens and the orb shifts cyan.
+3. Ask `what should we sell next`; confirm Ledger opens and the orb shifts green.
+4. Ask `what is the irrigation status`; confirm Rootline opens and the orb shifts teal.
+5. Ask `which agent should handle a marketing post`; confirm Beacon opens and the answer still says no specialist was dispatched.
+
+### 10.9D Oom Sakkie Agent Handoff Lane - Local Ready
+
+Purpose:
+
+- Make the controller/team model easier to follow on screen.
+- Show the visible sequence for each read-only answer: Oom Sakkie receives the request, a specialist workspace opens, an existing read-only backend tool supplies facts, and owner approval remains the gate for anything beyond advice.
+- Keep the UI closer to the Jarvis reference without turning planned specialists into live autonomous agents yet.
+
+What changed:
+
+- `build_agent_activity()` now returns a four-step `handoff_lane`:
+  - `controller` -> Oom Sakkie received one bounded read-only turn,
+  - `specialist_workspace` -> visible-only planned agent workspace opened,
+  - `read_only_tool` -> existing backend read-only tool supplied facts,
+  - `owner_gate` -> no write/post/sale/control/patch/deploy can run here.
+- The kiosk Agent Activity Stage now includes an `Agent handoff lane`.
+- The lane is rendered with DOM nodes and `.textContent`, not dynamic HTML.
+- CSS presents the lane as four compact process cards on desktop and stacked cards on narrow screens.
+- Frontend contracts pin the lane markup, JS renderer, DOM creation path, and CSS hooks.
+
+Safety status:
+
+- Visual handoff only.
+- No live specialist dispatch.
+- No specialist LLM call.
+- No autonomous loop.
+- No new tool authority.
+- No write, post, sale, message, physical control, Builder/Forge run, patch application, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 149 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 474 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Ask `what should we sell next`.
+3. Confirm the handoff lane shows Controller / Specialist Workspace / Read Only Tool / Owner Gate.
+4. Confirm the owner-gate card says no write/post/sale/control/patch/deploy can run here.
+
+### 10.9E Oom Sakkie Agent Crew Brief - Local Ready
+
+Purpose:
+
+- Let Oom Sakkie explain how the planned specialist team would work together on broader requests.
+- Move from single-agent recommendation toward a controller-led team plan without enabling live dispatch.
+- Give the owner a practical view of which specialist would inspect which part of a problem before any future multi-agent runtime is allowed.
+
+What changed:
+
+- Added `build_agent_crew_brief(text)` to the agent runtime foundation.
+- The helper selects a scenario from the owner text:
+  - commercial growth,
+  - farm operations,
+  - pig pipeline,
+  - system build,
+  - weather/irrigation,
+  - general fallback.
+- The helper returns `mode = crew_plan_only` with a planned sequence of agents, each including:
+  - order,
+  - slug/name/personality/role/color,
+  - what that specialist would inspect,
+  - allowed read-only tools,
+  - `runs_agent = false`,
+  - `writes = false`.
+- Added read-only tool `agent_crew_brief`.
+- Added deterministic routing for phrases such as:
+  - `crew brief`,
+  - `team brief`,
+  - `agent team`,
+  - `which agents would work together`,
+  - `coordinate the team`,
+  - `multi-agent`,
+  - `agent plan`.
+- Added kiosk quick action `Team Brief` with prompt `Give me the agent team brief for growing the farm business.`
+
+Safety status:
+
+- Plan-only.
+- No specialist dispatch.
+- No specialist LLM call.
+- No autonomous loop.
+- No specialist tool execution.
+- No write, post, sale, message, physical control, Builder/Forge run, patch application, or deploy.
+- Future execution still requires owner approval before live multi-agent dispatch.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 151 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 476 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Team Brief`.
+3. Confirm the answer names a planned sequence such as Ledger, Butcher, Beacon, Sentinel.
+4. Confirm the safety note says no specialist was dispatched and no write was performed.
+5. Confirm the active workspace follows the first planned specialist but the guard still says dispatch/loops/writes are off.
+
+### 10.9F Oom Sakkie Visible Crew Sequence - Local Ready
+
+Purpose:
+
+- Make the plan-only Team Brief visible on the Agent Activity Stage.
+- Show the owner the planned specialist sequence as cards, not only answer text.
+- Continue building toward the Jarvis-style controller/team display while keeping execution disabled.
+
+What changed:
+
+- `agent_activity` now includes `crew_sequence` when the tool result contains a crew brief.
+- The sequence is bounded to six planned agents.
+- Each sequence card includes:
+  - step/order,
+  - agent name/personality,
+  - what the agent would inspect,
+  - `runs no`,
+  - `writes no`.
+- Added `oom_agent_crew_sequence` to the kiosk Agent Activity Stage.
+- Added `renderAgentCrewSequence()` in `static/js/oomSakkie.js`.
+- The sequence area is hidden by default and appears only when a crew brief is returned.
+- Crew sequence cards use the same agent color language as the active workspace.
+- Dynamic sequence content uses DOM nodes and `.textContent`.
+
+Safety status:
+
+- Visual plan only.
+- No specialist dispatch.
+- No specialist LLM call.
+- No autonomous loop.
+- No specialist tool execution.
+- No write, post, sale, message, physical control, Builder/Forge run, patch application, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 152 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 477 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Team Brief`.
+3. Confirm a `Planned specialist sequence` row appears with Ledger / Butcher / Beacon / Sentinel cards.
+4. Confirm each card says `runs no | writes no`.
+5. Ask a normal single-tool question such as `what is the power doing now`; confirm the sequence row hides again.
+
+### 10.9G Oom Sakkie Agent Activation Plan - Local Ready
+
+Purpose:
+
+- Make the path from planned agents to real agents explicit and trackable.
+- Let Oom Sakkie answer what needs to happen before agents become live.
+- Keep the activation plan inside the runtime as a read-only contract, not just a vague idea in chat.
+
+What changed:
+
+- Added `get_agent_activation_plan()` to `modules/oom_sakkie/agent_runtime.py`.
+- The plan returns:
+  - `mode = activation_plan_only`,
+  - runtime/dispatch/autonomous-loop/write flags all false,
+  - activation stages:
+    - foundation visible,
+    - read-only dry-run,
+    - human-approved dispatch,
+    - draft-only outputs,
+    - controlled writes,
+  - recommended next stage: `read_only_dry_run`,
+  - recommended first candidate: Sentinel,
+  - required locked-until gates,
+  - blocked capabilities.
+- Added read-only tool `agent_activation_plan`.
+- Added deterministic routing for phrases such as:
+  - `agent activation`,
+  - `activate agents`,
+  - `make agents live`,
+  - `agent roadmap`,
+  - `what is next for the agents`,
+  - `when can agents go live`.
+- Added kiosk quick action `Agent Roadmap` with prompt `What is the agent activation plan?`
+
+Safety status:
+
+- Read-only plan only.
+- No specialist dispatch.
+- No specialist LLM call.
+- No autonomous loop.
+- No runtime flag is enabled.
+- No write, post, sale, message, physical control, Builder/Forge run, patch application, or deploy.
+- First live slice remains locked behind owner approval and a future append-only dispatch/audit gate.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 154 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 479 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Agent Roadmap`.
+3. Confirm Oom Sakkie says the next safe stage is a read-only dry-run.
+4. Confirm Sentinel is recommended first.
+5. Confirm the safety note says no specialist was dispatched and no runtime flag was enabled.
+
+### 10.9H Oom Sakkie Sentinel Dry-Run Review - Local Ready
+
+Purpose:
+
+- Start the first specialist activation rehearsal without enabling live specialist dispatch.
+- Let Sentinel review whether the current tool/runtime foundation is safe enough for a future read-only dry-run.
+- Keep the result deterministic, read-only, and auditable before any specialist LLM or dispatch loop exists.
+
+What changed:
+
+- Added `build_sentinel_dry_run_review(tool_catalog)` to `modules/oom_sakkie/agent_runtime.py`.
+- The review returns:
+  - `mode = sentinel_dry_run_review_only`,
+  - selected agent: Sentinel,
+  - runtime/dispatch/autonomous-loop/write/specialist-LLM flags all false,
+  - read-only tool audit,
+  - non-read-only / confirmation-required tool lists,
+  - blockers before any live specialist dry-run,
+  - recommendation and next gate.
+- Added read-only tool `sentinel_dry_run_review`.
+- Added deterministic routing for phrases such as:
+  - `sentinel dry-run`,
+  - `safety dry-run`,
+  - `first agent dry run`,
+  - `specialist dry-run`,
+  - `agent dry-run review`.
+- Added kiosk quick action `Sentinel Dry Run` with prompt `Run the Sentinel dry-run review.`
+- Agent Activity Stage maps the tool to Sentinel so the visible workspace uses the Sentinel identity/color.
+
+Safety status:
+
+- Read-only review only.
+- No specialist dispatch.
+- No specialist LLM call.
+- No autonomous loop.
+- No specialist tool execution.
+- No runtime flag is enabled.
+- No write, post, sale, message, physical control, Builder/Forge run, patch application, or deploy.
+- Future live dry-run remains locked behind owner approval, append-only dispatch/audit trail, and review.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 155 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 480 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Sentinel Dry Run`.
+3. Confirm the answer says this is an advisory-only rehearsal and live dispatch remains locked.
+4. Confirm Sentinel opens in the Agent Activity Stage.
+5. Confirm the safety note says no specialist was dispatched, no specialist LLM ran, no specialist tool executed, and no write was performed.
+6. Confirm the review lists blockers before any live specialist dry-run.
 
 7.3E weather LLM triage note:
 

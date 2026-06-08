@@ -2658,6 +2658,230 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.oom-agent-stage {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.38fr) minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.oom-agent-controller,
+.oom-agent-workspace {
+  border: 1px solid rgba(125, 155, 125, 0.28);
+  background: rgba(255, 255, 255, 0.74);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.oom-agent-controller span,
+.oom-agent-workspace span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.oom-agent-controller strong,
+.oom-agent-workspace strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.oom-agent-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border-left: 4px solid #b8c4b2;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.oom-agent-workspace p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.35;
+}
+
+.oom-agent-workspace code {
+  align-self: start;
+  border: 1px solid rgba(125, 155, 125, 0.25);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #ffffff;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+.oom-agent-handoff-lane {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oom-agent-handoff-card {
+  min-height: 112px;
+  border: 1px solid rgba(125, 155, 125, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 10px 12px;
+}
+
+.oom-agent-handoff-card span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-agent-handoff-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+.oom-agent-handoff-card p {
+  min-height: 34px;
+  margin: 7px 0 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.oom-agent-handoff-card code {
+  display: inline-block;
+  border: 1px solid rgba(45, 212, 168, 0.26);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: rgba(45, 212, 168, 0.08);
+  color: var(--text-soft);
+  font-size: 11px;
+  white-space: normal;
+}
+
+.oom-agent-crew-sequence {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.oom-agent-sequence-heading {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-agent-sequence-card {
+  min-height: 124px;
+  border: 1px solid rgba(125, 155, 125, 0.22);
+  border-left: 4px solid #b8c4b2;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px 12px;
+}
+
+.oom-agent-sequence-card span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-agent-sequence-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-main);
+  font-size: 14px;
+}
+
+.oom-agent-sequence-card p {
+  min-height: 38px;
+  margin: 7px 0 8px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.oom-agent-sequence-card code {
+  display: inline-block;
+  border: 1px solid rgba(125, 155, 125, 0.24);
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #ffffff;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.oom-agent-workspace[data-agent="green"],
+.oom-presence-orb[data-agent="green"],
+.oom-agent-sequence-card[data-agent="green"] {
+  border-color: #4f9365;
+}
+
+.oom-agent-workspace[data-agent="rose"],
+.oom-presence-orb[data-agent="rose"],
+.oom-agent-sequence-card[data-agent="rose"] {
+  border-color: #b65b6b;
+}
+
+.oom-agent-workspace[data-agent="magenta"],
+.oom-presence-orb[data-agent="magenta"],
+.oom-agent-sequence-card[data-agent="magenta"] {
+  border-color: #a95191;
+}
+
+.oom-agent-workspace[data-agent="teal"],
+.oom-presence-orb[data-agent="teal"],
+.oom-agent-sequence-card[data-agent="teal"] {
+  border-color: #3f8f86;
+}
+
+.oom-agent-workspace[data-agent="amber"],
+.oom-presence-orb[data-agent="amber"],
+.oom-agent-sequence-card[data-agent="amber"] {
+  border-color: #b4883e;
+}
+
+.oom-agent-workspace[data-agent="blue"],
+.oom-presence-orb[data-agent="blue"],
+.oom-agent-sequence-card[data-agent="blue"] {
+  border-color: #4f75a8;
+}
+
+.oom-agent-workspace[data-agent="cyan"],
+.oom-presence-orb[data-agent="cyan"],
+.oom-agent-sequence-card[data-agent="cyan"] {
+  border-color: #4d95ad;
+}
+
+.oom-agent-workspace[data-agent="violet"],
+.oom-presence-orb[data-agent="violet"],
+.oom-agent-sequence-card[data-agent="violet"] {
+  border-color: #8068b1;
+}
+
+.oom-agent-workspace[data-agent="red"],
+.oom-presence-orb[data-agent="red"],
+.oom-agent-sequence-card[data-agent="red"] {
+  border-color: #b45b52;
+}
+
+.oom-agent-workspace[data-agent="olive"],
+.oom-presence-orb[data-agent="olive"],
+.oom-agent-sequence-card[data-agent="olive"] {
+  border-color: #7b8d45;
+}
+
 @keyframes oom-orb-spin {
   to {
     transform: rotate(360deg);
@@ -3762,6 +3986,17 @@ button:disabled {
 
   .oom-presence-actions {
     justify-content: flex-start;
+  }
+
+  .oom-agent-stage,
+  .oom-agent-workspace,
+  .oom-agent-handoff-lane {
+    grid-template-columns: 1fr;
+  }
+
+  .oom-agent-workspace code {
+    justify-self: start;
+    white-space: normal;
   }
 
   .oom-answer {

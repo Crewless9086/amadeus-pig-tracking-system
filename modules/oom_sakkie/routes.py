@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from modules.oom_sakkie.access import is_review_request_allowed, review_access_denied_response
+from modules.oom_sakkie.agent_runtime import get_agent_runtime_status, recommend_agent_for_text
 from modules.oom_sakkie.build_request_store import (
     get_build_request,
     list_build_requests,
@@ -90,6 +91,23 @@ def oom_sakkie_specialists():
     }), 200
 
 
+@oom_sakkie_bp.route("/oom-sakkie/agents", methods=["GET"])
+def oom_sakkie_agents():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    return jsonify(get_agent_runtime_status()), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agents/recommend", methods=["POST"])
+def oom_sakkie_agent_recommend():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    return jsonify(recommend_agent_for_text(payload.get("text") or "")), 200
+
+
 @oom_sakkie_bp.route("/oom-sakkie/review-packet", methods=["GET"])
 def oom_sakkie_review_packet():
     denied = _require_review_access()
@@ -110,6 +128,7 @@ def oom_sakkie_review_packet():
         "policy": get_runtime_policy(),
         "tools": list_tool_catalog(),
         "specialists": list_specialist_manifests(),
+        "agent_runtime": get_agent_runtime_status(),
         "review_summary": review_summary,
         "recent_traces": recent_traces,
         "statuses": {

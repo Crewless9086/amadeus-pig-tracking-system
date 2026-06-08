@@ -26,6 +26,11 @@ def record_deploy_decision(patch_proposal_id, payload, database_url=None):
     if not database_url:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
 
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing"}, 500
+
     patch_result, patch_status = get_patch_proposal(patch_proposal_id, database_url=database_url)
     if patch_status != 200:
         return patch_result, patch_status
@@ -39,11 +44,6 @@ def record_deploy_decision(patch_proposal_id, payload, database_url=None):
             "patch_proposal_id": patch_proposal_id,
             "required_event": "approved_for_patch",
         }, 409
-
-    try:
-        import psycopg
-    except ImportError:
-        return {"success": False, "configured": True, "status": "dependency_missing"}, 500
 
     params = _deploy_decision_params(patch_proposal_id, payload)
     try:

@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from modules.oom_sakkie.agent_runtime import build_agent_activity
 from modules.oom_sakkie.llm_answer import compose_answer_with_llm
 from modules.oom_sakkie.llm_router import route_with_llm
 from modules.oom_sakkie.tools import RiskLevel, get_tool
@@ -38,6 +39,22 @@ class IntentMatch:
 
 RULES = [
     (
+        re.compile(r"\b(sentinel dry[- ]?run|safety dry[- ]?run|first agent dry[- ]?run|agent dry[- ]?run review|specialist dry[- ]?run|dry[- ]?run sentinel)\b", re.I),
+        IntentMatch("sentinel_dry_run_review", "sentinel_dry_run_review", 0.95, "rule:sentinel_dry_run_review"),
+    ),
+    (
+        re.compile(r"\b(agent activation|activate agents|turn agents on|make agents live|live agents|agent roadmap|agent activation plan|next.*agents|agents.*next|when.*agents.*live)\b", re.I),
+        IntentMatch("agent_activation_plan", "agent_activation_plan", 0.95, "rule:agent_activation_plan"),
+    ),
+    (
+        re.compile(r"\b(crew brief|team brief|agent team|which agents would work|who would work together|coordinate the team|multi agent|multi-agent|agent plan|team plan)\b", re.I),
+        IntentMatch("agent_crew_brief", "agent_crew_brief", 0.95, "rule:agent_crew_brief"),
+    ),
+    (
+        re.compile(r"\b(agent crew|agent runtime|which agent|what agent|who should handle|who handles|specialist should|which specialist|agent platform|jarvis agents)\b", re.I),
+        IntentMatch("agent_crew_status", "agent_crew_status", 0.95, "rule:agent_crew_status"),
+    ),
+    (
         re.compile(r"\b(system work|work status|approval status|waiting for approval|needs my approval|need my approval|what are you building|what did you build|builder status|forge status|patch status|deploy status|what needs review)\b", re.I),
         IntentMatch("system_work_status", "system_work_status", 0.95, "rule:system_work_status"),
     ),
@@ -46,7 +63,7 @@ RULES = [
         IntentMatch("farm_operating_brief", "farm_operating_brief", 0.95, "rule:farm_operating_brief"),
     ),
     (
-        re.compile(r"\b(business advisor|business growth|grow sales|grow the business|make money|generate money|what should we sell|what can we sell|what should i promote|sales opportunity|commercial focus|next offer)\b", re.I),
+        re.compile(r"\b(business advisor|business growth|grow sales|grow the business|make money|generate money|what should we sell|what can we sell|what should i promote|sales opportunity|commercial focus|next offer|offer brief|commercial brief|prepare.*offer)\b", re.I),
         IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),
     (
@@ -320,7 +337,7 @@ def handle_message(payload):
             "trace_store": trace_status,
         }, 500
 
-    tool_result = tool.handler({})
+    tool_result = tool.handler({"user_text": text})
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
     links = list(tool_result.get("links") or [])
@@ -337,6 +354,11 @@ def handle_message(payload):
     )
     answer = composed_answer or deterministic_answer
     answer_source = "llm_composer" if composed_answer else "deterministic"
+    agent_activity = build_agent_activity(
+        tool_name=tool.name,
+        user_text=text,
+        tool_result=tool_result,
+    )
     trace = _trace_payload(
         trace_id=trace_id,
         channel=channel,
@@ -372,6 +394,7 @@ def handle_message(payload):
             llm_answer_used=answer_source == "llm_composer",
             tool_checked=True,
         ),
+        "agent_activity": agent_activity,
         "trace_store": trace_status,
         "intent": {
             "name": match.intent,

@@ -75,6 +75,71 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    def test_agents_route_is_foundation_only(self):
+        response = self.client.get("/api/oom-sakkie/agents")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "advisory_runtime_foundation")
+        self.assertFalse(data["runtime_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["autonomous_loops_enabled"])
+        self.assertGreaterEqual(data["agent_count"], 8)
+        ledger = next(item for item in data["agents"] if item["slug"] == "ledger")
+        self.assertIn("business_growth_brief", ledger["allowed_tools"])
+
+    def test_agents_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agents",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    def test_agent_recommend_route_returns_non_dispatching_recommendation(self):
+        response = self.client.post(
+            "/api/oom-sakkie/agents/recommend",
+            json={"text": "should we post a marketing update?"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "dispatch_recommendation_only")
+        self.assertFalse(data["runs_agent"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertEqual(data["selected_agent"]["slug"], "beacon")
+
+    def test_agent_recommend_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/agents/recommend",
+            json={"text": "who should handle this?"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_message_can_answer_agent_crew_status_without_dispatch(self, _write_trace):
+        response = self.client.post(
+            "/api/oom-sakkie/message",
+            json={"text": "which agent should handle a marketing post?", "channel": "kiosk"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["tool_used"], "agent_crew_status")
+        self.assertEqual(data["risk_level"], 0)
+        self.assertIn("No specialist was dispatched", " ".join(data["safety_notes"]))
+        self.assertFalse(data["needs_clarification"])
+
     @patch("modules.oom_sakkie.routes.get_review_advisor")
     def test_review_advisor_route_is_advisory_only(self, mock_advisor):
         mock_advisor.return_value = ({

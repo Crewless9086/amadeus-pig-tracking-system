@@ -6,6 +6,13 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
+from modules.oom_sakkie.agent_runtime import (
+    build_agent_crew_brief,
+    build_agent_activity,
+    get_agent_activation_plan,
+    get_agent_runtime_status,
+    recommend_agent_for_text,
+)
 from modules.oom_sakkie.llm_answer import (
     _build_payload,
     compose_answer_with_llm,
@@ -68,6 +75,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(
             set(TOOL_REGISTRY),
             {
+                "sentinel_dry_run_review",
+                "agent_activation_plan",
+                "agent_crew_brief",
+                "agent_crew_status",
                 "system_work_status",
                 "farm_operating_brief",
                 "business_growth_brief",
@@ -164,6 +175,195 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(beacon["risk_level"], 1)
         self.assertEqual(beacon["allowed_mode"], "draft_only")
 
+    def test_agent_runtime_foundation_is_advisory_only(self):
+        status = get_agent_runtime_status()
+
+        self.assertTrue(status["success"])
+        self.assertEqual(status["mode"], "advisory_runtime_foundation")
+        self.assertFalse(status["runtime_enabled"])
+        self.assertFalse(status["dispatch_enabled"])
+        self.assertFalse(status["autonomous_loops_enabled"])
+        self.assertFalse(status["writes_enabled"])
+        self.assertGreaterEqual(status["agent_count"], 8)
+        agents = {item["slug"]: item for item in status["agents"]}
+        self.assertIn("ledger", agents)
+        self.assertIn("butcher", agents)
+        self.assertEqual(agents["ledger"]["personality"], "commercially sharp business advisor")
+        self.assertIn("business_growth_brief", agents["ledger"]["allowed_tools"])
+        self.assertIn("reviewed_traces", agents["ledger"]["memory_sources"])
+        for agent in status["agents"]:
+            with self.subTest(agent=agent["slug"]):
+                self.assertFalse(agent["runtime_enabled"])
+                self.assertFalse(agent["dispatch_enabled"])
+                self.assertFalse(agent["autonomous_loops_enabled"])
+                self.assertLessEqual(agent["risk_limit"], 1)
+                self.assertTrue(agent["approval_rules"])
+
+    def test_agent_recommendation_does_not_dispatch(self):
+        recommendation = recommend_agent_for_text("Can the business advisor help us make more money from pork?")
+
+        self.assertTrue(recommendation["success"])
+        self.assertEqual(recommendation["mode"], "dispatch_recommendation_only")
+        self.assertFalse(recommendation["dispatch_enabled"])
+        self.assertFalse(recommendation["autonomous_loops_enabled"])
+        self.assertFalse(recommendation["runs_agent"])
+        self.assertFalse(recommendation["writes"])
+        self.assertEqual(recommendation["selected_agent"]["slug"], "ledger")
+        self.assertIn("owner_approval", recommendation["next_gate"])
+
+    def test_agent_activation_plan_keeps_runtime_locked(self):
+        plan = get_agent_activation_plan()
+
+        self.assertTrue(plan["success"])
+        self.assertEqual(plan["mode"], "activation_plan_only")
+        self.assertEqual(plan["recommended_next_stage"], "read_only_dry_run")
+        self.assertEqual(plan["recommended_first_candidate"]["slug"], "sentinel")
+        self.assertFalse(plan["runtime_enabled"])
+        self.assertFalse(plan["dispatch_enabled"])
+        self.assertFalse(plan["autonomous_loops_enabled"])
+        self.assertFalse(plan["writes_enabled"])
+        self.assertIn("live specialist dispatch", plan["blocked_capabilities"])
+        self.assertIn("owner_approval", plan["next_gate"])
+
+    def test_agent_crew_brief_is_multi_agent_plan_only(self):
+        brief = build_agent_crew_brief("How do we grow sales and market pork better?")
+
+        self.assertTrue(brief["success"])
+        self.assertEqual(brief["mode"], "crew_plan_only")
+        self.assertEqual(brief["scenario"], "commercial_growth")
+        self.assertEqual([item["slug"] for item in brief["sequence"][:4]], [
+            "ledger",
+            "butcher",
+            "beacon",
+            "sentinel",
+        ])
+        self.assertIn("sales stock", brief["sequence"][0]["would_inspect"])
+        self.assertIn("draft-only marketing", brief["sequence"][2]["would_inspect"])
+        self.assertFalse(brief["safety"]["runs_agents"])
+        self.assertFalse(brief["safety"]["dispatch_enabled"])
+        self.assertFalse(brief["safety"]["autonomous_loops_enabled"])
+        self.assertFalse(brief["safety"]["writes"])
+        self.assertIn("owner_approval", brief["next_gate"])
+
+    def test_agent_activity_maps_read_only_tools_to_visible_workspace(self):
+        activity = build_agent_activity(
+            tool_name="business_growth_brief",
+            user_text="what should we sell next?",
+            tool_result={},
+        )
+
+        self.assertTrue(activity["success"])
+        self.assertEqual(activity["mode"], "visual_activity_only")
+        self.assertEqual(activity["controller"], "oom_sakkie")
+        self.assertEqual(activity["active_agent"]["slug"], "ledger")
+        self.assertEqual(activity["active_agent"]["color"], "green")
+        self.assertEqual(activity["workspace"]["tool_name"], "business_growth_brief")
+        self.assertEqual([step["step"] for step in activity["handoff_lane"]], [
+            "controller",
+            "specialist_workspace",
+            "read_only_tool",
+            "owner_gate",
+        ])
+        self.assertEqual(activity["handoff_lane"][0]["actor"], "Oom Sakkie")
+        self.assertEqual(activity["handoff_lane"][2]["actor"], "business_growth_brief")
+        self.assertIn("No write", activity["handoff_lane"][3]["detail"])
+        self.assertFalse(activity["safety"]["runs_agent"])
+        self.assertFalse(activity["safety"]["dispatch_enabled"])
+        self.assertFalse(activity["safety"]["autonomous_loops_enabled"])
+        self.assertFalse(activity["safety"]["writes"])
+
+    def test_agent_activity_uses_agent_recommendation_context(self):
+        recommendation = recommend_agent_for_text("Who should handle a marketing post?")
+        activity = build_agent_activity(
+            tool_name="agent_crew_status",
+            user_text="Who should handle a marketing post?",
+            tool_result={"llm_context": {"selected_agent": recommendation["selected_agent"]}},
+        )
+
+        self.assertEqual(activity["active_agent"]["slug"], "beacon")
+        self.assertEqual(activity["active_agent"]["color"], "magenta")
+        self.assertEqual(activity["workspace"]["reason"], "tool_context:selected_agent")
+        self.assertFalse(activity["safety"]["runs_agent"])
+
+    def test_agent_activity_exposes_plan_only_crew_sequence(self):
+        crew_brief = build_agent_crew_brief("Give me the team plan to grow sales")
+        activity = build_agent_activity(
+            tool_name="agent_crew_brief",
+            user_text="Give me the team plan to grow sales",
+            tool_result={
+                "llm_context": {
+                    "selected_agent": crew_brief["sequence"][0],
+                    "crew_brief": crew_brief,
+                }
+            },
+        )
+
+        self.assertEqual(activity["active_agent"]["slug"], "ledger")
+        self.assertEqual(activity["crew_sequence"][0]["slug"], "ledger")
+        self.assertEqual(activity["crew_sequence"][1]["slug"], "butcher")
+        self.assertEqual(activity["crew_sequence"][2]["slug"], "beacon")
+        self.assertFalse(activity["crew_sequence"][0]["runs_agent"])
+        self.assertFalse(activity["crew_sequence"][0]["writes"])
+
+    def test_agent_crew_status_tool_is_read_only_and_recommendation_only(self):
+        from modules.oom_sakkie.tools import agent_crew_status_handler
+
+        result = agent_crew_status_handler({"user_text": "who should handle a marketing post?"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Agent crew foundation", result["summary"])
+        self.assertIn("recommendation only", result["summary"])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_crew_status")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "beacon")
+        self.assertFalse(result["llm_context"]["recommendation"]["runs_agent"])
+        self.assertFalse(result["llm_context"]["recommendation"]["writes"])
+
+    def test_agent_crew_brief_tool_is_read_only_plan_only(self):
+        from modules.oom_sakkie.tools import agent_crew_brief_handler
+
+        result = agent_crew_brief_handler({"user_text": "give me the agent team brief for growing sales"})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Crew brief prepared", result["summary"])
+        self.assertIn("no specialist was dispatched", result["safety_notes"][0].lower())
+        self.assertEqual(result["llm_context"]["kind"], "agent_crew_brief")
+        self.assertEqual(result["llm_context"]["crew_brief"]["mode"], "crew_plan_only")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "ledger")
+
+    def test_agent_activation_plan_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_activation_plan_handler
+
+        result = agent_activation_plan_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("read-only dry-run", result["summary"])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_activation_plan")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
+        self.assertFalse(result["llm_context"]["activation_plan"]["dispatch_enabled"])
+
+    def test_sentinel_dry_run_review_is_read_only_and_locked(self):
+        from modules.oom_sakkie.tools import sentinel_dry_run_review_handler
+
+        result = sentinel_dry_run_review_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Sentinel dry-run review", result["summary"])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "sentinel_dry_run_review")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
+        self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runtime_flags"]["specialist_llm_enabled"])
+        self.assertEqual(result["llm_context"]["tool_audit"]["non_read_only_tools"], [])
+        self.assertEqual(result["llm_context"]["tool_audit"]["requires_confirmation_tools"], [])
+        blockers = result["llm_context"]["sentinel_review"]["blockers_before_live_dry_run"]
+        self.assertTrue(any("dispatch/audit" in blocker for blocker in blockers))
+
     @patch("modules.oom_sakkie.tools.list_deploy_decisions")
     @patch("modules.oom_sakkie.tools.list_patch_proposals")
     @patch("modules.oom_sakkie.tools.list_build_requests")
@@ -241,6 +441,37 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("verification", result["llm_context"]["next_action"])
         self.assertIn("OSK-PATCH-READY", result["llm_context"]["next_action"])
 
+    @patch("modules.oom_sakkie.tools.list_deploy_decisions")
+    @patch("modules.oom_sakkie.tools.list_patch_proposals")
+    @patch("modules.oom_sakkie.tools.list_build_requests")
+    def test_system_work_status_warns_when_store_unavailable(self, mock_builds, mock_patches, mock_deploys):
+        from modules.oom_sakkie.tools import system_work_status_handler
+
+        mock_builds.return_value = ({
+            "success": False,
+            "configured": False,
+            "status": "not_configured",
+            "build_requests": [],
+        }, 503)
+        mock_patches.return_value = ({
+            "success": True,
+            "configured": True,
+            "patch_proposals": [],
+        }, 200)
+        mock_deploys.return_value = ({
+            "success": True,
+            "configured": True,
+            "deploy_decisions": [],
+        }, 200)
+
+        result = system_work_status_handler({})
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertIn("incomplete", result["summary"])
+        self.assertEqual(result["llm_context"]["counts"]["pending_build_requests"], 0)
+        self.assertIn("build_requests unavailable (status 503)", result["stale_warnings"][0])
+
     @patch("modules.oom_sakkie.tools.get_meat_planning_data")
     @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
     def test_business_growth_brief_is_read_only_commercial_advice(self, mock_sales, mock_meat):
@@ -249,8 +480,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         mock_sales.return_value = {
             "success": True,
             "totals": [
-                {"sale_category": "Meat", "qty_available": 4},
-                {"sale_category": "Livestock", "qty_available": 2},
+                {"sale_category": "Newborn", "qty_available": 10, "status": "Not For Sale"},
+                {"sale_category": "Grower Pigs", "qty_available": 4, "status": "Available"},
+                {"sale_category": "Weaner Piglets", "qty_available": 2, "status": "Available"},
             ],
         }
         mock_meat.return_value = {
@@ -261,6 +493,15 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "next_30_days": 7,
                 "fallback_abattoir": 1,
             },
+            "pigs": [{
+                "planning_bucket": "ready_now",
+                "pig_id": "PIG-1",
+                "tag_number": "22",
+                "current_pen_name": "D1",
+                "latest_weight_kg": 58.8,
+                "recommended_action": "Prioritize for meat preorder marketing.",
+                "marketing_readiness": "Ready For Interest",
+            }],
         }
 
         result = business_growth_brief_handler({})
@@ -268,9 +509,22 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Business advisor brief", result["summary"])
+        self.assertIn("Question:", result["summary"])
         self.assertIn("paid orders", result["llm_context"]["commercial_focus"])
-        self.assertEqual(result["llm_context"]["counts"]["available_sales_stock"], 6)
+        self.assertIn("draft offer brief", result["llm_context"]["owner_question"])
+        self.assertEqual(result["llm_context"]["counts"]["available_sales_stock"], 16)
+        self.assertEqual(result["llm_context"]["counts"]["marketable_sales_stock"], 6)
+        self.assertEqual(result["llm_context"]["counts"]["young_or_not_ready_stock"], 10)
         self.assertEqual(result["llm_context"]["counts"]["meat_ready_now"], 3)
+        self.assertEqual(result["llm_context"]["ready_meat_candidates"][0]["tag_number"], "22")
+        outline = result["llm_context"]["offer_brief_outline"]
+        self.assertEqual(outline["mode"], "internal_outline_only")
+        self.assertEqual(outline["title"], "Ready meat preorder opportunity")
+        self.assertIn("tag 22 in D1 at 58.8 kg", outline["stock_basis"])
+        self.assertIn("Owner approval is required", outline["approval_needed"])
+        self.assertIn("No customer message drafted.", outline["not_done"])
+        self.assertIn("No public post drafted.", outline["not_done"])
+        self.assertIn("No sale, reservation, or stock change made.", outline["not_done"])
         self.assertIn("read-only advice", result["safety_notes"][0])
         self.assertIn("No customer message", result["safety_notes"][0])
 
@@ -904,12 +1158,21 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     def test_rule_routing_known_phrases(self):
         cases = {
+            "run the sentinel dry-run review": "sentinel_dry_run_review",
+            "first agent dry run": "sentinel_dry_run_review",
             "what needs my approval": "system_work_status",
+            "what is the agent activation plan": "agent_activation_plan",
+            "when can agents go live": "agent_activation_plan",
+            "give me the agent team brief": "agent_crew_brief",
+            "which agents would work together on sales": "agent_crew_brief",
+            "which agent should handle marketing": "agent_crew_status",
+            "show me the agent crew": "agent_crew_status",
             "what are you building": "system_work_status",
             "what needs review": "system_work_status",
             "what should we sell next": "business_growth_brief",
             "how do we grow sales": "business_growth_brief",
             "what should i promote": "business_growth_brief",
+            "prepare an offer brief": "business_growth_brief",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",
@@ -1215,6 +1478,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("backend_context", system)
         self.assertIn("prioritize what the owner should look at first", system)
         self.assertIn("mention all required sections", system)
+        self.assertIn("For business_growth_brief, sound like a business advisor", system)
+        self.assertIn("internal offer brief outline only", system)
+        self.assertIn("not customer-facing copy", system)
+        self.assertIn("ask exactly one approval-style follow-up question", system)
+        self.assertIn("For system_work_status, state the next owner action first", system)
         self.assertIn("stay in that tool's lane", system)
         self.assertIn("Do not mention unrelated systems", system)
         self.assertIn("do not say 'no stale warning'", system)
@@ -1367,6 +1635,15 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["answer"], mock_compose.return_value)
         self.assertEqual(result["pipeline"]["answer_source"], "llm_composer")
         self.assertTrue(result["pipeline"]["llm_answer_used"])
+        self.assertEqual(result["agent_activity"]["mode"], "visual_activity_only")
+        self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "atlas")
+        self.assertEqual(result["agent_activity"]["active_agent"]["color"], "cyan")
+        self.assertEqual(result["agent_activity"]["workspace"]["tool_name"], "power_current")
+        self.assertEqual(result["agent_activity"]["handoff_lane"][1]["actor"], "Atlas")
+        self.assertEqual(result["agent_activity"]["handoff_lane"][3]["status"], "required_for_action")
+        self.assertFalse(result["agent_activity"]["safety"]["runs_agent"])
+        self.assertFalse(result["agent_activity"]["safety"]["dispatch_enabled"])
+        self.assertFalse(result["agent_activity"]["safety"]["writes"])
         mock_compose.assert_called_once()
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
