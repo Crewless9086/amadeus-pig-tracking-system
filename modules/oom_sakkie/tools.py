@@ -9,6 +9,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_status,
     recommend_agent_for_text,
 )
+from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_results
 from modules.oom_sakkie.agent_dry_run_store import list_agent_dry_run_requests
 from modules.oom_sakkie.build_request_store import list_build_requests
 from modules.oom_sakkie.deploy_decision_store import list_deploy_decisions
@@ -973,9 +974,13 @@ def sentinel_dry_run_review_handler(_args):
 def agent_dry_run_status_handler(_args):
     result, status_code = list_agent_dry_run_requests(limit=5)
     requests = result.get("dry_run_requests", []) if isinstance(result, dict) else []
+    results_result, results_status_code = list_agent_dry_run_results(limit=5)
+    dry_run_results = results_result.get("dry_run_results", []) if isinstance(results_result, dict) else []
     stale_warnings = []
     if status_code != 200:
-        stale_warnings.append(f"Agent dry-run queue is unavailable (status {status_code}).")
+        stale_warnings.append(f"Agent dry-run request queue is unavailable (status {status_code}).")
+    if results_status_code != 200:
+        stale_warnings.append(f"Agent dry-run result queue is unavailable (status {results_status_code}).")
     waiting = [
         item for item in requests
         if not (item.get("latest_event") or {}).get("event_type")
@@ -984,21 +989,40 @@ def agent_dry_run_status_handler(_args):
         item for item in requests
         if (item.get("latest_event") or {}).get("event_type") == "cancelled"
     ]
+    result_waiting = [
+        item for item in dry_run_results
+        if not (item.get("latest_event") or {}).get("event_type")
+    ]
+    result_accepted = [
+        item for item in dry_run_results
+        if (item.get("latest_event") or {}).get("event_type") == "accepted_for_learning"
+    ]
     summary = (
         "Agent dry-run queue: {} request(s) loaded, {} waiting for manual review, {} cancelled. "
+        "{} result(s) loaded, {} waiting for owner review, {} accepted for learning. "
         "This is queue status only; no specialist was dispatched."
-    ).format(len(requests), len(waiting), len(cancelled))
-    if status_code != 200:
+    ).format(
+        len(requests),
+        len(waiting),
+        len(cancelled),
+        len(dry_run_results),
+        len(result_waiting),
+        len(result_accepted),
+    )
+    if status_code != 200 or results_status_code != 200:
         summary = "Agent dry-run queue is unavailable. " + summary
 
     return {
-        "success": status_code == 200,
-        "status": result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+        "success": status_code == 200 and results_status_code == 200,
+        "status": _combined_status(
+            result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+            results_result.get("status", "unavailable") if isinstance(results_result, dict) else "unavailable",
+        ),
         "summary": summary,
         "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
         "stale_warnings": stale_warnings,
         "safety_notes": [
-            "Agent dry-run status is read-only. No specialist was dispatched, no specialist LLM ran, no specialist tool executed, and no write was performed."
+            "Agent dry-run status is read-only. No specialist was dispatched, no specialist LLM ran, no specialist tool executed, no runtime change was applied, and no write was performed."
         ],
         "llm_context": {
             "kind": "agent_dry_run_status",
@@ -1006,17 +1030,25 @@ def agent_dry_run_status_handler(_args):
                 "dry_run_requests": len(requests),
                 "waiting_for_review": len(waiting),
                 "cancelled": len(cancelled),
+                "dry_run_results": len(dry_run_results),
+                "results_waiting_for_owner_review": len(result_waiting),
+                "results_accepted_for_learning": len(result_accepted),
             },
             "requests": requests,
+            "results": dry_run_results,
             "runtime_flags": {
                 "dry_run_enabled": False,
                 "dispatch_enabled": False,
                 "runs_specialist_llm": False,
                 "runs_specialist_tools": False,
                 "writes": False,
+                "applies_runtime_change": False,
             },
         },
-        "raw": result if isinstance(result, dict) else {},
+        "raw": {
+            "requests": result if isinstance(result, dict) else {},
+            "results": results_result if isinstance(results_result, dict) else {},
+        },
     }
 
 
@@ -1042,6 +1074,17 @@ def _system_work_next_action(pending_build, patch_without_decision, deploy_ready
         first = deploy_ready_patch[0]
         return f"Review/apply the approved patch outside the kiosk, run verification, then record a deploy decision for {first.get('patch_proposal_id', 'the approved patch proposal')}."
     return "No build approval work is waiting in the latest queue snapshot."
+
+
+def _combined_status(*statuses):
+    clean = [str(item or "").strip() for item in statuses if str(item or "").strip()]
+    if not clean:
+        return "unavailable"
+    if all(item == "ok" for item in clean):
+        return "ok"
+    if any(item == "not_configured" for item in clean):
+        return "not_configured"
+    return "degraded"
 
 
 def _display_value(value):

@@ -168,6 +168,69 @@ def list_agent_dry_run_requests(limit=20, database_url=None):
     }, 200
 
 
+def get_agent_dry_run_request(dry_run_request_id, database_url=None):
+    dry_run_request_id = _clean_text(dry_run_request_id, 100)
+    if not dry_run_request_id:
+        return {"success": False, "status": "dry_run_request_id_required"}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing"}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select dr.dry_run_request_id, dr.status, dr.mode, dr.specialist_slug,
+                           dr.requested_by, dr.owner_text, dr.purpose, dr.source_trace_id,
+                           dr.allowed_tools_json, dr.guardrails_json, dr.next_gate,
+                           dr.dry_run_enabled, dr.dispatch_enabled, dr.runs_specialist_llm,
+                           dr.runs_specialist_tools, dr.writes, dr.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_agent_dry_run_requests dr
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_agent_dry_run_events e
+                        where e.dry_run_request_id = dr.dry_run_request_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where dr.dry_run_request_id = %(dry_run_request_id)s
+                    limit 1
+                    """,
+                    {"dry_run_request_id": dry_run_request_id},
+                )
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "agent_dry_run_request_read_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    if not row:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "agent_dry_run_request_not_found",
+            "dry_run_request_id": dry_run_request_id,
+        }, 404
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "dry_run_request": _agent_dry_run_request_row(row),
+    }, 200
+
+
 def record_agent_dry_run_event(dry_run_request_id, payload, database_url=None):
     dry_run_request_id = _clean_text(dry_run_request_id, 100)
     payload = payload if isinstance(payload, dict) else {}

@@ -56,3 +56,5 @@ Keep this list empty, or nearly empty, so nothing drifts out of **`NEXT_STEPS.md
 
 Add new scratch bullets below, then move them into the correct canonical file.
 - Oom Sakkie analyst/review helper moved to `NEXT_STEPS.md` Phase 10.7B and `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`: advisory review queue only for now; no automatic trace marking or autonomous loop.
+- Bulk-weight 20-vs-68 live-data note moved to `NEXT_STEPS.md` Phase 9.6C and `CURRENT_STATE.md`; local report visibility correction is ready for browser/live confirmation.
+- Litter `LIT-2026-EB92` male/female sex-count capture note moved to `NEXT_STEPS.md` Phase 9.7J and `CURRENT_STATE.md`; local preview/save action is ready for browser testing.

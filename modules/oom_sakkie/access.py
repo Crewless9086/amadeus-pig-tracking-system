@@ -22,9 +22,13 @@ def is_review_request_allowed(remote_addr, environ=None):
 
 
 def is_message_request_allowed(remote_addr, environ=None):
-    if not _llm_surface_enabled(environ):
+    if not is_llm_message_guard_active(environ):
         return True
     return is_review_request_allowed(remote_addr, environ=environ)
+
+
+def is_llm_message_guard_active(environ=None):
+    return _llm_surface_enabled(environ)
 
 
 def review_access_denied_response(remote_addr):

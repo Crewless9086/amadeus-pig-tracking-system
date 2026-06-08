@@ -10,6 +10,7 @@ class OomSakkieRouteTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
 
+    @patch.dict(os.environ, {}, clear=True)
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "not_configured"})
     def test_message_route_returns_shape_without_database(self, _write_trace):
         response = self.client.post("/api/oom-sakkie/message", json={
@@ -209,9 +210,181 @@ class OomSakkieRouteTests(unittest.TestCase):
             {"event_type": "approved", "notes": "record only"},
         )
 
+    @patch("modules.oom_sakkie.routes.build_agent_dry_run_handoff")
+    @patch("modules.oom_sakkie.routes.get_agent_dry_run_request")
+    def test_agent_dry_run_handoff_route_requires_persisted_request_id(self, mock_get, mock_handoff):
+        mock_get.return_value = ({
+            "success": True,
+            "dry_run_request": {
+                "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+                "mode": "read_only_dry_run_request_only",
+                "specialist_slug": "sentinel",
+                "dry_run_enabled": False,
+                "dispatch_enabled": False,
+                "runs_specialist_llm": False,
+                "runs_specialist_tools": False,
+                "writes": False,
+            },
+        }, 200)
+        mock_handoff.return_value = ({
+            "success": True,
+            "mode": "agent_dry_run_handoff_only",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+            "specialist_slug": "sentinel",
+            "runs_specialist": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "dispatch_enabled": False,
+            "writes": False,
+            "prompt": "handoff only",
+        }, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs/handoff",
+            json={"dry_run_request_id": "OSK-AGENT-DRYRUN-1"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["mode"], "agent_dry_run_handoff_only")
+        self.assertFalse(data["runs_specialist"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_get.assert_called_once_with("OSK-AGENT-DRYRUN-1")
+        mock_handoff.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.get_agent_dry_run_request")
+    def test_agent_dry_run_handoff_route_rejects_missing_request(self, mock_get):
+        mock_get.return_value = ({
+            "success": False,
+            "status": "agent_dry_run_request_not_found",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-FAKE",
+        }, 404)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs/handoff",
+            json={"dry_run_request_id": "OSK-AGENT-DRYRUN-FAKE"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(data["status"], "agent_dry_run_request_not_found")
+
+    @patch("modules.oom_sakkie.routes.record_agent_dry_run_result")
+    def test_agent_dry_run_result_create_route_records_review_only_result(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "dry_run_result_review_only",
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs/OSK-AGENT-DRYRUN-1/results",
+            json={"result_text": "Sentinel found no execution path.", "findings": ["No live dispatch."]},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data["mode"], "dry_run_result_review_only")
+        self.assertFalse(data["runs_specialist"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.list_agent_dry_run_results")
+    def test_agent_dry_run_results_route_lists_without_execution(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "dry_run_result_review_queue",
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "dry_run_results": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/agent-dry-run-results?limit=4&dry_run_request_id=OSK-AGENT-DRYRUN-1")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["mode"], "dry_run_result_review_queue")
+        self.assertFalse(data["runs_specialist"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        mock_list.assert_called_once_with(dry_run_request_id="OSK-AGENT-DRYRUN-1", limit="4")
+
+    @patch("modules.oom_sakkie.routes.record_agent_dry_run_result_event")
+    def test_agent_dry_run_result_event_route_records_review_only_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_type": "accepted_for_learning",
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-1/events",
+            json={"event_type": "accepted_for_learning", "notes": "Record only."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data["event_type"], "accepted_for_learning")
+        self.assertFalse(data["runs_specialist"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        mock_record.assert_called_once_with(
+            "OSK-AGENT-DRYRUN-RESULT-1",
+            {"event_type": "accepted_for_learning", "notes": "Record only."},
+        )
+
     def test_agent_dry_run_routes_deny_non_local_review_access(self):
         response = self.client.get(
             "/api/oom-sakkie/agent-dry-runs",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+        response = self.client.get(
+            "/api/oom-sakkie/agent-dry-run-results",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs/handoff",
+            json={"dry_run_request_id": "OSK-AGENT-DRYRUN-1"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

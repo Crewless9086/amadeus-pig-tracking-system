@@ -30,8 +30,19 @@ const pigletDeathNotes = document.getElementById("piglet_death_notes");
 const pigletDeathPreview = document.getElementById("piglet_death_preview");
 const pigletDeathPreviewButton = document.getElementById("piglet_death_preview_button");
 const pigletDeathApplyButton = document.getElementById("piglet_death_apply_button");
+const sexCountPanel = document.getElementById("litter_sex_count_panel");
+const sexCountForm = document.getElementById("sex_count_form");
+const sexCountDate = document.getElementById("sex_count_date");
+const sexCountMale = document.getElementById("sex_count_male");
+const sexCountFemale = document.getElementById("sex_count_female");
+const sexCountRecordedBy = document.getElementById("sex_count_recorded_by");
+const sexCountNotes = document.getElementById("sex_count_notes");
+const sexCountPreview = document.getElementById("sex_count_preview");
+const sexCountPreviewButton = document.getElementById("sex_count_preview_button");
+const sexCountApplyButton = document.getElementById("sex_count_apply_button");
 let latestNewbornHealthPreview = null;
 let latestPigletDeathPreview = null;
+let latestSexCountPreview = null;
 let productsLoaded = false;
 
 function getLitterIdFromUrl() {
@@ -255,6 +266,21 @@ function renderPigletDeathPanel(litter) {
   }
 }
 
+function renderSexCountPanel(litter) {
+  const activeUnsexedPiglets = (litter.piglets || []).filter((piglet) => (
+    piglet.status === "Active"
+    && piglet.on_farm === "Yes"
+    && !piglet.sex
+  ));
+  const hasUnsexedPiglets = activeUnsexedPiglets.length > 0;
+  if (sexCountPanel) {
+    sexCountPanel.classList.toggle("hidden", !hasUnsexedPiglets);
+  }
+  if (sexCountDate && !sexCountDate.value) {
+    sexCountDate.value = todayIsoDate();
+  }
+}
+
 function pigletDeathPayload(dryRun) {
   return {
     event_date: pigletDeathDate.value,
@@ -310,6 +336,130 @@ function setPigletDeathSubmitting(isSubmitting, mode = "preview") {
   pigletDeathApplyButton.disabled = isSubmitting || !latestPigletDeathPreview;
   pigletDeathPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
   pigletDeathApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Piglet Deaths";
+}
+
+function sexCountPayload(dryRun) {
+  return {
+    action_date: sexCountDate.value,
+    male_count: sexCountMale.value,
+    female_count: sexCountFemale.value,
+    changed_by: sexCountRecordedBy.value || "web_app",
+    notes: sexCountNotes.value,
+    dry_run: dryRun,
+  };
+}
+
+function renderSexCountPreview(preview) {
+  if (!sexCountPreview) return;
+  sexCountPreview.classList.remove("hidden");
+  const selected = preview.selected_piglets || [];
+  const rows = selected.map((piglet) => `
+    <tr>
+      <td>${escapeHtml(piglet.tag_number || piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.sex || "-")}</td>
+    </tr>
+  `).join("");
+  sexCountPreview.innerHTML = `
+    <div class="bulk-review-header">
+      <strong>Preview ready</strong>
+      <span>${escapeHtml(preview.summary || `${preview.piglet_count || 0} piglet(s) will be updated`)}</span>
+    </div>
+    <div class="simple-table-wrap">
+      <table class="simple-table compact-table">
+        <thead>
+          <tr>
+            <th>Piglet</th>
+            <th>Pig ID</th>
+            <th>New Sex</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function resetSexCountPreview() {
+  latestSexCountPreview = null;
+  if (sexCountApplyButton) sexCountApplyButton.disabled = true;
+  if (sexCountPreview) sexCountPreview.classList.add("hidden");
+}
+
+function setSexCountSubmitting(isSubmitting, mode = "preview") {
+  sexCountPreviewButton.disabled = isSubmitting;
+  sexCountApplyButton.disabled = isSubmitting || !latestSexCountPreview;
+  sexCountPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
+  sexCountApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Sex Counts";
+}
+
+async function previewSexCount() {
+  clearLitterMessage();
+  latestSexCountPreview = null;
+  sexCountApplyButton.disabled = true;
+
+  if (!sexCountDate.value) {
+    showLitterMessage("Choose an action date before previewing.", "error");
+    return;
+  }
+  if (!sexCountMale.value && !sexCountFemale.value) {
+    showLitterMessage("Enter at least one male or female count before previewing.", "error");
+    return;
+  }
+
+  setSexCountSubmitting(true, "preview");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/sex-counts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sexCountPayload(true)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not preview sex-count action."]).join(" "));
+    }
+    latestSexCountPreview = data;
+    renderSexCountPreview(data);
+  } catch (error) {
+    showLitterMessage(error.message || "Could not preview sex-count action.", "error");
+  } finally {
+    setSexCountSubmitting(false, "preview");
+  }
+}
+
+async function submitSexCount(event) {
+  event.preventDefault();
+  clearLitterMessage();
+
+  if (!latestSexCountPreview) {
+    showLitterMessage("Preview the sex-count action before saving.", "error");
+    return;
+  }
+  if (!window.confirm("Save the previewed male/female sex counts to the selected piglet rows?")) {
+    return;
+  }
+
+  setSexCountSubmitting(true, "apply");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/sex-counts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(sexCountPayload(false)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not save sex-count action."]).join(" "));
+    }
+    resetSexCountPreview();
+    showLitterMessage(data.message || "Sex-count action saved.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Could not save sex-count action.", "error");
+  } finally {
+    setSexCountSubmitting(false, "apply");
+  }
 }
 
 async function previewPigletDeath() {
@@ -610,6 +760,7 @@ async function loadLitterDetail(options = {}) {
     renderAttention(litter);
     renderLifecycleOutcomes(litter);
     renderPigletDeathPanel(litter);
+    renderSexCountPanel(litter);
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {
@@ -634,6 +785,8 @@ newbornHealthPreviewButton.addEventListener("click", previewNewbornHealth);
 newbornHealthForm.addEventListener("submit", submitNewbornHealth);
 pigletDeathPreviewButton.addEventListener("click", previewPigletDeath);
 pigletDeathForm.addEventListener("submit", submitPigletDeath);
+sexCountPreviewButton.addEventListener("click", previewSexCount);
+sexCountForm.addEventListener("submit", submitSexCount);
 [
   newbornHealthDate,
   newbornHealthEarmarked,
@@ -653,6 +806,14 @@ pigletDeathForm.addEventListener("submit", submitPigletDeath);
   pigletDeathNotes,
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetPigletDeathPreview);
+});
+[
+  sexCountDate,
+  sexCountMale,
+  sexCountFemale,
+  sexCountNotes,
+].forEach((element) => {
+  if (element) element.addEventListener("change", resetSexCountPreview);
 });
 loadLitterDetail();
 updateBackLinkFromQuery();

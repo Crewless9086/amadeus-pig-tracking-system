@@ -39,7 +39,7 @@ class IntentMatch:
 
 RULES = [
     (
-        re.compile(r"\b(agent dry[- ]?run status|dry[- ]?run queue|dry[- ]?run request|dry[- ]?run approval|specialist dry[- ]?run queue)\b", re.I),
+        re.compile(r"\b(agent dry[- ]?run status|dry[- ]?run queue|dry[- ]?run request|dry[- ]?run approval|specialist dry[- ]?run queue|sentinel result queue|dry[- ]?run result|dry[- ]?run results|sentinel review queue)\b", re.I),
         IntentMatch("agent_dry_run_status", "agent_dry_run_status", 0.95, "rule:agent_dry_run_status"),
     ),
     (

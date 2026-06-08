@@ -1078,6 +1078,150 @@ def mark_litter_piglets_dead(
     }, 200
 
 
+def _append_sex_count_note(existing_notes, action_date, changed_by, notes):
+    note = f"Sex counts recorded on {format_date_for_sheet(action_date)} by {changed_by}."
+    if notes:
+        note = f"{note} Notes: {notes}"
+    existing = to_clean_string(existing_notes)
+    return f"{existing} | {note}" if existing else note
+
+
+def record_litter_piglet_sex_counts(
+    litter_id: str,
+    action_date_value,
+    male_count=None,
+    female_count=None,
+    changed_by: str = "web_app",
+    notes: str = "",
+    dry_run: bool = True,
+):
+    litter_id = to_clean_string(litter_id)
+    action_date = parse_sheet_date(action_date_value)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    notes = to_clean_string(notes)
+    dry_run = dry_run is True
+
+    male_count_value = to_float(male_count)
+    female_count_value = to_float(female_count)
+    errors = []
+    if not litter_id:
+        errors.append("Litter ID is required.")
+    if not action_date:
+        errors.append("A valid action date is required.")
+    if male_count_value is None or male_count_value < 0:
+        errors.append("Male count must be zero or greater.")
+    if female_count_value is None or female_count_value < 0:
+        errors.append("Female count must be zero or greater.")
+    if errors:
+        return {"success": False, "errors": errors}, 400
+
+    male_count_int = int(male_count_value)
+    female_count_int = int(female_count_value)
+    total_count = male_count_int + female_count_int
+    if total_count <= 0:
+        return {
+            "success": False,
+            "errors": ["Enter at least one male or female piglet before previewing."],
+        }, 400
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_rows = get_all_records(pig_master_sheet)
+    active_piglets = [
+        row for row in pig_rows
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id
+        and to_clean_string(row.get(columns["status"], "")) == "Active"
+        and to_clean_string(row.get(columns["on_farm"], "")) == "Yes"
+    ]
+    active_piglets.sort(key=lambda row: (
+        to_clean_string(row.get("Tag_Number", "")),
+        to_clean_string(row.get(columns["pig_id"], "")),
+    ))
+    unsexed_piglets = [
+        row for row in active_piglets
+        if not to_clean_string(row.get(columns["sex"], ""))
+    ]
+
+    if not active_piglets:
+        return {
+            "success": False,
+            "errors": ["No active on-farm piglets were found for this litter."],
+            "litter_id": litter_id,
+        }, 409
+    if len(unsexed_piglets) < total_count:
+        return {
+            "success": False,
+            "errors": [
+                f"Only {len(unsexed_piglets)} active piglet(s) still have blank sex. "
+                f"You entered {total_count}."
+            ],
+            "litter_id": litter_id,
+            "active_piglet_count": len(active_piglets),
+            "unsexed_piglet_count": len(unsexed_piglets),
+        }, 409
+
+    selected_piglets = []
+    pig_updates = {}
+    action_date_sheet = format_date_for_sheet(action_date)
+    today = format_date_for_sheet(datetime.now().date())
+    selected_rows = (
+        [("Male", row) for row in unsexed_piglets[:male_count_int]]
+        + [("Female", row) for row in unsexed_piglets[male_count_int:total_count]]
+    )
+    for sex, row in selected_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        pig_updates[pig_id] = {
+            "Sex": sex,
+            "Updated_At": today,
+            "General_Notes": _append_sex_count_note(
+                row.get("General_Notes", ""),
+                action_date,
+                changed_by,
+                notes,
+            ),
+        }
+        selected_piglets.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get("Tag_Number", "")),
+            "sex": sex,
+        })
+
+    rows_updated = 0
+    if not dry_run:
+        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+
+    return {
+        "success": True,
+        "action": "record_litter_piglet_sex_counts",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "action_date": action_date.isoformat(),
+        "male_count": male_count_int,
+        "female_count": female_count_int,
+        "piglet_count": total_count,
+        "selected_piglets": selected_piglets,
+        "pig_ids": [piglet["pig_id"] for piglet in selected_piglets],
+        "rows_updated": rows_updated,
+        "planned_updates": pig_updates,
+        "changed_by": changed_by,
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+        },
+        "message": (
+            f"Litter {litter_id} sex-count action previewed for {total_count} piglet(s)."
+            if dry_run
+            else f"Litter {litter_id} sex-count action saved for {total_count} piglet(s)."
+        ),
+        "summary": (
+            f"{male_count_int} male and {female_count_int} female piglet(s) will be assigned."
+            if dry_run
+            else f"{male_count_int} male and {female_count_int} female piglet(s) were assigned."
+        ),
+        "recorded_date": action_date_sheet,
+    }, 200
+
+
 def record_litter_newborn_health(
     litter_id: str,
     action_date_value,
@@ -2800,9 +2944,6 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
     entries = []
     for pig_id, pig_weights in weights_by_pig.items():
         pig_meta = pig_lookup.get(pig_id, {})
-        if not _is_active_on_farm_pig(pig_meta):
-            continue
-
         if selected_pen_id and pig_meta.get("current_pen_id") != selected_pen_id:
             continue
 
@@ -2832,6 +2973,9 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
                 "weight_log_id": item["weight_log_id"],
                 "pig_id": pig_id,
                 "tag_number": pig_meta.get("tag_number", ""),
+                "status": pig_meta.get("status", ""),
+                "on_farm": pig_meta.get("on_farm", ""),
+                "active_on_farm": _is_active_on_farm_pig(pig_meta),
                 "weight_date": item["weight_date"].isoformat(),
                 "weight_kg": item["weight_kg"],
                 "previous_weight_kg": previous_entry["weight_kg"] if previous_entry else None,
@@ -2919,6 +3063,10 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
                 if entry["previous_weight_kg"] is None
             ]),
             "duplicate_same_day_count": duplicate_same_day_count,
+            "not_active_on_farm_count": len([
+                entry for entry in entries
+                if not entry["active_on_farm"]
+            ]),
         },
         "pen_summary": pen_summary,
         "loss_flags": loss_flags,

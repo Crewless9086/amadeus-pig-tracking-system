@@ -14,6 +14,7 @@ from modules.pig_weights.pig_weights_service import (
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
     record_litter_newborn_health,
+    record_litter_piglet_sex_counts,
     get_pig_detail,
     get_products,
     get_pens,
@@ -166,6 +167,19 @@ def mark_litter_profile_piglets_dead(litter_id: str, payload: dict):
         male_count=payload.get("male_count", None),
         female_count=payload.get("female_count", None),
         pig_ids=payload.get("pig_ids", []),
+        changed_by=payload.get("changed_by", "web_app"),
+        notes=payload.get("notes", ""),
+        dry_run=payload.get("dry_run", True) is True,
+    )
+
+
+def record_litter_profile_piglet_sex_counts(litter_id: str, payload: dict):
+    payload = payload or {}
+    return record_litter_piglet_sex_counts(
+        litter_id=litter_id,
+        action_date_value=payload.get("action_date", ""),
+        male_count=payload.get("male_count", None),
+        female_count=payload.get("female_count", None),
         changed_by=payload.get("changed_by", "web_app"),
         notes=payload.get("notes", ""),
         dry_run=payload.get("dry_run", True) is True,

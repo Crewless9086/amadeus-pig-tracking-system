@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Deployed / Awaiting Real Weight Live Test; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now | Next: keep live-test-dependent items open, then choose the next practical business-module-aligned slice. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Live-Data Correction Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now; 9.7J Sex Count Capture Local Ready | Next: browser-test `/weight-report`, `/bulk-weights`, and `/litter/LIT-2026-EB92` before returning to Phase 10.9N. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -2557,6 +2557,7 @@ Follow-up idea:
 - Owner deployed the `/bulk-weights` changes on 2026-06-01.
 - 2026-06-01 owner decision: keep 9.6C open while the farm does a live bulk-weight test later today or soon after; close only after owner confirms the flow is correct with real data.
 - Remaining closure step: owner browser-test the local/deployed `/bulk-weights` flow with real weighing data before marking 9.6C deployed/browser-verified. Owner confirmed on 2026-06-04 that this must wait until real weights are available.
+- 2026-06-08 live-data correction: owner reported a 68-row bulk weighing session looked like only 20 rows in the daily weight report. Code audit found no 20-row cap in `/bulk-weights` preflight/save; the likely mismatch was `/weight-report` hiding historical weight rows for pigs that are no longer currently `Active` / `On_Farm = Yes`. Local fix keeps historical weight rows visible, adds `status`, `on_farm`, `active_on_farm`, and `not_active_on_farm_count`, and marks rows that are no longer active/on-farm instead of silently dropping them. Verification passed: focused bulk/report/litter/frontend tests and JS syntax checks.
 
 Recommended 9.6 split:
 
@@ -2799,6 +2800,17 @@ Questions to answer during 9.7A:
 - Future build should align the litter print sheet, litter detail table, and any bulk litter upload/capture form so the printed workflow and web workflow feel like the same process.
 - Owner will provide a sample before implementation.
 - Keep wide browser layouts and table format as the default for these operational pages.
+
+9.7J litter sex-count capture from attention detail - Local Ready:
+
+- Owner request 2026-06-08: on `/litter/LIT-2026-EB92`, add an attention-detail action to enter how many active piglets are male and female, similar to piglet death capture, so the linked pig rows get `Sex` filled once the farm has the real counts.
+- Added backend service `record_litter_piglet_sex_counts()`.
+- Added `POST /api/pig-weights/litter/<litter_id>/sex-counts`.
+- The action is preview-before-save and only fills active/on-farm piglets whose `Sex` is still blank. It does not overwrite existing sex values.
+- If male + female counts exceed blank-sex active piglets, the backend blocks with a clear error and writes nothing.
+- `/litter/<litter_id>` now shows a `Sex Count Capture` side panel when active piglets still have blank sex, with action date, male count, female count, recorded-by, notes, preview, and save.
+- Applying the action updates `PIG_MASTER.Sex`, `Updated_At`, and `General_Notes`; it writes to Google Sheets only after preview and explicit confirmation, and writes nothing to Supabase.
+- Local verification passed: `node --check static/js/litterDetail.js`, focused litter/frontend tests, and focused bulk/report/litter/frontend test suite.
 
 9.7I smart return/back navigation - Deployed/working:
 
@@ -7740,7 +7752,7 @@ Verification:
 Manual check:
 
 1. With LLM flags off, ask a normal kiosk question and confirm `/api/oom-sakkie/message` still works.
-2. With LLM answer/router enabled, confirm `/api/oom-sakkie/policy` shows `message_endpoint_access.llm_guard_active = true`.
+2. With any LLM router/answer/learning env enabled, confirm `/api/oom-sakkie/policy` shows `message_endpoint_access.llm_guard_active = true`.
 3. Ask `irrigate zone 3 now`; confirm it returns read-only irrigation status and safety notes, not an action.
 4. Do not deploy behind a reverse proxy until trusted proxy handling and auth/rate-limit policy are deliberately reviewed.
 
@@ -7806,6 +7818,226 @@ Manual check:
 3. Confirm Oom Sakkie reports agent dry-run queue status and says no specialist was dispatched.
 4. Use `/api/oom-sakkie/agent-dry-runs` locally to inspect the recorded request queue if needed.
 5. Do not treat this as live specialist execution; it is an approval/audit rail only.
+
+### 10.9K Oom Sakkie Message Guard Policy Consistency - Local Ready
+
+Purpose:
+
+- Close Claude's 10.9I/J pass-with-nits finding.
+- Make `/api/oom-sakkie/policy` report the exact same LLM env set that `modules/oom_sakkie/access.py` uses to guard `/api/oom-sakkie/message`.
+- Avoid operator confusion where `/message` is guarded because learning LLM is enabled, but policy says the guard is inactive.
+
+What changed:
+
+- Added public helper `is_llm_message_guard_active()` in `modules/oom_sakkie/access.py`.
+- `is_message_request_allowed()` now uses that helper instead of calling the private LLM-surface check directly.
+- `modules/oom_sakkie/policy.py` now imports the shared guard env list and helper.
+- Runtime policy now exposes:
+  - `message_endpoint_access.llm_guard_envs`,
+  - `llm_guard_active` derived from the same env set as access enforcement,
+  - guard wording that names router, answer composer, and learning analyst.
+- Added regression coverage for the exact mismatch Claude found: `OOM_SAKKIE_LLM_LEARNING_ENABLED=true` now makes policy report `message_endpoint_access.llm_guard_active = true`.
+- Cleared LLM env inside the basic `/message` route shape test so local developer env settings cannot make that test flaky.
+
+Safety status:
+
+- No new route authority.
+- No new write tools.
+- No specialist dispatch.
+- No specialist LLM execution.
+- No autonomous loop.
+- No Builder/Forge run, patch application, or deploy.
+- This is an honesty/consistency fix only; access enforcement was already fail-safe.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 171 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 496 tests.
+
+Manual check:
+
+1. Set only `OOM_SAKKIE_LLM_LEARNING_ENABLED=true`.
+2. Open `/api/oom-sakkie/policy` locally.
+3. Confirm `message_endpoint_access.llm_guard_active = true`.
+4. Confirm `message_endpoint_access.llm_guard_envs` lists router, answer, and learning envs.
+5. Keep `/message` local/private-LAN guarded whenever any listed LLM env is enabled.
+
+### 10.9L Oom Sakkie Sentinel Dry-Run Handoff Packet - Local Ready
+
+Purpose:
+
+- Move one step closer to real specialist dry-runs without enabling execution.
+- Require a persisted Agent Dry-Run Request before generating a Sentinel handoff packet.
+- Give the owner a structured, reviewable packet for a future Sentinel dry-run while keeping all runtime flags off.
+
+What changed:
+
+- Added `modules/oom_sakkie/agent_dry_run_handoff.py`.
+- Added `get_agent_dry_run_request()` to `modules/oom_sakkie/agent_dry_run_store.py`.
+- Added protected route `POST /api/oom-sakkie/agent-dry-runs/handoff`.
+- The route accepts only:
+  - `{"dry_run_request_id": "OSK-AGENT-DRYRUN-..."}`.
+- The route loads the stored dry-run request by ID before generating a packet.
+- Synthetic handoff payloads are not accepted.
+- The handoff builder rejects any request where one of these flags is truthy:
+  - `dry_run_enabled`,
+  - `dispatch_enabled`,
+  - `runs_specialist_llm`,
+  - `runs_specialist_tools`,
+  - `writes`.
+- The packet returns:
+  - `mode = agent_dry_run_handoff_only`,
+  - `runs_specialist = false`,
+  - `runs_specialist_llm = false`,
+  - `runs_specialist_tools = false`,
+  - `dispatch_enabled = false`,
+  - `writes = false`,
+  - a Sentinel prompt that explicitly says not to claim inspection, call tools, produce code, or approve itself.
+
+Safety status:
+
+- Packet only.
+- Does not run Sentinel.
+- Does not dispatch a specialist.
+- Does not call a specialist LLM.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not run Builder/Forge, apply patches, or deploy.
+- Future dry-run execution remains a separate owner-approved step.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 174 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 499 tests.
+
+Manual check:
+
+1. Create or use an existing Sentinel dry-run request ID.
+2. POST locally to `/api/oom-sakkie/agent-dry-runs/handoff` with only `dry_run_request_id`.
+3. Confirm the response says `mode = agent_dry_run_handoff_only`.
+4. Confirm every execution flag is false.
+5. Read the prompt and confirm it asks Sentinel for a plan only, not execution.
+
+### 10.9M Oom Sakkie Sentinel Dry-Run Result Gate - Local Ready
+
+Purpose:
+
+- Add the append-only record where a future Sentinel dry-run result can be stored for owner review.
+- Keep result recording separate from dry-run request approval and handoff generation.
+- Preserve the same safety boundary: the kiosk records what was proposed/reviewed, but does not execute Sentinel or apply any runtime change.
+
+What changed:
+
+- Added migration `supabase/migrations/202606080002_create_oom_sakkie_agent_dry_run_results.sql`.
+- The migration creates:
+  - `oom_sakkie_agent_dry_run_results`,
+  - `oom_sakkie_agent_dry_run_result_events`.
+- DB constraints force:
+  - `mode = dry_run_result_review_only`,
+  - `status = recorded_for_owner_review`,
+  - `runs_specialist = false`,
+  - `dispatch_enabled = false`,
+  - `runs_specialist_llm = false`,
+  - `runs_specialist_tools = false`,
+  - `writes = false`,
+  - `applies_runtime_change = false`.
+- DB triggers make both result tables append-only.
+- Added `modules/oom_sakkie/agent_dry_run_result_store.py`:
+  - `record_agent_dry_run_result()`,
+  - `list_agent_dry_run_results()`,
+  - `record_agent_dry_run_result_event()`.
+- Result recording requires an existing dry-run request and currently accepts only Sentinel requests.
+- Added protected local-only routes:
+  - `POST /api/oom-sakkie/agent-dry-runs/<dry_run_request_id>/results`,
+  - `GET /api/oom-sakkie/agent-dry-run-results`,
+  - `POST /api/oom-sakkie/agent-dry-run-results/<dry_run_result_id>/events`.
+- Result events are limited to:
+  - `accepted_for_learning`,
+  - `rejected`,
+  - `review_note`.
+
+Safety status:
+
+- Records result/review text only.
+- Does not run Sentinel.
+- Does not dispatch any specialist.
+- Does not call a specialist LLM.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 181 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Applied migration `202606080002_create_oom_sakkie_agent_dry_run_results.sql`.
+- Live-style smoke against request `OSK-AGENT-DRYRUN-B2E07585AD` created result `OSK-AGENT-DRYRUN-RESULT-2FBFA47000FC` and event `OSK-AGENT-DRYRUN-RESULT-EVENT-4DADAE8AD1B3`; all execution/runtime/write flags remained false.
+- Full local `python -m unittest` passed at 506 tests.
+
+Manual check:
+
+1. Use a persisted Sentinel dry-run request ID.
+2. POST a result to `/api/oom-sakkie/agent-dry-runs/<id>/results`.
+3. Confirm the response says `mode = dry_run_result_review_only`.
+4. Confirm every execution/runtime/write flag is false.
+5. Add a `review_note`, `rejected`, or `accepted_for_learning` event only after reading the result.
+
+### 10.9N Oom Sakkie Sentinel Review Queue Status - Local Ready
+
+Purpose:
+
+- Make the new dry-run result gate visible through normal Oom Sakkie chat.
+- Keep one `Dry-Run Queue` quick action instead of adding more clutter.
+- Let the owner ask what Sentinel dry-run requests/results need review without opening raw endpoints.
+
+What changed:
+
+- `agent_dry_run_status` now reads:
+  - recent dry-run requests,
+  - recent dry-run results.
+- The answer now reports:
+  - request count,
+  - requests waiting for manual review,
+  - cancelled requests,
+  - result count,
+  - results waiting for owner review,
+  - results accepted for learning.
+- If either the request queue or result queue is unavailable, the tool returns a stale warning instead of confidently saying nothing is waiting.
+- Runtime flags now include `applies_runtime_change = false`.
+- Deterministic routing now catches:
+  - `sentinel result queue`,
+  - `dry-run result`,
+  - `dry-run results`,
+  - `sentinel review queue`.
+- The kiosk quick action still says `Dry-Run Queue`, but now asks `What is the Sentinel dry-run result queue status?`
+
+Safety status:
+
+- Read-only queue status only.
+- Does not create dry-run requests.
+- Does not create dry-run results.
+- Does not accept/reject results.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data or apply runtime changes.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 182 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 507 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Dry-Run Queue`.
+3. Confirm Oom Sakkie mentions both dry-run requests and dry-run results.
+4. Confirm the safety note says no specialist was dispatched and no runtime change was applied.
 
 7.3E weather LLM triage note:
 

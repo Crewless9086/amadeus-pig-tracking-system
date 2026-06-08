@@ -1,3 +1,4 @@
+from modules.oom_sakkie.access import LLM_MESSAGE_GUARD_ENVS, is_llm_message_guard_active
 from modules.oom_sakkie.llm_answer import llm_answer_policy
 from modules.oom_sakkie.llm_router import llm_router_policy
 from modules.oom_sakkie.tools import TOOL_REGISTRY, RiskLevel
@@ -7,7 +8,7 @@ def get_runtime_policy():
     tools = list(TOOL_REGISTRY.values())
     llm_answer = llm_answer_policy()
     llm_router = llm_router_policy()
-    llm_message_guard_active = bool(llm_answer["enabled"] or llm_router["enabled"])
+    llm_message_guard_active = is_llm_message_guard_active()
     write_tools = [
         tool.name
         for tool in tools
@@ -51,7 +52,8 @@ def get_runtime_policy():
             "default": "local_guard_required_when_llm_enabled" if llm_message_guard_active else "reachable_wherever_flask_is_reachable",
             "route": "POST /api/oom-sakkie/message",
             "llm_guard_active": llm_message_guard_active,
-            "llm_guard_rule": "When LLM router or answer composer is enabled, /message must pass the same loopback/private-LAN guard before outbound API calls can occur.",
+            "llm_guard_envs": list(LLM_MESSAGE_GUARD_ENVS),
+            "llm_guard_rule": "When LLM router, answer composer, or learning analyst is enabled, /message must pass the same loopback/private-LAN guard before outbound API calls can occur.",
             "note": "This is the local brain endpoint, not an admin/review endpoint. Keep Flask bound to trusted local/LAN surfaces until channel auth is added.",
         },
         "kiosk_policy": {

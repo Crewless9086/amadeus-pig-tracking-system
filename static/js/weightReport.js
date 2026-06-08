@@ -107,6 +107,7 @@ function renderSummary(summary) {
     ["Loss Flags", summary.weight_loss_count ?? 0],
     ["No Previous", summary.no_previous_weight_count ?? 0],
     ["Duplicate Day", summary.duplicate_same_day_count ?? 0],
+    ["No Longer Active", summary.not_active_on_farm_count ?? 0],
   ];
 
   summaryEl.innerHTML = items.map(([label, value]) => `
@@ -159,16 +160,22 @@ function duplicateMarker(item) {
   return `<span class="duplicate-marker" title="Multiple weights for this pig on this date">!</span>`;
 }
 
+function activeStatusMarker(item) {
+  if (item.active_on_farm !== false) return "";
+  const status = [item.status, item.on_farm ? `On farm: ${item.on_farm}` : ""].filter(Boolean).join(" / ");
+  return `<span class="duplicate-marker" title="${escapeHtml(status || "Pig is no longer active on farm")}">status</span>`;
+}
+
 function renderDetails(rows, singleDay) {
   if (!rows.length) {
-    detailBody.innerHTML = `<tr><td colspan="${singleDay ? 7 : 8}" class="table-empty">No active on-farm pig weights found for this date range.</td></tr>`;
+    detailBody.innerHTML = `<tr><td colspan="${singleDay ? 7 : 8}" class="table-empty">No weight entries found for this date range.</td></tr>`;
     return;
   }
 
   detailBody.innerHTML = rows.map((item) => `
     <tr class="${item.duplicate_same_day ? "report-warning-row" : ""}">
       <td class="date-column ${singleDay ? "hidden-column" : ""}">${escapeHtml(item.weight_date || "-")}</td>
-      <td>${duplicateMarker(item)}${escapeHtml(formatPigLabel(item))}</td>
+      <td>${duplicateMarker(item)}${activeStatusMarker(item)}${escapeHtml(formatPigLabel(item))}</td>
       <td>${escapeHtml(formatPen(item))}</td>
       <td>${escapeHtml(formatKg(item.weight_kg))}</td>
       <td>${escapeHtml(formatKg(item.previous_weight_kg))}</td>

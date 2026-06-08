@@ -94,28 +94,31 @@ def records_for_sheet(sheet_name):
 
 
 class WeightReportServiceTests(unittest.TestCase):
-    def test_weight_report_filters_to_active_on_farm_pigs_and_calculates_summary(self):
+    def test_weight_report_keeps_historical_rows_and_flags_currently_inactive_pigs(self):
         with patch.object(pig_weights_service, "get_all_records", side_effect=records_for_sheet):
             report = pig_weights_service.get_weight_report("2026-05-20", "2026-05-20")
 
         self.assertTrue(report["success"])
-        self.assertEqual(report["summary"]["total_entries"], 3)
-        self.assertEqual(report["summary"]["unique_pigs"], 2)
-        self.assertEqual(report["summary"]["average_weight_kg"], 39.33)
+        self.assertEqual(report["summary"]["total_entries"], 4)
+        self.assertEqual(report["summary"]["unique_pigs"], 3)
+        self.assertEqual(report["summary"]["average_weight_kg"], 42.0)
         self.assertEqual(report["summary"]["average_difference_kg"], 0.67)
         self.assertEqual(report["summary"]["average_growth_rate_kg_day"], 0.33)
         self.assertEqual(report["summary"]["weight_gain_count"], 2)
         self.assertEqual(report["summary"]["weight_loss_count"], 1)
         self.assertEqual(report["summary"]["duplicate_same_day_count"], 2)
+        self.assertEqual(report["summary"]["not_active_on_farm_count"], 1)
 
         pig_ids = [entry["pig_id"] for entry in report["entries"]]
-        self.assertEqual(pig_ids, ["PIG-1", "PIG-1", "PIG-2"])
+        self.assertEqual(pig_ids, ["PIG-1", "PIG-1", "PIG-SOLD", "PIG-2"])
         self.assertEqual(report["entries"][0]["previous_weight_kg"], 40.0)
         self.assertEqual(report["entries"][0]["difference_kg"], 2.0)
         self.assertEqual(report["entries"][0]["growth_rate_kg_day"], 1.0)
         self.assertEqual(report["entries"][0]["current_pen_name"], "Camp 1")
         self.assertTrue(report["entries"][0]["duplicate_same_day"])
         self.assertEqual(report["entries"][0]["duplicate_entry_count"], 2)
+        self.assertFalse(report["entries"][2]["active_on_farm"])
+        self.assertEqual(report["entries"][2]["status"], "Sold")
         self.assertEqual(len(report["loss_flags"]), 1)
         self.assertEqual(report["loss_flags"][0]["pig_id"], "PIG-2")
 

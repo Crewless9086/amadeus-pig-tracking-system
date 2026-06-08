@@ -7,10 +7,17 @@ from modules.oom_sakkie.access import (
     review_access_denied_response,
 )
 from modules.oom_sakkie.agent_runtime import get_agent_runtime_status, recommend_agent_for_text
+from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
 from modules.oom_sakkie.agent_dry_run_store import (
+    get_agent_dry_run_request,
     list_agent_dry_run_requests,
     record_agent_dry_run_event,
     record_agent_dry_run_request,
+)
+from modules.oom_sakkie.agent_dry_run_result_store import (
+    list_agent_dry_run_results,
+    record_agent_dry_run_result,
+    record_agent_dry_run_result_event,
 )
 from modules.oom_sakkie.build_request_store import (
     get_build_request,
@@ -147,6 +154,53 @@ def oom_sakkie_agent_dry_run_events(dry_run_request_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_agent_dry_run_event(dry_run_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs/handoff", methods=["POST"])
+def oom_sakkie_agent_dry_run_handoff():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    dry_run_request_id = str(payload.get("dry_run_request_id") or "").strip()
+    loaded, load_status = get_agent_dry_run_request(dry_run_request_id)
+    if load_status != 200:
+        return jsonify(loaded), load_status
+    dry_run_request = loaded.get("dry_run_request", {})
+    result, status_code = build_agent_dry_run_handoff(dry_run_request)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs/<dry_run_request_id>/results", methods=["POST"])
+def oom_sakkie_agent_dry_run_result_create(dry_run_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_agent_dry_run_result(dry_run_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-run-results", methods=["GET"])
+def oom_sakkie_agent_dry_run_results():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_agent_dry_run_results(
+        dry_run_request_id=request.args.get("dry_run_request_id", "").strip(),
+        limit=request.args.get("limit", 20),
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-run-results/<dry_run_result_id>/events", methods=["POST"])
+def oom_sakkie_agent_dry_run_result_events(dry_run_result_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_agent_dry_run_result_event(dry_run_result_id, payload)
     return jsonify(result), status_code
 
 

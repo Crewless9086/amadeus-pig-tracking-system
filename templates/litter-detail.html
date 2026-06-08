@@ -240,6 +240,40 @@
               </div>
             </form>
           </section>
+
+          <section id="litter_sex_count_panel" class="litter-side-panel hidden">
+            <div class="section-subtitle">Sex Count Capture</div>
+            <p class="form-helper">Use this when the litter has been checked and you know how many active piglets are male and female. This only fills blank sex rows.</p>
+            <form id="sex_count_form" class="attention-action-form">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="sex_count_date">Action Date</label>
+                  <input type="date" id="sex_count_date" required />
+                </div>
+                <div class="form-field">
+                  <label for="sex_count_male">Male Count</label>
+                  <input type="number" id="sex_count_male" min="0" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="sex_count_female">Female Count</label>
+                  <input type="number" id="sex_count_female" min="0" step="1" />
+                </div>
+                <div class="form-field">
+                  <label for="sex_count_recorded_by">Recorded By</label>
+                  <input type="text" id="sex_count_recorded_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="sex_count_notes">Notes</label>
+                  <textarea id="sex_count_notes" rows="3"></textarea>
+                </div>
+              </div>
+              <div id="sex_count_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="sex_count_preview_button" class="button-link button-link-secondary">Preview</button>
+                <button type="submit" id="sex_count_apply_button" disabled>Save Sex Counts</button>
+              </div>
+            </form>
+          </section>
         </aside>
       </div>
     </div>
