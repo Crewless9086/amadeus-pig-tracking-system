@@ -216,6 +216,36 @@ function rowsPayload() {
   });
 }
 
+function clearUploadedAndDuplicateDraftRows(uploadData) {
+  const clearPigIds = new Set();
+  (uploadData.saved_rows || []).forEach((row) => {
+    if (row.pig_id) clearPigIds.add(row.pig_id);
+  });
+  (uploadData.blocked_rows || []).forEach((row) => {
+    const reason = String(row.reason || "").toLowerCase();
+    if (row.pig_id && reason.includes("already has a weight entry")) {
+      clearPigIds.add(row.pig_id);
+    }
+  });
+
+  clearPigIds.forEach((pigId) => {
+    delete draftRows[pigId];
+  });
+
+  if (Object.values(draftRows).some((row) => String(row.weight_kg || "").trim() !== "")) {
+    window.localStorage.setItem(draftKey(), JSON.stringify({
+      saved_at: new Date().toISOString(),
+      weight_date: bulkDateInput.value,
+      rows: draftRows,
+    }));
+    draftStatus.textContent = "Needs review";
+  } else {
+    window.localStorage.removeItem(draftKey());
+    draftRows = {};
+    draftStatus.textContent = "Uploaded";
+  }
+}
+
 function renderReview(data) {
   const blockedRows = data.blocked_rows || [];
   const blockedHtml = blockedRows.length
@@ -258,7 +288,7 @@ async function uploadBatch() {
 
   try {
     const { response, data } = await preflightBatch();
-    if (!response.ok || !data.success) {
+    if (!response.ok) {
       setMessage("Batch has rows that need attention. Nothing was uploaded.", "error");
       return;
     }
@@ -268,7 +298,10 @@ async function uploadBatch() {
       return;
     }
 
-    const confirmed = window.confirm(`Upload ${data.accepted_count} weight record${data.accepted_count === 1 ? "" : "s"} now? Blank rows will be skipped.`);
+    const blockedText = Number(data.blocked_count || 0)
+      ? ` ${data.blocked_count} blocked/existing row${data.blocked_count === 1 ? "" : "s"} will be skipped.`
+      : "";
+    const confirmed = window.confirm(`Upload ${data.accepted_count} weight record${data.accepted_count === 1 ? "" : "s"} now? Blank rows will be skipped.${blockedText}`);
     if (!confirmed) {
       setMessage("Batch upload cancelled. Draft is still available on this device.", "error");
       return;
@@ -292,10 +325,11 @@ async function uploadBatch() {
       return;
     }
 
-    window.localStorage.removeItem(draftKey());
-    draftRows = {};
-    draftStatus.textContent = "Uploaded";
-    setMessage(`Uploaded ${uploadData.saved_count} weight record${uploadData.saved_count === 1 ? "" : "s"}. Blank rows skipped: ${uploadData.skipped_count}.`, "success");
+    clearUploadedAndDuplicateDraftRows(uploadData);
+    const extraSkipped = Number(uploadData.blocked_count || 0) || Number(uploadData.failed_count || 0)
+      ? ` Blocked/existing rows skipped: ${Number(uploadData.blocked_count || 0)}. Failed rows kept for review: ${Number(uploadData.failed_count || 0)}.`
+      : "";
+    setMessage(`Uploaded ${uploadData.saved_count} weight record${uploadData.saved_count === 1 ? "" : "s"}. Blank rows skipped: ${uploadData.skipped_count}.${extraSkipped}`, "success");
     await loadData();
   } catch (error) {
     console.error("bulk upload error:", error);

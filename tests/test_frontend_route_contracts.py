@@ -1048,6 +1048,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/pig-weights/weights-batch", js)
         self.assertIn("window.localStorage", js)
         self.assertIn("Blank rows will be skipped", js)
+        self.assertIn("clearUploadedAndDuplicateDraftRows", js)
+        self.assertIn("already has a weight entry", js)
+        self.assertIn("Blocked/existing rows skipped", js)
 
 
 if __name__ == "__main__":

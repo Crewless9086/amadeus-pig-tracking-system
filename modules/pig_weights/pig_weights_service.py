@@ -3666,17 +3666,20 @@ def preflight_bulk_weight_entries(payload: dict):
 
 def save_bulk_weight_entries(payload: dict):
     preflight, status_code = preflight_bulk_weight_entries(payload)
-    if status_code != 200 or not preflight.get("success"):
-        return preflight, 409 if preflight.get("blocked_count", 0) else status_code
+    if status_code != 200:
+        return preflight, status_code
     if preflight.get("accepted_count", 0) == 0:
         return {
             "success": False,
-            "message": "No weights entered. Nothing to upload.",
+            "message": "No new weight rows were ready to upload.",
             "saved_count": 0,
             "skipped_count": preflight.get("skipped_count", 0),
-        }, 400
+            "blocked_count": preflight.get("blocked_count", 0),
+            "blocked_rows": preflight.get("blocked_rows", []),
+        }, 409 if preflight.get("blocked_count", 0) else 400
 
     saved_rows = []
+    failed_rows = []
     movement_count = 0
 
     for row in preflight.get("accepted_rows", []):
@@ -3691,26 +3694,47 @@ def save_bulk_weight_entries(payload: dict):
         })
 
         if not result.get("success"):
-            return {
-                "success": False,
-                "message": "Batch upload stopped because a row failed during save.",
-                "saved_count": len(saved_rows),
-                "saved_rows": saved_rows,
-                "failed_row": row,
+            failed_rows.append({
+                "row": row,
                 "error": result,
-            }, 409 if result.get("duplicate_weight") else 500
+            })
+            continue
 
         if result.get("movement_logged"):
             movement_count += 1
         saved_rows.append(result.get("saved", {}))
 
+    if not saved_rows:
+        return {
+            "success": False,
+            "message": "No new weight rows were uploaded.",
+            "saved_count": 0,
+            "movement_count": movement_count,
+            "skipped_count": preflight.get("skipped_count", 0),
+            "blocked_count": preflight.get("blocked_count", 0),
+            "failed_count": len(failed_rows),
+            "blocked_rows": preflight.get("blocked_rows", []),
+            "failed_rows": failed_rows,
+        }, 409 if preflight.get("blocked_count", 0) or failed_rows else 400
+
+    blocked_count = preflight.get("blocked_count", 0)
+    failed_count = len(failed_rows)
+    partial_count = blocked_count + failed_count
     return {
         "success": True,
-        "message": "Bulk weight batch uploaded successfully.",
+        "message": (
+            "Bulk weight batch uploaded with skipped rows."
+            if partial_count
+            else "Bulk weight batch uploaded successfully."
+        ),
         "saved_count": len(saved_rows),
         "movement_count": movement_count,
         "skipped_count": preflight.get("skipped_count", 0),
+        "blocked_count": blocked_count,
+        "failed_count": failed_count,
         "saved_rows": saved_rows,
+        "blocked_rows": preflight.get("blocked_rows", []),
+        "failed_rows": failed_rows,
     }, 201
 
 

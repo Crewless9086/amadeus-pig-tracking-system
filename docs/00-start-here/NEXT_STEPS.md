@@ -2548,16 +2548,17 @@ Follow-up idea:
 - Page uses active pig row order matching the printable sheet: current pen/camp, then numeric tag number.
 - Page supports multi-pen filtering, one batch date, new weight, optional new pen, and notes.
 - `Save Draft` stores typed rows in browser `localStorage` for the selected date.
-- `Upload Batch` runs backend preflight first, shows accepted/skipped/blocked counts, asks for confirmation, then writes the batch.
+- `Upload Batch` runs backend preflight first, shows accepted/skipped/blocked counts, asks for confirmation, then writes valid new rows. Duplicate/existing same-pig/same-date rows are skipped instead of blocking the whole batch.
 - Blank weight rows are skipped and do not create `WEIGHT_LOG` rows.
 - Backend added `POST /api/pig-weights/weights-batch/preflight` and `POST /api/pig-weights/weights-batch`.
-- Backend blocks invalid pigs, invalid dates, non-positive/invalid weights, invalid destination pens, duplicate rows in the batch, and existing same-pig/same-date weights before commit.
+- Backend flags invalid pigs, invalid dates, non-positive/invalid weights, invalid destination pens, duplicate rows in the batch, and existing same-pig/same-date weights before commit. A batch with at least one valid new row may still upload; blocked rows are returned in the review payload and are not written.
 - Optional pen movement reuses the existing weight-with-optional-move behavior.
 - Local verification passed: `node --check static/js/bulkWeights.js`, focused bulk/frontend tests, full local unittest suite at 305 tests, route smoke for `/bulk-weights`, and no-op batch upload guard.
 - Owner deployed the `/bulk-weights` changes on 2026-06-01.
 - 2026-06-01 owner decision: keep 9.6C open while the farm does a live bulk-weight test later today or soon after; close only after owner confirms the flow is correct with real data.
 - Remaining closure step: owner browser-test the local/deployed `/bulk-weights` flow with real weighing data before marking 9.6C deployed/browser-verified. Owner confirmed on 2026-06-04 that this must wait until real weights are available.
 - 2026-06-08 live-data correction: owner reported a 68-row bulk weighing session looked like only 20 rows in the daily weight report. Code audit found no 20-row cap in `/bulk-weights` preflight/save; the likely mismatch was `/weight-report` hiding historical weight rows for pigs that are no longer currently `Active` / `On_Farm = Yes`. Local fix keeps historical weight rows visible, adds `status`, `on_farm`, `active_on_farm`, and `not_active_on_farm_count`, and marks rows that are no longer active/on-farm instead of silently dropping them. Verification passed: focused bulk/report/litter/frontend tests and JS syntax checks.
+- 2026-06-08 live upload correction: owner saved a bulk draft, then `Upload Batch` stopped when some rows already had weights for the date. Local fix changed bulk upload to partial-save semantics: upload all valid new rows, skip duplicate/existing rows, keep true failed rows visible for correction, and update the local draft accordingly. Verification passed: focused bulk/frontend tests and `node --check static/js/bulkWeights.js`.
 
 Recommended 9.6 split:
 
@@ -2811,6 +2812,7 @@ Questions to answer during 9.7A:
 - `/litter/<litter_id>` now shows a `Sex Count Capture` side panel when active piglets still have blank sex, with action date, male count, female count, recorded-by, notes, preview, and save.
 - Applying the action updates `PIG_MASTER.Sex`, `Updated_At`, and `General_Notes`; it writes to Google Sheets only after preview and explicit confirmation, and writes nothing to Supabase.
 - Local verification passed: `node --check static/js/litterDetail.js`, focused litter/frontend tests, and focused bulk/report/litter/frontend test suite.
+- First owner browser check passed on 2026-06-08: `LIT-2026-6EC0` and `LIT-2026-1025` received male/female counts and first medical records through the litter action flow.
 
 9.7I smart return/back navigation - Deployed/working:
 
