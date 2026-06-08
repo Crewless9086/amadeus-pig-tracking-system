@@ -9,6 +9,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_status,
     recommend_agent_for_text,
 )
+from modules.oom_sakkie.agent_dry_run_store import list_agent_dry_run_requests
 from modules.oom_sakkie.build_request_store import list_build_requests
 from modules.oom_sakkie.deploy_decision_store import list_deploy_decisions
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
@@ -969,6 +970,56 @@ def sentinel_dry_run_review_handler(_args):
     }
 
 
+def agent_dry_run_status_handler(_args):
+    result, status_code = list_agent_dry_run_requests(limit=5)
+    requests = result.get("dry_run_requests", []) if isinstance(result, dict) else []
+    stale_warnings = []
+    if status_code != 200:
+        stale_warnings.append(f"Agent dry-run queue is unavailable (status {status_code}).")
+    waiting = [
+        item for item in requests
+        if not (item.get("latest_event") or {}).get("event_type")
+    ]
+    cancelled = [
+        item for item in requests
+        if (item.get("latest_event") or {}).get("event_type") == "cancelled"
+    ]
+    summary = (
+        "Agent dry-run queue: {} request(s) loaded, {} waiting for manual review, {} cancelled. "
+        "This is queue status only; no specialist was dispatched."
+    ).format(len(requests), len(waiting), len(cancelled))
+    if status_code != 200:
+        summary = "Agent dry-run queue is unavailable. " + summary
+
+    return {
+        "success": status_code == 200,
+        "status": result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+        "summary": summary,
+        "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
+        "stale_warnings": stale_warnings,
+        "safety_notes": [
+            "Agent dry-run status is read-only. No specialist was dispatched, no specialist LLM ran, no specialist tool executed, and no write was performed."
+        ],
+        "llm_context": {
+            "kind": "agent_dry_run_status",
+            "counts": {
+                "dry_run_requests": len(requests),
+                "waiting_for_review": len(waiting),
+                "cancelled": len(cancelled),
+            },
+            "requests": requests,
+            "runtime_flags": {
+                "dry_run_enabled": False,
+                "dispatch_enabled": False,
+                "runs_specialist_llm": False,
+                "runs_specialist_tools": False,
+                "writes": False,
+            },
+        },
+        "raw": result if isinstance(result, dict) else {},
+    }
+
+
 def _system_work_build_stage(item):
     latest_event = item.get("latest_event") or {}
     event_type = latest_event.get("event_type") or ""
@@ -1014,6 +1065,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=sentinel_dry_run_review_handler,
         description="Read-only Sentinel specialist dry-run readiness review. Never dispatches specialists or enables runtime flags.",
+    ),
+    "agent_dry_run_status": OomSakkieTool(
+        name="agent_dry_run_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_dry_run_status_handler,
+        description="Read-only status of approved specialist dry-run requests. Never dispatches agents.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

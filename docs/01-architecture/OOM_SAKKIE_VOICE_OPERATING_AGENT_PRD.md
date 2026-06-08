@@ -303,8 +303,9 @@ Trace fields:
 - Trace ID is visible but collapsed by default.
 - Confirmation UI pattern should be designed now for future writes: exact backend payload preview, not paraphrased text.
 - Kiosk access must be LAN/IP/device controlled before it is treated as trusted.
-- Current local review endpoints rely on Flask `request.remote_addr`. That is acceptable only while Flask is directly reachable without a reverse proxy in front. If nginx, Caddy, Cloudflare, Render, Waitress behind a proxy, or any other proxy is introduced, configure trusted proxy handling first and make review access checks use the validated client IP, not the proxy loopback address.
-- `POST /api/oom-sakkie/message` is intentionally reachable wherever the local Flask app is reachable during the kiosk MVP. It is not an admin/review endpoint. Keep Flask bound to trusted local/LAN surfaces until channel auth or a device policy is added.
+- Hard deployment rule: current local review endpoints rely on Flask `request.remote_addr`. Do not put a same-host reverse proxy, nginx, Caddy, Cloudflare, Render proxy, Waitress-behind-proxy setup, or any other proxy in front of review routes until trusted proxy handling is deliberately configured and reviewed. A co-located proxy can make every public client look like `127.0.0.1`, which would defeat the loopback-only review guard.
+- `POST /api/oom-sakkie/message` is intentionally reachable wherever the local Flask app is reachable during the kiosk MVP while LLM router/answer features are off. It is not an admin/review endpoint. Keep Flask bound to trusted local/LAN surfaces until channel auth or a device policy is added.
+- When an LLM router or answer-composer flag is enabled, `/api/oom-sakkie/message` must pass the local/private-LAN access guard before it can create outbound paid API calls with user text. Do not enable LLM flags on a non-loopback/public bind without a deliberate access policy and rate limit.
 
 ### First Hardware Sequence
 

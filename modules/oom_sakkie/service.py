@@ -15,7 +15,7 @@ MAX_USER_TEXT_CHARS = 2000
 ACTION_GUARD_PATTERN = re.compile(
     r"\b("
     r"delete|remove|save|create|update|edit|change|send|email|message|post|publish|"
-    r"start|stop|switch on|switch off|turn on|turn off|open|close|run|activate|deactivate"
+    r"start|stop|irrigate|switch on|switch off|turn on|turn off|open|close|run|activate|deactivate"
     r")\b",
     re.I,
 )
@@ -38,6 +38,10 @@ class IntentMatch:
 
 
 RULES = [
+    (
+        re.compile(r"\b(agent dry[- ]?run status|dry[- ]?run queue|dry[- ]?run request|dry[- ]?run approval|specialist dry[- ]?run queue)\b", re.I),
+        IntentMatch("agent_dry_run_status", "agent_dry_run_status", 0.95, "rule:agent_dry_run_status"),
+    ),
     (
         re.compile(r"\b(sentinel dry[- ]?run|safety dry[- ]?run|first agent dry[- ]?run|agent dry[- ]?run review|specialist dry[- ]?run|dry[- ]?run sentinel)\b", re.I),
         IntentMatch("sentinel_dry_run_review", "sentinel_dry_run_review", 0.95, "rule:sentinel_dry_run_review"),
@@ -67,7 +71,7 @@ RULES = [
         IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),
     (
-        re.compile(r"\b(irrigation|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
+        re.compile(r"\b(irrigation|irrigate|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),
         IntentMatch("irrigation_status", "irrigation_status", 0.95, "rule:irrigation_status"),
     ),
     (

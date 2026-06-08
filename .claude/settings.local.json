@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -n \"Call 1\\\\\\\\.1\\\\|HTTP - Create\\\\|executeWorkflow\" \"C:\\\\Users\\\\charl\\\\OneDrive\\\\1. Amadeus\\\\AGENTS\\\\amadeus-pig-tracking-system\\\\project-memory\\\\n8n_Current_Workflow.md\")"
+      "Bash(grep -n \"Call 1\\\\\\\\.1\\\\|HTTP - Create\\\\|executeWorkflow\" \"C:\\\\Users\\\\charl\\\\OneDrive\\\\1. Amadeus\\\\AGENTS\\\\amadeus-pig-tracking-system\\\\project-memory\\\\n8n_Current_Workflow.md\")",
+      "Bash(wc -l modules/oom_sakkie/*.py)",
+      "Bash(wc -l static/js/oomSakkie.js)",
+      "Bash(wc -l tests/test_oom_sakkie_service.py tests/test_oom_sakkie_routes.py tests/test_frontend_route_contracts.py)",
+      "Bash(python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts)",
+      "Bash(node --check static/js/oomSakkie.js)"
     ]
   }
 }

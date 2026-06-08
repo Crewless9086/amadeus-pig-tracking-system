@@ -5,6 +5,9 @@ from modules.oom_sakkie.tools import TOOL_REGISTRY, RiskLevel
 
 def get_runtime_policy():
     tools = list(TOOL_REGISTRY.values())
+    llm_answer = llm_answer_policy()
+    llm_router = llm_router_policy()
+    llm_message_guard_active = bool(llm_answer["enabled"] or llm_router["enabled"])
     write_tools = [
         tool.name
         for tool in tools
@@ -25,10 +28,10 @@ def get_runtime_policy():
         "mode": "local_kiosk_read_only",
         "backend_as_brain": True,
         "telegram_cutover_enabled": False,
-        "llm_answer_enabled": llm_answer_policy()["enabled"],
-        "llm_answer": llm_answer_policy(),
-        "llm_router_enabled": llm_router_policy()["enabled"],
-        "llm_router": llm_router_policy(),
+        "llm_answer_enabled": llm_answer["enabled"],
+        "llm_answer": llm_answer,
+        "llm_router_enabled": llm_router["enabled"],
+        "llm_router": llm_router,
         "write_tools_enabled": False,
         "physical_controls_enabled": False,
         "backend_voice_vendors_enabled": False,
@@ -45,8 +48,10 @@ def get_runtime_policy():
             "reverse_proxy_caveat": "If Flask sits behind nginx, Caddy, Cloudflare, Render, or another proxy, configure trusted proxy handling before relying on loopback review protection.",
         },
         "message_endpoint_access": {
-            "default": "reachable_wherever_flask_is_reachable",
+            "default": "local_guard_required_when_llm_enabled" if llm_message_guard_active else "reachable_wherever_flask_is_reachable",
             "route": "POST /api/oom-sakkie/message",
+            "llm_guard_active": llm_message_guard_active,
+            "llm_guard_rule": "When LLM router or answer composer is enabled, /message must pass the same loopback/private-LAN guard before outbound API calls can occur.",
             "note": "This is the local brain endpoint, not an admin/review endpoint. Keep Flask bound to trusted local/LAN surfaces until channel auth is added.",
         },
         "kiosk_policy": {

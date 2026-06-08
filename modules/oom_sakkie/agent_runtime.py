@@ -52,6 +52,7 @@ _AGENT_TOOLS = {
 
 _TOOL_PRIMARY_AGENT = {
     "agent_activation_plan": "gatekeeper",
+    "agent_dry_run_status": "gatekeeper",
     "agent_crew_brief": "gatekeeper",
     "agent_crew_status": "gatekeeper",
     "sentinel_dry_run_review": "sentinel",

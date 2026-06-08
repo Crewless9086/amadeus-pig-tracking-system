@@ -7693,6 +7693,120 @@ Manual check:
 5. Confirm the safety note says no specialist was dispatched, no specialist LLM ran, no specialist tool executed, and no write was performed.
 6. Confirm the review lists blockers before any live specialist dry-run.
 
+### 10.9I Oom Sakkie LLM Message Guard And Safety Follow-Ups - Local Ready
+
+Purpose:
+
+- Close Claude's pass-with-nits follow-ups before widening daily use.
+- Prevent unauthenticated non-local `/api/oom-sakkie/message` callers from creating outbound paid LLM calls when LLM flags are enabled.
+- Promote the reverse-proxy caveat to a hard deployment rule.
+- Add stronger tests for unsafe LLM composer output, action-guard wording, and live Postgres review-gate constraints.
+
+What changed:
+
+- Added message access helpers in `modules/oom_sakkie/access.py`:
+  - `/message` remains reachable wherever Flask is reachable while LLM router/answer features are off,
+  - when an LLM surface is enabled, `/message` must pass the same loopback/private-LAN guard before it can trigger outbound API calls,
+  - denied responses return `status = message_access_denied`.
+- `modules/oom_sakkie/routes.py` now applies the message guard before `handle_message()`.
+- Runtime policy now exposes:
+  - `message_endpoint_access.llm_guard_active`,
+  - `message_endpoint_access.llm_guard_rule`,
+  - `default = local_guard_required_when_llm_enabled` when the guard is active.
+- The action guard now treats `irrigate` as a control verb, and deterministic routing maps it to read-only `irrigation_status`.
+- The PRD now says no same-host reverse proxy may sit in front of review routes until trusted proxy handling is deliberately configured and reviewed.
+- Added a DATABASE_URL-gated live Postgres integration test for build/patch/deploy CHECK constraints:
+  - `builder_enabled = true` is rejected,
+  - `applies_patch = true` is rejected,
+  - `runs_deploy = true` is rejected.
+- Added an end-to-end `handle_message()` test proving unsafe LLM composer output such as `I updated...` falls back to the deterministic answer.
+
+Safety status:
+
+- No new write tools.
+- No live specialist dispatch.
+- No specialist LLM execution.
+- No autonomous loop.
+- No Builder/Forge run, patch application, or deploy.
+- `/message` is still open for plain deterministic local use while LLM flags are off.
+- `/message` becomes local/private-LAN guarded before outbound LLM calls can happen.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 161 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 486 tests.
+
+Manual check:
+
+1. With LLM flags off, ask a normal kiosk question and confirm `/api/oom-sakkie/message` still works.
+2. With LLM answer/router enabled, confirm `/api/oom-sakkie/policy` shows `message_endpoint_access.llm_guard_active = true`.
+3. Ask `irrigate zone 3 now`; confirm it returns read-only irrigation status and safety notes, not an action.
+4. Do not deploy behind a reverse proxy until trusted proxy handling and auth/rate-limit policy are deliberately reviewed.
+
+### 10.9J Oom Sakkie Agent Dry-Run Request Gate - Local Ready
+
+Purpose:
+
+- Build the missing append-only owner approval/audit rail before any future live specialist dry-run.
+- Let the system record a Sentinel read-only dry-run request without actually running Sentinel.
+- Give Oom Sakkie a read-only queue-status answer for future dry-run approvals.
+
+What changed:
+
+- Added migration `supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql`.
+- The migration creates:
+  - `oom_sakkie_agent_dry_run_requests`,
+  - `oom_sakkie_agent_dry_run_events`.
+- DB constraints force:
+  - `mode = read_only_dry_run_request_only`,
+  - `status = approved_for_read_only_dry_run`,
+  - `dry_run_enabled = false`,
+  - `dispatch_enabled = false`,
+  - `runs_specialist_llm = false`,
+  - `runs_specialist_tools = false`,
+  - `writes = false`.
+- DB triggers make both tables append-only.
+- Added `modules/oom_sakkie/agent_dry_run_store.py`:
+  - `record_agent_dry_run_request()`,
+  - `list_agent_dry_run_requests()`,
+  - `record_agent_dry_run_event()`.
+- Only `sentinel` is allowed for this first request-gate slice; other specialists return `specialist_dry_run_not_approved_yet`.
+- Added protected local-only routes:
+  - `GET /api/oom-sakkie/agent-dry-runs`,
+  - `POST /api/oom-sakkie/agent-dry-runs`,
+  - `POST /api/oom-sakkie/agent-dry-runs/<dry_run_request_id>/events`.
+- Added read-only `agent_dry_run_status` tool.
+- Added deterministic routing for dry-run queue/status phrasing.
+- Added kiosk quick action `Dry-Run Queue` with prompt `What is the agent dry-run queue status?`
+
+Safety status:
+
+- Records approval intent only.
+- Does not run Sentinel.
+- Does not dispatch any specialist.
+- Does not call a specialist LLM.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not run Builder/Forge, apply patches, or deploy.
+- Future dry-run execution remains locked behind a separate manually reviewed implementation step.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 170 tests.
+- Applied migration `202606080001_create_oom_sakkie_agent_dry_runs.sql`.
+- Live-style smoke created dry-run request `OSK-AGENT-DRYRUN-B2E07585AD` and event `OSK-AGENT-DRYRUN-EVENT-0542A235E334`; all execution flags remained false.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local `python -m unittest` passed at 495 tests.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Dry-Run Queue`.
+3. Confirm Oom Sakkie reports agent dry-run queue status and says no specialist was dispatched.
+4. Use `/api/oom-sakkie/agent-dry-runs` locally to inspect the recorded request queue if needed.
+5. Do not treat this as live specialist execution; it is an approval/audit rail only.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

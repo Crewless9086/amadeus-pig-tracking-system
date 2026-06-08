@@ -13,6 +13,13 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_status,
     recommend_agent_for_text,
 )
+from modules.oom_sakkie.agent_dry_run_store import (
+    _agent_dry_run_request_params,
+    _agent_dry_run_request_row,
+    list_agent_dry_run_requests,
+    record_agent_dry_run_event,
+    record_agent_dry_run_request,
+)
 from modules.oom_sakkie.llm_answer import (
     _build_payload,
     compose_answer_with_llm,
@@ -76,6 +83,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             set(TOOL_REGISTRY),
             {
                 "sentinel_dry_run_review",
+                "agent_dry_run_status",
                 "agent_activation_plan",
                 "agent_crew_brief",
                 "agent_crew_status",
@@ -145,11 +153,21 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["voice_auto_send_ms"], 2000)
         self.assertEqual(policy["message_endpoint_access"]["default"], "reachable_wherever_flask_is_reachable")
         self.assertEqual(policy["message_endpoint_access"]["route"], "POST /api/oom-sakkie/message")
+        self.assertFalse(policy["message_endpoint_access"]["llm_guard_active"])
         self.assertIn("reverse_proxy_assumption", policy["review_endpoints_access"])
         self.assertEqual(policy["kiosk_policy"]["max_risk_level"], 0)
         self.assertEqual(policy["kiosk_policy"]["requires_confirmation_tools"], [])
         self.assertEqual(policy["tool_counts"]["write_or_confirmation"], 0)
         self.assertIn("write tools", policy["blocked_capabilities"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ANSWER_ENABLED": "1"}, clear=True)
+    def test_runtime_policy_declares_message_guard_when_llm_enabled(self):
+        policy = get_runtime_policy()
+
+        self.assertTrue(policy["llm_answer_enabled"])
+        self.assertTrue(policy["message_endpoint_access"]["llm_guard_active"])
+        self.assertEqual(policy["message_endpoint_access"]["default"], "local_guard_required_when_llm_enabled")
+        self.assertIn("outbound API calls", policy["message_endpoint_access"]["llm_guard_rule"])
 
     def test_specialist_manifests_are_planned_and_approval_gated(self):
         manifests = list_specialist_manifests()
@@ -363,6 +381,129 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["tool_audit"]["requires_confirmation_tools"], [])
         blockers = result["llm_context"]["sentinel_review"]["blockers_before_live_dry_run"]
         self.assertTrue(any("dispatch/audit" in blocker for blocker in blockers))
+
+    @patch("modules.oom_sakkie.tools.list_agent_dry_run_requests")
+    def test_agent_dry_run_status_tool_is_read_only_queue_status(self, mock_list):
+        from modules.oom_sakkie.tools import agent_dry_run_status_handler
+
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "dry_run_requests": [{
+                "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+                "specialist_slug": "sentinel",
+                "latest_event": None,
+            }],
+        }, 200)
+
+        result = agent_dry_run_status_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertIn("1 request", result["summary"])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_dry_run_status")
+        self.assertEqual(result["llm_context"]["counts"]["waiting_for_review"], 1)
+        self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
+
+    def test_agent_dry_run_request_params_force_no_execution_flags(self):
+        params = _agent_dry_run_request_params({
+            "specialist_slug": "sentinel",
+            "owner_text": "approve first dry run",
+            "dry_run_enabled": True,
+            "dispatch_enabled": True,
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": True,
+            "writes": True,
+        })
+
+        self.assertEqual(params["specialist_slug"], "sentinel")
+        self.assertEqual(params["mode"], "read_only_dry_run_request_only")
+        self.assertEqual(params["status"], "approved_for_read_only_dry_run")
+        self.assertFalse(params["dry_run_enabled"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["runs_specialist_llm"])
+        self.assertFalse(params["runs_specialist_tools"])
+        self.assertFalse(params["writes"])
+        self.assertIn("sentinel_dry_run_review", params["allowed_tools_json"])
+
+    def test_agent_dry_run_store_not_configured_and_rejects_non_sentinel(self):
+        result, status_code = record_agent_dry_run_request({
+            "specialist_slug": "sentinel",
+            "owner_text": "approve first dry run",
+        }, database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["status"], "not_configured")
+
+        result, status_code = record_agent_dry_run_request({
+            "specialist_slug": "ledger",
+            "owner_text": "approve ledger dry run",
+        }, database_url="")
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "specialist_dry_run_not_approved_yet")
+
+        result, status_code = list_agent_dry_run_requests(database_url="")
+        self.assertEqual(status_code, 503)
+        self.assertEqual(result["dry_run_requests"], [])
+
+        result, status_code = record_agent_dry_run_event(
+            "OSK-AGENT-DRYRUN-TEST",
+            {"event_type": "run_now"},
+            database_url="",
+        )
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "invalid_event_type")
+
+    def test_agent_dry_run_request_row_maps_select_tuple_positions(self):
+        created_at = datetime(2026, 6, 8, tzinfo=timezone.utc)
+        event_at = datetime(2026, 6, 8, 1, tzinfo=timezone.utc)
+        row = (
+            "OSK-AGENT-DRYRUN-ABC",
+            "approved_for_read_only_dry_run",
+            "read_only_dry_run_request_only",
+            "sentinel",
+            "owner",
+            "owner text",
+            "purpose",
+            "OSK-TRACE",
+            ["system_work_status"],
+            ["No dispatch"],
+            "manual_review_before_any_specialist_execution",
+            False,
+            False,
+            False,
+            False,
+            False,
+            created_at,
+            "approved",
+            "Approved only.",
+            "owner",
+            event_at,
+        )
+
+        mapped = _agent_dry_run_request_row(row)
+
+        self.assertEqual(mapped["dry_run_request_id"], "OSK-AGENT-DRYRUN-ABC")
+        self.assertEqual(mapped["specialist_slug"], "sentinel")
+        self.assertEqual(mapped["allowed_tools"], ["system_work_status"])
+        self.assertFalse(mapped["dispatch_enabled"])
+        self.assertFalse(mapped["runs_specialist_llm"])
+        self.assertFalse(mapped["writes"])
+        self.assertEqual(mapped["latest_event"]["event_type"], "approved")
+        self.assertEqual(mapped["latest_event"]["created_at"], event_at.isoformat())
+
+    def test_agent_dry_run_migration_is_append_only_and_no_execution(self):
+        migration = Path("supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_agent_dry_run_requests", migration)
+        self.assertIn("mode = 'read_only_dry_run_request_only'", migration)
+        self.assertIn("dry_run_enabled = false", migration)
+        self.assertIn("dispatch_enabled = false", migration)
+        self.assertIn("runs_specialist_llm = false", migration)
+        self.assertIn("runs_specialist_tools = false", migration)
+        self.assertIn("writes = false", migration)
+        self.assertIn("before update on public.oom_sakkie_agent_dry_run_requests", migration)
+        self.assertIn("before delete on public.oom_sakkie_agent_dry_run_events", migration)
 
     @patch("modules.oom_sakkie.tools.list_deploy_decisions")
     @patch("modules.oom_sakkie.tools.list_patch_proposals")
@@ -1158,6 +1299,7 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     def test_rule_routing_known_phrases(self):
         cases = {
+            "what is the agent dry-run queue status": "agent_dry_run_status",
             "run the sentinel dry-run review": "sentinel_dry_run_review",
             "first agent dry run": "sentinel_dry_run_review",
             "what needs my approval": "system_work_status",
@@ -1255,6 +1397,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(is_unsupported_action_request("turn off the pump"))
         self.assertTrue(is_unsupported_action_request("turn the pump on"))
         self.assertTrue(is_unsupported_action_request("switch the inverter off"))
+        self.assertTrue(is_unsupported_action_request("irrigate zone 3 now"))
         self.assertFalse(is_unsupported_action_request("what is the power doing now"))
 
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
@@ -1646,6 +1789,53 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["agent_activity"]["safety"]["writes"])
         mock_compose.assert_called_once()
 
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LLM_ANSWER_ENABLED": "true",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-model",
+    }, clear=True)
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.tools.get_current_power_state")
+    @patch("modules.oom_sakkie.llm_answer.urllib_request.urlopen")
+    def test_handle_message_rejects_unsafe_llm_answer_and_uses_deterministic_fallback(self, mock_urlopen, mock_power, _write_trace):
+        response = Mock()
+        response.read.return_value = __import__("json").dumps({
+            "choices": [{
+                "message": {
+                    "content": "{\"answer\":\"I updated the power settings for you.\"}"
+                }
+            }]
+        }).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = response
+        mock_power.return_value = ({
+            "success": True,
+            "status": "ok",
+            "source": {"is_stale": False, "data_age_minutes": 2},
+            "current": {
+                "battery_soc_pct": 90,
+                "battery_state": "charging",
+                "solar_power_w": 2400,
+                "load_power_w": 800,
+                "grid_power_w": 0,
+                "grid_state": "not_using_grid",
+            },
+            "summary": {"headline": "Solar is carrying the farm load."},
+        }, 200)
+
+        result, status = handle_message({
+            "text": "what is the power doing now",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "power_current")
+        self.assertIn("Solar is carrying the farm load", result["answer"])
+        self.assertNotIn("updated the power settings", result["answer"])
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertFalse(result["pipeline"]["llm_answer_used"])
+
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
     @patch("modules.oom_sakkie.service.get_tool")
@@ -1782,6 +1972,28 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["tool_used"], "irrigation_status")
         self.assertFalse(result["needs_clarification"])
+        self.assertEqual(result["risk_level"], 0)
+        self.assertTrue(any("No write" in note for note in result["safety_notes"]))
+        self.assertIn("No start/stop command was sent", result["answer"])
+
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
+    @patch("modules.oom_sakkie.tools.get_irrigation_status")
+    def test_irrigate_zone_phrase_is_read_only_with_safety_note(self, mock_irrigation, _compose, _write_trace):
+        mock_irrigation.return_value = ({
+            "success": True,
+            "current": {"status": "IDLE", "zone_id": "Z1", "zone_name": "Zone 1"},
+            "today": {"done_count": 2, "next_zone_id": "Z2", "next_zone_name": "Zone 2"},
+            "operator_summary": {"headline": "Irrigation has a plan for today.", "notes": []},
+        }, 200)
+
+        result, status = handle_message({
+            "text": "irrigate zone 3 now",
+            "channel": "kiosk",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["tool_used"], "irrigation_status")
         self.assertEqual(result["risk_level"], 0)
         self.assertTrue(any("No write" in note for note in result["safety_notes"]))
         self.assertIn("No start/stop command was sent", result["answer"])
@@ -1938,6 +2150,95 @@ class OomSakkieServiceTests(unittest.TestCase):
                     )
                 connection.rollback()
                 self.assertIn("append-only", str(feedback_update.exception).lower())
+
+    def test_live_pg_review_gate_constraints_reject_action_flags_when_database_url_is_configured(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for review-gate constraint integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        suffix = build_trace_id().replace("OSK-", "")
+        build_request_id = f"OSK-BUILD-CONSTRAINT-{suffix}"
+        patch_proposal_id = f"OSK-PATCH-CONSTRAINT-{suffix}"
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as build_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_build_requests (
+                            build_request_id, status, mode, proposal_json, brief,
+                            recommended_files_json, verification_json, next_gate,
+                            builder_enabled
+                        )
+                        values (
+                            %s, 'approved_for_build', 'build_request_only', '{}'::jsonb, '',
+                            '[]'::jsonb, '[]'::jsonb, 'test', true
+                        )
+                        """,
+                        (build_request_id,),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(build_error.exception).lower())
+
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_build_requests (
+                        build_request_id, status, mode, proposal_json, brief,
+                        recommended_files_json, verification_json, next_gate
+                    )
+                    values (
+                        %s, 'approved_for_build', 'build_request_only', '{}'::jsonb, '',
+                        '[]'::jsonb, '[]'::jsonb, 'test'
+                    )
+                    """,
+                    (build_request_id,),
+                )
+                connection.commit()
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as patch_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_patch_proposals (
+                            patch_proposal_id, build_request_id, proposal_text, applies_patch
+                        )
+                        values (%s, %s, 'constraint test', true)
+                        """,
+                        (patch_proposal_id, build_request_id),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(patch_error.exception).lower())
+
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_patch_proposals (
+                        patch_proposal_id, build_request_id, proposal_text
+                    )
+                    values (%s, %s, 'constraint test')
+                    """,
+                    (patch_proposal_id, build_request_id),
+                )
+                connection.commit()
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as deploy_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_deploy_decisions (
+                            deploy_decision_id, patch_proposal_id, decision_type, runs_deploy
+                        )
+                        values (%s, %s, 'approved_for_manual_deploy', true)
+                        """,
+                        (f"OSK-DEPLOY-CONSTRAINT-{suffix}", patch_proposal_id),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(deploy_error.exception).lower())
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")

@@ -1,3 +1,4 @@
+import os
 import unittest
 from unittest.mock import patch
 
@@ -30,6 +31,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertIn("safety_notes", data)
         self.assertEqual(data["trace_store"]["status"], "not_configured")
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_policy_route_returns_local_read_only_shape(self):
         response = self.client.get("/api/oom-sakkie/policy")
         data = response.get_json()
@@ -118,6 +120,98 @@ class OomSakkieRouteTests(unittest.TestCase):
         response = self.client.post(
             "/api/oom-sakkie/agents/recommend",
             json={"text": "who should handle this?"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.list_agent_dry_run_requests")
+    def test_agent_dry_runs_route_lists_without_execution(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "read_only_dry_run_request_queue",
+            "dry_run_enabled": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "dry_run_requests": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/agent-dry-runs?limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["writes"])
+        mock_list.assert_called_once_with(limit="8")
+
+    @patch("modules.oom_sakkie.routes.record_agent_dry_run_request")
+    def test_agent_dry_run_create_route_records_request_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "read_only_dry_run_request_only",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+            "specialist_slug": "sentinel",
+            "dry_run_enabled": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs",
+            json={"specialist_slug": "sentinel", "owner_text": "approve first dry-run"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data["mode"], "read_only_dry_run_request_only")
+        self.assertFalse(data["dry_run_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.record_agent_dry_run_event")
+    def test_agent_dry_run_event_route_records_event_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_type": "approved",
+            "dry_run_enabled": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs/OSK-AGENT-DRYRUN-1/events",
+            json={"event_type": "approved", "notes": "record only"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data["event_type"], "approved")
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once_with(
+            "OSK-AGENT-DRYRUN-1",
+            {"event_type": "approved", "notes": "record only"},
+        )
+
+    def test_agent_dry_run_routes_deny_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agent-dry-runs",
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()
@@ -695,11 +789,36 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
-    def test_message_route_remains_available_for_non_local_access_policy(self):
+    @patch.dict(os.environ, {}, clear=True)
+    def test_message_route_remains_available_for_non_local_access_policy_when_llm_off(self):
         response = self.client.post(
             "/api/oom-sakkie/message",
             json={"text": "what is the power doing now", "channel": "kiosk"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+
+        self.assertNotEqual(response.status_code, 403)
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ANSWER_ENABLED": "1"}, clear=True)
+    def test_message_route_denies_non_local_access_when_llm_enabled(self):
+        response = self.client.post(
+            "/api/oom-sakkie/message",
+            json={"text": "what is the power doing now", "channel": "kiosk"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "message_access_denied")
+        self.assertTrue(data["llm_guard_active"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ROUTER_ENABLED": "1"}, clear=True)
+    def test_message_route_allows_loopback_when_llm_enabled(self):
+        response = self.client.post(
+            "/api/oom-sakkie/message",
+            json={"text": "what is the power doing now", "channel": "kiosk"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
         )
 
         self.assertNotEqual(response.status_code, 403)

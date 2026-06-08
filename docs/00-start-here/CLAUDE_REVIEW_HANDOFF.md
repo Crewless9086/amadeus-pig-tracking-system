@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-H specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, and Sentinel Dry-Run Review.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-J specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, Sentinel Dry-Run Review, LLM Message Guard safety follow-ups, and Agent Dry-Run Request Gate.
 
 Out of scope unless explicitly asked:
 
@@ -108,6 +108,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Visible Crew Sequence that renders crew-plan specialists as cards on the Agent Activity Stage
 - Agent Activation Plan that exposes the locked path from planned agents to future live agents without enabling runtime flags
 - Sentinel Dry-Run Review that rehearses the first specialist candidate as an advisory-only safety/readiness review without enabling dispatch, specialist LLM execution, specialist tool execution, autonomous loops, or writes
+- LLM Message Guard that keeps `/api/oom-sakkie/message` open for deterministic local use while LLM flags are off, but requires local/private-LAN access before outbound paid LLM calls can happen
+- Agent Dry-Run Request Gate that records owner-approved Sentinel dry-run requests append-only while keeping dry-run execution, specialist dispatch, specialist LLM calls, specialist tool execution, and writes disabled
 
 ## Files/folders to inspect
 
@@ -117,6 +119,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `modules/oom_sakkie/learning_packet.py`
 - `modules/oom_sakkie/forge_handoff.py`
 - `modules/oom_sakkie/agent_runtime.py`
+- `modules/oom_sakkie/agent_dry_run_store.py`
 - `modules/oom_sakkie/patch_proposal_store.py`
 - `modules/oom_sakkie/deploy_decision_store.py`
 - `templates/oom-sakkie.html`
@@ -128,6 +131,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `scripts/oom_sakkie_llm_router_diagnostic.py`
 - `scripts/oom_sakkie_llm_router_smoke.py`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
+- `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
 - `docs/01-architecture/JARVIS_EXTERNAL_REFERENCE_REVIEW.md`
 - `screenshots/Jarvis screen layout.mp4` (owner-provided visual reference; if local video tooling is unavailable, use the documented design intent in `NEXT_STEPS.md`)
 - `supabase/migrations/202606060001_create_oom_sakkie_traces.sql`
@@ -138,6 +142,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`
 - `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`
 - `supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql`
+- `supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql`
 - `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `docs/00-start-here/CURRENT_STATE.md`
@@ -489,6 +494,26 @@ Summary:
   - kiosk quick checks include `Sentinel Dry Run`,
   - Agent Activity Stage maps the tool to Sentinel,
   - no specialist dispatch, specialist LLM call, runtime flag enablement, autonomous loop, specialist tool execution, or write authority was added.
+- Added LLM Message Guard and safety follow-ups:
+  - `/api/oom-sakkie/message` remains reachable wherever Flask is reachable while LLM router/answer features are off,
+  - when an LLM surface is enabled, `/message` must pass the same loopback/private-LAN guard before outbound API calls can occur,
+  - denied non-local LLM-enabled message requests return `status = message_access_denied`,
+  - runtime policy exposes `message_endpoint_access.llm_guard_active` and `llm_guard_rule`,
+  - the PRD now treats same-host reverse proxying in front of review routes as a hard deployment rule until trusted proxy handling is deliberately configured,
+  - action guard now treats `irrigate` as a control verb and routes it to read-only `irrigation_status`,
+  - added end-to-end `handle_message()` coverage proving unsafe LLM-composer output falls back to deterministic wording,
+  - added DATABASE_URL-gated live Postgres CHECK-constraint coverage for build/patch/deploy no-action flags,
+  - no write tools, live specialist dispatch, specialist LLM execution, autonomous loops, Builder/Forge execution, patch application, deploy, or farm-data mutation was added.
+- Added Agent Dry-Run Request Gate:
+  - migration `202606080001_create_oom_sakkie_agent_dry_runs.sql` creates `oom_sakkie_agent_dry_run_requests` and `oom_sakkie_agent_dry_run_events`,
+  - DB constraints force `mode = read_only_dry_run_request_only`, `status = approved_for_read_only_dry_run`, and all execution flags false,
+  - DB triggers make both dry-run tables append-only,
+  - `modules/oom_sakkie/agent_dry_run_store.py` adds insert-only request/event recording and read-only queue listing,
+  - only `sentinel` is approved for this first request-gate slice; other specialist slugs are rejected before any insert,
+  - protected local-only routes expose `GET /api/oom-sakkie/agent-dry-runs`, `POST /api/oom-sakkie/agent-dry-runs`, and `POST /api/oom-sakkie/agent-dry-runs/<id>/events`,
+  - read-only `agent_dry_run_status` lets Oom Sakkie answer dry-run queue/status questions,
+  - kiosk quick action `Dry-Run Queue` asks `What is the agent dry-run queue status?`,
+  - no specialist is dispatched, no specialist LLM is called, no specialist tool is executed, no autonomous loop is started, no farm data is written, and no Builder/Forge/patch/deploy action occurs.
 - Added role-specific spoken composer rules:
   - `business_growth_brief` answers should lead with the commercial move, name supporting stock/ready pigs, and ask one approval-style follow-up question,
   - `system_work_status` answers should lead with the next owner action before counts,
@@ -622,6 +647,14 @@ Known verification from Codex:
 - Sentinel Dry-Run Review focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 155 tests OK
 - `node --check static/js/oomSakkie.js` passed after Sentinel Dry-Run Review
 - Full local unittest suite after Sentinel Dry-Run Review: `480 tests OK`
+- LLM Message Guard focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 161 tests OK
+- `node --check static/js/oomSakkie.js` passed after LLM Message Guard
+- Full local unittest suite after LLM Message Guard: `486 tests OK`
+- Agent Dry-Run Request Gate focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 170 tests OK
+- Applied migration `supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql`
+- Live-style dry-run gate smoke created request `OSK-AGENT-DRYRUN-B2E07585AD` and event `OSK-AGENT-DRYRUN-EVENT-0542A235E334`; returned `dry_run_enabled = false`, `dispatch_enabled = false`, `runs_specialist_llm = false`, `runs_specialist_tools = false`, and `writes = false`
+- `node --check static/js/oomSakkie.js` passed after Agent Dry-Run Request Gate
+- Full local unittest suite after Agent Dry-Run Request Gate: `495 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -696,7 +729,10 @@ Please inspect specifically:
 58. **Visible Crew Sequence:** Does Phase 10.9F render the crew plan visibly and safely on the kiosk while keeping normal single-tool checks uncluttered and preserving all `runs no` / `writes no` guardrails?
 59. **Agent Activation Plan:** Does Phase 10.9G make the future live-agent path explicit while keeping runtime/dispatch/autonomous-loop/write flags false and preserving all owner approval/audit gates before any dry-run or live dispatch?
 60. **Sentinel Dry-Run Review:** Does Phase 10.9H rehearse the first specialist candidate as deterministic/read-only/advisory-only review while keeping live dispatch, specialist LLM execution, specialist tool execution, autonomous loops, writes, customer/public output, Builder/Forge execution, patch application, and deploy disabled?
-61. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+61. **LLM Message Guard:** Does Phase 10.9I correctly keep `/api/oom-sakkie/message` open for deterministic local use while LLM flags are off, but require the local/private-LAN guard when LLM router/answer features are enabled so non-local unauthenticated callers cannot create outbound paid API calls?
+62. **Agent Dry-Run Request Gate:** Does Phase 10.9J create an append-only owner-approved Sentinel dry-run request/event rail while keeping `dry_run_enabled`, `dispatch_enabled`, `runs_specialist_llm`, `runs_specialist_tools`, and `writes` false at both DB and application layers?
+63. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+64. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

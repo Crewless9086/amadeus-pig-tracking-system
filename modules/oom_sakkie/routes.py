@@ -1,7 +1,17 @@
 from flask import Blueprint, jsonify, request
 
-from modules.oom_sakkie.access import is_review_request_allowed, review_access_denied_response
+from modules.oom_sakkie.access import (
+    is_message_request_allowed,
+    is_review_request_allowed,
+    message_access_denied_response,
+    review_access_denied_response,
+)
 from modules.oom_sakkie.agent_runtime import get_agent_runtime_status, recommend_agent_for_text
+from modules.oom_sakkie.agent_dry_run_store import (
+    list_agent_dry_run_requests,
+    record_agent_dry_run_event,
+    record_agent_dry_run_request,
+)
 from modules.oom_sakkie.build_request_store import (
     get_build_request,
     list_build_requests,
@@ -48,6 +58,9 @@ def _require_review_access():
 
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])
 def oom_sakkie_message():
+    if not is_message_request_allowed(request.remote_addr):
+        body, status_code = message_access_denied_response(request.remote_addr)
+        return jsonify(body), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_message(payload)
     return jsonify(result), status_code
@@ -106,6 +119,35 @@ def oom_sakkie_agent_recommend():
         return denied
     payload = request.get_json(silent=True) or {}
     return jsonify(recommend_agent_for_text(payload.get("text") or "")), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["GET"])
+def oom_sakkie_agent_dry_runs():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_agent_dry_run_requests(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["POST"])
+def oom_sakkie_agent_dry_run_create():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_agent_dry_run_request(payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs/<dry_run_request_id>/events", methods=["POST"])
+def oom_sakkie_agent_dry_run_events(dry_run_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_agent_dry_run_event(dry_run_request_id, payload)
+    return jsonify(result), status_code
 
 
 @oom_sakkie_bp.route("/oom-sakkie/review-packet", methods=["GET"])
