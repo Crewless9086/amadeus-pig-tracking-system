@@ -2849,12 +2849,95 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
+.oom-system-workbench {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(45, 212, 168, 0.16);
+  border-radius: 8px;
+  background: rgba(7, 10, 16, 0.42);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.oom-system-workbench > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: pointer;
+  list-style: none;
+  min-height: 58px;
+  padding: 0 18px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.oom-system-workbench > summary::-webkit-details-marker {
+  display: none;
+}
+
+.oom-system-workbench > summary::after {
+  content: "Open";
+  border: 1px solid rgba(45, 212, 168, 0.28);
+  border-radius: 999px;
+  color: #9ef2db;
+  font-size: 12px;
+  padding: 5px 10px;
+}
+
+.oom-system-workbench[open] > summary::after {
+  content: "Hide";
+}
+
+.oom-system-workbench > summary small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .oom-recent-panel {
   grid-column: 1 / -1;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(22, 23, 29, 0.52);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(22, 23, 29, 0.34);
   padding: 18px;
+}
+
+.oom-workbench-next-action {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid rgba(45, 212, 168, 0.28);
+  border-radius: 8px;
+  background: rgba(45, 212, 168, 0.08);
+}
+
+.oom-workbench-next-action strong {
+  color: #d8fff4;
+  font-size: 15px;
+}
+
+.oom-workbench-next-action p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.38;
+}
+
+.oom-workbench-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oom-workbench-counts span {
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #9ef2db;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .oom-section-heading {
@@ -3074,7 +3157,85 @@ button:disabled {
 
 .oom-advisor-queue {
   display: grid;
+  gap: 14px;
+}
+
+.oom-work-section {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.oom-work-section-empty {
+  opacity: 0.74;
+}
+
+.oom-work-section h4 {
+  margin: -2px -2px 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.oom-work-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.oom-work-item-active {
+  border-left: 3px solid rgba(45, 212, 168, 0.72);
+}
+
+.oom-work-item-muted {
+  opacity: 0.62;
+}
+
+.oom-work-badge {
+  display: inline-block !important;
+  width: fit-content;
+  margin: 0 0 6px !important;
+  padding: 3px 8px;
+  border: 1px solid rgba(45, 212, 168, 0.22);
+  border-radius: 999px;
+  background: rgba(45, 212, 168, 0.08);
+  color: #9ef2db !important;
+  font-family: inherit !important;
+  font-size: 11px !important;
+}
+
+.oom-work-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-top: 8px;
+}
+
+.oom-deploy-instructions {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid rgba(245, 182, 75, 0.24);
+  border-radius: 8px;
+  background: rgba(245, 182, 75, 0.08);
+}
+
+.oom-deploy-instructions strong {
+  color: #ffe7b3;
+}
+
+.oom-deploy-instructions ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .oom-advisor-queue article {

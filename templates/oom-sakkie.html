@@ -102,11 +102,20 @@
         </dl>
       </details>
 
-      <section class="oom-recent-panel">
-        <div class="oom-section-heading">
-          <p class="oom-label">Recent Checks</p>
-          <button type="button" id="oom_refresh_traces">Refresh</button>
-        </div>
+      <details class="oom-system-workbench">
+        <summary>
+          <span>System Workbench</span>
+          <small>Review traces, learning, build, patch, and deploy gates</small>
+        </summary>
+        <section class="oom-recent-panel">
+          <div id="oom_workbench_next_action" class="oom-workbench-next-action">
+            <strong>Next action</strong>
+            <p>Loading workbench status...</p>
+          </div>
+          <div class="oom-section-heading">
+            <p class="oom-label">Recent Checks</p>
+            <button type="button" id="oom_refresh_traces">Refresh</button>
+          </div>
         <div class="oom-voice-readiness">
           <div>
             <p class="oom-label">Voice Readiness</p>
@@ -224,6 +233,22 @@
               <p class="oom-empty">Patch proposals not loaded yet.</p>
             </div>
           </div>
+          <div class="oom-deploy-decision-form">
+            <div class="oom-section-heading">
+              <div>
+                <p class="oom-label">Deploy Approval Gate</p>
+                <p class="oom-empty">Records deploy approval only. It does not deploy.</p>
+              </div>
+              <button type="button" id="oom_refresh_deploy_decisions">Refresh</button>
+            </div>
+            <input id="oom_deploy_patch_proposal_id" type="text" autocomplete="off" placeholder="Patch proposal ID">
+            <textarea id="oom_deploy_verification_summary" rows="4" placeholder="Paste verification summary before approval."></textarea>
+            <button type="button" id="oom_approve_manual_deploy">Approve Manual Deploy</button>
+            <button type="button" id="oom_defer_deploy">Defer Deploy</button>
+            <div id="oom_deploy_decisions" class="oom-advisor-panel">
+              <p class="oom-empty">Deploy decisions not loaded yet.</p>
+            </div>
+          </div>
         </div>
         <div class="oom-trace-filters" aria-label="Recent trace review filters">
           <button type="button" data-review-filter="all" class="is-active">All</button>
@@ -242,7 +267,8 @@
         <div id="oom_recent_traces" class="oom-recent-list">
           <p class="oom-empty">No trace history loaded yet.</p>
         </div>
-      </section>
+        </section>
+      </details>
     </section>
 
     <form id="oom_form" class="oom-input-bar">
@@ -257,7 +283,9 @@
       <button type="button" data-quick-ask="What happened with the weather today?">Weather Today</button>
       <button type="button" data-quick-ask="What pigs are ready for meat?">Meat Ready</button>
       <button type="button" data-quick-ask="Show me the sales dashboard overview.">Sales</button>
+      <button type="button" data-quick-ask="What should we sell next?">Business</button>
       <button type="button" data-quick-ask="What is the irrigation status?">Irrigation</button>
+      <button type="button" data-quick-ask="What needs my approval?">Approvals</button>
     </div>
     <div class="oom-voice-status-row">
       <p id="oom_voice_status" class="oom-voice-status">Voice draft idle. Spoken text will appear in the input before you send it.</p>

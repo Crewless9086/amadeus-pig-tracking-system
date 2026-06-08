@@ -38,8 +38,16 @@ class IntentMatch:
 
 RULES = [
     (
+        re.compile(r"\b(system work|work status|approval status|waiting for approval|needs my approval|need my approval|what are you building|what did you build|builder status|forge status|patch status|deploy status|what needs review)\b", re.I),
+        IntentMatch("system_work_status", "system_work_status", 0.95, "rule:system_work_status"),
+    ),
+    (
         re.compile(r"\b(operating brief|farm brief|daily brief|morning brief|status report|jarvis check|full farm check|what should i know|bring me up to speed)\b", re.I),
         IntentMatch("farm_operating_brief", "farm_operating_brief", 0.95, "rule:farm_operating_brief"),
+    ),
+    (
+        re.compile(r"\b(business advisor|business growth|grow sales|grow the business|make money|generate money|what should we sell|what can we sell|what should i promote|sales opportunity|commercial focus|next offer)\b", re.I),
+        IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),
     (
         re.compile(r"\b(irrigation|water zone|water zones|watering|water anything|need to water|do we need to water|sprinkler|sprinklers|pump)\b", re.I),

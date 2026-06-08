@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z and 10.8A-F specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, and Patch Proposal Gate.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z and 10.8A-L specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, and Business quick action.
 
 Out of scope unless explicitly asked:
 
@@ -86,6 +86,16 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Forge Handoff packet for future Builder/Forge execution review
 - Forge Handoff now looks up persisted build requests by ID before generating packets
 - Patch Proposal Gate for recording Builder/Forge proposals and owner review decisions before any manual patch application
+- Patch Gate review-nit cleanup: current Forge Handoff test payload, frontend advisor-window assertion, and clean patch-proposal event `404` for missing proposal IDs
+- Deploy Approval Gate for append-only manual-deploy decisions after an approved patch proposal
+- Kiosk `System Workbench` simplification so trace/build/patch/deploy controls are not first-screen clutter
+- `Copy Forge Prompt` button for explicit owner-triggered clipboard copy
+- Read-only `system_work_status` tool and `Approvals` quick action so Oom Sakkie can answer what needs owner approval
+- Workbench pipeline grouping so active build/patch/deploy items move between clear buckets instead of staying in one flat list
+- Deploy-ready instruction card that explains the manual patch/verification/deploy-decision step
+- Read-only `business_growth_brief` Business Advisor seed across sales stock and meat pipeline
+- Workbench `Next action` card and stronger section/card visual separation
+- `Business` quick action for `What should we sell next?`
 
 ## Files/folders to inspect
 
@@ -95,6 +105,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `modules/oom_sakkie/learning_packet.py`
 - `modules/oom_sakkie/forge_handoff.py`
 - `modules/oom_sakkie/patch_proposal_store.py`
+- `modules/oom_sakkie/deploy_decision_store.py`
 - `templates/oom-sakkie.html`
 - `static/js/oomSakkie.js`
 - `static/css/main.css`
@@ -112,6 +123,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql`
 - `supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql`
 - `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`
+- `supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql`
 - `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `docs/00-start-here/CURRENT_STATE.md`
@@ -324,6 +336,53 @@ Summary:
   - event types `approved_for_patch`, `rejected`, and `review_note`,
   - DB and application constraints keep `applies_patch = false` and `deploys = false`,
   - `Approve Patch` records approval for manual patch application outside the kiosk; it does not apply a patch.
+- Added Patch Gate review-nit cleanup:
+  - `get_patch_proposal()` in `modules/oom_sakkie/patch_proposal_store.py`,
+  - patch proposal event writes now return `404 patch_proposal_not_found` before insert when the target proposal is missing,
+  - Forge Handoff non-local-access test now uses the current `build_request_id` payload,
+  - frontend route contract pins the Review Advisor `last ${data.days || 14} days` guard string.
+- Added Deploy Approval Gate:
+  - `modules/oom_sakkie/deploy_decision_store.py`,
+  - migration `supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql`,
+  - protected `POST /api/oom-sakkie/patch-proposals/<patch_proposal_id>/deploy-decisions`,
+  - protected `GET /api/oom-sakkie/deploy-decisions`,
+  - kiosk `Deploy Approval Gate` panel,
+  - append-only deploy decision rows,
+  - decision types `approved_for_manual_deploy`, `rejected`, `deferred`, and `review_note`,
+  - DB and application constraints keep `runs_deploy = false` and `deploys_now = false`,
+  - `approved_for_manual_deploy` requires the target patch proposal's latest event to be `approved_for_patch`,
+  - this records deploy approval only; no deploy is run by the kiosk/backend.
+- Added Workbench simplification and work-status tool:
+  - `templates/oom-sakkie.html` wraps the heavy review/build/patch/deploy controls in a collapsed `System Workbench`,
+  - `static/css/main.css` styles the workbench summary/content without changing backend behavior,
+  - `static/js/oomSakkie.js` adds explicit-click `Copy Forge Prompt` clipboard support,
+  - `templates/oom-sakkie.html` adds `Approvals` quick action,
+  - `modules/oom_sakkie/tools.py` adds read-only `system_work_status`,
+  - `modules/oom_sakkie/service.py` routes approval/build/patch/deploy status wording to `system_work_status`,
+  - the tool summarizes approved build requests, patch proposals, and deploy decisions from existing stores,
+  - this is status-only and does not run Builder/Forge, edit files, apply patches, deploy, or mutate prompts/tools/farm data.
+- Added Workbench pipeline clarity:
+  - Approved Build Requests split into `Needs Forge Handoff / Builder Plan` and `Already Moved Or Closed`,
+  - Patch Proposal Gate splits into `Needs Patch Review`, `Approved - Ready For Deploy Decision`, and `Rejected / Closed`,
+  - patch-proposal recording now adds append-only build-request `review_note` so the source build request moves out of the active bucket,
+  - patch/deploy actions refresh adjacent queues so items do not look stuck in the prior step,
+  - added `Use This Build Request In Patch Gate` next to Forge Handoff,
+  - added work-stage badges/action grouping in CSS,
+  - still no Builder/Forge execution, file edit, patch application, deploy, prompt/tool mutation, or farm-data mutation.
+- Added deploy-ready instructions and Business Advisor seed:
+  - approved patch rows show `What this needs now`,
+  - deploy verification placeholder asks for the actual verification result,
+  - `system_work_status` counts only active handoff work and patch proposals still waiting for deploy decision,
+  - `business_growth_brief` combines read-only `sales_dashboard` and `meat_planning`,
+  - broad commercial prompts route to `business_growth_brief`,
+  - tool returns read-only commercial focus and counts in `llm_context`,
+  - it does not draft, post, message, sell, reserve, mutate stock, run Builder/Forge, apply patches, or deploy.
+- Added Workbench Next Action and visual separation:
+  - `System Workbench` now starts with a `Next action` card,
+  - card shows build/patch/deploy counts and recommends the next item to handle,
+  - section headings and work records have stronger visual separation,
+  - added `Business` quick action for `What should we sell next?`,
+  - guidance only; no Builder/Forge execution, patch application, deploy, prompt/tool mutation, or farm-data mutation.
 - Added trace-driven composer lane guard:
   - live feedback showed single-tool answers mentioning unrelated systems,
   - prompt now tells non-brief tools to stay in their own lane,
@@ -398,6 +457,25 @@ Known verification from Codex:
 - `node --check static/js/oomSakkie.js` passed after Patch Proposal Gate
 - Applied migration `supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql`
 - Full local unittest suite after Patch Proposal Gate: `449 tests OK`
+- Patch Gate review-nit focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 125 tests OK
+- `node --check static/js/oomSakkie.js` passed after Patch Gate review nits
+- Full local unittest suite after Patch Gate review nits: `450 tests OK`
+- Deploy Approval Gate focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 135 tests OK
+- `node --check static/js/oomSakkie.js` passed after Deploy Approval Gate
+- Applied migration `supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql`
+- Full local unittest suite after Deploy Approval Gate: `460 tests OK`
+- Workbench/work-status focused verification: `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_routes tests.test_oom_sakkie_service` -> 136 tests OK
+- `node --check static/js/oomSakkie.js` passed after Workbench/work-status slice
+- Full local unittest suite after Workbench/work-status slice: `461 tests OK`
+- Workbench pipeline clarity focused verification: `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_routes tests.test_oom_sakkie_service` -> 136 tests OK
+- `node --check static/js/oomSakkie.js` passed after Workbench pipeline clarity
+- Full local unittest suite after Workbench pipeline clarity: `461 tests OK`
+- Deploy instructions / Business Advisor seed focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts tests.test_oom_sakkie_routes` -> 138 tests OK
+- `node --check static/js/oomSakkie.js` passed after deploy instructions / Business Advisor seed
+- Full local unittest suite after deploy instructions / Business Advisor seed: `463 tests OK`
+- Workbench Next Action focused verification: `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_service tests.test_oom_sakkie_routes` -> 138 tests OK
+- `node --check static/js/oomSakkie.js` passed after Workbench Next Action
+- Full local unittest suite after Workbench Next Action: `463 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -451,7 +529,16 @@ Please inspect specifically:
 37. **Forge Handoff:** Does Phase 10.8D prepare a useful Builder/Forge instruction packet while still not running a builder, editing files, applying patches, deploying, or weakening the future patch/deploy approval gates?
 38. **Forge Handoff persisted-ID hardening:** Does Phase 10.8E close the synthetic-payload gap by requiring a stored `build_request_id` lookup before handoff generation?
 39. **Patch Proposal Gate:** Does Phase 10.8F record Builder/Forge patch proposals and owner review decisions append-only while still not applying patches, editing files, running subprocesses, deploying, or weakening the later manual approval gates?
-40. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+40. **Patch Gate review nits:** Does Phase 10.8G close Claude's minor follow-ups: current Forge Handoff test payload, frontend advisor-window assertion, and clean `404 patch_proposal_not_found` behavior before recording patch proposal events?
+41. **Deploy Approval Gate:** Does Phase 10.8H record manual deploy decisions append-only, require an approved patch proposal before manual deploy approval, and still not run deploys, edit files, run subprocesses, mutate prompts/tools, or touch farm data?
+42. **Workbench simplification:** Does Phase 10.8I make the kiosk less busy by collapsing the heavy audit/build controls while keeping the audit trail available?
+43. **Work status tool:** Is `system_work_status` truly read-only, and can Oom Sakkie answer `what needs my approval?` without running Builder/Forge, applying patches, deploying, mutating prompts/tools, or touching farm data?
+44. **Clipboard behavior:** Is the `Copy Forge Prompt` button explicit owner-triggered copy only, with no automatic external tool call or hidden execution?
+45. **Workbench pipeline clarity:** Does Phase 10.8J make active vs moved/closed work clear, and do items move between visible buckets through append-only review/deploy records rather than hidden mutation?
+46. **Deploy-ready instructions:** Does Phase 10.8K explain the approved-patch/deploy-decision step clearly without implying the kiosk applies patches or deploys?
+47. **Business Advisor seed:** Is `business_growth_brief` read-only, commercially useful, and safely blocked from drafting/posting/messaging/selling/reserving/changing stock?
+48. **Workbench Next Action:** Does Phase 10.8L reduce owner confusion by surfacing the next action and visually separating sections without hiding audit data or adding hidden execution?
+49. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

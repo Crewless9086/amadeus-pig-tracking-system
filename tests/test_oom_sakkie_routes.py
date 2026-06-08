@@ -445,7 +445,7 @@ class OomSakkieRouteTests(unittest.TestCase):
     def test_forge_handoff_route_denies_non_local_review_access(self):
         response = self.client.post(
             "/api/oom-sakkie/build-requests/forge-handoff",
-            json={"build_request": {"mode": "build_request_only"}},
+            json={"build_request_id": "OSK-BUILD-TEST"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()
@@ -547,6 +547,82 @@ class OomSakkieRouteTests(unittest.TestCase):
         response = self.client.post(
             "/api/oom-sakkie/patch-proposals/OSK-PATCH-TEST/events",
             json={"event_type": "approved_for_patch"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.record_deploy_decision")
+    def test_deploy_decision_route_records_manual_approval_without_deploying(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "deploy_approval_record_only",
+            "decision_type": "approved_for_manual_deploy",
+            "runs_deploy": False,
+            "deploys_now": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/patch-proposals/OSK-PATCH-TEST/deploy-decisions",
+            json={
+                "decision_type": "approved_for_manual_deploy",
+                "environment": "local",
+                "verification_summary": "450 tests passed.",
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "deploy_approval_record_only")
+        self.assertFalse(data["runs_deploy"])
+        self.assertFalse(data["deploys_now"])
+        mock_record.assert_called_once_with("OSK-PATCH-TEST", {
+            "decision_type": "approved_for_manual_deploy",
+            "environment": "local",
+            "verification_summary": "450 tests passed.",
+        })
+
+    def test_deploy_decision_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/patch-proposals/OSK-PATCH-TEST/deploy-decisions",
+            json={"decision_type": "approved_for_manual_deploy"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.list_deploy_decisions")
+    def test_deploy_decisions_route_lists_record_only_decisions(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "deploy_approval_record_only",
+            "runs_deploy": False,
+            "deploys_now": False,
+            "deploy_decisions": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/deploy-decisions?patch_proposal_id=OSK-PATCH-TEST&limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "deploy_approval_record_only")
+        self.assertFalse(data["runs_deploy"])
+        self.assertFalse(data["deploys_now"])
+        mock_list.assert_called_once_with(patch_proposal_id="OSK-PATCH-TEST", limit="8")
+
+    def test_deploy_decisions_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/deploy-decisions",
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

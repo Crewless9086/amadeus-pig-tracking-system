@@ -139,6 +139,67 @@ def list_patch_proposals(build_request_id="", limit=20, database_url=None):
     }, 200
 
 
+def get_patch_proposal(patch_proposal_id, database_url=None):
+    patch_proposal_id = _clean_text(patch_proposal_id, 90)
+    if not patch_proposal_id:
+        return {"success": False, "status": "patch_proposal_id_required"}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing"}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select pp.patch_proposal_id, pp.build_request_id, pp.proposal_text, pp.proposed_by,
+                           pp.risk_notes, pp.files_touched_json, pp.verification_json,
+                           pp.applies_patch, pp.deploys, pp.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_patch_proposals pp
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_patch_proposal_events e
+                        where e.patch_proposal_id = pp.patch_proposal_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where pp.patch_proposal_id = %(patch_proposal_id)s
+                    limit 1
+                    """,
+                    {"patch_proposal_id": patch_proposal_id},
+                )
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "patch_proposal_read_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    if not row:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "patch_proposal_not_found",
+            "patch_proposal_id": patch_proposal_id,
+        }, 404
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "patch_proposal": _patch_proposal_row(row),
+    }, 200
+
+
 def record_patch_proposal_event(patch_proposal_id, payload, database_url=None):
     patch_proposal_id = _clean_text(patch_proposal_id, 90)
     payload = payload if isinstance(payload, dict) else {}
@@ -155,6 +216,10 @@ def record_patch_proposal_event(patch_proposal_id, payload, database_url=None):
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    loaded, load_status = get_patch_proposal(patch_proposal_id, database_url=database_url)
+    if load_status != 200:
+        return loaded, load_status
 
     try:
         import psycopg

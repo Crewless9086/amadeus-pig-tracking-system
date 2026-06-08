@@ -6368,6 +6368,325 @@ Next gate:
   6. Apply any patch manually outside the kiosk only after approval.
   7. Run verification before commit/deploy.
 
+### 10.8G Oom Sakkie Patch Gate Review Nits - Local Ready
+
+Source:
+
+- Claude passed Phase 10.8E-F and flagged small follow-ups:
+  - stale payload shape in one non-local Forge Handoff test,
+  - confusing FK-backed `503` if a patch proposal event targeted a missing proposal,
+  - confirm the advisor `last 14 days` guard is pinned by frontend contract tests.
+
+Implemented locally:
+
+- Updated `test_forge_handoff_route_denies_non_local_review_access` to send the current `build_request_id` payload.
+- Confirmed `tests/test_frontend_route_contracts.py` pins `last ${data.days || 14} days`.
+- Added `get_patch_proposal()` to `modules/oom_sakkie/patch_proposal_store.py`.
+- `record_patch_proposal_event()` now pre-checks the target proposal and returns `404 patch_proposal_not_found` before insert when missing.
+- Added tests for `get_patch_proposal()` not-configured behavior and the missing-proposal event path.
+
+Safety:
+
+- Still does not run a builder.
+- Still does not edit files.
+- Still does not apply patches.
+- Still does not deploy.
+- Still does not mutate prompts/tools/farm data.
+- Patch proposal events remain append-only review records only.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 125 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 450 tests OK.
+
+Next strategic gate:
+
+- Decide whether to build Deploy Approval Gate before the first production-affecting Builder patch.
+- For a tiny first local-only patch, manual deploy/commit review is acceptable; for anything touching alerts, orders, customer messaging, telemetry writes, or production behavior, build the deploy gate first.
+
+### 10.8H Oom Sakkie Deploy Approval Gate - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Close the last approval-gap Claude flagged before production-affecting Builder patches.
+- Record deploy decisions append-only without running a deploy.
+- Require an approved patch proposal before manual deploy approval can be recorded.
+
+Implemented locally:
+
+- Added `modules/oom_sakkie/deploy_decision_store.py`.
+- Added Supabase migration `supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql`.
+- Added append-only `public.oom_sakkie_deploy_decisions`.
+- Added DB constraints that keep:
+  - `runs_deploy = false`,
+  - `deploys_now = false`.
+- Added protected `POST /api/oom-sakkie/patch-proposals/<patch_proposal_id>/deploy-decisions`.
+- Added protected `GET /api/oom-sakkie/deploy-decisions`.
+- Added kiosk `Deploy Approval Gate` panel.
+- Added deploy decision types:
+  - `approved_for_manual_deploy`,
+  - `rejected`,
+  - `deferred`,
+  - `review_note`.
+- `approved_for_manual_deploy` requires the target patch proposal's latest event to be `approved_for_patch`.
+
+Safety:
+
+- Does not run a deploy.
+- Does not edit files.
+- Does not apply patches.
+- Does not run subprocesses.
+- Does not mutate prompts/tools/farm data.
+- Stores decisions append-only.
+
+Verification:
+
+- Applied migration `supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql`.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 135 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 460 tests OK.
+
+Current Builder/Forge manual chain:
+
+1. Learning Queue proposes an improvement from reviewed traces.
+2. Owner opens Build Brief.
+3. Owner approves for build.
+4. Approved build request is stored append-only.
+5. Owner generates Forge Handoff from stored build request.
+6. Owner pastes Forge Handoff into separate Builder/Forge tool.
+7. Builder proposes plan/patch outside the kiosk.
+8. Owner records the patch proposal in Patch Proposal Gate.
+9. Owner approves or rejects the patch proposal.
+10. Owner applies approved patch manually outside the kiosk.
+11. Owner runs verification.
+12. Owner records deploy decision in Deploy Approval Gate.
+13. Any deploy remains manual outside the kiosk.
+
+### 10.8I Oom Sakkie Workbench Simplification And Work Status Tool - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Reduce kiosk clutter by keeping the main screen focused on the living voice surface.
+- Keep the audit/build controls available, but tucked behind a clear `System Workbench` disclosure.
+- Let the owner ask Oom Sakkie what needs approval instead of hunting across panels.
+- Reduce manual text-selection friction for Forge Handoff prompts.
+
+Implemented locally:
+
+- Wrapped the busy Recent Checks / Learning Queue / Build Request / Patch Proposal / Deploy Approval panels in a collapsed `System Workbench`.
+- Added styling for the workbench summary and content area.
+- Added a `Copy Forge Prompt` button that copies the generated Forge prompt to the clipboard after an explicit click.
+- Added kiosk quick action `Approvals` with prompt `What needs my approval?`.
+- Added read-only tool `system_work_status`.
+- Added deterministic routing aliases for:
+  - `what needs my approval`,
+  - `what are you building`,
+  - `what needs review`,
+  - related build/patch/deploy status wording.
+- `system_work_status` reads only the existing approved build request, patch proposal, and deploy decision queues.
+- It returns counts and the next suggested human step in `llm_context`.
+- It includes safety note: no build, patch, or deploy was run.
+
+Safety:
+
+- Does not run Builder/Forge.
+- Does not automatically paste into or call an external coding agent.
+- Does not edit files.
+- Does not apply patches.
+- Does not deploy.
+- Does not mutate prompts/tools/farm data.
+- Clipboard copy requires an owner click because browsers intentionally gate clipboard writes behind user activation.
+- The approval queue status is read-only and uses existing append-only stores.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 136 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 461 tests OK.
+
+Next safe direction:
+
+- Use the calmer kiosk daily and ask `What needs my approval?` to check the current build/patch/deploy queues.
+- Keep actual Builder/Forge execution outside the kiosk until a separate, explicit execution agent is designed and reviewed.
+- If the workbench still feels busy, split it into tabs or separate views; do not remove the audit trail.
+
+### 10.8J Oom Sakkie Workbench Pipeline Clarity - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Make the workbench read like a step-by-step pipeline instead of a flat pile of records.
+- Move completed/moved work out of the active bucket after the owner advances it.
+- Keep all gates visible and audited without forcing the owner to infer which record belongs to which step.
+
+Implemented locally:
+
+- Approved Build Requests now render as:
+  - `Needs Forge Handoff / Builder Plan`,
+  - `Already Moved Or Closed`.
+- Patch Proposal Gate now renders as:
+  - `Needs Patch Review`,
+  - `Approved - Ready For Deploy Decision`,
+  - `Rejected / Closed`.
+- Added work-stage badges and grouped action buttons.
+- Added `Use This Build Request In Patch Gate` beside the Forge Handoff prompt.
+- When a patch proposal is recorded, the build request receives append-only `review_note`: `Patch proposal recorded; moved to Patch Proposal Gate.`
+- That review note moves the build request out of the active handoff bucket on refresh.
+- Patch approval/rejection now refreshes deploy decisions as well as patch proposals.
+- Deploy decision recording now refreshes patch proposals as well as deploy decisions.
+
+Safety:
+
+- Still does not run Builder/Forge.
+- Still does not edit files.
+- Still does not apply patches.
+- Still does not deploy.
+- Still does not mutate prompts/tools/farm data.
+- The only state change added is an append-only build-request `review_note` after a patch proposal is recorded.
+- Clipboard and handoff actions remain explicit owner clicks.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_routes tests.test_oom_sakkie_service` -> 136 tests OK.
+- `python -m unittest` -> 461 tests OK.
+
+Manual check:
+
+1. Open `System Workbench`.
+2. Confirm build requests show under `Needs Forge Handoff / Builder Plan`.
+3. Open Forge Handoff and click `Use This Build Request In Patch Gate`.
+4. Record a patch proposal.
+5. Confirm the build request moves to `Already Moved Or Closed`.
+6. Confirm the patch proposal appears under `Needs Patch Review`.
+7. Approve the patch proposal.
+8. Confirm it moves to `Approved - Ready For Deploy Decision`.
+
+### 10.8K Oom Sakkie Deploy Instructions And Business Advisor Seed - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Make the deploy-ready bucket explain exactly what the owner must do next.
+- Keep Oom Sakkie's `what needs my approval?` answer aligned with the visible workbench stages.
+- Start the Business Advisor as a real read-only farm/commercial tool, not a write-capable sales agent.
+
+Implemented locally:
+
+- Added `What this needs now` instruction card to patch proposals in `Approved - Ready For Deploy Decision`.
+- The instruction card tells the owner to:
+  - read the patch proposal or diff in the editor,
+  - apply it manually outside the kiosk only if happy,
+  - run verification commands,
+  - paste verification result before recording deploy approve/defer.
+- Improved deploy verification placeholder wording.
+- `system_work_status` now ignores build requests that already moved to Patch Proposal Gate.
+- `system_work_status` now counts deploy-ready patch proposals only when no deploy decision has been recorded for that patch proposal.
+- Added read-only `business_growth_brief`.
+- Added deterministic routing for:
+  - `business advisor`,
+  - `business growth`,
+  - `grow sales`,
+  - `grow the business`,
+  - `make money`,
+  - `what should we sell`,
+  - `what should i promote`,
+  - `commercial focus`.
+- `business_growth_brief` combines:
+  - read-only `sales_dashboard`,
+  - read-only `meat_planning`.
+- It returns commercial focus, sales/meat counts, and next advisory action in `llm_context`.
+
+Safety:
+
+- Business Advisor is read-only.
+- It does not draft customer messages.
+- It does not post to social media.
+- It does not sell, reserve, invoice, or change stock.
+- It does not run Builder/Forge.
+- It does not apply patches or deploy.
+- Deploy instruction card is explanatory only.
+- Deploy decision route remains record-only.
+
+Compressed agent timeline:
+
+1. **Now:** Oom Sakkie is the operating interface; deterministic tools plus LLM answer composer make answers more human.
+2. **Next:** Business Advisor grows from `business_growth_brief` into a stronger read-only commercial brief across stock, orders, meat pipeline, and attention gaps.
+3. **Then:** Sentinel/System Health watches trace/build/deploy health and raises approval-ready issues.
+4. **Then:** Forge/Builder remains outside the kiosk at first, but receives better structured handoffs and patch/deploy review state.
+5. **After trust:** Draft-only media/sales agents can propose posts/messages/offers for approval.
+6. **Last:** customer/public writes, Telegram cutover, physical controls, and autonomous execution only after explicit approval gates and Claude review.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_frontend_route_contracts tests.test_oom_sakkie_routes` -> 138 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest` -> 463 tests OK.
+
+Manual check:
+
+1. Ask Oom Sakkie: `what needs my approval?`
+2. Confirm moved build requests are not counted as active handoff work.
+3. Open an approved patch proposal under `Approved - Ready For Deploy Decision`.
+4. Confirm the row shows `What this needs now`.
+5. Ask Oom Sakkie: `what should we sell next?`
+6. Confirm it uses `business_growth_brief` and gives read-only commercial advice.
+
+### 10.8L Oom Sakkie Workbench Next Action And Visual Separation - Local Ready
+
+Status: local-ready.
+
+Purpose:
+
+- Reduce owner effort by showing the next workbench action before the long audit lists.
+- Make build/patch/deploy sections visually easier to scan while keeping the full audit trail.
+- Give Business Advisor a first-screen quick action.
+
+Implemented locally:
+
+- Added `oom_workbench_next_action` at the top of `System Workbench`.
+- The card summarizes active:
+  - build handoffs,
+  - patch reviews,
+  - deploy decisions.
+- It recommends the next item to handle:
+  - oldest build request needing Forge Handoff,
+  - oldest patch proposal needing review,
+  - oldest approved patch needing verification/deploy decision.
+- Added workbench count pills.
+- Strengthened visual separation between work sections and work records.
+- Added `Business` quick action with prompt `What should we sell next?`.
+
+Safety:
+
+- UI guidance only.
+- Does not run Builder/Forge.
+- Does not edit files.
+- Does not apply patches.
+- Does not deploy.
+- Does not mutate prompts/tools/farm data.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_service tests.test_oom_sakkie_routes` -> 138 tests OK.
+- `python -m unittest` -> 463 tests OK.
+
+Manual check:
+
+1. Open `System Workbench`.
+2. Confirm the first card says `Next action`.
+3. Confirm it shows build/patch/deploy counts.
+4. Scroll and confirm each group has a clear heading and separated cards.
+5. Click `Business` and confirm it asks `What should we sell next?`.
+
 Supabase RLS hardening verification:
 
 - 2026-05-27 Security Advisor warned about `rls_disabled_in_public`.

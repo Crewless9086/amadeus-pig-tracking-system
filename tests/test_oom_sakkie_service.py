@@ -21,6 +21,12 @@ from modules.oom_sakkie.build_request_store import (
     record_build_request_event,
     record_build_request,
 )
+from modules.oom_sakkie.deploy_decision_store import (
+    _deploy_decision_params,
+    _deploy_decision_row,
+    list_deploy_decisions,
+    record_deploy_decision,
+)
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
 from modules.oom_sakkie.learning_packet import (
     approve_build_request,
@@ -30,6 +36,7 @@ from modules.oom_sakkie.learning_packet import (
 from modules.oom_sakkie.patch_proposal_store import (
     _patch_proposal_params,
     _patch_proposal_row,
+    get_patch_proposal,
     record_patch_proposal,
     record_patch_proposal_event,
     list_patch_proposals,
@@ -61,7 +68,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(
             set(TOOL_REGISTRY),
             {
+                "system_work_status",
                 "farm_operating_brief",
+                "business_growth_brief",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -154,6 +163,116 @@ class OomSakkieServiceTests(unittest.TestCase):
         beacon = next(item for item in manifests if item["slug"] == "beacon")
         self.assertEqual(beacon["risk_level"], 1)
         self.assertEqual(beacon["allowed_mode"], "draft_only")
+
+    @patch("modules.oom_sakkie.tools.list_deploy_decisions")
+    @patch("modules.oom_sakkie.tools.list_patch_proposals")
+    @patch("modules.oom_sakkie.tools.list_build_requests")
+    def test_system_work_status_is_read_only_approval_summary(self, mock_builds, mock_patches, mock_deploys):
+        from modules.oom_sakkie.tools import system_work_status_handler
+
+        mock_builds.return_value = ({
+            "success": True,
+            "configured": True,
+            "build_requests": [{
+                "build_request_id": "OSK-BUILD-1",
+                "latest_event": None,
+            }],
+        }, 200)
+        mock_patches.return_value = ({
+            "success": True,
+            "configured": True,
+            "patch_proposals": [{
+                "patch_proposal_id": "OSK-PATCH-1",
+                "latest_event": None,
+            }],
+        }, 200)
+        mock_deploys.return_value = ({
+            "success": True,
+            "configured": True,
+            "deploy_decisions": [],
+        }, 200)
+
+        result = system_work_status_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Forge Handoff", result["summary"])
+        self.assertIn("patch proposal", result["summary"])
+        self.assertIn("read-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "system_work_status")
+        self.assertEqual(result["llm_context"]["counts"]["pending_build_requests"], 1)
+        self.assertIn("Open Forge Handoff", result["llm_context"]["next_action"])
+
+    @patch("modules.oom_sakkie.tools.list_deploy_decisions")
+    @patch("modules.oom_sakkie.tools.list_patch_proposals")
+    @patch("modules.oom_sakkie.tools.list_build_requests")
+    def test_system_work_status_tracks_pipeline_stages(self, mock_builds, mock_patches, mock_deploys):
+        from modules.oom_sakkie.tools import system_work_status_handler
+
+        mock_builds.return_value = ({
+            "success": True,
+            "configured": True,
+            "build_requests": [{
+                "build_request_id": "OSK-BUILD-MOVED",
+                "latest_event": {
+                    "event_type": "review_note",
+                    "notes": "Patch proposal recorded; moved to Patch Proposal Gate.",
+                },
+            }],
+        }, 200)
+        mock_patches.return_value = ({
+            "success": True,
+            "configured": True,
+            "patch_proposals": [{
+                "patch_proposal_id": "OSK-PATCH-READY",
+                "latest_event": {"event_type": "approved_for_patch"},
+            }],
+        }, 200)
+        mock_deploys.return_value = ({
+            "success": True,
+            "configured": True,
+            "deploy_decisions": [],
+        }, 200)
+
+        result = system_work_status_handler({})
+
+        self.assertEqual(result["llm_context"]["counts"]["pending_build_requests"], 0)
+        self.assertEqual(result["llm_context"]["counts"]["deploy_ready_patch_proposals"], 1)
+        self.assertIn("verification", result["llm_context"]["next_action"])
+        self.assertIn("OSK-PATCH-READY", result["llm_context"]["next_action"])
+
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_business_growth_brief_is_read_only_commercial_advice(self, mock_sales, mock_meat):
+        from modules.oom_sakkie.tools import business_growth_brief_handler
+
+        mock_sales.return_value = {
+            "success": True,
+            "totals": [
+                {"sale_category": "Meat", "qty_available": 4},
+                {"sale_category": "Livestock", "qty_available": 2},
+            ],
+        }
+        mock_meat.return_value = {
+            "success": True,
+            "summary": {
+                "ready_now": 3,
+                "next_14_days": 5,
+                "next_30_days": 7,
+                "fallback_abattoir": 1,
+            },
+        }
+
+        result = business_growth_brief_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Business advisor brief", result["summary"])
+        self.assertIn("paid orders", result["llm_context"]["commercial_focus"])
+        self.assertEqual(result["llm_context"]["counts"]["available_sales_stock"], 6)
+        self.assertEqual(result["llm_context"]["counts"]["meat_ready_now"], 3)
+        self.assertIn("read-only advice", result["safety_notes"][0])
+        self.assertIn("No customer message", result["safety_notes"][0])
 
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
@@ -493,6 +612,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "not_configured")
 
+        result, status_code = get_patch_proposal("OSK-PATCH-TEST", database_url="")
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
         result, status_code = record_patch_proposal_event(
             "OSK-PATCH-TEST",
             {"event_type": "approved_for_patch"},
@@ -522,6 +646,26 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "invalid_event_type")
+
+    @patch("modules.oom_sakkie.patch_proposal_store.get_patch_proposal")
+    def test_patch_proposal_event_returns_not_found_before_insert(self, mock_get):
+        mock_get.return_value = ({
+            "success": False,
+            "configured": True,
+            "status": "patch_proposal_not_found",
+            "patch_proposal_id": "OSK-PATCH-MISSING",
+        }, 404)
+
+        result, status_code = record_patch_proposal_event(
+            "OSK-PATCH-MISSING",
+            {"event_type": "approved_for_patch"},
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 404)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "patch_proposal_not_found")
+        mock_get.assert_called_once_with("OSK-PATCH-MISSING", database_url="postgresql://example")
 
     def test_patch_proposal_row_maps_select_tuple_positions(self):
         row = (
@@ -562,6 +706,107 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("before delete on public.oom_sakkie_patch_proposals", migration)
         self.assertIn("before update on public.oom_sakkie_patch_proposal_events", migration)
         self.assertIn("before delete on public.oom_sakkie_patch_proposal_events", migration)
+
+    def test_deploy_decision_params_are_record_only(self):
+        params = _deploy_decision_params("OSK-PATCH-TEST", {
+            "decision_type": "approved_for_manual_deploy",
+            "environment": "production",
+            "notes": "Ship after checks.",
+            "verification_summary": "450 tests passed.",
+            "approved_by": "owner",
+            "runs_deploy": True,
+            "deploys_now": True,
+        })
+
+        self.assertEqual(params["patch_proposal_id"], "OSK-PATCH-TEST")
+        self.assertTrue(params["deploy_decision_id"].startswith("OSK-DEPLOY-"))
+        self.assertEqual(params["decision_type"], "approved_for_manual_deploy")
+        self.assertEqual(params["environment"], "production")
+        self.assertFalse(params["runs_deploy"])
+        self.assertFalse(params["deploys_now"])
+
+    def test_deploy_decision_store_returns_not_configured_without_database_url(self):
+        result, status_code = record_deploy_decision(
+            "OSK-PATCH-TEST",
+            {"decision_type": "approved_for_manual_deploy"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+        result, status_code = list_deploy_decisions(database_url="")
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+
+    def test_deploy_decision_rejects_unknown_type(self):
+        result, status_code = record_deploy_decision(
+            "OSK-PATCH-TEST",
+            {"decision_type": "deploy_now"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_decision_type")
+
+    @patch("modules.oom_sakkie.deploy_decision_store.get_patch_proposal")
+    def test_deploy_decision_requires_approved_patch_for_manual_deploy(self, mock_get):
+        mock_get.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "patch_proposal": {
+                "patch_proposal_id": "OSK-PATCH-TEST",
+                "latest_event": {"event_type": "rejected"},
+            },
+        }, 200)
+
+        result, status_code = record_deploy_decision(
+            "OSK-PATCH-TEST",
+            {"decision_type": "approved_for_manual_deploy"},
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "patch_not_approved")
+        mock_get.assert_called_once_with("OSK-PATCH-TEST", database_url="postgresql://example")
+
+    def test_deploy_decision_row_maps_select_tuple_positions(self):
+        row = (
+            "OSK-DEPLOY-ABC",
+            "OSK-PATCH-ABC",
+            "approved_for_manual_deploy",
+            "local",
+            "Approved.",
+            "450 tests passed.",
+            "owner",
+            False,
+            False,
+            datetime(2026, 6, 7, tzinfo=timezone.utc),
+        )
+
+        item = _deploy_decision_row(row)
+
+        self.assertEqual(item["deploy_decision_id"], "OSK-DEPLOY-ABC")
+        self.assertEqual(item["patch_proposal_id"], "OSK-PATCH-ABC")
+        self.assertEqual(item["mode"], "deploy_approval_record_only")
+        self.assertEqual(item["decision_type"], "approved_for_manual_deploy")
+        self.assertEqual(item["verification_summary"], "450 tests passed.")
+        self.assertFalse(item["runs_deploy"])
+        self.assertFalse(item["deploys_now"])
+
+    def test_deploy_decision_migration_is_append_only_and_record_only(self):
+        migration = Path("supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_deploy_decisions", migration)
+        self.assertIn("decision_type in ('approved_for_manual_deploy', 'rejected', 'deferred', 'review_note')", migration)
+        self.assertIn("runs_deploy = false and deploys_now = false", migration)
+        self.assertIn("before update on public.oom_sakkie_deploy_decisions", migration)
+        self.assertIn("before delete on public.oom_sakkie_deploy_decisions", migration)
 
     @patch("modules.oom_sakkie.learning_packet.list_review_advisor_traces")
     @patch("modules.oom_sakkie.learning_packet.get_trace_review_summary")
@@ -659,6 +904,12 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     def test_rule_routing_known_phrases(self):
         cases = {
+            "what needs my approval": "system_work_status",
+            "what are you building": "system_work_status",
+            "what needs review": "system_work_status",
+            "what should we sell next": "business_growth_brief",
+            "how do we grow sales": "business_growth_brief",
+            "what should i promote": "business_growth_brief",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",

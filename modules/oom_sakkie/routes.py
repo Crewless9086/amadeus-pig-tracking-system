@@ -7,6 +7,10 @@ from modules.oom_sakkie.build_request_store import (
     record_build_request,
     record_build_request_event,
 )
+from modules.oom_sakkie.deploy_decision_store import (
+    list_deploy_decisions,
+    record_deploy_decision,
+)
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
 from modules.oom_sakkie.learning_advisor import get_learning_advisor, run_learning_analysis
 from modules.oom_sakkie.learning_packet import (
@@ -271,6 +275,28 @@ def oom_sakkie_patch_proposal_events(patch_proposal_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_patch_proposal_event(patch_proposal_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/patch-proposals/<patch_proposal_id>/deploy-decisions", methods=["POST"])
+def oom_sakkie_deploy_decision_create(patch_proposal_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_deploy_decision(patch_proposal_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/deploy-decisions", methods=["GET"])
+def oom_sakkie_deploy_decisions():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_deploy_decisions(
+        patch_proposal_id=request.args.get("patch_proposal_id", "").strip(),
+        limit=request.args.get("limit", 20),
+    )
     return jsonify(result), status_code
 
 
