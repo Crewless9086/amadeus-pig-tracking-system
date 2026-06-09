@@ -10219,6 +10219,56 @@ Manual check:
 3. Click one button in each group and confirm it still sends the same read-only quick ask.
 4. Confirm no action happens without clicking.
 
+### 10.9BO Oom Sakkie CI Green Evidence - Local Ready
+
+Purpose:
+
+- Close the carried-forward operational check that the two Oom Sakkie GitHub Actions gates are actually green on the branch.
+- Give the Safety Gate Board concrete owner-verified evidence rather than only "configured" status.
+
+What changed:
+
+- Installed portable GitHub CLI under `.tools/gh/bin/gh.exe`.
+- Added `/.tools/` to `.gitignore` so the downloaded CLI binary is not committed.
+- Authenticated GitHub CLI as owner account `Crewless9086`.
+- Verified active workflows:
+  - `Oom Sakkie Audit Rails`
+  - `Oom Sakkie Browser Behavior`
+- Verified latest runs on `main`:
+  - `Oom Sakkie Browser Behavior` run `27225474174` completed with `conclusion = success`, updated `2026-06-09T17:58:15Z`.
+  - `Oom Sakkie Audit Rails` run `27225474133` completed with `conclusion = success`, updated `2026-06-09T17:58:02Z`.
+- Verified successful jobs:
+  - `Playwright real-browser behavior gate`
+  - `Unit tests with disposable Postgres audit rails`
+
+Safety envelope:
+
+- Operational verification only.
+- No app code change.
+- No Oom Sakkie route/tool/store/migration change.
+- No DB write.
+- No runtime flag change.
+- No specialist dispatch.
+- No specialist LLM/tool execution.
+- No farm-data write.
+- No public/customer output.
+- No patch/deploy/Telegram/physical-control action.
+- GitHub Actions status is still external evidence; Oom Sakkie runtime itself still does not call GitHub.
+
+Verification:
+
+- `.\.tools\gh\bin\gh.exe auth status` confirmed login to `github.com` as `Crewless9086`.
+- `.\.tools\gh\bin\gh.exe workflow list` showed both Oom Sakkie workflows active.
+- `.\.tools\gh\bin\gh.exe run list --limit 12` showed the latest `Oom Sakkie Audit Rails` and `Oom Sakkie Browser Behavior` runs completed successfully.
+- `.\.tools\gh\bin\gh.exe run view 27225474174 --json name,status,conclusion,createdAt,updatedAt,headBranch,event,jobs` confirmed the browser behavior job succeeded.
+- `.\.tools\gh\bin\gh.exe run view 27225474133 --json name,status,conclusion,createdAt,updatedAt,headBranch,event,jobs` confirmed the audit-rail job succeeded.
+
+Manual check:
+
+1. Open GitHub Actions in the browser.
+2. Confirm the same two latest runs are green.
+3. Keep `.tools/` untracked.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
