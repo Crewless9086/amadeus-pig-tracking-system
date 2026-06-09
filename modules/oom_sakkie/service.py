@@ -47,6 +47,10 @@ RULES = [
         IntentMatch("agent_activation_preflight", "agent_activation_preflight", 0.95, "rule:agent_activation_preflight"),
     ),
     (
+        re.compile(r"\b(agent authority matrix|authority matrix|agent authority|agent permissions|agent powers|what authority.*agents|what can agents control|which agent powers are locked)\b", re.I),
+        IntentMatch("agent_authority_matrix", "agent_authority_matrix", 0.95, "rule:agent_authority_matrix"),
+    ),
+    (
         re.compile(r"\b(agent operating contract|agent operating contracts|agent contract|agent contracts|specialist contract|specialist contracts|agent rules|specialist rules|what can agents do|what must agents not do)\b", re.I),
         IntentMatch("agent_operating_contracts", "agent_operating_contracts", 0.95, "rule:agent_operating_contracts"),
     ),

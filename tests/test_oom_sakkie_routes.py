@@ -155,6 +155,35 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    def test_agent_authority_matrix_route_is_review_only(self):
+        response = self.client.get("/api/oom-sakkie/agents/authority-matrix")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "agent_authority_matrix_only")
+        self.assertEqual(data["enabled_count"], 0)
+        self.assertEqual(data["locked_count"], data["authority_count"])
+        self.assertFalse(data["runtime_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes_enabled"])
+        self.assertFalse(data["review_guard"]["runs_specialist"])
+        self.assertFalse(data["review_guard"]["dispatch_enabled"])
+        self.assertFalse(data["review_guard"]["writes"])
+        by_authority = {item["authority"]: item for item in data["areas"]}
+        self.assertEqual(by_authority["physical_controls"]["current_state"], "locked")
+        self.assertEqual(by_authority["deploy_execution"]["risk_level"], 5)
+
+    def test_agent_authority_matrix_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agents/authority-matrix",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     def test_agent_recommend_route_returns_non_dispatching_recommendation(self):
         response = self.client.post(
             "/api/oom-sakkie/agents/recommend",

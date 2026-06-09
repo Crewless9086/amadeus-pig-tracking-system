@@ -7,6 +7,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_sentinel_dry_run_review,
     get_agent_activation_plan,
     get_agent_activation_preflight,
+    get_agent_authority_matrix,
     get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
@@ -1057,6 +1058,37 @@ def agent_activation_preflight_handler(_args):
     }
 
 
+def agent_authority_matrix_handler(_args):
+    matrix = get_agent_authority_matrix()
+    summary = (
+        "Agent authority matrix: {} authority area(s) are locked and {} are enabled. "
+        "Highest locked risk level is {}. No live authority is active."
+    ).format(
+        matrix.get("locked_count", 0),
+        matrix.get("enabled_count", 0),
+        matrix.get("max_locked_risk_level", 0),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Agent Preflight", "href": "/api/oom-sakkie/agents/preflight"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent authority matrix is read-only. It does not enable dispatch, specialist LLMs, specialist tools, writes, customer/public output, Builder/Forge, deploys, Telegram cutover, or physical controls."
+        ],
+        "llm_context": {
+            "kind": "agent_authority_matrix",
+            "authority_matrix": matrix,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": matrix,
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1430,6 +1462,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_activation_preflight_handler,
         description="Read-only activation preflight for planned Oom Sakkie agents. Summarizes pass/manual/locked gates without enabling runtime authority.",
+    ),
+    "agent_authority_matrix": OomSakkieTool(
+        name="agent_authority_matrix",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_authority_matrix_handler,
+        description="Read-only matrix of future agent authority areas, locked status, risk levels, and required gates. Never enables authority.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

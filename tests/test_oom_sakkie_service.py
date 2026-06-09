@@ -11,6 +11,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_activity,
     get_agent_activation_plan,
     get_agent_activation_preflight,
+    get_agent_authority_matrix,
     get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
@@ -100,6 +101,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_dry_run_status",
                 "agent_learning_evidence",
                 "agent_activation_preflight",
+                "agent_authority_matrix",
                 "agent_operating_contracts",
                 "agent_runtime_readiness",
                 "agent_activation_plan",
@@ -361,6 +363,41 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(any(item["check"] == "live_specialist_dispatch" for item in preflight["locked_checks"]))
         self.assertIn("claude_and_owner_review", preflight["next_gate"])
 
+    def test_agent_authority_matrix_keeps_every_authority_locked(self):
+        matrix = get_agent_authority_matrix()
+
+        self.assertTrue(matrix["success"])
+        self.assertEqual(matrix["mode"], "agent_authority_matrix_only")
+        self.assertFalse(matrix["runtime_enabled"])
+        self.assertFalse(matrix["dispatch_enabled"])
+        self.assertFalse(matrix["autonomous_loops_enabled"])
+        self.assertFalse(matrix["writes_enabled"])
+        self.assertFalse(matrix["specialist_llm_enabled"])
+        self.assertFalse(matrix["specialist_tools_enabled"])
+        self.assertFalse(matrix["public_output_enabled"])
+        self.assertFalse(matrix["physical_controls_enabled"])
+        self.assertEqual(matrix["enabled_count"], 0)
+        self.assertEqual(matrix["locked_count"], matrix["authority_count"])
+        by_authority = {item["authority"]: item for item in matrix["areas"]}
+        for authority in [
+            "live_specialist_dispatch",
+            "specialist_llm_loop",
+            "specialist_tool_execution",
+            "farm_data_writes",
+            "customer_or_public_output",
+            "builder_or_patch_execution",
+            "deploy_execution",
+            "telegram_cutover",
+            "physical_controls",
+        ]:
+            with self.subTest(authority=authority):
+                self.assertIn(authority, by_authority)
+                self.assertFalse(by_authority[authority]["enabled"])
+                self.assertEqual(by_authority[authority]["current_state"], "locked")
+                self.assertTrue(by_authority[authority]["required_gates"])
+        self.assertEqual(by_authority["physical_controls"]["risk_level"], 5)
+        self.assertIn("owner_and_claude_review", matrix["next_gate"])
+
     def test_agent_crew_brief_is_multi_agent_plan_only(self):
         brief = build_agent_crew_brief("How do we grow sales and market pork better?")
 
@@ -513,6 +550,22 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["kind"], "agent_activation_preflight")
         self.assertFalse(result["llm_context"]["preflight"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["preflight"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_agent_authority_matrix_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_authority_matrix_handler
+
+        result = agent_authority_matrix_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("authority area", result["summary"])
+        self.assertIn("No live authority is active", result["summary"])
+        self.assertIn("does not enable dispatch", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_authority_matrix")
+        self.assertEqual(result["llm_context"]["authority_matrix"]["enabled_count"], 0)
+        self.assertFalse(result["llm_context"]["authority_matrix"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["authority_matrix"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
@@ -2061,6 +2114,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "what still blocks runtime": "agent_runtime_readiness",
             "run the agent activation preflight": "agent_activation_preflight",
             "what must happen before activating agents": "agent_activation_preflight",
+            "show me the agent authority matrix": "agent_authority_matrix",
+            "which agent powers are locked": "agent_authority_matrix",
             "what are the agent operating contracts": "agent_operating_contracts",
             "what must agents not do": "agent_operating_contracts",
             "what did sentinel learn": "agent_learning_evidence",

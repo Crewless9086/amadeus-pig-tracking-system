@@ -9,6 +9,7 @@ from modules.oom_sakkie.access import (
 from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_plan,
     get_agent_activation_preflight,
+    get_agent_authority_matrix,
     get_agent_operating_contracts,
     get_agent_runtime_status,
     recommend_agent_for_text,
@@ -154,6 +155,25 @@ def oom_sakkie_agent_preflight():
     preflight = get_agent_activation_preflight()
     return jsonify({
         **preflight,
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agents/authority-matrix", methods=["GET"])
+def oom_sakkie_agent_authority_matrix():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    matrix = get_agent_authority_matrix()
+    return jsonify({
+        **matrix,
         "review_guard": {
             "runs_specialist": False,
             "dispatch_enabled": False,

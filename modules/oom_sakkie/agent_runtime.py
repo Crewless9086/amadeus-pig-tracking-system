@@ -54,6 +54,7 @@ _AGENT_TOOLS = {
 _TOOL_PRIMARY_AGENT = {
     "agent_activation_plan": "gatekeeper",
     "agent_activation_preflight": "gatekeeper",
+    "agent_authority_matrix": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",
     "agent_runtime_readiness": "gatekeeper",
     "agent_dry_run_status": "gatekeeper",
@@ -172,6 +173,135 @@ _AGENT_CONTRACT_OWNER_GATES = {
     "quartermaster": "Owner approval plus a task/purchase/write gate is required before any operational mutation.",
     "gatekeeper": "Owner approval, append-only audit, browser-behavior proof, and Claude/Codex review are required before live authority.",
 }
+
+_AUTHORITY_AREAS = (
+    {
+        "authority": "live_specialist_dispatch",
+        "label": "Live specialist dispatch",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 3,
+        "why_locked": "No dispatch runtime exists and no specialist may run from a chat request.",
+        "required_gates": (
+            "owner approves a dispatch design",
+            "append-only dispatch audit rail exists",
+            "browser behavior suite proves no hidden dispatch",
+            "Claude/Codex review passes",
+        ),
+    },
+    {
+        "authority": "specialist_llm_loop",
+        "label": "Specialist LLM loop",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 3,
+        "why_locked": "Specialists are contracts/dry-run records only; no specialist-specific LLM loop is allowed.",
+        "required_gates": (
+            "prompt-injection review",
+            "tool allowlist enforcement",
+            "cost/privacy policy display",
+            "owner-approved bounded dry run",
+        ),
+    },
+    {
+        "authority": "specialist_tool_execution",
+        "label": "Specialist tool execution",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 3,
+        "why_locked": "Oom Sakkie may call existing read-only tools directly; specialists do not execute tools.",
+        "required_gates": (
+            "per-agent tool allowlist",
+            "read-only registry enforcement",
+            "trace-level tool audit",
+            "owner approval before widening",
+        ),
+    },
+    {
+        "authority": "farm_data_writes",
+        "label": "Farm data writes",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 4,
+        "why_locked": "Pig, litter, weight, sales, task, and operating records must not be mutated by agents.",
+        "required_gates": (
+            "idempotency keys",
+            "exact confirmation payload",
+            "append-only write decision rail",
+            "rollback and live verification plan",
+        ),
+    },
+    {
+        "authority": "customer_or_public_output",
+        "label": "Customer/public output",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 4,
+        "why_locked": "No agent may message customers, speak as Sam, post publicly, or publish marketing.",
+        "required_gates": (
+            "draft-only phase",
+            "human copy approval",
+            "channel-specific ACL",
+            "brand/customer safety review",
+        ),
+    },
+    {
+        "authority": "builder_or_patch_execution",
+        "label": "Builder/patch execution",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 4,
+        "why_locked": "The kiosk can prepare handoff packets and record patch proposals, but cannot edit files or apply patches.",
+        "required_gates": (
+            "separate builder tool review",
+            "owner patch approval",
+            "manual patch application",
+            "test evidence recorded",
+        ),
+    },
+    {
+        "authority": "deploy_execution",
+        "label": "Deploy execution",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 5,
+        "why_locked": "Deploy decisions are recorded only; deployment remains manual outside the kiosk.",
+        "required_gates": (
+            "approved patch proposal",
+            "manual deploy approval",
+            "operator deploy outside kiosk",
+            "post-deploy smoke result",
+        ),
+    },
+    {
+        "authority": "telegram_cutover",
+        "label": "Telegram cutover",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 4,
+        "why_locked": "n8n Telegram routing remains untouched until the kiosk brain has a separate parallel-run plan.",
+        "required_gates": (
+            "feature flag",
+            "one-user parallel run",
+            "answer-diff review",
+            "30-day archive plan for old workflows",
+        ),
+    },
+    {
+        "authority": "physical_controls",
+        "label": "Physical controls",
+        "enabled": False,
+        "current_state": "locked",
+        "risk_level": 5,
+        "why_locked": "Irrigation, pumps, valves, power controls, and any physical action remain read-only/status-only.",
+        "required_gates": (
+            "separate hardware safety design",
+            "exact payload confirmation",
+            "idempotency and lockouts",
+            "manual emergency stop procedure",
+        ),
+    },
+)
 
 _AGENT_COLOR = {
     "sentinel": "red",
@@ -506,13 +636,13 @@ def get_agent_activation_preflight():
         },
         {
             "check": "audit_rail_ci",
-            "status": "pass",
-            "detail": "Disposable-Postgres audit rail CI is configured for append-only/no-execution checks.",
+            "status": "configured",
+            "detail": "Disposable-Postgres audit rail CI gate is configured for append-only/no-execution checks; GitHub green status remains a manual check.",
         },
         {
             "check": "browser_behavior_smoke",
-            "status": "pass",
-            "detail": "Node smoke gate executes the real kiosk JS and checks no hidden startup POSTs or interval polling.",
+            "status": "configured",
+            "detail": "Node smoke gate is configured to execute the real kiosk JS and check no hidden startup POSTs or interval polling.",
         },
     ]
     manual_checks = [
@@ -578,6 +708,38 @@ def get_agent_activation_preflight():
             "contracts": contracts.get("mode"),
             "activation_plan": plan.get("mode"),
         },
+    }
+
+
+def get_agent_authority_matrix():
+    areas = []
+    for item in _AUTHORITY_AREAS:
+        areas.append({
+            "authority": item["authority"],
+            "label": item["label"],
+            "enabled": False,
+            "current_state": item["current_state"],
+            "risk_level": item["risk_level"],
+            "why_locked": item["why_locked"],
+            "required_gates": list(item["required_gates"]),
+        })
+    return {
+        "success": True,
+        "mode": "agent_authority_matrix_only",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "authority_count": len(areas),
+        "enabled_count": 0,
+        "locked_count": len(areas),
+        "max_locked_risk_level": max(item["risk_level"] for item in areas),
+        "areas": areas,
+        "next_gate": "owner_and_claude_review_before_any_authority_changes",
     }
 
 
