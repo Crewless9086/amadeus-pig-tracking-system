@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AJ. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AL. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -9029,6 +9029,86 @@ Manual check:
 
 1. Follow `docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md`.
 2. Record any failures as owner feedback before widening the runtime foundation further.
+
+### 10.9AK Oom Sakkie Audit Rail CI Scope Hardening - Local Ready
+
+Purpose:
+
+- Keep the audit-rail CI job focused on the Oom Sakkie safety rail it is meant to prove.
+- Avoid future unrelated real-DB tests failing this job because only the Oom Sakkie audit migrations are applied.
+
+What changed:
+
+- `.github/workflows/oom-sakkie-audit-rails.yml` now runs:
+
+```powershell
+python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts
+```
+
+- The workflow still starts disposable Postgres, applies the reviewed Oom Sakkie audit migrations, and runs `node --check static/js/oomSakkie.js`.
+- Frontend contract coverage now pins the scoped command.
+
+Safety status:
+
+- CI/test configuration only.
+- Does not touch production data.
+- Does not add routes, tools, runtime authority, specialist dispatch, specialist LLM/tool execution, farm writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, or physical controls.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 204 tests.
+- Full local unittest suite passed at 534 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Push a branch or open a PR.
+2. Confirm `Oom Sakkie Audit Rails` applies the Oom Sakkie audit migrations.
+3. Confirm the workflow runs the focused Oom Sakkie test modules, not unrelated DB suites.
+4. Confirm the DATABASE_URL-gated live-PG Oom Sakkie tests execute in CI.
+
+### 10.9AL Oom Sakkie Agent Runtime Readiness Tool - Local Ready
+
+Purpose:
+
+- Let Oom Sakkie explain what is still blocking real/live agents.
+- Keep the Jarvis end goal concrete while runtime authority remains locked.
+
+What changed:
+
+- Added `get_agent_runtime_readiness()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added read-only tool `agent_runtime_readiness`.
+- Added deterministic routing for phrases such as:
+  - `are we ready for live agents`,
+  - `what still blocks runtime`,
+  - `before agents can run`.
+- The readiness payload reports:
+  - ready gates,
+  - manual gates,
+  - locked gates,
+  - approved dry-run candidates,
+  - blocked capabilities,
+  - next safe action.
+
+Safety status:
+
+- Read-only checklist only.
+- Runtime remains disabled.
+- Dispatch remains disabled.
+- Specialist LLM/tool execution remains disabled.
+- Writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, and physical controls remain blocked.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 206 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Ask Oom Sakkie: `Are we ready for live agents?`
+2. Confirm it uses `agent_runtime_readiness`.
+3. Confirm the answer says manual checks are still required and live-authority gates remain locked.
+4. Confirm the safety note says no specialist was dispatched and no runtime/write/public/control action occurred.
 
 7.3E weather LLM triage note:
 

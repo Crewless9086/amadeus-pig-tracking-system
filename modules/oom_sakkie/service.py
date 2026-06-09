@@ -39,6 +39,10 @@ class IntentMatch:
 
 RULES = [
     (
+        re.compile(r"\b(agent readiness|runtime readiness|ready for agents|ready.*agents|agents.*ready|what blocks.*agents|what is blocking.*agents|before agents can run|before live agents|what still blocks runtime)\b", re.I),
+        IntentMatch("agent_runtime_readiness", "agent_runtime_readiness", 0.95, "rule:agent_runtime_readiness"),
+    ),
+    (
         re.compile(r"\b(agent dry[- ]?run status|dry[- ]?run queue|dry[- ]?run request|dry[- ]?run approval|specialist dry[- ]?run queue|sentinel result queue|dry[- ]?run result|dry[- ]?run results|sentinel review queue)\b", re.I),
         IntentMatch("agent_dry_run_status", "agent_dry_run_status", 0.95, "rule:agent_dry_run_status"),
     ),

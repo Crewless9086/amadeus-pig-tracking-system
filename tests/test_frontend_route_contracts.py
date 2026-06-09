@@ -13,7 +13,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("202606060004_lock_oom_sakkie_trace_append_only.sql", workflow)
         self.assertIn("202606070004_create_oom_sakkie_deploy_decisions.sql", workflow)
         self.assertIn("202606080002_create_oom_sakkie_agent_dry_run_results.sql", workflow)
-        self.assertIn("python -m unittest", workflow)
+        self.assertIn("python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts", workflow)
         self.assertIn("node --check static/js/oomSakkie.js", workflow)
 
         self.assertIn("No specialist dispatch.", checklist)

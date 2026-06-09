@@ -10,6 +10,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_agent_activity,
     get_agent_activation_plan,
+    get_agent_runtime_readiness,
     get_agent_runtime_status,
     recommend_agent_for_text,
 )
@@ -96,6 +97,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sentinel_dry_run_review",
                 "agent_dry_run_status",
                 "agent_learning_evidence",
+                "agent_runtime_readiness",
                 "agent_activation_plan",
                 "agent_crew_brief",
                 "agent_crew_status",
@@ -283,6 +285,25 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("live specialist dispatch", plan["blocked_capabilities"])
         self.assertIn("owner_approval", plan["next_gate"])
 
+    def test_agent_runtime_readiness_is_checklist_only(self):
+        readiness = get_agent_runtime_readiness()
+
+        self.assertTrue(readiness["success"])
+        self.assertEqual(readiness["mode"], "runtime_readiness_checklist_only")
+        self.assertFalse(readiness["runtime_enabled"])
+        self.assertFalse(readiness["dispatch_enabled"])
+        self.assertFalse(readiness["autonomous_loops_enabled"])
+        self.assertFalse(readiness["writes_enabled"])
+        self.assertFalse(readiness["specialist_llm_enabled"])
+        self.assertFalse(readiness["specialist_tools_enabled"])
+        self.assertFalse(readiness["public_output_enabled"])
+        self.assertFalse(readiness["physical_controls_enabled"])
+        self.assertIn("sentinel", readiness["dry_run_candidates"])
+        self.assertIn("ledger", readiness["dry_run_candidates"])
+        self.assertTrue(any(item["gate"] == "browser_behavior_pass" for item in readiness["manual_gates"]))
+        self.assertTrue(any(item["gate"] == "live_specialist_dispatch" for item in readiness["locked_gates"]))
+        self.assertIn("owner_review", readiness["next_gate"])
+
     def test_agent_crew_brief_is_multi_agent_plan_only(self):
         brief = build_agent_crew_brief("How do we grow sales and market pork better?")
 
@@ -390,6 +411,21 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["kind"], "agent_crew_brief")
         self.assertEqual(result["llm_context"]["crew_brief"]["mode"], "crew_plan_only")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "ledger")
+
+    def test_agent_runtime_readiness_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_runtime_readiness_handler
+
+        result = agent_runtime_readiness_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("manual check", result["summary"])
+        self.assertIn("live-authority gate", result["summary"])
+        self.assertIn("does not run specialists", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_runtime_readiness")
+        self.assertFalse(result["llm_context"]["readiness"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["readiness"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
     def test_agent_activation_plan_tool_is_read_only(self, mock_results):
@@ -1933,6 +1969,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         cases = {
             "what is the agent dry-run queue status": "agent_dry_run_status",
             "what is the sentinel dry-run result queue status": "agent_dry_run_status",
+            "are we ready for live agents": "agent_runtime_readiness",
+            "what still blocks runtime": "agent_runtime_readiness",
             "what did sentinel learn": "agent_learning_evidence",
             "show me agent learning evidence": "agent_learning_evidence",
             "run the sentinel dry-run review": "sentinel_dry_run_review",

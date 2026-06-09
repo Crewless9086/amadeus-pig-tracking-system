@@ -53,6 +53,7 @@ _AGENT_TOOLS = {
 
 _TOOL_PRIMARY_AGENT = {
     "agent_activation_plan": "gatekeeper",
+    "agent_runtime_readiness": "gatekeeper",
     "agent_dry_run_status": "gatekeeper",
     "agent_crew_brief": "gatekeeper",
     "agent_crew_status": "gatekeeper",
@@ -259,6 +260,74 @@ def get_agent_activation_plan():
             "deploy execution",
         ],
         "next_gate": "owner_approval_before_read_only_specialist_dry_run",
+    }
+
+
+def get_agent_runtime_readiness():
+    plan = get_agent_activation_plan()
+    status = get_agent_runtime_status()
+    dry_run_candidates = [
+        item["slug"]
+        for item in plan.get("first_candidates", [])
+        if item.get("dry_run_request_allowed")
+    ]
+    checklist = [
+        {
+            "gate": "foundation_visible",
+            "status": "ready",
+            "meaning": "The planned crew, visual workspace, handoff lane, dry-run request rail, result review rail, learning ledger, and roadmap are visible.",
+        },
+        {
+            "gate": "read_only_dry_run_records",
+            "status": "ready",
+            "meaning": "Approved specialists can have append-only dry-run request and result records, but the specialists do not run.",
+        },
+        {
+            "gate": "audit_rail_ci",
+            "status": "ready",
+            "meaning": "The audit rail has a disposable-Postgres CI workflow scoped to Oom Sakkie append-only/no-execution tests.",
+        },
+        {
+            "gate": "browser_behavior_pass",
+            "status": "manual_check_required",
+            "meaning": "The owner should run the browser behavior checklist before any wider runtime work.",
+        },
+        {
+            "gate": "live_specialist_dispatch",
+            "status": "locked",
+            "meaning": "No live specialist dispatch path exists and no runtime flag enables it.",
+        },
+        {
+            "gate": "specialist_llm_or_tools",
+            "status": "locked",
+            "meaning": "No specialist LLM loop or specialist tool execution is enabled.",
+        },
+        {
+            "gate": "writes_public_output_and_controls",
+            "status": "locked",
+            "meaning": "Farm writes, customer/public output, patch application, deploy, Telegram cutover, and physical controls remain outside this runtime.",
+        },
+    ]
+    return {
+        "success": True,
+        "mode": "runtime_readiness_checklist_only",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "dry_run_candidates": dry_run_candidates,
+        "ready_gates": [item for item in checklist if item["status"] == "ready"],
+        "manual_gates": [item for item in checklist if item["status"] == "manual_check_required"],
+        "locked_gates": [item for item in checklist if item["status"] == "locked"],
+        "checklist": checklist,
+        "blocked_capabilities": plan.get("blocked_capabilities", []),
+        "next_safe_action": "Run the browser behavior checklist and keep collecting accepted read-only dry-run evidence.",
+        "next_gate": "owner_review_before_any_live_specialist_dispatch",
+        "agent_count": status.get("agent_count", 0),
     }
 
 

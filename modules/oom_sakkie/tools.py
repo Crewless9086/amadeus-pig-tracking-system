@@ -6,6 +6,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_sentinel_dry_run_review,
     get_agent_activation_plan,
+    get_agent_runtime_readiness,
     get_agent_runtime_status,
     recommend_agent_for_text,
 )
@@ -945,6 +946,46 @@ def agent_activation_plan_handler(_args):
     }
 
 
+def agent_runtime_readiness_handler(_args):
+    readiness = get_agent_runtime_readiness()
+    ready_count = len(readiness.get("ready_gates", []))
+    manual_count = len(readiness.get("manual_gates", []))
+    locked_count = len(readiness.get("locked_gates", []))
+    summary = (
+        "Agent runtime readiness: {} gate(s) ready, {} manual check(s) required, and {} live-authority gate(s) still locked. "
+        "Next safe action: {}"
+    ).format(
+        ready_count,
+        manual_count,
+        locked_count,
+        readiness.get("next_safe_action", "continue read-only review"),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [
+            {
+                "label": "Browser Behavior Checklist",
+                "href": "docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md",
+            }
+        ],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent runtime readiness is read-only. It does not run specialists, dispatch agents, call specialist LLMs, execute specialist tools, write farm data, create public output, apply patches, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "agent_runtime_readiness",
+            "readiness": readiness,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": readiness,
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1291,6 +1332,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_learning_evidence_handler,
         description="Read-only accepted agent learning evidence. Never applies runtime changes or dispatches agents.",
+    ),
+    "agent_runtime_readiness": OomSakkieTool(
+        name="agent_runtime_readiness",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_runtime_readiness_handler,
+        description="Read-only agent runtime readiness checklist. Never enables dispatch, writes, public output, patches, deploys, Telegram, or controls.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",
