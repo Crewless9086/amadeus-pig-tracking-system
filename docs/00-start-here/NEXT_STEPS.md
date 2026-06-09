@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Claude reviews Phase 10.9AX. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Claude reviews Phase 10.9AY. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -9538,6 +9538,50 @@ Manual/CI check:
 1. Confirm `.github/workflows/oom-sakkie-browser-behavior.yml` runs green after push.
 2. Optional local run after dependency install: `npm run test:oom-sakkie:browser`.
 3. Confirm no hidden startup POSTs, no interval polling, and only owner-clicked dry-run/result/message POSTs.
+
+### 10.9AY Oom Sakkie Dispatch Decision Rail - Local Ready / Migration Pending
+
+Purpose:
+
+- Turn the dispatch-rail blueprint into a first append-only review rail while still keeping live dispatch completely disabled.
+
+What changed:
+
+- Added migration `supabase/migrations/202606090001_create_oom_sakkie_dispatch_decisions.sql`.
+- Added `modules/oom_sakkie/dispatch_decision_store.py`.
+- Added protected routes:
+  - `GET /api/oom-sakkie/dispatch-requests`,
+  - `POST /api/oom-sakkie/dispatch-requests`,
+  - `POST /api/oom-sakkie/dispatch-requests/<dispatch_request_id>/decisions`.
+- Added the migration to `.github/workflows/oom-sakkie-audit-rails.yml`.
+- Added tests for:
+  - forced false execution/runtime flags,
+  - locked-out specialist rejection before DB access,
+  - invalid decision types before DB access,
+  - migration CHECK/trigger text,
+  - protected route success shapes,
+  - non-local route denial,
+  - live-PG append-only/constraint coverage when the migration exists.
+
+Safety status:
+
+- Append-only audit/review rail only.
+- No specialist dispatch happens.
+- No specialist LLM or specialist tool execution happens.
+- No farm data write, public/customer output, patch, deploy, Telegram cutover, or physical control is created.
+- Application code forces `dispatch_enabled`, `runs_specialist_llm`, `runs_specialist_tools`, `writes`, and `applies_runtime_change` false.
+- DB constraints also force those flags false and triggers block update/delete.
+- Migration was not applied to the local/live database in this turn; CI applies it to disposable Postgres.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 242 tests.
+
+Manual/CI check:
+
+1. Confirm GitHub audit-rail workflow applies `202606090001_create_oom_sakkie_dispatch_decisions.sql` and runs green.
+2. Only after review, apply the migration to the intended database with the approved migration script.
+3. Confirm `/api/oom-sakkie/dispatch-requests` is loopback/review-gated and returns no-execution flags false.
 
 7.3E weather LLM triage note:
 

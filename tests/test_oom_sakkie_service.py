@@ -59,6 +59,12 @@ from modules.oom_sakkie.deploy_decision_store import (
     list_deploy_decisions,
     record_deploy_decision,
 )
+from modules.oom_sakkie.dispatch_decision_store import (
+    DISPATCH_DECISION_TYPES,
+    _dispatch_request_params,
+    record_dispatch_decision,
+    record_dispatch_request,
+)
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
 from modules.oom_sakkie.learning_packet import (
     approve_build_request,
@@ -1261,6 +1267,62 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("writes = false", migration)
         self.assertIn("before update on public.oom_sakkie_agent_dry_run_requests", migration)
         self.assertIn("before delete on public.oom_sakkie_agent_dry_run_events", migration)
+
+    def test_dispatch_request_params_force_no_execution_flags(self):
+        params = _dispatch_request_params({
+            "specialist_slug": "sentinel",
+            "owner_text": "design dispatch rail",
+            "dispatch_enabled": True,
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": True,
+            "writes": True,
+            "applies_runtime_change": True,
+        })
+
+        self.assertEqual(params["mode"], "dispatch_decision_request_only")
+        self.assertEqual(params["status"], "requested_for_dispatch_design_review")
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["runs_specialist_llm"])
+        self.assertFalse(params["runs_specialist_tools"])
+        self.assertFalse(params["writes"])
+        self.assertFalse(params["applies_runtime_change"])
+        self.assertIn("owner_and_claude_review", params["next_gate"])
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_dispatch_request_rejects_locked_out_specialist_before_database(self):
+        result, status_code = record_dispatch_request({
+            "specialist_slug": "forge",
+            "owner_text": "try dispatch",
+        })
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "specialist_dispatch_design_not_approved_yet")
+
+    @patch("modules.oom_sakkie.dispatch_decision_store.get_dispatch_request")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_dispatch_decision_validates_event_type_before_database(self, mock_get_request):
+        result, status_code = record_dispatch_decision("OSK-DISPATCH-REQ-1", {"decision_type": "run_now"})
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "invalid_decision_type")
+        self.assertEqual(set(result["allowed_decision_types"]), DISPATCH_DECISION_TYPES)
+        mock_get_request.assert_not_called()
+
+    def test_dispatch_decision_migration_is_append_only_and_no_execution(self):
+        migration = Path("supabase/migrations/202606090001_create_oom_sakkie_dispatch_decisions.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_dispatch_requests", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_dispatch_decisions", migration)
+        self.assertIn("mode = 'dispatch_decision_request_only'", migration)
+        self.assertIn("dispatch_enabled = false", migration)
+        self.assertIn("runs_specialist_llm = false", migration)
+        self.assertIn("runs_specialist_tools = false", migration)
+        self.assertIn("writes = false", migration)
+        self.assertIn("applies_runtime_change = false", migration)
+        self.assertIn("decision_type in ('approved_for_design_review', 'rejected', 'deferred', 'review_note')", migration)
+        self.assertIn("before update on public.oom_sakkie_dispatch_requests", migration)
+        self.assertIn("before delete on public.oom_sakkie_dispatch_decisions", migration)
 
     def test_agent_dry_run_result_params_force_review_only_flags(self):
         params = _agent_dry_run_result_params({
@@ -3287,6 +3349,29 @@ class OomSakkieServiceTests(unittest.TestCase):
                 connection.rollback()
                 self.assertIn("check", str(dry_run_result_error.exception).lower())
 
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select to_regclass('public.oom_sakkie_dispatch_requests')")
+                if cursor.fetchone()[0] is None:
+                    return
+                with self.assertRaises(Exception) as dispatch_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_requests (
+                            dispatch_request_id, status, mode, specialist_slug,
+                            requested_by, purpose, dispatch_enabled
+                        )
+                        values (
+                            %s, 'requested_for_dispatch_design_review',
+                            'dispatch_decision_request_only', 'sentinel',
+                            'unittest', 'constraint test', true
+                        )
+                        """,
+                        (f"OSK-DISPATCH-REQ-CONSTRAINT-{suffix}",),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(dispatch_error.exception).lower())
+
     def test_live_pg_review_gate_tables_are_append_only_when_database_url_is_configured(self):
         database_url = os.getenv("DATABASE_URL", "").strip()
         if not database_url:
@@ -3306,6 +3391,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         dry_run_event_id = f"OSK-AGENT-DRYRUN-EVENT-APPEND-{suffix}"
         dry_run_result_id = f"OSK-AGENT-DRYRUN-RESULT-APPEND-{suffix}"
         dry_run_result_event_id = f"OSK-AGENT-DRYRUN-RESULT-EVENT-APPEND-{suffix}"
+        dispatch_request_id = f"OSK-DISPATCH-REQ-APPEND-{suffix}"
+        dispatch_decision_id = f"OSK-DISPATCH-DECISION-APPEND-{suffix}"
 
         rows = [
             (
@@ -3366,6 +3453,23 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
+                cursor.execute("select to_regclass('public.oom_sakkie_dispatch_requests')")
+                dispatch_tables_exist = cursor.fetchone()[0] is not None
+                if dispatch_tables_exist:
+                    rows.extend([
+                        (
+                            "public.oom_sakkie_dispatch_requests",
+                            "dispatch_request_id",
+                            dispatch_request_id,
+                            "purpose",
+                        ),
+                        (
+                            "public.oom_sakkie_dispatch_decisions",
+                            "decision_id",
+                            dispatch_decision_id,
+                            "notes",
+                        ),
+                    ])
                 cursor.execute(
                     """
                     insert into public.oom_sakkie_build_requests (
@@ -3462,6 +3566,30 @@ class OomSakkieServiceTests(unittest.TestCase):
                     """,
                     (dry_run_result_event_id, dry_run_result_id),
                 )
+                if dispatch_tables_exist:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_requests (
+                            dispatch_request_id, status, mode, specialist_slug,
+                            requested_by, purpose
+                        )
+                        values (
+                            %s, 'requested_for_dispatch_design_review',
+                            'dispatch_decision_request_only', 'sentinel',
+                            'unittest', 'append-only test'
+                        )
+                        """,
+                        (dispatch_request_id,),
+                    )
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_decisions (
+                            decision_id, dispatch_request_id, decision_type, notes, recorded_by
+                        )
+                        values (%s, %s, 'review_note', 'append-only test', 'unittest')
+                        """,
+                        (dispatch_decision_id, dispatch_request_id),
+                    )
                 connection.commit()
 
         for table_name, id_column, row_id, text_column in rows:

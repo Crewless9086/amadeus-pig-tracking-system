@@ -41,6 +41,11 @@ from modules.oom_sakkie.deploy_decision_store import (
     list_deploy_decisions,
     record_deploy_decision,
 )
+from modules.oom_sakkie.dispatch_decision_store import (
+    list_dispatch_requests,
+    record_dispatch_decision,
+    record_dispatch_request,
+)
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
 from modules.oom_sakkie.learning_advisor import get_learning_advisor, run_learning_analysis
 from modules.oom_sakkie.learning_packet import (
@@ -576,6 +581,35 @@ def oom_sakkie_deploy_decisions():
         patch_proposal_id=request.args.get("patch_proposal_id", "").strip(),
         limit=request.args.get("limit", 20),
     )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests", methods=["GET"])
+def oom_sakkie_dispatch_requests():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_dispatch_requests(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests", methods=["POST"])
+def oom_sakkie_dispatch_request_create():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_dispatch_request(payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests/<dispatch_request_id>/decisions", methods=["POST"])
+def oom_sakkie_dispatch_decision_create(dispatch_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_dispatch_decision(dispatch_request_id, payload)
     return jsonify(result), status_code
 
 

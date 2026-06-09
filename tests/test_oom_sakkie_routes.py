@@ -1341,6 +1341,121 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    @patch("modules.oom_sakkie.routes.record_dispatch_request")
+    def test_dispatch_request_route_records_no_execution_request(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "dispatch_decision_request_only",
+            "dispatch_request_id": "OSK-DISPATCH-REQ-TEST",
+            "specialist_slug": "sentinel",
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-requests",
+            json={"specialist_slug": "sentinel", "owner_text": "Design only."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "dispatch_decision_request_only")
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        mock_record.assert_called_once_with({"specialist_slug": "sentinel", "owner_text": "Design only."})
+
+    def test_dispatch_request_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-requests",
+            json={"specialist_slug": "sentinel"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.list_dispatch_requests")
+    def test_dispatch_requests_route_lists_no_execution_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "dispatch_decision_request_queue",
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "dispatch_requests": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/dispatch-requests?limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "dispatch_decision_request_queue")
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        mock_list.assert_called_once_with(limit="8")
+
+    @patch("modules.oom_sakkie.routes.record_dispatch_decision")
+    def test_dispatch_decision_route_records_review_decision_without_dispatch(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "decision_type": "approved_for_design_review",
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-requests/OSK-DISPATCH-REQ-TEST/decisions",
+            json={"decision_type": "approved_for_design_review", "notes": "Design approved."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["decision_type"], "approved_for_design_review")
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        mock_record.assert_called_once_with("OSK-DISPATCH-REQ-TEST", {
+            "decision_type": "approved_for_design_review",
+            "notes": "Design approved.",
+        })
+
+    def test_dispatch_decision_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-requests/OSK-DISPATCH-REQ-TEST/decisions",
+            json={"decision_type": "approved_for_design_review"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_message_route_remains_available_for_non_local_access_policy_when_llm_off(self):
         response = self.client.post(
