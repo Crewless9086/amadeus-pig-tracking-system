@@ -48,6 +48,8 @@
   const runLearningAnalysis = document.getElementById("oom_run_learning_analysis");
   const implementationQueue = document.getElementById("oom_implementation_queue");
   const refreshImplementationQueue = document.getElementById("oom_refresh_implementation_queue");
+  const approvalConsole = document.getElementById("oom_approval_console");
+  const refreshApprovalConsole = document.getElementById("oom_refresh_approval_console");
   const workbenchNextAction = document.getElementById("oom_workbench_next_action");
   const buildRequests = document.getElementById("oom_build_requests");
   const forgeHandoff = document.getElementById("oom_forge_handoff");
@@ -1788,12 +1790,15 @@
       ? latestAgentDryRunResultsData.dry_run_results
       : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
+    const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
     const pendingBuild = buildItems.filter((item) => buildRequestStage(item) === "pending");
     const pendingPatch = patchItems.filter((item) => patchProposalStage(item) === "pending");
     const deployReady = patchItems.filter((item) => {
       return patchProposalStage(item) === "ready_for_deploy" && !deployDecidedPatchIds.has(item.patch_proposal_id);
     });
-    const pendingAgentRequests = agentRequestItems.filter((item) => agentDryRunRequestStage(item) === "pending");
+    const pendingAgentRequests = agentRequestItems.filter((item) => {
+      return agentDryRunRequestStage(item) === "pending" && !resultRequestIds.has(item.dry_run_request_id);
+    });
     const pendingAgentResults = agentResultItems.filter((item) => agentResultStage(item) === "pending");
 
     workbenchNextAction.innerHTML = "";
@@ -1832,6 +1837,172 @@
     workbenchNextAction.appendChild(summary);
     workbenchNextAction.appendChild(next);
     workbenchNextAction.appendChild(counts);
+  }
+
+  function currentApprovalItems() {
+    const buildItems = latestBuildRequestsData && Array.isArray(latestBuildRequestsData.build_requests)
+      ? latestBuildRequestsData.build_requests
+      : [];
+    const patchItems = latestPatchProposalsData && Array.isArray(latestPatchProposalsData.patch_proposals)
+      ? latestPatchProposalsData.patch_proposals
+      : [];
+    const deployItems = latestDeployDecisionsData && Array.isArray(latestDeployDecisionsData.deploy_decisions)
+      ? latestDeployDecisionsData.deploy_decisions
+      : [];
+    const agentRequestItems = latestAgentDryRunRequestsData && Array.isArray(latestAgentDryRunRequestsData.dry_run_requests)
+      ? latestAgentDryRunRequestsData.dry_run_requests
+      : [];
+    const agentResultItems = latestAgentDryRunResultsData && Array.isArray(latestAgentDryRunResultsData.dry_run_results)
+      ? latestAgentDryRunResultsData.dry_run_results
+      : [];
+    const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
+    const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
+    const items = [];
+
+    agentResultItems
+      .filter((item) => agentResultStage(item) === "pending")
+      .forEach((item) => {
+        items.push({
+          kind: "Agent Result",
+          title: item.dry_run_result_id || "Agent result waiting for review",
+          detail: `${item.specialist_slug || "sentinel"} result needs accept, reject, or note.`,
+          guard: "Review only | no runtime change | no farm-data write",
+          actionLabel: "Open Review",
+          action: (button) => {
+            openWorkbenchSection("oom_agent_result_reviews");
+            openAgentResultPacket(item.dry_run_result_id, button);
+          },
+        });
+      });
+
+    agentRequestItems
+      .filter((item) => agentDryRunRequestStage(item) === "pending" && !resultRequestIds.has(item.dry_run_request_id))
+      .forEach((item) => {
+        items.push({
+          kind: "Agent Handoff",
+          title: item.dry_run_request_id || "Agent dry-run request",
+          detail: `${item.specialist_slug || "sentinel"} request is waiting for a handoff or future result.`,
+          guard: "Dry-run request only | dispatch off | writes off",
+          actionLabel: "Open Handoff",
+          action: (button) => {
+            openWorkbenchSection("oom_agent_dry_run_requests");
+            buildAgentDryRunHandoff(item.dry_run_request_id, button);
+          },
+        });
+      });
+
+    buildItems
+      .filter((item) => buildRequestStage(item) === "pending")
+      .forEach((item) => {
+        const proposal = item.proposal || {};
+        items.push({
+          kind: "Build Handoff",
+          title: proposal.title || proposal.objective || item.build_request_id || "Build request",
+          detail: item.build_request_id || "Approved build request needs Forge handoff.",
+          guard: "Text handoff only | builder not run | files not changed",
+          actionLabel: "Open Forge",
+          action: (button) => {
+            openWorkbenchSection("oom_build_requests");
+            buildForgeHandoff(item.build_request_id, button);
+          },
+        });
+      });
+
+    patchItems
+      .filter((item) => patchProposalStage(item) === "pending")
+      .forEach((item) => {
+        items.push({
+          kind: "Patch Review",
+          title: item.patch_proposal_id || "Patch proposal",
+          detail: (item.proposal_text || "Patch proposal needs owner review.").slice(0, 180),
+          guard: "Records decision only | patch not applied",
+          actionLabel: "Go To Patch",
+          action: () => openWorkbenchSection("oom_patch_proposals"),
+        });
+      });
+
+    patchItems
+      .filter((item) => patchProposalStage(item) === "ready_for_deploy" && !deployDecidedPatchIds.has(item.patch_proposal_id))
+      .forEach((item) => {
+        items.push({
+          kind: "Deploy Decision",
+          title: item.patch_proposal_id || "Approved patch",
+          detail: "Patch is approved for manual application and needs a deploy decision record.",
+          guard: "Records decision only | deploy not run",
+          actionLabel: "Prepare Decision",
+          action: () => {
+            openWorkbenchSection("oom_deploy_decisions");
+            prepareDeployDecisionForm(item.patch_proposal_id);
+          },
+        });
+      });
+
+    return items;
+  }
+
+  function renderApprovalConsole() {
+    if (!approvalConsole) return;
+    approvalConsole.innerHTML = "";
+    const items = currentApprovalItems();
+    const summary = document.createElement("div");
+    const title = document.createElement("strong");
+    const detail = document.createElement("p");
+    summary.className = "oom-approval-summary";
+    title.textContent = items.length ? `${items.length} owner decision${items.length === 1 ? "" : "s"} waiting` : "No owner approvals waiting right now.";
+    detail.textContent = items.length
+      ? "Start with the first card. Each action opens the exact review area below."
+      : "Oom Sakkie will surface the next build, agent, patch, or deploy approval here.";
+    summary.appendChild(title);
+    summary.appendChild(detail);
+    approvalConsole.appendChild(summary);
+
+    if (!items.length) return;
+    items.slice(0, 6).forEach((item, index) => {
+      approvalConsole.appendChild(renderApprovalConsoleItem(item, index));
+    });
+  }
+
+  function renderApprovalConsoleItem(item, index) {
+    const card = document.createElement("article");
+    const meta = document.createElement("div");
+    const badge = document.createElement("span");
+    const order = document.createElement("span");
+    const title = document.createElement("strong");
+    const detail = document.createElement("p");
+    const guard = document.createElement("code");
+    const button = document.createElement("button");
+    card.className = index === 0 ? "oom-approval-item oom-approval-item-primary" : "oom-approval-item";
+    meta.className = "oom-approval-meta";
+    badge.className = "oom-approval-badge";
+    badge.textContent = item.kind || "Approval";
+    order.textContent = index === 0 ? "Next" : `Queue ${index + 1}`;
+    title.textContent = item.title || "Approval item";
+    detail.textContent = item.detail || "Open this item to review.";
+    guard.textContent = item.guard || "Owner review only";
+    button.type = "button";
+    button.className = "oom-approval-action";
+    button.textContent = item.actionLabel || "Open";
+    button.addEventListener("click", () => {
+      if (item.action) item.action(button);
+    });
+    meta.appendChild(badge);
+    meta.appendChild(order);
+    card.appendChild(meta);
+    card.appendChild(title);
+    card.appendChild(detail);
+    card.appendChild(guard);
+    card.appendChild(button);
+    return card;
+  }
+
+  function openWorkbenchSection(sectionId) {
+    const workbench = document.querySelector(".oom-system-workbench");
+    if (workbench) workbench.open = true;
+    const target = sectionId ? document.getElementById(sectionId) : workbench;
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (target && target.focus) target.focus({ preventScroll: true });
   }
 
   function renderImplementationQueue(data) {
@@ -2457,6 +2628,7 @@
       latestBuildRequestsData = data;
       renderBuildRequests(data);
       renderWorkbenchNextAction();
+      renderApprovalConsole();
     } catch (error) {
       buildRequests.innerHTML = '<p class="oom-empty">Build request store is unavailable.</p>';
     }
@@ -2470,6 +2642,7 @@
       latestPatchProposalsData = data;
       renderPatchProposals(data);
       renderWorkbenchNextAction();
+      renderApprovalConsole();
     } catch (error) {
       patchProposals.innerHTML = '<p class="oom-empty">Patch proposal store is unavailable.</p>';
     }
@@ -2483,6 +2656,7 @@
       latestDeployDecisionsData = data;
       renderDeployDecisions(data);
       renderWorkbenchNextAction();
+      renderApprovalConsole();
     } catch (error) {
       deployDecisions.innerHTML = '<p class="oom-empty">Deploy decision store is unavailable.</p>';
     }
@@ -2497,6 +2671,7 @@
       renderAgentResultReviews(data);
       renderAgentLearningLedger(data);
       renderWorkbenchNextAction();
+      renderApprovalConsole();
     } catch (error) {
       agentResultReviews.innerHTML = '<p class="oom-empty">Agent result reviews are unavailable.</p>';
       if (agentLearningLedger) agentLearningLedger.innerHTML = '<p class="oom-empty">Agent learning ledger is unavailable.</p>';
@@ -2850,6 +3025,7 @@
       latestAgentDryRunRequestsData = data;
       renderAgentDryRunRequests(data);
       renderWorkbenchNextAction();
+      renderApprovalConsole();
     } catch (error) {
       agentDryRunRequests.innerHTML = '<p class="oom-empty">Agent dry-run request queue is unavailable.</p>';
     }
@@ -3047,6 +3223,10 @@
     refreshImplementationQueue.addEventListener("click", loadImplementationQueue);
   }
 
+  if (refreshApprovalConsole) {
+    refreshApprovalConsole.addEventListener("click", refreshReviewData);
+  }
+
   if (refreshBuildRequests) {
     refreshBuildRequests.addEventListener("click", loadBuildRequests);
   }
@@ -3177,6 +3357,7 @@
   }
 
   renderVoiceLoopCounter();
+  renderApprovalConsole();
 
   reviewFilterButtons.forEach((button) => {
     button.addEventListener("click", () => {

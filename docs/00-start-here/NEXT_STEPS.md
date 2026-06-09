@@ -10616,6 +10616,46 @@ Next gate:
 2. Record accepted/rejected/review-note event only after owner review.
 3. Do not design accept-result-into-learning automation or any widening beyond Sentinel until this smoke is reviewed.
 
+### 10.9BV Oom Sakkie Owner Approval Console - Local Ready
+
+Purpose:
+
+- Reduce the confusing Workbench clutter by giving the owner one first-screen approval queue.
+- Keep the long System Workbench as the traceability/audit area, not the primary daily decision surface.
+
+What changed:
+
+- Added `Needs Your Approval` above the System Workbench.
+- The console summarizes current owner decisions from existing in-memory queues:
+  - agent result reviews,
+  - agent dry-run handoffs that do not already have a result,
+  - build handoffs,
+  - patch reviews,
+  - deploy decision records.
+- Each console card opens the existing Workbench section or existing review action on explicit owner click.
+- No new endpoint, route, store, migration, or decision type was added.
+
+Safety envelope:
+
+- UI-only clarity layer over existing append-only gates.
+- No background polling.
+- No hidden POSTs.
+- No auto-accept, auto-reject, auto-build, auto-patch, or auto-deploy.
+- No specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram cutover, physical control, or financial action.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes` -> 254 tests OK.
+
+Next gate:
+
+1. Owner checks the kiosk visually and confirms the approval console is clearer than the Workbench.
+2. If it is still too busy, the next UI-only Prism slice should collapse old Workbench detail further behind audit tabs, without changing authority.
+3. Do not design the next automation step until the accepted Sentinel smoke result has been reviewed as evidence.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
