@@ -9,6 +9,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_preflight,
     get_agent_authority_matrix,
     get_agent_authority_unlock_readiness,
+    get_agent_command_center,
     get_agent_dispatch_decision_rail_blueprint,
     get_agent_operating_contracts,
     get_agent_runtime_review_packet,
@@ -1093,6 +1094,64 @@ def jarvis_product_progress_handler(_args):
     }
 
 
+def agent_command_center_handler(_args):
+    center = get_agent_command_center()
+    work_status = system_work_status_handler({})
+    dry_run_status = agent_dry_run_status_handler({})
+    dispatch_status = dispatch_decision_status_handler({})
+    stale_warnings = []
+    for label, result in (
+        ("system work status", work_status),
+        ("agent dry-run status", dry_run_status),
+        ("dispatch decision status", dispatch_status),
+    ):
+        if result.get("status") not in {"ok", "not_configured"}:
+            stale_warnings.append(f"Agent command center snapshot is incomplete: {label} returned {result.get('status')}.")
+        stale_warnings.extend(result.get("stale_warnings") or [])
+
+    summary = (
+        "Agent command center: {} lane(s) are visible in read-only mode, overall Jarvis progress is {}% {}, "
+        "and live authority remains locked. Next action: {}"
+    ).format(
+        len(center.get("lanes", [])),
+        center.get("overall_percent", 0),
+        center.get("overall_bar", ""),
+        center.get("next_action", "continue read-only owner review"),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [
+            {"label": "Runtime Review Packet", "href": "/api/oom-sakkie/agents/runtime-review-packet"},
+            {"label": "Authority Matrix", "href": "/api/oom-sakkie/agents/authority-matrix"},
+        ],
+        "stale_warnings": stale_warnings,
+        "safety_notes": [
+            "Agent command center is read-only visibility. It does not run specialists, enable dispatch, call specialist LLMs/tools, write farm data, create public/customer output, apply patches, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "agent_command_center",
+            "command_center": center,
+            "queue_snapshots": {
+                "system_work_status": work_status.get("llm_context", {}),
+                "agent_dry_run_status": dry_run_status.get("llm_context", {}),
+                "dispatch_decision_status": dispatch_status.get("llm_context", {}),
+            },
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": {
+            "command_center": center,
+            "system_work_status": work_status,
+            "agent_dry_run_status": dry_run_status,
+            "dispatch_decision_status": dispatch_status,
+        },
+    }
+
+
 def agent_operating_contracts_handler(_args):
     contracts = get_agent_operating_contracts()
     contract_count = contracts.get("contract_count", 0)
@@ -1721,6 +1780,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=jarvis_product_progress_handler,
         description="Read-only product progress report for the Oom Sakkie/Jarvis build. Never enables authority.",
+    ),
+    "agent_command_center": OomSakkieTool(
+        name="agent_command_center",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_command_center_handler,
+        description="Read-only Agent Command Center status. Shows lanes, queues, and locked gates without dispatching agents or enabling authority.",
     ),
     "agent_operating_contracts": OomSakkieTool(
         name="agent_operating_contracts",

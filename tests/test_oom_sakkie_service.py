@@ -13,6 +13,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_preflight,
     get_agent_authority_matrix,
     get_agent_authority_unlock_readiness,
+    get_agent_command_center,
     get_agent_dispatch_decision_rail_blueprint,
     get_agent_operating_contracts,
     get_agent_runtime_review_packet,
@@ -114,6 +115,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
                 "jarvis_product_progress",
+                "agent_command_center",
                 "agent_dispatch_decision_rail_blueprint",
                 "dispatch_decision_status",
                 "agent_runtime_review_packet",
@@ -351,6 +353,33 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("runtime flags remain false", progress["blocked_until"])
         self.assertIn("owner_and_claude_review", progress["next_gate"])
 
+    def test_agent_command_center_is_read_only_visibility(self):
+        center = get_agent_command_center()
+
+        self.assertTrue(center["success"])
+        self.assertEqual(center["mode"], "agent_command_center_only")
+        self.assertEqual(center["summary_status"], "read_only_command_center_live_authority_locked")
+        self.assertFalse(center["runtime_enabled"])
+        self.assertFalse(center["dispatch_enabled"])
+        self.assertFalse(center["autonomous_loops_enabled"])
+        self.assertFalse(center["writes_enabled"])
+        self.assertFalse(center["specialist_llm_enabled"])
+        self.assertFalse(center["specialist_tools_enabled"])
+        self.assertFalse(center["public_output_enabled"])
+        self.assertFalse(center["physical_controls_enabled"])
+        lane_slugs = {item["specialist_slug"] for item in center["lanes"]}
+        self.assertIn("gatekeeper", lane_slugs)
+        self.assertIn("sentinel", lane_slugs)
+        self.assertIn("ledger", lane_slugs)
+        self.assertTrue(all(item["runs_agent"] is False for item in center["lanes"]))
+        self.assertTrue(all(item["writes"] is False for item in center["lanes"]))
+        panel_names = {item["panel"] for item in center["panels"]}
+        self.assertIn("progress", panel_names)
+        self.assertIn("approvals", panel_names)
+        self.assertIn("authority_locks", panel_names)
+        self.assertIn("system_work_status", center["queue_sources"])
+        self.assertIn("owner_and_claude_review", center["next_gate"])
+
     def test_agent_operating_contracts_are_planning_only(self):
         contracts = get_agent_operating_contracts()
 
@@ -527,6 +556,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "authority_matrix": get_agent_authority_matrix(),
             "unlock_readiness": get_agent_authority_unlock_readiness(),
             "jarvis_product_progress": get_jarvis_product_progress(),
+            "agent_command_center": get_agent_command_center(),
             "dispatch_rail_blueprint": get_agent_dispatch_decision_rail_blueprint(),
             "runtime_review_packet": get_agent_runtime_review_packet(),
         }
@@ -609,6 +639,20 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(activity["workspace"]["reason"], "tool_context:selected_agent")
         self.assertFalse(activity["safety"]["runs_agent"])
 
+    def test_agent_activity_maps_command_center_to_gatekeeper_workspace(self):
+        activity = build_agent_activity(
+            tool_name="agent_command_center",
+            user_text="show me the command center",
+            tool_result={},
+        )
+
+        self.assertEqual(activity["active_agent"]["slug"], "gatekeeper")
+        self.assertEqual(activity["active_agent"]["color"], "white")
+        self.assertEqual(activity["workspace"]["tool_name"], "agent_command_center")
+        self.assertFalse(activity["safety"]["runs_agent"])
+        self.assertFalse(activity["safety"]["dispatch_enabled"])
+        self.assertFalse(activity["safety"]["writes"])
+
     def test_agent_activity_exposes_plan_only_crew_sequence(self):
         crew_brief = build_agent_crew_brief("Give me the team plan to grow sales")
         activity = build_agent_activity(
@@ -686,6 +730,44 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["progress"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["progress"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    @patch("modules.oom_sakkie.tools.dispatch_decision_status_handler")
+    @patch("modules.oom_sakkie.tools.agent_dry_run_status_handler")
+    @patch("modules.oom_sakkie.tools.system_work_status_handler")
+    def test_agent_command_center_tool_is_read_only_visibility(self, mock_work, mock_dry_run, mock_dispatch):
+        from modules.oom_sakkie.tools import agent_command_center_handler
+
+        mock_work.return_value = {
+            "status": "ok",
+            "stale_warnings": [],
+            "llm_context": {"kind": "system_work_status"},
+        }
+        mock_dry_run.return_value = {
+            "status": "ok",
+            "stale_warnings": [],
+            "llm_context": {"kind": "agent_dry_run_status"},
+        }
+        mock_dispatch.return_value = {
+            "status": "ok",
+            "stale_warnings": [],
+            "llm_context": {"kind": "dispatch_decision_status"},
+        }
+
+        result = agent_command_center_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Agent command center", result["summary"])
+        self.assertIn("live authority remains locked", result["summary"])
+        self.assertIn("read-only visibility", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_command_center")
+        self.assertFalse(result["llm_context"]["command_center"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["command_center"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+        self.assertEqual(result["llm_context"]["queue_snapshots"]["system_work_status"]["kind"], "system_work_status")
+        mock_work.assert_called_once_with({})
+        mock_dry_run.assert_called_once_with({})
+        mock_dispatch.assert_called_once_with({})
 
     def test_agent_operating_contracts_tool_is_read_only(self):
         from modules.oom_sakkie.tools import agent_operating_contracts_handler
@@ -2475,6 +2557,9 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     def test_rule_routing_known_phrases(self):
         cases = {
+            "show me the agent command center": "agent_command_center",
+            "what are the agents doing": "agent_command_center",
+            "open the Jarvis control tower": "agent_command_center",
             "show me the Jarvis progress bar": "jarvis_product_progress",
             "how far are we from Jarvis": "jarvis_product_progress",
             "what is the agent dry-run queue status": "agent_dry_run_status",

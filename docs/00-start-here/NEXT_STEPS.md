@@ -9743,6 +9743,108 @@ Manual check:
 3. Confirm it gives an overall percentage and next milestone.
 4. Confirm it says live specialist execution/customer-public selling remain locked.
 
+### 10.9BC Oom Sakkie Agent Command Center - Local Ready
+
+Purpose:
+
+- Give the owner one read-only control-tower answer for the Jarvis team: who would be working, what lanes exist, what queues feed the view, and what remains locked.
+- Make Oom Sakkie able to answer `show me the agent command center` without implying that agents are running.
+
+What changed:
+
+- Added pure `get_agent_command_center()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added read-only `agent_command_center`.
+- Added deterministic routing for:
+  - `agent command center`,
+  - `jarvis command center`,
+  - `oom sakkie command center`,
+  - `who is working`,
+  - `what are the agents doing`,
+  - `team workspace`,
+  - `control tower`.
+- The command center reports:
+  - control-tower lane,
+  - safety-review lane,
+  - business-growth lane,
+  - farm-operations lane,
+  - interface lane,
+  - builder-gates lane.
+- Each lane carries `runs_agent = false`, `dispatch_enabled = false`, `runs_specialist_llm = false`, `runs_specialist_tools = false`, `writes = false`, and `applies_runtime_change = false`.
+- The tool includes read-only queue snapshots from:
+  - `system_work_status`,
+  - `agent_dry_run_status`,
+  - `dispatch_decision_status`.
+- Tests assert:
+  - all authority flags stay false,
+  - every lane is non-executing,
+  - the command-center surface participates in the runtime flag invariant test,
+  - routing hits `agent_command_center`.
+
+Safety status:
+
+- Read-only visibility only.
+- No new route, store, migration, event type, DB write, runtime flag, JS action, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+- Queue snapshots are status-only and cannot consume dispatch decisions or approval records to change behavior.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 248 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+- Browser behavior smoke passed.
+- Full local unittest suite passed at 578 tests.
+
+Manual check:
+
+1. Ask `show me the agent command center`.
+2. Confirm it uses `agent_command_center`.
+3. Confirm it says live authority remains locked.
+4. Confirm it names the next gate as owner/Claude review before any live runtime authority.
+
+Future research parking lot:
+
+- Financial Agent / capital-allocation assistant idea is parked for later only.
+- Hard lock for now: no trading, no broker/exchange/account access, no custody, no funds movement, no payment movement, no model-driven orders, no profit-share automation, and no investment advice or recommendations.
+- Any future finance agent must start as read-only research/accounting analysis only, and only after separate owner + Claude review, legal/regulatory/tax/risk review, a dedicated authority matrix entry, append-only decision rails, paper-trading/simulation gates if ever approved, and explicit proof that no live funds can move.
+
+### 10.9BD Oom Sakkie Command Center Quick Action - Local Ready
+
+Purpose:
+
+- Make the read-only command center easier to reach from the kiosk without adding another heavy workbench panel.
+- Make the existing agent stage show Gatekeeper/control-tower context when command-center answers are returned.
+
+What changed:
+
+- Added a `Command Center` quick-check button with `data-quick-ask="Show me the agent command center."`.
+- Mapped `agent_command_center` to Gatekeeper in the visual agent activity stage.
+- Added tests that assert:
+  - the quick action exists in the template,
+  - command-center activity opens the Gatekeeper workspace,
+  - no runtime/dispatch/write flags are enabled.
+
+Safety status:
+
+- UI reachability and visual routing only.
+- No new route, store, migration, event type, DB write, background polling, hidden POST, runtime flag, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 249 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+- Browser behavior smoke passed.
+- Full local unittest suite passed at 579 tests.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Click `Command Center`.
+3. Confirm the answer uses `agent_command_center`.
+4. Confirm the visible agent workspace shows Gatekeeper / control-tower style context and still says dispatch/writes are off.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

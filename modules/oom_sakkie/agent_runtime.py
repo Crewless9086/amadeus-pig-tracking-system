@@ -56,6 +56,7 @@ _TOOL_PRIMARY_AGENT = {
     "agent_activation_preflight": "gatekeeper",
     "agent_authority_matrix": "gatekeeper",
     "agent_authority_unlock_readiness": "gatekeeper",
+    "agent_command_center": "gatekeeper",
     "agent_dispatch_decision_rail_blueprint": "gatekeeper",
     "agent_runtime_review_packet": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",
@@ -463,6 +464,147 @@ def get_jarvis_product_progress():
             "a dedicated gate is designed before any code consumes dispatch decisions",
             "runtime flags remain false",
         ],
+        "next_gate": "owner_and_claude_review_before_any_live_runtime_authority",
+    }
+
+
+_COMMAND_CENTER_LANES = (
+    {
+        "lane": "control_tower",
+        "specialist_slug": "gatekeeper",
+        "label": "Oom Sakkie Control Tower",
+        "would_show": "Current phase, next gate, locked authority, and owner approvals.",
+        "current_state": "watching_read_only",
+        "color": "white",
+    },
+    {
+        "lane": "safety_review",
+        "specialist_slug": "sentinel",
+        "label": "Sentinel Safety Desk",
+        "would_show": "Guardrails, no-go rules, runtime flags, and dry-run safety evidence.",
+        "current_state": "dry_run_evidence_only",
+        "color": "red",
+    },
+    {
+        "lane": "business_growth",
+        "specialist_slug": "ledger",
+        "label": "Ledger Business Desk",
+        "would_show": "Read-only sales, meat pipeline, stock, and growth brief context.",
+        "current_state": "read_only_briefing",
+        "color": "green",
+    },
+    {
+        "lane": "farm_operations",
+        "specialist_slug": "rootline",
+        "label": "Rootline Farm Desk",
+        "would_show": "Read-only weather, irrigation, power, and farm-attention context.",
+        "current_state": "read_only_monitoring",
+        "color": "teal",
+    },
+    {
+        "lane": "interface",
+        "specialist_slug": "prism",
+        "label": "Prism Interface Desk",
+        "would_show": "Kiosk clarity, agent stage display, and Jarvis-style workspace polish.",
+        "current_state": "design_review_only",
+        "color": "violet",
+    },
+    {
+        "lane": "builder_gates",
+        "specialist_slug": "forge",
+        "label": "Forge Build Desk",
+        "would_show": "Build requests, Forge handoff packets, patch proposals, and deploy decisions.",
+        "current_state": "manual_gate_only",
+        "color": "blue",
+    },
+)
+
+
+def get_agent_command_center():
+    progress = get_jarvis_product_progress()
+    activation_plan = get_agent_activation_plan()
+    preflight = get_agent_activation_preflight()
+    matrix = get_agent_authority_matrix()
+    lanes = []
+    for item in _COMMAND_CENTER_LANES:
+        lanes.append({
+            "lane": item["lane"],
+            "specialist_slug": item["specialist_slug"],
+            "label": item["label"],
+            "would_show": item["would_show"],
+            "current_state": item["current_state"],
+            "color": item["color"],
+            "runs_agent": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        })
+    return {
+        "success": True,
+        "mode": "agent_command_center_only",
+        "summary_status": "read_only_command_center_live_authority_locked",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "overall_percent": progress.get("overall_percent", 0),
+        "overall_bar": progress.get("overall_bar", ""),
+        "lanes": lanes,
+        "panels": [
+            {
+                "panel": "progress",
+                "label": "Jarvis progress",
+                "source": "jarvis_product_progress",
+                "authority": "read_only_visibility_only",
+            },
+            {
+                "panel": "approvals",
+                "label": "Owner approval queue",
+                "source": "system_work_status",
+                "authority": "read_only_status_only",
+            },
+            {
+                "panel": "agent_learning",
+                "label": "Accepted dry-run learning",
+                "source": "agent_learning_evidence",
+                "authority": "read_only_evidence_only",
+            },
+            {
+                "panel": "dispatch_review",
+                "label": "Dispatch design review",
+                "source": "dispatch_runtime_review_packet",
+                "authority": "review_packet_only",
+            },
+            {
+                "panel": "authority_locks",
+                "label": "Locked authority matrix",
+                "source": "agent_authority_matrix",
+                "authority": "inspection_only",
+            },
+        ],
+        "queue_sources": [
+            "system_work_status",
+            "agent_dry_run_status",
+            "dispatch_decision_status",
+        ],
+        "blocked_authority_count": matrix.get("locked_count", 0),
+        "dry_run_candidate_count": len(activation_plan.get("first_candidates", [])),
+        "manual_check_count": len(preflight.get("manual_checks", [])),
+        "locked_check_count": len(preflight.get("locked_checks", [])),
+        "not_done": [
+            "No specialist runtime is enabled.",
+            "No specialist LLM loop is enabled.",
+            "No specialist tool execution is enabled.",
+            "No dispatch decision is consumed to change behavior.",
+            "No farm-data write, public/customer output, patch, deploy, Telegram cutover, or physical control is enabled.",
+        ],
+        "next_action": "Use this as a read-only control-tower view; owner and Claude review remain required before any live authority.",
         "next_gate": "owner_and_claude_review_before_any_live_runtime_authority",
     }
 

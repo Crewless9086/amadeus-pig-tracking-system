@@ -192,6 +192,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('data-quick-ask="Prepare an internal offer brief."', template)
         self.assertIn('data-quick-ask="What is the irrigation status?"', template)
         self.assertIn('data-quick-ask="What needs my approval?"', template)
+        self.assertIn('data-quick-ask="Show me the agent command center."', template)
+        self.assertIn("Command Center", template)
         self.assertIn('data-quick-ask="Which agent should handle this?"', template)
         self.assertIn('data-quick-ask="Give me the agent team brief for growing the farm business."', template)
         self.assertIn('data-quick-ask="What is the agent activation plan?"', template)
