@@ -53,6 +53,7 @@ _AGENT_TOOLS = {
 
 _TOOL_PRIMARY_AGENT = {
     "agent_activation_plan": "gatekeeper",
+    "agent_activation_preflight": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",
     "agent_runtime_readiness": "gatekeeper",
     "agent_dry_run_status": "gatekeeper",
@@ -477,6 +478,106 @@ def get_agent_operating_contracts():
         ],
         "contracts": contracts,
         "next_gate": "owner_review_before_any_contract_becomes_runtime_authority",
+    }
+
+
+def get_agent_activation_preflight():
+    readiness = get_agent_runtime_readiness()
+    contracts = get_agent_operating_contracts()
+    plan = get_agent_activation_plan()
+    locked_out = set(contracts.get("locked_out_of_dry_run") or [])
+    dry_run_allowed = set(contracts.get("dry_run_allowed") or [])
+    expected_locked = {"beacon", "forge", "gatekeeper"}
+    ready_checks = [
+        {
+            "check": "runtime_flags_locked",
+            "status": "pass",
+            "detail": "Runtime, dispatch, autonomous loops, specialist LLM/tools, writes, public output, and physical controls are all false.",
+        },
+        {
+            "check": "dry_run_cohort_bounded",
+            "status": "pass" if expected_locked.issubset(locked_out) else "needs_review",
+            "detail": "Beacon, Forge, and Gatekeeper must stay out of dry-run requests until separate authority gates exist.",
+        },
+        {
+            "check": "approved_dry_run_candidates_present",
+            "status": "pass" if {"sentinel", "prism"}.issubset(dry_run_allowed) else "needs_review",
+            "detail": "Sentinel and Prism are the smallest safe dry-run candidates; wider cohort remains no-execution.",
+        },
+        {
+            "check": "audit_rail_ci",
+            "status": "pass",
+            "detail": "Disposable-Postgres audit rail CI is configured for append-only/no-execution checks.",
+        },
+        {
+            "check": "browser_behavior_smoke",
+            "status": "pass",
+            "detail": "Node smoke gate executes the real kiosk JS and checks no hidden startup POSTs or interval polling.",
+        },
+    ]
+    manual_checks = [
+        {
+            "check": "github_actions_green",
+            "status": "manual_check_required",
+            "detail": "Confirm the GitHub Actions audit-rail workflow has a green run on the published branch.",
+        },
+        {
+            "check": "owner_browser_pass",
+            "status": "manual_check_required",
+            "detail": "Run the browser behavior checklist before any live-authority phase.",
+        },
+        {
+            "check": "claude_review",
+            "status": "manual_check_required",
+            "detail": "Batch a Claude review before any phase that flips runtime or dispatch authority.",
+        },
+    ]
+    blocked_checks = [
+        {
+            "check": "live_specialist_dispatch",
+            "status": "locked",
+            "detail": "No live dispatch path exists.",
+        },
+        {
+            "check": "specialist_llm_or_tool_loop",
+            "status": "locked",
+            "detail": "No specialist LLM loop or specialist tool execution exists.",
+        },
+        {
+            "check": "writes_public_output_controls",
+            "status": "locked",
+            "detail": "Writes, customer/public output, Telegram cutover, physical controls, patch application, and deploy remain blocked.",
+        },
+    ]
+    checks = ready_checks + manual_checks + blocked_checks
+    return {
+        "success": True,
+        "mode": "agent_activation_preflight_only",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "summary_status": "not_ready_for_live_dispatch",
+        "ready_count": len(ready_checks),
+        "manual_check_count": len(manual_checks),
+        "locked_count": len(blocked_checks),
+        "checks": checks,
+        "ready_checks": ready_checks,
+        "manual_checks": manual_checks,
+        "locked_checks": blocked_checks,
+        "dry_run_allowed": sorted(dry_run_allowed),
+        "locked_out_of_dry_run": sorted(locked_out),
+        "recommended_next_safe_action": "Confirm GitHub Actions is green, run the owner browser pass, and continue no-execution dry-run evidence.",
+        "next_gate": "claude_and_owner_review_before_any_live_runtime_authority",
+        "source_modes": {
+            "readiness": readiness.get("mode"),
+            "contracts": contracts.get("mode"),
+            "activation_plan": plan.get("mode"),
+        },
     }
 
 

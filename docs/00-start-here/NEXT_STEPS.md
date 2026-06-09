@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AO. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AP. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -9228,6 +9228,51 @@ Manual check:
 2. Confirm `mode = agent_operating_contracts_only`.
 3. Confirm `review_guard.runs_specialist = false`, `dispatch_enabled = false`, and `writes = false`.
 4. Confirm Beacon, Forge, and Gatekeeper are listed under `locked_out_of_dry_run`.
+
+### 10.9AP Oom Sakkie Agent Activation Preflight - Local Ready
+
+Purpose:
+
+- Give Oom Sakkie one read-only preflight summary before any live agent authority exists.
+- Combine readiness, contracts, activation plan, browser-smoke, and audit-rail status into one answer/endpoint.
+
+What changed:
+
+- Added `get_agent_activation_preflight()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added read-only tool `agent_activation_preflight`.
+- Added protected `GET /api/oom-sakkie/agents/preflight`.
+- Added deterministic routing for phrases such as:
+  - `agent activation preflight`,
+  - `before activating agents`,
+  - `preflight runtime`.
+- The preflight reports:
+  - ready checks,
+  - manual checks,
+  - locked checks,
+  - dry-run allowed cohort,
+  - locked-out dry-run agents,
+  - next safe action,
+  - next gate.
+
+Safety status:
+
+- Read-only preflight only.
+- Runtime remains disabled.
+- Dispatch remains disabled.
+- Specialist LLM/tool execution remains disabled.
+- Writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, and physical controls remain blocked.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 215 tests.
+
+Manual check:
+
+1. Ask Oom Sakkie: `Run the agent activation preflight.`
+2. Confirm it uses `agent_activation_preflight`.
+3. Open `/api/oom-sakkie/agents/preflight` locally.
+4. Confirm `summary_status = not_ready_for_live_dispatch`.
+5. Confirm the manual checks include GitHub Actions green, owner browser pass, and Claude review.
 
 7.3E weather LLM triage note:
 

@@ -10,6 +10,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_agent_activity,
     get_agent_activation_plan,
+    get_agent_activation_preflight,
     get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
@@ -98,6 +99,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sentinel_dry_run_review",
                 "agent_dry_run_status",
                 "agent_learning_evidence",
+                "agent_activation_preflight",
                 "agent_operating_contracts",
                 "agent_runtime_readiness",
                 "agent_activation_plan",
@@ -335,6 +337,30 @@ class OomSakkieServiceTests(unittest.TestCase):
                 self.assertFalse(item["writes_enabled"])
                 self.assertTrue(item["owner_gate"])
 
+    def test_agent_activation_preflight_is_read_only_and_not_ready_for_dispatch(self):
+        preflight = get_agent_activation_preflight()
+
+        self.assertTrue(preflight["success"])
+        self.assertEqual(preflight["mode"], "agent_activation_preflight_only")
+        self.assertEqual(preflight["summary_status"], "not_ready_for_live_dispatch")
+        self.assertFalse(preflight["runtime_enabled"])
+        self.assertFalse(preflight["dispatch_enabled"])
+        self.assertFalse(preflight["autonomous_loops_enabled"])
+        self.assertFalse(preflight["writes_enabled"])
+        self.assertFalse(preflight["specialist_llm_enabled"])
+        self.assertFalse(preflight["specialist_tools_enabled"])
+        self.assertFalse(preflight["public_output_enabled"])
+        self.assertFalse(preflight["physical_controls_enabled"])
+        self.assertGreaterEqual(preflight["ready_count"], 1)
+        self.assertGreaterEqual(preflight["manual_check_count"], 1)
+        self.assertGreaterEqual(preflight["locked_count"], 1)
+        self.assertIn("beacon", preflight["locked_out_of_dry_run"])
+        self.assertIn("sentinel", preflight["dry_run_allowed"])
+        self.assertTrue(any(item["check"] == "browser_behavior_smoke" for item in preflight["ready_checks"]))
+        self.assertTrue(any(item["check"] == "owner_browser_pass" for item in preflight["manual_checks"]))
+        self.assertTrue(any(item["check"] == "live_specialist_dispatch" for item in preflight["locked_checks"]))
+        self.assertIn("claude_and_owner_review", preflight["next_gate"])
+
     def test_agent_crew_brief_is_multi_agent_plan_only(self):
         brief = build_agent_crew_brief("How do we grow sales and market pork better?")
 
@@ -472,6 +498,21 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["contracts"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["contracts"]["writes_enabled"])
         self.assertIn("beacon", result["llm_context"]["contracts"]["locked_out_of_dry_run"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_agent_activation_preflight_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_activation_preflight_handler
+
+        result = agent_activation_preflight_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("not ready for live dispatch", result["summary"])
+        self.assertIn("manual check", result["summary"])
+        self.assertIn("does not run specialists", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_activation_preflight")
+        self.assertFalse(result["llm_context"]["preflight"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["preflight"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
@@ -2018,6 +2059,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "what is the sentinel dry-run result queue status": "agent_dry_run_status",
             "are we ready for live agents": "agent_runtime_readiness",
             "what still blocks runtime": "agent_runtime_readiness",
+            "run the agent activation preflight": "agent_activation_preflight",
+            "what must happen before activating agents": "agent_activation_preflight",
             "what are the agent operating contracts": "agent_operating_contracts",
             "what must agents not do": "agent_operating_contracts",
             "what did sentinel learn": "agent_learning_evidence",

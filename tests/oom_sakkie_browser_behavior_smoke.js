@@ -228,6 +228,7 @@ async function flushPromises() {
   await element("oom_request_sentinel_dry_run").trigger("click");
   await flushPromises();
   assert(fetchCalls.some((call) => call.method === "POST" && call.url === "/api/oom-sakkie/agent-dry-runs"), "Sentinel dry-run request must POST only after owner click");
+  assert.strictEqual(intervalCalls.length, 0, "Sentinel dry-run request click must not start interval polling");
 
   fetchCalls.length = 0;
   element("oom_agent_dry_run_result_request_id").value = "OSK-AGENT-DRYRUN-SMOKE";
@@ -239,11 +240,13 @@ async function flushPromises() {
     fetchCalls.some((call) => call.method === "POST" && call.url.includes("/api/oom-sakkie/agent-dry-runs/OSK-AGENT-DRYRUN-SMOKE/results")),
     "Agent dry-run result recording must POST only after owner click",
   );
+  assert.strictEqual(intervalCalls.length, 0, "Agent dry-run result recording click must not start interval polling");
 
   fetchCalls.length = 0;
   await quickAskButton.trigger("click");
   await flushPromises();
   assert(fetchCalls.some((call) => call.method === "POST" && call.url === "/api/oom-sakkie/message"), "quick ask should POST a single owner-triggered message");
+  assert.strictEqual(intervalCalls.length, 0, "quick ask click must not start interval polling");
 
   console.log("Oom Sakkie browser behavior smoke passed");
 })().catch((error) => {

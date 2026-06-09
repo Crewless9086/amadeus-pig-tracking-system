@@ -6,6 +6,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_sentinel_dry_run_review,
     get_agent_activation_plan,
+    get_agent_activation_preflight,
     get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
@@ -1018,6 +1019,44 @@ def agent_operating_contracts_handler(_args):
     }
 
 
+def agent_activation_preflight_handler(_args):
+    preflight = get_agent_activation_preflight()
+    summary = (
+        "Agent activation preflight: not ready for live dispatch. "
+        "{} check(s) pass, {} manual check(s) are still required, and {} live-authority gate(s) remain locked. "
+        "Next safe action: {}"
+    ).format(
+        preflight.get("ready_count", 0),
+        preflight.get("manual_check_count", 0),
+        preflight.get("locked_count", 0),
+        preflight.get("recommended_next_safe_action", "continue no-execution review"),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [
+            {
+                "label": "Claude Review Handoff",
+                "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md",
+            }
+        ],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent activation preflight is read-only. It does not run specialists, dispatch agents, call specialist LLMs, execute specialist tools, write farm data, create public output, apply patches, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "agent_activation_preflight",
+            "preflight": preflight,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": preflight,
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1382,6 +1421,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_operating_contracts_handler,
         description="Read-only planned-agent operating contracts. Lists focus, allowed read-only tools, must-not-do rules, and owner gates without dispatching agents.",
+    ),
+    "agent_activation_preflight": OomSakkieTool(
+        name="agent_activation_preflight",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_activation_preflight_handler,
+        description="Read-only activation preflight for planned Oom Sakkie agents. Summarizes pass/manual/locked gates without enabling runtime authority.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",
