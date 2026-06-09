@@ -111,6 +111,8 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
 
   await page.goto("/oom-sakkie");
   await page.waitForLoadState("networkidle");
+  await expect(page.locator(".oom-command-deck")).toBeVisible();
+  await expect(page.locator(".oom-quick-drawer")).toBeVisible();
   await page.locator(".oom-system-workbench").evaluate((element) => {
     element.open = true;
   });
@@ -134,7 +136,16 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
   await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
 
   requests.length = 0;
-  await page.locator("[data-quick-ask]").first().click();
+  await page.locator(".oom-quick-drawer").evaluate((element) => {
+    element.open = true;
+  });
+  await expect.poll(() => requests.filter((request) =>
+    request.method !== "GET" && request.url.includes("/api/oom-sakkie/"),
+  ).length).toBe(0);
+  await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
+
+  requests.length = 0;
+  await page.locator(".oom-command-deck [data-quick-ask]").first().click();
   await expect.poll(() => requests.some((request) =>
     request.method === "POST" && request.url.endsWith("/api/oom-sakkie/message"),
   )).toBe(true);

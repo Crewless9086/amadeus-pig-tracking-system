@@ -10744,6 +10744,41 @@ Next gate:
 2. If still too busy, next safe work is a UI-only Workbench tab/drawer split.
 3. Do not add direct `Approve`, `Run`, `Deploy`, `Send`, `Post`, `Sell`, `Trade`, or `Control` buttons to the first-screen console without a separate Claude-reviewed gate.
 
+### 10.9BZ Oom Sakkie Command UI Browser Gate Hardening - Local Ready
+
+Purpose:
+
+- Make the real-browser safety gate aware of the new command deck and quick-check drawer.
+- Catch future regressions where opening UI drawers or clicking primary commands causes hidden automation.
+
+What changed:
+
+- `tests/oom_sakkie_playwright_behavior.spec.js` now asserts:
+  - `.oom-command-deck` is visible,
+  - `.oom-quick-drawer` is visible,
+  - opening the quick drawer creates no non-GET `/api/oom-sakkie/` call,
+  - opening the quick drawer creates no interval polling,
+  - primary command-deck clicks still use the explicit owner-triggered `/message` path.
+- Frontend route contracts pin those Playwright assertions.
+
+Safety envelope:
+
+- Test-only.
+- No app code, route, store, migration, runtime flag, runner UI, specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram cutover, deploy, physical control, or financial action.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+Next gate:
+
+1. Let GitHub Actions run the real browser behavior gate after push.
+2. Owner reviews the visible kiosk in the browser.
+3. Claude reviews the 10.9BW-BZ UI/test batch before any further UI action surfaces are added.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
