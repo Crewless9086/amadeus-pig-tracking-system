@@ -406,9 +406,10 @@ _JARVIS_PROGRESS_AREAS = (
 
 
 def _authority_area_rows():
+    specialist_policy = _specialist_dry_run_policy_snapshot()
     rows = []
     for item in _AUTHORITY_AREAS:
-        rows.append({
+        row = {
             "authority": item["authority"],
             "label": item["label"],
             "blocked_capability": item["blocked_capability"],
@@ -417,7 +418,17 @@ def _authority_area_rows():
             "risk_level": item["risk_level"],
             "why_locked": item["why_locked"],
             "required_gates": list(item["required_gates"]),
-        })
+        }
+        if item["authority"] == "specialist_llm_loop":
+            row["effective_single_shot_enabled"] = bool(specialist_policy.get("enabled"))
+            row["effective_single_shot_configured"] = bool(specialist_policy.get("configured"))
+            row["effective_single_shot_mode"] = specialist_policy.get("mode")
+            row["effective_single_shot_specialist"] = specialist_policy.get("specialist_slug")
+            row["effective_single_shot_note"] = (
+                "This is the only narrow specialist LLM path. It still requires a local owner POST, "
+                "a per-request execution approval, and an unconsumed one-shot approval."
+            )
+        rows.append(row)
     return rows
 
 

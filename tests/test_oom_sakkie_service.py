@@ -498,7 +498,12 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("claude_and_owner_review", preflight["next_gate"])
 
     def test_agent_authority_matrix_keeps_authority_disabled_with_single_shot_llm_state(self):
-        matrix = get_agent_authority_matrix()
+        with patch.dict(os.environ, {
+            "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "",
+            "OPENAI_API_KEY": "",
+        }, clear=False):
+            matrix = get_agent_authority_matrix()
 
         self.assertTrue(matrix["success"])
         self.assertEqual(matrix["mode"], "agent_authority_matrix_only")
@@ -533,10 +538,32 @@ class OomSakkieServiceTests(unittest.TestCase):
                 self.assertTrue(by_authority[authority]["required_gates"])
         self.assertFalse(by_authority["specialist_llm_loop"]["enabled"])
         self.assertEqual(by_authority["specialist_llm_loop"]["current_state"], "single_shot_advisory_only")
+        self.assertFalse(by_authority["specialist_llm_loop"]["effective_single_shot_enabled"])
+        self.assertFalse(by_authority["specialist_llm_loop"]["effective_single_shot_configured"])
+        self.assertEqual(by_authority["specialist_llm_loop"]["effective_single_shot_mode"], "single_shot_advisory_only")
+        self.assertEqual(by_authority["specialist_llm_loop"]["effective_single_shot_specialist"], "sentinel")
         self.assertIn("one-shot", by_authority["specialist_llm_loop"]["why_locked"])
         self.assertIn("per-request dispatch execution approval", by_authority["specialist_llm_loop"]["required_gates"])
         self.assertEqual(by_authority["physical_controls"]["risk_level"], 5)
         self.assertIn("owner_and_claude_review", matrix["next_gate"])
+
+    def test_agent_authority_matrix_surfaces_effective_single_shot_env_gate(self):
+        with patch.dict(os.environ, {
+            "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
+            "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+            "OPENAI_API_KEY": "test-key",
+        }, clear=False):
+            matrix = get_agent_authority_matrix()
+
+        by_authority = {item["authority"]: item for item in matrix["areas"]}
+        specialist_llm = by_authority["specialist_llm_loop"]
+        self.assertFalse(specialist_llm["enabled"])
+        self.assertTrue(specialist_llm["effective_single_shot_enabled"])
+        self.assertTrue(specialist_llm["effective_single_shot_configured"])
+        self.assertEqual(specialist_llm["effective_single_shot_specialist"], "sentinel")
+        self.assertIn("local owner POST", specialist_llm["effective_single_shot_note"])
+        self.assertFalse(matrix["specialist_llm_enabled"])
+        self.assertEqual(matrix["enabled_count"], 0)
 
     def test_agent_preflight_and_activation_plan_derive_locks_from_authority_matrix(self):
         plan = get_agent_activation_plan()

@@ -10460,6 +10460,57 @@ Next gate:
 2. Confirm audit-rail and browser-behavior GitHub Actions are green for the pushed commit.
 3. Keep `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` off until the owner deliberately runs the first local Sentinel smoke.
 
+### 10.9BS Oom Sakkie Effective Single-Shot Visibility - Local Ready
+
+Purpose:
+
+- Close Claude's honesty nuance after 10.9BQ/BR.
+- Make the authority matrix show whether the narrow Sentinel single-shot env gate is effectively on/configured, while keeping general specialist LLM authority disabled.
+
+What changed:
+
+- The `specialist_llm_loop` area in `get_agent_authority_matrix()` now includes:
+  - `effective_single_shot_enabled`
+  - `effective_single_shot_configured`
+  - `effective_single_shot_mode`
+  - `effective_single_shot_specialist`
+  - `effective_single_shot_note`
+- These fields are derived from the existing Sentinel dry-run policy snapshot.
+- The matrix still reports:
+  - `enabled = false` for `specialist_llm_loop`,
+  - `enabled_count = 0`,
+  - top-level `specialist_llm_enabled = false`.
+- Tests cover:
+  - default-off reporting,
+  - env-on/configured reporting,
+  - the fact that even when the narrow env gate is on, general specialist LLM authority remains disabled.
+
+Safety envelope:
+
+- No new route.
+- No new UI execution button.
+- No new store or migration.
+- No LLM call.
+- No specialist tool execution.
+- No farm-data write.
+- No public/customer output.
+- No deploy, Telegram cutover, physical-control path, or financial action.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 279 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest` -> 609 tests OK.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+
+Next gate:
+
+1. Commit and push 10.9BS.
+2. Confirm audit-rail and browser-behavior GitHub Actions are green.
+3. Ask Claude to review the full 10.9BP-BS batch before turning on `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED`.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
