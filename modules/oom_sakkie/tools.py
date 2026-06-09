@@ -9,7 +9,9 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_preflight,
     get_agent_authority_matrix,
     get_agent_authority_unlock_readiness,
+    get_agent_dispatch_decision_rail_blueprint,
     get_agent_operating_contracts,
+    get_agent_runtime_review_packet,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
     recommend_agent_for_text,
@@ -1120,6 +1122,64 @@ def agent_authority_unlock_readiness_handler(_args):
     }
 
 
+def agent_dispatch_decision_rail_blueprint_handler(_args):
+    blueprint = get_agent_dispatch_decision_rail_blueprint()
+    summary = (
+        "Dispatch decision rail blueprint is ready for review only. "
+        "It proposes {} append-only table(s), {} endpoint shape(s), and {} required test(s), but dispatch stays off."
+    ).format(
+        len(blueprint.get("proposed_tables") or []),
+        len(blueprint.get("required_endpoints") or []),
+        len(blueprint.get("required_tests") or []),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Dispatch Rail Blueprint", "href": "/api/oom-sakkie/agents/dispatch-rail-blueprint"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Dispatch decision rail blueprint is read-only. It does not run specialists, enable dispatch, call specialist LLMs/tools, write farm data, apply runtime changes, or create public output."
+        ],
+        "llm_context": {
+            "kind": "agent_dispatch_decision_rail_blueprint",
+            "dispatch_blueprint": blueprint,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": blueprint,
+    }
+
+
+def agent_runtime_review_packet_handler(_args):
+    packet = get_agent_runtime_review_packet()
+    summary = (
+        "Agent runtime review packet is ready for bulk Claude review. "
+        "It bundles {} read-only source payload(s), but live dispatch stays off."
+    ).format(len(packet.get("source_modes") or {}))
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Agent Runtime Review Packet", "href": "/api/oom-sakkie/agents/runtime-review-packet"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent runtime review packet is read-only. It does not run specialists, enable dispatch, call specialist LLMs/tools, write farm data, apply runtime changes, create public output, or deploy."
+        ],
+        "llm_context": {
+            "kind": "agent_runtime_review_packet",
+            "review_packet": packet,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": packet,
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1511,6 +1571,24 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_authority_unlock_readiness_handler,
         description="Read-only planning report for which locked authority area would be lowest-risk to design later. Never unlocks authority.",
+    ),
+    "agent_dispatch_decision_rail_blueprint": OomSakkieTool(
+        name="agent_dispatch_decision_rail_blueprint",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_dispatch_decision_rail_blueprint_handler,
+        description="Read-only blueprint for a future append-only specialist dispatch decision rail. Never enables dispatch or runs agents.",
+    ),
+    "agent_runtime_review_packet": OomSakkieTool(
+        name="agent_runtime_review_packet",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_runtime_review_packet_handler,
+        description="Read-only bulk review packet for the agent runtime foundation. Bundles inspection surfaces without enabling authority.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

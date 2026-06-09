@@ -56,6 +56,8 @@ _TOOL_PRIMARY_AGENT = {
     "agent_activation_preflight": "gatekeeper",
     "agent_authority_matrix": "gatekeeper",
     "agent_authority_unlock_readiness": "gatekeeper",
+    "agent_dispatch_decision_rail_blueprint": "gatekeeper",
+    "agent_runtime_review_packet": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",
     "agent_runtime_readiness": "gatekeeper",
     "agent_dry_run_status": "gatekeeper",
@@ -811,6 +813,125 @@ def get_agent_authority_unlock_readiness():
         ],
         "next_gate": "owner_named_authority_design_before_any_unlock_work",
         "source_mode": matrix.get("mode"),
+    }
+
+
+def get_agent_dispatch_decision_rail_blueprint():
+    authority = next(
+        item for item in _authority_area_rows()
+        if item["authority"] == "live_specialist_dispatch"
+    )
+    tables = [
+        {
+            "name": "oom_sakkie_dispatch_requests",
+            "purpose": "Append-only owner request to design or rehearse one live specialist dispatch boundary.",
+            "must_force_false": [
+                "dispatch_enabled",
+                "runs_specialist_llm",
+                "runs_specialist_tools",
+                "writes",
+                "applies_runtime_change",
+            ],
+        },
+        {
+            "name": "oom_sakkie_dispatch_decisions",
+            "purpose": "Append-only owner decisions on whether a dispatch proposal may proceed to another review gate.",
+            "allowed_events": [
+                "approved_for_design_review",
+                "rejected",
+                "deferred",
+                "review_note",
+            ],
+        },
+    ]
+    required_tests = [
+        "DB CHECK constraints reject dispatch_enabled=true and applies_runtime_change=true.",
+        "UPDATE/DELETE triggers reject mutation on both dispatch tables.",
+        "Non-local requests to dispatch review endpoints return 403.",
+        "Browser behavior smoke proves no dispatch POST happens on page load or timer.",
+        "A rejected/deferred decision never changes runtime status.",
+    ]
+    return {
+        "success": True,
+        "mode": "dispatch_decision_rail_blueprint_only",
+        "authority": authority,
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "summary_status": "blueprint_only_no_dispatch",
+        "proposed_tables": tables,
+        "required_endpoints": [
+            "GET /api/oom-sakkie/dispatch-requests",
+            "POST /api/oom-sakkie/dispatch-requests",
+            "POST /api/oom-sakkie/dispatch-requests/<id>/decisions",
+        ],
+        "required_tests": required_tests,
+        "non_goals": [
+            "do not run a specialist",
+            "do not call a specialist LLM",
+            "do not execute specialist tools",
+            "do not write farm data",
+            "do not enable runtime flags",
+            "do not expose customer/public output",
+        ],
+        "owner_gate": "owner_and_claude_must_approve_before_any_dispatch_rail_code",
+        "next_gate": "claude_review_before_dispatch_decision_rail_implementation",
+    }
+
+
+def get_agent_runtime_review_packet():
+    status = get_agent_runtime_status()
+    readiness = get_agent_runtime_readiness()
+    contracts = get_agent_operating_contracts()
+    preflight = get_agent_activation_preflight()
+    matrix = get_agent_authority_matrix()
+    unlock = get_agent_authority_unlock_readiness()
+    dispatch_blueprint = get_agent_dispatch_decision_rail_blueprint()
+    source_modes = {
+        "runtime_status": status.get("mode"),
+        "runtime_readiness": readiness.get("mode"),
+        "operating_contracts": contracts.get("mode"),
+        "activation_preflight": preflight.get("mode"),
+        "authority_matrix": matrix.get("mode"),
+        "unlock_readiness": unlock.get("mode"),
+        "dispatch_blueprint": dispatch_blueprint.get("mode"),
+    }
+    return {
+        "success": True,
+        "mode": "agent_runtime_review_packet_only",
+        "summary_status": "ready_for_bulk_claude_review_not_live_dispatch",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "source_modes": source_modes,
+        "review_focus": [
+            "agent inspection surfaces keep all authority flags false",
+            "dry-run cohort remains bounded and no-execution",
+            "authority matrix remains the source of locked capability truth",
+            "dispatch decision rail blueprint remains blueprint-only",
+            "browser smoke and audit rail CI remain configured",
+        ],
+        "payloads": {
+            "runtime_status": status,
+            "runtime_readiness": readiness,
+            "operating_contracts": contracts,
+            "activation_preflight": preflight,
+            "authority_matrix": matrix,
+            "unlock_readiness": unlock,
+            "dispatch_blueprint": dispatch_blueprint,
+        },
+        "claude_prompt": "Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.",
+        "next_gate": "bulk_claude_review_before_dispatch_decision_rail_implementation",
     }
 
 

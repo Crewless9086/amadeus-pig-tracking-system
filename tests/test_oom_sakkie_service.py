@@ -13,7 +13,9 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_preflight,
     get_agent_authority_matrix,
     get_agent_authority_unlock_readiness,
+    get_agent_dispatch_decision_rail_blueprint,
     get_agent_operating_contracts,
+    get_agent_runtime_review_packet,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
     recommend_agent_for_text,
@@ -104,6 +106,8 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_activation_preflight",
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
+                "agent_dispatch_decision_rail_blueprint",
+                "agent_runtime_review_packet",
                 "agent_operating_contracts",
                 "agent_runtime_readiness",
                 "agent_activation_plan",
@@ -442,6 +446,44 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(any(item["authority"] == "physical_controls" for item in readiness["hard_no_authorities"]))
         self.assertIn("owner_named_authority", readiness["next_gate"])
 
+    def test_agent_dispatch_decision_rail_blueprint_is_blueprint_only(self):
+        blueprint = get_agent_dispatch_decision_rail_blueprint()
+
+        self.assertTrue(blueprint["success"])
+        self.assertEqual(blueprint["mode"], "dispatch_decision_rail_blueprint_only")
+        self.assertEqual(blueprint["summary_status"], "blueprint_only_no_dispatch")
+        self.assertEqual(blueprint["authority"]["authority"], "live_specialist_dispatch")
+        self.assertFalse(blueprint["runtime_enabled"])
+        self.assertFalse(blueprint["dispatch_enabled"])
+        self.assertFalse(blueprint["autonomous_loops_enabled"])
+        self.assertFalse(blueprint["writes_enabled"])
+        self.assertFalse(blueprint["specialist_llm_enabled"])
+        self.assertFalse(blueprint["specialist_tools_enabled"])
+        self.assertFalse(blueprint["public_output_enabled"])
+        self.assertFalse(blueprint["physical_controls_enabled"])
+        table_names = {item["name"] for item in blueprint["proposed_tables"]}
+        self.assertEqual(table_names, {"oom_sakkie_dispatch_requests", "oom_sakkie_dispatch_decisions"})
+        self.assertIn("do not run a specialist", blueprint["non_goals"])
+        self.assertIn("claude_review_before_dispatch", blueprint["next_gate"])
+
+    def test_agent_runtime_review_packet_is_bulk_review_only(self):
+        packet = get_agent_runtime_review_packet()
+
+        self.assertTrue(packet["success"])
+        self.assertEqual(packet["mode"], "agent_runtime_review_packet_only")
+        self.assertEqual(packet["summary_status"], "ready_for_bulk_claude_review_not_live_dispatch")
+        self.assertFalse(packet["runtime_enabled"])
+        self.assertFalse(packet["dispatch_enabled"])
+        self.assertFalse(packet["autonomous_loops_enabled"])
+        self.assertFalse(packet["writes_enabled"])
+        self.assertFalse(packet["specialist_llm_enabled"])
+        self.assertFalse(packet["specialist_tools_enabled"])
+        self.assertFalse(packet["public_output_enabled"])
+        self.assertFalse(packet["physical_controls_enabled"])
+        self.assertEqual(packet["payloads"]["dispatch_blueprint"]["summary_status"], "blueprint_only_no_dispatch")
+        self.assertIn("dispatch decision rail blueprint remains blueprint-only", packet["review_focus"])
+        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
+
     def test_agent_runtime_inspection_surfaces_keep_authority_flags_false(self):
         surfaces = {
             "runtime_status": get_agent_runtime_status(),
@@ -451,6 +493,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "activation_preflight": get_agent_activation_preflight(),
             "authority_matrix": get_agent_authority_matrix(),
             "unlock_readiness": get_agent_authority_unlock_readiness(),
+            "dispatch_rail_blueprint": get_agent_dispatch_decision_rail_blueprint(),
+            "runtime_review_packet": get_agent_runtime_review_packet(),
         }
         flag_names = [
             "runtime_enabled",
@@ -654,6 +698,36 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["unlock_readiness"]["enabled_count"], 0)
         self.assertFalse(result["llm_context"]["unlock_readiness"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["unlock_readiness"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_agent_dispatch_decision_rail_blueprint_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_dispatch_decision_rail_blueprint_handler
+
+        result = agent_dispatch_decision_rail_blueprint_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("review only", result["summary"])
+        self.assertIn("does not run specialists", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_dispatch_decision_rail_blueprint")
+        self.assertEqual(result["llm_context"]["dispatch_blueprint"]["summary_status"], "blueprint_only_no_dispatch")
+        self.assertFalse(result["llm_context"]["dispatch_blueprint"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["dispatch_blueprint"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_agent_runtime_review_packet_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_runtime_review_packet_handler
+
+        result = agent_runtime_review_packet_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("bulk Claude review", result["summary"])
+        self.assertIn("does not run specialists", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_runtime_review_packet")
+        self.assertEqual(result["llm_context"]["review_packet"]["summary_status"], "ready_for_bulk_claude_review_not_live_dispatch")
+        self.assertFalse(result["llm_context"]["review_packet"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["review_packet"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
@@ -2206,6 +2280,10 @@ class OomSakkieServiceTests(unittest.TestCase):
             "which agent powers are locked": "agent_authority_matrix",
             "which authority should we unlock first": "agent_authority_unlock_readiness",
             "show me authority unlock readiness": "agent_authority_unlock_readiness",
+            "show me the dispatch rail blueprint": "agent_dispatch_decision_rail_blueprint",
+            "what is the dispatch approval rail": "agent_dispatch_decision_rail_blueprint",
+            "show me the agent runtime review packet": "agent_runtime_review_packet",
+            "prepare the bulk claude review": "agent_runtime_review_packet",
             "what are the agent operating contracts": "agent_operating_contracts",
             "what must agents not do": "agent_operating_contracts",
             "what did sentinel learn": "agent_learning_evidence",

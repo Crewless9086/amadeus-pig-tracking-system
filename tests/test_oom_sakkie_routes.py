@@ -211,6 +211,61 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    def test_agent_dispatch_rail_blueprint_route_is_review_only(self):
+        response = self.client.get("/api/oom-sakkie/agents/dispatch-rail-blueprint")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "dispatch_decision_rail_blueprint_only")
+        self.assertEqual(data["summary_status"], "blueprint_only_no_dispatch")
+        self.assertEqual(data["authority"]["authority"], "live_specialist_dispatch")
+        self.assertFalse(data["runtime_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes_enabled"])
+        self.assertFalse(data["review_guard"]["runs_specialist"])
+        self.assertFalse(data["review_guard"]["dispatch_enabled"])
+        self.assertFalse(data["review_guard"]["writes"])
+        self.assertTrue(any(item["name"] == "oom_sakkie_dispatch_requests" for item in data["proposed_tables"]))
+        self.assertIn("do not run a specialist", data["non_goals"])
+
+    def test_agent_dispatch_rail_blueprint_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agents/dispatch-rail-blueprint",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    def test_agent_runtime_review_packet_route_is_review_only(self):
+        response = self.client.get("/api/oom-sakkie/agents/runtime-review-packet")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "agent_runtime_review_packet_only")
+        self.assertEqual(data["summary_status"], "ready_for_bulk_claude_review_not_live_dispatch")
+        self.assertFalse(data["runtime_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes_enabled"])
+        self.assertFalse(data["review_guard"]["runs_specialist"])
+        self.assertFalse(data["review_guard"]["dispatch_enabled"])
+        self.assertFalse(data["review_guard"]["writes"])
+        self.assertEqual(data["payloads"]["dispatch_blueprint"]["summary_status"], "blueprint_only_no_dispatch")
+        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", data["claude_prompt"])
+
+    def test_agent_runtime_review_packet_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agents/runtime-review-packet",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     def test_agent_recommend_route_returns_non_dispatching_recommendation(self):
         response = self.client.post(
             "/api/oom-sakkie/agents/recommend",

@@ -11,7 +11,9 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_preflight,
     get_agent_authority_matrix,
     get_agent_authority_unlock_readiness,
+    get_agent_dispatch_decision_rail_blueprint,
     get_agent_operating_contracts,
+    get_agent_runtime_review_packet,
     get_agent_runtime_status,
     recommend_agent_for_text,
 )
@@ -194,6 +196,44 @@ def oom_sakkie_agent_unlock_readiness():
     readiness = get_agent_authority_unlock_readiness()
     return jsonify({
         **readiness,
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agents/dispatch-rail-blueprint", methods=["GET"])
+def oom_sakkie_agent_dispatch_rail_blueprint():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    blueprint = get_agent_dispatch_decision_rail_blueprint()
+    return jsonify({
+        **blueprint,
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agents/runtime-review-packet", methods=["GET"])
+def oom_sakkie_agent_runtime_review_packet():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    packet = get_agent_runtime_review_packet()
+    return jsonify({
+        **packet,
         "review_guard": {
             "runs_specialist": False,
             "dispatch_enabled": False,

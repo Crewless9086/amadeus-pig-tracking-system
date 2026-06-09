@@ -55,6 +55,14 @@ RULES = [
         IntentMatch("agent_authority_unlock_readiness", "agent_authority_unlock_readiness", 0.95, "rule:agent_authority_unlock_readiness"),
     ),
     (
+        re.compile(r"\b(dispatch decision rail|dispatch rail blueprint|specialist dispatch blueprint|live dispatch rail|dispatch approval rail|dispatch request rail)\b", re.I),
+        IntentMatch("agent_dispatch_decision_rail_blueprint", "agent_dispatch_decision_rail_blueprint", 0.95, "rule:agent_dispatch_decision_rail_blueprint"),
+    ),
+    (
+        re.compile(r"\b(agent runtime review packet|runtime review packet|bulk claude review|claude review packet|agent review packet|review the agent runtime)\b", re.I),
+        IntentMatch("agent_runtime_review_packet", "agent_runtime_review_packet", 0.95, "rule:agent_runtime_review_packet"),
+    ),
+    (
         re.compile(r"\b(agent operating contract|agent operating contracts|agent contract|agent contracts|specialist contract|specialist contracts|agent rules|specialist rules|what can agents do|what must agents not do)\b", re.I),
         IntentMatch("agent_operating_contracts", "agent_operating_contracts", 0.95, "rule:agent_operating_contracts"),
     ),
