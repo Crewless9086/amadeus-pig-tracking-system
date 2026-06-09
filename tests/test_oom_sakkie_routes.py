@@ -1456,6 +1456,124 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    @patch("modules.oom_sakkie.routes.record_dispatch_execution_approval")
+    def test_dispatch_execution_approval_route_records_without_execution(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "single_dry_run_execution_approval_only",
+            "approval_type": "approved_for_single_dry_run_execution",
+            "executes_now": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "dispatches_further": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-requests/OSK-DISPATCH-REQ-TEST/execution-approvals",
+            json={"approval_type": "approved_for_single_dry_run_execution", "notes": "Owner approves gate design."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "single_dry_run_execution_approval_only")
+        self.assertFalse(data["executes_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        self.assertFalse(data["dispatches_further"])
+        mock_record.assert_called_once_with("OSK-DISPATCH-REQ-TEST", {
+            "approval_type": "approved_for_single_dry_run_execution",
+            "notes": "Owner approves gate design.",
+        })
+
+    @patch("modules.oom_sakkie.routes.list_dispatch_execution_approvals")
+    def test_dispatch_execution_approval_route_lists_without_execution(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "single_dry_run_execution_approval_queue",
+            "executes_now": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "dispatches_further": False,
+            "execution_approvals": [],
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/dispatch-execution-approvals?dispatch_request_id=OSK-DISPATCH-REQ-TEST&limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "single_dry_run_execution_approval_queue")
+        self.assertFalse(data["executes_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        self.assertFalse(data["dispatches_further"])
+        mock_list.assert_called_once_with(dispatch_request_id="OSK-DISPATCH-REQ-TEST", limit="8")
+
+    @patch("modules.oom_sakkie.routes.record_dispatch_execution_approval_event")
+    def test_dispatch_execution_approval_event_route_records_append_only_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "event_type": "review_note",
+            "executes_now": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "dispatches_further": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-execution-approvals/OSK-DISPATCH-EXEC-APPROVAL-TEST/events",
+            json={"event_type": "review_note", "notes": "Still review only."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["event_type"], "review_note")
+        self.assertFalse(data["executes_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        self.assertFalse(data["dispatches_further"])
+        mock_record.assert_called_once_with("OSK-DISPATCH-EXEC-APPROVAL-TEST", {
+            "event_type": "review_note",
+            "notes": "Still review only.",
+        })
+
+    def test_dispatch_execution_approval_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-requests/OSK-DISPATCH-REQ-TEST/execution-approvals",
+            json={"approval_type": "approved_for_single_dry_run_execution"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_message_route_remains_available_for_non_local_access_policy_when_llm_off(self):
         response = self.client.post(

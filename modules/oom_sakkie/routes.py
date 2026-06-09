@@ -46,6 +46,11 @@ from modules.oom_sakkie.dispatch_decision_store import (
     record_dispatch_decision,
     record_dispatch_request,
 )
+from modules.oom_sakkie.dispatch_execution_approval_store import (
+    list_dispatch_execution_approvals,
+    record_dispatch_execution_approval,
+    record_dispatch_execution_approval_event,
+)
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
 from modules.oom_sakkie.learning_advisor import get_learning_advisor, run_learning_analysis
 from modules.oom_sakkie.learning_packet import (
@@ -610,6 +615,38 @@ def oom_sakkie_dispatch_decision_create(dispatch_request_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_dispatch_decision(dispatch_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests/<dispatch_request_id>/execution-approvals", methods=["POST"])
+def oom_sakkie_dispatch_execution_approval_create(dispatch_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_dispatch_execution_approval(dispatch_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-execution-approvals", methods=["GET"])
+def oom_sakkie_dispatch_execution_approvals():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_dispatch_execution_approvals(
+        dispatch_request_id=request.args.get("dispatch_request_id", "").strip(),
+        limit=request.args.get("limit", 20),
+    )
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-execution-approvals/<approval_id>/events", methods=["POST"])
+def oom_sakkie_dispatch_execution_approval_events(approval_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_dispatch_execution_approval_event(approval_id, payload)
     return jsonify(result), status_code
 
 

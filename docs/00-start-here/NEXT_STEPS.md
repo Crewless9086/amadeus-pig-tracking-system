@@ -10269,6 +10269,64 @@ Manual check:
 2. Confirm the same two latest runs are green.
 3. Keep `.tools/` untracked.
 
+### 10.9BP Oom Sakkie Dispatch Execution Approval Rail - Local Ready
+
+Purpose:
+
+- Implement the first dedicated gate Claude approved designing: a Sentinel-only single-shot advisory dry-run execution approval rail.
+- Keep this phase as an approval/audit rail only. It does not run Sentinel, call an LLM, execute tools, or consume the approval to change runtime behavior.
+
+What changed:
+
+- Added migration `supabase/migrations/202606090002_create_oom_sakkie_dispatch_execution_approvals.sql`.
+- Added `modules/oom_sakkie/dispatch_execution_approval_store.py`.
+- Added protected review-gated routes:
+  - `POST /api/oom-sakkie/dispatch-requests/<dispatch_request_id>/execution-approvals`
+  - `GET /api/oom-sakkie/dispatch-execution-approvals`
+  - `POST /api/oom-sakkie/dispatch-execution-approvals/<approval_id>/events`
+- Wired the new migration into `.github/workflows/oom-sakkie-audit-rails.yml`.
+- Extended the live-PG audit smoke to include the new approval and approval-event tables when migrated.
+
+Safety envelope:
+
+- Approval rail only.
+- Requires the parent dispatch request to be `sentinel`.
+- `approved_for_single_dry_run_execution` requires the existing dispatch decision rail's latest decision to be `approved_for_design_review`.
+- DB CHECK constraints force:
+  - `executes_now = false`
+  - `dispatch_enabled = false`
+  - `runs_specialist_llm = false`
+  - `runs_specialist_tools = false`
+  - `writes = false`
+  - `applies_runtime_change = false`
+  - `dispatches_further = false`
+- Application responses force the same flags false.
+- UPDATE/DELETE triggers make both approval tables append-only.
+- No runner or consumer was added.
+- No specialist LLM call was added.
+- No specialist tool execution was added.
+- No farm-data write, public/customer output, deploy, Telegram cutover, physical-control path, or Financial-Agent path was added.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 267 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest` -> 597 tests OK.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+
+Manual check:
+
+1. Push to GitHub.
+2. Confirm `Oom Sakkie Audit Rails` applies `202606090002_create_oom_sakkie_dispatch_execution_approvals.sql` and runs green.
+3. Ask Claude to verify this is still an approval rail only and not an execution consumer.
+
+Next gate:
+
+- Do not build the Sentinel LLM runner until Claude reviews this approval rail.
+- The next implementation, if approved, must be a separate phase: env-gated default-off, Sentinel-only, one-shot, no tool calls, unsafe-output filtered, writes only to the existing append-only dry-run result rail, and records a consumption event without row mutation.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

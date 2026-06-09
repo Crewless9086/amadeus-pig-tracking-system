@@ -69,6 +69,11 @@ from modules.oom_sakkie.dispatch_decision_store import (
     record_dispatch_decision,
     record_dispatch_request,
 )
+from modules.oom_sakkie.dispatch_execution_approval_store import (
+    DISPATCH_EXECUTION_APPROVAL_TYPES,
+    _dispatch_execution_approval_params,
+    record_dispatch_execution_approval,
+)
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
 from modules.oom_sakkie.learning_packet import (
     approve_build_request,
@@ -1661,6 +1666,101 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("decision_type in ('approved_for_design_review', 'rejected', 'deferred', 'review_note')", migration)
         self.assertIn("before update on public.oom_sakkie_dispatch_requests", migration)
         self.assertIn("before delete on public.oom_sakkie_dispatch_decisions", migration)
+
+    def test_dispatch_execution_approval_params_force_no_execution_flags(self):
+        params = _dispatch_execution_approval_params({
+            "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+            "specialist_slug": "sentinel",
+        }, {
+            "approval_type": "approved_for_single_dry_run_execution",
+            "executes_now": True,
+            "dispatch_enabled": True,
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": True,
+            "writes": True,
+            "applies_runtime_change": True,
+            "dispatches_further": True,
+        })
+
+        self.assertEqual(params["mode"], "single_dry_run_execution_approval_only")
+        self.assertEqual(params["status"], "recorded_for_single_dry_run_execution_gate")
+        self.assertEqual(params["specialist_slug"], "sentinel")
+        self.assertFalse(params["executes_now"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["runs_specialist_llm"])
+        self.assertFalse(params["runs_specialist_tools"])
+        self.assertFalse(params["writes"])
+        self.assertFalse(params["applies_runtime_change"])
+        self.assertFalse(params["dispatches_further"])
+        self.assertIn("implementation_diff_review", params["next_gate"])
+
+    @patch("modules.oom_sakkie.dispatch_execution_approval_store.get_dispatch_request")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_dispatch_execution_approval_validates_type_before_database(self, mock_get_request):
+        result, status_code = record_dispatch_execution_approval("OSK-DISPATCH-REQ-1", {"approval_type": "run_now"})
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "invalid_approval_type")
+        self.assertEqual(set(result["allowed_approval_types"]), DISPATCH_EXECUTION_APPROVAL_TYPES)
+        mock_get_request.assert_not_called()
+
+    @patch("modules.oom_sakkie.dispatch_execution_approval_store.get_dispatch_request")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_dispatch_execution_approval_requires_design_approval(self, mock_get_request):
+        mock_get_request.return_value = ({
+            "success": True,
+            "dispatch_request": {
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "specialist_slug": "sentinel",
+                "latest_decision": {"decision_type": "deferred"},
+            },
+        }, 200)
+
+        result, status_code = record_dispatch_execution_approval(
+            "OSK-DISPATCH-REQ-1",
+            {"approval_type": "approved_for_single_dry_run_execution"},
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "dispatch_design_not_approved")
+
+    @patch("modules.oom_sakkie.dispatch_execution_approval_store.get_dispatch_request")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_dispatch_execution_approval_is_sentinel_only(self, mock_get_request):
+        mock_get_request.return_value = ({
+            "success": True,
+            "dispatch_request": {
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "specialist_slug": "prism",
+                "latest_decision": {"decision_type": "approved_for_design_review"},
+            },
+        }, 200)
+
+        result, status_code = record_dispatch_execution_approval(
+            "OSK-DISPATCH-REQ-1",
+            {"approval_type": "approved_for_single_dry_run_execution"},
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "single_dry_run_execution_gate_is_sentinel_only")
+
+    def test_dispatch_execution_approval_migration_is_append_only_and_no_execution(self):
+        migration = Path("supabase/migrations/202606090002_create_oom_sakkie_dispatch_execution_approvals.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_dispatch_execution_approvals", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_dispatch_execution_approval_events", migration)
+        self.assertIn("mode = 'single_dry_run_execution_approval_only'", migration)
+        self.assertIn("approval_type in ('approved_for_single_dry_run_execution', 'rejected', 'deferred', 'review_note')", migration)
+        self.assertIn("specialist_slug = 'sentinel'", migration)
+        self.assertIn("executes_now = false", migration)
+        self.assertIn("dispatch_enabled = false", migration)
+        self.assertIn("runs_specialist_llm = false", migration)
+        self.assertIn("runs_specialist_tools = false", migration)
+        self.assertIn("writes = false", migration)
+        self.assertIn("applies_runtime_change = false", migration)
+        self.assertIn("dispatches_further = false", migration)
+        self.assertIn("before update on public.oom_sakkie_dispatch_execution_approvals", migration)
+        self.assertIn("before delete on public.oom_sakkie_dispatch_execution_approval_events", migration)
 
     def test_agent_dry_run_result_params_force_review_only_flags(self):
         params = _agent_dry_run_result_params({
@@ -3847,6 +3947,42 @@ class OomSakkieServiceTests(unittest.TestCase):
                 connection.rollback()
                 self.assertIn("check", str(dispatch_error.exception).lower())
 
+                cursor.execute("select to_regclass('public.oom_sakkie_dispatch_execution_approvals')")
+                if cursor.fetchone()[0] is None:
+                    return
+                dispatch_request_id = f"OSK-DISPATCH-REQ-EXEC-CONSTRAINT-{suffix}"
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_dispatch_requests (
+                        dispatch_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'requested_for_dispatch_design_review',
+                        'dispatch_decision_request_only', 'sentinel',
+                        'unittest', 'constraint test'
+                    )
+                    """,
+                    (dispatch_request_id,),
+                )
+                with self.assertRaises(Exception) as execution_approval_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_execution_approvals (
+                            approval_id, dispatch_request_id, status, mode, specialist_slug,
+                            approval_type, runs_specialist_llm
+                        )
+                        values (
+                            %s, %s, 'recorded_for_single_dry_run_execution_gate',
+                            'single_dry_run_execution_approval_only', 'sentinel',
+                            'approved_for_single_dry_run_execution', true
+                        )
+                        """,
+                        (f"OSK-DISPATCH-EXEC-CONSTRAINT-{suffix}", dispatch_request_id),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(execution_approval_error.exception).lower())
+
     def test_live_pg_review_gate_tables_are_append_only_when_database_url_is_configured(self):
         database_url = os.getenv("DATABASE_URL", "").strip()
         if not database_url:
@@ -3868,6 +4004,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         dry_run_result_event_id = f"OSK-AGENT-DRYRUN-RESULT-EVENT-APPEND-{suffix}"
         dispatch_request_id = f"OSK-DISPATCH-REQ-APPEND-{suffix}"
         dispatch_decision_id = f"OSK-DISPATCH-DECISION-APPEND-{suffix}"
+        dispatch_execution_approval_id = f"OSK-DISPATCH-EXEC-APPROVAL-APPEND-{suffix}"
+        dispatch_execution_event_id = f"OSK-DISPATCH-EXEC-EVENT-APPEND-{suffix}"
 
         rows = [
             (
@@ -3942,6 +4080,23 @@ class OomSakkieServiceTests(unittest.TestCase):
                             "public.oom_sakkie_dispatch_decisions",
                             "decision_id",
                             dispatch_decision_id,
+                            "notes",
+                        ),
+                    ])
+                cursor.execute("select to_regclass('public.oom_sakkie_dispatch_execution_approvals')")
+                dispatch_execution_tables_exist = cursor.fetchone()[0] is not None
+                if dispatch_execution_tables_exist:
+                    rows.extend([
+                        (
+                            "public.oom_sakkie_dispatch_execution_approvals",
+                            "approval_id",
+                            dispatch_execution_approval_id,
+                            "notes",
+                        ),
+                        (
+                            "public.oom_sakkie_dispatch_execution_approval_events",
+                            "event_id",
+                            dispatch_execution_event_id,
                             "notes",
                         ),
                     ])
@@ -4064,6 +4219,30 @@ class OomSakkieServiceTests(unittest.TestCase):
                         values (%s, %s, 'review_note', 'append-only test', 'unittest')
                         """,
                         (dispatch_decision_id, dispatch_request_id),
+                    )
+                if dispatch_execution_tables_exist:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_execution_approvals (
+                            approval_id, dispatch_request_id, status, mode,
+                            specialist_slug, approval_type, notes, approved_by
+                        )
+                        values (
+                            %s, %s, 'recorded_for_single_dry_run_execution_gate',
+                            'single_dry_run_execution_approval_only', 'sentinel',
+                            'review_note', 'append-only test', 'unittest'
+                        )
+                        """,
+                        (dispatch_execution_approval_id, dispatch_request_id),
+                    )
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_execution_approval_events (
+                            event_id, approval_id, event_type, notes, recorded_by
+                        )
+                        values (%s, %s, 'review_note', 'append-only test', 'unittest')
+                        """,
+                        (dispatch_execution_event_id, dispatch_execution_approval_id),
                     )
                 connection.commit()
 
