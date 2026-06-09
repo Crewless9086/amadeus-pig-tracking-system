@@ -1,0 +1,62 @@
+name: Oom Sakkie Audit Rails
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  audit-rails:
+    name: Unit tests with disposable Postgres audit rails
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: amadeus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d amadeus_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/amadeus_test
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Apply Oom Sakkie audit migrations
+        run: |
+          python scripts/apply_supabase_migration.py supabase/migrations/202606060001_create_oom_sakkie_traces.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606060002_create_oom_sakkie_trace_feedback.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606060003_add_oom_sakkie_safety_notes.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606060004_lock_oom_sakkie_trace_append_only.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606070001_create_oom_sakkie_build_requests.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606070002_create_oom_sakkie_build_request_events.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606070003_create_oom_sakkie_patch_proposals.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606070004_create_oom_sakkie_deploy_decisions.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606080002_create_oom_sakkie_agent_dry_run_results.sql
+
+      - name: Run full unit suite with live audit-rail checks enabled
+        run: python -m unittest
+
+      - name: Check Oom Sakkie JavaScript syntax
+        run: node --check static/js/oomSakkie.js

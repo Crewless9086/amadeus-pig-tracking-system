@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AH. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AJ. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -8948,6 +8948,87 @@ Manual check:
 3. Refresh `Agent Roadmap`.
 4. Confirm the `Accepted agent learning` section shows `accepted by specialist ...`.
 5. Confirm all runtime/write/dispatch guards remain locked.
+
+### 10.9AI Oom Sakkie Audit Rail CI Workflow - Local Ready
+
+Purpose:
+
+- Convert the DATABASE_URL-gated audit-rail smoke from an optional local check into a CI-enforced check when GitHub Actions runs.
+- Keep append-only/no-execution guarantees tested against a real disposable Postgres database.
+
+What changed:
+
+- Added `.github/workflows/oom-sakkie-audit-rails.yml`.
+- The workflow starts a Postgres 16 service.
+- It installs `requirements.txt`.
+- It applies the reviewed Oom Sakkie audit migrations only:
+  - trace tables,
+  - trace safety notes,
+  - trace append-only triggers,
+  - build request/event tables,
+  - patch proposal/event tables,
+  - deploy decision table,
+  - agent dry-run request/event tables,
+  - agent dry-run result/event tables.
+- It runs `python -m unittest` with `DATABASE_URL` configured, so the live-PG audit rail checks execute instead of skipping.
+- It runs `node --check static/js/oomSakkie.js`.
+
+Safety status:
+
+- CI/test configuration only.
+- Uses a disposable GitHub Actions Postgres service.
+- Does not add routes, tools, runtime authority, specialist dispatch, specialist LLM/tool execution, farm writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, or physical controls.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 204 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Push a branch or open a PR.
+2. Confirm the `Oom Sakkie Audit Rails` workflow starts.
+3. Confirm migrations apply in order.
+4. Confirm the full unittest suite runs with `DATABASE_URL` configured.
+5. Confirm the append-only/no-execution live-PG tests do not skip in CI.
+
+### 10.9AJ Oom Sakkie Browser Behavior Checklist - Local Ready
+
+Purpose:
+
+- Make Claude's requested browser-behavior pass repeatable without adding Playwright or another dependency yet.
+- Give the owner one clear checklist for the now-busier multi-specialist Workbench UI.
+
+What changed:
+
+- Added `docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md`.
+- The checklist covers:
+  - multi-specialist dry-run request UI,
+  - handoff and result review,
+  - accepted learning and roadmap counts,
+  - no background polling,
+  - explicit owner-click event actions,
+  - browser voice start/stop and five-turn loop cap.
+- Added frontend contract coverage that the CI workflow and browser checklist exist and name the core safety expectations.
+
+Safety status:
+
+- Documentation and regression coverage only.
+- Does not run specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not enable runtime flags, run Builder/Forge, apply patches, deploy, cut over Telegram, produce public/customer output, or control hardware.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 204 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Follow `docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md`.
+2. Record any failures as owner feedback before widening the runtime foundation further.
 
 7.3E weather LLM triage note:
 

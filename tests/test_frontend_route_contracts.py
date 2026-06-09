@@ -3,6 +3,25 @@ import unittest
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_oom_sakkie_audit_rail_ci_and_browser_checklist_are_documented(self):
+        workflow = Path(".github/workflows/oom-sakkie-audit-rails.yml").read_text(encoding="utf-8")
+        checklist = Path("docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md").read_text(encoding="utf-8")
+
+        self.assertIn("postgres:16", workflow)
+        self.assertIn("DATABASE_URL: postgresql://postgres:postgres@localhost:5432/amadeus_test", workflow)
+        self.assertIn("202606060001_create_oom_sakkie_traces.sql", workflow)
+        self.assertIn("202606060004_lock_oom_sakkie_trace_append_only.sql", workflow)
+        self.assertIn("202606070004_create_oom_sakkie_deploy_decisions.sql", workflow)
+        self.assertIn("202606080002_create_oom_sakkie_agent_dry_run_results.sql", workflow)
+        self.assertIn("python -m unittest", workflow)
+        self.assertIn("node --check static/js/oomSakkie.js", workflow)
+
+        self.assertIn("No specialist dispatch.", checklist)
+        self.assertIn("No Background Polling", checklist)
+        self.assertIn("Accepted agent learning", checklist)
+        self.assertIn("Voice loop 5 of 5", checklist)
+        self.assertIn("Every dry-run/result/event action is owner-clicked.", checklist)
+
     def test_oom_sakkie_agent_dry_run_browser_behavior_contract(self):
         js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
 
