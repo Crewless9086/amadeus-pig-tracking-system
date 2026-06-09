@@ -55,6 +55,7 @@ _TOOL_PRIMARY_AGENT = {
     "agent_activation_plan": "gatekeeper",
     "agent_activation_preflight": "gatekeeper",
     "agent_authority_matrix": "gatekeeper",
+    "agent_authority_unlock_readiness": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",
     "agent_runtime_readiness": "gatekeeper",
     "agent_dry_run_status": "gatekeeper",
@@ -178,6 +179,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "live_specialist_dispatch",
         "label": "Live specialist dispatch",
+        "blocked_capability": "live specialist dispatch",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 3,
@@ -192,6 +194,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "specialist_llm_loop",
         "label": "Specialist LLM loop",
+        "blocked_capability": "specialist LLM loops",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 3,
@@ -206,6 +209,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "specialist_tool_execution",
         "label": "Specialist tool execution",
+        "blocked_capability": "specialist tool execution",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 3,
@@ -220,6 +224,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "farm_data_writes",
         "label": "Farm data writes",
+        "blocked_capability": "farm data writes",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 4,
@@ -234,6 +239,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "customer_or_public_output",
         "label": "Customer/public output",
+        "blocked_capability": "customer/public output",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 4,
@@ -248,6 +254,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "builder_or_patch_execution",
         "label": "Builder/patch execution",
+        "blocked_capability": "Builder/Forge execution from kiosk",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 4,
@@ -262,6 +269,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "deploy_execution",
         "label": "Deploy execution",
+        "blocked_capability": "deploy execution",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 5,
@@ -276,6 +284,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "telegram_cutover",
         "label": "Telegram cutover",
+        "blocked_capability": "Telegram cutover",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 4,
@@ -290,6 +299,7 @@ _AUTHORITY_AREAS = (
     {
         "authority": "physical_controls",
         "label": "Physical controls",
+        "blocked_capability": "physical controls",
         "enabled": False,
         "current_state": "locked",
         "risk_level": 5,
@@ -302,6 +312,39 @@ _AUTHORITY_AREAS = (
         ),
     },
 )
+
+
+def _authority_area_rows():
+    rows = []
+    for item in _AUTHORITY_AREAS:
+        rows.append({
+            "authority": item["authority"],
+            "label": item["label"],
+            "blocked_capability": item["blocked_capability"],
+            "enabled": False,
+            "current_state": item["current_state"],
+            "risk_level": item["risk_level"],
+            "why_locked": item["why_locked"],
+            "required_gates": list(item["required_gates"]),
+        })
+    return rows
+
+
+def _blocked_capabilities_from_authorities():
+    return [item["blocked_capability"] for item in _AUTHORITY_AREAS]
+
+
+def _locked_checks_from_authorities():
+    return [
+        {
+            "check": item["authority"],
+            "status": "locked",
+            "detail": item["why_locked"],
+            "risk_level": item["risk_level"],
+            "required_gates": list(item["required_gates"]),
+        }
+        for item in _AUTHORITY_AREAS
+    ]
 
 _AGENT_COLOR = {
     "sentinel": "red",
@@ -478,16 +521,7 @@ def get_agent_activation_plan():
             "dry-run output is reviewed manually",
             "Claude/Codex review confirms no widened authority",
         ],
-        "blocked_capabilities": [
-            "live specialist dispatch",
-            "specialist autonomous loops",
-            "specialist write tools",
-            "customer/public output",
-            "physical controls",
-            "Builder/Forge execution from kiosk",
-            "patch application",
-            "deploy execution",
-        ],
+        "blocked_capabilities": _blocked_capabilities_from_authorities(),
         "next_gate": "owner_approval_before_read_only_specialist_dry_run",
     }
 
@@ -662,23 +696,7 @@ def get_agent_activation_preflight():
             "detail": "Batch a Claude review before any phase that flips runtime or dispatch authority.",
         },
     ]
-    blocked_checks = [
-        {
-            "check": "live_specialist_dispatch",
-            "status": "locked",
-            "detail": "No live dispatch path exists.",
-        },
-        {
-            "check": "specialist_llm_or_tool_loop",
-            "status": "locked",
-            "detail": "No specialist LLM loop or specialist tool execution exists.",
-        },
-        {
-            "check": "writes_public_output_controls",
-            "status": "locked",
-            "detail": "Writes, customer/public output, Telegram cutover, physical controls, patch application, and deploy remain blocked.",
-        },
-    ]
+    blocked_checks = _locked_checks_from_authorities()
     checks = ready_checks + manual_checks + blocked_checks
     return {
         "success": True,
@@ -712,17 +730,7 @@ def get_agent_activation_preflight():
 
 
 def get_agent_authority_matrix():
-    areas = []
-    for item in _AUTHORITY_AREAS:
-        areas.append({
-            "authority": item["authority"],
-            "label": item["label"],
-            "enabled": False,
-            "current_state": item["current_state"],
-            "risk_level": item["risk_level"],
-            "why_locked": item["why_locked"],
-            "required_gates": list(item["required_gates"]),
-        })
+    areas = _authority_area_rows()
     return {
         "success": True,
         "mode": "agent_authority_matrix_only",
@@ -740,6 +748,69 @@ def get_agent_authority_matrix():
         "max_locked_risk_level": max(item["risk_level"] for item in areas),
         "areas": areas,
         "next_gate": "owner_and_claude_review_before_any_authority_changes",
+    }
+
+
+def get_agent_authority_unlock_readiness():
+    matrix = get_agent_authority_matrix()
+    candidates = sorted(
+        matrix["areas"],
+        key=lambda item: (item["risk_level"], item["authority"]),
+    )
+    lowest_risk = candidates[0]["risk_level"] if candidates else 0
+    lowest_risk_candidates = [
+        {
+            "authority": item["authority"],
+            "label": item["label"],
+            "risk_level": item["risk_level"],
+            "current_state": item["current_state"],
+            "enabled": False,
+            "why_locked": item["why_locked"],
+            "required_gates": item["required_gates"],
+            "recommendation": "Do not unlock yet; use this only as planning input for a future owner/Claude-reviewed design.",
+        }
+        for item in candidates
+        if item["risk_level"] == lowest_risk
+    ]
+    hard_no = [
+        item
+        for item in candidates
+        if item["risk_level"] >= 4
+    ]
+    return {
+        "success": True,
+        "mode": "agent_authority_unlock_readiness_only",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "summary_status": "planning_only_no_unlock_recommended",
+        "enabled_count": 0,
+        "candidate_count": len(lowest_risk_candidates),
+        "lowest_risk_level": lowest_risk,
+        "lowest_risk_candidates": lowest_risk_candidates,
+        "hard_no_authorities": [
+            {
+                "authority": item["authority"],
+                "label": item["label"],
+                "risk_level": item["risk_level"],
+                "why_locked": item["why_locked"],
+            }
+            for item in hard_no
+        ],
+        "required_before_any_unlock": [
+            "owner names one authority area explicitly",
+            "Claude/Codex reviews the design before code changes",
+            "append-only decision rail exists for that authority",
+            "browser behavior suite covers hidden action surfaces",
+            "runtime flags remain false until the reviewed gate is built",
+        ],
+        "next_gate": "owner_named_authority_design_before_any_unlock_work",
+        "source_mode": matrix.get("mode"),
     }
 
 

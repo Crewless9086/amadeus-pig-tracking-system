@@ -51,6 +51,10 @@ RULES = [
         IntentMatch("agent_authority_matrix", "agent_authority_matrix", 0.95, "rule:agent_authority_matrix"),
     ),
     (
+        re.compile(r"\b(authority unlock readiness|unlock readiness|which authority.*unlock|what authority.*first|lowest risk authority|first agent authority|which power.*first)\b", re.I),
+        IntentMatch("agent_authority_unlock_readiness", "agent_authority_unlock_readiness", 0.95, "rule:agent_authority_unlock_readiness"),
+    ),
+    (
         re.compile(r"\b(agent operating contract|agent operating contracts|agent contract|agent contracts|specialist contract|specialist contracts|agent rules|specialist rules|what can agents do|what must agents not do)\b", re.I),
         IntentMatch("agent_operating_contracts", "agent_operating_contracts", 0.95, "rule:agent_operating_contracts"),
     ),

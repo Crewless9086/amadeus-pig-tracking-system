@@ -93,6 +93,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/contracts", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/preflight", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/authority-matrix", methods=["GET"])', route_source)
+        self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/unlock-readiness", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/recommend", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["POST"])', route_source)

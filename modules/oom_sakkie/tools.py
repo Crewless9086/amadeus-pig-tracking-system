@@ -8,6 +8,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_plan,
     get_agent_activation_preflight,
     get_agent_authority_matrix,
+    get_agent_authority_unlock_readiness,
     get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
@@ -1089,6 +1090,36 @@ def agent_authority_matrix_handler(_args):
     }
 
 
+def agent_authority_unlock_readiness_handler(_args):
+    readiness = get_agent_authority_unlock_readiness()
+    candidates = readiness.get("lowest_risk_candidates") or []
+    labels = ", ".join(item["label"] for item in candidates) if candidates else "none"
+    summary = (
+        "Agent authority unlock readiness: no unlock is recommended. "
+        "Lowest-risk planning candidate(s): {}. "
+        "{} high-risk authority area(s) stay hard-no for now."
+    ).format(labels, len(readiness.get("hard_no_authorities") or []))
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Agent Authority Matrix", "href": "/api/oom-sakkie/agents/authority-matrix"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent authority unlock readiness is planning-only. It does not unlock authority, dispatch agents, run specialist LLMs/tools, write farm data, create public output, apply patches, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "agent_authority_unlock_readiness",
+            "unlock_readiness": readiness,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": readiness,
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1471,6 +1502,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_authority_matrix_handler,
         description="Read-only matrix of future agent authority areas, locked status, risk levels, and required gates. Never enables authority.",
+    ),
+    "agent_authority_unlock_readiness": OomSakkieTool(
+        name="agent_authority_unlock_readiness",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_authority_unlock_readiness_handler,
+        description="Read-only planning report for which locked authority area would be lowest-risk to design later. Never unlocks authority.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

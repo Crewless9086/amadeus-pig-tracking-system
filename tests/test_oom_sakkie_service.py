@@ -12,6 +12,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_activation_plan,
     get_agent_activation_preflight,
     get_agent_authority_matrix,
+    get_agent_authority_unlock_readiness,
     get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
@@ -102,6 +103,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_learning_evidence",
                 "agent_activation_preflight",
                 "agent_authority_matrix",
+                "agent_authority_unlock_readiness",
                 "agent_operating_contracts",
                 "agent_runtime_readiness",
                 "agent_activation_plan",
@@ -289,6 +291,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(plan["autonomous_loops_enabled"])
         self.assertFalse(plan["writes_enabled"])
         self.assertIn("live specialist dispatch", plan["blocked_capabilities"])
+        self.assertIn("farm data writes", plan["blocked_capabilities"])
+        self.assertIn("Telegram cutover", plan["blocked_capabilities"])
         self.assertIn("owner_approval", plan["next_gate"])
 
     def test_agent_runtime_readiness_is_checklist_only(self):
@@ -361,6 +365,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(any(item["check"] == "browser_behavior_smoke" for item in preflight["ready_checks"]))
         self.assertTrue(any(item["check"] == "owner_browser_pass" for item in preflight["manual_checks"]))
         self.assertTrue(any(item["check"] == "live_specialist_dispatch" for item in preflight["locked_checks"]))
+        self.assertTrue(any(item["check"] == "physical_controls" for item in preflight["locked_checks"]))
         self.assertIn("claude_and_owner_review", preflight["next_gate"])
 
     def test_agent_authority_matrix_keeps_every_authority_locked(self):
@@ -397,6 +402,74 @@ class OomSakkieServiceTests(unittest.TestCase):
                 self.assertTrue(by_authority[authority]["required_gates"])
         self.assertEqual(by_authority["physical_controls"]["risk_level"], 5)
         self.assertIn("owner_and_claude_review", matrix["next_gate"])
+
+    def test_agent_preflight_and_activation_plan_derive_locks_from_authority_matrix(self):
+        plan = get_agent_activation_plan()
+        preflight = get_agent_activation_preflight()
+        matrix = get_agent_authority_matrix()
+        matrix_by_authority = {item["authority"]: item for item in matrix["areas"]}
+        preflight_by_check = {item["check"]: item for item in preflight["locked_checks"]}
+
+        self.assertEqual(
+            set(plan["blocked_capabilities"]),
+            {item["blocked_capability"] for item in matrix["areas"]},
+        )
+        self.assertEqual(set(preflight_by_check), set(matrix_by_authority))
+        for authority, item in matrix_by_authority.items():
+            with self.subTest(authority=authority):
+                self.assertEqual(preflight_by_check[authority]["risk_level"], item["risk_level"])
+                self.assertEqual(preflight_by_check[authority]["detail"], item["why_locked"])
+                self.assertEqual(preflight_by_check[authority]["required_gates"], item["required_gates"])
+
+    def test_agent_authority_unlock_readiness_is_planning_only(self):
+        readiness = get_agent_authority_unlock_readiness()
+
+        self.assertTrue(readiness["success"])
+        self.assertEqual(readiness["mode"], "agent_authority_unlock_readiness_only")
+        self.assertEqual(readiness["summary_status"], "planning_only_no_unlock_recommended")
+        self.assertFalse(readiness["runtime_enabled"])
+        self.assertFalse(readiness["dispatch_enabled"])
+        self.assertFalse(readiness["autonomous_loops_enabled"])
+        self.assertFalse(readiness["writes_enabled"])
+        self.assertFalse(readiness["specialist_llm_enabled"])
+        self.assertFalse(readiness["specialist_tools_enabled"])
+        self.assertFalse(readiness["public_output_enabled"])
+        self.assertFalse(readiness["physical_controls_enabled"])
+        self.assertEqual(readiness["enabled_count"], 0)
+        self.assertGreaterEqual(readiness["candidate_count"], 1)
+        self.assertEqual(readiness["lowest_risk_level"], 3)
+        self.assertTrue(all(item["enabled"] is False for item in readiness["lowest_risk_candidates"]))
+        self.assertTrue(any(item["authority"] == "physical_controls" for item in readiness["hard_no_authorities"]))
+        self.assertIn("owner_named_authority", readiness["next_gate"])
+
+    def test_agent_runtime_inspection_surfaces_keep_authority_flags_false(self):
+        surfaces = {
+            "runtime_status": get_agent_runtime_status(),
+            "activation_plan": get_agent_activation_plan(),
+            "runtime_readiness": get_agent_runtime_readiness(),
+            "operating_contracts": get_agent_operating_contracts(),
+            "activation_preflight": get_agent_activation_preflight(),
+            "authority_matrix": get_agent_authority_matrix(),
+            "unlock_readiness": get_agent_authority_unlock_readiness(),
+        }
+        flag_names = [
+            "runtime_enabled",
+            "dispatch_enabled",
+            "autonomous_loops_enabled",
+            "writes_enabled",
+            "specialist_llm_enabled",
+            "specialist_tools_enabled",
+            "public_output_enabled",
+            "physical_controls_enabled",
+        ]
+
+        for name, payload in surfaces.items():
+            with self.subTest(surface=name):
+                self.assertTrue(payload["success"])
+                for flag in flag_names:
+                    if flag in payload:
+                        self.assertFalse(payload[flag], f"{name}.{flag} must stay false")
+                self.assertNotEqual(payload.get("next_gate"), "")
 
     def test_agent_crew_brief_is_multi_agent_plan_only(self):
         brief = build_agent_crew_brief("How do we grow sales and market pork better?")
@@ -566,6 +639,21 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["authority_matrix"]["enabled_count"], 0)
         self.assertFalse(result["llm_context"]["authority_matrix"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["authority_matrix"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_agent_authority_unlock_readiness_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_authority_unlock_readiness_handler
+
+        result = agent_authority_unlock_readiness_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("no unlock is recommended", result["summary"])
+        self.assertIn("planning-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_authority_unlock_readiness")
+        self.assertEqual(result["llm_context"]["unlock_readiness"]["enabled_count"], 0)
+        self.assertFalse(result["llm_context"]["unlock_readiness"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["unlock_readiness"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
@@ -2116,6 +2204,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "what must happen before activating agents": "agent_activation_preflight",
             "show me the agent authority matrix": "agent_authority_matrix",
             "which agent powers are locked": "agent_authority_matrix",
+            "which authority should we unlock first": "agent_authority_unlock_readiness",
+            "show me authority unlock readiness": "agent_authority_unlock_readiness",
             "what are the agent operating contracts": "agent_operating_contracts",
             "what must agents not do": "agent_operating_contracts",
             "what did sentinel learn": "agent_learning_evidence",
