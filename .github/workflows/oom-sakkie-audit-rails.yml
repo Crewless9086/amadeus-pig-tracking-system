@@ -60,3 +60,6 @@ jobs:
 
       - name: Check Oom Sakkie JavaScript syntax
         run: node --check static/js/oomSakkie.js
+
+      - name: Run Oom Sakkie browser behavior smoke
+        run: node tests/oom_sakkie_browser_behavior_smoke.js

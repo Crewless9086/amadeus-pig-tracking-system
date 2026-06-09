@@ -6,7 +6,12 @@ from modules.oom_sakkie.access import (
     message_access_denied_response,
     review_access_denied_response,
 )
-from modules.oom_sakkie.agent_runtime import get_agent_activation_plan, get_agent_runtime_status, recommend_agent_for_text
+from modules.oom_sakkie.agent_runtime import (
+    get_agent_activation_plan,
+    get_agent_operating_contracts,
+    get_agent_runtime_status,
+    recommend_agent_for_text,
+)
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
 from modules.oom_sakkie.agent_dry_run_store import (
     get_agent_dry_run_request,
@@ -119,6 +124,25 @@ def oom_sakkie_agents():
     if denied:
         return denied
     return jsonify(get_agent_runtime_status()), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agents/contracts", methods=["GET"])
+def oom_sakkie_agent_contracts():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    contracts = get_agent_operating_contracts()
+    return jsonify({
+        **contracts,
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200
 
 
 @oom_sakkie_bp.route("/oom-sakkie/agents/recommend", methods=["POST"])

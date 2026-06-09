@@ -43,6 +43,10 @@ RULES = [
         IntentMatch("agent_runtime_readiness", "agent_runtime_readiness", 0.95, "rule:agent_runtime_readiness"),
     ),
     (
+        re.compile(r"\b(agent operating contract|agent operating contracts|agent contract|agent contracts|specialist contract|specialist contracts|agent rules|specialist rules|what can agents do|what must agents not do)\b", re.I),
+        IntentMatch("agent_operating_contracts", "agent_operating_contracts", 0.95, "rule:agent_operating_contracts"),
+    ),
+    (
         re.compile(r"\b(agent dry[- ]?run status|dry[- ]?run queue|dry[- ]?run request|dry[- ]?run approval|specialist dry[- ]?run queue|sentinel result queue|dry[- ]?run result|dry[- ]?run results|sentinel review queue)\b", re.I),
         IntentMatch("agent_dry_run_status", "agent_dry_run_status", 0.95, "rule:agent_dry_run_status"),
     ),

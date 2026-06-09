@@ -53,6 +53,7 @@ _AGENT_TOOLS = {
 
 _TOOL_PRIMARY_AGENT = {
     "agent_activation_plan": "gatekeeper",
+    "agent_operating_contracts": "gatekeeper",
     "agent_runtime_readiness": "gatekeeper",
     "agent_dry_run_status": "gatekeeper",
     "agent_crew_brief": "gatekeeper",
@@ -72,6 +73,103 @@ _TOOL_PRIMARY_AGENT = {
     "pig_allocation_readiness": "herdmaster",
     "meat_planning": "butcher",
     "sales_dashboard": "ledger",
+}
+
+_AGENT_CONTRACT_FOCUS = {
+    "sentinel": "Guardrails, unsafe requests, no-go rules, secrets exposure, audit gaps, and approval boundaries.",
+    "forge": "Implementation plans, file impact, test plans, and patch/deploy readiness after owner approval.",
+    "prism": "Kiosk layout clarity, visual hierarchy, operator flow, and Jarvis-style presence without hidden automation.",
+    "ledger": "Business growth, sales stock, meat-pipeline opportunity, margins, and internal-only offer thinking.",
+    "atlas": "Farm trends, anomalies, operating history, telemetry patterns, and cross-system explanations.",
+    "rootline": "Weather, rain, wind, irrigation status, crop context, and stale physical-environment assumptions.",
+    "herdmaster": "Pig, litter, weight, pen, and herd attention questions from existing read-only records.",
+    "butcher": "Pork pipeline, slaughter readiness, stock opportunity, and internal meat planning.",
+    "beacon": "Draft-only public voice and campaign ideas after later approval; locked out of dry-run request gate for now.",
+    "quartermaster": "Farm attention, supplies, task-like operating context, and daily work organization.",
+    "gatekeeper": "Routing, approval state, runtime readiness, locked gates, and what may happen next.",
+}
+
+_AGENT_CONTRACT_MUST_NOT = {
+    "sentinel": (
+        "run live specialists",
+        "approve its own findings",
+        "change policies",
+        "read secrets",
+    ),
+    "forge": (
+        "edit files from the kiosk",
+        "apply patches",
+        "run deploys",
+        "skip owner patch review",
+    ),
+    "prism": (
+        "edit UI files",
+        "generate public assets automatically",
+        "hide safety text",
+        "start polling loops",
+    ),
+    "ledger": (
+        "change prices",
+        "create quotes or invoices",
+        "send customer messages",
+        "reserve stock",
+    ),
+    "atlas": (
+        "write analytics back to farm data",
+        "change telemetry sources",
+        "claim uncertain correlations as facts",
+        "override stale warnings",
+    ),
+    "rootline": (
+        "start pumps or valves",
+        "change irrigation schedules",
+        "issue physical-control commands",
+        "treat stale weather as current",
+    ),
+    "herdmaster": (
+        "change pig records",
+        "record medical actions",
+        "move pens",
+        "enter weights",
+    ),
+    "butcher": (
+        "book slaughter",
+        "create sales",
+        "reserve pigs or meat",
+        "message customers",
+    ),
+    "beacon": (
+        "post publicly",
+        "message customers",
+        "publish marketing",
+        "speak as Sam",
+    ),
+    "quartermaster": (
+        "purchase supplies",
+        "message suppliers",
+        "write tasks",
+        "change stock records",
+    ),
+    "gatekeeper": (
+        "bypass owner approval",
+        "enable runtime flags",
+        "cut over Telegram",
+        "weaken access controls",
+    ),
+}
+
+_AGENT_CONTRACT_OWNER_GATES = {
+    "sentinel": "Owner accepts dry-run learning before it can influence future planning.",
+    "forge": "Owner approves plan, patch proposal, and manual deploy decision outside the kiosk.",
+    "prism": "Owner approves any visual/code change through the build and patch gates.",
+    "ledger": "Owner approves any quote, price, invoice, customer message, or sale workflow separately.",
+    "atlas": "Owner approves any new analytics source, recurring analysis, or dashboard change separately.",
+    "rootline": "Owner approval plus a separate physical-control safety gate is required before any irrigation/control action.",
+    "herdmaster": "Owner approval plus a record-write gate is required before pig, litter, weight, pen, or medical changes.",
+    "butcher": "Owner approval plus sales/slaughter workflow gates are required before bookings, reservations, or customer output.",
+    "beacon": "Owner approval plus public/customer-output gates are required before any published draft.",
+    "quartermaster": "Owner approval plus a task/purchase/write gate is required before any operational mutation.",
+    "gatekeeper": "Owner approval, append-only audit, browser-behavior proof, and Claude/Codex review are required before live authority.",
 }
 
 _AGENT_COLOR = {
@@ -328,6 +426,57 @@ def get_agent_runtime_readiness():
         "next_safe_action": "Run the browser behavior checklist and keep collecting accepted read-only dry-run evidence.",
         "next_gate": "owner_review_before_any_live_specialist_dispatch",
         "agent_count": status.get("agent_count", 0),
+    }
+
+
+def get_agent_operating_contracts():
+    agents = list_agent_runtime_manifests()
+    dry_run_allowed = allowed_agent_dry_run_slugs()
+    contracts = []
+    for agent in agents:
+        slug = agent["slug"]
+        contracts.append({
+            "slug": slug,
+            "name": agent["name"],
+            "personality": agent["personality"],
+            "role": agent["role"],
+            "status": agent["status"],
+            "dry_run_request_allowed": slug in dry_run_allowed,
+            "runtime_enabled": False,
+            "dispatch_enabled": False,
+            "autonomous_loops_enabled": False,
+            "writes_enabled": False,
+            "specialist_llm_enabled": False,
+            "specialist_tools_enabled": False,
+            "public_output_enabled": False,
+            "physical_controls_enabled": False,
+            "focus": _AGENT_CONTRACT_FOCUS.get(slug, agent["role"]),
+            "allowed_read_only_tools": list(agent["allowed_tools"]),
+            "memory_sources": list(agent["memory_sources"]),
+            "output_contract": list(agent["output_contract"]),
+            "must_not_do": list(_AGENT_CONTRACT_MUST_NOT.get(slug, ())),
+            "owner_gate": _AGENT_CONTRACT_OWNER_GATES.get(slug, "Owner approval required before any live authority."),
+        })
+    return {
+        "success": True,
+        "mode": "agent_operating_contracts_only",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "contract_count": len(contracts),
+        "dry_run_allowed": sorted(dry_run_allowed),
+        "locked_out_of_dry_run": [
+            item["slug"]
+            for item in contracts
+            if not item["dry_run_request_allowed"]
+        ],
+        "contracts": contracts,
+        "next_gate": "owner_review_before_any_contract_becomes_runtime_authority",
     }
 
 

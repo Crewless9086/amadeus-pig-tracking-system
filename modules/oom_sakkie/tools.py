@@ -6,6 +6,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_sentinel_dry_run_review,
     get_agent_activation_plan,
+    get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
     recommend_agent_for_text,
@@ -986,6 +987,37 @@ def agent_runtime_readiness_handler(_args):
     }
 
 
+def agent_operating_contracts_handler(_args):
+    contracts = get_agent_operating_contracts()
+    contract_count = contracts.get("contract_count", 0)
+    dry_run_allowed = contracts.get("dry_run_allowed") or []
+    locked_out = contracts.get("locked_out_of_dry_run") or []
+    locked_text = ", ".join(locked_out) if locked_out else "none"
+    summary = (
+        "Agent operating contracts: {} planned contract(s) documented, {} specialist(s) allowed for dry-run request records, "
+        "and {} locked out of dry-run requests. These are planning contracts only, not runtime authority."
+    ).format(contract_count, len(dry_run_allowed), locked_text)
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Agent Roadmap", "href": "/api/oom-sakkie/agents/activation-plan"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Agent operating contracts are read-only planning records. No specialist was dispatched, no specialist LLM ran, no specialist tool executed, no runtime flag changed, and no write/public/control action occurred."
+        ],
+        "llm_context": {
+            "kind": "agent_operating_contracts",
+            "contracts": contracts,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": contracts,
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1341,6 +1373,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_runtime_readiness_handler,
         description="Read-only agent runtime readiness checklist. Never enables dispatch, writes, public output, patches, deploys, Telegram, or controls.",
+    ),
+    "agent_operating_contracts": OomSakkieTool(
+        name="agent_operating_contracts",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_operating_contracts_handler,
+        description="Read-only planned-agent operating contracts. Lists focus, allowed read-only tools, must-not-do rules, and owner gates without dispatching agents.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

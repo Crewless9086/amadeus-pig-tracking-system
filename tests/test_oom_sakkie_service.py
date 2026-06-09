@@ -10,6 +10,7 @@ from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_agent_activity,
     get_agent_activation_plan,
+    get_agent_operating_contracts,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
     recommend_agent_for_text,
@@ -97,6 +98,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sentinel_dry_run_review",
                 "agent_dry_run_status",
                 "agent_learning_evidence",
+                "agent_operating_contracts",
                 "agent_runtime_readiness",
                 "agent_activation_plan",
                 "agent_crew_brief",
@@ -304,6 +306,35 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(any(item["gate"] == "live_specialist_dispatch" for item in readiness["locked_gates"]))
         self.assertIn("owner_review", readiness["next_gate"])
 
+    def test_agent_operating_contracts_are_planning_only(self):
+        contracts = get_agent_operating_contracts()
+
+        self.assertTrue(contracts["success"])
+        self.assertEqual(contracts["mode"], "agent_operating_contracts_only")
+        self.assertFalse(contracts["runtime_enabled"])
+        self.assertFalse(contracts["dispatch_enabled"])
+        self.assertFalse(contracts["autonomous_loops_enabled"])
+        self.assertFalse(contracts["writes_enabled"])
+        self.assertFalse(contracts["specialist_llm_enabled"])
+        self.assertFalse(contracts["specialist_tools_enabled"])
+        self.assertFalse(contracts["public_output_enabled"])
+        self.assertFalse(contracts["physical_controls_enabled"])
+        self.assertIn("sentinel", contracts["dry_run_allowed"])
+        self.assertIn("ledger", contracts["dry_run_allowed"])
+        self.assertIn("beacon", contracts["locked_out_of_dry_run"])
+        self.assertIn("forge", contracts["locked_out_of_dry_run"])
+        self.assertIn("gatekeeper", contracts["locked_out_of_dry_run"])
+        by_slug = {item["slug"]: item for item in contracts["contracts"]}
+        self.assertIn("send customer messages", by_slug["ledger"]["must_not_do"])
+        self.assertIn("start pumps or valves", by_slug["rootline"]["must_not_do"])
+        self.assertIn("post publicly", by_slug["beacon"]["must_not_do"])
+        for item in contracts["contracts"]:
+            with self.subTest(agent=item["slug"]):
+                self.assertFalse(item["runtime_enabled"])
+                self.assertFalse(item["dispatch_enabled"])
+                self.assertFalse(item["writes_enabled"])
+                self.assertTrue(item["owner_gate"])
+
     def test_agent_crew_brief_is_multi_agent_plan_only(self):
         brief = build_agent_crew_brief("How do we grow sales and market pork better?")
 
@@ -425,6 +456,22 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["kind"], "agent_runtime_readiness")
         self.assertFalse(result["llm_context"]["readiness"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["readiness"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_agent_operating_contracts_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import agent_operating_contracts_handler
+
+        result = agent_operating_contracts_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("planned contract", result["summary"])
+        self.assertIn("not runtime authority", result["summary"])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "agent_operating_contracts")
+        self.assertFalse(result["llm_context"]["contracts"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["contracts"]["writes_enabled"])
+        self.assertIn("beacon", result["llm_context"]["contracts"]["locked_out_of_dry_run"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
@@ -1971,6 +2018,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "what is the sentinel dry-run result queue status": "agent_dry_run_status",
             "are we ready for live agents": "agent_runtime_readiness",
             "what still blocks runtime": "agent_runtime_readiness",
+            "what are the agent operating contracts": "agent_operating_contracts",
+            "what must agents not do": "agent_operating_contracts",
             "what did sentinel learn": "agent_learning_evidence",
             "show me agent learning evidence": "agent_learning_evidence",
             "run the sentinel dry-run review": "sentinel_dry_run_review",

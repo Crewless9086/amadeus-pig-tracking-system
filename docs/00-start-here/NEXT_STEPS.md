@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AL. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AO. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -9109,6 +9109,125 @@ Manual check:
 2. Confirm it uses `agent_runtime_readiness`.
 3. Confirm the answer says manual checks are still required and live-authority gates remain locked.
 4. Confirm the safety note says no specialist was dispatched and no runtime/write/public/control action occurred.
+
+### 10.9AM Oom Sakkie Browser Behavior Smoke Gate - Local Ready
+
+Purpose:
+
+- Turn the most important browser-behavior checklist items into an automated local/CI smoke.
+- Keep this dependency-free until live specialist execution is actually being considered.
+
+What changed:
+
+- Added `tests/oom_sakkie_browser_behavior_smoke.js`.
+- The smoke executes the real `static/js/oomSakkie.js` in a small fake DOM.
+- It fails if kiosk startup creates background polling intervals.
+- It fails if kiosk startup performs hidden POST requests.
+- It verifies startup performs only read-only GET loads.
+- It simulates owner clicks for:
+  - Sentinel dry-run request,
+  - agent dry-run result recording,
+  - quick ask message submission.
+- It verifies those POSTs occur only after explicit click handlers fire.
+- The GitHub Actions audit-rail workflow now runs the smoke after `node --check`.
+
+Safety status:
+
+- Test/CI hardening only.
+- No browser automation dependency was added.
+- No routes, tools, migrations, runtime flags, specialist dispatch, LLM calls, writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, or physical controls were added.
+
+Verification:
+
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- Focused Oom Sakkie service/routes/frontend tests passed at 207 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- Full local unittest suite passed at 537 tests.
+
+Manual check:
+
+1. Confirm the next `Oom Sakkie Audit Rails` GitHub Actions run includes `Run Oom Sakkie browser behavior smoke`.
+2. Keep `docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md` as the human browser pass until a full Playwright suite is deliberately added.
+
+### 10.9AN Oom Sakkie Agent Operating Contracts - Local Ready
+
+Purpose:
+
+- Make each planned specialist's boundaries explicit before any live runtime exists.
+- Let Oom Sakkie answer what each agent may inspect, what it must not do, and which owner gate blocks it.
+
+What changed:
+
+- Added `get_agent_operating_contracts()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added read-only tool `agent_operating_contracts`.
+- Added deterministic routing for phrases such as:
+  - `what are the agent operating contracts`,
+  - `what must agents not do`,
+  - `specialist rules`.
+- Each contract includes:
+  - focus,
+  - allowed read-only tools,
+  - memory sources,
+  - output contract,
+  - must-not-do list,
+  - owner gate,
+  - dry-run request eligibility.
+- Beacon, Forge, and Gatekeeper stay locked out of the dry-run request cohort.
+
+Safety status:
+
+- Read-only planning contracts only.
+- Runtime remains disabled.
+- Dispatch remains disabled.
+- Specialist LLM/tool execution remains disabled.
+- Writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, and physical controls remain blocked.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 209 tests.
+
+Manual check:
+
+1. Ask Oom Sakkie: `What are the agent operating contracts?`
+2. Confirm it uses `agent_operating_contracts`.
+3. Confirm Ledger cannot send customer messages, Rootline cannot start pumps/valves, and Beacon cannot post publicly.
+4. Confirm the answer says these are planning contracts only, not runtime authority.
+
+### 10.9AO Oom Sakkie Agent Contracts Review Endpoint - Local Ready
+
+Purpose:
+
+- Make the operating contracts directly inspectable by reviewers and future UI without going through chat.
+- Keep the endpoint protected and review-only.
+
+What changed:
+
+- Added protected `GET /api/oom-sakkie/agents/contracts`.
+- The route returns `get_agent_operating_contracts()` plus a `review_guard` with all execution/runtime/write flags false.
+- Added route tests for:
+  - successful local contract inspection,
+  - non-local access denial.
+- Added frontend route contract coverage for the new endpoint.
+
+Safety status:
+
+- Read-only route only.
+- Loopback/private-LAN review guard applies.
+- Runtime remains disabled.
+- Dispatch remains disabled.
+- Specialist LLM/tool execution remains disabled.
+- Writes, public/customer output, Builder/Forge execution, patch application, deploy, Telegram cutover, and physical controls remain blocked.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 211 tests.
+
+Manual check:
+
+1. Open `/api/oom-sakkie/agents/contracts` locally.
+2. Confirm `mode = agent_operating_contracts_only`.
+3. Confirm `review_guard.runs_specialist = false`, `dispatch_enabled = false`, and `writes = false`.
+4. Confirm Beacon, Forge, and Gatekeeper are listed under `locked_out_of_dry_run`.
 
 7.3E weather LLM triage note:
 

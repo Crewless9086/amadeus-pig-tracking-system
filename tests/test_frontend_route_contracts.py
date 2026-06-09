@@ -15,6 +15,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("202606080002_create_oom_sakkie_agent_dry_run_results.sql", workflow)
         self.assertIn("python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts", workflow)
         self.assertIn("node --check static/js/oomSakkie.js", workflow)
+        self.assertIn("node tests/oom_sakkie_browser_behavior_smoke.js", workflow)
 
         self.assertIn("No specialist dispatch.", checklist)
         self.assertIn("No Background Polling", checklist)
@@ -63,6 +64,17 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("recordAgentResultEvent", render_rows)
         self.assertIn("openAgentResultPacket", render_rows)
 
+    def test_oom_sakkie_browser_behavior_smoke_executes_real_kiosk_script(self):
+        smoke = Path("tests/oom_sakkie_browser_behavior_smoke.js").read_text(encoding="utf-8")
+
+        self.assertIn('fs.readFileSync(path.join(__dirname, "..", "static", "js", "oomSakkie.js")', smoke)
+        self.assertIn("vm.runInNewContext(source, sandbox", smoke)
+        self.assertIn("kiosk startup must not create background polling intervals", smoke)
+        self.assertIn("kiosk startup must not perform hidden POST requests", smoke)
+        self.assertIn("Sentinel dry-run request must POST only after owner click", smoke)
+        self.assertIn("Agent dry-run result recording must POST only after owner click", smoke)
+        self.assertIn("quick ask should POST a single owner-triggered message", smoke)
+
     def test_oom_sakkie_kiosk_page_and_api_are_registered(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
         template = Path("templates/oom-sakkie.html").read_text(encoding="utf-8")
@@ -78,6 +90,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/policy", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/specialists", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents", methods=["GET"])', route_source)
+        self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/contracts", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agents/recommend", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["POST"])', route_source)
