@@ -113,6 +113,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
                 "agent_dispatch_decision_rail_blueprint",
+                "dispatch_decision_status",
                 "agent_runtime_review_packet",
                 "agent_operating_contracts",
                 "agent_runtime_readiness",
@@ -720,6 +721,42 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["dispatch_blueprint"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_blueprint"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    @patch("modules.oom_sakkie.tools.list_dispatch_requests")
+    def test_dispatch_decision_status_tool_is_read_only(self, mock_dispatch):
+        from modules.oom_sakkie.tools import dispatch_decision_status_handler
+
+        mock_dispatch.return_value = ({
+            "success": True,
+            "configured": True,
+            "dispatch_requests": [
+                {
+                    "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                    "specialist_slug": "sentinel",
+                    "latest_decision": None,
+                },
+                {
+                    "dispatch_request_id": "OSK-DISPATCH-REQ-2",
+                    "specialist_slug": "prism",
+                    "latest_decision": {"decision_type": "approved_for_design_review"},
+                },
+            ],
+        }, 200)
+
+        result = dispatch_decision_status_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("1 request(s) need owner/Claude design review", result["summary"])
+        self.assertIn("No specialist dispatch is enabled", result["summary"])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "dispatch_decision_status")
+        self.assertEqual(result["llm_context"]["counts"]["pending_design_review"], 1)
+        self.assertEqual(result["llm_context"]["counts"]["approved_for_design_review"], 1)
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertIn("OSK-DISPATCH-REQ-1", result["llm_context"]["next_action"])
 
     def test_agent_runtime_review_packet_tool_is_read_only(self):
         from modules.oom_sakkie.tools import agent_runtime_review_packet_handler
@@ -1538,10 +1575,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("before update on public.oom_sakkie_agent_dry_run_results", migration)
         self.assertIn("before delete on public.oom_sakkie_agent_dry_run_result_events", migration)
 
+    @patch("modules.oom_sakkie.tools.list_dispatch_requests")
     @patch("modules.oom_sakkie.tools.list_deploy_decisions")
     @patch("modules.oom_sakkie.tools.list_patch_proposals")
     @patch("modules.oom_sakkie.tools.list_build_requests")
-    def test_system_work_status_is_read_only_approval_summary(self, mock_builds, mock_patches, mock_deploys):
+    def test_system_work_status_is_read_only_approval_summary(self, mock_builds, mock_patches, mock_deploys, mock_dispatch):
         from modules.oom_sakkie.tools import system_work_status_handler
 
         mock_builds.return_value = ({
@@ -1565,6 +1603,14 @@ class OomSakkieServiceTests(unittest.TestCase):
             "configured": True,
             "deploy_decisions": [],
         }, 200)
+        mock_dispatch.return_value = ({
+            "success": True,
+            "configured": True,
+            "dispatch_requests": [{
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "latest_decision": None,
+            }],
+        }, 200)
 
         result = system_work_status_handler({})
 
@@ -1575,12 +1621,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "system_work_status")
         self.assertEqual(result["llm_context"]["counts"]["pending_build_requests"], 1)
+        self.assertEqual(result["llm_context"]["counts"]["pending_dispatch_design_requests"], 1)
         self.assertIn("Open Forge Handoff", result["llm_context"]["next_action"])
 
+    @patch("modules.oom_sakkie.tools.list_dispatch_requests")
     @patch("modules.oom_sakkie.tools.list_deploy_decisions")
     @patch("modules.oom_sakkie.tools.list_patch_proposals")
     @patch("modules.oom_sakkie.tools.list_build_requests")
-    def test_system_work_status_tracks_pipeline_stages(self, mock_builds, mock_patches, mock_deploys):
+    def test_system_work_status_tracks_pipeline_stages(self, mock_builds, mock_patches, mock_deploys, mock_dispatch):
         from modules.oom_sakkie.tools import system_work_status_handler
 
         mock_builds.return_value = ({
@@ -1607,6 +1655,11 @@ class OomSakkieServiceTests(unittest.TestCase):
             "configured": True,
             "deploy_decisions": [],
         }, 200)
+        mock_dispatch.return_value = ({
+            "success": True,
+            "configured": True,
+            "dispatch_requests": [],
+        }, 200)
 
         result = system_work_status_handler({})
 
@@ -1615,10 +1668,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("verification", result["llm_context"]["next_action"])
         self.assertIn("OSK-PATCH-READY", result["llm_context"]["next_action"])
 
+    @patch("modules.oom_sakkie.tools.list_dispatch_requests")
     @patch("modules.oom_sakkie.tools.list_deploy_decisions")
     @patch("modules.oom_sakkie.tools.list_patch_proposals")
     @patch("modules.oom_sakkie.tools.list_build_requests")
-    def test_system_work_status_warns_when_store_unavailable(self, mock_builds, mock_patches, mock_deploys):
+    def test_system_work_status_warns_when_store_unavailable(self, mock_builds, mock_patches, mock_deploys, mock_dispatch):
         from modules.oom_sakkie.tools import system_work_status_handler
 
         mock_builds.return_value = ({
@@ -1636,6 +1690,11 @@ class OomSakkieServiceTests(unittest.TestCase):
             "success": True,
             "configured": True,
             "deploy_decisions": [],
+        }, 200)
+        mock_dispatch.return_value = ({
+            "success": True,
+            "configured": True,
+            "dispatch_requests": [],
         }, 200)
 
         result = system_work_status_handler({})
@@ -2344,6 +2403,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "show me authority unlock readiness": "agent_authority_unlock_readiness",
             "show me the dispatch rail blueprint": "agent_dispatch_decision_rail_blueprint",
             "what is the dispatch approval rail": "agent_dispatch_decision_rail_blueprint",
+            "what is the dispatch decision status": "dispatch_decision_status",
+            "which dispatch requests are waiting for review": "dispatch_decision_status",
             "show me the agent runtime review packet": "agent_runtime_review_packet",
             "prepare the bulk claude review": "agent_runtime_review_packet",
             "what are the agent operating contracts": "agent_operating_contracts",

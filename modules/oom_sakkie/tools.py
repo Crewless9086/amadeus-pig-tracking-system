@@ -20,6 +20,7 @@ from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_res
 from modules.oom_sakkie.agent_dry_run_store import list_agent_dry_run_requests
 from modules.oom_sakkie.build_request_store import list_build_requests
 from modules.oom_sakkie.deploy_decision_store import list_deploy_decisions
+from modules.oom_sakkie.dispatch_decision_store import list_dispatch_requests
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
 from modules.reports.report_service import get_farm_attention_summary
 from modules.pig_weights.pig_weights_controller import (
@@ -732,21 +733,24 @@ def system_work_status_handler(_args):
     build_result, build_status = list_build_requests(limit=5)
     patch_result, patch_status = list_patch_proposals(limit=5)
     deploy_result, deploy_status = list_deploy_decisions(limit=5)
+    dispatch_result, dispatch_status = list_dispatch_requests(limit=5)
 
     statuses = {
         "build_requests": build_status,
         "patch_proposals": patch_status,
         "deploy_decisions": deploy_status,
+        "dispatch_requests": dispatch_status,
     }
     store_warnings = _system_work_store_warnings(statuses)
     configured = all(
         result.get("configured", True)
-        for result in (build_result, patch_result, deploy_result)
+        for result in (build_result, patch_result, deploy_result, dispatch_result)
         if isinstance(result, dict)
     )
     build_items = build_result.get("build_requests", []) if isinstance(build_result, dict) else []
     patch_items = patch_result.get("patch_proposals", []) if isinstance(patch_result, dict) else []
     deploy_items = deploy_result.get("deploy_decisions", []) if isinstance(deploy_result, dict) else []
+    dispatch_items = dispatch_result.get("dispatch_requests", []) if isinstance(dispatch_result, dict) else []
     pending_build = [
         item for item in build_items
         if _system_work_build_stage(item) == "pending"
@@ -768,12 +772,14 @@ def system_work_status_handler(_args):
         item for item in approved_patch
         if item.get("patch_proposal_id") not in deploy_decided_patch_ids
     ]
+    pending_dispatch_design = _dispatch_requests_without_decision(dispatch_items)
 
     if store_warnings:
         base_summary = (
             f"{len(pending_build)} item(s) need Forge Handoff or a Builder plan, "
             f"{len(patch_without_decision)} patch proposal(s) need approve/reject review, "
-            f"and {len(deploy_ready_patch)} approved patch proposal(s) need verification plus a deploy decision from the stores I could read."
+            f"{len(deploy_ready_patch)} approved patch proposal(s) need verification plus a deploy decision, "
+            f"and {len(pending_dispatch_design)} dispatch design request(s) need owner/Claude review from the stores I could read."
         )
         if not configured:
             summary = "System work status is incomplete because one or more approval stores are not configured. " + base_summary
@@ -789,7 +795,8 @@ def system_work_status_handler(_args):
             "System work status: "
             f"{len(pending_build)} item(s) need Forge Handoff or a Builder plan, "
             f"{len(patch_without_decision)} patch proposal(s) need approve/reject review, "
-            f"and {len(deploy_ready_patch)} approved patch proposal(s) need verification plus a deploy decision."
+            f"{len(deploy_ready_patch)} approved patch proposal(s) need verification plus a deploy decision, "
+            f"and {len(pending_dispatch_design)} dispatch design request(s) need owner/Claude review."
         )
         status = "ok"
 
@@ -799,28 +806,89 @@ def system_work_status_handler(_args):
         "summary": summary,
         "links": [{"label": "Oom Sakkie Workbench", "href": "/oom-sakkie"}],
         "stale_warnings": store_warnings,
-        "safety_notes": ["System work status is read-only. No build, patch, or deploy was run."],
+        "safety_notes": ["System work status is read-only. No build, patch, deploy, specialist dispatch, specialist LLM/tool execution, or runtime change was run."],
         "llm_context": {
             "kind": "system_work_status",
             "counts": {
                 "build_requests": len(build_items),
                 "patch_proposals": len(patch_items),
                 "deploy_decisions": len(deploy_items),
+                "dispatch_requests": len(dispatch_items),
                 "pending_build_requests": len(pending_build),
                 "patch_proposals_without_decision": len(patch_without_decision),
                 "approved_patch_proposals": len(approved_patch),
                 "deploy_ready_patch_proposals": len(deploy_ready_patch),
+                "pending_dispatch_design_requests": len(pending_dispatch_design),
             },
             "statuses": statuses,
-            "next_action": _system_work_next_action(pending_build, patch_without_decision, deploy_ready_patch),
+            "next_action": _system_work_next_action(
+                pending_build,
+                patch_without_decision,
+                deploy_ready_patch,
+                pending_dispatch_design,
+            ),
         },
         "raw": {
             "build_requests": build_result,
             "patch_proposals": patch_result,
             "deploy_decisions": deploy_result,
+            "dispatch_requests": dispatch_result,
             "statuses": statuses,
         },
 }
+
+
+def dispatch_decision_status_handler(_args):
+    result, status_code = list_dispatch_requests(limit=8)
+    dispatch_items = result.get("dispatch_requests", []) if isinstance(result, dict) else []
+    pending = _dispatch_requests_without_decision(dispatch_items)
+    counts = _dispatch_decision_counts(dispatch_items)
+    configured = bool(result.get("configured", True)) if isinstance(result, dict) else False
+    stale_warnings = []
+    if status_code != 200:
+        stale_warnings.append(f"Dispatch design status is incomplete: dispatch_requests unavailable (status {status_code}).")
+
+    if status_code == 200:
+        summary = (
+            "Dispatch design status: "
+            f"{len(pending)} request(s) need owner/Claude design review, "
+            f"{counts.get('approved_for_design_review', 0)} approved for design review, "
+            f"{counts.get('rejected', 0)} rejected, and {counts.get('deferred', 0)} deferred. "
+            "No specialist dispatch is enabled."
+        )
+        status = "ok"
+    elif not configured:
+        summary = "Dispatch design status is not configured in this process. No specialist dispatch is enabled."
+        status = "not_configured"
+    else:
+        summary = "Dispatch design status is degraded because the dispatch request store could not be read. No specialist dispatch is enabled."
+        status = "degraded"
+
+    return {
+        "success": status_code == 200,
+        "status": status,
+        "summary": summary,
+        "links": [{"label": "Dispatch Requests", "href": "/api/oom-sakkie/dispatch-requests"}],
+        "stale_warnings": stale_warnings,
+        "safety_notes": [
+            "Dispatch design status is read-only. No specialist was dispatched, no specialist LLM/tool ran, no runtime flag changed, and no farm data was written."
+        ],
+        "llm_context": {
+            "kind": "dispatch_decision_status",
+            "counts": {
+                "dispatch_requests": len(dispatch_items),
+                "pending_design_review": len(pending),
+                **counts,
+            },
+            "next_action": _dispatch_decision_next_action(pending),
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": result,
+    }
 
 
 def _system_work_store_warnings(statuses):
@@ -1463,7 +1531,7 @@ def _system_work_build_stage(item):
     return "pending"
 
 
-def _system_work_next_action(pending_build, patch_without_decision, deploy_ready_patch):
+def _system_work_next_action(pending_build, patch_without_decision, deploy_ready_patch, pending_dispatch_design=None):
     if pending_build:
         first = pending_build[0]
         return f"Open Forge Handoff for {first.get('build_request_id', 'the oldest build request')}."
@@ -1473,7 +1541,38 @@ def _system_work_next_action(pending_build, patch_without_decision, deploy_ready
     if deploy_ready_patch:
         first = deploy_ready_patch[0]
         return f"Review/apply the approved patch outside the kiosk, run verification, then record a deploy decision for {first.get('patch_proposal_id', 'the approved patch proposal')}."
+    if pending_dispatch_design:
+        first = pending_dispatch_design[0]
+        return f"Review dispatch design request {first.get('dispatch_request_id', 'waiting for review')} with Claude before any runtime code."
     return "No build approval work is waiting in the latest queue snapshot."
+
+
+def _dispatch_requests_without_decision(dispatch_items):
+    return [
+        item for item in dispatch_items
+        if not (item.get("latest_decision") or {}).get("decision_type")
+    ]
+
+
+def _dispatch_decision_counts(dispatch_items):
+    counts = {
+        "approved_for_design_review": 0,
+        "rejected": 0,
+        "deferred": 0,
+        "review_note": 0,
+    }
+    for item in dispatch_items:
+        decision_type = (item.get("latest_decision") or {}).get("decision_type")
+        if decision_type in counts:
+            counts[decision_type] += 1
+    return counts
+
+
+def _dispatch_decision_next_action(pending):
+    if pending:
+        first = pending[0]
+        return f"Review dispatch design request {first.get('dispatch_request_id', 'waiting for review')} with Claude before any runtime code."
+    return "No dispatch design request is waiting in the latest queue snapshot."
 
 
 def _combined_status(*statuses):
@@ -1580,6 +1679,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_dispatch_decision_rail_blueprint_handler,
         description="Read-only blueprint for a future append-only specialist dispatch decision rail. Never enables dispatch or runs agents.",
+    ),
+    "dispatch_decision_status": OomSakkieTool(
+        name="dispatch_decision_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=dispatch_decision_status_handler,
+        description="Read-only status of append-only dispatch design requests and decisions. Never dispatches specialists or enables runtime flags.",
     ),
     "agent_runtime_review_packet": OomSakkieTool(
         name="agent_runtime_review_packet",

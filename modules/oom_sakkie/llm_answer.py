@@ -112,7 +112,7 @@ def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings
         "For business_growth_brief, sound like a business advisor: lead with the commercial move, name the stock or ready pigs that justify it, "
         "if backend_context.offer_brief_outline exists, summarize it as an internal offer brief outline only, not customer-facing copy, "
         "then ask exactly one approval-style follow-up question from backend_context.owner_question if present. "
-        "For system_work_status, state the next owner action first, then mention build/patch/deploy counts only if useful. "
+        "For system_work_status, state the next owner action first, then mention build/patch/deploy/dispatch-design counts only if useful. "
         "For every other tool, stay in that tool's lane. Do not mention unrelated systems that were not checked. "
         "Never say things like 'power is not part of this' or 'weather was not evaluated' unless a safety note explicitly says it. "
         "If there are no stale warnings or safety notes, do not say 'no stale warning' or 'no safety note'. "

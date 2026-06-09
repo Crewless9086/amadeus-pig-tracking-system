@@ -59,6 +59,10 @@ RULES = [
         IntentMatch("agent_dispatch_decision_rail_blueprint", "agent_dispatch_decision_rail_blueprint", 0.95, "rule:agent_dispatch_decision_rail_blueprint"),
     ),
     (
+        re.compile(r"\b(dispatch decision status|dispatch request status|dispatch requests.*review|dispatch design review|dispatch design queue|live dispatch review queue|what dispatch.*review|which dispatch.*waiting)\b", re.I),
+        IntentMatch("dispatch_decision_status", "dispatch_decision_status", 0.95, "rule:dispatch_decision_status"),
+    ),
+    (
         re.compile(r"\b(agent runtime review packet|runtime review packet|bulk claude review|claude review packet|agent review packet|review the agent runtime)\b", re.I),
         IntentMatch("agent_runtime_review_packet", "agent_runtime_review_packet", 0.95, "rule:agent_runtime_review_packet"),
     ),
