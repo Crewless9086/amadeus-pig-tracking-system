@@ -903,10 +903,12 @@ def agent_activation_plan_handler(_args):
     candidate = plan.get("recommended_first_candidate") or {}
     learning = accepted_agent_learning_snapshot(limit=20)
     accepted_count = learning["accepted_count"]
+    specialist_summary = _accepted_learning_specialist_summary(learning.get("accepted_by_specialist", {}))
     learning_line = (
-        f"Accepted learning evidence: {accepted_count} Sentinel result(s) can guide planning, but runtime stays locked. "
+        f"Accepted learning evidence: {accepted_count} accepted agent result(s) can guide planning"
+        f"{specialist_summary}, but runtime stays locked. "
         if accepted_count
-        else "No accepted Sentinel learning evidence is available yet. "
+        else "No accepted agent learning evidence is available yet. "
     )
     summary = (
         "Agent activation plan: foundation is visible now; next safe stage is a read-only dry-run. "
@@ -934,6 +936,7 @@ def agent_activation_plan_handler(_args):
             "selected_agent": candidate,
             "accepted_learning": learning["evidence"],
             "accepted_learning_count": accepted_count,
+            "accepted_by_specialist": learning.get("accepted_by_specialist", {}),
         },
         "raw": {
             "activation_plan": plan,
@@ -1015,10 +1018,16 @@ def agent_dry_run_status_handler(_args):
         item for item in dry_run_results
         if (item.get("latest_event") or {}).get("event_type") == "accepted_for_learning"
     ]
+    specialist_counts = _agent_dry_run_counts_by_specialist(requests, dry_run_results)
+    active_specialists = [
+        f"{slug}: {counts['requests']} request(s), {counts['results']} result(s)"
+        for slug, counts in sorted(specialist_counts.items())
+        if counts["requests"] or counts["results"]
+    ]
     summary = (
         "Agent dry-run queue: {} request(s) loaded, {} waiting for manual review, {} cancelled. "
         "{} result(s) loaded, {} waiting for owner review, {} accepted for learning. "
-        "This is queue status only; no specialist was dispatched."
+        "{} This is queue status only; no specialist was dispatched."
     ).format(
         len(requests),
         len(waiting),
@@ -1026,6 +1035,7 @@ def agent_dry_run_status_handler(_args):
         len(dry_run_results),
         len(result_waiting),
         len(result_accepted),
+        "Specialists in view: {}.".format("; ".join(active_specialists[:6])) if active_specialists else "No specialist-specific queue items are loaded.",
     )
     if status_code != 200 or results_status_code != 200:
         summary = "Agent dry-run queue is unavailable. " + summary
@@ -1052,6 +1062,7 @@ def agent_dry_run_status_handler(_args):
                 "results_waiting_for_owner_review": len(result_waiting),
                 "results_accepted_for_learning": len(result_accepted),
             },
+            "specialist_counts": specialist_counts,
             "requests": requests,
             "results": dry_run_results,
             "runtime_flags": {
@@ -1070,10 +1081,43 @@ def agent_dry_run_status_handler(_args):
     }
 
 
+def _agent_dry_run_counts_by_specialist(requests, dry_run_results):
+    counts = {}
+    for item in list(requests or []):
+        slug = str(item.get("specialist_slug") or "unknown").strip().lower() or "unknown"
+        counts.setdefault(slug, {
+            "requests": 0,
+            "requests_waiting": 0,
+            "results": 0,
+            "results_waiting": 0,
+            "accepted_for_learning": 0,
+        })
+        counts[slug]["requests"] += 1
+        if not (item.get("latest_event") or {}).get("event_type"):
+            counts[slug]["requests_waiting"] += 1
+    for item in list(dry_run_results or []):
+        slug = str(item.get("specialist_slug") or "unknown").strip().lower() or "unknown"
+        counts.setdefault(slug, {
+            "requests": 0,
+            "requests_waiting": 0,
+            "results": 0,
+            "results_waiting": 0,
+            "accepted_for_learning": 0,
+        })
+        counts[slug]["results"] += 1
+        event_type = (item.get("latest_event") or {}).get("event_type")
+        if not event_type:
+            counts[slug]["results_waiting"] += 1
+        if event_type == "accepted_for_learning":
+            counts[slug]["accepted_for_learning"] += 1
+    return counts
+
+
 def agent_learning_evidence_handler(_args):
     learning = accepted_agent_learning_snapshot(limit=20)
     status_code = learning["status_code"]
     accepted_count = learning["accepted_count"]
+    specialist_summary = _accepted_learning_specialist_summary(learning.get("accepted_by_specialist", {}))
     stale_warnings = []
     if status_code != 200:
         stale_warnings.append(f"Agent learning evidence is unavailable (status {status_code}).")
@@ -1081,15 +1125,16 @@ def agent_learning_evidence_handler(_args):
     if accepted_count:
         first = learning["accepted_results"][0]
         summary = (
-            "Agent learning evidence: {} accepted Sentinel result(s) are available. "
+            "Agent learning evidence: {} accepted agent result(s) are available{}. "
             "Most recent: {}. This can guide future planning, but no specialist was run and no runtime changed."
         ).format(
             accepted_count,
+            specialist_summary,
             (first.get("result_text") or first.get("dry_run_result_id") or "accepted result")[:180],
         )
     elif status_code == 200:
         summary = (
-            "Agent learning evidence: no accepted Sentinel dry-run results are available yet. "
+            "Agent learning evidence: no accepted agent dry-run results are available yet. "
             "Accept a result first if you want it to become planning evidence."
         )
     else:
@@ -1099,7 +1144,7 @@ def agent_learning_evidence_handler(_args):
         "success": status_code == 200,
         "status": learning["status"],
         "summary": summary,
-        "links": [{"label": "Sentinel Result Queue", "href": "/api/oom-sakkie/agent-dry-run-results"}],
+        "links": [{"label": "Agent Result Queue", "href": "/api/oom-sakkie/agent-dry-run-results"}],
         "stale_warnings": stale_warnings,
         "safety_notes": [
             "Agent learning evidence is read-only. It reads accepted review events only; no specialist was dispatched, no specialist LLM ran, no specialist tool executed, no runtime change was applied, and no write was performed."
@@ -1108,6 +1153,7 @@ def agent_learning_evidence_handler(_args):
             "kind": "agent_learning_evidence",
             "accepted_count": accepted_count,
             "evidence": learning["evidence"],
+            "accepted_by_specialist": learning.get("accepted_by_specialist", {}),
             "runtime_flags": {
                 "dry_run_enabled": False,
                 "dispatch_enabled": False,
@@ -1120,6 +1166,7 @@ def agent_learning_evidence_handler(_args):
         "raw": {
             "mode": "accepted_agent_learning_evidence",
             "accepted_results": learning["evidence"],
+            "accepted_by_specialist": learning.get("accepted_by_specialist", {}),
             "all_results_count": learning["all_results_count"],
         },
     }
@@ -1132,6 +1179,10 @@ def accepted_agent_learning_snapshot(limit=20):
         item for item in dry_run_results
         if (item.get("latest_event") or {}).get("event_type") == "accepted_for_learning"
     ]
+    accepted_by_specialist = {}
+    for item in accepted:
+        slug = str(item.get("specialist_slug") or "unknown").strip().lower() or "unknown"
+        accepted_by_specialist[slug] = accepted_by_specialist.get(slug, 0) + 1
     evidence = []
     for item in accepted[:8]:
         latest_event = item.get("latest_event") or {}
@@ -1148,10 +1199,22 @@ def accepted_agent_learning_snapshot(limit=20):
         "status_code": status_code,
         "status": results_result.get("status", "unavailable") if isinstance(results_result, dict) else "unavailable",
         "accepted_count": len(accepted),
+        "accepted_by_specialist": accepted_by_specialist,
         "accepted_results": accepted,
         "evidence": evidence,
         "all_results_count": len(dry_run_results),
     }
+
+
+def _accepted_learning_specialist_summary(counts):
+    if not counts:
+        return ""
+    parts = [
+        f"{slug}: {count}"
+        for slug, count in sorted(counts.items())
+        if count
+    ]
+    return f" ({', '.join(parts)})" if parts else ""
 
 
 def _system_work_build_stage(item):
@@ -1227,7 +1290,7 @@ TOOL_REGISTRY = {
         risk_level=RiskLevel.READ_ONLY,
         requires_confirmation=False,
         handler=agent_learning_evidence_handler,
-        description="Read-only accepted Sentinel learning evidence. Never applies runtime changes or dispatches agents.",
+        description="Read-only accepted agent learning evidence. Never applies runtime changes or dispatches agents.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

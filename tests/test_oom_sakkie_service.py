@@ -406,7 +406,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("read-only dry-run", result["summary"])
-        self.assertIn("No accepted Sentinel learning evidence", result["summary"])
+        self.assertIn("No accepted agent learning evidence", result["summary"])
         self.assertIn("no specialist was dispatched", result["safety_notes"][0].lower())
         self.assertEqual(result["llm_context"]["kind"], "agent_activation_plan")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
@@ -423,9 +423,9 @@ class OomSakkieServiceTests(unittest.TestCase):
             "dry_run_results": [{
                 "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
                 "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
-                "specialist_slug": "sentinel",
-                "result_text": "Sentinel says guardrails stayed locked.",
-                "findings": ["Runtime flags stayed false."],
+                "specialist_slug": "ledger",
+                "result_text": "Ledger says offer planning should stay internal.",
+                "findings": ["No customer message should be sent."],
                 "latest_event": {
                     "event_type": "accepted_for_learning",
                     "notes": "Useful.",
@@ -437,8 +437,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         result = agent_activation_plan_handler({})
 
         self.assertTrue(result["success"])
-        self.assertIn("Accepted learning evidence: 1 Sentinel result", result["summary"])
+        self.assertIn("Accepted learning evidence: 1 accepted agent result", result["summary"])
+        self.assertIn("ledger: 1", result["summary"])
         self.assertEqual(result["llm_context"]["accepted_learning_count"], 1)
+        self.assertEqual(result["llm_context"]["accepted_by_specialist"]["ledger"], 1)
         self.assertEqual(
             result["llm_context"]["accepted_learning"][0]["dry_run_result_id"],
             "OSK-AGENT-DRYRUN-RESULT-1",
@@ -476,6 +478,10 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
                 "specialist_slug": "sentinel",
                 "latest_event": None,
+            }, {
+                "dry_run_request_id": "OSK-AGENT-DRYRUN-2",
+                "specialist_slug": "ledger",
+                "latest_event": {"event_type": "approved"},
             }],
         }, 200)
         mock_results.return_value = ({
@@ -484,19 +490,30 @@ class OomSakkieServiceTests(unittest.TestCase):
             "dry_run_results": [{
                 "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
                 "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+                "specialist_slug": "sentinel",
                 "latest_event": None,
+            }, {
+                "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-2",
+                "dry_run_request_id": "OSK-AGENT-DRYRUN-2",
+                "specialist_slug": "ledger",
+                "latest_event": {"event_type": "accepted_for_learning"},
             }],
         }, 200)
 
         result = agent_dry_run_status_handler({})
 
         self.assertTrue(result["success"])
-        self.assertIn("1 request", result["summary"])
-        self.assertIn("1 result", result["summary"])
+        self.assertIn("2 request", result["summary"])
+        self.assertIn("2 result", result["summary"])
+        self.assertIn("ledger: 1 request(s), 1 result(s)", result["summary"])
+        self.assertIn("sentinel: 1 request(s), 1 result(s)", result["summary"])
         self.assertIn("No specialist was dispatched", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "agent_dry_run_status")
         self.assertEqual(result["llm_context"]["counts"]["waiting_for_review"], 1)
         self.assertEqual(result["llm_context"]["counts"]["results_waiting_for_owner_review"], 1)
+        self.assertEqual(result["llm_context"]["specialist_counts"]["sentinel"]["requests_waiting"], 1)
+        self.assertEqual(result["llm_context"]["specialist_counts"]["sentinel"]["results_waiting"], 1)
+        self.assertEqual(result["llm_context"]["specialist_counts"]["ledger"]["accepted_for_learning"], 1)
         self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runtime_flags"]["applies_runtime_change"])
 
@@ -534,8 +551,8 @@ class OomSakkieServiceTests(unittest.TestCase):
                 {
                     "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
                     "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
-                    "specialist_slug": "sentinel",
-                    "result_text": "Sentinel says the runtime flags stayed off.",
+                    "specialist_slug": "ledger",
+                    "result_text": "Ledger says the offer should remain internal.",
                     "findings": ["Runtime flags stayed false."],
                     "latest_event": {
                         "event_type": "accepted_for_learning",
@@ -546,6 +563,18 @@ class OomSakkieServiceTests(unittest.TestCase):
                 {
                     "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-2",
                     "dry_run_request_id": "OSK-AGENT-DRYRUN-2",
+                    "specialist_slug": "rootline",
+                    "result_text": "Rootline says irrigation context is stale.",
+                    "findings": ["No pump command."],
+                    "latest_event": {
+                        "event_type": "accepted_for_learning",
+                        "notes": "Useful boundary.",
+                        "created_at": "2026-06-08T11:00:00+00:00",
+                    },
+                },
+                {
+                    "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-3",
+                    "dry_run_request_id": "OSK-AGENT-DRYRUN-3",
                     "specialist_slug": "sentinel",
                     "result_text": "Not accepted.",
                     "findings": ["Ignore."],
@@ -557,9 +586,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         result = agent_learning_evidence_handler({})
 
         self.assertTrue(result["success"])
-        self.assertIn("1 accepted Sentinel result", result["summary"])
+        self.assertIn("2 accepted agent result", result["summary"])
+        self.assertIn("ledger: 1", result["summary"])
+        self.assertIn("rootline: 1", result["summary"])
         self.assertEqual(result["llm_context"]["kind"], "agent_learning_evidence")
-        self.assertEqual(result["llm_context"]["accepted_count"], 1)
+        self.assertEqual(result["llm_context"]["accepted_count"], 2)
+        self.assertEqual(result["llm_context"]["accepted_by_specialist"]["ledger"], 1)
+        self.assertEqual(result["llm_context"]["accepted_by_specialist"]["rootline"], 1)
         self.assertEqual(result["llm_context"]["evidence"][0]["dry_run_result_id"], "OSK-AGENT-DRYRUN-RESULT-1")
         self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runtime_flags"]["applies_runtime_change"])
@@ -831,7 +864,51 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(packet["writes"])
         self.assertIn("You are Ledger", packet["prompt"])
         self.assertIn("business and profit reviewer", packet["prompt"])
+        self.assertIn("business growth brief", packet["required_context"])
+        self.assertIn("unapproved price change", packet["risk_checks"])
+        self.assertIn("customer messages", packet["prompt"])
+        self.assertIn("read-only business review", packet["owner_approval_question"])
         self.assertIn("Do not call tools", packet["prompt"])
+
+    def test_rootline_dry_run_handoff_names_physical_control_risks(self):
+        request = _agent_dry_run_request_row((
+            "OSK-AGENT-DRYRUN-ROOTLINE",
+            "approved_for_read_only_dry_run",
+            "read_only_dry_run_request_only",
+            "rootline",
+            "owner",
+            "Review whether we need to water anything.",
+            "Future Rootline dry-run request.",
+            "",
+            ["weather_now", "weather_today", "weather_forecast", "irrigation_status"],
+            ["No pump control.", "Owner must review output."],
+            "manual_review_before_any_specialist_execution",
+            False,
+            False,
+            False,
+            False,
+            False,
+            datetime(2026, 6, 9, tzinfo=timezone.utc),
+            None,
+            None,
+            None,
+            None,
+        ))
+
+        packet, status_code = build_agent_dry_run_handoff(request)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["specialist_slug"], "rootline")
+        self.assertEqual(packet["specialist_name"], "Rootline")
+        self.assertFalse(packet["runs_specialist"])
+        self.assertFalse(packet["runs_specialist_llm"])
+        self.assertFalse(packet["runs_specialist_tools"])
+        self.assertFalse(packet["dispatch_enabled"])
+        self.assertFalse(packet["writes"])
+        self.assertIn("weather today", packet["required_context"])
+        self.assertIn("pump/control command", packet["risk_checks"])
+        self.assertIn("Do not write farm data", packet["prompt"])
+        self.assertIn("read-only weather/irrigation review", packet["owner_approval_question"])
 
     def test_agent_dry_run_migration_is_append_only_and_no_execution(self):
         migration = Path("supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql").read_text(encoding="utf-8")
@@ -977,6 +1054,58 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(packet["review_guard"]["writes"])
         self.assertFalse(packet["review_guard"]["applies_runtime_change"])
         self.assertIn("Owner should accept", packet["next_action"])
+
+    def test_agent_dry_run_result_review_packet_classifies_business_evidence_without_unlocking_actions(self):
+        packet, status_code = build_agent_dry_run_result_review_packet({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-LEDGER",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-LEDGER",
+            "specialist_slug": "ledger",
+            "mode": "dry_run_result_review_only",
+            "result_text": "Ledger would ask for margin data before deciding the next offer.",
+            "findings": ["No price change should happen yet."],
+            "recommended_next_gate": "owner_review_before_learning_or_runtime_change",
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        })
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["specialist_slug"], "ledger")
+        self.assertEqual(packet["evidence_kind"], "business_review_evidence")
+        self.assertIn("future business brief questions", packet["may_influence"])
+        self.assertIn("customer messages", packet["must_not_influence"])
+        self.assertIn("price changes", packet["must_not_influence"])
+        self.assertFalse(packet["review_guard"]["dispatch_enabled"])
+        self.assertFalse(packet["review_guard"]["applies_runtime_change"])
+
+    def test_agent_dry_run_result_review_packet_classifies_rootline_physical_control_boundary(self):
+        packet, status_code = build_agent_dry_run_result_review_packet({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-ROOTLINE",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-ROOTLINE",
+            "specialist_slug": "rootline",
+            "mode": "dry_run_result_review_only",
+            "result_text": "Rootline would inspect stale weather before any irrigation decision.",
+            "findings": ["Do not control pump."],
+            "recommended_next_gate": "owner_review_before_learning_or_runtime_change",
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        })
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["specialist_slug"], "rootline")
+        self.assertEqual(packet["evidence_kind"], "weather_irrigation_review_evidence")
+        self.assertIn("future weather/irrigation inspection questions", packet["may_influence"])
+        self.assertIn("pump or valve commands", packet["must_not_influence"])
+        self.assertIn("physical controls", packet["must_not_influence"])
+        self.assertFalse(packet["review_guard"]["runs_specialist_tools"])
+        self.assertFalse(packet["review_guard"]["writes"])
 
     def test_agent_dry_run_result_review_packet_rejects_execution_flags(self):
         packet, status_code = build_agent_dry_run_result_review_packet({

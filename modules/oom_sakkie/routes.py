@@ -142,6 +142,7 @@ def oom_sakkie_agent_activation_plan():
         "activation_plan": get_agent_activation_plan(),
         "accepted_learning": learning["evidence"],
         "accepted_learning_count": learning["accepted_count"],
+        "accepted_by_specialist": learning.get("accepted_by_specialist", {}),
         "accepted_learning_status": learning["status"],
         "review_guard": {
             "runs_specialist": False,

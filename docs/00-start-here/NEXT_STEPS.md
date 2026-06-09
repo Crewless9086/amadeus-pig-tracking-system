@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AC. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AH. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -8754,6 +8754,200 @@ Manual check:
 3. Refresh `Agent Roadmap`.
 4. Confirm `Approved dry-run candidates` lists the approved cohort.
 5. Confirm each guard reads dry-run request allowed and runtime locked.
+
+### 10.9AD Oom Sakkie Specialist Dry-Run Handoff Quality - Local Ready
+
+Purpose:
+
+- Make approved specialist handoff packets useful enough for owner-reviewed dry-run planning.
+- Give each planned specialist a role-specific review shape without executing the specialist.
+
+What changed:
+
+- Added fixed specialist review guides for Sentinel, Prism, Ledger, Atlas, Rootline, Herdmaster, Butcher, and Quartermaster.
+- Each handoff packet now includes:
+  - `focus_questions`,
+  - `required_context`,
+  - `risk_checks`,
+  - `owner_approval_question`.
+- Handoff prompts now include those specialist-specific sections before the generic no-go rules.
+- Ledger handoffs now explicitly check business/profit risk such as fake revenue, unapproved price changes, and customer-facing wording.
+- Rootline handoffs now explicitly check physical-control risk such as pump/control commands and stale weather/irrigation assumptions.
+
+Safety status:
+
+- Pure packet/prompt text generation only.
+- Does not run specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not produce customer/public output.
+- Does not run Builder/Forge, apply patches, deploy, cut over Telegram, or control hardware.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 201 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Create or open a Ledger or Rootline dry-run request.
+2. Generate its handoff.
+3. Confirm the packet names the correct specialist role.
+4. Confirm the prompt says not to call tools, not to claim inspection, and to wait for owner approval.
+5. Confirm role-specific focus/context/risk sections are present.
+
+### 10.9AE Oom Sakkie Specialist Result Evidence Boundaries - Local Ready
+
+Purpose:
+
+- Make reviewed dry-run results safer to accept by showing exactly what accepted evidence may and must not influence.
+- Keep accepted learning useful for future planning without creating hidden runtime authority.
+
+What changed:
+
+- Added deterministic result-review profiles for Sentinel, Prism, Ledger, Atlas, Rootline, Herdmaster, Butcher, and Quartermaster.
+- Result review packets now include:
+  - `evidence_kind`,
+  - `may_influence`,
+  - `must_not_influence`,
+  - `owner_review_question`.
+- Ledger evidence may guide business-brief questions and internal offer planning, but must not influence customer messages, price changes, quotes, or invoices.
+- Rootline evidence may guide read-only weather/irrigation inspection questions, but must not influence pump/valve commands, irrigation schedules, or physical controls.
+- The kiosk review packet panel now displays Evidence kind, May influence, Must not influence, and Owner question.
+
+Safety status:
+
+- Review packet and UI display only.
+- Does not run specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not produce customer/public output.
+- Does not enable runtime flags, run Builder/Forge, apply patches, deploy, cut over Telegram, or control hardware.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 203 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open an Agent Result Review packet.
+2. Confirm Evidence kind, May influence, Must not influence, and Owner question are visible.
+3. Confirm accepting evidence still records only an append-only review event.
+4. Confirm no specialist/runtime/write guard changes after acceptance.
+
+### 10.9AF Oom Sakkie Per-Specialist Dry-Run Queue Status - Local Ready
+
+Purpose:
+
+- Let Oom Sakkie answer which planned specialists have dry-run requests/results in the review queue.
+- Make the agent queue easier to understand without reading raw Workbench lists.
+
+What changed:
+
+- `agent_dry_run_status` now calculates `specialist_counts` for loaded request/result rows.
+- Counts include:
+  - total requests,
+  - requests waiting,
+  - total results,
+  - results waiting,
+  - accepted-for-learning results.
+- The spoken/display summary now includes per-specialist queue items such as `ledger: 1 request(s), 1 result(s)`.
+
+Safety status:
+
+- Read-only queue summarization only.
+- Does not run specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not change review events, runtime flags, Builder/Forge, patches, deploys, Telegram, public output, or physical controls.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 203 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Ask Oom Sakkie: `What is the agent dry-run queue status?`
+2. Confirm the answer includes queue totals and specialist-specific queue items when present.
+3. Confirm the safety note still says no specialist was dispatched and no runtime change was applied.
+
+### 10.9AG Oom Sakkie Generic Agent Learning Evidence - Local Ready
+
+Purpose:
+
+- Make accepted dry-run learning evidence match the widened approved specialist cohort.
+- Stop owner-facing runtime wording from implying accepted learning is Sentinel-only now that Ledger, Rootline, Herdmaster, Butcher, Quartermaster, Atlas, and Prism can also produce reviewed evidence.
+
+What changed:
+
+- `accepted_agent_learning_snapshot` now includes `accepted_by_specialist` counts.
+- `agent_learning_evidence` now says accepted agent result(s), not accepted Sentinel result(s).
+- `agent_activation_plan` now reports accepted learning evidence by specialist when evidence exists.
+- The Agent Roadmap panel now labels the section `Accepted agent learning` and uses generic accepted-agent fallback copy.
+- Tool description for `agent_learning_evidence` now says accepted agent learning evidence.
+
+Safety status:
+
+- Read-only evidence summarization only.
+- Accepted evidence remains planning context only.
+- Does not run specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not change review events, enable runtime flags, run Builder/Forge, apply patches, deploy, cut over Telegram, produce public/customer output, or control hardware.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 203 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Accept dry-run result evidence for any non-Sentinel approved specialist, such as Ledger or Rootline.
+2. Ask Oom Sakkie: `What did the agents learn from accepted results?`
+3. Confirm the answer says accepted agent evidence and names the specialist count.
+4. Confirm the safety note still says no specialist was dispatched and no runtime change was applied.
+
+### 10.9AH Oom Sakkie Roadmap Learning Counts - Local Ready
+
+Purpose:
+
+- Make the Agent Roadmap panel show which planned specialists already have accepted evidence.
+- Keep the owner-facing roadmap useful as the approved dry-run cohort grows.
+
+What changed:
+
+- `GET /api/oom-sakkie/agents/activation-plan` now returns `accepted_by_specialist`.
+- The Agent Roadmap panel now displays a compact `accepted by specialist` line.
+- Frontend and route tests pin the new field and rendered label.
+
+Safety status:
+
+- Read-only route/panel data only.
+- Does not create requests, results, or events.
+- Does not run specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not enable runtime flags, run Builder/Forge, apply patches, deploy, cut over Telegram, produce public/customer output, or control hardware.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 203 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Refresh `Agent Roadmap`.
+4. Confirm the `Accepted agent learning` section shows `accepted by specialist ...`.
+5. Confirm all runtime/write/dispatch guards remain locked.
 
 7.3E weather LLM triage note:
 

@@ -134,9 +134,10 @@ class OomSakkieRouteTests(unittest.TestCase):
             "status_code": 200,
             "status": "ok",
             "accepted_count": 1,
+            "accepted_by_specialist": {"ledger": 1},
             "evidence": [{
                 "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
-                "result_text": "Sentinel reviewed guardrails.",
+                "result_text": "Ledger reviewed internal offer planning.",
             }],
         }
 
@@ -147,6 +148,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["mode"], "agent_activation_plan_panel")
         self.assertEqual(data["accepted_learning_count"], 1)
+        self.assertEqual(data["accepted_by_specialist"], {"ledger": 1})
         self.assertFalse(data["review_guard"]["runs_specialist"])
         self.assertFalse(data["review_guard"]["dispatch_enabled"])
         self.assertFalse(data["review_guard"]["writes"])

@@ -2031,6 +2031,13 @@
     const candidates = Array.isArray(plan.first_candidates) ? plan.first_candidates : [];
     const stages = Array.isArray(plan.stages) ? plan.stages : [];
     const evidence = Array.isArray(data.accepted_learning) ? data.accepted_learning : [];
+    const acceptedBySpecialist = data.accepted_by_specialist && typeof data.accepted_by_specialist === "object"
+      ? data.accepted_by_specialist
+      : {};
+    const acceptedParts = Object.keys(acceptedBySpecialist)
+      .sort()
+      .filter((slug) => acceptedBySpecialist[slug])
+      .map((slug) => `${slug}: ${acceptedBySpecialist[slug]}`);
     const guard = data.review_guard || {};
     agentRoadmap.innerHTML = "";
 
@@ -2096,8 +2103,11 @@
     learning.className = "oom-work-list";
     const learningTitle = document.createElement("p");
     learningTitle.className = "oom-label";
-    learningTitle.textContent = "Accepted Sentinel learning";
+    learningTitle.textContent = "Accepted agent learning";
     learning.appendChild(learningTitle);
+    const learningCounts = document.createElement("code");
+    learningCounts.textContent = `accepted by specialist ${acceptedParts.length ? acceptedParts.join(" | ") : "none yet"}`;
+    learning.appendChild(learningCounts);
     if (!evidence.length) {
       const empty = document.createElement("p");
       empty.className = "oom-empty";
@@ -2111,7 +2121,7 @@
         const text = document.createElement("p");
         const note = document.createElement("code");
         title.textContent = item.dry_run_result_id || "Accepted result";
-        text.textContent = item.result_text || "Accepted Sentinel evidence.";
+        text.textContent = item.result_text || "Accepted agent evidence.";
         note.textContent = `accepted ${item.accepted_at || "recorded"} | runtime change no`;
         row.appendChild(title);
         row.appendChild(text);
@@ -2524,6 +2534,10 @@
     const mode = document.createElement("p");
     const result = document.createElement("p");
     const findings = document.createElement("p");
+    const evidence = document.createElement("p");
+    const mayInfluence = document.createElement("p");
+    const mustNotInfluence = document.createElement("p");
+    const ownerQuestion = document.createElement("p");
     const guard = document.createElement("p");
     const options = document.createElement("p");
     panel.className = "oom-deploy-instructions";
@@ -2533,6 +2547,14 @@
     findings.textContent = data && Array.isArray(data.findings)
       ? `Findings: ${data.findings.slice(0, 5).join("; ") || "none supplied"}`
       : "Findings: none supplied.";
+    evidence.textContent = `Evidence kind: ${(data && data.evidence_kind) || "agent_review_evidence"}`;
+    mayInfluence.textContent = data && Array.isArray(data.may_influence)
+      ? `May influence: ${data.may_influence.slice(0, 5).join("; ") || "future planning notes only"}`
+      : "May influence: future planning notes only.";
+    mustNotInfluence.textContent = data && Array.isArray(data.must_not_influence)
+      ? `Must not influence: ${data.must_not_influence.slice(0, 5).join("; ") || "runtime changes; writes; dispatch"}`
+      : "Must not influence: runtime changes; writes; dispatch.";
+    ownerQuestion.textContent = `Owner question: ${(data && data.owner_review_question) || "Should this evidence guide future planning only?"}`;
     const reviewGuard = data && data.review_guard ? data.review_guard : {};
     guard.textContent = `Guard: review only ${reviewGuard.review_only ? "yes" : "no"} | runs specialist ${reviewGuard.runs_specialist ? "yes" : "no"} | writes ${reviewGuard.writes ? "yes" : "no"} | runtime change ${reviewGuard.applies_runtime_change ? "yes" : "no"}`;
     options.textContent = data && Array.isArray(data.owner_options)
@@ -2542,6 +2564,10 @@
     panel.appendChild(mode);
     panel.appendChild(result);
     panel.appendChild(findings);
+    panel.appendChild(evidence);
+    panel.appendChild(mayInfluence);
+    panel.appendChild(mustNotInfluence);
+    panel.appendChild(ownerQuestion);
     panel.appendChild(guard);
     panel.appendChild(options);
     agentResultReviews.appendChild(panel);
