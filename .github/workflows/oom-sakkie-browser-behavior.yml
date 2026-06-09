@@ -13,7 +13,9 @@ jobs:
 
     env:
       PYTHONUNBUFFERED: "1"
-      OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND: "python app.py"
+      FLASK_ENV: "production"
+      FLASK_DEBUG: "0"
+      OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND: "python -m flask --app app run --host 127.0.0.1 --port 5000"
       OOM_SAKKIE_PLAYWRIGHT_BASE_URL: "http://127.0.0.1:5000"
 
     steps:
@@ -23,7 +25,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.12"
 
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt

@@ -9845,6 +9845,40 @@ Manual check:
 3. Confirm the answer uses `agent_command_center`.
 4. Confirm the visible agent workspace shows Gatekeeper / control-tower style context and still says dispatch/writes are off.
 
+### 10.9BF Oom Sakkie Playwright CI Startup Hardening - Local Ready
+
+Purpose:
+
+- Address the GitHub Actions browser-behavior failure email by making the Playwright workflow closer to the local development runtime and less dependent on Flask debug-mode behavior.
+
+What changed:
+
+- Browser workflow now uses Python `3.12`, matching the local development venv major/minor version instead of `3.13`.
+- Browser workflow now starts Flask through `python -m flask --app app run --host 127.0.0.1 --port 5000`.
+- Browser workflow sets `FLASK_ENV = production` and `FLASK_DEBUG = 0`.
+- Frontend contract tests assert the workflow does not drift back to `python app.py`.
+
+Safety status:
+
+- CI/test hardening only.
+- No app route, store, migration, DB write, runtime flag, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+- The workflow still runs only against loopback and the Playwright spec still stubs `/api/oom-sakkie/**` with read-only JSON.
+
+Verification:
+
+- Frontend route contracts passed at 27 tests.
+- Focused Oom Sakkie service/routes/frontend tests passed at 249 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+- Browser behavior smoke passed.
+
+Manual check:
+
+1. Push the branch.
+2. Confirm the `Oom Sakkie Browser Behavior` GitHub Actions workflow turns green.
+3. If it fails again, inspect the failed step log before changing app code.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -29,6 +29,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Every dry-run/result/event action is owner-clicked.", checklist)
 
         self.assertIn("Playwright real-browser behavior gate", playwright_workflow)
+        self.assertIn('python-version: "3.12"', playwright_workflow)
+        self.assertIn('FLASK_DEBUG: "0"', playwright_workflow)
+        self.assertIn("python -m flask --app app run --host 127.0.0.1 --port 5000", playwright_workflow)
+        self.assertNotIn("python app.py", playwright_workflow)
         self.assertIn("npm run test:oom-sakkie:browser", playwright_workflow)
         self.assertIn("npx playwright install --with-deps chromium", playwright_workflow)
         self.assertIn('"test:oom-sakkie:browser"', package_json)
