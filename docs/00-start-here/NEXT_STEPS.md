@@ -10511,6 +10511,48 @@ Next gate:
 2. Confirm audit-rail and browser-behavior GitHub Actions are green.
 3. Ask Claude to review the full 10.9BP-BS batch before turning on `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED`.
 
+### 10.9BT Oom Sakkie Sentinel Single-Shot Runbook - Local Ready
+
+Purpose:
+
+- Turn the first live Sentinel smoke from an improvised action into an explicit supervised procedure.
+- Keep the actual env-on run as an owner-approved operational step, not a background automation.
+
+What changed:
+
+- Added `docs/06-operations/OOM_SAKKIE_SENTINEL_SINGLE_SHOT_RUNBOOK.md`.
+- The runbook covers:
+  - preconditions,
+  - required dry-run request / dispatch request / design approval / execution approval chain,
+  - short `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED=1` smoke window,
+  - policy checks before running,
+  - the exact local endpoint to call once,
+  - expected success and failure shapes,
+  - append-only result verification,
+  - replay-block verification,
+  - immediate flag-off confirmation,
+  - outcome fields to log after the smoke.
+
+Safety envelope:
+
+- Docs-only.
+- Does not enable the env flag.
+- Does not call an LLM.
+- Does not add routes, stores, migrations, UI buttons, or tools.
+- Does not write farm data.
+- Does not create public/customer output.
+- Does not deploy, cut over Telegram, control hardware, or touch financial actions.
+
+Verification:
+
+- Documentation reviewed locally.
+
+Next gate:
+
+1. Commit and push 10.9BT.
+2. Confirm GitHub Actions are green.
+3. Run the first Sentinel smoke only after owner approval, with the env flag off again immediately afterward.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
