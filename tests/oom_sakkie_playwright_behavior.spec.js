@@ -111,8 +111,12 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
 
   await page.goto("/oom-sakkie");
   await page.waitForLoadState("networkidle");
+  await page.locator(".oom-system-workbench").evaluate((element) => {
+    element.open = true;
+  });
   requests.length = 0;
 
+  await expect(page.locator("#oom_request_sentinel_dry_run")).toBeVisible();
   await page.locator("#oom_request_sentinel_dry_run").click();
   await expect.poll(() => requests.some((request) =>
     request.method === "POST" && request.url.endsWith("/api/oom-sakkie/agent-dry-runs"),

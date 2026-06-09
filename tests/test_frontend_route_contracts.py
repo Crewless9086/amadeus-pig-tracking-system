@@ -48,6 +48,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("kiosk startup performs no hidden POSTs or interval polling", playwright_spec)
         self.assertIn("dry-run/result/message POSTs require explicit owner clicks", playwright_spec)
         self.assertIn("stubOomSakkieApi", playwright_spec)
+        self.assertIn('page.locator(".oom-system-workbench").evaluate', playwright_spec)
+        self.assertIn('toBeVisible()', playwright_spec)
 
     def test_oom_sakkie_agent_dry_run_browser_behavior_contract(self):
         js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")

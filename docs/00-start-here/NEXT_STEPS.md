@@ -9956,6 +9956,38 @@ Manual check:
 2. Confirm the `Oom Sakkie Browser Behavior` GitHub Actions workflow turns green.
 3. If it still fails, copy the failing step log, not only the annotation summary.
 
+### 10.9BI Oom Sakkie Playwright Workbench Visibility Fix - Local Ready
+
+Purpose:
+
+- Address the likely real-browser failure hidden behind the GitHub email summary.
+- The dry-run controls are inside the collapsed `System Workbench` `<details>` element, so Chromium must open that section before it can click the owner-action controls.
+- Keep the real-browser gate strict about owner-click-only POSTs while making it match the actual UI.
+
+What changed:
+
+- `tests/oom_sakkie_playwright_behavior.spec.js` now opens `.oom-system-workbench` before the dry-run/result owner-click sequence.
+- The spec asserts `#oom_request_sentinel_dry_run` is visible before clicking it.
+- Frontend contract tests pin this behavior so the real-browser smoke does not drift back to hidden-control clicks.
+
+Safety status:
+
+- Test-only hardening.
+- No app route, store, migration, DB write, runtime flag, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+- The Playwright spec still stubs all `/api/oom-sakkie/**` calls with read-only JSON and only verifies explicit owner-click POST behavior.
+
+Verification:
+
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+
+Manual check:
+
+1. Push the branch.
+2. Confirm the `Oom Sakkie Browser Behavior` GitHub Actions workflow turns green.
+3. If it still fails, expand the failed `Run Oom Sakkie Playwright behavior gate` step and copy the first Playwright error block.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
