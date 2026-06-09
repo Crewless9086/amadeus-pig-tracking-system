@@ -12,6 +12,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         package_json = Path("package.json").read_text(encoding="utf-8")
 
         self.assertIn("postgres:16", workflow)
+        self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
         self.assertIn("DATABASE_URL: postgresql://postgres:postgres@localhost:5432/amadeus_test", workflow)
         self.assertIn("202606060001_create_oom_sakkie_traces.sql", workflow)
         self.assertIn("202606060004_lock_oom_sakkie_trace_append_only.sql", workflow)

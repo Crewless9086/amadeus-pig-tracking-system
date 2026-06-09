@@ -9988,6 +9988,34 @@ Manual check:
 2. Confirm the `Oom Sakkie Browser Behavior` GitHub Actions workflow turns green.
 3. If it still fails, expand the failed `Run Oom Sakkie Playwright behavior gate` step and copy the first Playwright error block.
 
+### 10.9BJ Oom Sakkie Audit Rail CI Node 24 Warning Cleanup - Local Ready
+
+Purpose:
+
+- Clean up the remaining GitHub Actions warning on the disposable-Postgres audit-rail workflow.
+- The workflow was already green; this is warning cleanup only.
+
+What changed:
+
+- Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 = true` to `.github/workflows/oom-sakkie-audit-rails.yml`.
+- Frontend contract tests now assert the audit workflow keeps that opt-in.
+
+Safety status:
+
+- CI/test hardening only.
+- No app route, store, migration, DB write, runtime flag, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+- The workflow still uses disposable Postgres with throwaway credentials and applies only Oom Sakkie audit migrations.
+
+Verification:
+
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+
+Manual check:
+
+1. Push the branch.
+2. Confirm `Oom Sakkie Audit Rails` remains green.
+3. Confirm the Node 20 actions warning no longer appears for that workflow.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
