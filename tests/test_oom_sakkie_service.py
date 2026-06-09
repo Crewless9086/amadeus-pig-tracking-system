@@ -2226,6 +2226,53 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["status"], "dry_run_result_has_execution_flags")
         self.assertIn("runs_specialist", packet["unsafe_flags"])
 
+    def test_agent_dry_run_result_review_packet_allows_single_shot_sentinel_result(self):
+        packet, status_code = build_agent_dry_run_result_review_packet({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-SINGLE",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-SINGLE",
+            "mode": "single_shot_sentinel_advisory_result",
+            "status": "recorded_from_single_shot_sentinel_llm",
+            "specialist_slug": "sentinel",
+            "result_text": "Sentinel reviewed the gate and did not run tools.",
+            "findings": ["One-shot advisory only."],
+            "recommended_next_gate": "owner_review_before_learning_or_runtime_change",
+            "runs_specialist": True,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "latest_event": None,
+        })
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["mode"], "dry_run_result_review_packet")
+        self.assertEqual(packet["specialist_slug"], "sentinel")
+        self.assertEqual(packet["evidence_kind"], "safety_guardrail_evidence")
+        self.assertFalse(packet["review_guard"]["runs_specialist"])
+        self.assertFalse(packet["review_guard"]["runs_specialist_llm"])
+        self.assertFalse(packet["review_guard"]["runs_specialist_tools"])
+        self.assertFalse(packet["review_guard"]["writes"])
+        self.assertIn("Owner should accept", packet["next_action"])
+
+    def test_agent_dry_run_result_review_packet_rejects_unsafe_single_shot_flags(self):
+        packet, status_code = build_agent_dry_run_result_review_packet({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-SINGLE",
+            "mode": "single_shot_sentinel_advisory_result",
+            "status": "recorded_from_single_shot_sentinel_llm",
+            "specialist_slug": "sentinel",
+            "runs_specialist": True,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": True,
+            "writes": False,
+            "applies_runtime_change": False,
+        })
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(packet["status"], "dry_run_result_has_execution_flags")
+        self.assertIn("runs_specialist_tools", packet["unsafe_flags"])
+
     def test_agent_dry_run_result_migration_is_append_only_and_no_execution(self):
         migration = Path("supabase/migrations/202606080002_create_oom_sakkie_agent_dry_run_results.sql").read_text(encoding="utf-8")
 

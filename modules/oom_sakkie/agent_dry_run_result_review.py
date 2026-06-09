@@ -116,22 +116,14 @@ _RESULT_REVIEW_PROFILES = {
 
 def build_agent_dry_run_result_review_packet(dry_run_result):
     dry_run_result = dry_run_result if isinstance(dry_run_result, dict) else {}
-    if dry_run_result.get("mode") != "dry_run_result_review_only":
+    if not _is_supported_result_mode(dry_run_result):
         return {
             "success": False,
             "status": "invalid_dry_run_result_mode",
             "message": "Only stored dry-run review results can become review packets.",
         }, 400
 
-    unsafe_flags = [
-        "runs_specialist",
-        "dispatch_enabled",
-        "runs_specialist_llm",
-        "runs_specialist_tools",
-        "writes",
-        "applies_runtime_change",
-    ]
-    enabled = [flag for flag in unsafe_flags if dry_run_result.get(flag)]
+    enabled = _unsafe_result_flags(dry_run_result)
     if enabled:
         return {
             "success": False,
@@ -195,6 +187,42 @@ def build_agent_dry_run_result_review_packet(dry_run_result):
         },
         "next_action": _next_action(latest_event),
     }, 200
+
+
+def _is_supported_result_mode(dry_run_result):
+    mode = dry_run_result.get("mode")
+    if mode == "dry_run_result_review_only":
+        return True
+    return (
+        mode == "single_shot_sentinel_advisory_result"
+        and dry_run_result.get("status") == "recorded_from_single_shot_sentinel_llm"
+        and str(dry_run_result.get("specialist_slug") or "").strip().lower() == "sentinel"
+    )
+
+
+def _unsafe_result_flags(dry_run_result):
+    if dry_run_result.get("mode") == "single_shot_sentinel_advisory_result":
+        unsafe_flags = [
+            "dispatch_enabled",
+            "runs_specialist_tools",
+            "writes",
+            "applies_runtime_change",
+        ]
+        enabled = [flag for flag in unsafe_flags if dry_run_result.get(flag)]
+        if not dry_run_result.get("runs_specialist"):
+            enabled.append("missing_runs_specialist")
+        if not dry_run_result.get("runs_specialist_llm"):
+            enabled.append("missing_runs_specialist_llm")
+        return enabled
+    unsafe_flags = [
+        "runs_specialist",
+        "dispatch_enabled",
+        "runs_specialist_llm",
+        "runs_specialist_tools",
+        "writes",
+        "applies_runtime_change",
+    ]
+    return [flag for flag in unsafe_flags if dry_run_result.get(flag)]
 
 
 def _next_action(latest_event):

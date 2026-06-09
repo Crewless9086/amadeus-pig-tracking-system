@@ -10553,6 +10553,69 @@ Next gate:
 2. Confirm GitHub Actions are green.
 3. Run the first Sentinel smoke only after owner approval, with the env flag off again immediately afterward.
 
+### 10.9BU Oom Sakkie First Sentinel Smoke And Review Packet Fix - Local Ready
+
+Purpose:
+
+- Execute the first owner-approved Sentinel single-shot smoke.
+- Verify replay blocking and flag-off recovery.
+- Fix the review-packet reader so the owner can inspect the honest single-shot result.
+
+Smoke outcome:
+
+- Owner approved the smoke explicitly.
+- Temporary local server ran with `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED=1`.
+- Normal kiosk policy was verified afterward with `specialist_dry_run.enabled = false`.
+- Smoke chain:
+  - dry-run request `OSK-AGENT-DRYRUN-499E983FAF`
+  - dispatch request `OSK-DISPATCH-REQ-3234DBAB07`
+  - execution approval `OSK-DISPATCH-EXEC-APPROVAL-SMOKE-20260609-CODEX1`
+  - consumed event `OSK-DISPATCH-EXEC-EVENT-6D892274A9`
+  - result `OSK-AGENT-DRYRUN-RESULT-C63AF980E948`
+- Result was advisory-only Sentinel text.
+- Replay against the same approval returned `409 dispatch_execution_approval_already_consumed`.
+
+Integration fix:
+
+- `build_agent_dry_run_result_review_packet()` now accepts the narrow single-shot result shape:
+  - `mode = single_shot_sentinel_advisory_result`
+  - `status = recorded_from_single_shot_sentinel_llm`
+  - `specialist_slug = sentinel`
+  - `runs_specialist = true`
+  - `runs_specialist_llm = true`
+  - `dispatch_enabled = false`
+  - `runs_specialist_tools = false`
+  - `writes = false`
+  - `applies_runtime_change = false`
+- The same function still rejects unsafe flags for normal dry-run results and single-shot results.
+
+Safety envelope:
+
+- No general specialist LLM loop.
+- No specialist tool execution.
+- No farm-data write.
+- No public/customer output.
+- No deploy, Telegram cutover, physical-control path, or financial action.
+- No replay of the consumed approval.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 281 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest` -> 611 tests OK.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+- Existing smoke result review packet returned `200`.
+- Replay returned `409 dispatch_execution_approval_already_consumed`.
+- Normal kiosk policy returned `specialist_dry_run.enabled = false` after the smoke.
+
+Next gate:
+
+1. Owner reviews result `OSK-AGENT-DRYRUN-RESULT-C63AF980E948`.
+2. Record accepted/rejected/review-note event only after owner review.
+3. Do not design accept-result-into-learning automation or any widening beyond Sentinel until this smoke is reviewed.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
