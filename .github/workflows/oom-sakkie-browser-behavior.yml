@@ -1,0 +1,43 @@
+name: Oom Sakkie Browser Behavior
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  browser-behavior:
+    name: Playwright real-browser behavior gate
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND: "python app.py"
+      OOM_SAKKIE_PLAYWRIGHT_BASE_URL: "http://127.0.0.1:5000"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright dependencies
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Oom Sakkie Playwright behavior gate
+        run: npm run test:oom-sakkie:browser

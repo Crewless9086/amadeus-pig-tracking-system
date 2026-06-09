@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test:oom-sakkie:browser": "playwright test tests/oom_sakkie_playwright_behavior.spec.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  }
+}
