@@ -110,6 +110,7 @@ def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings
         "Do not recite every ID unless the ID is useful for inspection. "
         "For jarvis_daily_command_brief, give one owner-ready command brief across farm, business, and command-center sections; "
         "lead with the highest priority and end with the next owner decision if one is present. "
+        "For jarvis_owner_review_packet, state whether the review packet is ready, name the Claude handoff file, and clearly say no authority is approved by the packet. "
         "For farm_operating_brief, mention all required sections: attention or priority, power, weather, and irrigation. "
         "For business_growth_brief, sound like a business advisor: lead with the commercial move, name the stock or ready pigs that justify it, "
         "if backend_context.offer_brief_outline exists, summarize it as an internal offer brief outline only, not customer-facing copy, "
@@ -156,7 +157,7 @@ def _looks_unsafe(answer):
 def _looks_off_topic(answer, tool_name):
     if not answer:
         return False
-    if str(tool_name or "") in {"farm_operating_brief", "jarvis_daily_command_brief"}:
+    if str(tool_name or "") in {"farm_operating_brief", "jarvis_daily_command_brief", "jarvis_owner_review_packet"}:
         return False
     text = answer.lower().replace("’", "'").replace("‘", "'")
     blocked_fragments = (

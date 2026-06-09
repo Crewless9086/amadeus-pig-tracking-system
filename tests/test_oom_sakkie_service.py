@@ -19,7 +19,9 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_review_packet,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
+    get_jarvis_owner_review_packet,
     get_jarvis_product_progress,
+    get_jarvis_safety_gate_board,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
@@ -115,6 +117,8 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
                 "jarvis_product_progress",
+                "jarvis_safety_gate_board",
+                "jarvis_owner_review_packet",
                 "agent_command_center",
                 "jarvis_daily_command_brief",
                 "agent_dispatch_decision_rail_blueprint",
@@ -354,6 +358,48 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("runtime flags remain false", progress["blocked_until"])
         self.assertIn("owner_and_claude_review", progress["next_gate"])
 
+    def test_jarvis_safety_gate_board_is_read_only_status(self):
+        board = get_jarvis_safety_gate_board()
+
+        self.assertTrue(board["success"])
+        self.assertEqual(board["mode"], "jarvis_safety_gate_board_only")
+        self.assertEqual(board["summary_status"], "ci_gates_configured_live_authority_locked")
+        self.assertFalse(board["runtime_enabled"])
+        self.assertFalse(board["dispatch_enabled"])
+        self.assertFalse(board["autonomous_loops_enabled"])
+        self.assertFalse(board["writes_enabled"])
+        self.assertFalse(board["specialist_llm_enabled"])
+        self.assertFalse(board["specialist_tools_enabled"])
+        self.assertFalse(board["public_output_enabled"])
+        self.assertFalse(board["physical_controls_enabled"])
+        gates = {item["gate"]: item for item in board["gates"]}
+        self.assertEqual(gates["audit_rail_ci"]["status"], "configured_owner_reported_green")
+        self.assertEqual(gates["browser_behavior_ci"]["status"], "configured_owner_reported_green")
+        self.assertEqual(gates["runtime_authority"]["status"], "locked")
+        self.assertEqual(gates["external_ci_status"]["status"], "manual_check_required")
+        self.assertIn("does not call GitHub", gates["external_ci_status"]["proves"][0])
+        self.assertIn("owner_and_claude_review", board["next_gate"])
+
+    def test_jarvis_owner_review_packet_is_read_only_batched_review(self):
+        packet = get_jarvis_owner_review_packet()
+
+        self.assertTrue(packet["success"])
+        self.assertEqual(packet["mode"], "jarvis_owner_review_packet_only")
+        self.assertEqual(packet["summary_status"], "ready_for_batched_owner_claude_review_no_authority_change")
+        self.assertFalse(packet["runtime_enabled"])
+        self.assertFalse(packet["dispatch_enabled"])
+        self.assertFalse(packet["autonomous_loops_enabled"])
+        self.assertFalse(packet["writes_enabled"])
+        self.assertFalse(packet["specialist_llm_enabled"])
+        self.assertFalse(packet["specialist_tools_enabled"])
+        self.assertFalse(packet["public_output_enabled"])
+        self.assertFalse(packet["physical_controls_enabled"])
+        self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
+        self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
+        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
+        self.assertIn("Do not treat it as approval", packet["owner_instruction"])
+        self.assertIn("review_before_any_runtime_authority_change", packet["next_gate"])
+
     def test_agent_command_center_is_read_only_visibility(self):
         center = get_agent_command_center()
 
@@ -378,7 +424,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("progress", panel_names)
         self.assertIn("approvals", panel_names)
         self.assertIn("authority_locks", panel_names)
+        self.assertIn("safety_gates", panel_names)
         self.assertIn("system_work_status", center["queue_sources"])
+        self.assertIn("jarvis_safety_gate_board", center["queue_sources"])
         self.assertIn("owner_and_claude_review", center["next_gate"])
 
     def test_agent_operating_contracts_are_planning_only(self):
@@ -557,6 +605,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "authority_matrix": get_agent_authority_matrix(),
             "unlock_readiness": get_agent_authority_unlock_readiness(),
             "jarvis_product_progress": get_jarvis_product_progress(),
+            "jarvis_safety_gate_board": get_jarvis_safety_gate_board(),
+            "jarvis_owner_review_packet": get_jarvis_owner_review_packet(),
             "agent_command_center": get_agent_command_center(),
             "dispatch_rail_blueprint": get_agent_dispatch_decision_rail_blueprint(),
             "runtime_review_packet": get_agent_runtime_review_packet(),
@@ -667,6 +717,32 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(activity["safety"]["dispatch_enabled"])
         self.assertFalse(activity["safety"]["writes"])
 
+    def test_agent_activity_maps_safety_gate_board_to_sentinel_workspace(self):
+        activity = build_agent_activity(
+            tool_name="jarvis_safety_gate_board",
+            user_text="are the gates green?",
+            tool_result={},
+        )
+
+        self.assertEqual(activity["active_agent"]["slug"], "sentinel")
+        self.assertEqual(activity["workspace"]["tool_name"], "jarvis_safety_gate_board")
+        self.assertFalse(activity["safety"]["runs_agent"])
+        self.assertFalse(activity["safety"]["dispatch_enabled"])
+        self.assertFalse(activity["safety"]["writes"])
+
+    def test_agent_activity_maps_owner_review_packet_to_gatekeeper_workspace(self):
+        activity = build_agent_activity(
+            tool_name="jarvis_owner_review_packet",
+            user_text="prepare Claude review",
+            tool_result={},
+        )
+
+        self.assertEqual(activity["active_agent"]["slug"], "gatekeeper")
+        self.assertEqual(activity["workspace"]["tool_name"], "jarvis_owner_review_packet")
+        self.assertFalse(activity["safety"]["runs_agent"])
+        self.assertFalse(activity["safety"]["dispatch_enabled"])
+        self.assertFalse(activity["safety"]["writes"])
+
     def test_agent_activity_exposes_plan_only_crew_sequence(self):
         crew_brief = build_agent_crew_brief("Give me the team plan to grow sales")
         activity = build_agent_activity(
@@ -745,10 +821,48 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["progress"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
+    def test_jarvis_safety_gate_board_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import jarvis_safety_gate_board_handler
+
+        result = jarvis_safety_gate_board_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Safety gate board", result["summary"])
+        self.assertIn("does not call GitHub", result["stale_warnings"][0])
+        self.assertIn("read-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "jarvis_safety_gate_board")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["applies_runtime_change"])
+
+    def test_jarvis_owner_review_packet_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import jarvis_owner_review_packet_handler
+
+        result = jarvis_owner_review_packet_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Owner review packet is ready", result["summary"])
+        self.assertIn("does not call Claude", result["stale_warnings"][0])
+        self.assertIn("read-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+        self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["applies_runtime_change"])
+
+    @patch("modules.oom_sakkie.tools.jarvis_safety_gate_board_handler")
     @patch("modules.oom_sakkie.tools.dispatch_decision_status_handler")
     @patch("modules.oom_sakkie.tools.agent_dry_run_status_handler")
     @patch("modules.oom_sakkie.tools.system_work_status_handler")
-    def test_agent_command_center_tool_is_read_only_visibility(self, mock_work, mock_dry_run, mock_dispatch):
+    def test_agent_command_center_tool_is_read_only_visibility(self, mock_work, mock_dry_run, mock_dispatch, mock_safety_gate):
         from modules.oom_sakkie.tools import agent_command_center_handler
 
         mock_work.return_value = {
@@ -766,6 +880,11 @@ class OomSakkieServiceTests(unittest.TestCase):
             "stale_warnings": [],
             "llm_context": {"kind": "dispatch_decision_status"},
         }
+        mock_safety_gate.return_value = {
+            "status": "ok",
+            "stale_warnings": [],
+            "llm_context": {"kind": "jarvis_safety_gate_board"},
+        }
 
         result = agent_command_center_handler({})
 
@@ -779,9 +898,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["command_center"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertEqual(result["llm_context"]["queue_snapshots"]["system_work_status"]["kind"], "system_work_status")
+        self.assertEqual(result["llm_context"]["queue_snapshots"]["jarvis_safety_gate_board"]["kind"], "jarvis_safety_gate_board")
         mock_work.assert_called_once_with({})
         mock_dry_run.assert_called_once_with({})
         mock_dispatch.assert_called_once_with({})
+        mock_safety_gate.assert_called_once_with({})
 
     def test_agent_operating_contracts_tool_is_read_only(self):
         from modules.oom_sakkie.tools import agent_operating_contracts_handler
@@ -2579,6 +2700,12 @@ class OomSakkieServiceTests(unittest.TestCase):
             "run the command brief": "jarvis_daily_command_brief",
             "show me the Jarvis progress bar": "jarvis_product_progress",
             "how far are we from Jarvis": "jarvis_product_progress",
+            "are the gates green": "jarvis_safety_gate_board",
+            "show me the safety gates": "jarvis_safety_gate_board",
+            "what is the CI status": "jarvis_safety_gate_board",
+            "prepare Claude review": "jarvis_owner_review_packet",
+            "show me the owner review packet": "jarvis_owner_review_packet",
+            "handoff to Claude": "jarvis_owner_review_packet",
             "what is the agent dry-run queue status": "agent_dry_run_status",
             "what is the sentinel dry-run result queue status": "agent_dry_run_status",
             "are we ready for live agents": "agent_runtime_readiness",
@@ -3017,6 +3144,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("backend_context", system)
         self.assertIn("prioritize what the owner should look at first", system)
         self.assertIn("For jarvis_daily_command_brief, give one owner-ready command brief", system)
+        self.assertIn("For jarvis_owner_review_packet, state whether the review packet is ready", system)
         self.assertIn("mention all required sections", system)
         self.assertIn("For business_growth_brief, sound like a business advisor", system)
         self.assertIn("internal offer brief outline only", system)

@@ -15,7 +15,9 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_review_packet,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
+    get_jarvis_owner_review_packet,
     get_jarvis_product_progress,
+    get_jarvis_safety_gate_board,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_results
@@ -1202,16 +1204,98 @@ def jarvis_product_progress_handler(_args):
     }
 
 
+def jarvis_safety_gate_board_handler(_args):
+    board = get_jarvis_safety_gate_board()
+    gate_labels = ", ".join(item["label"] for item in board.get("gates", [])[:4])
+    summary = (
+        "Safety gate board: "
+        f"{board.get('configured_count', 0)} configured gate(s), "
+        f"{board.get('locked_count', 0)} locked authority gate(s), and "
+        f"{board.get('manual_check_count', 0)} manual check(s). "
+        f"Gates: {gate_labels}."
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Oom Sakkie", "href": "/oom-sakkie"}],
+        "stale_warnings": [
+            "GitHub Actions green status is owner-confirmed outside this runtime; Oom Sakkie does not call GitHub."
+        ],
+        "safety_notes": [
+            "Safety gate board is read-only. No specialist was dispatched, no specialist LLM/tool execution ran, no write/public/deploy/Telegram/control action occurred."
+        ],
+        "llm_context": {
+            "kind": "jarvis_safety_gate_board",
+            "gate_board": board,
+            "selected_agent": {
+                "slug": "sentinel",
+                "name": "Sentinel",
+            },
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": board,
+    }
+
+
+def jarvis_owner_review_packet_handler(_args):
+    packet = get_jarvis_owner_review_packet()
+    readiness = packet.get("review_readiness") or {}
+    summary = (
+        "Owner review packet is ready: Jarvis progress is {}%, {} safety gate(s) are configured, "
+        "{} authority gate(s) remain locked, and {} manual check(s) remain owner-confirmed. "
+        "Use the Claude handoff prompt when you want the batched review."
+    ).format(
+        readiness.get("progress_overall_percent", 0),
+        readiness.get("configured_gate_count", 0),
+        readiness.get("locked_gate_count", 0),
+        readiness.get("manual_check_count", 0),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "stale_warnings": [
+            "Owner review packet is assembled locally. It does not call Claude, GitHub, or any external review service."
+        ],
+        "safety_notes": [
+            "Owner review packet is read-only. It does not approve runtime authority, dispatch specialists, run specialist LLMs/tools, write farm data, create public/customer output, apply patches, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "jarvis_owner_review_packet",
+            "review_packet": packet,
+            "claude_prompt": packet.get("claude_prompt"),
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": packet,
+    }
+
+
 def agent_command_center_handler(_args):
     center = get_agent_command_center()
     work_status = system_work_status_handler({})
     dry_run_status = agent_dry_run_status_handler({})
     dispatch_status = dispatch_decision_status_handler({})
+    safety_gate_status = jarvis_safety_gate_board_handler({})
     stale_warnings = []
     for label, result in (
         ("system work status", work_status),
         ("agent dry-run status", dry_run_status),
         ("dispatch decision status", dispatch_status),
+        ("safety gate board", safety_gate_status),
     ):
         if result.get("status") not in {"ok", "not_configured"}:
             stale_warnings.append(f"Agent command center snapshot is incomplete: {label} returned {result.get('status')}.")
@@ -1245,6 +1329,7 @@ def agent_command_center_handler(_args):
                 "system_work_status": work_status.get("llm_context", {}),
                 "agent_dry_run_status": dry_run_status.get("llm_context", {}),
                 "dispatch_decision_status": dispatch_status.get("llm_context", {}),
+                "jarvis_safety_gate_board": safety_gate_status.get("llm_context", {}),
             },
             "selected_agent": {
                 "slug": "gatekeeper",
@@ -1256,6 +1341,7 @@ def agent_command_center_handler(_args):
             "system_work_status": work_status,
             "agent_dry_run_status": dry_run_status,
             "dispatch_decision_status": dispatch_status,
+            "jarvis_safety_gate_board": safety_gate_status,
         },
     }
 
@@ -1888,6 +1974,24 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=jarvis_product_progress_handler,
         description="Read-only product progress report for the Oom Sakkie/Jarvis build. Never enables authority.",
+    ),
+    "jarvis_safety_gate_board": OomSakkieTool(
+        name="jarvis_safety_gate_board",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=jarvis_safety_gate_board_handler,
+        description="Read-only safety gate board for CI gates, runtime locks, and manual checks. Never calls GitHub or enables authority.",
+    ),
+    "jarvis_owner_review_packet": OomSakkieTool(
+        name="jarvis_owner_review_packet",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=jarvis_owner_review_packet_handler,
+        description="Read-only owner/Claude review packet assembled from locked Jarvis runtime, command center, safety gates, and progress surfaces. Never calls Claude or approves authority.",
     ),
     "agent_command_center": OomSakkieTool(
         name="agent_command_center",

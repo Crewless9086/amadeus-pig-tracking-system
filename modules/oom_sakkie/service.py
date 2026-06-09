@@ -51,6 +51,14 @@ RULES = [
         IntentMatch("jarvis_product_progress", "jarvis_product_progress", 0.95, "rule:jarvis_product_progress"),
     ),
     (
+        re.compile(r"\b(safety gate|safety gates|ci gate|ci gates|github action|github actions|are the gates green|audit rail.*green|browser behavior.*green|workflow status|ci status)\b", re.I),
+        IntentMatch("jarvis_safety_gate_board", "jarvis_safety_gate_board", 0.95, "rule:jarvis_safety_gate_board"),
+    ),
+    (
+        re.compile(r"\b(owner review packet|jarvis review packet|oom sakkie review packet|prepare claude review|ready for claude|claude handoff|handoff to claude|review handoff|batch review packet|bulk review packet)\b", re.I),
+        IntentMatch("jarvis_owner_review_packet", "jarvis_owner_review_packet", 0.95, "rule:jarvis_owner_review_packet"),
+    ),
+    (
         re.compile(r"\b(agent readiness|runtime readiness|ready for agents|ready.*agents|agents.*ready|what blocks.*agents|what is blocking.*agents|before agents can run|before live agents|what still blocks runtime)\b", re.I),
         IntentMatch("agent_runtime_readiness", "agent_runtime_readiness", 0.95, "rule:agent_runtime_readiness"),
     ),

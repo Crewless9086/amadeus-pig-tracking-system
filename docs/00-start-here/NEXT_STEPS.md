@@ -10016,6 +10016,159 @@ Manual check:
 2. Confirm `Oom Sakkie Audit Rails` remains green.
 3. Confirm the Node 20 actions warning no longer appears for that workflow.
 
+### 10.9BK Oom Sakkie Safety Gate Board - Local Ready
+
+Purpose:
+
+- Give the owner one read-only answer for "are the gates green?", "what is the CI status?", and "show me the safety gates".
+- Keep the runtime honest: Oom Sakkie can report configured/locked/manual safety gates, but it does not call GitHub or trust CI automatically.
+
+What changed:
+
+- Added `get_jarvis_safety_gate_board()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added the read-only `jarvis_safety_gate_board` tool.
+- Added deterministic routing for safety-gate / CI-status / GitHub Actions status wording.
+- Mapped the tool to Sentinel in the visible agent activity stage.
+- Added the safety-gate board as a Command Center panel, queue source, and queue snapshot.
+- Added tests for:
+  - read-only board payload and false execution flags
+  - read-only tool handler
+  - routing phrases
+  - Sentinel visual mapping
+  - Command Center inclusion
+  - inspection-surface authority flags
+
+Safety envelope:
+
+- No GitHub API call.
+- No network call.
+- No route.
+- No store or migration.
+- No DB write.
+- No runtime flag change.
+- No specialist dispatch.
+- No specialist LLM/tool execution.
+- No farm-data write.
+- No public/customer output.
+- No patch/deploy/Telegram/physical-control action.
+- GitHub green status remains owner-confirmed outside the runtime; Oom Sakkie reports that limitation as a stale warning.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service` -> 152 tests OK, 3 expected live-DB skips.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 255 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+Manual check:
+
+1. Ask `are the gates green?`.
+2. Confirm it uses `jarvis_safety_gate_board`.
+3. Confirm it says Oom Sakkie does not call GitHub.
+4. Confirm it says live authority remains locked and no specialist/write/public/deploy/control action occurred.
+
+### 10.9BL Oom Sakkie Owner Review Packet - Local Ready
+
+Purpose:
+
+- Give the owner one read-only packet for "prepare Claude review", "handoff to Claude", and "show me the owner review packet".
+- Reduce Claude spend by batching the current review context into one local Oom Sakkie answer before the owner decides to ask Claude.
+
+What changed:
+
+- Added `get_jarvis_owner_review_packet()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added the read-only `jarvis_owner_review_packet` tool.
+- Added deterministic routing for owner-review / Claude-handoff wording.
+- Mapped the tool visually to Gatekeeper.
+- Added answer-composer guidance for the packet when the env-gated composer is enabled.
+- The packet composes existing locked/read-only surfaces:
+  - `jarvis_product_progress`
+  - `agent_command_center`
+  - `jarvis_safety_gate_board`
+  - `agent_runtime_review_packet`
+- Added tests for:
+  - read-only packet payload and false execution flags
+  - read-only tool handler
+  - routing phrases
+  - Gatekeeper visual mapping
+  - inspection-surface authority flags
+  - composer prompt wording
+
+Safety envelope:
+
+- No Claude API call.
+- No GitHub API call.
+- No network call.
+- No route.
+- No store or migration.
+- No DB write.
+- No runtime flag change.
+- No specialist dispatch.
+- No specialist LLM/tool execution.
+- No farm-data write.
+- No public/customer output.
+- No patch/deploy/Telegram/physical-control action.
+- The packet explicitly says it is not approval to unlock runtime authority.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service` -> 155 tests OK, 3 expected live-DB skips.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 258 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest` -> 588 tests OK.
+- `python -m unittest` -> 588 tests OK.
+
+Manual check:
+
+1. Ask `prepare Claude review`.
+2. Confirm it uses `jarvis_owner_review_packet`.
+3. Confirm it names `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md`.
+4. Confirm it says the packet does not call Claude/GitHub and does not approve runtime authority.
+
+### 10.9BM Oom Sakkie Review Shortcuts - Local Ready
+
+Purpose:
+
+- Make the new read-only review surfaces visible in the kiosk without requiring the owner to remember exact phrases.
+- Keep the interaction explicit-click only through the existing quick-ask mechanism.
+
+What changed:
+
+- Added `Safety Gates` quick action with `data-quick-ask="Show me the safety gates."`.
+- Added `Review Packet` quick action with `data-quick-ask="Prepare Claude review."`.
+- Added frontend route contract assertions for both buttons and prompt strings.
+
+Safety envelope:
+
+- UI-only.
+- Uses existing owner-clicked quick-ask POST path.
+- No background polling.
+- No hidden POST.
+- No route.
+- No store or migration.
+- No DB write.
+- No runtime flag change.
+- No specialist dispatch.
+- No specialist LLM/tool execution.
+- No farm-data write.
+- No public/customer output.
+- No patch/deploy/Telegram/physical-control action.
+
+Verification:
+
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 258 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Click `Safety Gates`; confirm it asks `Show me the safety gates.` and routes to `jarvis_safety_gate_board`.
+3. Click `Review Packet`; confirm it asks `Prepare Claude review.` and routes to `jarvis_owner_review_packet`.
+4. Confirm no action happens without clicking.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

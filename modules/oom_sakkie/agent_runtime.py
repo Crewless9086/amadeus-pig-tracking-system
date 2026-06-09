@@ -58,6 +58,8 @@ _TOOL_PRIMARY_AGENT = {
     "agent_authority_unlock_readiness": "gatekeeper",
     "agent_command_center": "gatekeeper",
     "jarvis_daily_command_brief": "gatekeeper",
+    "jarvis_safety_gate_board": "sentinel",
+    "jarvis_owner_review_packet": "gatekeeper",
     "agent_dispatch_decision_rail_blueprint": "gatekeeper",
     "agent_runtime_review_packet": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",
@@ -469,6 +471,89 @@ def get_jarvis_product_progress():
     }
 
 
+def get_jarvis_safety_gate_board():
+    gates = [
+        {
+            "gate": "audit_rail_ci",
+            "label": "Audit Rail CI",
+            "status": "configured_owner_reported_green",
+            "proves": [
+                "append-only audit rails can be migrated on disposable Postgres",
+                "no-execution CHECK constraints are exercised in CI",
+                "Oom Sakkie service/routes/frontend tests run with DATABASE_URL set",
+            ],
+            "does_not_prove": [
+                "production Supabase migrations are applied",
+                "runtime dispatch is allowed",
+                "farm data can be written",
+            ],
+            "authority": "test_gate_only",
+        },
+        {
+            "gate": "browser_behavior_ci",
+            "label": "Browser Behavior CI",
+            "status": "configured_owner_reported_green",
+            "proves": [
+                "the real kiosk page loads in Chromium",
+                "no hidden startup Oom Sakkie POSTs are made",
+                "no interval polling is created",
+                "dry-run/result/message POSTs require explicit owner clicks",
+            ],
+            "does_not_prove": [
+                "live specialist dispatch is allowed",
+                "public/customer output is allowed",
+                "remote deployments are safe",
+            ],
+            "authority": "test_gate_only",
+        },
+        {
+            "gate": "runtime_authority",
+            "label": "Runtime Authority Locks",
+            "status": "locked",
+            "proves": [
+                "runtime, dispatch, autonomous loops, specialist LLM/tools, writes, public output, and physical controls remain false in inspection surfaces",
+            ],
+            "does_not_prove": [
+                "any live authority may be enabled",
+                "approved design-review records can be consumed for execution",
+            ],
+            "authority": "locked",
+        },
+        {
+            "gate": "external_ci_status",
+            "label": "External GitHub Status",
+            "status": "manual_check_required",
+            "proves": [
+                "the runtime does not call GitHub or trust remote CI state automatically",
+            ],
+            "does_not_prove": [
+                "current branch Actions are green without owner checking GitHub",
+            ],
+            "authority": "external_manual_check_only",
+        },
+    ]
+    return {
+        "success": True,
+        "mode": "jarvis_safety_gate_board_only",
+        "summary_status": "ci_gates_configured_live_authority_locked",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "gate_count": len(gates),
+        "configured_count": len([item for item in gates if item["status"].startswith("configured")]),
+        "manual_check_count": len([item for item in gates if item["status"] == "manual_check_required"]),
+        "locked_count": len([item for item in gates if item["status"] == "locked"]),
+        "gates": gates,
+        "next_safe_action": "Keep both GitHub workflows green and use the runtime-review packet before any authority change.",
+        "next_gate": "owner_and_claude_review_before_any_code_consumes_authority_decisions",
+    }
+
+
 _COMMAND_CENTER_LANES = (
     {
         "lane": "control_tower",
@@ -588,11 +673,18 @@ def get_agent_command_center():
                 "source": "agent_authority_matrix",
                 "authority": "inspection_only",
             },
+            {
+                "panel": "safety_gates",
+                "label": "Safety gates",
+                "source": "jarvis_safety_gate_board",
+                "authority": "read_only_gate_status",
+            },
         ],
         "queue_sources": [
             "system_work_status",
             "agent_dry_run_status",
             "dispatch_decision_status",
+            "jarvis_safety_gate_board",
         ],
         "blocked_authority_count": matrix.get("locked_count", 0),
         "dry_run_candidate_count": len(activation_plan.get("first_candidates", [])),
@@ -1210,6 +1302,53 @@ def get_agent_runtime_review_packet():
         },
         "claude_prompt": "Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.",
         "next_gate": "bulk_claude_review_before_dispatch_decision_rail_implementation",
+    }
+
+
+def get_jarvis_owner_review_packet():
+    progress = get_jarvis_product_progress()
+    command_center = get_agent_command_center()
+    safety_gates = get_jarvis_safety_gate_board()
+    runtime_review = get_agent_runtime_review_packet()
+    readiness = {
+        "progress_overall_percent": progress.get("overall_percent", 0),
+        "progress_summary_status": progress.get("summary_status"),
+        "command_center_status": command_center.get("summary_status"),
+        "safety_gate_status": safety_gates.get("summary_status"),
+        "runtime_review_status": runtime_review.get("summary_status"),
+        "configured_gate_count": safety_gates.get("configured_count", 0),
+        "locked_gate_count": safety_gates.get("locked_count", 0),
+        "manual_check_count": safety_gates.get("manual_check_count", 0),
+    }
+    return {
+        "success": True,
+        "mode": "jarvis_owner_review_packet_only",
+        "summary_status": "ready_for_batched_owner_claude_review_no_authority_change",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "review_readiness": readiness,
+        "review_focus": [
+            "Safety gates are configured and owner-reported green, but Oom Sakkie does not call GitHub.",
+            "Agent Command Center remains read-only visualization.",
+            "Dispatch rail remains append-only/no-execution and no decision is consumed for runtime behavior.",
+            "All runtime, dispatch, specialist LLM/tool, write, public output, deploy, Telegram, and physical-control authority stays locked.",
+            "Next review should decide only whether the current read-only foundation is ready for the next design discussion.",
+        ],
+        "payloads": {
+            "jarvis_product_progress": progress,
+            "agent_command_center": command_center,
+            "jarvis_safety_gate_board": safety_gates,
+            "agent_runtime_review_packet": runtime_review,
+        },
+        "claude_prompt": "Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.",
+        "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
+        "next_gate": "owner_and_claude_review_before_any_runtime_authority_change",
     }
 
 
