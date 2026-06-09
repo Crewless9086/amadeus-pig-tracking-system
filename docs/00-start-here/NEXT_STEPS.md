@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9W. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9Z. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -8492,6 +8492,154 @@ Manual check:
 2. Open `System Workbench`.
 3. If a Sentinel request exists, confirm `Next action` says to open the Sentinel handoff.
 4. After recording a result, confirm `Next action` moves to Sentinel result review.
+
+### 10.9X Oom Sakkie Live-PG Audit Rail Smoke - Local Ready
+
+Purpose:
+
+- Close Claude's strongest remaining test gap: prove the append-only triggers and no-execution CHECK constraints on the Oom Sakkie audit rails against a real Postgres when `DATABASE_URL` is available.
+- Keep the test gated so normal local/CI runs skip it when no database is configured.
+
+What changed:
+
+- Extended `tests/test_oom_sakkie_service.py` with a live-PG append-only smoke for:
+  - `oom_sakkie_build_requests`,
+  - `oom_sakkie_build_request_events`,
+  - `oom_sakkie_patch_proposals`,
+  - `oom_sakkie_patch_proposal_events`,
+  - `oom_sakkie_deploy_decisions`,
+  - `oom_sakkie_agent_dry_run_requests`,
+  - `oom_sakkie_agent_dry_run_events`,
+  - `oom_sakkie_agent_dry_run_results`,
+  - `oom_sakkie_agent_dry_run_result_events`.
+- The test inserts one valid audit chain, then asserts `UPDATE` and `DELETE` both raise an `append-only` exception for every table.
+- Extended the existing live-PG no-execution CHECK test to also reject:
+  - `dry_run_enabled = true` on `oom_sakkie_agent_dry_run_requests`,
+  - `runs_specialist = true` on `oom_sakkie_agent_dry_run_results`.
+
+Safety status:
+
+- Test-only.
+- Runs only when `DATABASE_URL` and `psycopg` are available.
+- Inserts audit test rows only.
+- Does not run specialists.
+- Does not dispatch agents.
+- Does not call specialist LLMs.
+- Does not execute tools.
+- Does not write farm operating data.
+- Does not apply runtime changes.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 192 tests with database-gated tests skipped when `DATABASE_URL` is unavailable.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual/live check:
+
+1. Ensure Supabase migrations through `202606080002_create_oom_sakkie_agent_dry_run_results.sql` are applied.
+2. Set `DATABASE_URL`.
+3. Run:
+
+   ```powershell
+   .\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service.OomSakkieServiceTests.test_live_pg_review_gate_constraints_reject_action_flags_when_database_url_is_configured tests.test_oom_sakkie_service.OomSakkieServiceTests.test_live_pg_review_gate_tables_are_append_only_when_database_url_is_configured
+   ```
+
+4. Expected: both pass; no audit table permits mutation or execution flags.
+
+### 10.9Y Oom Sakkie Prism Dry-Run Request Gate - Local Ready
+
+Purpose:
+
+- Start the next planned specialist safely after Sentinel by adding Prism to the same request -> handoff -> reviewed result rail.
+- Keep this as dry-run planning only; Prism still does not run.
+
+What changed:
+
+- `agent_dry_run_store.py` now has an explicit approved dry-run allowlist: `sentinel`, `prism`.
+- Prism requests default to the same no-execution mode and only expose read-only context.
+- `agent_dry_run_handoff.py` now supports approved specialists from the allowlist and generates a specialist-specific prompt:
+  - Sentinel remains the safety/readiness reviewer.
+  - Prism is the kiosk/interface design reviewer.
+- `agent_dry_run_result_store.py` now preserves the approved request's specialist slug in review-only result records instead of hard-coding Sentinel.
+- The Agent Roadmap panel now has `Request Prism Dry-Run` next to `Request Sentinel Dry-Run`.
+- Prism request UI posts an append-only dry-run request with guardrails:
+  - no live dispatch,
+  - no specialist LLM execution,
+  - no specialist tool execution,
+  - no generated assets/code edits/patch/deploy,
+  - owner review required for any future result.
+
+Safety status:
+
+- Records request intent only.
+- Handoff is prompt-only.
+- Result recording remains append-only review text.
+- Does not run Prism.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not generate assets.
+- Does not edit code, apply patches, or deploy.
+
+Verification:
+
+- Added service tests for Prism request params, Prism handoff packet, and Prism result params.
+- Added route test for Prism dry-run request creation through the existing protected endpoint.
+- Added frontend contract checks for the Prism request button and payload.
+- Focused Oom Sakkie service/routes/frontend tests passed at 196 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Find `Agent Roadmap`.
+4. Click `Request Prism Dry-Run`.
+5. Confirm a Prism request appears in `Sentinel Dry-Run Requests` / dry-run request queue.
+6. Open its handoff and confirm it says Prism is the kiosk/interface design reviewer.
+7. Confirm guard flags still say dispatch, specialist LLM, tools, and writes are off.
+
+### 10.9Z Oom Sakkie Generic Agent Dry-Run Workbench Labels - Local Ready
+
+Purpose:
+
+- Remove Sentinel-specific UI wording from the shared dry-run rail now that Prism can also enter it.
+- Keep the Workbench easier to follow as the planned crew grows.
+
+What changed:
+
+- Renamed live Workbench labels:
+  - `Sentinel Dry-Run Requests` -> `Agent Dry-Run Requests`,
+  - `Record Sentinel Result` -> `Record Agent Result`,
+  - `Sentinel Result Review` -> `Agent Result Review`.
+- Updated JS empty/error/next-action copy from Sentinel-specific wording to generic agent wording.
+- Handoff cards now use the packet's `specialist_name`, so Sentinel and Prism are named correctly.
+- Workbench `Next action` now says `agent handoff` / `agent result review` instead of `Sentinel handoff` / `Sentinel result review`.
+
+Safety status:
+
+- UI wording only.
+- Does not change routes, DB schema, or allowed operations.
+- Does not run agents.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes, patches, or deploys.
+
+Verification:
+
+- Updated frontend contract assertions for the generic dry-run Workbench labels.
+- Focused Oom Sakkie service/routes/frontend tests passed at 196 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Confirm shared panels read `Agent Dry-Run Requests`, `Record Agent Result`, and `Agent Result Review`.
+4. Confirm Sentinel and Prism request rows still show their specific `specialist_slug`.
 
 7.3E weather LLM triage note:
 

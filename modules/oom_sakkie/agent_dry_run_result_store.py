@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from modules.oom_sakkie.agent_dry_run_store import get_agent_dry_run_request
+from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs, get_agent_dry_run_request
 from services.database_service import DATABASE_URL_ENV
 
 
@@ -19,8 +19,13 @@ def record_agent_dry_run_result(dry_run_request_id, payload, database_url=None):
     if request_status != 200:
         return request, request_status
     dry_run_request = request.get("dry_run_request", {})
-    if dry_run_request.get("specialist_slug") != "sentinel":
-        return {"success": False, "status": "dry_run_result_not_approved_for_specialist"}, 400
+    specialist_slug = str(dry_run_request.get("specialist_slug") or "").strip().lower()
+    if specialist_slug not in allowed_agent_dry_run_slugs():
+        return {
+            "success": False,
+            "status": "dry_run_result_not_approved_for_specialist",
+            "allowed_specialists": sorted(allowed_agent_dry_run_slugs()),
+        }, 400
 
     payload = payload if isinstance(payload, dict) else {}
     params = _agent_dry_run_result_params(dry_run_request, payload)
@@ -327,7 +332,7 @@ def _agent_dry_run_result_params(dry_run_request, payload):
         "dry_run_request_id": _clean_text(dry_run_request.get("dry_run_request_id", ""), 100),
         "status": "recorded_for_owner_review",
         "mode": "dry_run_result_review_only",
-        "specialist_slug": "sentinel",
+        "specialist_slug": _clean_text(dry_run_request.get("specialist_slug", ""), 80).lower(),
         "result_text": _clean_text(payload.get("result_text", ""), 6000),
         "findings_json": _json([str(item)[:500] for item in list(findings)[:20]]),
         "recommended_next_gate": _clean_text(

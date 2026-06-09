@@ -72,6 +72,7 @@
   const agentRoadmap = document.getElementById("oom_agent_roadmap");
   const refreshAgentRoadmap = document.getElementById("oom_refresh_agent_roadmap");
   const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
+  const requestPrismDryRunButton = document.getElementById("oom_request_prism_dry_run");
   const agentDryRunRequests = document.getElementById("oom_agent_dry_run_requests");
   const refreshAgentDryRunRequests = document.getElementById("oom_refresh_agent_dry_run_requests");
   const agentDryRunHandoff = document.getElementById("oom_agent_dry_run_handoff");
@@ -1373,7 +1374,7 @@
       agentResultReviews.innerHTML = "";
       const empty = document.createElement("p");
       empty.className = "oom-empty";
-      empty.textContent = `Sentinel result review queue: ${status}.`;
+      empty.textContent = `Agent result review queue: ${status}.`;
       agentResultReviews.appendChild(empty);
       return;
     }
@@ -1394,8 +1395,8 @@
       empty.textContent = "No Sentinel dry-run results recorded yet.";
       list.appendChild(empty);
     } else {
-      appendQueueSection(list, "Needs Owner Review", pendingItems, "No Sentinel results need owner review right now.", renderAgentResultRow);
-      appendQueueSection(list, "Reviewed / Closed", closedItems.slice(0, 5), "No reviewed Sentinel results yet.", renderAgentResultRow);
+      appendQueueSection(list, "Needs Owner Review", pendingItems, "No agent results need owner review right now.", renderAgentResultRow);
+      appendQueueSection(list, "Reviewed / Closed", closedItems.slice(0, 5), "No reviewed agent results yet.", renderAgentResultRow);
     }
     agentResultReviews.appendChild(list);
   }
@@ -1447,7 +1448,7 @@
     row.className = "oom-work-item";
     badge.className = "oom-work-badge";
     badge.textContent = "Accepted evidence";
-    title.textContent = item.dry_run_result_id || "Accepted Sentinel result";
+    title.textContent = item.dry_run_result_id || "Accepted agent result";
     meta.textContent = `${item.specialist_slug || "sentinel"} | request ${item.dry_run_request_id || "-"} | accepted ${latestEvent.created_at || "-"}`;
     result.textContent = (item.result_text || "No result text supplied.").slice(0, 620);
     findings.textContent = `Evidence: ${(item.findings || []).slice(0, 5).join("; ") || "none supplied"}`;
@@ -1471,7 +1472,7 @@
       agentDryRunRequests.innerHTML = "";
       const empty = document.createElement("p");
       empty.className = "oom-empty";
-      empty.textContent = `Sentinel dry-run request queue: ${status}.`;
+      empty.textContent = `Agent dry-run request queue: ${status}.`;
       agentDryRunRequests.appendChild(empty);
       return;
     }
@@ -1567,7 +1568,7 @@
     guard.className = "oom-policy-blocked";
     guard.textContent = `${data.mode || "agent_dry_run_handoff_only"} | runs specialist ${data.runs_specialist ? "yes" : "no"} | specialist LLM ${data.runs_specialist_llm ? "yes" : "no"} | tools ${data.runs_specialist_tools ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "yes" : "no"} | writes ${data.writes ? "yes" : "no"}`;
     const title = document.createElement("strong");
-    title.textContent = `Sentinel handoff: ${data.dry_run_request_id || "request"}`;
+    title.textContent = `${data.specialist_name || "Agent"} handoff: ${data.dry_run_request_id || "request"}`;
     const prompt = document.createElement("pre");
     prompt.textContent = data.prompt || "No handoff prompt returned.";
     const copyButton = document.createElement("button");
@@ -1654,7 +1655,7 @@
         agentResultReviews.innerHTML = "";
         const line = document.createElement("p");
         line.className = "oom-empty";
-        line.textContent = `Sentinel result could not be recorded: ${(error && error.message) || "unknown error"}.`;
+        line.textContent = `Agent result could not be recorded: ${(error && error.message) || "unknown error"}.`;
         agentResultReviews.appendChild(line);
       }
     } finally {
@@ -1690,7 +1691,7 @@
     row.className = stage === "pending" ? "oom-work-item oom-work-item-active" : "oom-work-item oom-work-item-muted";
     badge.className = "oom-work-badge";
     badge.textContent = stage === "pending" ? "Needs owner review" : "Reviewed";
-    title.textContent = item.dry_run_result_id || "Sentinel result";
+    title.textContent = item.dry_run_result_id || "Agent result";
     meta.textContent = `${item.dry_run_request_id || ""} | ${item.specialist_slug || "sentinel"} | ${item.created_at || ""}`;
     text.textContent = (item.result_text || "No result text supplied.").slice(0, 520);
     findings.textContent = `Findings: ${(item.findings || []).slice(0, 3).join("; ") || "none supplied"}`;
@@ -1728,7 +1729,7 @@
     noteButton.className = "oom-build-brief-button";
     noteButton.textContent = "Add Note";
     noteButton.addEventListener("click", () => {
-      const note = window.prompt("Review note for this Sentinel result. This records text only; no specialist runs.") || "";
+      const note = window.prompt("Review note for this agent result. This records text only; no specialist runs.") || "";
       if (!note.trim()) return;
       recordAgentResultEvent(item.dry_run_result_id, "review_note", note.trim(), noteButton);
     });
@@ -1799,9 +1800,9 @@
     const next = document.createElement("p");
     const counts = document.createElement("div");
     title.textContent = "Next action";
-    summary.textContent = `${pendingAgentRequests.length} Sentinel handoff, ${pendingAgentResults.length} Sentinel result review, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
+    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
     if (pendingAgentRequests.length) {
-      next.textContent = `Open Sentinel handoff for ${pendingAgentRequests[0].dry_run_request_id || "the oldest dry-run request"}.`;
+      next.textContent = `Open agent handoff for ${pendingAgentRequests[0].dry_run_request_id || "the oldest dry-run request"}.`;
     } else if (pendingAgentResults.length) {
       next.textContent = `Review Sentinel dry-run result ${pendingAgentResults[0].dry_run_result_id || "waiting for review"}.`;
     } else if (pendingBuild.length) {
@@ -1815,8 +1816,8 @@
     }
     counts.className = "oom-workbench-counts";
     [
-      ["Sentinel handoff", pendingAgentRequests.length],
-      ["Sentinel result", pendingAgentResults.length],
+      ["Agent handoff", pendingAgentRequests.length],
+      ["Agent result", pendingAgentResults.length],
       ["Build", pendingBuild.length],
       ["Patch", pendingPatch.length],
       ["Deploy", deployReady.length],
@@ -2462,7 +2463,7 @@
       renderAgentLearningLedger(data);
       renderWorkbenchNextAction();
     } catch (error) {
-      agentResultReviews.innerHTML = '<p class="oom-empty">Sentinel result reviews are unavailable.</p>';
+      agentResultReviews.innerHTML = '<p class="oom-empty">Agent result reviews are unavailable.</p>';
       if (agentLearningLedger) agentLearningLedger.innerHTML = '<p class="oom-empty">Agent learning ledger is unavailable.</p>';
     }
   }
@@ -2481,7 +2482,7 @@
     } catch (error) {
       const line = document.createElement("p");
       line.className = "oom-empty";
-      line.textContent = "Sentinel result packet is unavailable.";
+      line.textContent = "Agent result packet is unavailable.";
       agentResultReviews.appendChild(line);
     } finally {
       if (button) {
@@ -2501,7 +2502,7 @@
     const guard = document.createElement("p");
     const options = document.createElement("p");
     panel.className = "oom-deploy-instructions";
-    title.textContent = data && data.success ? `Review packet: ${data.dry_run_result_id || "Sentinel result"}` : "Review packet unavailable";
+    title.textContent = data && data.success ? `Review packet: ${data.dry_run_result_id || "agent result"}` : "Review packet unavailable";
     mode.textContent = data && data.status ? `${data.mode || "unknown"} | ${data.status}` : "No packet returned.";
     result.textContent = data && data.result_text ? `Result: ${data.result_text}` : "Result: not supplied.";
     findings.textContent = data && Array.isArray(data.findings)
@@ -2684,7 +2685,7 @@
       if (agentResultReviews) {
         const line = document.createElement("p");
         line.className = "oom-empty";
-        line.textContent = "Sentinel result review event could not be recorded.";
+        line.textContent = "Agent result review event could not be recorded.";
         agentResultReviews.appendChild(line);
       }
     } finally {
@@ -2799,12 +2800,45 @@
       renderAgentDryRunRequests(data);
       renderWorkbenchNextAction();
     } catch (error) {
-      agentDryRunRequests.innerHTML = '<p class="oom-empty">Sentinel dry-run request queue is unavailable.</p>';
+      agentDryRunRequests.innerHTML = '<p class="oom-empty">Agent dry-run request queue is unavailable.</p>';
     }
   }
 
-  async function requestSentinelDryRun(button) {
+  function dryRunRequestPayload(specialistSlug) {
+    if (specialistSlug === "prism") {
+      return {
+        specialist_slug: "prism",
+        requested_by: "kiosk",
+        owner_text: "Owner requested a Prism read-only dry-run from the Agent Roadmap panel.",
+        purpose: "Create an append-only approval record for a future Prism kiosk/interface review. Do not run Prism.",
+        guardrails: [
+          "No live specialist dispatch.",
+          "No specialist LLM execution from this request.",
+          "No specialist tool execution from this request.",
+          "No generated assets, code edits, patch application, or deploy.",
+          "Owner must review any future dry-run result manually.",
+        ],
+      };
+    }
+    return {
+      specialist_slug: "sentinel",
+      requested_by: "kiosk",
+      owner_text: "Owner requested the first Sentinel read-only dry-run from the Agent Roadmap panel.",
+      purpose: "Create an append-only approval record for a future Sentinel dry-run review. Do not run Sentinel.",
+      guardrails: [
+        "No live specialist dispatch.",
+        "No specialist LLM execution from this request.",
+        "No specialist tool execution from this request.",
+        "No write, post, sale, control, patch, or deploy.",
+        "Owner must review any future dry-run result manually.",
+      ],
+    };
+  }
+
+  async function requestAgentDryRun(button, specialistSlug) {
     if (!button || !agentRoadmap) return;
+    const payload = dryRunRequestPayload(specialistSlug);
+    const specialistName = payload.specialist_slug === "prism" ? "Prism" : "Sentinel";
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = "Requesting";
@@ -2812,23 +2846,11 @@
       const response = await fetch("/api/oom-sakkie/agent-dry-runs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          specialist_slug: "sentinel",
-          requested_by: "kiosk",
-          owner_text: "Owner requested the first Sentinel read-only dry-run from the Agent Roadmap panel.",
-          purpose: "Create an append-only approval record for a future Sentinel dry-run review. Do not run Sentinel.",
-          guardrails: [
-            "No live specialist dispatch.",
-            "No specialist LLM execution from this request.",
-            "No specialist tool execution from this request.",
-            "No write, post, sale, control, patch, or deploy.",
-            "Owner must review any future dry-run result manually.",
-          ],
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await response.json();
       if (!response.ok || !data.success) {
-        throw new Error(data.status || "sentinel_dry_run_request_failed");
+        throw new Error(data.status || "agent_dry_run_request_failed");
       }
       renderAgentRoadmapRequestResult(data);
       loadAgentRoadmap();
@@ -2838,15 +2860,23 @@
     } catch (error) {
       const line = document.createElement("p");
       line.className = "oom-empty";
-      line.textContent = `Sentinel dry-run request failed: ${(error && error.message) || "unknown error"}.`;
+      line.textContent = `${specialistName} dry-run request failed: ${(error && error.message) || "unknown error"}.`;
       agentRoadmap.prepend(line);
       button.textContent = "Error";
     } finally {
       window.setTimeout(() => {
         button.disabled = false;
-        button.textContent = originalText || "Request Sentinel Dry-Run";
+        button.textContent = originalText || `Request ${specialistName} Dry-Run`;
       }, 1400);
     }
+  }
+
+  async function requestSentinelDryRun(button) {
+    return requestAgentDryRun(button, "sentinel");
+  }
+
+  async function requestPrismDryRun(button) {
+    return requestAgentDryRun(button, "prism");
   }
 
   function renderAgentRoadmapRequestResult(data) {
@@ -2856,8 +2886,9 @@
     const title = document.createElement("strong");
     const detail = document.createElement("p");
     const guard = document.createElement("code");
-    title.textContent = `Sentinel dry-run request recorded: ${data.dry_run_request_id || "new request"}`;
-    detail.textContent = "This only records owner approval intent for a future review. Sentinel did not run.";
+    const specialistName = (data.specialist_slug || "sentinel").replace(/^\w/, (letter) => letter.toUpperCase());
+    title.textContent = `${specialistName} dry-run request recorded: ${data.dry_run_request_id || "new request"}`;
+    detail.textContent = `This only records owner approval intent for a future review. ${specialistName} did not run.`;
     guard.textContent = `dispatch ${data.dispatch_enabled ? "on" : "off"} | specialist LLM ${data.runs_specialist_llm ? "on" : "off"} | tools ${data.runs_specialist_tools ? "on" : "off"} | writes ${data.writes ? "on" : "off"}`;
     card.appendChild(title);
     card.appendChild(detail);
@@ -2959,6 +2990,9 @@
 
   if (requestSentinelDryRunButton) {
     requestSentinelDryRunButton.addEventListener("click", () => requestSentinelDryRun(requestSentinelDryRunButton));
+  }
+  if (requestPrismDryRunButton) {
+    requestPrismDryRunButton.addEventListener("click", () => requestPrismDryRun(requestPrismDryRunButton));
   }
 
   if (refreshAgentDryRunRequests) {

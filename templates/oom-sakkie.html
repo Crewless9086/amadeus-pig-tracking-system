@@ -200,6 +200,7 @@
             </div>
             <button type="button" id="oom_refresh_agent_roadmap">Refresh</button>
             <button type="button" id="oom_request_sentinel_dry_run">Request Sentinel Dry-Run</button>
+            <button type="button" id="oom_request_prism_dry_run">Request Prism Dry-Run</button>
           </div>
           <div id="oom_agent_roadmap" class="oom-advisor-panel">
             <p class="oom-empty">Agent roadmap not loaded yet.</p>
@@ -208,8 +209,8 @@
         <div class="oom-agent-dry-run-requests">
           <div class="oom-section-heading">
             <div>
-              <p class="oom-label">Sentinel Dry-Run Requests</p>
-              <p class="oom-empty">Append-only request queue and handoff packets. Sentinel does not run here.</p>
+              <p class="oom-label">Agent Dry-Run Requests</p>
+              <p class="oom-empty">Append-only request queue and handoff packets. Agents do not run here.</p>
             </div>
             <button type="button" id="oom_refresh_agent_dry_run_requests">Refresh</button>
           </div>
@@ -222,8 +223,8 @@
           <div class="oom-agent-dry-run-result-form">
             <div class="oom-section-heading">
               <div>
-                <p class="oom-label">Record Sentinel Result</p>
-                <p class="oom-empty">Paste reviewed output only. This does not run Sentinel or apply learning.</p>
+                <p class="oom-label">Record Agent Result</p>
+                <p class="oom-empty">Paste reviewed output only. This does not run an agent or apply learning.</p>
               </div>
             </div>
             <input id="oom_agent_dry_run_result_request_id" type="text" autocomplete="off" placeholder="Dry-run request ID">
@@ -235,13 +236,13 @@
         <div class="oom-agent-result-review">
           <div class="oom-section-heading">
             <div>
-              <p class="oom-label">Sentinel Result Review</p>
+              <p class="oom-label">Agent Result Review</p>
               <p class="oom-empty">Owner review for recorded dry-run results. No specialist runs here.</p>
             </div>
             <button type="button" id="oom_refresh_agent_result_reviews">Refresh</button>
           </div>
           <div id="oom_agent_result_reviews" class="oom-advisor-panel">
-            <p class="oom-empty">Sentinel result reviews not loaded yet.</p>
+            <p class="oom-empty">Agent result reviews not loaded yet.</p>
           </div>
         </div>
         <div class="oom-agent-learning-ledger">

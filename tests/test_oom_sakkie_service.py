@@ -575,7 +575,27 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(params["writes"])
         self.assertIn("sentinel_dry_run_review", params["allowed_tools_json"])
 
-    def test_agent_dry_run_store_not_configured_and_rejects_non_sentinel(self):
+    def test_agent_dry_run_request_params_allow_prism_without_execution(self):
+        params = _agent_dry_run_request_params({
+            "specialist_slug": "prism",
+            "owner_text": "review the kiosk layout",
+            "dry_run_enabled": True,
+            "dispatch_enabled": True,
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": True,
+            "writes": True,
+        })
+
+        self.assertEqual(params["specialist_slug"], "prism")
+        self.assertEqual(params["mode"], "read_only_dry_run_request_only")
+        self.assertFalse(params["dry_run_enabled"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["runs_specialist_llm"])
+        self.assertFalse(params["runs_specialist_tools"])
+        self.assertFalse(params["writes"])
+        self.assertIn("system_work_status", params["allowed_tools_json"])
+
+    def test_agent_dry_run_store_not_configured_and_rejects_unapproved_specialist(self):
         result, status_code = record_agent_dry_run_request({
             "specialist_slug": "sentinel",
             "owner_text": "approve first dry run",
@@ -687,6 +707,45 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(rejected["status"], "unsafe_dry_run_request_flags")
         self.assertIn("runs_specialist_llm", rejected["unsafe_flags"])
 
+    def test_prism_dry_run_handoff_is_prompt_only(self):
+        request = _agent_dry_run_request_row((
+            "OSK-AGENT-DRYRUN-PRISM",
+            "approved_for_read_only_dry_run",
+            "read_only_dry_run_request_only",
+            "prism",
+            "owner",
+            "Review the kiosk layout.",
+            "Future Prism dry-run request.",
+            "",
+            ["system_work_status"],
+            ["No generated assets.", "Owner must review output."],
+            "manual_review_before_any_specialist_execution",
+            False,
+            False,
+            False,
+            False,
+            False,
+            datetime(2026, 6, 9, tzinfo=timezone.utc),
+            None,
+            None,
+            None,
+            None,
+        ))
+
+        packet, status_code = build_agent_dry_run_handoff(request)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["mode"], "agent_dry_run_handoff_only")
+        self.assertEqual(packet["specialist_slug"], "prism")
+        self.assertEqual(packet["specialist_name"], "Prism")
+        self.assertFalse(packet["runs_specialist"])
+        self.assertFalse(packet["runs_specialist_llm"])
+        self.assertFalse(packet["runs_specialist_tools"])
+        self.assertFalse(packet["dispatch_enabled"])
+        self.assertFalse(packet["writes"])
+        self.assertIn("You are Prism", packet["prompt"])
+        self.assertIn("Do not call tools", packet["prompt"])
+
     def test_agent_dry_run_migration_is_append_only_and_no_execution(self):
         migration = Path("supabase/migrations/202606080001_create_oom_sakkie_agent_dry_runs.sql").read_text(encoding="utf-8")
 
@@ -716,6 +775,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         })
 
         self.assertEqual(params["mode"], "dry_run_result_review_only")
+        self.assertEqual(params["specialist_slug"], "sentinel")
         self.assertEqual(params["status"], "recorded_for_owner_review")
         self.assertFalse(params["runs_specialist"])
         self.assertFalse(params["dispatch_enabled"])
@@ -724,6 +784,24 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(params["writes"])
         self.assertFalse(params["applies_runtime_change"])
         self.assertIn("Review tool allowlist", params["findings_json"])
+
+    def test_agent_dry_run_result_params_preserve_approved_specialist_slug(self):
+        params = _agent_dry_run_result_params({
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-PRISM",
+            "specialist_slug": "prism",
+        }, {
+            "result_text": "Prism would review the layout.",
+            "findings": ["Panel density is high."],
+        })
+
+        self.assertEqual(params["specialist_slug"], "prism")
+        self.assertEqual(params["mode"], "dry_run_result_review_only")
+        self.assertFalse(params["runs_specialist"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["runs_specialist_llm"])
+        self.assertFalse(params["runs_specialist_tools"])
+        self.assertFalse(params["writes"])
+        self.assertFalse(params["applies_runtime_change"])
 
     def test_agent_dry_run_result_row_maps_select_tuple_positions(self):
         created_at = datetime(2026, 6, 8, tzinfo=timezone.utc)
@@ -2580,6 +2658,263 @@ class OomSakkieServiceTests(unittest.TestCase):
                     )
                 connection.rollback()
                 self.assertIn("check", str(deploy_error.exception).lower())
+
+        dry_run_request_id = f"OSK-AGENT-DRYRUN-CONSTRAINT-{suffix}"
+        dry_run_result_id = f"OSK-AGENT-DRYRUN-RESULT-CONSTRAINT-{suffix}"
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as dry_run_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_agent_dry_run_requests (
+                            dry_run_request_id, status, mode, specialist_slug,
+                            requested_by, purpose, dry_run_enabled
+                        )
+                        values (
+                            %s, 'approved_for_read_only_dry_run',
+                            'read_only_dry_run_request_only', 'sentinel',
+                            'unittest', 'constraint test', true
+                        )
+                        """,
+                        (dry_run_request_id,),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(dry_run_error.exception).lower())
+
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_requests (
+                        dry_run_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'approved_for_read_only_dry_run',
+                        'read_only_dry_run_request_only', 'sentinel',
+                        'unittest', 'constraint test'
+                    )
+                    """,
+                    (dry_run_request_id,),
+                )
+                connection.commit()
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as dry_run_result_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_agent_dry_run_results (
+                            dry_run_result_id, dry_run_request_id, status, mode,
+                            specialist_slug, result_text, runs_specialist
+                        )
+                        values (
+                            %s, %s, 'recorded_for_owner_review',
+                            'dry_run_result_review_only', 'sentinel',
+                            'constraint test', true
+                        )
+                        """,
+                        (dry_run_result_id, dry_run_request_id),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(dry_run_result_error.exception).lower())
+
+    def test_live_pg_review_gate_tables_are_append_only_when_database_url_is_configured(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for review-gate append-only integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        suffix = build_trace_id().replace("OSK-", "")
+        build_request_id = f"OSK-BUILD-APPEND-{suffix}"
+        build_event_id = f"OSK-BUILD-EVENT-APPEND-{suffix}"
+        patch_proposal_id = f"OSK-PATCH-APPEND-{suffix}"
+        patch_event_id = f"OSK-PATCH-EVENT-APPEND-{suffix}"
+        deploy_decision_id = f"OSK-DEPLOY-APPEND-{suffix}"
+        dry_run_request_id = f"OSK-AGENT-DRYRUN-APPEND-{suffix}"
+        dry_run_event_id = f"OSK-AGENT-DRYRUN-EVENT-APPEND-{suffix}"
+        dry_run_result_id = f"OSK-AGENT-DRYRUN-RESULT-APPEND-{suffix}"
+        dry_run_result_event_id = f"OSK-AGENT-DRYRUN-RESULT-EVENT-APPEND-{suffix}"
+
+        rows = [
+            (
+                "public.oom_sakkie_build_requests",
+                "build_request_id",
+                build_request_id,
+                "brief",
+            ),
+            (
+                "public.oom_sakkie_build_request_events",
+                "event_id",
+                build_event_id,
+                "notes",
+            ),
+            (
+                "public.oom_sakkie_patch_proposals",
+                "patch_proposal_id",
+                patch_proposal_id,
+                "proposal_text",
+            ),
+            (
+                "public.oom_sakkie_patch_proposal_events",
+                "event_id",
+                patch_event_id,
+                "notes",
+            ),
+            (
+                "public.oom_sakkie_deploy_decisions",
+                "deploy_decision_id",
+                deploy_decision_id,
+                "notes",
+            ),
+            (
+                "public.oom_sakkie_agent_dry_run_requests",
+                "dry_run_request_id",
+                dry_run_request_id,
+                "purpose",
+            ),
+            (
+                "public.oom_sakkie_agent_dry_run_events",
+                "event_id",
+                dry_run_event_id,
+                "notes",
+            ),
+            (
+                "public.oom_sakkie_agent_dry_run_results",
+                "dry_run_result_id",
+                dry_run_result_id,
+                "result_text",
+            ),
+            (
+                "public.oom_sakkie_agent_dry_run_result_events",
+                "event_id",
+                dry_run_result_event_id,
+                "notes",
+            ),
+        ]
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_build_requests (
+                        build_request_id, status, mode, proposal_json, brief,
+                        recommended_files_json, verification_json, next_gate
+                    )
+                    values (
+                        %s, 'approved_for_build', 'build_request_only', '{}'::jsonb,
+                        'append-only test', '[]'::jsonb, '[]'::jsonb, 'manual'
+                    )
+                    """,
+                    (build_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_build_request_events (
+                        event_id, build_request_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'review_note', 'append-only test', 'unittest')
+                    """,
+                    (build_event_id, build_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_patch_proposals (
+                        patch_proposal_id, build_request_id, proposal_text, proposed_by
+                    )
+                    values (%s, %s, 'append-only test', 'unittest')
+                    """,
+                    (patch_proposal_id, build_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_patch_proposal_events (
+                        event_id, patch_proposal_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'review_note', 'append-only test', 'unittest')
+                    """,
+                    (patch_event_id, patch_proposal_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_deploy_decisions (
+                        deploy_decision_id, patch_proposal_id, decision_type,
+                        environment, notes, approved_by
+                    )
+                    values (%s, %s, 'review_note', 'local', 'append-only test', 'unittest')
+                    """,
+                    (deploy_decision_id, patch_proposal_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_requests (
+                        dry_run_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'approved_for_read_only_dry_run',
+                        'read_only_dry_run_request_only', 'sentinel',
+                        'unittest', 'append-only test'
+                    )
+                    """,
+                    (dry_run_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_events (
+                        event_id, dry_run_request_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'review_note', 'append-only test', 'unittest')
+                    """,
+                    (dry_run_event_id, dry_run_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_results (
+                        dry_run_result_id, dry_run_request_id, status, mode,
+                        specialist_slug, result_text, recorded_by
+                    )
+                    values (
+                        %s, %s, 'recorded_for_owner_review',
+                        'dry_run_result_review_only', 'sentinel',
+                        'append-only test', 'unittest'
+                    )
+                    """,
+                    (dry_run_result_id, dry_run_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_result_events (
+                        event_id, dry_run_result_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'review_note', 'append-only test', 'unittest')
+                    """,
+                    (dry_run_result_event_id, dry_run_result_id),
+                )
+                connection.commit()
+
+        for table_name, id_column, row_id, text_column in rows:
+            with psycopg.connect(database_url, connect_timeout=10) as connection:
+                with connection.cursor() as cursor:
+                    with self.assertRaises(Exception) as update_error:
+                        cursor.execute(
+                            f"update {table_name} set {text_column} = {text_column} where {id_column} = %s",
+                            (row_id,),
+                        )
+                    connection.rollback()
+                    self.assertIn("append-only", str(update_error.exception).lower())
+
+            with psycopg.connect(database_url, connect_timeout=10) as connection:
+                with connection.cursor() as cursor:
+                    with self.assertRaises(Exception) as delete_error:
+                        cursor.execute(
+                            f"delete from {table_name} where {id_column} = %s",
+                            (row_id,),
+                        )
+                    connection.rollback()
+                    self.assertIn("append-only", str(delete_error.exception).lower())
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")

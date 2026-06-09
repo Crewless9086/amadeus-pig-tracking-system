@@ -253,6 +253,43 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(payload["specialist_slug"], "sentinel")
         self.assertIn("Do not run Sentinel", payload["purpose"])
 
+    @patch("modules.oom_sakkie.routes.record_agent_dry_run_request")
+    def test_agent_dry_run_create_route_supports_prism_request_without_execution(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "read_only_dry_run_request_only",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-PRISM",
+            "specialist_slug": "prism",
+            "dry_run_enabled": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs",
+            json={
+                "specialist_slug": "prism",
+                "requested_by": "kiosk",
+                "owner_text": "Review the kiosk layout.",
+                "purpose": "Create an append-only approval record for a future Prism kiosk/interface review. Do not run Prism.",
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data["specialist_slug"], "prism")
+        self.assertFalse(data["dry_run_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        payload = mock_record.call_args.args[0]
+        self.assertEqual(payload["specialist_slug"], "prism")
+        self.assertIn("Do not run Prism", payload["purpose"])
+
     @patch("modules.oom_sakkie.routes.record_agent_dry_run_event")
     def test_agent_dry_run_event_route_records_event_only(self, mock_record):
         mock_record.return_value = ({

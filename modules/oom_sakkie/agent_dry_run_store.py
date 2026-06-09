@@ -8,7 +8,11 @@ from services.database_service import DATABASE_URL_ENV
 
 
 AGENT_DRY_RUN_EVENT_TYPES = {"approved", "cancelled", "review_note"}
-_ALLOWED_DRY_RUN_SLUGS = {"sentinel"}
+_ALLOWED_DRY_RUN_SLUGS = {"prism", "sentinel"}
+
+
+def allowed_agent_dry_run_slugs():
+    return set(_ALLOWED_DRY_RUN_SLUGS)
 
 
 def record_agent_dry_run_request(payload, database_url=None):
@@ -394,6 +398,8 @@ def _agent_dry_run_request_row(row):
 def _default_allowed_tools(specialist_slug):
     if specialist_slug == "sentinel":
         return ["system_work_status", "farm_operating_brief", "sentinel_dry_run_review"]
+    if specialist_slug == "prism":
+        return ["system_work_status"]
     return []
 
 

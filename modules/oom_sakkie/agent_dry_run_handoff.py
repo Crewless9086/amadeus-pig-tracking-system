@@ -1,4 +1,5 @@
 from modules.oom_sakkie.agent_runtime import recommend_agent_for_text
+from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 
 
 NO_GO_RULES = (
@@ -8,6 +9,16 @@ NO_GO_RULES = (
     "Do not write farm data, send messages, post publicly, sell, reserve stock, control hardware, edit code, apply patches, or deploy.",
     "Return a short dry-run plan and wait for owner approval before any separate execution step.",
 )
+
+_SPECIALIST_NAMES = {
+    "sentinel": "Sentinel",
+    "prism": "Prism",
+}
+
+_SPECIALIST_ROLES = {
+    "sentinel": "the safety and readiness reviewer",
+    "prism": "the kiosk and interface design reviewer",
+}
 
 
 def build_agent_dry_run_handoff(dry_run_request):
@@ -32,21 +43,23 @@ def build_agent_dry_run_handoff(dry_run_request):
         }, 400
 
     specialist_slug = str(dry_run_request.get("specialist_slug") or "").strip().lower()
-    if specialist_slug != "sentinel":
+    allowed = allowed_agent_dry_run_slugs()
+    if specialist_slug not in allowed:
         return {
             "success": False,
             "status": "dry_run_handoff_not_approved_for_specialist",
-            "approved_specialist": "sentinel",
+            "approved_specialists": sorted(allowed),
         }, 400
 
     owner_text = _clean_text(dry_run_request.get("owner_text") or "", 1200)
-    recommendation = recommend_agent_for_text(owner_text or "sentinel dry-run safety review")
+    specialist_name = _SPECIALIST_NAMES.get(specialist_slug, specialist_slug.title())
+    recommendation = recommend_agent_for_text(owner_text or f"{specialist_slug} dry-run review")
     packet = {
         "success": True,
         "mode": "agent_dry_run_handoff_only",
         "dry_run_request_id": dry_run_request.get("dry_run_request_id", ""),
         "specialist_slug": specialist_slug,
-        "specialist_name": "Sentinel",
+        "specialist_name": specialist_name,
         "owner_text": owner_text,
         "purpose": _clean_text(dry_run_request.get("purpose") or "", 1200),
         "source_trace_id": _clean_text(dry_run_request.get("source_trace_id") or "", 80),
@@ -60,7 +73,7 @@ def build_agent_dry_run_handoff(dry_run_request):
         "dispatch_enabled": False,
         "requires_owner_execution_approval": True,
         "requires_output_review": True,
-        "next_gate": "owner_approval_before_any_separate_sentinel_dry_run_execution",
+        "next_gate": f"owner_approval_before_any_separate_{specialist_slug}_dry_run_execution",
         "agent_recommendation": recommendation,
     }
     packet["prompt"] = _handoff_prompt(packet)
@@ -71,8 +84,9 @@ def _handoff_prompt(packet):
     tools = ", ".join(packet["allowed_tools"]) or "none"
     guardrails = "\n".join(f"- {item}" for item in packet["guardrails"]) or "- No extra guardrails supplied."
     no_go = "\n".join(f"- {item}" for item in packet["no_go_rules"])
+    specialist_role = _SPECIALIST_ROLES.get(packet["specialist_slug"], "a planned Oom Sakkie specialist")
     return (
-        "You are Sentinel, the safety and readiness reviewer for Oom Sakkie.\n\n"
+        f"You are {packet['specialist_name']}, {specialist_role} for Oom Sakkie.\n\n"
         "This is a DRY-RUN HANDOFF ONLY. You are not being executed by the kiosk runtime.\n"
         "Your job is to propose how you would review this request safely, then stop.\n\n"
         f"Dry-run request ID: {packet['dry_run_request_id']}\n"

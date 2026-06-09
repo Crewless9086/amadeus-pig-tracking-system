@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-W specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, Sentinel Dry-Run Review, LLM Message Guard safety follow-ups, Agent Dry-Run Request Gate, Message Guard Policy Consistency, Sentinel Dry-Run Handoff Packet, Sentinel Dry-Run Result Gate, Sentinel Review Queue Status, Sentinel Dry-Run Result Review Packet, Sentinel Result Review UI, Agent Learning Evidence, Agent Learning Ledger UI, Accepted Learning Roadmap Link, Visible Agent Roadmap Panel, Sentinel Dry-Run Request Button, Sentinel Dry-Run Mini-Pipeline UI, and Workbench Sentinel Next Action.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-Z specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, Sentinel Dry-Run Review, LLM Message Guard safety follow-ups, Agent Dry-Run Request Gate, Message Guard Policy Consistency, Sentinel Dry-Run Handoff Packet, Sentinel Dry-Run Result Gate, Sentinel Review Queue Status, Sentinel Dry-Run Result Review Packet, Sentinel Result Review UI, Agent Learning Evidence, Agent Learning Ledger UI, Accepted Learning Roadmap Link, Visible Agent Roadmap Panel, Sentinel Dry-Run Request Button, Sentinel Dry-Run Mini-Pipeline UI, Workbench Sentinel Next Action, Live-PG Audit Rail Smoke, Prism Dry-Run Request Gate, and Generic Agent Dry-Run Workbench Labels.
 
 Out of scope unless explicitly asked:
 
@@ -123,6 +123,9 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Sentinel Dry-Run Request Button that creates an append-only Sentinel-only request from the roadmap while still not running Sentinel
 - Sentinel Dry-Run Mini-Pipeline UI for opening Sentinel handoffs and recording reviewed result text/findings without executing specialist LLM, specialist tools, writes, runtime changes, Builder/Forge, patch, or deploy
 - Workbench Sentinel Next Action card that prioritizes pending Sentinel handoff/result-review work before build/patch/deploy queues without implying automation or execution
+- Live-PG Audit Rail Smoke that verifies append-only triggers and no-execution CHECK constraints on the Oom Sakkie audit rails when `DATABASE_URL` is configured
+- Prism Dry-Run Request Gate that starts the second planned specialist on the same request -> handoff -> reviewed result rail while still not running Prism
+- Generic Agent Dry-Run Workbench Labels so the shared dry-run queue/review UI covers Sentinel and Prism without implying live execution
 
 ## Files/folders to inspect
 
@@ -605,6 +608,24 @@ Summary:
   - Workbench `Next action` now includes pending Sentinel request handoffs and pending Sentinel result reviews,
   - Sentinel handoff/result-review items are prioritized before build/patch/deploy queues,
   - the card remains recommendation-only and does not trigger work by itself.
+- Added Live-PG Audit Rail Smoke:
+  - extended the DATABASE_URL-gated integration coverage for review-gate audit rails,
+  - a real Postgres run can now insert a valid build/patch/deploy/agent dry-run audit chain,
+  - the test asserts `UPDATE` and `DELETE` raise `append-only` on build request/event, patch proposal/event, deploy decision, agent dry-run request/event, agent dry-run result, and agent dry-run result event tables,
+  - the no-execution CHECK test now also rejects `dry_run_enabled = true` on dry-run requests and `runs_specialist = true` on dry-run results,
+  - normal local runs skip these checks when `DATABASE_URL` or `psycopg` is unavailable.
+- Added Prism Dry-Run Request Gate:
+  - approved dry-run request allowlist is now explicit: `sentinel`, `prism`,
+  - Prism requests share the same append-only request -> handoff -> reviewed result rail,
+  - Prism handoff prompt identifies Prism as the kiosk/interface design reviewer,
+  - Prism results preserve `specialist_slug = prism` instead of being hard-coded as Sentinel,
+  - Agent Roadmap includes `Request Prism Dry-Run`,
+  - Prism still does not run, dispatch, call specialist LLM/tools, generate assets, edit code, write farm data, apply patches, or deploy.
+- Added Generic Agent Dry-Run Workbench Labels:
+  - live Workbench labels now read `Agent Dry-Run Requests`, `Record Agent Result`, and `Agent Result Review`,
+  - next-action copy now says `agent handoff` / `agent result review`,
+  - handoff cards use packet `specialist_name`, so Sentinel and Prism remain visible inside the shared rail,
+  - this is UI wording only; no route, schema, write, dispatch, LLM, patch, or deploy authority changed.
 - Added role-specific spoken composer rules:
   - `business_growth_brief` answers should lead with the commercial move, name supporting stock/ready pigs, and ask one approval-style follow-up question,
   - `system_work_status` answers should lead with the next owner action before counts,
@@ -780,6 +801,12 @@ Known verification from Codex:
 - Workbench Sentinel Next Action focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 191 tests OK
 - `node --check static/js/oomSakkie.js` passed after Workbench Sentinel Next Action
 - Full local unittest suite after Workbench Sentinel Next Action: `521 tests OK`
+- Live-PG Audit Rail Smoke focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 192 tests OK (`DATABASE_URL`-gated live checks skip when not configured)
+- `node --check static/js/oomSakkie.js` passed after Live-PG Audit Rail Smoke
+- Prism Dry-Run Request Gate focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 196 tests OK
+- `node --check static/js/oomSakkie.js` passed after Prism Dry-Run Request Gate
+- Generic Agent Dry-Run Workbench Labels focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 196 tests OK
+- `node --check static/js/oomSakkie.js` passed after Generic Agent Dry-Run Workbench Labels
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -869,8 +896,11 @@ Please inspect specifically:
 73. **Sentinel Dry-Run Request Button:** Does Phase 10.9U create only an append-only Sentinel dry-run request from the roadmap, with execution/dispatch/specialist LLM/tools/writes/patch/deploy still disabled?
 74. **Sentinel Dry-Run Mini-Pipeline UI:** Does Phase 10.9V make the Sentinel request -> handoff -> reviewed result path usable while keeping handoff copy and result recording text-only/append-only, with no Sentinel execution, specialist LLM/tools, writes, runtime changes, Builder/Forge, patch, or deploy?
 75. **Workbench Sentinel Next Action:** Does Phase 10.9W correctly prioritize Sentinel handoff/result-review work in the Workbench next-action card without implying automation or executing any step?
-76. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
-77. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+76. **Live-PG Audit Rail Smoke:** Does Phase 10.9X close the remaining database-level test gap by exercising append-only triggers and no-execution CHECK constraints on the review/audit rails without mutating farm operating data?
+77. **Prism Dry-Run Request Gate:** Does Phase 10.9Y add Prism as a second approved dry-run specialist while preserving the same no-dispatch/no-specialist-LLM/no-specialist-tool/no-write/no-asset/no-patch/no-deploy boundary?
+78. **Generic Agent Dry-Run Workbench Labels:** Does Phase 10.9Z make the shared dry-run request/result UI clear for Sentinel and Prism without implying live agent execution or hidden automation?
+79. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+80. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 
