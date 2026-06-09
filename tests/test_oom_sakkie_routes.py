@@ -163,7 +163,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["mode"], "agent_authority_matrix_only")
         self.assertEqual(data["enabled_count"], 0)
-        self.assertEqual(data["locked_count"], data["authority_count"])
+        self.assertLess(data["locked_count"], data["authority_count"])
         self.assertFalse(data["runtime_enabled"])
         self.assertFalse(data["dispatch_enabled"])
         self.assertFalse(data["writes_enabled"])
@@ -171,6 +171,8 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["review_guard"]["dispatch_enabled"])
         self.assertFalse(data["review_guard"]["writes"])
         by_authority = {item["authority"]: item for item in data["areas"]}
+        self.assertEqual(by_authority["specialist_llm_loop"]["current_state"], "single_shot_advisory_only")
+        self.assertFalse(by_authority["specialist_llm_loop"]["enabled"])
         self.assertEqual(by_authority["physical_controls"]["current_state"], "locked")
         self.assertEqual(by_authority["deploy_execution"]["risk_level"], 5)
 
@@ -1567,6 +1569,46 @@ class OomSakkieRouteTests(unittest.TestCase):
         response = self.client.post(
             "/api/oom-sakkie/dispatch-requests/OSK-DISPATCH-REQ-TEST/execution-approvals",
             json={"approval_type": "approved_for_single_dry_run_execution"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.run_sentinel_single_shot_dry_run")
+    def test_sentinel_single_shot_route_is_explicit_and_review_gated(self, mock_run):
+        mock_run.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "single_shot_sentinel_advisory_result",
+            "runs_specialist_llm": True,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "dispatches_further": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-execution-approvals/OSK-DISPATCH-EXEC-APPROVAL-TEST/run-sentinel-dry-run",
+            json={},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "single_shot_sentinel_advisory_result")
+        self.assertTrue(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["applies_runtime_change"])
+        self.assertFalse(data["dispatches_further"])
+        mock_run.assert_called_once_with("OSK-DISPATCH-EXEC-APPROVAL-TEST")
+
+    def test_sentinel_single_shot_route_denies_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/dispatch-execution-approvals/OSK-DISPATCH-EXEC-APPROVAL-TEST/run-sentinel-dry-run",
+            json={},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

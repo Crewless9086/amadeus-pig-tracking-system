@@ -109,6 +109,105 @@ def record_agent_dry_run_result(dry_run_request_id, payload, database_url=None):
     }, 201
 
 
+def record_sentinel_single_shot_result(dry_run_request_id, payload, database_url=None):
+    dry_run_request_id = _clean_text(dry_run_request_id, 100)
+    if not dry_run_request_id:
+        return {"success": False, "status": "dry_run_request_id_required"}, 400
+
+    request, request_status = get_agent_dry_run_request(dry_run_request_id, database_url=database_url)
+    if request_status != 200:
+        return request, request_status
+    dry_run_request = request.get("dry_run_request", {})
+    specialist_slug = str(dry_run_request.get("specialist_slug") or "").strip().lower()
+    if specialist_slug != "sentinel":
+        return {
+            "success": False,
+            "status": "single_shot_result_is_sentinel_only",
+            "specialist_slug": specialist_slug,
+        }, 400
+
+    payload = payload if isinstance(payload, dict) else {}
+    params = _sentinel_single_shot_result_params(dry_run_request, payload)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured"}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing"}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_results (
+                        dry_run_result_id,
+                        dry_run_request_id,
+                        status,
+                        mode,
+                        specialist_slug,
+                        result_text,
+                        findings_json,
+                        recommended_next_gate,
+                        recorded_by,
+                        runs_specialist,
+                        dispatch_enabled,
+                        runs_specialist_llm,
+                        runs_specialist_tools,
+                        writes,
+                        applies_runtime_change,
+                        created_at
+                    )
+                    values (
+                        %(dry_run_result_id)s,
+                        %(dry_run_request_id)s,
+                        %(status)s,
+                        %(mode)s,
+                        %(specialist_slug)s,
+                        %(result_text)s,
+                        %(findings_json)s::jsonb,
+                        %(recommended_next_gate)s,
+                        %(recorded_by)s,
+                        %(runs_specialist)s,
+                        %(dispatch_enabled)s,
+                        %(runs_specialist_llm)s,
+                        %(runs_specialist_tools)s,
+                        %(writes)s,
+                        %(applies_runtime_change)s,
+                        now()
+                    )
+                    on conflict (dry_run_result_id) do nothing
+                    """,
+                    params,
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sentinel_single_shot_result_write_failed",
+            "error_type": exc.__class__.__name__,
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "single_shot_sentinel_advisory_result",
+        "dry_run_result_id": params["dry_run_result_id"],
+        "dry_run_request_id": params["dry_run_request_id"],
+        "specialist_slug": "sentinel",
+        "runs_specialist": True,
+        "dispatch_enabled": False,
+        "runs_specialist_llm": True,
+        "runs_specialist_tools": False,
+        "writes": False,
+        "applies_runtime_change": False,
+        "next_gate": params["recommended_next_gate"],
+    }, 201
+
+
 def list_agent_dry_run_results(limit=20, dry_run_request_id="", database_url=None):
     parsed_limit = _bounded_limit(limit)
     dry_run_request_id = _clean_text(dry_run_request_id, 100)
@@ -349,6 +448,32 @@ def _agent_dry_run_result_params(dry_run_request, payload):
     }
 
 
+def _sentinel_single_shot_result_params(dry_run_request, payload):
+    findings = payload.get("findings") or []
+    approval_id = _clean_text(payload.get("approval_id", ""), 100)
+    return {
+        "dry_run_result_id": _clean_text(payload.get("dry_run_result_id", ""), 100)
+        or _single_shot_result_id(dry_run_request.get("dry_run_request_id", ""), approval_id),
+        "dry_run_request_id": _clean_text(dry_run_request.get("dry_run_request_id", ""), 100),
+        "status": "recorded_from_single_shot_sentinel_llm",
+        "mode": "single_shot_sentinel_advisory_result",
+        "specialist_slug": "sentinel",
+        "result_text": _clean_text(payload.get("result_text", ""), 6000),
+        "findings_json": _json([str(item)[:500] for item in list(findings)[:20]]),
+        "recommended_next_gate": _clean_text(
+            payload.get("recommended_next_gate", "owner_review_before_learning_or_runtime_change"),
+            160,
+        ),
+        "recorded_by": _clean_text(payload.get("recorded_by", "sentinel_single_shot_runner"), 80),
+        "runs_specialist": True,
+        "dispatch_enabled": False,
+        "runs_specialist_llm": True,
+        "runs_specialist_tools": False,
+        "writes": False,
+        "applies_runtime_change": False,
+    }
+
+
 def _agent_dry_run_result_row(row):
     (
         dry_run_result_id,
@@ -404,6 +529,12 @@ def _agent_dry_run_result_row(row):
 def _result_id(dry_run_request_id):
     now = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
     digest = hashlib.sha1(f"{dry_run_request_id}:{now}".encode("utf-8")).hexdigest()[:12].upper()
+    return f"OSK-AGENT-DRYRUN-RESULT-{digest}"
+
+
+def _single_shot_result_id(dry_run_request_id, approval_id):
+    seed = approval_id or datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    digest = hashlib.sha1(f"{dry_run_request_id}:{seed}:single-shot-sentinel".encode("utf-8")).hexdigest()[:12].upper()
     return f"OSK-AGENT-DRYRUN-RESULT-{digest}"
 
 

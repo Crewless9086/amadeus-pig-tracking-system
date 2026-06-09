@@ -20,6 +20,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("202606080002_create_oom_sakkie_agent_dry_run_results.sql", workflow)
         self.assertIn("202606090001_create_oom_sakkie_dispatch_decisions.sql", workflow)
         self.assertIn("202606090002_create_oom_sakkie_dispatch_execution_approvals.sql", workflow)
+        self.assertIn("202606090003_allow_single_shot_sentinel_dry_run_results.sql", workflow)
         self.assertIn("python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts", workflow)
         self.assertIn("node --check static/js/oomSakkie.js", workflow)
         self.assertIn("node tests/oom_sakkie_browser_behavior_smoke.js", workflow)

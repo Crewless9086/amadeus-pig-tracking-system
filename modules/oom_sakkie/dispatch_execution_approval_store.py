@@ -213,7 +213,121 @@ def list_dispatch_execution_approvals(limit=20, dispatch_request_id="", database
     }, 200
 
 
-def record_dispatch_execution_approval_event(approval_id, payload, database_url=None):
+def get_dispatch_execution_approval(approval_id, database_url=None):
+    approval_id = _clean_text(approval_id, 100)
+    if not approval_id:
+        return {"success": False, "status": "approval_id_required", "execution_approval": {}}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured", "execution_approval": {}}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing", "execution_approval": {}}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select a.approval_id, a.dispatch_request_id, a.status, a.mode,
+                           a.specialist_slug, a.approval_type, a.notes, a.approved_by,
+                           a.one_shot_scope_json, a.next_gate,
+                           a.executes_now, a.dispatch_enabled, a.runs_specialist_llm,
+                           a.runs_specialist_tools, a.writes, a.applies_runtime_change,
+                           a.dispatches_further, a.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_dispatch_execution_approvals a
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_dispatch_execution_approval_events e
+                        where e.approval_id = a.approval_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where a.approval_id = %(approval_id)s
+                    limit 1
+                    """,
+                    {"approval_id": approval_id},
+                )
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dispatch_execution_approval_read_failed",
+            "error_type": exc.__class__.__name__,
+            "execution_approval": {},
+        }, 503
+
+    if not row:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dispatch_execution_approval_not_found",
+            "approval_id": approval_id,
+            "execution_approval": {},
+        }, 404
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "single_dry_run_execution_approval_detail",
+        "executes_now": False,
+        "dispatch_enabled": False,
+        "runs_specialist_llm": False,
+        "runs_specialist_tools": False,
+        "writes": False,
+        "applies_runtime_change": False,
+        "dispatches_further": False,
+        "execution_approval": _dispatch_execution_approval_row(row),
+    }, 200
+
+
+def dispatch_execution_approval_consumed(approval_id, database_url=None):
+    approval_id = _clean_text(approval_id, 100)
+    if not approval_id:
+        return {"success": False, "status": "approval_id_required", "consumed": False}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured", "consumed": False}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing", "consumed": False}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select exists (
+                        select 1
+                        from public.oom_sakkie_dispatch_execution_approval_events
+                        where approval_id = %(approval_id)s
+                          and event_type = 'consumed_by_single_dry_run_result'
+                    )
+                    """,
+                    {"approval_id": approval_id},
+                )
+                consumed = bool(cursor.fetchone()[0])
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "dispatch_execution_approval_event_read_failed",
+            "error_type": exc.__class__.__name__,
+            "consumed": False,
+        }, 503
+
+    return {"success": True, "configured": True, "status": "ok", "consumed": consumed}, 200
+
+
+def record_dispatch_execution_approval_event(approval_id, payload, database_url=None, allow_consumed=False):
     approval_id = _clean_text(approval_id, 100)
     payload = payload if isinstance(payload, dict) else {}
     event_type = _clean_text(payload.get("event_type", ""), 60)
@@ -225,6 +339,11 @@ def record_dispatch_execution_approval_event(approval_id, payload, database_url=
             "status": "invalid_event_type",
             "allowed_event_types": sorted(DISPATCH_EXECUTION_APPROVAL_EVENT_TYPES),
         }, 400
+    if event_type == "consumed_by_single_dry_run_result" and not allow_consumed:
+        return {
+            "success": False,
+            "status": "consumed_event_is_runner_only",
+        }, 403
 
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:

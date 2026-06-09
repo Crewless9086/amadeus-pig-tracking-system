@@ -58,6 +58,10 @@ create table if not exists public.oom_sakkie_dispatch_execution_approval_events 
 create index if not exists idx_oom_sakkie_dispatch_execution_approval_events_approval_created
     on public.oom_sakkie_dispatch_execution_approval_events(approval_id, created_at desc);
 
+create unique index if not exists idx_oom_sakkie_dispatch_execution_approval_consumed_once
+    on public.oom_sakkie_dispatch_execution_approval_events(approval_id)
+    where event_type = 'consumed_by_single_dry_run_result';
+
 create or replace function public.prevent_oom_sakkie_dispatch_execution_approval_mutation()
 returns trigger
 language plpgsql

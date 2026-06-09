@@ -1,5 +1,6 @@
 import unittest
 import os
+import json
 from urllib import error as urllib_error
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,8 +38,10 @@ from modules.oom_sakkie.agent_dry_run_store import (
 from modules.oom_sakkie.agent_dry_run_result_store import (
     _agent_dry_run_result_params,
     _agent_dry_run_result_row,
+    _sentinel_single_shot_result_params,
     get_agent_dry_run_result,
     list_agent_dry_run_results,
+    record_sentinel_single_shot_result,
     record_agent_dry_run_result_event,
 )
 from modules.oom_sakkie.agent_dry_run_result_review import build_agent_dry_run_result_review_packet
@@ -46,6 +49,11 @@ from modules.oom_sakkie.llm_answer import (
     _build_payload,
     compose_answer_with_llm,
     parse_llm_answer_response,
+)
+from modules.oom_sakkie.sentinel_single_shot_runner import (
+    parse_sentinel_single_shot_response,
+    run_sentinel_single_shot_dry_run,
+    specialist_dry_run_policy,
 )
 from modules.oom_sakkie.learning_advisor import build_learning_advice
 from modules.oom_sakkie.learning_llm import analyze_learning_with_llm, parse_learning_response
@@ -72,6 +80,7 @@ from modules.oom_sakkie.dispatch_decision_store import (
 from modules.oom_sakkie.dispatch_execution_approval_store import (
     DISPATCH_EXECUTION_APPROVAL_TYPES,
     _dispatch_execution_approval_params,
+    record_dispatch_execution_approval_event,
     record_dispatch_execution_approval,
 )
 from modules.oom_sakkie.forge_handoff import build_forge_handoff
@@ -488,7 +497,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(any(item["check"] == "physical_controls" for item in preflight["locked_checks"]))
         self.assertIn("claude_and_owner_review", preflight["next_gate"])
 
-    def test_agent_authority_matrix_keeps_every_authority_locked(self):
+    def test_agent_authority_matrix_keeps_authority_disabled_with_single_shot_llm_state(self):
         matrix = get_agent_authority_matrix()
 
         self.assertTrue(matrix["success"])
@@ -502,11 +511,13 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(matrix["public_output_enabled"])
         self.assertFalse(matrix["physical_controls_enabled"])
         self.assertEqual(matrix["enabled_count"], 0)
-        self.assertEqual(matrix["locked_count"], matrix["authority_count"])
         by_authority = {item["authority"]: item for item in matrix["areas"]}
+        self.assertEqual(
+            matrix["locked_count"],
+            len([item for item in matrix["areas"] if item["current_state"] == "locked"]),
+        )
         for authority in [
             "live_specialist_dispatch",
-            "specialist_llm_loop",
             "specialist_tool_execution",
             "farm_data_writes",
             "customer_or_public_output",
@@ -520,6 +531,10 @@ class OomSakkieServiceTests(unittest.TestCase):
                 self.assertFalse(by_authority[authority]["enabled"])
                 self.assertEqual(by_authority[authority]["current_state"], "locked")
                 self.assertTrue(by_authority[authority]["required_gates"])
+        self.assertFalse(by_authority["specialist_llm_loop"]["enabled"])
+        self.assertEqual(by_authority["specialist_llm_loop"]["current_state"], "single_shot_advisory_only")
+        self.assertIn("one-shot", by_authority["specialist_llm_loop"]["why_locked"])
+        self.assertIn("per-request dispatch execution approval", by_authority["specialist_llm_loop"]["required_gates"])
         self.assertEqual(by_authority["physical_controls"]["risk_level"], 5)
         self.assertIn("owner_and_claude_review", matrix["next_gate"])
 
@@ -1744,6 +1759,16 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(status_code, 400)
         self.assertEqual(result["status"], "single_dry_run_execution_gate_is_sentinel_only")
 
+    @patch.dict(os.environ, {}, clear=True)
+    def test_dispatch_execution_consumed_event_is_runner_only(self):
+        result, status_code = record_dispatch_execution_approval_event(
+            "OSK-DISPATCH-EXEC-APPROVAL-1",
+            {"event_type": "consumed_by_single_dry_run_result"},
+        )
+
+        self.assertEqual(status_code, 403)
+        self.assertEqual(result["status"], "consumed_event_is_runner_only")
+
     def test_dispatch_execution_approval_migration_is_append_only_and_no_execution(self):
         migration = Path("supabase/migrations/202606090002_create_oom_sakkie_dispatch_execution_approvals.sql").read_text(encoding="utf-8")
 
@@ -1759,8 +1784,220 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("writes = false", migration)
         self.assertIn("applies_runtime_change = false", migration)
         self.assertIn("dispatches_further = false", migration)
+        self.assertIn("where event_type = 'consumed_by_single_dry_run_result'", migration)
         self.assertIn("before update on public.oom_sakkie_dispatch_execution_approvals", migration)
         self.assertIn("before delete on public.oom_sakkie_dispatch_execution_approval_events", migration)
+
+    def test_single_shot_sentinel_result_params_are_honest_but_no_tools_or_writes(self):
+        params = _sentinel_single_shot_result_params({
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-SENTINEL",
+            "specialist_slug": "sentinel",
+        }, {
+            "approval_id": "OSK-DISPATCH-EXEC-APPROVAL-1",
+            "result_text": "Sentinel reviewed the gate.",
+            "findings": ["No tools should run."],
+        })
+
+        self.assertEqual(params["mode"], "single_shot_sentinel_advisory_result")
+        self.assertEqual(params["status"], "recorded_from_single_shot_sentinel_llm")
+        self.assertEqual(params["specialist_slug"], "sentinel")
+        self.assertTrue(params["runs_specialist"])
+        self.assertTrue(params["runs_specialist_llm"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["runs_specialist_tools"])
+        self.assertFalse(params["writes"])
+        self.assertFalse(params["applies_runtime_change"])
+
+    def test_single_shot_sentinel_result_migration_adds_narrow_result_mode(self):
+        migration = Path("supabase/migrations/202606090003_allow_single_shot_sentinel_dry_run_results.sql").read_text(encoding="utf-8")
+
+        self.assertIn("single_shot_sentinel_advisory_result", migration)
+        self.assertIn("recorded_from_single_shot_sentinel_llm", migration)
+        self.assertIn("specialist_slug = 'sentinel'", migration)
+        self.assertIn("runs_specialist = true", migration)
+        self.assertIn("runs_specialist_llm = true", migration)
+        self.assertIn("runs_specialist_tools = false", migration)
+        self.assertIn("writes = false", migration)
+        self.assertIn("applies_runtime_change = false", migration)
+        self.assertIn("mode = 'dry_run_result_review_only'", migration)
+
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.urllib_request.urlopen")
+    @patch.dict(os.environ, {}, clear=True)
+    def test_sentinel_single_shot_runner_refuses_when_env_disabled_before_network(self, mock_urlopen):
+        result, status_code = run_sentinel_single_shot_dry_run("OSK-DISPATCH-EXEC-APPROVAL-1")
+
+        self.assertEqual(status_code, 403)
+        self.assertEqual(result["status"], "specialist_dry_run_disabled")
+        self.assertFalse(result["runs_specialist_llm"])
+        self.assertFalse(result["runs_specialist_tools"])
+        self.assertFalse(result["writes"])
+        mock_urlopen.assert_not_called()
+
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.dispatch_execution_approval_consumed")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_request")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_execution_approval")
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    def test_sentinel_single_shot_runner_refuses_consumed_approval_before_network(
+        self,
+        mock_get_approval,
+        mock_get_dispatch,
+        mock_consumed,
+        mock_urlopen,
+    ):
+        mock_get_approval.return_value = ({
+            "success": True,
+            "execution_approval": {
+                "approval_id": "OSK-DISPATCH-EXEC-APPROVAL-1",
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "specialist_slug": "sentinel",
+                "approval_type": "approved_for_single_dry_run_execution",
+                "one_shot_scope": {"dry_run_request_id": "OSK-AGENT-DRYRUN-1"},
+            },
+        }, 200)
+        mock_get_dispatch.return_value = ({
+            "success": True,
+            "dispatch_request": {
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "specialist_slug": "sentinel",
+                "latest_decision": {"decision_type": "approved_for_design_review"},
+            },
+        }, 200)
+        mock_consumed.return_value = ({"success": True, "consumed": True}, 200)
+
+        result, status_code = run_sentinel_single_shot_dry_run("OSK-DISPATCH-EXEC-APPROVAL-1")
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "dispatch_execution_approval_already_consumed")
+        mock_urlopen.assert_not_called()
+
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_execution_approval")
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    def test_sentinel_single_shot_runner_refuses_missing_approval_before_network(self, mock_get_approval, mock_urlopen):
+        mock_get_approval.return_value = ({
+            "success": False,
+            "status": "dispatch_execution_approval_not_found",
+        }, 404)
+
+        result, status_code = run_sentinel_single_shot_dry_run("OSK-DISPATCH-EXEC-APPROVAL-MISSING")
+
+        self.assertEqual(status_code, 404)
+        self.assertEqual(result["status"], "dispatch_execution_approval_not_found")
+        mock_urlopen.assert_not_called()
+
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.record_sentinel_single_shot_result")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.record_dispatch_execution_approval_event")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.dispatch_execution_approval_consumed")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_request")
+    @patch("modules.oom_sakkie.sentinel_single_shot_runner.get_dispatch_execution_approval")
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    def test_sentinel_single_shot_runner_success_writes_append_only_result(
+        self,
+        mock_get_approval,
+        mock_get_dispatch,
+        mock_consumed,
+        mock_urlopen,
+        mock_record_event,
+        mock_record_result,
+    ):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "choices": [{
+                        "message": {
+                            "content": json.dumps({
+                                "result_text": "Sentinel reviewed the approval gate and found it advisory-only.",
+                                "findings": ["No tools should run.", "Owner review remains required."],
+                            })
+                        }
+                    }]
+                }).encode("utf-8")
+
+        mock_get_approval.return_value = ({
+            "success": True,
+            "execution_approval": {
+                "approval_id": "OSK-DISPATCH-EXEC-APPROVAL-1",
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "specialist_slug": "sentinel",
+                "approval_type": "approved_for_single_dry_run_execution",
+                "one_shot_scope": {"dry_run_request_id": "OSK-AGENT-DRYRUN-1"},
+            },
+        }, 200)
+        mock_get_dispatch.return_value = ({
+            "success": True,
+            "dispatch_request": {
+                "dispatch_request_id": "OSK-DISPATCH-REQ-1",
+                "specialist_slug": "sentinel",
+                "latest_decision": {"decision_type": "approved_for_design_review"},
+            },
+        }, 200)
+        mock_consumed.return_value = ({"success": True, "consumed": False}, 200)
+        mock_record_event.return_value = ({"success": True, "event_id": "OSK-EVENT-1"}, 201)
+        mock_record_result.return_value = ({
+            "success": True,
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+        }, 201)
+        mock_urlopen.return_value = FakeResponse()
+
+        result, status_code = run_sentinel_single_shot_dry_run("OSK-DISPATCH-EXEC-APPROVAL-1")
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "single_shot_sentinel_advisory_result")
+        self.assertTrue(result["runs_specialist_llm"])
+        self.assertFalse(result["runs_specialist_tools"])
+        self.assertFalse(result["writes"])
+        self.assertFalse(result["dispatches_further"])
+        mock_record_event.assert_called_once()
+        mock_urlopen.assert_called_once()
+        mock_record_result.assert_called_once()
+
+    def test_sentinel_single_shot_response_rejects_unsafe_action_claims(self):
+        body = {
+            "choices": [{
+                "message": {
+                    "content": "{\"result_text\":\"I updated the guardrails.\",\"findings\":[\"unsafe\"]}"
+                }
+            }]
+        }
+
+        self.assertIsNone(parse_sentinel_single_shot_response(json.dumps(body)))
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "gpt-test",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    def test_specialist_dry_run_policy_exposes_egress_and_no_write(self):
+        policy = specialist_dry_run_policy()
+
+        self.assertTrue(policy["enabled"])
+        self.assertTrue(policy["configured"])
+        self.assertEqual(policy["specialist_slug"], "sentinel")
+        self.assertEqual(policy["mode"], "single_shot_advisory_only")
+        self.assertFalse(policy["runs_specialist_tools"])
+        self.assertFalse(policy["writes"])
+        self.assertFalse(policy["dispatches_further"])
 
     def test_agent_dry_run_result_params_force_review_only_flags(self):
         params = _agent_dry_run_result_params({

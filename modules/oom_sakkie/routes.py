@@ -66,6 +66,7 @@ from modules.oom_sakkie.patch_proposal_store import (
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.tools import accepted_agent_learning_snapshot, list_tool_catalog
 from modules.oom_sakkie.trace_store import (
@@ -647,6 +648,15 @@ def oom_sakkie_dispatch_execution_approval_events(approval_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_dispatch_execution_approval_event(approval_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/dispatch-execution-approvals/<approval_id>/run-sentinel-dry-run", methods=["POST"])
+def oom_sakkie_sentinel_single_shot_dry_run(approval_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = run_sentinel_single_shot_dry_run(approval_id)
     return jsonify(result), status_code
 
 

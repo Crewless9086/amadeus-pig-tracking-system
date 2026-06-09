@@ -1,6 +1,7 @@
 from modules.oom_sakkie.access import LLM_MESSAGE_GUARD_ENVS, is_llm_message_guard_active
 from modules.oom_sakkie.llm_answer import llm_answer_policy
 from modules.oom_sakkie.llm_router import llm_router_policy
+from modules.oom_sakkie.sentinel_single_shot_runner import specialist_dry_run_policy
 from modules.oom_sakkie.tools import TOOL_REGISTRY, RiskLevel
 
 
@@ -8,6 +9,7 @@ def get_runtime_policy():
     tools = list(TOOL_REGISTRY.values())
     llm_answer = llm_answer_policy()
     llm_router = llm_router_policy()
+    specialist_dry_run = specialist_dry_run_policy()
     llm_message_guard_active = is_llm_message_guard_active()
     write_tools = [
         tool.name
@@ -33,6 +35,8 @@ def get_runtime_policy():
         "llm_answer": llm_answer,
         "llm_router_enabled": llm_router["enabled"],
         "llm_router": llm_router,
+        "specialist_dry_run_enabled": specialist_dry_run["enabled"],
+        "specialist_dry_run": specialist_dry_run,
         "write_tools_enabled": False,
         "physical_controls_enabled": False,
         "backend_voice_vendors_enabled": False,

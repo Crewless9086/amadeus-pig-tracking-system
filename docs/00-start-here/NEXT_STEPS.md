@@ -10324,8 +10324,141 @@ Manual check:
 
 Next gate:
 
-- Do not build the Sentinel LLM runner until Claude reviews this approval rail.
-- The next implementation, if approved, must be a separate phase: env-gated default-off, Sentinel-only, one-shot, no tool calls, unsafe-output filtered, writes only to the existing append-only dry-run result rail, and records a consumption event without row mutation.
+- The Sentinel LLM runner was built separately in 10.9BQ.
+- Keep `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` off until Claude reviews 10.9BQ and the owner explicitly decides to run a local smoke.
+
+### 10.9BQ Oom Sakkie Sentinel Single-Shot Advisory Runner - Local Ready
+
+Purpose:
+
+- Implement the first tightly bounded specialist LLM execution path Claude approved: Sentinel-only, single-shot, advisory-only, default-off, and owner/audit gated.
+- Keep specialist tool execution, farm writes, public/customer output, Telegram, physical controls, deploys, autonomous loops, and further dispatch locked.
+
+What changed:
+
+- Added `modules/oom_sakkie/sentinel_single_shot_runner.py`.
+- Added protected review-gated route:
+  - `POST /api/oom-sakkie/dispatch-execution-approvals/<approval_id>/run-sentinel-dry-run`
+- Added `specialist_dry_run_policy()` to expose:
+  - `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED`
+  - outbound endpoint
+  - capped read-only context disclosure
+  - Sentinel-only single-shot advisory mode
+  - no tools / no writes / no further dispatch
+- Added Safety Gate Board visibility for the Sentinel single-shot env gate.
+- Added `record_sentinel_single_shot_result()` to the existing dry-run result store.
+- Added migration `202606090003_allow_single_shot_sentinel_dry_run_results.sql`:
+  - preserves old `dry_run_result_review_only` no-execution rows,
+  - adds narrow `single_shot_sentinel_advisory_result` mode,
+  - allows `runs_specialist = true` and `runs_specialist_llm = true` only for Sentinel's single-shot advisory result,
+  - still forces `dispatch_enabled = false`, `runs_specialist_tools = false`, `writes = false`, and `applies_runtime_change = false`.
+- Wired the migration into audit-rail CI.
+
+Execution gates:
+
+The runner refuses unless all are true:
+
+1. `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` is explicitly on.
+2. OpenAI-compatible model and API key are configured.
+3. The approval exists.
+4. The approval is `approved_for_single_dry_run_execution`.
+5. The approval specialist is `sentinel`.
+6. The parent dispatch request still has latest decision `approved_for_design_review`.
+7. The approval has no prior `consumed_by_single_dry_run_result` event.
+8. `one_shot_scope.dry_run_request_id` is present.
+9. The referenced dry-run request exists and is Sentinel.
+
+One-shot behavior:
+
+- The runner writes `consumed_by_single_dry_run_result` before the outbound LLM call.
+- The approval event table has a unique partial index so one approval can only have one consumed event.
+- The consumed event is runner-only; the generic approval-event route rejects manual `consumed_by_single_dry_run_result` writes.
+- A consumed approval refuses replay.
+- If the outbound LLM call fails after consumption, the approval remains consumed. This favors no replay/cost control over automatic retry.
+
+Safety envelope:
+
+- Sends only capped read-only context.
+- Calls the configured OpenAI-compatible endpoint once.
+- Does not call specialist tools.
+- Does not call Oom Sakkie tools.
+- Does not write farm data.
+- Does not create public/customer output.
+- Does not deploy, patch, cut over Telegram, or control hardware.
+- Does not dispatch another agent.
+- Rejects unsafe action-claiming output through `_looks_unsafe`.
+- Writes result text/findings only to the append-only dry-run result rail.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 278 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest` -> 608 tests OK.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+
+Manual check:
+
+1. Keep `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` off until Claude reviews the implementation diff.
+2. Push to GitHub and confirm audit-rail CI applies migrations `202606090002` and `202606090003`.
+3. Ask Claude to review the runner before turning the env flag on.
+
+Claude review focus:
+
+- Confirm the runner is Sentinel-only, one-shot, env-gated, approval-gated, and no-tool/no-write.
+- Confirm recording the consumed event before the LLM call is the right idempotency tradeoff.
+- Confirm the new result constraint honestly records `runs_specialist_llm = true` only in the narrow Sentinel mode.
+- Confirm no route/UI path can run the specialist without explicit local owner POST plus env flag.
+
+### 10.9BR Oom Sakkie Sentinel Runner Review Hardening - Local Ready
+
+Purpose:
+
+- Close Claude's post-10.9BQ nits before any live smoke.
+- Make the authority matrix honest that the specialist LLM authority is no longer purely `locked`, while still not generally enabled.
+- Prove the default-off Sentinel runner path makes zero outbound HTTP calls.
+
+What changed:
+
+- `specialist_llm_loop` in the authority matrix now reports:
+  - `enabled = false`
+  - `current_state = single_shot_advisory_only`
+  - one-shot Sentinel-only wording in `why_locked`
+  - required gates tied to per-request execution approval, consumed-event idempotency, cost/privacy display, and Claude/Codex review before widening.
+- `locked_count` now counts only authorities whose `current_state` is `locked`.
+- Route/service tests now assert:
+  - `specialist_llm_loop` is not enabled,
+  - `specialist_llm_loop` is `single_shot_advisory_only`,
+  - all other authority areas remain locked,
+  - top-level `specialist_llm_enabled` remains false.
+- The default-off Sentinel runner test now mocks `urllib_request.urlopen` and asserts it is not called when `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` is off.
+
+Safety envelope:
+
+- No new route.
+- No new UI button.
+- No new store/migration.
+- No specialist tool execution.
+- No farm-data write.
+- No public/customer output.
+- No deploy, Telegram cutover, or physical-control path.
+- No widening beyond Sentinel single-shot advisory mode.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 278 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest` -> 608 tests OK.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+
+Next gate:
+
+1. Commit and push 10.9BP-BR.
+2. Confirm audit-rail and browser-behavior GitHub Actions are green for the pushed commit.
+3. Keep `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` off until the owner deliberately runs the first local Sentinel smoke.
 
 7.3E weather LLM triage note:
 

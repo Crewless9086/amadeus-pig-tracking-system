@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+import os
 import re
 
 from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
@@ -202,14 +203,14 @@ _AUTHORITY_AREAS = (
         "label": "Specialist LLM loop",
         "blocked_capability": "specialist LLM loops",
         "enabled": False,
-        "current_state": "locked",
+        "current_state": "single_shot_advisory_only",
         "risk_level": 3,
-        "why_locked": "Specialists are contracts/dry-run records only; no specialist-specific LLM loop is allowed.",
+        "why_locked": "Only Sentinel may run one one-shot, env-gated, owner-approved advisory LLM pass; no loops, tools, writes, or further dispatch are allowed.",
         "required_gates": (
-            "prompt-injection review",
-            "tool allowlist enforcement",
+            "per-request dispatch execution approval",
+            "one-shot consumed-event idempotency",
             "cost/privacy policy display",
-            "owner-approved bounded dry run",
+            "Claude/Codex review before widening beyond Sentinel",
         ),
     },
     {
@@ -472,6 +473,7 @@ def get_jarvis_product_progress():
 
 
 def get_jarvis_safety_gate_board():
+    specialist_policy = _specialist_dry_run_policy_snapshot()
     gates = [
         {
             "gate": "audit_rail_ci",
@@ -530,6 +532,22 @@ def get_jarvis_safety_gate_board():
                 "current branch Actions are green without owner checking GitHub",
             ],
             "authority": "external_manual_check_only",
+        },
+        {
+            "gate": "sentinel_single_shot_env_gate",
+            "label": "Sentinel Single-Shot Env Gate",
+            "status": "enabled" if specialist_policy.get("enabled") else "default_off",
+            "proves": [
+                "the operator can see whether the specialist dry-run env flag is active",
+                "the first specialist LLM path remains explicitly gated",
+            ],
+            "does_not_prove": [
+                "a dispatch execution approval exists",
+                "an approval has not already been consumed",
+                "Sentinel may run without owner click and audit records",
+            ],
+            "authority": "single_shot_advisory_only_when_enabled",
+            "policy": specialist_policy,
         },
     ]
     return {
@@ -1103,6 +1121,7 @@ def get_agent_activation_preflight():
 
 def get_agent_authority_matrix():
     areas = _authority_area_rows()
+    locked_areas = [item for item in areas if item["current_state"] == "locked"]
     return {
         "success": True,
         "mode": "agent_authority_matrix_only",
@@ -1116,8 +1135,8 @@ def get_agent_authority_matrix():
         "physical_controls_enabled": False,
         "authority_count": len(areas),
         "enabled_count": 0,
-        "locked_count": len(areas),
-        "max_locked_risk_level": max(item["risk_level"] for item in areas),
+        "locked_count": len(locked_areas),
+        "max_locked_risk_level": max(item["risk_level"] for item in locked_areas),
         "areas": areas,
         "next_gate": "owner_and_claude_review_before_any_authority_changes",
     }
@@ -1349,6 +1368,30 @@ def get_jarvis_owner_review_packet():
         "claude_prompt": "Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.",
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
         "next_gate": "owner_and_claude_review_before_any_runtime_authority_change",
+    }
+
+
+def _specialist_dry_run_policy_snapshot():
+    enabled_env = "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED"
+    model_env = "OOM_SAKKIE_LLM_ROUTER_MODEL"
+    api_key_env = "OPENAI_API_KEY"
+    api_url_env = "OOM_SAKKIE_LLM_ROUTER_URL"
+    return {
+        "enabled": os.getenv(enabled_env, "").strip().lower() in {"1", "true", "yes", "on"},
+        "configured": bool(os.getenv(model_env, "").strip() and os.getenv(api_key_env, "").strip()),
+        "provider": "openai_compatible_chat_completions",
+        "outbound_endpoint_when_enabled": os.getenv(api_url_env, "https://api.openai.com/v1/chat/completions").strip() or "https://api.openai.com/v1/chat/completions",
+        "sends_capped_read_only_context_when_enabled": True,
+        "specialist_slug": "sentinel",
+        "mode": "single_shot_advisory_only",
+        "requires_dispatch_execution_approval": True,
+        "runs_specialist_tools": False,
+        "writes": False,
+        "dispatches_further": False,
+        "enabled_env": enabled_env,
+        "model_env": model_env,
+        "api_key_env": api_key_env,
+        "can_write": False,
     }
 
 
