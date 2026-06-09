@@ -43,6 +43,10 @@ RULES = [
         IntentMatch("agent_command_center", "agent_command_center", 0.95, "rule:agent_command_center"),
     ),
     (
+        re.compile(r"\b(daily command brief|jarvis daily brief|oom sakkie daily brief|command brief|start my day|daily command|run the command brief|give me the command brief|full jarvis brief)\b", re.I),
+        IntentMatch("jarvis_daily_command_brief", "jarvis_daily_command_brief", 0.95, "rule:jarvis_daily_command_brief"),
+    ),
+    (
         re.compile(r"\b(jarvis progress|oom sakkie progress|product progress|project progress|how far.*jarvis|how close.*jarvis|progress bar|progress percentage|where are we.*jarvis|jarvis roadmap status)\b", re.I),
         IntentMatch("jarvis_product_progress", "jarvis_product_progress", 0.95, "rule:jarvis_product_progress"),
     ),

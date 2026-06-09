@@ -116,6 +116,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_authority_unlock_readiness",
                 "jarvis_product_progress",
                 "agent_command_center",
+                "jarvis_daily_command_brief",
                 "agent_dispatch_decision_rail_blueprint",
                 "dispatch_decision_status",
                 "agent_runtime_review_packet",
@@ -649,6 +650,19 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(activity["active_agent"]["slug"], "gatekeeper")
         self.assertEqual(activity["active_agent"]["color"], "white")
         self.assertEqual(activity["workspace"]["tool_name"], "agent_command_center")
+        self.assertFalse(activity["safety"]["runs_agent"])
+        self.assertFalse(activity["safety"]["dispatch_enabled"])
+        self.assertFalse(activity["safety"]["writes"])
+
+    def test_agent_activity_maps_daily_command_brief_to_gatekeeper_workspace(self):
+        activity = build_agent_activity(
+            tool_name="jarvis_daily_command_brief",
+            user_text="give me the daily command brief",
+            tool_result={},
+        )
+
+        self.assertEqual(activity["active_agent"]["slug"], "gatekeeper")
+        self.assertEqual(activity["workspace"]["tool_name"], "jarvis_daily_command_brief")
         self.assertFalse(activity["safety"]["runs_agent"])
         self.assertFalse(activity["safety"]["dispatch_enabled"])
         self.assertFalse(activity["safety"]["writes"])
@@ -2560,6 +2574,9 @@ class OomSakkieServiceTests(unittest.TestCase):
             "show me the agent command center": "agent_command_center",
             "what are the agents doing": "agent_command_center",
             "open the Jarvis control tower": "agent_command_center",
+            "give me the daily command brief": "jarvis_daily_command_brief",
+            "start my day": "jarvis_daily_command_brief",
+            "run the command brief": "jarvis_daily_command_brief",
             "show me the Jarvis progress bar": "jarvis_product_progress",
             "how far are we from Jarvis": "jarvis_product_progress",
             "what is the agent dry-run queue status": "agent_dry_run_status",
@@ -2674,6 +2691,101 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Weather steady", result["llm_context"]["sections"]["weather"]["summary"])
         self.assertEqual(result["raw"]["kind"], "farm_operating_brief")
         self.assertEqual(set(result["raw"]["sections"]), {"attention", "power", "weather", "irrigation"})
+
+    def test_jarvis_daily_command_brief_composes_read_only_sections(self):
+        from modules.oom_sakkie.tools import jarvis_daily_command_brief_handler
+
+        with patch("modules.oom_sakkie.tools.farm_operating_brief_handler") as farm, \
+                patch("modules.oom_sakkie.tools.business_growth_brief_handler") as business, \
+                patch("modules.oom_sakkie.tools.agent_command_center_handler") as command:
+            farm.return_value = {
+                "success": True,
+                "status": "ok",
+                "summary": "Farm steady.",
+                "links": [{"label": "Farm", "href": "/"}],
+                "stale_warnings": [],
+                "safety_notes": ["Farm brief read-only."],
+                "llm_context": {"kind": "farm_operating_brief"},
+                "raw": {},
+            }
+            business.return_value = {
+                "success": True,
+                "status": "ok",
+                "summary": "Business has one opportunity.",
+                "links": [{"label": "Sales", "href": "/sales-dashboard"}],
+                "stale_warnings": [],
+                "safety_notes": ["Business brief read-only."],
+                "llm_context": {
+                    "kind": "business_growth_brief",
+                    "owner_question": "Should I prepare an internal offer brief for approval?",
+                },
+                "raw": {},
+            }
+            command.return_value = {
+                "success": True,
+                "status": "ok",
+                "summary": "No approvals waiting.",
+                "links": [{"label": "Oom Sakkie", "href": "/oom-sakkie"}],
+                "stale_warnings": [],
+                "safety_notes": ["Command center read-only."],
+                "llm_context": {
+                    "kind": "agent_command_center",
+                    "queue_snapshots": {
+                        "system_work_status": {
+                            "counts": {
+                                "pending_build_requests": 1,
+                                "pending_patch_reviews": 0,
+                                "pending_dispatch_design_requests": 1,
+                            },
+                        },
+                    },
+                },
+                "raw": {},
+            }
+
+            result = jarvis_daily_command_brief_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Daily command brief loaded", result["summary"])
+        self.assertEqual(result["llm_context"]["kind"], "jarvis_daily_command_brief")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["applies_runtime_change"])
+        self.assertEqual(result["llm_context"]["sections"]["farm"]["llm_context"]["kind"], "farm_operating_brief")
+        self.assertEqual(result["llm_context"]["next_actions"][0], "Review 2 pending approval/design item(s) in the Oom Sakkie workbench.")
+        self.assertIn("internal offer brief", result["llm_context"]["next_actions"][1])
+        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+
+    def test_jarvis_daily_command_brief_warns_on_partial_section(self):
+        from modules.oom_sakkie.tools import jarvis_daily_command_brief_handler
+
+        with patch("modules.oom_sakkie.tools.farm_operating_brief_handler") as farm, \
+                patch("modules.oom_sakkie.tools.business_growth_brief_handler") as business, \
+                patch("modules.oom_sakkie.tools.agent_command_center_handler") as command:
+            farm.return_value = {
+                "success": True, "status": "ok", "summary": "Farm steady.",
+                "links": [], "stale_warnings": [], "safety_notes": [], "llm_context": {}, "raw": {},
+            }
+            business.return_value = {
+                "success": False, "status": "not_configured", "summary": "Business unavailable.",
+                "links": [], "stale_warnings": ["Sheets unavailable."], "safety_notes": [], "llm_context": {}, "raw": {},
+            }
+            command.return_value = {
+                "success": True, "status": "ok", "summary": "Command steady.",
+                "links": [], "stale_warnings": [], "safety_notes": [], "llm_context": {}, "raw": {},
+            }
+
+            result = jarvis_daily_command_brief_handler({})
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["llm_context"]["failed_sections"], ["business"])
+        self.assertIn("Daily command brief section unavailable or partial: business.", result["stale_warnings"])
+        self.assertIn("Sheets unavailable.", result["stale_warnings"])
 
     def test_unsupported_action_guard_identifies_write_or_control_phrases(self):
         self.assertTrue(is_unsupported_action_request("delete that pig record"))
@@ -2904,6 +3016,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Lead with the operational meaning", system)
         self.assertIn("backend_context", system)
         self.assertIn("prioritize what the owner should look at first", system)
+        self.assertIn("For jarvis_daily_command_brief, give one owner-ready command brief", system)
         self.assertIn("mention all required sections", system)
         self.assertIn("For business_growth_brief, sound like a business advisor", system)
         self.assertIn("internal offer brief outline only", system)

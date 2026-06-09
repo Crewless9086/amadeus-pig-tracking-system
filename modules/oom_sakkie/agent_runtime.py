@@ -48,7 +48,7 @@ _AGENT_TOOLS = {
     "butcher": ("business_growth_brief", "meat_planning", "sales_dashboard", "pig_allocation_readiness"),
     "beacon": ("business_growth_brief", "sales_dashboard"),
     "quartermaster": ("farm_attention_summary", "dashboard_summary", "system_work_status"),
-    "gatekeeper": ("system_work_status", "farm_operating_brief"),
+    "gatekeeper": ("agent_command_center", "jarvis_daily_command_brief", "system_work_status", "farm_operating_brief"),
 }
 
 _TOOL_PRIMARY_AGENT = {
@@ -57,6 +57,7 @@ _TOOL_PRIMARY_AGENT = {
     "agent_authority_matrix": "gatekeeper",
     "agent_authority_unlock_readiness": "gatekeeper",
     "agent_command_center": "gatekeeper",
+    "jarvis_daily_command_brief": "gatekeeper",
     "agent_dispatch_decision_rail_blueprint": "gatekeeper",
     "agent_runtime_review_packet": "gatekeeper",
     "agent_operating_contracts": "gatekeeper",

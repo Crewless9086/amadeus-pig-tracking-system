@@ -9879,6 +9879,83 @@ Manual check:
 2. Confirm the `Oom Sakkie Browser Behavior` GitHub Actions workflow turns green.
 3. If it fails again, inspect the failed step log before changing app code.
 
+### 10.9BG Oom Sakkie Daily Command Brief - Local Ready
+
+Purpose:
+
+- Make the existing `Brief` quick action feel more like a Jarvis-style controller briefing instead of a farm-only status readback.
+- Compose the three current read-only owner views into one answer: farm operating brief, business growth brief, and Agent Command Center.
+- Keep the answer useful while preserving the current safety line: no live agents, no writes, no public output, and no decision consumption.
+
+What changed:
+
+- Added read-only `jarvis_daily_command_brief`.
+- Added deterministic routing for `daily command brief`, `start my day`, `run the command brief`, and related phrases.
+- Updated the `Brief` quick action to ask `Give me the daily command brief.`
+- Mapped the tool to Gatekeeper in the visible agent activity stage.
+- Extracted read-only next actions from existing section context: pending approval/design counts, the Business Advisor owner question, and unavailable sections.
+- Updated the LLM answer composer instructions so env-gated composed answers treat this as a multi-section owner command brief across farm, business, and command-center context.
+- Added tests for registry coverage, routing, Gatekeeper visual mapping, full read-only composition, partial-section warning behavior, frontend quick-action contract, and composer prompt wording.
+
+Safety status:
+
+- Read-only composition only.
+- No new route, store, migration, event type, DB write, runtime flag, specialist dispatch, specialist LLM/tool execution, farm write, customer/public output, patch, deploy, Telegram cutover, or physical control.
+- The tool calls existing read-only handlers and reports `partial` plus stale warnings if a section is unavailable.
+- All command-brief `llm_context` execution flags remain false.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service` -> 149 tests OK, 3 skipped live-DB gates.
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 252 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- Browser behavior smoke passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Click `Brief`.
+3. Confirm the answer uses `jarvis_daily_command_brief`.
+4. Confirm the visible agent workspace shows Gatekeeper.
+5. Confirm the answer covers farm, business, and command-center context without saying anything was dispatched, written, posted, deployed, or controlled.
+
+### 10.9BH Oom Sakkie Playwright CI Node 24 And Server URL Hardening - Local Ready
+
+Purpose:
+
+- Respond to the GitHub Actions email that still reported the Playwright real-browser behavior gate failing.
+- Remove the GitHub hosted-actions Node 20 deprecation warning.
+- Make the Playwright web server readiness check target the actual `/oom-sakkie` page instead of relying on the base URL.
+
+What changed:
+
+- Browser behavior workflow now sets `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 = true`.
+- Browser behavior workflow now uses `node-version: "24"`.
+- Browser behavior workflow now sets `OOM_SAKKIE_PLAYWRIGHT_SERVER_URL = http://127.0.0.1:5000/oom-sakkie`.
+- `playwright.config.js` now separates:
+  - `baseURL` for page/test navigation, and
+  - `serverURL` for webServer readiness.
+- Frontend contract tests assert the workflow/config do not drift back to Node 20 or the wrong readiness URL.
+
+Safety status:
+
+- CI/test hardening only.
+- No app route, store, migration, DB write, runtime flag, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+- Playwright still targets loopback and the spec still stubs all `/api/oom-sakkie/**` calls with read-only JSON.
+
+Verification:
+
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node --check playwright.config.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+
+Manual check:
+
+1. Push the branch.
+2. Confirm the `Oom Sakkie Browser Behavior` GitHub Actions workflow turns green.
+3. If it still fails, copy the failing step log, not only the annotation summary.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

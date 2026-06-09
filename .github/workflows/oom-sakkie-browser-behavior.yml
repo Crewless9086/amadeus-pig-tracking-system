@@ -12,11 +12,13 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       PYTHONUNBUFFERED: "1"
       FLASK_ENV: "production"
       FLASK_DEBUG: "0"
       OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND: "python -m flask --app app run --host 127.0.0.1 --port 5000"
       OOM_SAKKIE_PLAYWRIGHT_BASE_URL: "http://127.0.0.1:5000"
+      OOM_SAKKIE_PLAYWRIGHT_SERVER_URL: "http://127.0.0.1:5000/oom-sakkie"
 
     steps:
       - name: Check out repository
@@ -33,7 +35,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install Playwright dependencies
         run: npm install

@@ -271,6 +271,114 @@ def business_growth_brief_handler(_args):
     }
 
 
+def jarvis_daily_command_brief_handler(_args):
+    sections = {
+        "farm": farm_operating_brief_handler({}),
+        "business": business_growth_brief_handler({}),
+        "command_center": agent_command_center_handler({}),
+    }
+    stale_warnings = []
+    safety_notes = [
+        "Daily command brief is read-only. No specialist was dispatched, no specialist LLM/tool execution ran, no farm data was written, no customer/public output was created, no patch/deploy/Telegram/control action occurred."
+    ]
+    links = [{"label": "Oom Sakkie", "href": "/oom-sakkie"}]
+    for label, section in sections.items():
+        if not section.get("success"):
+            stale_warnings.append(f"Daily command brief section unavailable or partial: {label}.")
+        stale_warnings.extend(section.get("stale_warnings") or [])
+        safety_notes.extend(section.get("safety_notes") or [])
+        links.extend(section.get("links") or [])
+
+    unique_links = []
+    seen_hrefs = set()
+    for link in links:
+        href = link.get("href")
+        if href in seen_hrefs:
+            continue
+        seen_hrefs.add(href)
+        unique_links.append(link)
+
+    failed = [name for name, section in sections.items() if not section.get("success")]
+    status = "partial" if failed else "ok"
+    next_actions = _daily_command_next_actions(sections, failed)
+    summary = (
+        "Daily command brief loaded. "
+        f"Farm: {sections['farm'].get('summary', 'unavailable')} "
+        f"Business: {sections['business'].get('summary', 'unavailable')} "
+        f"Command center: {sections['command_center'].get('summary', 'unavailable')} "
+        f"Next: {next_actions[0] if next_actions else 'Keep monitoring the read-only command center.'}"
+    )
+    section_context = {
+        name: {
+            "status": section.get("status"),
+            "summary": section.get("summary"),
+            "stale_warnings": list(section.get("stale_warnings") or [])[:3],
+            "safety_notes": list(section.get("safety_notes") or [])[:3],
+            "llm_context": section.get("llm_context", {}),
+        }
+        for name, section in sections.items()
+    }
+    return {
+        "success": not bool(failed),
+        "status": status,
+        "summary": summary,
+        "links": unique_links[:10],
+        "stale_warnings": stale_warnings[:10],
+        "safety_notes": safety_notes[:10],
+        "llm_context": {
+            "kind": "jarvis_daily_command_brief",
+            "sections": section_context,
+            "failed_sections": failed,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+            "next_actions": next_actions,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": {
+            "kind": "jarvis_daily_command_brief",
+            "sections": sections,
+            "failed_sections": failed,
+        },
+    }
+
+
+def _daily_command_next_actions(sections, failed):
+    actions = []
+    command_context = (sections.get("command_center") or {}).get("llm_context") or {}
+    queue_snapshots = command_context.get("queue_snapshots") or {}
+    work_counts = ((queue_snapshots.get("system_work_status") or {}).get("counts") or {})
+    pending_work = sum(
+        int(work_counts.get(key) or 0)
+        for key in (
+            "pending_build_requests",
+            "pending_patch_reviews",
+            "pending_dispatch_design_requests",
+        )
+    )
+    if pending_work:
+        actions.append(f"Review {pending_work} pending approval/design item(s) in the Oom Sakkie workbench.")
+
+    business_context = (sections.get("business") or {}).get("llm_context") or {}
+    owner_question = business_context.get("owner_question")
+    if owner_question:
+        actions.append(str(owner_question))
+
+    farm_context = (sections.get("farm") or {}).get("llm_context") or {}
+    farm_failed = failed or farm_context.get("failed_sections") or []
+    if farm_failed:
+        actions.append("Review the unavailable command brief section(s): {}.".format(", ".join(farm_failed)))
+
+    if not actions:
+        actions.append("Use the farm, business, or command-center section that matters most today; no action was taken automatically.")
+    return actions[:3]
+
+
 def _business_marketable_stock(sales_totals):
     categories = []
     total = 0
@@ -1789,6 +1897,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_command_center_handler,
         description="Read-only Agent Command Center status. Shows lanes, queues, and locked gates without dispatching agents or enabling authority.",
+    ),
+    "jarvis_daily_command_brief": OomSakkieTool(
+        name="jarvis_daily_command_brief",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=jarvis_daily_command_brief_handler,
+        description="Read-only daily command brief across farm operations, business growth, and the agent command center. Never dispatches agents or performs actions.",
     ),
     "agent_operating_contracts": OomSakkieTool(
         name="agent_operating_contracts",
