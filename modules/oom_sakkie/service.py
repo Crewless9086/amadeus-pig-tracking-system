@@ -39,6 +39,10 @@ class IntentMatch:
 
 RULES = [
     (
+        re.compile(r"\b(jarvis progress|oom sakkie progress|product progress|project progress|how far.*jarvis|how close.*jarvis|progress bar|progress percentage|where are we.*jarvis|jarvis roadmap status)\b", re.I),
+        IntentMatch("jarvis_product_progress", "jarvis_product_progress", 0.95, "rule:jarvis_product_progress"),
+    ),
+    (
         re.compile(r"\b(agent readiness|runtime readiness|ready for agents|ready.*agents|agents.*ready|what blocks.*agents|what is blocking.*agents|before agents can run|before live agents|what still blocks runtime)\b", re.I),
         IntentMatch("agent_runtime_readiness", "agent_runtime_readiness", 0.95, "rule:agent_runtime_readiness"),
     ),

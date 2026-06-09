@@ -18,6 +18,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_review_packet,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
+    get_jarvis_product_progress,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
@@ -112,6 +113,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_activation_preflight",
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
+                "jarvis_product_progress",
                 "agent_dispatch_decision_rail_blueprint",
                 "dispatch_decision_status",
                 "agent_runtime_review_packet",
@@ -326,6 +328,29 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(any(item["gate"] == "live_specialist_dispatch" for item in readiness["locked_gates"]))
         self.assertIn("owner_review", readiness["next_gate"])
 
+    def test_jarvis_product_progress_is_read_only_planning_status(self):
+        progress = get_jarvis_product_progress()
+
+        self.assertTrue(progress["success"])
+        self.assertEqual(progress["mode"], "jarvis_product_progress_only")
+        self.assertEqual(progress["summary_status"], "foundation_strong_live_authority_locked")
+        self.assertGreater(progress["overall_percent"], 0)
+        self.assertLess(progress["overall_percent"], 100)
+        self.assertFalse(progress["runtime_enabled"])
+        self.assertFalse(progress["dispatch_enabled"])
+        self.assertFalse(progress["autonomous_loops_enabled"])
+        self.assertFalse(progress["writes_enabled"])
+        self.assertFalse(progress["specialist_llm_enabled"])
+        self.assertFalse(progress["specialist_tools_enabled"])
+        self.assertFalse(progress["public_output_enabled"])
+        self.assertFalse(progress["physical_controls_enabled"])
+        by_area = {item["area"]: item for item in progress["areas"]}
+        self.assertGreaterEqual(by_area["foundation_safety_rails"]["percent"], 80)
+        self.assertLessEqual(by_area["live_specialist_execution"]["percent"], 25)
+        self.assertEqual(progress["next_milestone"]["authority"], "read_only_visibility_only")
+        self.assertIn("runtime flags remain false", progress["blocked_until"])
+        self.assertIn("owner_and_claude_review", progress["next_gate"])
+
     def test_agent_operating_contracts_are_planning_only(self):
         contracts = get_agent_operating_contracts()
 
@@ -501,6 +526,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "activation_preflight": get_agent_activation_preflight(),
             "authority_matrix": get_agent_authority_matrix(),
             "unlock_readiness": get_agent_authority_unlock_readiness(),
+            "jarvis_product_progress": get_jarvis_product_progress(),
             "dispatch_rail_blueprint": get_agent_dispatch_decision_rail_blueprint(),
             "runtime_review_packet": get_agent_runtime_review_packet(),
         }
@@ -644,6 +670,21 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["kind"], "agent_runtime_readiness")
         self.assertFalse(result["llm_context"]["readiness"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["readiness"]["writes_enabled"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    def test_jarvis_product_progress_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import jarvis_product_progress_handler
+
+        result = jarvis_product_progress_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("Jarvis product progress", result["summary"])
+        self.assertIn("Next milestone", result["summary"])
+        self.assertIn("read-only planning status", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "jarvis_product_progress")
+        self.assertFalse(result["llm_context"]["progress"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["progress"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
 
     def test_agent_operating_contracts_tool_is_read_only(self):
@@ -2434,6 +2475,8 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     def test_rule_routing_known_phrases(self):
         cases = {
+            "show me the Jarvis progress bar": "jarvis_product_progress",
+            "how far are we from Jarvis": "jarvis_product_progress",
             "what is the agent dry-run queue status": "agent_dry_run_status",
             "what is the sentinel dry-run result queue status": "agent_dry_run_status",
             "are we ready for live agents": "agent_runtime_readiness",

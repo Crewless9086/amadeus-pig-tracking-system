@@ -14,6 +14,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_review_packet,
     get_agent_runtime_readiness,
     get_agent_runtime_status,
+    get_jarvis_product_progress,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_results
@@ -1060,6 +1061,38 @@ def agent_runtime_readiness_handler(_args):
     }
 
 
+def jarvis_product_progress_handler(_args):
+    progress = get_jarvis_product_progress()
+    summary = (
+        "Jarvis product progress: overall {}% {}. "
+        "Foundation is strong, but live specialist execution and public/customer selling stay locked. "
+        "Next milestone: {}."
+    ).format(
+        progress.get("overall_percent", 0),
+        progress.get("overall_bar", ""),
+        (progress.get("next_milestone") or {}).get("name", "Read-only Agent Command Center"),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Next Steps", "href": "docs/00-start-here/NEXT_STEPS.md"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Jarvis product progress is read-only planning status. It does not run specialists, enable dispatch, call specialist LLMs/tools, write farm data, create public output, apply patches, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "jarvis_product_progress",
+            "progress": progress,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": progress,
+    }
+
+
 def agent_operating_contracts_handler(_args):
     contracts = get_agent_operating_contracts()
     contract_count = contracts.get("contract_count", 0)
@@ -1679,6 +1712,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_runtime_readiness_handler,
         description="Read-only agent runtime readiness checklist. Never enables dispatch, writes, public output, patches, deploys, Telegram, or controls.",
+    ),
+    "jarvis_product_progress": OomSakkieTool(
+        name="jarvis_product_progress",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=jarvis_product_progress_handler,
+        description="Read-only product progress report for the Oom Sakkie/Jarvis build. Never enables authority.",
     ),
     "agent_operating_contracts": OomSakkieTool(
         name="agent_operating_contracts",

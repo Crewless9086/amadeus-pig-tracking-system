@@ -9685,6 +9685,64 @@ Manual check:
 3. Confirm the answer names owner/Claude review as the next gate.
 4. Confirm it says dispatch remains disabled.
 
+### 10.9BB Oom Sakkie Jarvis Product Progress - Local Ready
+
+Purpose:
+
+- Give the owner a simple product-progress answer with bars/percentages while keeping the build honest about what is still locked.
+- Make Oom Sakkie able to answer `how far are we from Jarvis?` without implying runtime authority.
+
+What changed:
+
+- Added pure `get_jarvis_product_progress()` in `modules/oom_sakkie/agent_runtime.py`.
+- Added read-only `jarvis_product_progress`.
+- Added deterministic routing for:
+  - `jarvis progress`,
+  - `oom sakkie progress`,
+  - `product progress`,
+  - `how far are we from Jarvis`,
+  - `progress bar`,
+  - `jarvis roadmap status`.
+- Progress areas now report:
+  - Foundation / safety rails,
+  - Local kiosk + voice basics,
+  - Read-only farm intelligence,
+  - Agent roster + contracts,
+  - Agent dry-run / learning rails,
+  - Builder / patch / deploy gates,
+  - Live specialist execution,
+  - Business advisor automation,
+  - Customer/public selling tools,
+  - True alive Jarvis UI/feel.
+- The payload includes `overall_percent`, `overall_bar`, `next_milestone`, and `blocked_until`.
+- Tests assert:
+  - all authority flags stay false,
+  - the progress surface participates in the runtime flag invariant test,
+  - live specialist execution remains low/locked,
+  - routing hits `jarvis_product_progress`.
+
+Safety status:
+
+- Planning visibility only.
+- No new route, store, migration, event type, DB write, runtime flag, JS action, specialist dispatch, specialist LLM/tool execution, farm write, public/customer output, patch, deploy, Telegram cutover, or physical control.
+- Percentages are explicit planning status, not unlock criteria.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 246 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+- Browser behavior smoke passed.
+- Full local unittest suite passed at 576 tests.
+
+Manual check:
+
+1. Ask `show me the Jarvis progress bar`.
+2. Confirm it uses `jarvis_product_progress`.
+3. Confirm it gives an overall percentage and next milestone.
+4. Confirm it says live specialist execution/customer-public selling remain locked.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

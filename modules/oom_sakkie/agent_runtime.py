@@ -316,6 +316,90 @@ _AUTHORITY_AREAS = (
 )
 
 
+_JARVIS_PROGRESS_AREAS = (
+    {
+        "area": "foundation_safety_rails",
+        "label": "Foundation / safety rails",
+        "percent": 90,
+        "status": "strong",
+        "evidence": "Tool registry, access guards, trace store, audit rails, CI, browser smoke, and review handoff exist.",
+        "next_step": "Confirm CI stays green and keep all authority flags false.",
+    },
+    {
+        "area": "local_kiosk_voice",
+        "label": "Local kiosk + voice basics",
+        "percent": 70,
+        "status": "usable",
+        "evidence": "Browser speech, voice loop cap, top controls, presence strip, and no-hidden-POST smoke exist.",
+        "next_step": "Improve command-center clarity and real-browser checks as the UI grows.",
+    },
+    {
+        "area": "read_only_farm_intelligence",
+        "label": "Read-only farm intelligence",
+        "percent": 65,
+        "status": "useful_but_growing",
+        "evidence": "Operating brief, power, weather, irrigation, dashboard, meat, sales, and business brief tools are read-only.",
+        "next_step": "Make briefings more multi-signal and decision-oriented without writing data.",
+    },
+    {
+        "area": "agent_roster_contracts",
+        "label": "Agent roster + contracts",
+        "percent": 80,
+        "status": "well_defined",
+        "evidence": "Specialist manifests, contracts, authority matrix, activation plan, and dry-run cohort are documented.",
+        "next_step": "Keep Beacon, Forge, and Gatekeeper locked out of dry-run request records.",
+    },
+    {
+        "area": "agent_dry_run_learning",
+        "label": "Agent dry-run / learning rails",
+        "percent": 70,
+        "status": "ready_for_evidence",
+        "evidence": "Append-only dry-run requests/results, review packets, accepted learning, and ledger summaries exist.",
+        "next_step": "Collect reviewed specialist dry-run evidence before live execution design.",
+    },
+    {
+        "area": "builder_patch_deploy_gates",
+        "label": "Builder / patch / deploy gates",
+        "percent": 70,
+        "status": "gated_manual",
+        "evidence": "Build request, Forge handoff, patch proposal, and deploy decision rails are append-only and manual.",
+        "next_step": "Use the gates on small real changes; do not let the kiosk apply patches or deploy.",
+    },
+    {
+        "area": "live_specialist_execution",
+        "label": "Live specialist execution",
+        "percent": 20,
+        "status": "locked",
+        "evidence": "Dispatch rail is append-only/no-execution and observable, but no decision consumer exists.",
+        "next_step": "Owner and Claude must review the dispatch runtime packet before any execution design.",
+    },
+    {
+        "area": "business_advisor_automation",
+        "label": "Business advisor automation",
+        "percent": 40,
+        "status": "seeded",
+        "evidence": "Ledger-style business brief and internal offer outline are read-only and approval-safe.",
+        "next_step": "Expand daily business briefing with demand/order context before customer-facing drafts.",
+    },
+    {
+        "area": "customer_public_selling",
+        "label": "Customer/public selling tools",
+        "percent": 10,
+        "status": "hard_locked",
+        "evidence": "Public/customer output remains blocked by the authority matrix and no customer sender exists in Oom Sakkie.",
+        "next_step": "Do not build until drafts, approval payloads, and public/customer-output gates are designed.",
+    },
+    {
+        "area": "alive_jarvis_interface",
+        "label": "True alive Jarvis UI/feel",
+        "percent": 30,
+        "status": "early",
+        "evidence": "Presence orb, agent activity lane, and command-center concepts exist, but the UI is not yet a live workspace.",
+        "next_step": "Build clearer agent workspace panels and visual stage transitions after runtime review.",
+    },
+)
+
+
 def _authority_area_rows():
     rows = []
     for item in _AUTHORITY_AREAS:
@@ -330,6 +414,57 @@ def _authority_area_rows():
             "required_gates": list(item["required_gates"]),
         })
     return rows
+
+
+def _progress_bar(percent, width=10):
+    clamped = max(0, min(100, int(percent or 0)))
+    filled = round((clamped / 100) * width)
+    return "{}{}".format("█" * filled, "░" * (width - filled))
+
+
+def get_jarvis_product_progress():
+    areas = []
+    total = 0
+    for item in _JARVIS_PROGRESS_AREAS:
+        percent = max(0, min(100, int(item["percent"])))
+        total += percent
+        areas.append({
+            "area": item["area"],
+            "label": item["label"],
+            "percent": percent,
+            "bar": _progress_bar(percent),
+            "status": item["status"],
+            "evidence": item["evidence"],
+            "next_step": item["next_step"],
+        })
+    overall = round(total / len(areas)) if areas else 0
+    return {
+        "success": True,
+        "mode": "jarvis_product_progress_only",
+        "summary_status": "foundation_strong_live_authority_locked",
+        "overall_percent": overall,
+        "overall_bar": _progress_bar(overall),
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "areas": areas,
+        "next_milestone": {
+            "name": "Read-only Agent Command Center",
+            "goal": "Make Oom Sakkie show who is working, what they inspected, what needs approval, and what remains locked.",
+            "authority": "read_only_visibility_only",
+        },
+        "blocked_until": [
+            "owner and Claude review the dispatch runtime review packet",
+            "a dedicated gate is designed before any code consumes dispatch decisions",
+            "runtime flags remain false",
+        ],
+        "next_gate": "owner_and_claude_review_before_any_live_runtime_authority",
+    }
 
 
 def _blocked_capabilities_from_authorities():
