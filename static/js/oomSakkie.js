@@ -69,6 +69,20 @@
   const refreshPolicy = document.getElementById("oom_refresh_policy");
   const agentCrew = document.getElementById("oom_agent_crew");
   const refreshAgents = document.getElementById("oom_refresh_agents");
+  const agentRoadmap = document.getElementById("oom_agent_roadmap");
+  const refreshAgentRoadmap = document.getElementById("oom_refresh_agent_roadmap");
+  const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
+  const agentDryRunRequests = document.getElementById("oom_agent_dry_run_requests");
+  const refreshAgentDryRunRequests = document.getElementById("oom_refresh_agent_dry_run_requests");
+  const agentDryRunHandoff = document.getElementById("oom_agent_dry_run_handoff");
+  const agentDryRunResultRequestId = document.getElementById("oom_agent_dry_run_result_request_id");
+  const agentDryRunResultText = document.getElementById("oom_agent_dry_run_result_text");
+  const agentDryRunResultFindings = document.getElementById("oom_agent_dry_run_result_findings");
+  const recordAgentDryRunResultButton = document.getElementById("oom_record_agent_dry_run_result");
+  const agentResultReviews = document.getElementById("oom_agent_result_reviews");
+  const refreshAgentResultReviews = document.getElementById("oom_refresh_agent_result_reviews");
+  const agentLearningLedger = document.getElementById("oom_agent_learning_ledger");
+  const refreshAgentLearningLedger = document.getElementById("oom_refresh_agent_learning_ledger");
   const recentTraces = document.getElementById("oom_recent_traces");
   const refreshTraces = document.getElementById("oom_refresh_traces");
   const traceSearch = document.getElementById("oom_trace_search");
@@ -94,6 +108,8 @@
   let latestBuildRequestsData = null;
   let latestPatchProposalsData = null;
   let latestDeployDecisionsData = null;
+  let latestAgentDryRunRequestsData = null;
+  let latestAgentDryRunResultsData = null;
   const feedbackOptions = [
     ["", "Mark review"],
     ["correct", "Correct"],
@@ -1350,6 +1366,390 @@
     deployDecisions.appendChild(list);
   }
 
+  function renderAgentResultReviews(data) {
+    if (!agentResultReviews) return;
+    if (!data || !data.success) {
+      const status = data && data.status ? data.status : "unavailable";
+      agentResultReviews.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = `Sentinel result review queue: ${status}.`;
+      agentResultReviews.appendChild(empty);
+      return;
+    }
+    agentResultReviews.innerHTML = "";
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "dry_run_result_review_queue"} | runs specialist ${data.runs_specialist ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "yes" : "no"} | writes ${data.writes ? "yes" : "no"} | runtime change ${data.applies_runtime_change ? "yes" : "no"}`;
+    agentResultReviews.appendChild(guard);
+
+    const items = Array.isArray(data.dry_run_results) ? data.dry_run_results : [];
+    const pendingItems = items.filter((item) => agentResultStage(item) === "pending");
+    const closedItems = items.filter((item) => agentResultStage(item) !== "pending");
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No Sentinel dry-run results recorded yet.";
+      list.appendChild(empty);
+    } else {
+      appendQueueSection(list, "Needs Owner Review", pendingItems, "No Sentinel results need owner review right now.", renderAgentResultRow);
+      appendQueueSection(list, "Reviewed / Closed", closedItems.slice(0, 5), "No reviewed Sentinel results yet.", renderAgentResultRow);
+    }
+    agentResultReviews.appendChild(list);
+  }
+
+  function renderAgentLearningLedger(data) {
+    if (!agentLearningLedger) return;
+    if (!data || !data.success) {
+      const status = data && data.status ? data.status : "unavailable";
+      agentLearningLedger.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = `Agent learning ledger: ${status}.`;
+      agentLearningLedger.appendChild(empty);
+      return;
+    }
+    agentLearningLedger.innerHTML = "";
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "accepted evidence only | runs specialist no | dispatch no | writes no | runtime change no";
+    agentLearningLedger.appendChild(guard);
+
+    const items = Array.isArray(data.dry_run_results) ? data.dry_run_results : [];
+    const acceptedItems = items.filter((item) => {
+      return (item.latest_event || {}).event_type === "accepted_for_learning";
+    });
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!acceptedItems.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No accepted agent learning evidence yet.";
+      list.appendChild(empty);
+    } else {
+      acceptedItems.slice(0, 8).forEach((item) => list.appendChild(renderAgentLearningLedgerRow(item)));
+    }
+    agentLearningLedger.appendChild(list);
+  }
+
+  function renderAgentLearningLedgerRow(item) {
+    const row = document.createElement("article");
+    const title = document.createElement("strong");
+    const badge = document.createElement("span");
+    const meta = document.createElement("span");
+    const result = document.createElement("p");
+    const findings = document.createElement("p");
+    const note = document.createElement("p");
+    const guard = document.createElement("p");
+    const latestEvent = item.latest_event || {};
+    row.className = "oom-work-item";
+    badge.className = "oom-work-badge";
+    badge.textContent = "Accepted evidence";
+    title.textContent = item.dry_run_result_id || "Accepted Sentinel result";
+    meta.textContent = `${item.specialist_slug || "sentinel"} | request ${item.dry_run_request_id || "-"} | accepted ${latestEvent.created_at || "-"}`;
+    result.textContent = (item.result_text || "No result text supplied.").slice(0, 620);
+    findings.textContent = `Evidence: ${(item.findings || []).slice(0, 5).join("; ") || "none supplied"}`;
+    note.textContent = latestEvent.notes ? `Owner note: ${latestEvent.notes}` : "Owner note: none supplied";
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "learning evidence only | no specialist run | no runtime change";
+    row.appendChild(badge);
+    row.appendChild(title);
+    row.appendChild(meta);
+    row.appendChild(result);
+    row.appendChild(findings);
+    row.appendChild(note);
+    row.appendChild(guard);
+    return row;
+  }
+
+  function renderAgentDryRunRequests(data) {
+    if (!agentDryRunRequests) return;
+    if (!data || !data.success) {
+      const status = data && data.status ? data.status : "unavailable";
+      agentDryRunRequests.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = `Sentinel dry-run request queue: ${status}.`;
+      agentDryRunRequests.appendChild(empty);
+      return;
+    }
+    agentDryRunRequests.innerHTML = "";
+    const guard = document.createElement("p");
+    guard.className = "oom-policy-blocked";
+    guard.textContent = `${data.mode || "read_only_dry_run_request_queue"} | dry-run ${data.dry_run_enabled ? "on" : "off"} | dispatch ${data.dispatch_enabled ? "yes" : "no"} | specialist LLM ${data.runs_specialist_llm ? "yes" : "no"} | writes ${data.writes ? "yes" : "no"}`;
+    agentDryRunRequests.appendChild(guard);
+
+    const items = Array.isArray(data.dry_run_requests) ? data.dry_run_requests : [];
+    const pending = items.filter((item) => agentDryRunRequestStage(item) === "pending");
+    const closed = items.filter((item) => agentDryRunRequestStage(item) !== "pending");
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No Sentinel dry-run requests recorded yet.";
+      list.appendChild(empty);
+    } else {
+      appendQueueSection(list, "Needs Handoff / Future Result", pending, "No Sentinel dry-run requests need handoff right now.", renderAgentDryRunRequestRow);
+      appendQueueSection(list, "Closed / Not Active", closed.slice(0, 5), "No closed Sentinel dry-run requests yet.", renderAgentDryRunRequestRow);
+    }
+    agentDryRunRequests.appendChild(list);
+  }
+
+  function agentDryRunRequestStage(item) {
+    const latestEvent = (item && item.latest_event) || {};
+    if (latestEvent.event_type === "cancelled") return "closed";
+    return "pending";
+  }
+
+  function renderAgentDryRunRequestRow(item) {
+    const latestEvent = item.latest_event || {};
+    const stage = agentDryRunRequestStage(item);
+    const row = document.createElement("article");
+    row.className = "oom-work-item";
+    const badge = document.createElement("span");
+    const title = document.createElement("strong");
+    const meta = document.createElement("span");
+    const purpose = document.createElement("p");
+    const guard = document.createElement("p");
+    const actions = document.createElement("div");
+    const handoffButton = document.createElement("button");
+    const useForResultButton = document.createElement("button");
+    badge.className = "oom-work-badge";
+    badge.textContent = stage === "pending" ? "Needs handoff" : "Closed";
+    title.textContent = item.dry_run_request_id || "Sentinel dry-run request";
+    meta.textContent = `${item.specialist_slug || "sentinel"} | ${item.created_at || ""}`;
+    purpose.textContent = item.purpose || item.owner_text || "Read-only dry-run request.";
+    guard.className = "oom-policy-blocked";
+    guard.textContent = `dispatch ${item.dispatch_enabled ? "on" : "off"} | specialist LLM ${item.runs_specialist_llm ? "on" : "off"} | tools ${item.runs_specialist_tools ? "on" : "off"} | writes ${item.writes ? "on" : "off"}`;
+    actions.className = "oom-work-actions";
+    handoffButton.type = "button";
+    handoffButton.textContent = "Open Handoff";
+    handoffButton.disabled = stage !== "pending";
+    handoffButton.addEventListener("click", () => {
+      buildAgentDryRunHandoff(item.dry_run_request_id, handoffButton);
+    });
+    useForResultButton.type = "button";
+    useForResultButton.textContent = "Use For Result";
+    useForResultButton.addEventListener("click", () => {
+      if (agentDryRunResultRequestId) agentDryRunResultRequestId.value = item.dry_run_request_id || "";
+    });
+    actions.appendChild(handoffButton);
+    actions.appendChild(useForResultButton);
+    row.appendChild(badge);
+    row.appendChild(title);
+    row.appendChild(meta);
+    row.appendChild(purpose);
+    if (latestEvent.event_type) {
+      const eventLine = document.createElement("p");
+      eventLine.textContent = `Latest event: ${latestEvent.event_type} - ${latestEvent.notes || "no note"}`;
+      row.appendChild(eventLine);
+    }
+    row.appendChild(guard);
+    row.appendChild(actions);
+    return row;
+  }
+
+  function renderAgentDryRunHandoff(data) {
+    if (!agentDryRunHandoff) return;
+    agentDryRunHandoff.hidden = false;
+    agentDryRunHandoff.innerHTML = "";
+    if (!data || !data.success) {
+      const line = document.createElement("p");
+      line.className = "oom-empty";
+      line.textContent = "Sentinel dry-run handoff could not be generated.";
+      agentDryRunHandoff.appendChild(line);
+      return;
+    }
+    const guard = document.createElement("p");
+    guard.className = "oom-policy-blocked";
+    guard.textContent = `${data.mode || "agent_dry_run_handoff_only"} | runs specialist ${data.runs_specialist ? "yes" : "no"} | specialist LLM ${data.runs_specialist_llm ? "yes" : "no"} | tools ${data.runs_specialist_tools ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "yes" : "no"} | writes ${data.writes ? "yes" : "no"}`;
+    const title = document.createElement("strong");
+    title.textContent = `Sentinel handoff: ${data.dry_run_request_id || "request"}`;
+    const prompt = document.createElement("pre");
+    prompt.textContent = data.prompt || "No handoff prompt returned.";
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.textContent = "Copy Sentinel Handoff";
+    copyButton.addEventListener("click", () => {
+      copyTextToClipboard(data.prompt || "", copyButton, "Copy Sentinel Handoff");
+    });
+    if (agentDryRunResultRequestId) agentDryRunResultRequestId.value = data.dry_run_request_id || "";
+    agentDryRunHandoff.appendChild(guard);
+    agentDryRunHandoff.appendChild(title);
+    agentDryRunHandoff.appendChild(prompt);
+    agentDryRunHandoff.appendChild(copyButton);
+  }
+
+  async function buildAgentDryRunHandoff(dryRunRequestId, button) {
+    if (!dryRunRequestId || !agentDryRunHandoff) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Opening";
+    }
+    agentDryRunHandoff.hidden = false;
+    agentDryRunHandoff.innerHTML = '<p class="oom-empty">Preparing Sentinel dry-run handoff...</p>';
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-dry-runs/handoff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dry_run_request_id: dryRunRequestId }),
+      });
+      const data = await response.json();
+      renderAgentDryRunHandoff(data);
+    } catch (error) {
+      agentDryRunHandoff.innerHTML = '<p class="oom-empty">Sentinel dry-run handoff is unavailable.</p>';
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Open Handoff";
+      }
+    }
+  }
+
+  async function recordAgentDryRunResult(button) {
+    if (!agentDryRunResultRequestId || !agentDryRunResultText) return;
+    const dryRunRequestId = (agentDryRunResultRequestId.value || "").trim();
+    const resultText = (agentDryRunResultText.value || "").trim();
+    if (!dryRunRequestId || !resultText) {
+      if (agentResultReviews) {
+        agentResultReviews.innerHTML = '<p class="oom-empty">Dry-run request ID and result text are required.</p>';
+      }
+      return;
+    }
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording";
+    }
+    const findings = (agentDryRunResultFindings && agentDryRunResultFindings.value ? agentDryRunResultFindings.value : "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+    try {
+      const response = await fetch(`/api/oom-sakkie/agent-dry-runs/${encodeURIComponent(dryRunRequestId)}/results`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          result_text: resultText,
+          findings,
+          recorded_by: "owner",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.status || "agent_dry_run_result_failed");
+      }
+      if (agentDryRunResultText) agentDryRunResultText.value = "";
+      if (agentDryRunResultFindings) agentDryRunResultFindings.value = "";
+      loadAgentDryRunRequests();
+      loadAgentResultReviews();
+      loadAgentRoadmap();
+    } catch (error) {
+      if (agentResultReviews) {
+        agentResultReviews.innerHTML = "";
+        const line = document.createElement("p");
+        line.className = "oom-empty";
+        line.textContent = `Sentinel result could not be recorded: ${(error && error.message) || "unknown error"}.`;
+        agentResultReviews.appendChild(line);
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Record Result For Review";
+      }
+    }
+  }
+
+  function agentResultStage(item) {
+    const latestEvent = item.latest_event || {};
+    if (!latestEvent.event_type || latestEvent.event_type === "review_note") return "pending";
+    return "closed";
+  }
+
+  function renderAgentResultRow(item) {
+    const row = document.createElement("article");
+    const title = document.createElement("strong");
+    const badge = document.createElement("span");
+    const meta = document.createElement("span");
+    const text = document.createElement("p");
+    const findings = document.createElement("p");
+    const event = document.createElement("p");
+    const guard = document.createElement("p");
+    const actionGroup = document.createElement("div");
+    const openButton = document.createElement("button");
+    const acceptButton = document.createElement("button");
+    const rejectButton = document.createElement("button");
+    const noteButton = document.createElement("button");
+    const latestEvent = item.latest_event || {};
+    const stage = agentResultStage(item);
+    row.className = stage === "pending" ? "oom-work-item oom-work-item-active" : "oom-work-item oom-work-item-muted";
+    badge.className = "oom-work-badge";
+    badge.textContent = stage === "pending" ? "Needs owner review" : "Reviewed";
+    title.textContent = item.dry_run_result_id || "Sentinel result";
+    meta.textContent = `${item.dry_run_request_id || ""} | ${item.specialist_slug || "sentinel"} | ${item.created_at || ""}`;
+    text.textContent = (item.result_text || "No result text supplied.").slice(0, 520);
+    findings.textContent = `Findings: ${(item.findings || []).slice(0, 3).join("; ") || "none supplied"}`;
+    event.textContent = latestEvent.event_type
+      ? `Latest event: ${latestEvent.event_type} ${latestEvent.notes ? "- " + latestEvent.notes : ""}`
+      : "Latest event: none";
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "review only | runs specialist no | dispatch no | writes no | runtime change no";
+    actionGroup.className = "oom-work-actions";
+
+    openButton.type = "button";
+    openButton.className = "oom-build-brief-button";
+    openButton.textContent = "Open Review Packet";
+    openButton.addEventListener("click", () => {
+      openAgentResultPacket(item.dry_run_result_id, openButton);
+    });
+    acceptButton.type = "button";
+    acceptButton.className = "oom-build-brief-button";
+    acceptButton.textContent = "Accept For Learning";
+    acceptButton.addEventListener("click", () => {
+      recordAgentResultEvent(
+        item.dry_run_result_id,
+        "accepted_for_learning",
+        "Accepted for future learning evidence. No specialist ran and no runtime change was applied.",
+        acceptButton
+      );
+    });
+    rejectButton.type = "button";
+    rejectButton.className = "oom-build-brief-button";
+    rejectButton.textContent = "Reject";
+    rejectButton.addEventListener("click", () => {
+      recordAgentResultEvent(item.dry_run_result_id, "rejected", "Rejected from owner review. No specialist ran.", rejectButton);
+    });
+    noteButton.type = "button";
+    noteButton.className = "oom-build-brief-button";
+    noteButton.textContent = "Add Note";
+    noteButton.addEventListener("click", () => {
+      const note = window.prompt("Review note for this Sentinel result. This records text only; no specialist runs.") || "";
+      if (!note.trim()) return;
+      recordAgentResultEvent(item.dry_run_result_id, "review_note", note.trim(), noteButton);
+    });
+    actionGroup.appendChild(openButton);
+    if (stage === "pending") {
+      actionGroup.appendChild(acceptButton);
+      actionGroup.appendChild(rejectButton);
+    }
+    actionGroup.appendChild(noteButton);
+
+    row.appendChild(badge);
+    row.appendChild(title);
+    row.appendChild(meta);
+    row.appendChild(text);
+    row.appendChild(findings);
+    row.appendChild(event);
+    row.appendChild(guard);
+    row.appendChild(actionGroup);
+    return row;
+  }
+
   function appendQueueSection(parent, titleText, items, emptyText, renderItem) {
     const section = document.createElement("section");
     const heading = document.createElement("h4");
@@ -1378,12 +1778,20 @@
     const deployItems = latestDeployDecisionsData && Array.isArray(latestDeployDecisionsData.deploy_decisions)
       ? latestDeployDecisionsData.deploy_decisions
       : [];
+    const agentRequestItems = latestAgentDryRunRequestsData && Array.isArray(latestAgentDryRunRequestsData.dry_run_requests)
+      ? latestAgentDryRunRequestsData.dry_run_requests
+      : [];
+    const agentResultItems = latestAgentDryRunResultsData && Array.isArray(latestAgentDryRunResultsData.dry_run_results)
+      ? latestAgentDryRunResultsData.dry_run_results
+      : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const pendingBuild = buildItems.filter((item) => buildRequestStage(item) === "pending");
     const pendingPatch = patchItems.filter((item) => patchProposalStage(item) === "pending");
     const deployReady = patchItems.filter((item) => {
       return patchProposalStage(item) === "ready_for_deploy" && !deployDecidedPatchIds.has(item.patch_proposal_id);
     });
+    const pendingAgentRequests = agentRequestItems.filter((item) => agentDryRunRequestStage(item) === "pending");
+    const pendingAgentResults = agentResultItems.filter((item) => agentResultStage(item) === "pending");
 
     workbenchNextAction.innerHTML = "";
     const title = document.createElement("strong");
@@ -1391,8 +1799,12 @@
     const next = document.createElement("p");
     const counts = document.createElement("div");
     title.textContent = "Next action";
-    summary.textContent = `${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
-    if (pendingBuild.length) {
+    summary.textContent = `${pendingAgentRequests.length} Sentinel handoff, ${pendingAgentResults.length} Sentinel result review, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
+    if (pendingAgentRequests.length) {
+      next.textContent = `Open Sentinel handoff for ${pendingAgentRequests[0].dry_run_request_id || "the oldest dry-run request"}.`;
+    } else if (pendingAgentResults.length) {
+      next.textContent = `Review Sentinel dry-run result ${pendingAgentResults[0].dry_run_result_id || "waiting for review"}.`;
+    } else if (pendingBuild.length) {
       next.textContent = `Start with Forge Handoff for ${pendingBuild[0].build_request_id || "the oldest build request"}.`;
     } else if (pendingPatch.length) {
       next.textContent = `Review patch proposal ${pendingPatch[0].patch_proposal_id || "waiting for review"}.`;
@@ -1403,6 +1815,8 @@
     }
     counts.className = "oom-workbench-counts";
     [
+      ["Sentinel handoff", pendingAgentRequests.length],
+      ["Sentinel result", pendingAgentResults.length],
       ["Build", pendingBuild.length],
       ["Patch", pendingPatch.length],
       ["Deploy", deployReady.length],
@@ -1601,6 +2015,85 @@
       row.appendChild(meta);
       agentCrew.appendChild(row);
     });
+  }
+
+  function renderAgentRoadmap(data) {
+    if (!agentRoadmap) return;
+    if (!data || !data.activation_plan) {
+      agentRoadmap.innerHTML = '<p class="oom-empty">Agent roadmap is unavailable.</p>';
+      return;
+    }
+    const plan = data.activation_plan || {};
+    const candidate = plan.recommended_first_candidate || {};
+    const stages = Array.isArray(plan.stages) ? plan.stages : [];
+    const evidence = Array.isArray(data.accepted_learning) ? data.accepted_learning : [];
+    const guard = data.review_guard || {};
+    agentRoadmap.innerHTML = "";
+
+    const status = document.createElement("p");
+    status.className = "oom-policy-blocked";
+    status.textContent = `next ${plan.recommended_next_stage || "read-only dry-run"} | accepted evidence ${data.accepted_learning_count || 0} | dispatch ${guard.dispatch_enabled ? "on" : "off"} | writes ${guard.writes ? "on" : "off"}`;
+    agentRoadmap.appendChild(status);
+
+    const candidateCard = document.createElement("article");
+    candidateCard.className = "oom-work-item";
+    const candidateTitle = document.createElement("strong");
+    const candidateReason = document.createElement("p");
+    const candidateGuard = document.createElement("code");
+    candidateTitle.textContent = `First safe candidate: ${candidate.name || candidate.slug || "Sentinel"}`;
+    candidateReason.textContent = candidate.reason || "Recommended first because it can review guardrails without touching farm data.";
+    candidateGuard.textContent = "planning only | owner approval required | runtime locked";
+    candidateCard.appendChild(candidateTitle);
+    candidateCard.appendChild(candidateReason);
+    candidateCard.appendChild(candidateGuard);
+    agentRoadmap.appendChild(candidateCard);
+
+    const stageList = document.createElement("div");
+    stageList.className = "oom-work-list";
+    stages.forEach((stage) => {
+      const item = document.createElement("article");
+      item.className = "oom-work-item";
+      const title = document.createElement("strong");
+      const text = document.createElement("p");
+      const code = document.createElement("code");
+      title.textContent = stage.stage || "stage";
+      text.textContent = stage.summary || "";
+      code.textContent = stage.status || "locked";
+      item.appendChild(title);
+      item.appendChild(text);
+      item.appendChild(code);
+      stageList.appendChild(item);
+    });
+    agentRoadmap.appendChild(stageList);
+
+    const learning = document.createElement("div");
+    learning.className = "oom-work-list";
+    const learningTitle = document.createElement("p");
+    learningTitle.className = "oom-label";
+    learningTitle.textContent = "Accepted Sentinel learning";
+    learning.appendChild(learningTitle);
+    if (!evidence.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No accepted evidence has been approved for planning yet.";
+      learning.appendChild(empty);
+    } else {
+      evidence.slice(0, 3).forEach((item) => {
+        const row = document.createElement("article");
+        row.className = "oom-work-item";
+        const title = document.createElement("strong");
+        const text = document.createElement("p");
+        const note = document.createElement("code");
+        title.textContent = item.dry_run_result_id || "Accepted result";
+        text.textContent = item.result_text || "Accepted Sentinel evidence.";
+        note.textContent = `accepted ${item.accepted_at || "recorded"} | runtime change no`;
+        row.appendChild(title);
+        row.appendChild(text);
+        row.appendChild(note);
+        learning.appendChild(row);
+      });
+    }
+    agentRoadmap.appendChild(learning);
   }
 
   function renderRecentTraces(items) {
@@ -1959,6 +2452,75 @@
     }
   }
 
+  async function loadAgentResultReviews() {
+    if (!agentResultReviews) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-dry-run-results?limit=8");
+      const data = await response.json();
+      latestAgentDryRunResultsData = data;
+      renderAgentResultReviews(data);
+      renderAgentLearningLedger(data);
+      renderWorkbenchNextAction();
+    } catch (error) {
+      agentResultReviews.innerHTML = '<p class="oom-empty">Sentinel result reviews are unavailable.</p>';
+      if (agentLearningLedger) agentLearningLedger.innerHTML = '<p class="oom-empty">Agent learning ledger is unavailable.</p>';
+    }
+  }
+
+  async function openAgentResultPacket(dryRunResultId, button) {
+    if (!dryRunResultId || !agentResultReviews) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Opening...";
+    }
+    try {
+      const response = await fetch(`/api/oom-sakkie/agent-dry-run-results/${encodeURIComponent(dryRunResultId)}/review-packet`);
+      const data = await response.json();
+      renderAgentResultPacket(data);
+    } catch (error) {
+      const line = document.createElement("p");
+      line.className = "oom-empty";
+      line.textContent = "Sentinel result packet is unavailable.";
+      agentResultReviews.appendChild(line);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Open Review Packet";
+      }
+    }
+  }
+
+  function renderAgentResultPacket(data) {
+    if (!agentResultReviews) return;
+    const panel = document.createElement("article");
+    const title = document.createElement("strong");
+    const mode = document.createElement("p");
+    const result = document.createElement("p");
+    const findings = document.createElement("p");
+    const guard = document.createElement("p");
+    const options = document.createElement("p");
+    panel.className = "oom-deploy-instructions";
+    title.textContent = data && data.success ? `Review packet: ${data.dry_run_result_id || "Sentinel result"}` : "Review packet unavailable";
+    mode.textContent = data && data.status ? `${data.mode || "unknown"} | ${data.status}` : "No packet returned.";
+    result.textContent = data && data.result_text ? `Result: ${data.result_text}` : "Result: not supplied.";
+    findings.textContent = data && Array.isArray(data.findings)
+      ? `Findings: ${data.findings.slice(0, 5).join("; ") || "none supplied"}`
+      : "Findings: none supplied.";
+    const reviewGuard = data && data.review_guard ? data.review_guard : {};
+    guard.textContent = `Guard: review only ${reviewGuard.review_only ? "yes" : "no"} | runs specialist ${reviewGuard.runs_specialist ? "yes" : "no"} | writes ${reviewGuard.writes ? "yes" : "no"} | runtime change ${reviewGuard.applies_runtime_change ? "yes" : "no"}`;
+    options.textContent = data && Array.isArray(data.owner_options)
+      ? `Owner options: ${data.owner_options.map((item) => item.event_type).join(", ")}`
+      : "Owner options: unavailable.";
+    panel.appendChild(title);
+    panel.appendChild(mode);
+    panel.appendChild(result);
+    panel.appendChild(findings);
+    panel.appendChild(guard);
+    panel.appendChild(options);
+    agentResultReviews.appendChild(panel);
+  }
+
   async function buildForgeHandoff(buildRequestId, button) {
     if (!buildRequestId) return;
     if (!forgeHandoff) return;
@@ -2104,6 +2666,35 @@
     }
   }
 
+  async function recordAgentResultEvent(dryRunResultId, eventType, notes, button) {
+    if (!dryRunResultId) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      await fetch(`/api/oom-sakkie/agent-dry-run-results/${encodeURIComponent(dryRunResultId)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: eventType, notes, recorded_by: "owner" }),
+      });
+      loadAgentResultReviews();
+    } catch (error) {
+      if (agentResultReviews) {
+        const line = document.createElement("p");
+        line.className = "oom-empty";
+        line.textContent = "Sentinel result review event could not be recorded.";
+        agentResultReviews.appendChild(line);
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Review";
+      }
+    }
+  }
+
   async function recordDeployDecision(decisionType, button) {
     if (!deployPatchProposalId) return;
     const patchProposalId = deployPatchProposalId.value.trim();
@@ -2188,6 +2779,92 @@
     }
   }
 
+  async function loadAgentRoadmap() {
+    if (!agentRoadmap) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/agents/activation-plan?limit=20");
+      const data = await response.json();
+      renderAgentRoadmap(data);
+    } catch (error) {
+      agentRoadmap.innerHTML = '<p class="oom-empty">Agent roadmap is unavailable.</p>';
+    }
+  }
+
+  async function loadAgentDryRunRequests() {
+    if (!agentDryRunRequests) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-dry-runs?limit=8");
+      const data = await response.json();
+      latestAgentDryRunRequestsData = data;
+      renderAgentDryRunRequests(data);
+      renderWorkbenchNextAction();
+    } catch (error) {
+      agentDryRunRequests.innerHTML = '<p class="oom-empty">Sentinel dry-run request queue is unavailable.</p>';
+    }
+  }
+
+  async function requestSentinelDryRun(button) {
+    if (!button || !agentRoadmap) return;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Requesting";
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-dry-runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          specialist_slug: "sentinel",
+          requested_by: "kiosk",
+          owner_text: "Owner requested the first Sentinel read-only dry-run from the Agent Roadmap panel.",
+          purpose: "Create an append-only approval record for a future Sentinel dry-run review. Do not run Sentinel.",
+          guardrails: [
+            "No live specialist dispatch.",
+            "No specialist LLM execution from this request.",
+            "No specialist tool execution from this request.",
+            "No write, post, sale, control, patch, or deploy.",
+            "Owner must review any future dry-run result manually.",
+          ],
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.status || "sentinel_dry_run_request_failed");
+      }
+      renderAgentRoadmapRequestResult(data);
+      loadAgentRoadmap();
+      loadAgentDryRunRequests();
+      loadAgentResultReviews();
+      button.textContent = "Requested";
+    } catch (error) {
+      const line = document.createElement("p");
+      line.className = "oom-empty";
+      line.textContent = `Sentinel dry-run request failed: ${(error && error.message) || "unknown error"}.`;
+      agentRoadmap.prepend(line);
+      button.textContent = "Error";
+    } finally {
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.textContent = originalText || "Request Sentinel Dry-Run";
+      }, 1400);
+    }
+  }
+
+  function renderAgentRoadmapRequestResult(data) {
+    if (!agentRoadmap) return;
+    const card = document.createElement("article");
+    card.className = "oom-work-item";
+    const title = document.createElement("strong");
+    const detail = document.createElement("p");
+    const guard = document.createElement("code");
+    title.textContent = `Sentinel dry-run request recorded: ${data.dry_run_request_id || "new request"}`;
+    detail.textContent = "This only records owner approval intent for a future review. Sentinel did not run.";
+    guard.textContent = `dispatch ${data.dispatch_enabled ? "on" : "off"} | specialist LLM ${data.runs_specialist_llm ? "on" : "off"} | tools ${data.runs_specialist_tools ? "on" : "off"} | writes ${data.writes ? "on" : "off"}`;
+    card.appendChild(title);
+    card.appendChild(detail);
+    card.appendChild(guard);
+    agentRoadmap.prepend(card);
+  }
+
   function refreshReviewData() {
     loadReviewSummary();
     loadRecentTraces();
@@ -2197,6 +2874,9 @@
     loadBuildRequests();
     loadPatchProposals();
     loadDeployDecisions();
+    loadAgentResultReviews();
+    loadAgentRoadmap();
+    loadAgentDryRunRequests();
   }
 
   if (form) {
@@ -2271,6 +2951,30 @@
 
   if (refreshAgents) {
     refreshAgents.addEventListener("click", loadAgentCrew);
+  }
+
+  if (refreshAgentRoadmap) {
+    refreshAgentRoadmap.addEventListener("click", loadAgentRoadmap);
+  }
+
+  if (requestSentinelDryRunButton) {
+    requestSentinelDryRunButton.addEventListener("click", () => requestSentinelDryRun(requestSentinelDryRunButton));
+  }
+
+  if (refreshAgentDryRunRequests) {
+    refreshAgentDryRunRequests.addEventListener("click", loadAgentDryRunRequests);
+  }
+
+  if (recordAgentDryRunResultButton) {
+    recordAgentDryRunResultButton.addEventListener("click", () => recordAgentDryRunResult(recordAgentDryRunResultButton));
+  }
+
+  if (refreshAgentResultReviews) {
+    refreshAgentResultReviews.addEventListener("click", loadAgentResultReviews);
+  }
+
+  if (refreshAgentLearningLedger) {
+    refreshAgentLearningLedger.addEventListener("click", loadAgentResultReviews);
   }
 
   if (voiceButton) {
@@ -2382,5 +3086,7 @@
   loadToolCatalog();
   loadPolicyStatus();
   loadAgentCrew();
+  loadAgentRoadmap();
+  loadAgentDryRunRequests();
   refreshReviewData();
 })();

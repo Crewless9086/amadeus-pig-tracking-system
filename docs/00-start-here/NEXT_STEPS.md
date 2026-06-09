@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Live-Data Correction Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; Sales Dashboard Accepted For Now; 9.7J Sex Count Capture Local Ready | Next: browser-test `/weight-report`, `/bulk-weights`, and `/litter/LIT-2026-EB92` before returning to Phase 10.9N. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9W. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -8040,6 +8040,458 @@ Manual check:
 2. Click `Dry-Run Queue`.
 3. Confirm Oom Sakkie mentions both dry-run requests and dry-run results.
 4. Confirm the safety note says no specialist was dispatched and no runtime change was applied.
+
+### 10.9O Oom Sakkie Sentinel Dry-Run Result Review Packet - Local Ready
+
+Purpose:
+
+- Make one stored Sentinel dry-run result easy for the owner to review.
+- Keep the result review anchored to a persisted `dry_run_result_id` instead of accepting synthetic payloads.
+- Prepare the future owner-approval conversation without running Sentinel or applying any runtime change.
+
+What changed:
+
+- Added `get_agent_dry_run_result(dry_run_result_id)`.
+- Added `build_agent_dry_run_result_review_packet(dry_run_result)`.
+- Added protected `GET /api/oom-sakkie/agent-dry-run-results/<dry_run_result_id>/review-packet`.
+- The packet returns:
+  - result text,
+  - findings,
+  - latest review event,
+  - owner options: `accepted_for_learning`, `rejected`, `review_note`,
+  - a visible review guard with every execution/runtime/write flag false.
+- The packet builder rejects any stored result with unsafe execution flags before returning a packet.
+
+Safety status:
+
+- Review-packet only.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not accept/reject the result by itself.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 186 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Use a persisted dry-run result ID.
+2. Open `/api/oom-sakkie/agent-dry-run-results/<id>/review-packet` from the local browser.
+3. Confirm `mode = dry_run_result_review_packet`.
+4. Confirm `owner_options` lists accept/reject/review-note only.
+5. Confirm every review guard execution/runtime/write flag is false.
+
+### 10.9P Oom Sakkie Sentinel Result Review UI - Local Ready
+
+Purpose:
+
+- Move Sentinel dry-run result review out of raw JSON and into the kiosk workbench.
+- Let the owner review, accept for learning, reject, or add a note from clear cards.
+- Keep every action event-only; no specialist execution or runtime change.
+
+What changed:
+
+- Added `Sentinel Result Review` panel inside the System Workbench.
+- Added refresh button `oom_refresh_agent_result_reviews`.
+- Added result review container `oom_agent_result_reviews`.
+- Kiosk now loads `/api/oom-sakkie/agent-dry-run-results?limit=8` with the rest of review data.
+- Result cards are grouped into:
+  - `Needs Owner Review`,
+  - `Reviewed / Closed`.
+- Each card shows:
+  - result ID,
+  - linked dry-run request ID,
+  - result text,
+  - findings,
+  - latest event,
+  - review-only guard.
+- Card actions:
+  - `Open Review Packet` fetches the protected packet route,
+  - `Accept For Learning` records `accepted_for_learning`,
+  - `Reject` records `rejected`,
+  - `Add Note` records `review_note`.
+- Workbench `Next action` now includes pending Sentinel result reviews before build/patch/deploy work.
+
+Safety status:
+
+- UI-only plus append-only event recording.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 186 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Find `Sentinel Result Review`.
+4. Confirm the existing smoke result appears as a card.
+5. Click `Open Review Packet` and confirm it renders below the queue.
+6. Use `Add Note` first if testing safely; it should record text only and refresh the card.
+7. Only click `Accept For Learning` or `Reject` when you mean to record that decision.
+
+### 10.9Q Oom Sakkie Agent Learning Evidence - Local Ready
+
+Purpose:
+
+- Make accepted Sentinel dry-run results useful after owner approval.
+- Let Oom Sakkie answer what the agent system has learned so far.
+- Keep this as evidence summarization only, not runtime behavior.
+
+What changed:
+
+- Added read-only `agent_learning_evidence` tool.
+- Added deterministic routing for:
+  - `what did Sentinel learn`,
+  - `agent learning evidence`,
+  - `accepted Sentinel`,
+  - `what have agents learned`.
+- Added kiosk quick action `Agent Learning`.
+- The tool reads recent dry-run results and filters only those whose latest event is `accepted_for_learning`.
+- Output includes accepted result IDs, linked request IDs, findings, accepted timestamp, and accepted note.
+
+Safety status:
+
+- Read-only evidence summary only.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 187 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Click `Agent Learning`.
+3. Confirm Oom Sakkie reports accepted Sentinel evidence, not pending/rejected results.
+4. Confirm the safety note says no specialist was dispatched and no runtime change was applied.
+
+### 10.9R Oom Sakkie Agent Learning Ledger UI - Local Ready
+
+Purpose:
+
+- Make accepted agent learning evidence visible in the System Workbench.
+- Separate accepted evidence from the Sentinel result review queue.
+- Give the owner a readable ledger of what the agent platform is allowed to remember for future planning.
+
+What changed:
+
+- Added `Agent Learning Ledger` panel inside the System Workbench.
+- Added refresh button `oom_refresh_agent_learning_ledger`.
+- Added ledger container `oom_agent_learning_ledger`.
+- The ledger reuses the dry-run result list but displays only results whose latest event is `accepted_for_learning`.
+- Each ledger card shows:
+  - dry-run result ID,
+  - linked request ID,
+  - specialist slug,
+  - accepted timestamp,
+  - result text,
+  - accepted findings,
+  - owner acceptance note.
+
+Safety status:
+
+- UI-only accepted-evidence display.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 187 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Reload `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Find `Agent Learning Ledger`.
+4. Confirm the accepted Sentinel result appears there.
+5. Confirm pending/rejected/review-note-only results are not shown as learning evidence.
+
+### 10.9S Oom Sakkie Accepted Learning Roadmap Link - Local Ready
+
+Purpose:
+
+- Let the agent roadmap reflect owner-accepted Sentinel learning evidence.
+- Keep accepted evidence as planning context only, not as runtime permission.
+
+What changed:
+
+- Added a shared accepted-learning snapshot helper inside `modules/oom_sakkie/tools.py`.
+- `agent_learning_evidence` and `agent_activation_plan` now use the same accepted-result filtering:
+  - only `latest_event.event_type = accepted_for_learning`,
+  - bounded to the latest accepted evidence,
+  - no pending/rejected/review-note-only result becomes learning evidence.
+- `agent_activation_plan` now reports whether accepted Sentinel evidence exists when the owner asks for the agent roadmap.
+- The roadmap summary explicitly says runtime remains locked.
+- The roadmap `llm_context` now includes:
+  - `accepted_learning_count`,
+  - `accepted_learning`,
+  - existing false runtime/dispatch/write flags.
+
+Safety status:
+
+- Read-only evidence plumbing only.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call a specialist LLM.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Added tests that the activation roadmap:
+  - works when no accepted evidence exists,
+  - surfaces one accepted Sentinel result when present,
+  - keeps `dispatch_enabled = false`,
+  - keeps the no-runtime-change safety note.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Click `Agent Roadmap`.
+3. Confirm Oom Sakkie mentions accepted Sentinel learning evidence if a result has been accepted.
+4. Confirm the answer still says no specialist was dispatched and runtime remains locked.
+
+### 10.9T Oom Sakkie Visible Agent Roadmap Panel - Local Ready
+
+Purpose:
+
+- Put the Agent Roadmap where the owner expected to find it: inside the System Workbench.
+- Make the path to live agents visible without requiring a chat question.
+
+What changed:
+
+- Added protected read-only endpoint `GET /api/oom-sakkie/agents/activation-plan`.
+- The endpoint returns:
+  - the current activation plan,
+  - accepted Sentinel learning evidence,
+  - accepted learning count,
+  - review guard flags with specialist/runtime/write actions false.
+- Added `Agent Roadmap` panel in the Workbench below `Agent Crew Foundation`.
+- Added refresh button `oom_refresh_agent_roadmap`.
+- Added JS renderer `renderAgentRoadmap(data)` and loader `loadAgentRoadmap()`.
+- The panel shows:
+  - recommended next stage,
+  - accepted evidence count,
+  - first safe candidate,
+  - activation stages,
+  - up to three accepted Sentinel evidence cards.
+
+Safety status:
+
+- Read-only panel data only.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Added route tests for:
+  - local roadmap endpoint shape,
+  - non-local denial,
+  - no runtime/write guard flags.
+- Added frontend contract checks for the panel, refresh button, fetch route, renderer, and safety copy.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Find `Agent Roadmap` directly under `Agent Crew Foundation`.
+4. Confirm it shows the next stage, first safe candidate, accepted evidence count, and runtime locked guard.
+5. Click `Refresh` and confirm it reloads without sending a chat message.
+
+### 10.9U Oom Sakkie Sentinel Dry-Run Request Button - Local Ready
+
+Purpose:
+
+- Let the owner start the next safe agent gate from the visible Agent Roadmap panel.
+- Reduce raw endpoint/manual JSON work while keeping all execution disabled.
+
+What changed:
+
+- Added `Request Sentinel Dry-Run` button to the `Agent Roadmap` panel.
+- Added JS handler `requestSentinelDryRun(button)`.
+- The handler posts to the existing protected append-only request endpoint:
+  - `POST /api/oom-sakkie/agent-dry-runs`.
+- The payload is fixed to:
+  - `specialist_slug = sentinel`,
+  - `requested_by = kiosk`,
+  - owner text explaining it came from the Roadmap panel,
+  - guardrails forbidding dispatch, specialist LLM execution, specialist tool execution, writes, posts, sales, controls, patches, and deploys.
+- On success the Roadmap panel immediately shows the recorded request ID and the false execution flags.
+
+Safety status:
+
+- Records owner approval intent only.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Added frontend contract checks for the Roadmap request button, request function, request endpoint, Sentinel slug, and no-run copy.
+- Added route test that the Roadmap-style request remains request-only with every execution flag false.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. In `Agent Roadmap`, click `Request Sentinel Dry-Run`.
+4. Confirm a card appears with a new `OSK-AGENT-DRYRUN-...` request ID.
+5. Confirm the card says Sentinel did not run and dispatch / specialist LLM / tools / writes are off.
+
+### 10.9V Oom Sakkie Sentinel Dry-Run Mini-Pipeline UI - Local Ready
+
+Purpose:
+
+- Make the first specialist gate usable end-to-end from the Workbench.
+- Keep the owner out of raw JSON endpoints while preserving manual approval and no-execution boundaries.
+
+What changed:
+
+- Added `Sentinel Dry-Run Requests` panel inside the System Workbench.
+- The panel loads `GET /api/oom-sakkie/agent-dry-runs?limit=8`.
+- Each request card shows:
+  - request ID,
+  - specialist slug,
+  - purpose,
+  - latest event if present,
+  - dispatch / specialist LLM / specialist tools / writes guard flags.
+- Each pending request has:
+  - `Open Handoff` button,
+  - `Use For Result` button.
+- Added `Sentinel dry-run handoff` display panel:
+  - calls `POST /api/oom-sakkie/agent-dry-runs/handoff`,
+  - renders the prompt as text,
+  - includes `Copy Sentinel Handoff`.
+- Added `Record Sentinel Result` form:
+  - dry-run request ID,
+  - result text,
+  - optional findings, one per line,
+  - posts to `POST /api/oom-sakkie/agent-dry-runs/<id>/results`.
+
+Safety status:
+
+- Request queue is read-only.
+- Handoff is prompt-only.
+- Result recording is append-only review text.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+- Does not run Builder/Forge, apply patches, or deploy.
+
+Verification:
+
+- Added frontend contract checks for:
+  - dry-run request panel,
+  - handoff panel,
+  - result recorder inputs/button,
+  - request queue fetch,
+  - handoff POST,
+  - result POST,
+  - no-run display copy.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Find `Sentinel Dry-Run Requests`.
+4. Click `Open Handoff` on a request.
+5. Confirm the handoff prompt appears and guard says runs specialist / LLM / tools / writes are off.
+6. Click `Use For Result`.
+7. Paste a short reviewed result and findings.
+8. Click `Record Result For Review`.
+9. Confirm the result appears in `Sentinel Result Review` for Accept / Reject / Note.
+
+### 10.9W Oom Sakkie Workbench Sentinel Next Action - Local Ready
+
+Purpose:
+
+- Make the Workbench `Next action` card follow the Sentinel dry-run pipeline order.
+- Avoid telling the owner to review a result before the request handoff step is visible.
+
+What changed:
+
+- The Workbench now tracks latest dry-run request queue data.
+- `Next action` counts now include:
+  - `Sentinel handoff`,
+  - `Sentinel result`,
+  - `Build`,
+  - `Patch`,
+  - `Deploy`.
+- Priority order is now:
+  1. pending Sentinel dry-run request handoff,
+  2. pending Sentinel dry-run result review,
+  3. build handoff,
+  4. patch review,
+  5. deploy decision.
+- Loading or refreshing dry-run requests updates the next-action card.
+- Recording a dry-run result refreshes dry-run requests, result reviews, and roadmap state.
+
+Safety status:
+
+- UI state only.
+- Does not run Sentinel.
+- Does not dispatch specialists.
+- Does not call specialist LLMs.
+- Does not execute specialist tools.
+- Does not write farm data.
+- Does not apply runtime changes.
+
+Verification:
+
+- Added frontend contract coverage for:
+  - `latestAgentDryRunRequestsData`,
+  - `pendingAgentRequests`,
+  - `Sentinel handoff`,
+  - `Open Sentinel handoff for`.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. If a Sentinel request exists, confirm `Next action` says to open the Sentinel handoff.
+4. After recording a result, confirm `Next action` moves to Sentinel result review.
 
 7.3E weather LLM triage note:
 

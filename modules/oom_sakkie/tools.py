@@ -901,26 +901,44 @@ def agent_crew_brief_handler(args):
 def agent_activation_plan_handler(_args):
     plan = get_agent_activation_plan()
     candidate = plan.get("recommended_first_candidate") or {}
+    learning = accepted_agent_learning_snapshot(limit=20)
+    accepted_count = learning["accepted_count"]
+    learning_line = (
+        f"Accepted learning evidence: {accepted_count} Sentinel result(s) can guide planning, but runtime stays locked. "
+        if accepted_count
+        else "No accepted Sentinel learning evidence is available yet. "
+    )
     summary = (
         "Agent activation plan: foundation is visible now; next safe stage is a read-only dry-run. "
+        f"{learning_line}"
         "Recommended first candidate is {} because {} "
         "Nothing is enabled yet; owner approval and audit gates are still required."
     ).format(candidate.get("name", "Sentinel"), candidate.get("reason", "it has the smallest safe surface."))
+    stale_warnings = []
+    if learning["status_code"] != 200:
+        stale_warnings.append(
+            f"Accepted agent learning evidence is unavailable (status {learning['status_code']})."
+        )
     return {
         "success": True,
         "status": "ok",
         "summary": summary,
         "links": [{"label": "Oom Sakkie Agents", "href": "/api/oom-sakkie/agents"}],
-        "stale_warnings": [],
+        "stale_warnings": stale_warnings,
         "safety_notes": [
-            "Agent activation plan is read-only. No specialist was dispatched, no runtime flag was enabled, and no write was performed."
+            "Agent activation plan is read-only. Accepted evidence may guide future planning only; no specialist was dispatched, no runtime flag was enabled, and no write was performed."
         ],
         "llm_context": {
             "kind": "agent_activation_plan",
             "activation_plan": plan,
             "selected_agent": candidate,
+            "accepted_learning": learning["evidence"],
+            "accepted_learning_count": accepted_count,
         },
-        "raw": plan,
+        "raw": {
+            "activation_plan": plan,
+            "accepted_learning": learning,
+        },
     }
 
 
@@ -1052,6 +1070,90 @@ def agent_dry_run_status_handler(_args):
     }
 
 
+def agent_learning_evidence_handler(_args):
+    learning = accepted_agent_learning_snapshot(limit=20)
+    status_code = learning["status_code"]
+    accepted_count = learning["accepted_count"]
+    stale_warnings = []
+    if status_code != 200:
+        stale_warnings.append(f"Agent learning evidence is unavailable (status {status_code}).")
+
+    if accepted_count:
+        first = learning["accepted_results"][0]
+        summary = (
+            "Agent learning evidence: {} accepted Sentinel result(s) are available. "
+            "Most recent: {}. This can guide future planning, but no specialist was run and no runtime changed."
+        ).format(
+            accepted_count,
+            (first.get("result_text") or first.get("dry_run_result_id") or "accepted result")[:180],
+        )
+    elif status_code == 200:
+        summary = (
+            "Agent learning evidence: no accepted Sentinel dry-run results are available yet. "
+            "Accept a result first if you want it to become planning evidence."
+        )
+    else:
+        summary = "Agent learning evidence is unavailable. No specialist was run and no runtime changed."
+
+    return {
+        "success": status_code == 200,
+        "status": learning["status"],
+        "summary": summary,
+        "links": [{"label": "Sentinel Result Queue", "href": "/api/oom-sakkie/agent-dry-run-results"}],
+        "stale_warnings": stale_warnings,
+        "safety_notes": [
+            "Agent learning evidence is read-only. It reads accepted review events only; no specialist was dispatched, no specialist LLM ran, no specialist tool executed, no runtime change was applied, and no write was performed."
+        ],
+        "llm_context": {
+            "kind": "agent_learning_evidence",
+            "accepted_count": accepted_count,
+            "evidence": learning["evidence"],
+            "runtime_flags": {
+                "dry_run_enabled": False,
+                "dispatch_enabled": False,
+                "runs_specialist_llm": False,
+                "runs_specialist_tools": False,
+                "writes": False,
+                "applies_runtime_change": False,
+            },
+        },
+        "raw": {
+            "mode": "accepted_agent_learning_evidence",
+            "accepted_results": learning["evidence"],
+            "all_results_count": learning["all_results_count"],
+        },
+    }
+
+
+def accepted_agent_learning_snapshot(limit=20):
+    results_result, status_code = list_agent_dry_run_results(limit=limit)
+    dry_run_results = results_result.get("dry_run_results", []) if isinstance(results_result, dict) else []
+    accepted = [
+        item for item in dry_run_results
+        if (item.get("latest_event") or {}).get("event_type") == "accepted_for_learning"
+    ]
+    evidence = []
+    for item in accepted[:8]:
+        latest_event = item.get("latest_event") or {}
+        evidence.append({
+            "dry_run_result_id": item.get("dry_run_result_id", ""),
+            "dry_run_request_id": item.get("dry_run_request_id", ""),
+            "specialist_slug": item.get("specialist_slug", ""),
+            "result_text": str(item.get("result_text", ""))[:700],
+            "findings": list(item.get("findings") or [])[:8],
+            "accepted_at": latest_event.get("created_at", ""),
+            "accepted_note": latest_event.get("notes", ""),
+        })
+    return {
+        "status_code": status_code,
+        "status": results_result.get("status", "unavailable") if isinstance(results_result, dict) else "unavailable",
+        "accepted_count": len(accepted),
+        "accepted_results": accepted,
+        "evidence": evidence,
+        "all_results_count": len(dry_run_results),
+    }
+
+
 def _system_work_build_stage(item):
     latest_event = item.get("latest_event") or {}
     event_type = latest_event.get("event_type") or ""
@@ -1117,6 +1219,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_dry_run_status_handler,
         description="Read-only status of approved specialist dry-run requests. Never dispatches agents.",
+    ),
+    "agent_learning_evidence": OomSakkieTool(
+        name="agent_learning_evidence",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=agent_learning_evidence_handler,
+        description="Read-only accepted Sentinel learning evidence. Never applies runtime changes or dispatches agents.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

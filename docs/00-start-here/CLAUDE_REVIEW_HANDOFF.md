@@ -29,7 +29,7 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-N specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, Sentinel Dry-Run Review, LLM Message Guard safety follow-ups, Agent Dry-Run Request Gate, Message Guard Policy Consistency, Sentinel Dry-Run Handoff Packet, Sentinel Dry-Run Result Gate, and Sentinel Review Queue Status.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-W specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, Sentinel Dry-Run Review, LLM Message Guard safety follow-ups, Agent Dry-Run Request Gate, Message Guard Policy Consistency, Sentinel Dry-Run Handoff Packet, Sentinel Dry-Run Result Gate, Sentinel Review Queue Status, Sentinel Dry-Run Result Review Packet, Sentinel Result Review UI, Agent Learning Evidence, Agent Learning Ledger UI, Accepted Learning Roadmap Link, Visible Agent Roadmap Panel, Sentinel Dry-Run Request Button, Sentinel Dry-Run Mini-Pipeline UI, and Workbench Sentinel Next Action.
 
 Out of scope unless explicitly asked:
 
@@ -114,6 +114,15 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Sentinel Dry-Run Handoff Packet that requires a persisted dry-run request ID and returns a prompt/packet only, still with no Sentinel execution, specialist LLM calls, specialist tool execution, or writes
 - Sentinel Dry-Run Result Gate that records a future Sentinel dry-run result for owner review append-only, still with no specialist execution, runtime change, tool execution, or writes
 - Sentinel Review Queue Status that makes request/result review state visible through the read-only `agent_dry_run_status` tool and `Dry-Run Queue` quick action
+- Sentinel Dry-Run Result Review Packet that looks up persisted result records and returns review-only owner options without running Sentinel or changing runtime state
+- Sentinel Result Review UI that opens result packets, records append-only accepted/rejected/review-note events, and keeps review-note-only results pending
+- `agent_learning_evidence` read-only tool and `Agent Learning` quick action that summarize only accepted Sentinel learning evidence
+- Agent Learning Ledger UI that displays accepted dry-run evidence separately from pending/rejected result reviews
+- Accepted Learning Roadmap Link so the activation plan can reference accepted Sentinel evidence while keeping runtime/dispatch/write flags false
+- Visible Agent Roadmap panel and protected activation-plan endpoint for locked, read-only agent activation planning
+- Sentinel Dry-Run Request Button that creates an append-only Sentinel-only request from the roadmap while still not running Sentinel
+- Sentinel Dry-Run Mini-Pipeline UI for opening Sentinel handoffs and recording reviewed result text/findings without executing specialist LLM, specialist tools, writes, runtime changes, Builder/Forge, patch, or deploy
+- Workbench Sentinel Next Action card that prioritizes pending Sentinel handoff/result-review work before build/patch/deploy queues without implying automation or execution
 
 ## Files/folders to inspect
 
@@ -126,6 +135,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `modules/oom_sakkie/agent_dry_run_handoff.py`
 - `modules/oom_sakkie/agent_dry_run_store.py`
 - `modules/oom_sakkie/agent_dry_run_result_store.py`
+- `modules/oom_sakkie/agent_dry_run_result_review.py`
 - `modules/oom_sakkie/patch_proposal_store.py`
 - `modules/oom_sakkie/deploy_decision_store.py`
 - `templates/oom-sakkie.html`
@@ -553,6 +563,48 @@ Summary:
   - deterministic routing catches Sentinel result/review queue phrasing,
   - the kiosk `Dry-Run Queue` quick action now asks for Sentinel dry-run result queue status,
   - no request/result/event is created by this tool and no specialist/runtime/write action occurs.
+- Added Sentinel Dry-Run Result Review Packet:
+  - `get_agent_dry_run_result()` looks up persisted dry-run result records by ID,
+  - `modules/oom_sakkie/agent_dry_run_result_review.py` assembles a review-only packet with result text, findings, latest event, owner options, and guard flags,
+  - `GET /api/oom-sakkie/agent-dry-run-results/<id>/review-packet` is loopback/private-LAN review-gated,
+  - packet owner options are `accepted_for_learning`, `rejected`, and `review_note`,
+  - all packet guard flags remain false for specialist execution, specialist LLM/tools, writes, runtime changes, Builder/Forge, patch, and deploy.
+- Added Sentinel Result Review UI:
+  - System Workbench now has a `Sentinel Result Review` panel,
+  - the panel opens result review packets, renders packet fields with text-only DOM updates, and records append-only review events,
+  - `review_note` remains pending; only `accepted_for_learning` and `rejected` close a result review row,
+  - no review packet open or event button runs Sentinel, calls specialist LLM/tools, changes runtime, writes farm data, applies patches, or deploys.
+- Added Agent Learning Evidence:
+  - new read-only `agent_learning_evidence` tool summarizes accepted Sentinel result evidence only,
+  - deterministic routing catches accepted-learning / Sentinel-learned phrasing,
+  - kiosk quick checks include `Agent Learning`,
+  - the tool reports accepted learning as planning evidence only and does not enable runtime, dispatch, tools, writes, or specialist LLM calls.
+- Added Agent Learning Ledger UI:
+  - System Workbench now has an `Agent Learning Ledger`,
+  - the ledger displays accepted dry-run result evidence separately from pending/rejected/review-note-only results,
+  - it is display-only and writes no review events by itself.
+- Added Accepted Learning Roadmap Link:
+  - `agent_activation_plan` now reads the same accepted-learning snapshot as `agent_learning_evidence`,
+  - accepted Sentinel evidence can inform planning copy while the activation plan still reports runtime/dispatch/autonomous/write flags false,
+  - tests cover that accepted learning is surfaced without unlocking runtime.
+- Added Visible Agent Roadmap Panel:
+  - protected `GET /api/oom-sakkie/agents/activation-plan` returns the locked activation plan plus accepted learning evidence,
+  - kiosk `Agent Roadmap` panel renders the plan and guard flags,
+  - the endpoint and panel remain read-only and review-gated.
+- Added Sentinel Dry-Run Request Button:
+  - roadmap panel includes `Request Sentinel Dry-Run`,
+  - the button posts a fixed Sentinel-only, no-run payload to the existing append-only dry-run request endpoint,
+  - the created request still has dry-run execution, dispatch, specialist LLM/tools, writes, patches, and deploys disabled.
+- Added Sentinel Dry-Run Mini-Pipeline UI:
+  - System Workbench now lists Sentinel dry-run requests,
+  - request rows can open a persisted handoff packet and copy its prompt explicitly,
+  - request rows can populate a result recorder form,
+  - the result recorder stores owner-reviewed text/findings through the existing append-only result endpoint,
+  - this UI still does not execute Sentinel, call specialist LLM/tools, change runtime, write farm data, invoke Builder/Forge, apply patches, or deploy.
+- Added Workbench Sentinel Next Action:
+  - Workbench `Next action` now includes pending Sentinel request handoffs and pending Sentinel result reviews,
+  - Sentinel handoff/result-review items are prioritized before build/patch/deploy queues,
+  - the card remains recommendation-only and does not trigger work by itself.
 - Added role-specific spoken composer rules:
   - `business_growth_brief` answers should lead with the commercial move, name supporting stock/ready pigs, and ask one approval-style follow-up question,
   - `system_work_status` answers should lead with the next owner action before counts,
@@ -708,6 +760,26 @@ Known verification from Codex:
 - Sentinel Review Queue Status focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 182 tests OK
 - `node --check static/js/oomSakkie.js` passed after Sentinel Review Queue Status
 - Full local unittest suite after Sentinel Review Queue Status: `507 tests OK`
+- Sentinel Dry-Run Result Review Packet focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 184 tests OK
+- `node --check static/js/oomSakkie.js` passed after Sentinel Dry-Run Result Review Packet
+- Sentinel Result Review UI focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 185 tests OK
+- `node --check static/js/oomSakkie.js` passed after Sentinel Result Review UI
+- Full local unittest suite after Sentinel Result Review UI: `512 tests OK`
+- Agent Learning Evidence focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 187 tests OK
+- `node --check static/js/oomSakkie.js` passed after Agent Learning Evidence
+- Agent Learning Ledger UI focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 187 tests OK
+- Full local unittest suite after Agent Learning Ledger UI: `518 tests OK`
+- Accepted Learning Roadmap Link focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 188 tests OK
+- Full local unittest suite after Accepted Learning Roadmap Link: `518 tests OK`
+- Visible Agent Roadmap Panel focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 190 tests OK
+- Full local unittest suite after Visible Agent Roadmap Panel: `520 tests OK`
+- Sentinel Dry-Run Request Button focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 191 tests OK
+- Full local unittest suite after Sentinel Dry-Run Request Button: `521 tests OK`
+- Sentinel Dry-Run Mini-Pipeline UI focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 191 tests OK
+- Full local unittest suite after Sentinel Dry-Run Mini-Pipeline UI: `521 tests OK`
+- Workbench Sentinel Next Action focused verification: `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 191 tests OK
+- `node --check static/js/oomSakkie.js` passed after Workbench Sentinel Next Action
+- Full local unittest suite after Workbench Sentinel Next Action: `521 tests OK`
 - Applied Supabase migrations through `202606060004_lock_oom_sakkie_trace_append_only.sql`.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -788,8 +860,17 @@ Please inspect specifically:
 64. **Sentinel Dry-Run Handoff Packet:** Does Phase 10.9L require a persisted `dry_run_request_id` before generating a handoff, reject unsafe execution flags, and remain packet/prompt-only with no Sentinel execution, specialist LLM calls, specialist tool execution, writes, Builder/Forge execution, patch application, or deploy?
 65. **Sentinel Dry-Run Result Gate:** Does Phase 10.9M record future dry-run results append-only for owner review while keeping specialist execution, dispatch, specialist LLM calls, specialist tool execution, runtime changes, writes, Builder/Forge execution, patch application, and deploy disabled at DB and application layers?
 66. **Sentinel Review Queue Status:** Does Phase 10.9N make dry-run request/result review state visible through read-only chat/quick-action status while avoiding hidden writes, result acceptance, specialist execution, LLM calls, specialist tool execution, runtime changes, Builder/Forge execution, patch application, or deploy?
-67. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
-68. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+67. **Sentinel Dry-Run Result Review Packet:** Does Phase 10.9O require a persisted result ID, return only review-packet data/owner options, and keep all specialist execution, specialist LLM/tool execution, writes, runtime changes, Builder/Forge, patch, and deploy flags false?
+68. **Sentinel Result Review UI:** Does Phase 10.9P let the owner open result packets and record append-only accepted/rejected/review-note events while keeping `review_note` pending and avoiding hidden specialist execution, runtime changes, writes, patches, or deploys?
+69. **Agent Learning Evidence:** Does Phase 10.9Q summarize only accepted Sentinel result evidence through a read-only tool/quick action while keeping accepted evidence as planning context only, not runtime activation?
+70. **Agent Learning Ledger UI:** Does Phase 10.9R show accepted learning evidence separately from pending/rejected/review-note-only result reviews, and is the ledger display-only?
+71. **Accepted Learning Roadmap Link:** Does Phase 10.9S let accepted Sentinel evidence inform the activation plan text while keeping runtime, dispatch, autonomous loop, specialist LLM/tool, write, patch, and deploy flags false?
+72. **Visible Agent Roadmap Panel:** Does Phase 10.9T expose the activation plan through a protected read-only endpoint and kiosk panel without enabling live agents, dispatch, specialist LLM/tools, writes, Builder/Forge, patch, or deploy?
+73. **Sentinel Dry-Run Request Button:** Does Phase 10.9U create only an append-only Sentinel dry-run request from the roadmap, with execution/dispatch/specialist LLM/tools/writes/patch/deploy still disabled?
+74. **Sentinel Dry-Run Mini-Pipeline UI:** Does Phase 10.9V make the Sentinel request -> handoff -> reviewed result path usable while keeping handoff copy and result recording text-only/append-only, with no Sentinel execution, specialist LLM/tools, writes, runtime changes, Builder/Forge, patch, or deploy?
+75. **Workbench Sentinel Next Action:** Does Phase 10.9W correctly prioritize Sentinel handoff/result-review work in the Workbench next-action card without implying automation or executing any step?
+76. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+77. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

@@ -128,6 +128,41 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    @patch("modules.oom_sakkie.routes.accepted_agent_learning_snapshot")
+    def test_agent_activation_plan_route_is_read_only_panel_data(self, mock_learning):
+        mock_learning.return_value = {
+            "status_code": 200,
+            "status": "ok",
+            "accepted_count": 1,
+            "evidence": [{
+                "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+                "result_text": "Sentinel reviewed guardrails.",
+            }],
+        }
+
+        response = self.client.get("/api/oom-sakkie/agents/activation-plan?limit=20")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "agent_activation_plan_panel")
+        self.assertEqual(data["accepted_learning_count"], 1)
+        self.assertFalse(data["review_guard"]["runs_specialist"])
+        self.assertFalse(data["review_guard"]["dispatch_enabled"])
+        self.assertFalse(data["review_guard"]["writes"])
+        self.assertFalse(data["review_guard"]["applies_runtime_change"])
+        self.assertFalse(data["activation_plan"]["dispatch_enabled"])
+
+    def test_agent_activation_plan_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agents/activation-plan",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     @patch("modules.oom_sakkie.routes.list_agent_dry_run_requests")
     def test_agent_dry_runs_route_lists_without_execution(self, mock_list):
         mock_list.return_value = ({
@@ -180,6 +215,43 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["runs_specialist_llm"])
         self.assertFalse(data["writes"])
         mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.record_agent_dry_run_request")
+    def test_agent_dry_run_create_route_supports_roadmap_request_without_execution(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "read_only_dry_run_request_only",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-ROADMAP",
+            "specialist_slug": "sentinel",
+            "dry_run_enabled": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-dry-runs",
+            json={
+                "specialist_slug": "sentinel",
+                "requested_by": "kiosk",
+                "owner_text": "Owner requested the first Sentinel read-only dry-run from the Agent Roadmap panel.",
+                "purpose": "Create an append-only approval record for a future Sentinel dry-run review. Do not run Sentinel.",
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(data["dry_run_request_id"], "OSK-AGENT-DRYRUN-ROADMAP")
+        self.assertFalse(data["dry_run_enabled"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["runs_specialist_llm"])
+        self.assertFalse(data["runs_specialist_tools"])
+        self.assertFalse(data["writes"])
+        payload = mock_record.call_args.args[0]
+        self.assertEqual(payload["specialist_slug"], "sentinel")
+        self.assertIn("Do not run Sentinel", payload["purpose"])
 
     @patch("modules.oom_sakkie.routes.record_agent_dry_run_event")
     def test_agent_dry_run_event_route_records_event_only(self, mock_record):
@@ -363,9 +435,76 @@ class OomSakkieRouteTests(unittest.TestCase):
             {"event_type": "accepted_for_learning", "notes": "Record only."},
         )
 
+    @patch("modules.oom_sakkie.routes.build_agent_dry_run_result_review_packet")
+    @patch("modules.oom_sakkie.routes.get_agent_dry_run_result")
+    def test_agent_dry_run_result_review_packet_route_requires_persisted_result(self, mock_get, mock_packet):
+        mock_get.return_value = ({
+            "success": True,
+            "status": "ok",
+            "dry_run_result": {
+                "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+                "mode": "dry_run_result_review_only",
+            },
+        }, 200)
+        mock_packet.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "dry_run_result_review_packet",
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+            "review_guard": {
+                "runs_specialist": False,
+                "dispatch_enabled": False,
+                "runs_specialist_llm": False,
+                "runs_specialist_tools": False,
+                "writes": False,
+                "applies_runtime_change": False,
+            },
+        }, 200)
+
+        response = self.client.get(
+            "/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-1/review-packet"
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["mode"], "dry_run_result_review_packet")
+        self.assertFalse(data["review_guard"]["runs_specialist"])
+        self.assertFalse(data["review_guard"]["dispatch_enabled"])
+        self.assertFalse(data["review_guard"]["writes"])
+        self.assertFalse(data["review_guard"]["applies_runtime_change"])
+        mock_get.assert_called_once_with("OSK-AGENT-DRYRUN-RESULT-1")
+        mock_packet.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.build_agent_dry_run_result_review_packet")
+    @patch("modules.oom_sakkie.routes.get_agent_dry_run_result")
+    def test_agent_dry_run_result_review_packet_route_propagates_missing_result(self, mock_get, mock_packet):
+        mock_get.return_value = ({
+            "success": False,
+            "status": "dry_run_result_not_found",
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-FAKE",
+        }, 404)
+
+        response = self.client.get(
+            "/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-FAKE/review-packet"
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(data["status"], "dry_run_result_not_found")
+        mock_packet.assert_not_called()
+
     def test_agent_dry_run_routes_deny_non_local_review_access(self):
         response = self.client.get(
             "/api/oom-sakkie/agent-dry-runs",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+        response = self.client.get(
+            "/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-1/review-packet",
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

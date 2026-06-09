@@ -6,7 +6,7 @@ from modules.oom_sakkie.access import (
     message_access_denied_response,
     review_access_denied_response,
 )
-from modules.oom_sakkie.agent_runtime import get_agent_runtime_status, recommend_agent_for_text
+from modules.oom_sakkie.agent_runtime import get_agent_activation_plan, get_agent_runtime_status, recommend_agent_for_text
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
 from modules.oom_sakkie.agent_dry_run_store import (
     get_agent_dry_run_request,
@@ -15,10 +15,12 @@ from modules.oom_sakkie.agent_dry_run_store import (
     record_agent_dry_run_request,
 )
 from modules.oom_sakkie.agent_dry_run_result_store import (
+    get_agent_dry_run_result,
     list_agent_dry_run_results,
     record_agent_dry_run_result,
     record_agent_dry_run_result_event,
 )
+from modules.oom_sakkie.agent_dry_run_result_review import build_agent_dry_run_result_review_packet
 from modules.oom_sakkie.build_request_store import (
     get_build_request,
     list_build_requests,
@@ -45,7 +47,7 @@ from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.specialists import list_specialist_manifests
-from modules.oom_sakkie.tools import list_tool_catalog
+from modules.oom_sakkie.tools import accepted_agent_learning_snapshot, list_tool_catalog
 from modules.oom_sakkie.trace_store import (
     get_trace_review_summary,
     list_recent_traces,
@@ -128,6 +130,30 @@ def oom_sakkie_agent_recommend():
     return jsonify(recommend_agent_for_text(payload.get("text") or "")), 200
 
 
+@oom_sakkie_bp.route("/oom-sakkie/agents/activation-plan", methods=["GET"])
+def oom_sakkie_agent_activation_plan():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    learning = accepted_agent_learning_snapshot(limit=request.args.get("limit", 20))
+    return jsonify({
+        "success": learning["status_code"] == 200,
+        "mode": "agent_activation_plan_panel",
+        "activation_plan": get_agent_activation_plan(),
+        "accepted_learning": learning["evidence"],
+        "accepted_learning_count": learning["accepted_count"],
+        "accepted_learning_status": learning["status"],
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200 if learning["status_code"] == 200 else 503
+
+
 @oom_sakkie_bp.route("/oom-sakkie/agent-dry-runs", methods=["GET"])
 def oom_sakkie_agent_dry_runs():
     denied = _require_review_access()
@@ -201,6 +227,19 @@ def oom_sakkie_agent_dry_run_result_events(dry_run_result_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_agent_dry_run_result_event(dry_run_result_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-dry-run-results/<dry_run_result_id>/review-packet", methods=["GET"])
+def oom_sakkie_agent_dry_run_result_review_packet(dry_run_result_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    loaded, load_status = get_agent_dry_run_result(dry_run_result_id)
+    if load_status != 200:
+        return jsonify(loaded), load_status
+    dry_run_result = loaded.get("dry_run_result", {})
+    result, status_code = build_agent_dry_run_result_review_packet(dry_run_result)
     return jsonify(result), status_code
 
 

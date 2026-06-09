@@ -25,9 +25,11 @@ from modules.oom_sakkie.agent_dry_run_store import (
 from modules.oom_sakkie.agent_dry_run_result_store import (
     _agent_dry_run_result_params,
     _agent_dry_run_result_row,
+    get_agent_dry_run_result,
     list_agent_dry_run_results,
     record_agent_dry_run_result_event,
 )
+from modules.oom_sakkie.agent_dry_run_result_review import build_agent_dry_run_result_review_packet
 from modules.oom_sakkie.llm_answer import (
     _build_payload,
     compose_answer_with_llm,
@@ -92,6 +94,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             {
                 "sentinel_dry_run_review",
                 "agent_dry_run_status",
+                "agent_learning_evidence",
                 "agent_activation_plan",
                 "agent_crew_brief",
                 "agent_crew_status",
@@ -358,7 +361,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertIn("Agent crew foundation", result["summary"])
         self.assertIn("recommendation only", result["summary"])
-        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertIn("no specialist was dispatched", result["safety_notes"][0].lower())
         self.assertEqual(result["llm_context"]["kind"], "agent_crew_status")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "beacon")
         self.assertFalse(result["llm_context"]["recommendation"]["runs_agent"])
@@ -377,18 +380,60 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["crew_brief"]["mode"], "crew_plan_only")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "ledger")
 
-    def test_agent_activation_plan_tool_is_read_only(self):
+    @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
+    def test_agent_activation_plan_tool_is_read_only(self, mock_results):
         from modules.oom_sakkie.tools import agent_activation_plan_handler
+
+        mock_results.return_value = ({
+            "success": True,
+            "status": "ok",
+            "dry_run_results": [],
+        }, 200)
 
         result = agent_activation_plan_handler({})
 
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("read-only dry-run", result["summary"])
-        self.assertIn("No specialist was dispatched", result["safety_notes"][0])
+        self.assertIn("No accepted Sentinel learning evidence", result["summary"])
+        self.assertIn("no specialist was dispatched", result["safety_notes"][0].lower())
         self.assertEqual(result["llm_context"]["kind"], "agent_activation_plan")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
         self.assertFalse(result["llm_context"]["activation_plan"]["dispatch_enabled"])
+        self.assertEqual(result["llm_context"]["accepted_learning_count"], 0)
+
+    @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
+    def test_agent_activation_plan_surfaces_accepted_learning_without_unlocking_runtime(self, mock_results):
+        from modules.oom_sakkie.tools import agent_activation_plan_handler
+
+        mock_results.return_value = ({
+            "success": True,
+            "status": "ok",
+            "dry_run_results": [{
+                "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+                "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+                "specialist_slug": "sentinel",
+                "result_text": "Sentinel says guardrails stayed locked.",
+                "findings": ["Runtime flags stayed false."],
+                "latest_event": {
+                    "event_type": "accepted_for_learning",
+                    "notes": "Useful.",
+                    "created_at": "2026-06-08T10:00:00+00:00",
+                },
+            }],
+        }, 200)
+
+        result = agent_activation_plan_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertIn("Accepted learning evidence: 1 Sentinel result", result["summary"])
+        self.assertEqual(result["llm_context"]["accepted_learning_count"], 1)
+        self.assertEqual(
+            result["llm_context"]["accepted_learning"][0]["dry_run_result_id"],
+            "OSK-AGENT-DRYRUN-RESULT-1",
+        )
+        self.assertFalse(result["llm_context"]["activation_plan"]["dispatch_enabled"])
+        self.assertIn("no runtime flag was enabled", result["safety_notes"][0])
 
     def test_sentinel_dry_run_review_is_read_only_and_locked(self):
         from modules.oom_sakkie.tools import sentinel_dry_run_review_handler
@@ -466,6 +511,48 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "not_configured")
         self.assertIn("unavailable", result["summary"])
         self.assertIn("result queue is unavailable (status 503)", result["stale_warnings"][0])
+
+    @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
+    def test_agent_learning_evidence_is_read_only_accepted_results(self, mock_results):
+        from modules.oom_sakkie.tools import agent_learning_evidence_handler
+
+        mock_results.return_value = ({
+            "success": True,
+            "status": "ok",
+            "dry_run_results": [
+                {
+                    "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+                    "dry_run_request_id": "OSK-AGENT-DRYRUN-1",
+                    "specialist_slug": "sentinel",
+                    "result_text": "Sentinel says the runtime flags stayed off.",
+                    "findings": ["Runtime flags stayed false."],
+                    "latest_event": {
+                        "event_type": "accepted_for_learning",
+                        "notes": "Useful.",
+                        "created_at": "2026-06-08T10:00:00+00:00",
+                    },
+                },
+                {
+                    "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-2",
+                    "dry_run_request_id": "OSK-AGENT-DRYRUN-2",
+                    "specialist_slug": "sentinel",
+                    "result_text": "Not accepted.",
+                    "findings": ["Ignore."],
+                    "latest_event": {"event_type": "review_note"},
+                },
+            ],
+        }, 200)
+
+        result = agent_learning_evidence_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertIn("1 accepted Sentinel result", result["summary"])
+        self.assertEqual(result["llm_context"]["kind"], "agent_learning_evidence")
+        self.assertEqual(result["llm_context"]["accepted_count"], 1)
+        self.assertEqual(result["llm_context"]["evidence"][0]["dry_run_result_id"], "OSK-AGENT-DRYRUN-RESULT-1")
+        self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runtime_flags"]["applies_runtime_change"])
+        self.assertIn("read-only", result["safety_notes"][0])
 
     def test_agent_dry_run_request_params_force_no_execution_flags(self):
         params = _agent_dry_run_request_params({
@@ -683,6 +770,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(results["status"], "not_configured")
         self.assertEqual(results["dry_run_results"], [])
 
+        detail, detail_status = get_agent_dry_run_result("OSK-AGENT-DRYRUN-RESULT-ABC", database_url="")
+        self.assertEqual(detail_status, 503)
+        self.assertEqual(detail["status"], "not_configured")
+
         event, event_status = record_agent_dry_run_result_event(
             "OSK-AGENT-DRYRUN-RESULT-ABC",
             {"event_type": "run_now"},
@@ -690,6 +781,53 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         self.assertEqual(event_status, 400)
         self.assertEqual(event["status"], "invalid_event_type")
+
+    def test_agent_dry_run_result_review_packet_is_review_only(self):
+        packet, status_code = build_agent_dry_run_result_review_packet({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-ABC",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-ABC",
+            "mode": "dry_run_result_review_only",
+            "specialist_slug": "sentinel",
+            "result_text": "Sentinel found a routing guard to review.",
+            "findings": ["Keep dry-run review-only."],
+            "recommended_next_gate": "owner_review_before_learning_or_runtime_change",
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "latest_event": None,
+        })
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["mode"], "dry_run_result_review_packet")
+        self.assertEqual(packet["dry_run_result_id"], "OSK-AGENT-DRYRUN-RESULT-ABC")
+        self.assertEqual(packet["owner_options"][0]["event_type"], "accepted_for_learning")
+        self.assertTrue(packet["review_guard"]["review_only"])
+        self.assertFalse(packet["review_guard"]["runs_specialist"])
+        self.assertFalse(packet["review_guard"]["dispatch_enabled"])
+        self.assertFalse(packet["review_guard"]["runs_specialist_llm"])
+        self.assertFalse(packet["review_guard"]["runs_specialist_tools"])
+        self.assertFalse(packet["review_guard"]["writes"])
+        self.assertFalse(packet["review_guard"]["applies_runtime_change"])
+        self.assertIn("Owner should accept", packet["next_action"])
+
+    def test_agent_dry_run_result_review_packet_rejects_execution_flags(self):
+        packet, status_code = build_agent_dry_run_result_review_packet({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-ABC",
+            "mode": "dry_run_result_review_only",
+            "runs_specialist": True,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        })
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(packet["status"], "dry_run_result_has_execution_flags")
+        self.assertIn("runs_specialist", packet["unsafe_flags"])
 
     def test_agent_dry_run_result_migration_is_append_only_and_no_execution(self):
         migration = Path("supabase/migrations/202606080002_create_oom_sakkie_agent_dry_run_results.sql").read_text(encoding="utf-8")
@@ -1501,6 +1639,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         cases = {
             "what is the agent dry-run queue status": "agent_dry_run_status",
             "what is the sentinel dry-run result queue status": "agent_dry_run_status",
+            "what did sentinel learn": "agent_learning_evidence",
+            "show me agent learning evidence": "agent_learning_evidence",
             "run the sentinel dry-run review": "sentinel_dry_run_review",
             "first agent dry run": "sentinel_dry_run_review",
             "what needs my approval": "system_work_status",
