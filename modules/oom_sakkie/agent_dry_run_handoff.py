@@ -11,11 +11,23 @@ NO_GO_RULES = (
 )
 
 _SPECIALIST_NAMES = {
+    "atlas": "Atlas",
+    "butcher": "Butcher",
+    "herdmaster": "Herdmaster",
+    "ledger": "Ledger",
+    "quartermaster": "Quartermaster",
+    "rootline": "Rootline",
     "sentinel": "Sentinel",
     "prism": "Prism",
 }
 
 _SPECIALIST_ROLES = {
+    "atlas": "the farm data and anomaly reviewer",
+    "butcher": "the pork pipeline and slaughter-readiness reviewer",
+    "herdmaster": "the pig lifecycle and herd-attention reviewer",
+    "ledger": "the business and profit reviewer",
+    "quartermaster": "the operations, supplies, and task reviewer",
+    "rootline": "the weather, crop, and irrigation reviewer",
     "sentinel": "the safety and readiness reviewer",
     "prism": "the kiosk and interface design reviewer",
 }

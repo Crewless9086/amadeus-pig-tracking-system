@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass
 import re
 
+from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
@@ -162,6 +163,31 @@ _FIRST_ACTIVATION_CANDIDATES = (
         "reason": "Useful farm intelligence, but should wait until read-only dry-run/audit patterns are proven.",
         "first_slice": "Advisory-only explanation of one read-only operating brief; no new backend calls.",
     },
+    {
+        "slug": "ledger",
+        "reason": "Turns sales and pork-pipeline context into business questions without customer output.",
+        "first_slice": "Advisory-only review of one business-growth brief; no pricing, quote, invoice, or customer message.",
+    },
+    {
+        "slug": "rootline",
+        "reason": "Weather and irrigation advice is high-value but must remain read-only before any physical control path exists.",
+        "first_slice": "Advisory-only review of one weather/irrigation brief; no pump, valve, schedule, or hardware command.",
+    },
+    {
+        "slug": "herdmaster",
+        "reason": "Herd and litter attention can guide daily checks without changing pig records.",
+        "first_slice": "Advisory-only review of one herd/litter attention brief; no pig, litter, medical, pen, or weight write.",
+    },
+    {
+        "slug": "butcher",
+        "reason": "Pork pipeline planning helps revenue without creating sales or bookings.",
+        "first_slice": "Advisory-only review of one meat-planning brief; no slaughter booking, reservation, sale, or customer message.",
+    },
+    {
+        "slug": "quartermaster",
+        "reason": "Operations and supplies planning can organize work without purchasing or messaging suppliers.",
+        "first_slice": "Advisory-only review of one farm-attention brief; no purchase, stock update, supplier message, or task write.",
+    },
 )
 
 
@@ -190,6 +216,7 @@ def get_agent_runtime_status():
 
 def get_agent_activation_plan():
     agents = {item["slug"]: item for item in list_agent_runtime_manifests()}
+    dry_run_allowed = allowed_agent_dry_run_slugs()
     candidates = []
     for item in _FIRST_ACTIVATION_CANDIDATES:
         agent = agents[item["slug"]]
@@ -201,6 +228,7 @@ def get_agent_activation_plan():
             "reason": item["reason"],
             "first_slice": item["first_slice"],
             "allowed_now": False,
+            "dry_run_request_allowed": agent["slug"] in dry_run_allowed,
             "requires_owner_approval": True,
         })
     return {

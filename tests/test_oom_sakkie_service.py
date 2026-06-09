@@ -17,6 +17,7 @@ from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
 from modules.oom_sakkie.agent_dry_run_store import (
     _agent_dry_run_request_params,
     _agent_dry_run_request_row,
+    allowed_agent_dry_run_slugs,
     get_agent_dry_run_request,
     list_agent_dry_run_requests,
     record_agent_dry_run_event,
@@ -265,6 +266,16 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(plan["mode"], "activation_plan_only")
         self.assertEqual(plan["recommended_next_stage"], "read_only_dry_run")
         self.assertEqual(plan["recommended_first_candidate"]["slug"], "sentinel")
+        candidates = {item["slug"]: item for item in plan["first_candidates"]}
+        for slug in ["sentinel", "prism", "atlas", "ledger", "rootline", "herdmaster", "butcher", "quartermaster"]:
+            with self.subTest(slug=slug):
+                self.assertIn(slug, candidates)
+                self.assertTrue(candidates[slug]["dry_run_request_allowed"])
+                self.assertFalse(candidates[slug]["allowed_now"])
+                self.assertTrue(candidates[slug]["requires_owner_approval"])
+        self.assertNotIn("beacon", candidates)
+        self.assertNotIn("forge", candidates)
+        self.assertNotIn("gatekeeper", candidates)
         self.assertFalse(plan["runtime_enabled"])
         self.assertFalse(plan["dispatch_enabled"])
         self.assertFalse(plan["autonomous_loops_enabled"])
@@ -595,6 +606,42 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(params["writes"])
         self.assertIn("system_work_status", params["allowed_tools_json"])
 
+    def test_agent_dry_run_request_params_allow_read_only_farm_business_cohort_without_execution(self):
+        expected_tools = {
+            "ledger": "business_growth_brief",
+            "atlas": "farm_operating_brief",
+            "rootline": "irrigation_status",
+            "herdmaster": "farm_attention_summary",
+            "butcher": "meat_planning",
+            "quartermaster": "farm_attention_summary",
+        }
+
+        for slug, expected_tool in expected_tools.items():
+            with self.subTest(slug=slug):
+                params = _agent_dry_run_request_params({
+                    "specialist_slug": slug,
+                    "owner_text": f"approve {slug} dry run",
+                    "dry_run_enabled": True,
+                    "dispatch_enabled": True,
+                    "runs_specialist_llm": True,
+                    "runs_specialist_tools": True,
+                    "writes": True,
+                })
+
+                self.assertIn(slug, allowed_agent_dry_run_slugs())
+                self.assertEqual(params["specialist_slug"], slug)
+                self.assertEqual(params["mode"], "read_only_dry_run_request_only")
+                self.assertFalse(params["dry_run_enabled"])
+                self.assertFalse(params["dispatch_enabled"])
+                self.assertFalse(params["runs_specialist_llm"])
+                self.assertFalse(params["runs_specialist_tools"])
+                self.assertFalse(params["writes"])
+                self.assertIn(expected_tool, params["allowed_tools_json"])
+
+        self.assertNotIn("beacon", allowed_agent_dry_run_slugs())
+        self.assertNotIn("forge", allowed_agent_dry_run_slugs())
+        self.assertNotIn("gatekeeper", allowed_agent_dry_run_slugs())
+
     def test_agent_dry_run_store_not_configured_and_rejects_unapproved_specialist(self):
         result, status_code = record_agent_dry_run_request({
             "specialist_slug": "sentinel",
@@ -605,8 +652,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "not_configured")
 
         result, status_code = record_agent_dry_run_request({
-            "specialist_slug": "ledger",
-            "owner_text": "approve ledger dry run",
+            "specialist_slug": "beacon",
+            "owner_text": "approve beacon dry run",
         }, database_url="")
         self.assertEqual(status_code, 400)
         self.assertEqual(result["status"], "specialist_dry_run_not_approved_yet")
@@ -744,6 +791,46 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(packet["dispatch_enabled"])
         self.assertFalse(packet["writes"])
         self.assertIn("You are Prism", packet["prompt"])
+        self.assertIn("Do not call tools", packet["prompt"])
+
+    def test_ledger_dry_run_handoff_is_prompt_only(self):
+        request = _agent_dry_run_request_row((
+            "OSK-AGENT-DRYRUN-LEDGER",
+            "approved_for_read_only_dry_run",
+            "read_only_dry_run_request_only",
+            "ledger",
+            "owner",
+            "Review what we should sell next.",
+            "Future Ledger dry-run request.",
+            "",
+            ["business_growth_brief", "sales_dashboard", "meat_planning"],
+            ["No customer message.", "Owner must review output."],
+            "manual_review_before_any_specialist_execution",
+            False,
+            False,
+            False,
+            False,
+            False,
+            datetime(2026, 6, 9, tzinfo=timezone.utc),
+            None,
+            None,
+            None,
+            None,
+        ))
+
+        packet, status_code = build_agent_dry_run_handoff(request)
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(packet["mode"], "agent_dry_run_handoff_only")
+        self.assertEqual(packet["specialist_slug"], "ledger")
+        self.assertEqual(packet["specialist_name"], "Ledger")
+        self.assertFalse(packet["runs_specialist"])
+        self.assertFalse(packet["runs_specialist_llm"])
+        self.assertFalse(packet["runs_specialist_tools"])
+        self.assertFalse(packet["dispatch_enabled"])
+        self.assertFalse(packet["writes"])
+        self.assertIn("You are Ledger", packet["prompt"])
+        self.assertIn("business and profit reviewer", packet["prompt"])
         self.assertIn("Do not call tools", packet["prompt"])
 
     def test_agent_dry_run_migration_is_append_only_and_no_execution(self):

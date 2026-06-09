@@ -73,6 +73,8 @@
   const refreshAgentRoadmap = document.getElementById("oom_refresh_agent_roadmap");
   const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
   const requestPrismDryRunButton = document.getElementById("oom_request_prism_dry_run");
+  const agentDryRunSpecialistSelect = document.getElementById("oom_agent_dry_run_specialist_select");
+  const requestSelectedAgentDryRunButton = document.getElementById("oom_request_selected_agent_dry_run");
   const agentDryRunRequests = document.getElementById("oom_agent_dry_run_requests");
   const refreshAgentDryRunRequests = document.getElementById("oom_refresh_agent_dry_run_requests");
   const agentDryRunHandoff = document.getElementById("oom_agent_dry_run_handoff");
@@ -1493,8 +1495,8 @@
       empty.textContent = "No Sentinel dry-run requests recorded yet.";
       list.appendChild(empty);
     } else {
-      appendQueueSection(list, "Needs Handoff / Future Result", pending, "No Sentinel dry-run requests need handoff right now.", renderAgentDryRunRequestRow);
-      appendQueueSection(list, "Closed / Not Active", closed.slice(0, 5), "No closed Sentinel dry-run requests yet.", renderAgentDryRunRequestRow);
+      appendQueueSection(list, "Needs Handoff / Future Result", pending, "No agent dry-run requests need handoff right now.", renderAgentDryRunRequestRow);
+      appendQueueSection(list, "Closed / Not Active", closed.slice(0, 5), "No closed agent dry-run requests yet.", renderAgentDryRunRequestRow);
     }
     agentDryRunRequests.appendChild(list);
   }
@@ -2026,6 +2028,7 @@
     }
     const plan = data.activation_plan || {};
     const candidate = plan.recommended_first_candidate || {};
+    const candidates = Array.isArray(plan.first_candidates) ? plan.first_candidates : [];
     const stages = Array.isArray(plan.stages) ? plan.stages : [];
     const evidence = Array.isArray(data.accepted_learning) ? data.accepted_learning : [];
     const guard = data.review_guard || {};
@@ -2066,6 +2069,28 @@
       stageList.appendChild(item);
     });
     agentRoadmap.appendChild(stageList);
+
+    const candidateList = document.createElement("div");
+    candidateList.className = "oom-work-list";
+    const candidateListTitle = document.createElement("p");
+    candidateListTitle.className = "oom-label";
+    candidateListTitle.textContent = "Approved dry-run candidates";
+    candidateList.appendChild(candidateListTitle);
+    candidates.forEach((item) => {
+      const row = document.createElement("article");
+      row.className = "oom-work-item";
+      const title = document.createElement("strong");
+      const text = document.createElement("p");
+      const code = document.createElement("code");
+      title.textContent = `${item.name || item.slug || "Agent"} | ${item.personality || "planned specialist"}`;
+      text.textContent = item.first_slice || item.reason || "";
+      code.textContent = `dry-run request ${item.dry_run_request_allowed ? "allowed" : "locked"} | runtime ${item.allowed_now ? "on" : "locked"}`;
+      row.appendChild(title);
+      row.appendChild(text);
+      row.appendChild(code);
+      candidateList.appendChild(row);
+    });
+    agentRoadmap.appendChild(candidateList);
 
     const learning = document.createElement("div");
     learning.className = "oom-work-list";
@@ -2805,6 +2830,38 @@
   }
 
   function dryRunRequestPayload(specialistSlug) {
+    const presets = {
+      ledger: {
+        label: "Ledger",
+        purpose: "Create an append-only approval record for a future Ledger business/profit review. Do not run Ledger.",
+        owner_text: "Owner requested a Ledger read-only dry-run from the Agent Roadmap panel.",
+      },
+      atlas: {
+        label: "Atlas",
+        purpose: "Create an append-only approval record for a future Atlas farm analytics review. Do not run Atlas.",
+        owner_text: "Owner requested an Atlas read-only dry-run from the Agent Roadmap panel.",
+      },
+      rootline: {
+        label: "Rootline",
+        purpose: "Create an append-only approval record for a future Rootline weather/irrigation review. Do not run Rootline.",
+        owner_text: "Owner requested a Rootline read-only dry-run from the Agent Roadmap panel.",
+      },
+      herdmaster: {
+        label: "Herdmaster",
+        purpose: "Create an append-only approval record for a future Herdmaster pig/litter review. Do not run Herdmaster.",
+        owner_text: "Owner requested a Herdmaster read-only dry-run from the Agent Roadmap panel.",
+      },
+      butcher: {
+        label: "Butcher",
+        purpose: "Create an append-only approval record for a future Butcher pork-pipeline review. Do not run Butcher.",
+        owner_text: "Owner requested a Butcher read-only dry-run from the Agent Roadmap panel.",
+      },
+      quartermaster: {
+        label: "Quartermaster",
+        purpose: "Create an append-only approval record for a future Quartermaster operations/supplies review. Do not run Quartermaster.",
+        owner_text: "Owner requested a Quartermaster read-only dry-run from the Agent Roadmap panel.",
+      },
+    };
     if (specialistSlug === "prism") {
       return {
         specialist_slug: "prism",
@@ -2816,6 +2873,21 @@
           "No specialist LLM execution from this request.",
           "No specialist tool execution from this request.",
           "No generated assets, code edits, patch application, or deploy.",
+          "Owner must review any future dry-run result manually.",
+        ],
+      };
+    }
+    if (presets[specialistSlug]) {
+      return {
+        specialist_slug: specialistSlug,
+        requested_by: "kiosk",
+        owner_text: presets[specialistSlug].owner_text,
+        purpose: presets[specialistSlug].purpose,
+        guardrails: [
+          "No live specialist dispatch.",
+          "No specialist LLM execution from this request.",
+          "No specialist tool execution from this request.",
+          "No farm data writes, public/customer output, sale, control, patch, or deploy.",
           "Owner must review any future dry-run result manually.",
         ],
       };
@@ -2838,7 +2910,7 @@
   async function requestAgentDryRun(button, specialistSlug) {
     if (!button || !agentRoadmap) return;
     const payload = dryRunRequestPayload(specialistSlug);
-    const specialistName = payload.specialist_slug === "prism" ? "Prism" : "Sentinel";
+    const specialistName = payload.specialist_slug.replace(/^\w/, (letter) => letter.toUpperCase());
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = "Requesting";
@@ -2877,6 +2949,11 @@
 
   async function requestPrismDryRun(button) {
     return requestAgentDryRun(button, "prism");
+  }
+
+  async function requestSelectedAgentDryRun(button) {
+    const specialistSlug = agentDryRunSpecialistSelect ? agentDryRunSpecialistSelect.value : "";
+    return requestAgentDryRun(button, specialistSlug || "ledger");
   }
 
   function renderAgentRoadmapRequestResult(data) {
@@ -2993,6 +3070,9 @@
   }
   if (requestPrismDryRunButton) {
     requestPrismDryRunButton.addEventListener("click", () => requestPrismDryRun(requestPrismDryRunButton));
+  }
+  if (requestSelectedAgentDryRunButton) {
+    requestSelectedAgentDryRunButton.addEventListener("click", () => requestSelectedAgentDryRun(requestSelectedAgentDryRunButton));
   }
 
   if (refreshAgentDryRunRequests) {

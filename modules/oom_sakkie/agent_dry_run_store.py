@@ -8,7 +8,16 @@ from services.database_service import DATABASE_URL_ENV
 
 
 AGENT_DRY_RUN_EVENT_TYPES = {"approved", "cancelled", "review_note"}
-_ALLOWED_DRY_RUN_SLUGS = {"prism", "sentinel"}
+_ALLOWED_DRY_RUN_SLUGS = {
+    "atlas",
+    "butcher",
+    "herdmaster",
+    "ledger",
+    "prism",
+    "quartermaster",
+    "rootline",
+    "sentinel",
+}
 
 
 def allowed_agent_dry_run_slugs():
@@ -400,6 +409,18 @@ def _default_allowed_tools(specialist_slug):
         return ["system_work_status", "farm_operating_brief", "sentinel_dry_run_review"]
     if specialist_slug == "prism":
         return ["system_work_status"]
+    if specialist_slug == "ledger":
+        return ["business_growth_brief", "sales_dashboard", "meat_planning"]
+    if specialist_slug == "atlas":
+        return ["farm_operating_brief", "dashboard_summary", "pig_allocation_readiness", "power_recent"]
+    if specialist_slug == "rootline":
+        return ["weather_now", "weather_today", "weather_forecast", "irrigation_status"]
+    if specialist_slug == "herdmaster":
+        return ["dashboard_summary", "pig_allocation_readiness", "meat_planning", "farm_attention_summary"]
+    if specialist_slug == "butcher":
+        return ["business_growth_brief", "meat_planning", "sales_dashboard", "pig_allocation_readiness"]
+    if specialist_slug == "quartermaster":
+        return ["farm_attention_summary", "dashboard_summary", "system_work_status"]
     return []
 
 

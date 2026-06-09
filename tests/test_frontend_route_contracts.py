@@ -3,6 +3,47 @@ import unittest
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_oom_sakkie_agent_dry_run_browser_behavior_contract(self):
+        js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("setInterval", js)
+        self.assertIn('fetch("/api/oom-sakkie/agent-dry-runs?limit=8")', js)
+        self.assertIn('fetch("/api/oom-sakkie/agent-dry-run-results?limit=8")', js)
+        self.assertIn('fetch(`/api/oom-sakkie/agent-dry-run-results/${encodeURIComponent(dryRunResultId)}/review-packet`)', js)
+        self.assertIn('fetch("/api/oom-sakkie/agent-dry-runs/handoff"', js)
+        self.assertIn("recordAgentDryRunResultButton.addEventListener", js)
+        self.assertIn("requestSentinelDryRunButton.addEventListener", js)
+        self.assertIn("requestPrismDryRunButton.addEventListener", js)
+        self.assertIn("requestSelectedAgentDryRunButton.addEventListener", js)
+        self.assertIn("agentDryRunSpecialistSelect.value", js)
+        self.assertIn("Approved dry-run candidates", js)
+        self.assertIn('dry-run request ${item.dry_run_request_allowed ? "allowed" : "locked"}', js)
+        self.assertIn('runtime ${item.allowed_now ? "on" : "locked"}', js)
+        self.assertIn("acceptButton.addEventListener", js)
+        self.assertIn("rejectButton.addEventListener", js)
+        self.assertIn("noteButton.addEventListener", js)
+        self.assertIn('recordAgentResultEvent(', js)
+        self.assertIn('"accepted_for_learning"', js)
+        self.assertIn('"rejected"', js)
+        self.assertIn('"review_note"', js)
+        self.assertIn("No agent dry-run requests need handoff right now.", js)
+        self.assertIn("No closed agent dry-run requests yet.", js)
+        self.assertIn("No agent results need owner review right now.", js)
+        self.assertIn("No reviewed agent results yet.", js)
+
+        render_reviews = js[js.index("function renderAgentResultReviews"):js.index("function renderAgentLearningLedger")]
+        render_rows = js[js.index("function renderAgentResultRow"):js.index("function openAgentResultPacket")]
+        render_requests = js[js.index("function renderAgentDryRunRequests"):js.index("function renderAgentDryRunRequestRow")]
+        render_handoff = js[js.index("function renderAgentDryRunHandoff"):js.index("async function buildAgentDryRunHandoff")]
+
+        self.assertNotIn("fetch(", render_reviews)
+        self.assertNotIn("recordAgentResultEvent", render_reviews)
+        self.assertNotIn("fetch(", render_requests)
+        self.assertNotIn("fetch(", render_handoff)
+        self.assertNotIn("/events", render_handoff)
+        self.assertIn("recordAgentResultEvent", render_rows)
+        self.assertIn("openAgentResultPacket", render_rows)
+
     def test_oom_sakkie_kiosk_page_and_api_are_registered(self):
         app_source = Path("app.py").read_text(encoding="utf-8")
         template = Path("templates/oom-sakkie.html").read_text(encoding="utf-8")
@@ -128,9 +169,18 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('id="oom_refresh_agent_roadmap"', template)
         self.assertIn('id="oom_request_sentinel_dry_run"', template)
         self.assertIn('id="oom_request_prism_dry_run"', template)
+        self.assertIn('id="oom_agent_dry_run_specialist_select"', template)
+        self.assertIn('id="oom_request_selected_agent_dry_run"', template)
         self.assertIn("Agent Roadmap", template)
         self.assertIn("Request Sentinel Dry-Run", template)
         self.assertIn("Request Prism Dry-Run", template)
+        self.assertIn("Request Selected Dry-Run", template)
+        self.assertIn("Ledger - business", template)
+        self.assertIn("Atlas - analytics", template)
+        self.assertIn("Rootline - weather/irrigation", template)
+        self.assertIn("Herdmaster - pigs", template)
+        self.assertIn("Butcher - pork pipeline", template)
+        self.assertIn("Quartermaster - operations", template)
         self.assertIn("Activation stages and accepted learning. Planning only.", template)
         self.assertIn('id="oom_agent_dry_run_requests"', template)
         self.assertIn('id="oom_refresh_agent_dry_run_requests"', template)
@@ -143,6 +193,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Record Agent Result", template)
         self.assertIn("Agents do not run here.", template)
         self.assertIn("This does not run an agent or apply learning.", template)
+        self.assertIn("Paste agent dry-run result text for owner review.", template)
         self.assertIn('id="oom_agent_result_reviews"', template)
         self.assertIn('id="oom_refresh_agent_result_reviews"', template)
         self.assertIn("Agent Result Review", template)

@@ -25,7 +25,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 6: Web App Order Usability | 6.1 And 6.2 Complete; broader Phase 6 ongoing | Continue only with deliberate small usability slices. |
 | Phase 7: Broader Workflow Improvements | 7.0, 7.1, 7.2 Complete; 7.3C Complete And Live-Verified; 7.3D Complete And Live-Verified | Weather/Solar/Oom Sakkie UX notes captured for later deliberate slices. |
 | Phase 8: Breeding Board Improvements | 8D Live-Verified; 8E Owner-Verified; 8F First Slice Owner-Verified; Drill-In Browser-Accepted For Now | Next: collect real-use notes before adding mating suggestions. |
-| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9Z. |
+| Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after Phase 10.9AC. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
@@ -8640,6 +8640,120 @@ Manual check:
 2. Open `System Workbench`.
 3. Confirm shared panels read `Agent Dry-Run Requests`, `Record Agent Result`, and `Agent Result Review`.
 4. Confirm Sentinel and Prism request rows still show their specific `specialist_slug`.
+
+### 10.9AA Oom Sakkie Agent Dry-Run Browser Behavior Contracts - Local Ready
+
+Purpose:
+
+- Retire the remaining dry-run UI behavior gap without widening runtime authority.
+- Pin the shared Agent Dry-Run request/result Workbench behavior now that Sentinel and Prism both use it.
+
+What changed:
+
+- Fixed the last Sentinel-specific empty-state strings in the shared dry-run queue.
+- Added frontend contract coverage that the agent dry-run/result UI:
+  - has no `setInterval` background polling,
+  - loads dry-run requests/results/review packets only through explicit fetch paths,
+  - wires request, result-record, accept, reject, and review-note actions through explicit button handlers,
+  - keeps render-only sections free of hidden fetches or event writes,
+  - renders generic empty states for agent requests/results.
+
+Safety status:
+
+- Test and UI-copy hardening only.
+- Does not add routes, migrations, tools, LLM calls, specialist dispatch, specialist tool execution, farm writes, runtime changes, Builder/Forge execution, patch application, or deploys.
+- Review/event writes remain append-only and owner-clicked only.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 197 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Confirm `Agent Dry-Run Requests` and `Agent Result Review` do not refresh on a timer.
+4. Confirm request/result/event actions happen only after clicking the relevant button.
+5. Confirm empty states say `agent`, not only `Sentinel`.
+
+### 10.9AB Oom Sakkie Approved Read-Only Dry-Run Cohort - Local Ready
+
+Purpose:
+
+- Let the planned farm/business specialists enter the same append-only dry-run request -> handoff -> reviewed-result rail as Sentinel and Prism.
+- Build more of the agent platform without enabling live specialist dispatch or external authority.
+
+What changed:
+
+- Expanded the approved dry-run request allowlist to the risk-0 read-only specialists:
+  - `ledger`,
+  - `atlas`,
+  - `rootline`,
+  - `herdmaster`,
+  - `butcher`,
+  - `quartermaster`,
+  - plus existing `sentinel` and `prism`.
+- Kept `beacon`, `forge`, and `gatekeeper` out of the dry-run allowlist for now because they touch public draft, code/build, or routing-policy surfaces.
+- Added fixed default read-only tool context for each approved specialist.
+- Added specialist names/roles to the dry-run handoff prompt so each packet reads as that planned specialist while still saying it is a dry-run handoff only.
+- Added one selected-specialist dropdown in the Agent Roadmap panel instead of adding a long row of buttons.
+
+Safety status:
+
+- No specialist runs.
+- No specialist LLM executes.
+- No specialist tool executes.
+- No farm data is written.
+- No public/customer output is generated.
+- No Builder/Forge, patch, deploy, Telegram cutover, physical control, or runtime flag is enabled.
+- Request/result/event records remain append-only owner-reviewed planning/audit records.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 200 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. In `Agent Roadmap`, choose Ledger/Atlas/Rootline/Herdmaster/Butcher/Quartermaster from the dropdown.
+4. Click `Request Selected Dry-Run`.
+5. Confirm an append-only request appears and every visible guard still says dispatch, specialist LLM, specialist tools, and writes are off.
+
+### 10.9AC Oom Sakkie Activation Roadmap Cohort Visibility - Local Ready
+
+Purpose:
+
+- Make the Agent Roadmap reflect the same approved dry-run cohort as the backend request gate.
+- Keep the owner-facing roadmap honest about what is allowed now: dry-run request records only, not live runtime.
+
+What changed:
+
+- The activation plan now includes Sentinel, Prism, Atlas, Ledger, Rootline, Herdmaster, Butcher, and Quartermaster as dry-run candidates.
+- Each candidate exposes `dry_run_request_allowed = true` while `allowed_now = false` keeps live runtime locked.
+- Beacon, Forge, and Gatekeeper remain absent from the dry-run candidate list.
+- The kiosk Agent Roadmap now renders an `Approved dry-run candidates` section with each candidate's first slice and guard line.
+
+Safety status:
+
+- Roadmap/display data only.
+- Does not run agents, dispatch specialists, call specialist LLMs, execute specialist tools, write farm data, produce customer/public output, run Builder/Forge, apply patches, deploy, cut over Telegram, or control hardware.
+- Dry-run request authority remains bounded by the append-only request gate from 10.9AB.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 200 tests.
+- `node --check static/js/oomSakkie.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Open `System Workbench`.
+3. Refresh `Agent Roadmap`.
+4. Confirm `Approved dry-run candidates` lists the approved cohort.
+5. Confirm each guard reads dry-run request allowed and runtime locked.
 
 7.3E weather LLM triage note:
 
