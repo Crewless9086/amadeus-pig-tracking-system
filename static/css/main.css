@@ -2764,6 +2764,43 @@ button:disabled {
   white-space: normal;
 }
 
+.oom-controller-board {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oom-controller-board article {
+  display: grid;
+  gap: 5px;
+  min-height: 118px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.oom-controller-board span {
+  color: rgba(158, 242, 219, 0.68);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-controller-board strong {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.oom-controller-board p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .oom-agent-crew-sequence {
   grid-column: 1 / -1;
   display: grid;
@@ -2942,6 +2979,44 @@ button:disabled {
   font-size: 32px;
   line-height: 1.28;
   font-weight: 750;
+}
+
+.oom-command-deck {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oom-command-deck button {
+  display: grid;
+  gap: 5px;
+  min-height: 74px;
+  border: 1px solid rgba(45, 212, 168, 0.22);
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.72);
+  color: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+  padding: 12px;
+  text-align: left;
+}
+
+.oom-command-deck button:hover {
+  border-color: rgba(45, 212, 168, 0.48);
+  background: rgba(45, 212, 168, 0.11);
+}
+
+.oom-command-deck span {
+  color: rgba(158, 242, 219, 0.7);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-command-deck strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 .oom-answer-controls {
@@ -3996,11 +4071,61 @@ button:disabled {
   font-weight: 800;
 }
 
+.oom-quick-drawer {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0;
+}
+
+.oom-quick-drawer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+}
+
+.oom-quick-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.oom-quick-drawer > summary::after {
+  content: "Open";
+  border: 1px solid rgba(45, 212, 168, 0.28);
+  border-radius: 999px;
+  color: #9ef2db;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 10px;
+}
+
+.oom-quick-drawer[open] > summary::after {
+  content: "Hide";
+}
+
+.oom-quick-drawer > summary span {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.oom-quick-drawer > summary small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .oom-quick-checks {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  margin-top: -10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 0;
+  padding: 12px;
 }
 
 .oom-quick-group {
@@ -4131,7 +4256,8 @@ button:disabled {
 
   .oom-agent-stage,
   .oom-agent-workspace,
-  .oom-agent-handoff-lane {
+  .oom-agent-handoff-lane,
+  .oom-controller-board {
     grid-template-columns: 1fr;
   }
 
@@ -4142,6 +4268,10 @@ button:disabled {
 
   .oom-answer {
     font-size: 28px;
+  }
+
+  .oom-command-deck {
+    grid-template-columns: 1fr;
   }
 
   .oom-trace-panel dl {

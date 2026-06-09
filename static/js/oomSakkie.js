@@ -12,6 +12,12 @@
   const activeAgentDetail = document.getElementById("oom_active_agent_detail");
   const activeAgentGuard = document.getElementById("oom_active_agent_guard");
   const agentHandoffLane = document.getElementById("oom_agent_handoff_lane");
+  const controllerMission = document.getElementById("oom_controller_mission");
+  const controllerDetail = document.getElementById("oom_controller_detail");
+  const specialistMission = document.getElementById("oom_specialist_mission");
+  const specialistDetail = document.getElementById("oom_specialist_detail");
+  const ownerGateMission = document.getElementById("oom_owner_gate_mission");
+  const ownerGateDetail = document.getElementById("oom_owner_gate_detail");
   const agentCrewSequence = document.getElementById("oom_agent_crew_sequence");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
@@ -159,6 +165,7 @@
       activeAgentGuard.textContent = "dispatch off | writes off";
       renderAgentHandoffLane([]);
       renderAgentCrewSequence([]);
+      renderControllerBoard(null);
       return;
     }
 
@@ -176,6 +183,36 @@
     activeAgentGuard.textContent = `dispatch ${safety.dispatch_enabled ? "on" : "off"} | loops ${safety.autonomous_loops_enabled ? "on" : "off"} | writes ${safety.writes ? "on" : "off"}`;
     renderAgentHandoffLane(activity.handoff_lane || []);
     renderAgentCrewSequence(activity.crew_sequence || []);
+    renderControllerBoard(activity);
+  }
+
+  function renderControllerBoard(activity) {
+    if (!controllerMission || !controllerDetail || !specialistMission || !specialistDetail || !ownerGateMission || !ownerGateDetail) return;
+    if (!activity || !activity.active_agent) {
+      controllerMission.textContent = "Standing by";
+      controllerDetail.textContent = "Oom Sakkie will route the next read-only check.";
+      specialistMission.textContent = "No workspace open";
+      specialistDetail.textContent = "The selected specialist appears here after a question.";
+      ownerGateMission.textContent = "No approval waiting";
+      ownerGateDetail.textContent = "Approvals stay explicit and audit-only.";
+      return;
+    }
+
+    const agent = activity.active_agent || {};
+    const workspace = activity.workspace || {};
+    const safety = activity.safety || {};
+    const lane = Array.isArray(activity.handoff_lane) ? activity.handoff_lane : [];
+    const ownerStep = lane.find((item) => item.step === "owner_gate") || {};
+    controllerMission.textContent = `Routing to ${agent.name || agent.slug || "specialist"}`;
+    controllerDetail.textContent = workspace.reason
+      ? `Reason: ${workspace.reason}.`
+      : "Oom Sakkie selected the safest read-only workspace.";
+    specialistMission.textContent = workspace.title || `${agent.name || "Specialist"} workspace`;
+    specialistDetail.textContent = workspace.tool_name
+      ? `Inspecting through ${workspace.tool_name}; no specialist tools are running.`
+      : "Inspecting through the existing read-only backend.";
+    ownerGateMission.textContent = safety.writes || safety.dispatch_enabled ? "Blocked until approval" : "Read-only result";
+    ownerGateDetail.textContent = ownerStep.detail || "No action was taken; owner gates remain manual.";
   }
 
   function renderAgentHandoffLane(items) {

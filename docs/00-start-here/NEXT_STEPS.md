@@ -10656,6 +10656,94 @@ Next gate:
 2. If it is still too busy, the next UI-only Prism slice should collapse old Workbench detail further behind audit tabs, without changing authority.
 3. Do not design the next automation step until the accepted Sentinel smoke result has been reviewed as evidence.
 
+### 10.9BW Oom Sakkie Controller Board - Local Ready
+
+Purpose:
+
+- Make the agent stage feel more like a Jarvis-style controller view.
+- Show the owner what Oom Sakkie is coordinating without adding any execution path.
+
+What changed:
+
+- Added a compact `Controller / Specialist / Owner Gate` board inside the agent stage.
+- `renderControllerBoard()` populates it from the existing `agent_activity` object already returned by `/message`.
+- Idle state stays explicit: no workspace open, no approval waiting, read-only routing pending.
+- Active state names the selected specialist, tool/workspace, selection reason, and owner gate status.
+
+Safety envelope:
+
+- Frontend display only.
+- No new endpoint, fetch, route, store, migration, or POST.
+- No in-console approval, runner, deploy, send, sell, trade, or control button.
+- No specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram cutover, physical control, deploy automation, or financial action.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+### 10.9BX Oom Sakkie Primary Command Deck - Local Ready
+
+Purpose:
+
+- Put the daily owner commands in the first screen instead of forcing the owner into the large quick-action grid.
+- Keep the commands read-only and explicit-click.
+
+What changed:
+
+- Added a first-screen command deck with:
+  - `Start Day` -> daily command brief,
+  - `Needs approval` -> approval status,
+  - `Agent command center` -> command center,
+  - `Gate status` -> safety gates.
+- The deck uses the existing `data-quick-ask` event binding.
+- No new JavaScript fetch path was introduced.
+
+Safety envelope:
+
+- Explicit owner click only.
+- Uses existing `/message` read-only ask path.
+- No hidden POST, polling, runner UI, direct approval, direct deploy, direct send, direct sale, direct trade, or physical control.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+### 10.9BY Oom Sakkie Quick Checks Drawer - Local Ready
+
+Purpose:
+
+- Reduce visual clutter now that the primary command deck exists.
+- Keep all read-only quick checks available without making them dominate the kiosk.
+
+What changed:
+
+- Wrapped the larger quick-action grid in a collapsed `More read-only checks` drawer.
+- Existing farm/business/agent quick buttons and prompts are unchanged.
+- Existing `querySelectorAll("[data-quick-ask]")` binding still handles buttons inside the drawer.
+
+Safety envelope:
+
+- Template/CSS-only presentation change.
+- No new endpoint, fetch, route, store, migration, POST, or authority change.
+- No background polling or hidden POSTs.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes` -> 254 tests OK.
+
+Next gate:
+
+1. Owner visually checks whether the first screen now feels clearer: presence/orb, agent stage, command deck, answer, approval console, and detailed Workbench below.
+2. If still too busy, next safe work is a UI-only Workbench tab/drawer split.
+3. Do not add direct `Approve`, `Run`, `Deploy`, `Send`, `Post`, `Sell`, `Trade`, or `Control` buttons to the first-screen console without a separate Claude-reviewed gate.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
