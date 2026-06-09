@@ -1248,6 +1248,51 @@ def agent_runtime_review_packet_handler(_args):
     }
 
 
+def dispatch_runtime_review_packet_handler(_args):
+    packet = get_agent_runtime_review_packet()
+    dispatch_status = dispatch_decision_status_handler({})
+    status_counts = (dispatch_status.get("llm_context") or {}).get("counts") or {}
+    summary = (
+        "Dispatch runtime review packet is ready for owner and Claude review. "
+        "It combines the locked runtime review packet with dispatch design status: "
+        f"{status_counts.get('pending_design_review', 0)} pending design-review request(s), "
+        f"{status_counts.get('approved_for_design_review', 0)} approved for design review. "
+        "This still does not enable dispatch."
+    )
+    return {
+        "success": bool(packet.get("success")) and bool(dispatch_status.get("success")),
+        "status": _combined_status("ok" if packet.get("success") else "unavailable", dispatch_status.get("status")),
+        "summary": summary,
+        "links": [
+            {"label": "Runtime Review Packet", "href": "/api/oom-sakkie/agents/runtime-review-packet"},
+            {"label": "Dispatch Requests", "href": "/api/oom-sakkie/dispatch-requests"},
+        ],
+        "stale_warnings": list(dispatch_status.get("stale_warnings") or []),
+        "safety_notes": [
+            "Dispatch runtime review packet is read-only. It does not run specialists, enable dispatch, call specialist LLMs/tools, write farm data, apply runtime changes, create public output, patch, deploy, cut over Telegram, or control hardware."
+        ],
+        "llm_context": {
+            "kind": "dispatch_runtime_review_packet",
+            "review_packet": packet,
+            "dispatch_status": dispatch_status,
+            "next_gate": "owner_and_claude_review_before_any_code_consumes_dispatch_decisions",
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+        },
+        "raw": {
+            "review_packet": packet,
+            "dispatch_status": dispatch_status,
+        },
+    }
+
+
 def sentinel_dry_run_review_handler(_args):
     catalog = [
         {
@@ -1697,6 +1742,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_runtime_review_packet_handler,
         description="Read-only bulk review packet for the agent runtime foundation. Bundles inspection surfaces without enabling authority.",
+    ),
+    "dispatch_runtime_review_packet": OomSakkieTool(
+        name="dispatch_runtime_review_packet",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=dispatch_runtime_review_packet_handler,
+        description="Read-only owner/Claude review packet combining locked runtime review with dispatch design status. Never consumes dispatch decisions to enable runtime.",
     ),
     "agent_activation_plan": OomSakkieTool(
         name="agent_activation_plan",

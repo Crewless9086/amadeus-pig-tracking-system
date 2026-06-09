@@ -9635,6 +9635,56 @@ Manual/CI check:
 3. Confirm the answer says no specialist dispatch is enabled.
 4. Confirm `what needs my approval?` includes dispatch design review counts when dispatch requests exist.
 
+### 10.9BA Oom Sakkie Dispatch Runtime Review Packet - Local Ready
+
+Purpose:
+
+- Give the owner and Claude one chat-accessible review packet before any future phase designs code that consumes dispatch decisions.
+- Keep the packet review-only and separate from the protected pure runtime-review endpoint.
+
+What changed:
+
+- Added read-only `dispatch_runtime_review_packet`.
+- The tool combines:
+  - pure `get_agent_runtime_review_packet()` output,
+  - read-only `dispatch_decision_status_handler({})` output.
+- Added deterministic routing for:
+  - `dispatch runtime review packet`,
+  - `dispatch review packet`,
+  - `dispatch execution review`,
+  - `claude dispatch review`.
+- The packet `next_gate` is `owner_and_claude_review_before_any_code_consumes_dispatch_decisions`.
+- Tests assert the tool:
+  - is in the read-only registry,
+  - keeps dispatch/specialist LLM/specialist tool/write/runtime-change flags false,
+  - says it does not enable dispatch,
+  - routes correctly from dispatch-review wording.
+
+Safety status:
+
+- Review assembly only.
+- No new route, store, migration, event type, runtime flag, JS action, or DB write.
+- No code consumes `approved_for_design_review` to enable dispatch.
+- No specialist dispatch happens.
+- No specialist LLM or specialist tool execution happens.
+- No farm data write, public/customer output, patch, deploy, Telegram cutover, or physical control is created.
+
+Verification:
+
+- Focused Oom Sakkie service/routes/frontend tests passed at 244 tests.
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node --check playwright.config.js` passed.
+- Browser behavior smoke passed.
+- Full local unittest suite passed at 574 tests.
+
+Manual check:
+
+1. Ask `prepare the dispatch runtime review packet`.
+2. Confirm it uses `dispatch_runtime_review_packet`.
+3. Confirm the answer names owner/Claude review as the next gate.
+4. Confirm it says dispatch remains disabled.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -115,6 +115,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_dispatch_decision_rail_blueprint",
                 "dispatch_decision_status",
                 "agent_runtime_review_packet",
+                "dispatch_runtime_review_packet",
                 "agent_operating_contracts",
                 "agent_runtime_readiness",
                 "agent_activation_plan",
@@ -772,6 +773,48 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["review_packet"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["review_packet"]["writes_enabled"])
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+
+    @patch("modules.oom_sakkie.tools.dispatch_decision_status_handler")
+    def test_dispatch_runtime_review_packet_tool_is_read_only(self, mock_dispatch_status):
+        from modules.oom_sakkie.tools import dispatch_runtime_review_packet_handler
+
+        mock_dispatch_status.return_value = {
+            "success": True,
+            "status": "ok",
+            "summary": "Dispatch design status.",
+            "links": [],
+            "stale_warnings": [],
+            "safety_notes": ["Dispatch status read-only."],
+            "llm_context": {
+                "kind": "dispatch_decision_status",
+                "counts": {
+                    "pending_design_review": 1,
+                    "approved_for_design_review": 2,
+                },
+                "dispatch_enabled": False,
+                "runs_specialist_llm": False,
+                "runs_specialist_tools": False,
+                "writes": False,
+                "applies_runtime_change": False,
+            },
+            "raw": {"dispatch_requests": []},
+        }
+
+        result = dispatch_runtime_review_packet_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("owner and Claude review", result["summary"])
+        self.assertIn("does not enable dispatch", result["summary"])
+        self.assertIn("does not run specialists", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "dispatch_runtime_review_packet")
+        self.assertEqual(result["llm_context"]["dispatch_status"]["llm_context"]["counts"]["pending_design_review"], 1)
+        self.assertEqual(result["llm_context"]["next_gate"], "owner_and_claude_review_before_any_code_consumes_dispatch_decisions")
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["applies_runtime_change"])
 
     @patch("modules.oom_sakkie.tools.list_agent_dry_run_results")
     def test_agent_activation_plan_tool_is_read_only(self, mock_results):
@@ -2403,6 +2446,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "show me authority unlock readiness": "agent_authority_unlock_readiness",
             "show me the dispatch rail blueprint": "agent_dispatch_decision_rail_blueprint",
             "what is the dispatch approval rail": "agent_dispatch_decision_rail_blueprint",
+            "prepare the dispatch runtime review packet": "dispatch_runtime_review_packet",
+            "claude dispatch review": "dispatch_runtime_review_packet",
             "what is the dispatch decision status": "dispatch_decision_status",
             "which dispatch requests are waiting for review": "dispatch_decision_status",
             "show me the agent runtime review packet": "agent_runtime_review_packet",
