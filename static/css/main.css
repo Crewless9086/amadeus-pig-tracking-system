@@ -3884,10 +3884,32 @@ button:disabled {
 }
 
 .oom-quick-checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: -10px;
+}
+
+.oom-quick-group {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 8px;
-  margin-top: -10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.oom-quick-group-label {
+  flex: 0 0 100%;
+  margin: 0 0 2px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .oom-quick-checks button {
@@ -3905,6 +3927,12 @@ button:disabled {
 .oom-quick-checks button:hover {
   border-color: rgba(45, 212, 168, 0.48);
   background: rgba(45, 212, 168, 0.14);
+}
+
+@media (max-width: 980px) {
+  .oom-quick-checks {
+    grid-template-columns: 1fr;
+  }
 }
 
 .oom-voice-status {

@@ -10118,6 +10118,7 @@ Verification:
 - `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
 - `python -m unittest` -> 588 tests OK.
 - `python -m unittest` -> 588 tests OK.
+- `python -m unittest` -> 588 tests OK.
 
 Manual check:
 
@@ -10167,6 +10168,55 @@ Manual check:
 1. Open `/oom-sakkie`.
 2. Click `Safety Gates`; confirm it asks `Show me the safety gates.` and routes to `jarvis_safety_gate_board`.
 3. Click `Review Packet`; confirm it asks `Prepare Claude review.` and routes to `jarvis_owner_review_packet`.
+4. Confirm no action happens without clicking.
+
+### 10.9BN Oom Sakkie Quick Checks Grouping - Local Ready
+
+Purpose:
+
+- Reduce visual clutter in the growing quick-check row without changing any quick-check behavior.
+- Make the kiosk easier to scan by grouping existing owner-clicked checks into Farm, Business, and Agent Review clusters.
+
+What changed:
+
+- Grouped existing quick-action buttons in `templates/oom-sakkie.html`:
+  - `Farm`
+  - `Business`
+  - `Agent Review`
+- Added `.oom-quick-group` and `.oom-quick-group-label` CSS.
+- Desktop layout uses three quick-check columns; smaller screens collapse to one column.
+- Added frontend route contract assertions for the grouping and CSS.
+
+Safety envelope:
+
+- UI-only.
+- No JavaScript behavior change.
+- Same `data-quick-ask` prompts as before.
+- Same explicit owner-click quick-ask POST path.
+- No background polling.
+- No hidden POST.
+- No route.
+- No store or migration.
+- No DB write.
+- No runtime flag change.
+- No specialist dispatch.
+- No specialist LLM/tool execution.
+- No farm-data write.
+- No public/customer output.
+- No patch/deploy/Telegram/physical-control action.
+
+Verification:
+
+- `python -m unittest tests.test_frontend_route_contracts` -> 27 tests OK.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 258 tests OK.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+Manual check:
+
+1. Open `/oom-sakkie`.
+2. Confirm quick checks are grouped into `Farm`, `Business`, and `Agent Review`.
+3. Click one button in each group and confirm it still sends the same read-only quick ask.
 4. Confirm no action happens without clicking.
 
 7.3E weather LLM triage note:

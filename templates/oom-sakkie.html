@@ -383,25 +383,34 @@
       <button type="submit">Ask</button>
     </form>
     <div class="oom-quick-checks" aria-label="Quick read-only farm checks">
-      <button type="button" data-quick-ask="Give me the daily command brief.">Brief</button>
-      <button type="button" data-quick-ask="What needs attention today?">Attention</button>
-      <button type="button" data-quick-ask="What is the power doing now?">Power</button>
-      <button type="button" data-quick-ask="What happened with the weather today?">Weather Today</button>
-      <button type="button" data-quick-ask="What pigs are ready for meat?">Meat Ready</button>
-      <button type="button" data-quick-ask="Show me the sales dashboard overview.">Sales</button>
-      <button type="button" data-quick-ask="What should we sell next?">Business</button>
-      <button type="button" data-quick-ask="Prepare an internal offer brief.">Offer Brief</button>
-      <button type="button" data-quick-ask="What is the irrigation status?">Irrigation</button>
-      <button type="button" data-quick-ask="What needs my approval?">Approvals</button>
-      <button type="button" data-quick-ask="Show me the agent command center.">Command Center</button>
-      <button type="button" data-quick-ask="Show me the safety gates.">Safety Gates</button>
-      <button type="button" data-quick-ask="Prepare Claude review.">Review Packet</button>
-      <button type="button" data-quick-ask="Which agent should handle this?">Agents</button>
-      <button type="button" data-quick-ask="Give me the agent team brief for growing the farm business.">Team Brief</button>
-      <button type="button" data-quick-ask="What is the agent activation plan?">Agent Roadmap</button>
-      <button type="button" data-quick-ask="Run the Sentinel dry-run review.">Sentinel Dry Run</button>
-      <button type="button" data-quick-ask="What is the Sentinel dry-run result queue status?">Dry-Run Queue</button>
-      <button type="button" data-quick-ask="What did Sentinel learn from accepted results?">Agent Learning</button>
+      <div class="oom-quick-group" aria-label="Farm checks">
+        <p class="oom-quick-group-label">Farm</p>
+        <button type="button" data-quick-ask="Give me the daily command brief.">Brief</button>
+        <button type="button" data-quick-ask="What needs attention today?">Attention</button>
+        <button type="button" data-quick-ask="What is the power doing now?">Power</button>
+        <button type="button" data-quick-ask="What happened with the weather today?">Weather Today</button>
+        <button type="button" data-quick-ask="What pigs are ready for meat?">Meat Ready</button>
+        <button type="button" data-quick-ask="What is the irrigation status?">Irrigation</button>
+      </div>
+      <div class="oom-quick-group" aria-label="Business checks">
+        <p class="oom-quick-group-label">Business</p>
+        <button type="button" data-quick-ask="Show me the sales dashboard overview.">Sales</button>
+        <button type="button" data-quick-ask="What should we sell next?">Business</button>
+        <button type="button" data-quick-ask="Prepare an internal offer brief.">Offer Brief</button>
+      </div>
+      <div class="oom-quick-group" aria-label="Agent and review checks">
+        <p class="oom-quick-group-label">Agent Review</p>
+        <button type="button" data-quick-ask="What needs my approval?">Approvals</button>
+        <button type="button" data-quick-ask="Show me the agent command center.">Command Center</button>
+        <button type="button" data-quick-ask="Show me the safety gates.">Safety Gates</button>
+        <button type="button" data-quick-ask="Prepare Claude review.">Review Packet</button>
+        <button type="button" data-quick-ask="Which agent should handle this?">Agents</button>
+        <button type="button" data-quick-ask="Give me the agent team brief for growing the farm business.">Team Brief</button>
+        <button type="button" data-quick-ask="What is the agent activation plan?">Agent Roadmap</button>
+        <button type="button" data-quick-ask="Run the Sentinel dry-run review.">Sentinel Dry Run</button>
+        <button type="button" data-quick-ask="What is the Sentinel dry-run result queue status?">Dry-Run Queue</button>
+        <button type="button" data-quick-ask="What did Sentinel learn from accepted results?">Agent Learning</button>
+      </div>
     </div>
     <div class="oom-voice-status-row">
       <p id="oom_voice_status" class="oom-voice-status">Voice draft idle. Spoken text will appear in the input before you send it.</p>
