@@ -387,6 +387,42 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["dispatch_enabled"])
         self.assertFalse(data["writes"])
 
+    @patch("modules.oom_sakkie.routes.record_learning_influence_proposal_from_result")
+    def test_learning_influence_from_result_route_records_one_source_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 1,
+            "learning_influence_proposals": [{
+                "source_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948",
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            }],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/influence-proposals/from-result",
+            json={"source_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["created_count"], 1)
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once_with("OSK-AGENT-DRYRUN-RESULT-C63AF980E948")
+
     @patch("modules.oom_sakkie.routes.record_learning_influence_proposal_event")
     def test_learning_influence_event_route_records_review_only_event(self, mock_record):
         mock_record.return_value = ({
@@ -420,6 +456,16 @@ class OomSakkieRouteTests(unittest.TestCase):
         response = self.client.post(
             "/api/oom-sakkie/agent-learning/influence-proposals/from-accepted",
             json={"limit": 8},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/influence-proposals/from-result",
+            json={"source_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

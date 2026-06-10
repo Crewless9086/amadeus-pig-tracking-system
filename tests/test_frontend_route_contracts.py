@@ -254,6 +254,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Approve Future Planning", js)
         self.assertIn("Accepted from Owner Cockpit. Evidence only; no runtime change.", js)
         self.assertIn("Approved from Owner Cockpit as future planning evidence only. No learning was applied.", js)
+        self.assertIn("function prepareLearningInfluenceProposalForResult", js)
+        self.assertIn("/api/oom-sakkie/agent-learning/influence-proposals/from-result", js)
         self.assertIn("openAuditWorkbenchButton.addEventListener", js)
         self.assertIn("refreshApprovalConsole.addEventListener", js)
         self.assertIn(".oom-system-workbench", js)

@@ -2799,6 +2799,14 @@ Questions to answer during 9.7A:
 
 - Owner note 2026-06-03: father has a specific paper capture format for litters, and the system should eventually match that printout style more closely.
 - Future build should align the litter print sheet, litter detail table, and any bulk litter upload/capture form so the printed workflow and web workflow feel like the same process.
+- Owner note 2026-06-10: after a litter is captured and the piglet rows exist, the owner needs an editable table-style workflow to enter tag numbers, weaned weights, and current/target pens for the whole litter in one pass instead of opening every piglet individually.
+- Planned direction:
+  - Add a litter-level bulk capture/edit table from `/litter/<litter_id>`.
+  - Keep it preview-before-save, with one deliberate `Save Batch` action.
+  - Support spreadsheet-like entry for tag number, weaned weight, and pen fields.
+  - Validate duplicate tag numbers, existing same-date weights, and invalid pens before commit.
+  - Preserve individual pig rows and audit history; do not overwrite existing tag/weight/pen data silently.
+  - Reuse the existing bulk-weight partial-save behavior where practical so valid rows can save while duplicate/invalid rows stay visible for correction.
 - Owner will provide a sample before implementation.
 - Keep wide browser layouts and table format as the default for these operational pages.
 
@@ -11109,6 +11117,40 @@ Next gate:
 
 1. Owner visually confirms the cockpit now shows a clear status after append-only review actions.
 2. Do not add any first-screen run/apply/deploy/send/sell/control/trade action without a dedicated owner + Claude-reviewed gate.
+
+### 10.9CJ Oom Sakkie Cockpit Accepted-Result Proposal Prep - Local Ready
+
+Purpose:
+
+- Remove the extra Workbench step after the owner accepts one agent result for learning.
+- Prepare the learning influence proposal for the exact clicked result only.
+- Keep proposal generation review-only and never apply learning automatically.
+
+What changed:
+
+- Added protected route `POST /api/oom-sakkie/agent-learning/influence-proposals/from-result`.
+- Added `record_learning_influence_proposal_from_result()` to load one dry-run result and require its latest event to be `accepted_for_learning`.
+- After a cockpit `Accept For Learning` click succeeds, the kiosk now prepares the proposal for that same dry-run result ID and refreshes the learning proposal queue.
+- The cockpit status tells the owner whether one planning proposal was prepared or already existed.
+- Browser behavior tests now assert the proposal-prep POST includes the exact clicked `source_result_id`.
+
+Safety envelope:
+
+- Proposal prep remains append-only/review-only.
+- Existing accepted-result bulk prep still exists in the Workbench for deliberate batch use.
+- The cockpit does not approve the proposal, apply learning, change prompts, change routes, run a specialist, deploy, send, post, sell, trade, control equipment, or write farm data.
+- `applies_learning_now = false`, `changes_prompt_now = false`, `changes_runtime_now = false`, `dispatch_enabled = false`, and `writes = false` stay pinned in responses/tests.
+
+Verification:
+
+- Focused service/route/frontend tests passed.
+- Dependency-free browser behavior smoke passed.
+- JS syntax checks passed for the kiosk and browser smoke files.
+
+Next gate:
+
+1. Owner visually checks the cockpit flow: click `Accept For Learning`, confirm a planning proposal appears, and confirm the status says no learning/runtime change was applied.
+2. Do not build any consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
 
 7.3E weather LLM triage note:
 

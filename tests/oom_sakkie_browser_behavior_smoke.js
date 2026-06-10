@@ -146,6 +146,19 @@ function responseFor(url, options = {}) {
       writes: false,
     };
   }
+  if (url.includes("/agent-learning/influence-proposals/from-result")) {
+    return {
+      success: true,
+      created_count: 1,
+      accepted_count: 1,
+      learning_influence_proposals: [],
+      applies_learning_now: false,
+      changes_prompt_now: false,
+      changes_runtime_now: false,
+      dispatch_enabled: false,
+      writes: false,
+    };
+  }
   if (url.includes("/agent-learning/influence-proposals") && url.includes("/events")) return { success: true };
   if (url.includes("/agent-learning/influence-proposals")) {
     return {
@@ -302,6 +315,18 @@ async function flushPromises() {
   assert(
     fetchCalls.some((call) => call.method === "POST" && call.url.includes("/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-SMOKE/events")),
     "Owner cockpit Accept For Learning must POST only after owner click",
+  );
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url === "/api/oom-sakkie/agent-learning/influence-proposals/from-result"),
+    "Owner cockpit Accept For Learning should prepare a proposal only for the clicked result",
+  );
+  const fromResultCall = fetchCalls.find((call) =>
+    call.method === "POST" && call.url === "/api/oom-sakkie/agent-learning/influence-proposals/from-result"
+  );
+  assert.deepStrictEqual(
+    JSON.parse(fromResultCall.options.body),
+    { source_result_id: "OSK-AGENT-DRYRUN-RESULT-SMOKE" },
+    "Owner cockpit proposal preparation must send the clicked result id only",
   );
   assert.strictEqual(intervalCalls.length, 0, "Owner cockpit evidence decision click must not start interval polling");
 

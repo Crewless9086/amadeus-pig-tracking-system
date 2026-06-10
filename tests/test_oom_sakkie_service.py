@@ -102,6 +102,7 @@ from modules.oom_sakkie.learning_packet import (
 )
 from modules.oom_sakkie.learning_influence_store import (
     _learning_influence_params,
+    record_learning_influence_proposal_from_result,
     record_learning_influence_proposal_event,
 )
 from modules.oom_sakkie.patch_proposal_store import (
@@ -1367,6 +1368,90 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(params["changes_runtime_now"])
         self.assertFalse(params["dispatch_enabled"])
         self.assertFalse(params["writes"])
+
+    @patch("modules.oom_sakkie.learning_influence_store._record_learning_influence_params")
+    @patch("modules.oom_sakkie.learning_influence_store.get_agent_dry_run_result")
+    def test_learning_influence_from_result_requires_accepted_source(self, mock_get_result, mock_record):
+        mock_get_result.return_value = ({
+            "success": True,
+            "dry_run_result": {
+                "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+                "latest_event": {"event_type": "review_note"},
+            },
+        }, 200)
+
+        result, status_code = record_learning_influence_proposal_from_result(
+            "OSK-AGENT-DRYRUN-RESULT-1",
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "source_result_not_accepted_for_learning")
+        self.assertFalse(result["applies_learning_now"])
+        self.assertFalse(result["changes_prompt_now"])
+        self.assertFalse(result["dispatch_enabled"])
+        self.assertFalse(result["writes"])
+        mock_record.assert_not_called()
+
+    def test_learning_influence_from_result_requires_source_result_id(self):
+        result, status_code = record_learning_influence_proposal_from_result(
+            "",
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "source_result_id_required")
+        self.assertEqual(result["learning_influence_proposals"], [])
+        self.assertFalse(result["applies_learning_now"])
+        self.assertFalse(result["changes_prompt_now"])
+        self.assertFalse(result["dispatch_enabled"])
+        self.assertFalse(result["writes"])
+
+    @patch("modules.oom_sakkie.learning_influence_store._record_learning_influence_params")
+    @patch("modules.oom_sakkie.learning_influence_store.get_agent_dry_run_result")
+    def test_learning_influence_from_result_records_exact_accepted_source_only(self, mock_get_result, mock_record):
+        mock_get_result.return_value = ({
+            "success": True,
+            "dry_run_result": {
+                "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948",
+                "dry_run_request_id": "OSK-AGENT-DRYRUN-499E983FAF",
+                "specialist_slug": "sentinel",
+                "result_text": "Sentinel safety evidence.",
+                "findings": ["No tool execution."],
+                "latest_event": {
+                    "event_type": "accepted_for_learning",
+                    "notes": "Accepted.",
+                    "created_at": "2026-06-10T10:00:00+00:00",
+                },
+            },
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 1,
+            "learning_influence_proposals": [],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+
+        result, status_code = record_learning_influence_proposal_from_result(
+            "OSK-AGENT-DRYRUN-RESULT-C63AF980E948",
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["applies_learning_now"])
+        self.assertFalse(result["changes_prompt_now"])
+        self.assertFalse(result["dispatch_enabled"])
+        self.assertFalse(result["writes"])
+        params = mock_record.call_args.args[0]
+        self.assertEqual(len(params), 1)
+        self.assertEqual(params[0]["source_result_id"], "OSK-AGENT-DRYRUN-RESULT-C63AF980E948")
 
     @patch("modules.oom_sakkie.tools.list_learning_influence_proposals")
     def test_learning_influence_status_is_read_only(self, mock_list):

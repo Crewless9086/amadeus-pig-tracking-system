@@ -61,6 +61,7 @@ from modules.oom_sakkie.learning_packet import (
 from modules.oom_sakkie.learning_influence_store import (
     list_learning_influence_proposals,
     record_learning_influence_proposal_event,
+    record_learning_influence_proposal_from_result,
     record_learning_influence_proposals_from_accepted,
 )
 from modules.oom_sakkie.patch_proposal_store import (
@@ -400,6 +401,16 @@ def oom_sakkie_learning_influence_proposals_from_accepted():
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_learning_influence_proposals_from_accepted(limit=payload.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/influence-proposals/from-result", methods=["POST"])
+def oom_sakkie_learning_influence_proposal_from_result():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_learning_influence_proposal_from_result(payload.get("source_result_id", ""))
     return jsonify(result), status_code
 
 

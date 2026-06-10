@@ -74,6 +74,18 @@ async function stubOomSakkieApi(page) {
       };
     } else if (url.includes("/events")) {
       body = { success: true };
+    } else if (url.includes("/agent-learning/influence-proposals/from-result")) {
+      body = {
+        success: true,
+        created_count: 1,
+        accepted_count: 1,
+        learning_influence_proposals: [],
+        applies_learning_now: false,
+        changes_prompt_now: false,
+        changes_runtime_now: false,
+        dispatch_enabled: false,
+        writes: false,
+      };
     } else if (url.includes("/agent-learning/influence-proposals/from-accepted")) {
       body = {
         success: true,
@@ -173,7 +185,15 @@ test("kiosk startup performs no hidden POSTs or interval polling", async ({ page
 
 test("dry-run/result/message POSTs require explicit owner clicks", async ({ page }) => {
   const requests = [];
-  page.on("request", (request) => requests.push({ method: request.method(), url: request.url() }));
+  page.on("request", (request) => {
+    let json = null;
+    try {
+      json = request.postDataJSON();
+    } catch (error) {
+      json = null;
+    }
+    requests.push({ method: request.method(), url: request.url(), json });
+  });
 
   await page.goto("/oom-sakkie");
   await page.waitForLoadState("networkidle");
@@ -206,6 +226,15 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
   await page.getByRole("button", { name: "Accept For Learning" }).first().click();
   await expect.poll(() => requests.some((request) =>
     request.method === "POST" && request.url.includes("/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-PLAYWRIGHT/events"),
+  )).toBe(true);
+  await expect.poll(() => requests.some((request) =>
+    request.method === "POST" && request.url.includes("/api/oom-sakkie/agent-learning/influence-proposals/from-result"),
+  )).toBe(true);
+  await expect.poll(() => requests.some((request) =>
+    request.method === "POST" &&
+    request.url.includes("/api/oom-sakkie/agent-learning/influence-proposals/from-result") &&
+    request.json &&
+    request.json.source_result_id === "OSK-AGENT-DRYRUN-RESULT-PLAYWRIGHT",
   )).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
 

@@ -1877,7 +1877,7 @@
     acceptButton.className = "oom-build-brief-button";
     acceptButton.textContent = "Accept For Learning";
     acceptButton.addEventListener("click", () => {
-      recordAgentResultEvent(
+      return recordAgentResultEvent(
         item.dry_run_result_id,
         "accepted_for_learning",
         "Accepted for future learning evidence. No specialist ran and no runtime change was applied.",
@@ -1888,7 +1888,7 @@
     rejectButton.className = "oom-build-brief-button";
     rejectButton.textContent = "Reject";
     rejectButton.addEventListener("click", () => {
-      recordAgentResultEvent(item.dry_run_result_id, "rejected", "Rejected from owner review. No specialist ran.", rejectButton);
+      return recordAgentResultEvent(item.dry_run_result_id, "rejected", "Rejected from owner review. No specialist ran.", rejectButton);
     });
     noteButton.type = "button";
     noteButton.className = "oom-build-brief-button";
@@ -2047,7 +2047,7 @@
           },
           primaryLabel: "Accept For Learning",
           primaryAction: (button) => {
-            recordAgentResultEvent(
+            return recordAgentResultEvent(
               item.dry_run_result_id,
               "accepted_for_learning",
               "Accepted from Owner Cockpit. Evidence only; no runtime change.",
@@ -2056,7 +2056,7 @@
           },
           secondaryLabel: "Reject",
           secondaryAction: (button) => {
-            recordAgentResultEvent(
+            return recordAgentResultEvent(
               item.dry_run_result_id,
               "rejected",
               "Rejected from Owner Cockpit. No specialist ran.",
@@ -3244,11 +3244,25 @@
       });
       const data = await response.json();
       await loadAgentResultReviews();
-      await loadLearningInfluenceProposals();
+      let proposalData = null;
+      if (data.success && eventType === "accepted_for_learning") {
+        proposalData = await prepareLearningInfluenceProposalForResult(dryRunResultId);
+      } else {
+        await loadLearningInfluenceProposals();
+      }
       if (ownerCockpitStatus) {
-        ownerCockpitStatus.textContent = data.success
-          ? `${eventType} recorded for ${dryRunResultId}. Evidence only; no runtime change.`
-          : `Result review was not recorded: ${data.status || "unknown"}.`;
+        if (!data.success) {
+          ownerCockpitStatus.textContent = `Result review was not recorded: ${data.status || "unknown"}.`;
+        } else if (proposalData && proposalData.success) {
+          const created = Number(proposalData.created_count || 0);
+          ownerCockpitStatus.textContent = created
+            ? `${eventType} recorded for ${dryRunResultId}. One planning proposal prepared. No learning was applied.`
+            : `${eventType} recorded for ${dryRunResultId}. Planning proposal already exists. No learning was applied.`;
+        } else if (proposalData && !proposalData.success) {
+          ownerCockpitStatus.textContent = `${eventType} recorded for ${dryRunResultId}. Proposal prep status: ${proposalData.status || "unavailable"}. No runtime change.`;
+        } else {
+          ownerCockpitStatus.textContent = `${eventType} recorded for ${dryRunResultId}. Evidence only; no runtime change.`;
+        }
       }
     } catch (error) {
       if (agentResultReviews) {
@@ -3263,6 +3277,26 @@
         button.disabled = false;
         button.textContent = originalText || "Review";
       }
+    }
+  }
+
+  async function prepareLearningInfluenceProposalForResult(dryRunResultId) {
+    if (!dryRunResultId) return null;
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-learning/influence-proposals/from-result", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_result_id: dryRunResultId }),
+      });
+      const data = await response.json();
+      await loadLearningInfluenceProposals();
+      return data;
+    } catch (error) {
+      await loadLearningInfluenceProposals();
+      return {
+        success: false,
+        status: "learning_influence_proposal_prepare_failed",
+      };
     }
   }
 

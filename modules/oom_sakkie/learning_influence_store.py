@@ -3,7 +3,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_results
+from modules.oom_sakkie.agent_dry_run_result_store import get_agent_dry_run_result, list_agent_dry_run_results
 from services.database_service import DATABASE_URL_ENV
 
 
@@ -27,91 +27,51 @@ def record_learning_influence_proposals_from_accepted(limit=20, database_url=Non
             "writes": False,
         }, accepted["status_code"]
 
-    if not database_url:
-        return _unavailable("not_configured", configured=False), 503
-
-    try:
-        import psycopg
-    except ImportError:
-        return _unavailable("dependency_missing", configured=True), 500
-
     params = [_learning_influence_params(item) for item in accepted["accepted_results"]]
-    if not params:
+    return _record_learning_influence_params(params, database_url=database_url)
+
+
+def record_learning_influence_proposal_from_result(source_result_id, database_url=None):
+    source_result_id = _clean_text(source_result_id, 100)
+    if not source_result_id:
         return {
-            "success": True,
-            "configured": True,
-            "status": "ok",
-            "mode": "learning_influence_proposal_queue",
-            "created_count": 0,
-            "accepted_count": 0,
+            "success": False,
+            "status": "source_result_id_required",
+            "source_result_id": source_result_id,
             "learning_influence_proposals": [],
+            "created_count": 0,
             "applies_learning_now": False,
             "changes_prompt_now": False,
             "changes_runtime_now": False,
             "dispatch_enabled": False,
             "writes": False,
-            "next_gate": "owner_review_before_learning_influence_is_used",
-        }, 200
+        }, 400
 
-    created_ids = []
-    try:
-        with psycopg.connect(database_url, connect_timeout=10) as connection:
-            with connection.cursor() as cursor:
-                for param in params:
-                    cursor.execute(
-                        """
-                        insert into public.oom_sakkie_learning_influence_proposals (
-                            proposal_id,
-                            source_result_id,
-                            status,
-                            mode,
-                            specialist_slug,
-                            proposal_title,
-                            proposal_text,
-                            evidence_json,
-                            proposed_rules_json,
-                            next_gate,
-                            proposed_by,
-                            applies_learning_now,
-                            changes_prompt_now,
-                            changes_runtime_now,
-                            dispatch_enabled,
-                            writes,
-                            created_at
-                        )
-                        values (
-                            %(proposal_id)s,
-                            %(source_result_id)s,
-                            %(status)s,
-                            %(mode)s,
-                            %(specialist_slug)s,
-                            %(proposal_title)s,
-                            %(proposal_text)s,
-                            %(evidence_json)s::jsonb,
-                            %(proposed_rules_json)s::jsonb,
-                            %(next_gate)s,
-                            %(proposed_by)s,
-                            %(applies_learning_now)s,
-                            %(changes_prompt_now)s,
-                            %(changes_runtime_now)s,
-                            %(dispatch_enabled)s,
-                            %(writes)s,
-                            now()
-                        )
-                        on conflict (source_result_id) do nothing
-                        returning proposal_id
-                        """,
-                        param,
-                    )
-                    row = cursor.fetchone()
-                    if row:
-                        created_ids.append(row[0])
-    except Exception as exc:
+    loaded, load_status = get_agent_dry_run_result(source_result_id, database_url=database_url)
+    if load_status != 200:
+        return {
+            "success": False,
+            "configured": loaded.get("configured", False) if isinstance(loaded, dict) else False,
+            "status": loaded.get("status", "source_result_unavailable") if isinstance(loaded, dict) else "source_result_unavailable",
+            "source_result_id": source_result_id,
+            "learning_influence_proposals": [],
+            "created_count": 0,
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, load_status
+
+    result = loaded.get("dry_run_result", {})
+    latest_event = result.get("latest_event") or {}
+    if latest_event.get("event_type") != "accepted_for_learning":
         return {
             "success": False,
             "configured": True,
-            "status": "learning_influence_proposal_write_failed",
-            "error_type": exc.__class__.__name__,
+            "status": "source_result_not_accepted_for_learning",
+            "source_result_id": source_result_id,
+            "latest_event": latest_event,
             "learning_influence_proposals": [],
             "created_count": 0,
             "applies_learning_now": False,
@@ -119,30 +79,9 @@ def record_learning_influence_proposals_from_accepted(limit=20, database_url=Non
             "changes_runtime_now": False,
             "dispatch_enabled": False,
             "writes": False,
-        }, 503
+        }, 409
 
-    listed, list_status = list_learning_influence_proposals(limit=max(20, len(params)), database_url=database_url)
-    if list_status != 200:
-        return listed, list_status
-    proposals = [
-        item for item in listed.get("learning_influence_proposals", [])
-        if item.get("proposal_id") in set(created_ids)
-    ]
-    return {
-        "success": True,
-        "configured": True,
-        "status": "ok",
-        "mode": "learning_influence_proposal_queue",
-        "created_count": len(created_ids),
-        "accepted_count": len(params),
-        "learning_influence_proposals": proposals,
-        "applies_learning_now": False,
-        "changes_prompt_now": False,
-        "changes_runtime_now": False,
-        "dispatch_enabled": False,
-        "writes": False,
-        "next_gate": "owner_review_before_learning_influence_is_used",
-    }, 201
+    return _record_learning_influence_params([_learning_influence_params(result)], database_url=database_url)
 
 
 def list_learning_influence_proposals(limit=20, database_url=None):
@@ -430,6 +369,126 @@ def _unavailable(status, configured):
         "dispatch_enabled": False,
         "writes": False,
     }
+
+
+def _record_learning_influence_params(params, database_url=None):
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _unavailable("not_configured", configured=False), 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", configured=True), 500
+
+    if not params:
+        return {
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "learning_influence_proposal_queue",
+            "created_count": 0,
+            "accepted_count": 0,
+            "learning_influence_proposals": [],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+            "next_gate": "owner_review_before_learning_influence_is_used",
+        }, 200
+
+    created_ids = []
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                for param in params:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_learning_influence_proposals (
+                            proposal_id,
+                            source_result_id,
+                            status,
+                            mode,
+                            specialist_slug,
+                            proposal_title,
+                            proposal_text,
+                            evidence_json,
+                            proposed_rules_json,
+                            next_gate,
+                            proposed_by,
+                            applies_learning_now,
+                            changes_prompt_now,
+                            changes_runtime_now,
+                            dispatch_enabled,
+                            writes,
+                            created_at
+                        )
+                        values (
+                            %(proposal_id)s,
+                            %(source_result_id)s,
+                            %(status)s,
+                            %(mode)s,
+                            %(specialist_slug)s,
+                            %(proposal_title)s,
+                            %(proposal_text)s,
+                            %(evidence_json)s::jsonb,
+                            %(proposed_rules_json)s::jsonb,
+                            %(next_gate)s,
+                            %(proposed_by)s,
+                            %(applies_learning_now)s,
+                            %(changes_prompt_now)s,
+                            %(changes_runtime_now)s,
+                            %(dispatch_enabled)s,
+                            %(writes)s,
+                            now()
+                        )
+                        on conflict (source_result_id) do nothing
+                        returning proposal_id
+                        """,
+                        param,
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        created_ids.append(row[0])
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "learning_influence_proposal_write_failed",
+            "error_type": exc.__class__.__name__,
+            "learning_influence_proposals": [],
+            "created_count": 0,
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 503
+
+    listed, list_status = list_learning_influence_proposals(limit=max(20, len(params)), database_url=database_url)
+    if list_status != 200:
+        return listed, list_status
+    source_ids = {param["source_result_id"] for param in params}
+    proposals = [
+        item for item in listed.get("learning_influence_proposals", [])
+        if item.get("source_result_id") in source_ids
+    ]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "learning_influence_proposal_queue",
+        "created_count": len(created_ids),
+        "accepted_count": len(params),
+        "learning_influence_proposals": proposals,
+        "applies_learning_now": False,
+        "changes_prompt_now": False,
+        "changes_runtime_now": False,
+        "dispatch_enabled": False,
+        "writes": False,
+        "next_gate": "owner_review_before_learning_influence_is_used",
+    }, 201
 
 
 def _proposal_id(source_result_id):
