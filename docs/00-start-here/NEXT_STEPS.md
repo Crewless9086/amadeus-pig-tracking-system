@@ -11152,6 +11152,43 @@ Next gate:
 1. Owner visually checks the cockpit flow: click `Accept For Learning`, confirm a planning proposal appears, and confirm the status says no learning/runtime change was applied.
 2. Do not build any consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
 
+### 10.9CK Oom Sakkie Learning/Cockpit Review Packet Refresh - Local Ready
+
+Purpose:
+
+- Keep the one-command Claude review handoff aligned with the current learning influence and cockpit action-surface work.
+- Record current CI evidence after the accepted-result proposal-prep checkpoint.
+
+What changed:
+
+- Updated `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` so the current review packet scope runs through 10.9CJ.
+- Added explicit review bullets for:
+  - Owner Cockpit UI and decision feedback.
+  - Cockpit accepted-result proposal prep.
+- Added `modules/oom_sakkie/learning_influence_store.py`, the learning influence migration, and the Playwright browser behavior spec to the inspect list.
+- Updated verification evidence with:
+  - local focused suite at 297 tests,
+  - full local suite at 627 tests,
+  - green GitHub Actions runs for commit `613085b`.
+- Added a dedicated Claude design-check question for 10.9CJ.
+
+Safety envelope:
+
+- Documentation/review readiness only.
+- No app runtime behavior changed.
+- No endpoint, store, migration, UI action, prompt/routing/runtime flag, specialist dispatch/tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, financial action, or proposal consumer was added.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- Focused frontend route contracts passed.
+- GitHub Actions evidence was read with the local portable `gh.exe`; Oom Sakkie Browser Behavior and Audit Rails are green for the latest pushed checkpoint.
+
+Next gate:
+
+1. Owner can ask Claude Code: `Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.`
+2. Keep learning influence proposal consumption locked until a separate owner + Claude-reviewed gate exists.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

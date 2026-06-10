@@ -29,8 +29,8 @@ If the user asks you to read this file and review, do this:
 ## Authority and scope
 
 - **Build order:** `docs/00-start-here/NEXT_STEPS.md`
-- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-BZ specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, Agent Runtime Foundation, Agent Crew Status Tool, Agent Activity Stage, Agent Handoff Lane, Agent Crew Brief, Visible Crew Sequence, Agent Activation Plan, Sentinel Dry-Run Review, LLM Message Guard safety follow-ups, Agent Dry-Run Request Gate, Message Guard Policy Consistency, Sentinel Dry-Run Handoff Packet, Sentinel Dry-Run Result Gate, Sentinel Review Queue Status, Sentinel Dry-Run Result Review Packet, Sentinel Result Review UI, Agent Learning Evidence, Agent Learning Ledger UI, Accepted Learning Roadmap Link, Visible Agent Roadmap Panel, Sentinel Dry-Run Request Button, Sentinel Dry-Run Mini-Pipeline UI, Workbench Sentinel Next Action, Live-PG Audit Rail Smoke, Prism Dry-Run Request Gate, Generic Agent Dry-Run Workbench Labels, Agent Dry-Run Browser Behavior Contracts, Approved Read-Only Dry-Run Cohort, Activation Roadmap Cohort Visibility, Specialist Dry-Run Handoff Quality, Specialist Result Evidence Boundaries, Per-Specialist Dry-Run Queue Status, Generic Agent Learning Evidence, Roadmap Learning Counts, Audit Rail CI Workflow, Browser Behavior Checklist, Audit Rail CI Scope Hardening, Agent Runtime Readiness Tool, Browser Behavior Smoke Gate, Agent Operating Contracts, Agent Contracts Review Endpoint, Agent Activation Preflight, Activation Preflight Wording Hardening, Agent Authority Matrix, Authority Lock Source Alignment, Authority Unlock Readiness, Runtime Inspection Invariant Test, Dispatch Decision Rail Blueprint, Agent Runtime Review Packet, Playwright Browser Behavior Gate, Dispatch Decision Rail, Dispatch Decision Status Visibility, Dispatch Runtime Review Packet, Jarvis Product Progress, Agent Command Center, Command Center Quick Action, Playwright CI Startup Hardening, Daily Command Brief, Playwright CI Node 24 / Server URL Hardening, Playwright Workbench Visibility Fix, Audit Rail CI Node 24 Warning Cleanup, Safety Gate Board, Owner Review Packet, Review Shortcuts, Quick Checks Grouping, CI Green Evidence, Dispatch Execution Approval Rail, Sentinel Single-Shot Advisory Runner, Sentinel Runner Review Hardening, Effective Single-Shot Visibility, Sentinel Single-Shot Runbook, First Sentinel Smoke And Review Packet Fix, Owner Approval Console, Controller Board, Primary Command Deck, Quick Checks Drawer, and Command UI Browser Gate Hardening.
-- **Latest additions in this review packet:** Phase 10.9CA-CI: Sentinel single-shot contract alignment, consumed-once DB test hardening, learning influence proposal/status/workbench/browser gates, the new Owner Cockpit UI, and cockpit decision-feedback polish after the owner accepted the Sentinel result.
+- **Explicit scope:** Phase 10.6 Oom Sakkie local kiosk/backend-as-brain work through `10.6Z`, plus Phase 10.7A-Z, 10.8A-P, and 10.9A-CJ specialist manifest, advisory trace-review, access caveat hardening, kiosk review-advisor panel, advisor wording/proxy-test tightening, advisor trace-read consolidation, advisor SQL/test hardening, kiosk advisor-window/voice-loop counter polish, trace-driven router/power-answer tightening, capability-fallback precedence fix, bounded LLM fallback router, LLM fallback privacy/failure-mode hardening, LLM smoke harness, verified local LLM smoke, env-gated LLM answer composer, Usejarvis external-reference review, kiosk alive-state/provenance strip, stronger spoken answer voice, animated presence orb, capped context briefing composer, read-only operating brief tool, operating brief required-section fix, top voice controls, human-approved Learning Queue, explicit LLM Learning Analyst, trace-driven composer lane guard, deterministic Learning Build Brief packet, human-approved Implementation Queue, Approve For Build gate, persistent build request queue, build request event log, Forge Handoff packet, Forge Handoff persisted-ID hardening, Patch Proposal Gate, Patch Gate review nits, Deploy Approval Gate, Workbench simplification, Forge prompt copy button, read-only system work status tool, Workbench pipeline clarity, deploy-ready instructions, read-only Business Advisor seed, Workbench Next Action card, Business quick action, Work Status honesty fix, Business Advisor context upgrade, role-specific spoken composer rules, internal-only Business Offer Outline, agent runtime/readiness/authority/review rails, Sentinel single-shot advisory runner and first supervised smoke, Owner Cockpit UI, learning influence proposal rail/status/workbench/browser gates, cockpit decision feedback, and exact accepted-result proposal preparation.
+- **Latest additions in this review packet:** Phase 10.9CA-CJ: Sentinel single-shot contract alignment, consumed-once DB test hardening, learning influence proposal/status/workbench/browser gates, Owner Cockpit UI, cockpit decision-feedback polish, and exact accepted-result proposal preparation after `Accept For Learning`.
 
 Out of scope unless explicitly asked:
 
@@ -186,6 +186,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Learning Influence Status Tool that lets Oom Sakkie answer self-learning / Sentinel suggestion questions by reading proposal counts only, without generating or applying proposals from chat
 - Learning Influence Workbench UI that lets the owner explicitly prepare proposal records from accepted evidence, review pending proposals, and record append-only proposal events while keeping the first-screen approval console navigation-only
 - Learning Influence Browser Gate Hardening that extends VM smoke and Playwright coverage so proposal preparation and proposal review events are explicit-owner-click actions with no interval polling
+- Owner Cockpit UI and decision feedback that move only append-only agent-result/proposal review decisions to the first screen, keep the full System Workbench available as the audit trail, and show visible status after owner clicks
+- Cockpit Accepted-Result Proposal Prep that calls `POST /api/oom-sakkie/agent-learning/influence-proposals/from-result` only after a successful `Accept For Learning` event, sends the exact clicked `source_result_id`, and prepares a proposal only if that result's latest event is `accepted_for_learning`
 
 ## Files/folders to inspect
 
@@ -199,6 +201,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `modules/oom_sakkie/agent_dry_run_store.py`
 - `modules/oom_sakkie/agent_dry_run_result_store.py`
 - `modules/oom_sakkie/agent_dry_run_result_review.py`
+- `modules/oom_sakkie/learning_influence_store.py`
 - `modules/oom_sakkie/dispatch_execution_approval_store.py`
 - `modules/oom_sakkie/sentinel_single_shot_runner.py`
 - `modules/oom_sakkie/policy.py`
@@ -211,6 +214,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `tests/test_oom_sakkie_routes.py`
 - `tests/test_frontend_route_contracts.py`
 - `tests/oom_sakkie_browser_behavior_smoke.js`
+- `tests/oom_sakkie_playwright_behavior.spec.js`
 - `scripts/oom_sakkie_llm_router_diagnostic.py`
 - `scripts/oom_sakkie_llm_router_smoke.py`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
@@ -231,6 +235,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - `supabase/migrations/202606090001_create_oom_sakkie_dispatch_decisions.sql`
 - `supabase/migrations/202606090002_create_oom_sakkie_dispatch_execution_approvals.sql`
 - `supabase/migrations/202606090003_allow_single_shot_sentinel_dry_run_results.sql`
+- `supabase/migrations/202606100001_create_oom_sakkie_learning_influence_proposals.sql`
 - `docs/01-architecture/OOM_SAKKIE_VOICE_OPERATING_AGENT_PRD.md`
 - `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`
 - `docs/00-start-here/CURRENT_STATE.md`
@@ -947,9 +952,9 @@ Known verification from Codex:
 - CI Green Evidence verification:
   - Portable GitHub CLI installed under ignored local tooling path `.tools/gh/bin/gh.exe`; `.tools/` is ignored and is not part of the app/runtime.
   - `gh auth status` confirms authenticated GitHub account `Crewless9086` with `repo` and `workflow` scopes.
-  - Latest `main` push workflow evidence from `gh run list --limit 6`:
-    - `Oom Sakkie Browser Behavior`, run `27225474174`, completed `success`, created `2026-06-09T17:57:19Z`.
-    - `Oom Sakkie Audit Rails`, run `27225474133`, completed `success`, created `2026-06-09T17:57:19Z`.
+  - Latest `main` push workflow evidence from `.\.tools\gh\bin\gh.exe run list --branch main --limit 8` after commit `613085b`:
+    - `Oom Sakkie Browser Behavior`, run `27278530296`, completed `success`, created `2026-06-10T13:09:04Z`.
+    - `Oom Sakkie Audit Rails`, run `27278529740`, completed `success`, created `2026-06-10T13:09:03Z`.
   - Detailed `gh run view` confirms the successful jobs were `Playwright real-browser behavior gate` and `Unit tests with disposable Postgres audit rails`.
   - This is owner/operator evidence only. The runtime still does not call GitHub, trust remote CI automatically, add routes/stores/DB writes, dispatch agents, run specialist LLM/tools, write farm data, produce public output, deploy, cut over Telegram, or control hardware.
 - Dispatch Execution Approval Rail focused verification:
@@ -1030,6 +1035,14 @@ Known verification from Codex:
   - `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
   - `python -m unittest tests.test_frontend_route_contracts` -> 28 tests OK.
   - Cockpit event handlers now await append-only event responses, refresh result/proposal queues, and write visible status messages that say evidence/planning only with no runtime change or learning application.
+- Cockpit Accepted-Result Proposal Prep focused verification:
+  - `python -m unittest tests.test_frontend_route_contracts tests.test_oom_sakkie_service tests.test_oom_sakkie_routes` -> 297 tests OK.
+  - `node --check static/js/oomSakkie.js` passed.
+  - `node --check tests/oom_sakkie_browser_behavior_smoke.js` passed.
+  - `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+  - `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+  - Full local unittest suite: `python -m unittest` -> 627 tests OK.
+  - Browser smoke and Playwright spec now assert the `from-result` request includes the exact clicked `source_result_id`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
@@ -1185,8 +1198,9 @@ Please inspect specifically:
 139. **Learning Influence Browser Gate:** Does Phase 10.9CG correctly extend VM smoke and Playwright coverage so learning proposal preparation and `approved_for_future_planning` event recording require explicit owner clicks, create no interval polling, and still do not apply learning or add any proposal consumer?
 140. **Owner Cockpit UI:** Does Phase 10.9CH materially simplify the owner-facing decision flow while keeping the full Workbench audit trail available, limiting first-screen direct actions to append-only agent-result/proposal review events, and avoiding Sentinel runner UI, proposal consumers, prompt/runtime changes, patch/deploy/send/sell/trade/control buttons, hidden POSTs, interval polling, or any specialist/tool/write/public/deploy/Telegram/physical/financial authority?
 141. **Owner Cockpit Decision Feedback:** Does Phase 10.9CI correctly make append-only cockpit decisions visibly confirm success/failure and refresh queues without adding any new authority, proposal consumer, Sentinel runner UI, hidden POST, polling, or apply-learning behavior?
-142. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
-143. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+142. **Cockpit Accepted-Result Proposal Prep:** Does Phase 10.9CJ correctly prepare a learning influence proposal only for the exact clicked result after a successful `accepted_for_learning` event, require that source result's latest event to be accepted before writing, keep the existing bulk Workbench prep deliberate, and avoid approving/applying learning or changing prompt/runtime/routing/tool/farm/public/deploy/Telegram/control/financial behavior?
+143. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+144. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 
