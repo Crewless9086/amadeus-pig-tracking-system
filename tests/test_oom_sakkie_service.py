@@ -937,6 +937,27 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["writes"])
         self.assertFalse(result["llm_context"]["applies_runtime_change"])
 
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_prepare_claude_review_answer_names_scope_without_authority(self, _write_trace, _compose):
+        result, status = handle_message({
+            "text": "prepare Claude review",
+            "channel": "kiosk",
+            "session_id": "test-review-packet",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertIn("10.9CK", result["answer"])
+        self.assertIn("2 current CI gate", result["answer"])
+        self.assertIn("does not approve runtime authority", result["safety_notes"][0])
+        self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
+        self.assertFalse(result["agent_activity"]["safety"]["runs_agent"])
+        self.assertFalse(result["agent_activity"]["safety"]["dispatch_enabled"])
+        self.assertFalse(result["agent_activity"]["safety"]["writes"])
+
     @patch("modules.oom_sakkie.tools.jarvis_safety_gate_board_handler")
     @patch("modules.oom_sakkie.tools.dispatch_decision_status_handler")
     @patch("modules.oom_sakkie.tools.agent_dry_run_status_handler")

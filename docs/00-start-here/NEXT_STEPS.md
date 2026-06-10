@@ -11221,6 +11221,39 @@ Next gate:
 1. Ask Oom Sakkie `prepare Claude review` and confirm it names the 10.9CK scope and says the packet does not approve authority.
 2. Keep learning influence proposal consumption locked until a separate owner + Claude-reviewed gate exists.
 
+### 10.9CM Oom Sakkie Owner Review Packet Chat Gate - Local Ready
+
+Purpose:
+
+- Turn the manual `prepare Claude review` browser check into a repeatable service test.
+- Prove the routed Oom Sakkie answer names the current review scope and keeps authority locked.
+
+What changed:
+
+- Added a `handle_message()` regression test for `prepare Claude review`.
+- The test verifies:
+  - the deterministic router selects `jarvis_owner_review_packet`,
+  - the answer names `10.9CK`,
+  - the answer reports the recorded green CI gate count,
+  - the safety note says the packet does not approve runtime authority,
+  - Gatekeeper is the visible agent workspace,
+  - no agent run, dispatch, or write authority is enabled.
+
+Safety envelope:
+
+- Test-only hardening.
+- No app runtime behavior, endpoint, store, migration, UI action, prompt/routing rule, runtime flag, specialist dispatch/tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, financial action, or learning proposal consumer was added.
+
+Verification:
+
+- Targeted `prepare Claude review` service test passed.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Keep this owner review packet as review-readiness only.
+2. Do not build learning proposal consumption or runtime unlocks until a separate owner + Claude-reviewed gate exists.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
