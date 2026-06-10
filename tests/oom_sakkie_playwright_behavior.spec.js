@@ -8,6 +8,7 @@ const READ_ONLY_JSON = {
   traces: [],
   dry_runs: [],
   results: [],
+  learning_influence_proposals: [],
   build_requests: [],
   patch_proposals: [],
   deploy_decisions: [],
@@ -57,6 +58,55 @@ async function stubOomSakkieApi(page) {
       };
     } else if (url.includes("/events")) {
       body = { success: true };
+    } else if (url.includes("/agent-learning/influence-proposals/from-accepted")) {
+      body = {
+        success: true,
+        created_count: 1,
+        accepted_count: 1,
+        learning_influence_proposals: [{
+          proposal_id: "OSK-LEARNING-INFLUENCE-PLAYWRIGHT",
+          source_result_id: "OSK-AGENT-DRYRUN-RESULT-PLAYWRIGHT",
+          specialist_slug: "sentinel",
+          proposal_title: "Learning proposal from Sentinel evidence",
+          proposal_text: "Use accepted evidence as planning input only.",
+          proposed_rules: ["Planning only", "Do not change runtime"],
+          applies_learning_now: false,
+          changes_prompt_now: false,
+          changes_runtime_now: false,
+          dispatch_enabled: false,
+          writes: false,
+          latest_event: null,
+        }],
+        applies_learning_now: false,
+        changes_prompt_now: false,
+        changes_runtime_now: false,
+        dispatch_enabled: false,
+        writes: false,
+      };
+    } else if (url.includes("/agent-learning/influence-proposals")) {
+      body = {
+        success: true,
+        mode: "learning_influence_proposal_queue",
+        learning_influence_proposals: [{
+          proposal_id: "OSK-LEARNING-INFLUENCE-PLAYWRIGHT",
+          source_result_id: "OSK-AGENT-DRYRUN-RESULT-PLAYWRIGHT",
+          specialist_slug: "sentinel",
+          proposal_title: "Learning proposal from Sentinel evidence",
+          proposal_text: "Use accepted evidence as planning input only.",
+          proposed_rules: ["Planning only", "Do not change runtime"],
+          applies_learning_now: false,
+          changes_prompt_now: false,
+          changes_runtime_now: false,
+          dispatch_enabled: false,
+          writes: false,
+          latest_event: null,
+        }],
+        applies_learning_now: false,
+        changes_prompt_now: false,
+        changes_runtime_now: false,
+        dispatch_enabled: false,
+        writes: false,
+      };
     } else if (url.includes("/runtime-review-packet")) {
       body = {
         success: true,
@@ -132,6 +182,21 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
   await page.locator("#oom_record_agent_dry_run_result").click();
   await expect.poll(() => requests.some((request) =>
     request.method === "POST" && request.url.includes("/api/oom-sakkie/agent-dry-runs/OSK-AGENT-DRYRUN-PLAYWRIGHT/results"),
+  )).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
+
+  requests.length = 0;
+  await expect(page.locator("#oom_prepare_learning_influence")).toBeVisible();
+  await page.locator("#oom_prepare_learning_influence").click();
+  await expect.poll(() => requests.some((request) =>
+    request.method === "POST" && request.url.endsWith("/api/oom-sakkie/agent-learning/influence-proposals/from-accepted"),
+  )).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
+
+  requests.length = 0;
+  await page.getByRole("button", { name: "Approve For Future Planning" }).first().click();
+  await expect.poll(() => requests.some((request) =>
+    request.method === "POST" && request.url.includes("/api/oom-sakkie/agent-learning/influence-proposals/OSK-LEARNING-INFLUENCE-PLAYWRIGHT/events"),
   )).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
 

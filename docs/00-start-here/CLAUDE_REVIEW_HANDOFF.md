@@ -184,6 +184,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Learning Influence Proposal Rail that converts accepted agent learning evidence into append-only `learning_influence_proposal_only` records for owner review while forcing all apply/prompt/runtime/dispatch/write flags false
 - Learning Influence Status Tool that lets Oom Sakkie answer self-learning / Sentinel suggestion questions by reading proposal counts only, without generating or applying proposals from chat
 - Learning Influence Workbench UI that lets the owner explicitly prepare proposal records from accepted evidence, review pending proposals, and record append-only proposal events while keeping the first-screen approval console navigation-only
+- Learning Influence Browser Gate Hardening that extends VM smoke and Playwright coverage so proposal preparation and proposal review events are explicit-owner-click actions with no interval polling
 
 ## Files/folders to inspect
 
@@ -1163,6 +1164,7 @@ Please inspect specifically:
 136. **Learning Influence Status Tool:** Does Phase 10.9CE give useful read-only self-learning / Sentinel suggestion status while avoiding proposal generation from chat, prompt changes, runtime changes, dispatch, tool execution, farm-data writes, public/customer output, deploy, Telegram, physical controls, and financial actions?
 137. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
 138. **Learning Influence Workbench UI:** Does Phase 10.9CF make learning proposals visible and reviewable without applying learning, changing prompts/routes/runtime, adding a proposal consumer, wiring the Sentinel runner into the UI, or adding first-screen approve/run/apply controls?
+139. **Learning Influence Browser Gate:** Does Phase 10.9CG correctly extend VM smoke and Playwright coverage so learning proposal preparation and `approved_for_future_planning` event recording require explicit owner clicks, create no interval polling, and still do not apply learning or add any proposal consumer?
 138. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
 139. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 

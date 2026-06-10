@@ -117,6 +117,32 @@ function responseFor(url, options = {}) {
   if (url.includes("/traces/review-summary")) return { success: true, summary: {} };
   if (url.includes("/traces/") && url.includes("/feedback")) return { success: true };
   if (url.includes("/traces")) return { success: true, traces: [] };
+  if (url.includes("/agent-learning/influence-proposals/from-accepted")) {
+    return {
+      success: true,
+      created_count: 1,
+      accepted_count: 1,
+      learning_influence_proposals: [],
+      applies_learning_now: false,
+      changes_prompt_now: false,
+      changes_runtime_now: false,
+      dispatch_enabled: false,
+      writes: false,
+    };
+  }
+  if (url.includes("/agent-learning/influence-proposals") && url.includes("/events")) return { success: true };
+  if (url.includes("/agent-learning/influence-proposals")) {
+    return {
+      success: true,
+      mode: "learning_influence_proposal_queue",
+      learning_influence_proposals: [],
+      applies_learning_now: false,
+      changes_prompt_now: false,
+      changes_runtime_now: false,
+      dispatch_enabled: false,
+      writes: false,
+    };
+  }
   if (url.includes("/review-advisor")) return { success: true, mode: "advisory_only", suggestions: [], issue_traces: [], unreviewed_traces: [] };
   if (url.includes("/learning-advisor/analyze")) return { success: true, queue: [], suggestions: [] };
   if (url.includes("/learning-advisor/build-packet")) return { success: true, packet: {} };
@@ -241,6 +267,15 @@ async function flushPromises() {
     "Agent dry-run result recording must POST only after owner click",
   );
   assert.strictEqual(intervalCalls.length, 0, "Agent dry-run result recording click must not start interval polling");
+
+  fetchCalls.length = 0;
+  await element("oom_prepare_learning_influence").trigger("click");
+  await flushPromises();
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url === "/api/oom-sakkie/agent-learning/influence-proposals/from-accepted"),
+    "Learning influence proposal preparation must POST only after owner click",
+  );
+  assert.strictEqual(intervalCalls.length, 0, "Learning influence proposal preparation click must not start interval polling");
 
   fetchCalls.length = 0;
   await quickAskButton.trigger("click");

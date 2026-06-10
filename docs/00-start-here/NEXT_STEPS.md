@@ -10996,6 +10996,46 @@ Next gate:
 4. Ask Claude to review 10.9CF with 10.9CD/CE as the context.
 5. Do not build a consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
 
+### 10.9CG Oom Sakkie Learning Influence Browser Gate Hardening - Local Ready
+
+Purpose:
+
+- Prove the new learning influence Workbench actions follow the same owner-click-only browser behavior as the rest of the kiosk.
+- Keep the learning proposal path visible and reviewable without adding hidden POSTs, polling, or any apply-learning consumer.
+
+What changed:
+
+- Extended `tests/oom_sakkie_browser_behavior_smoke.js`:
+  - stubs learning-influence list/prepare/event responses as no-apply JSON.
+  - asserts `Prepare Proposals` only POSTs after an explicit owner click.
+  - asserts that click does not start interval polling.
+- Extended `tests/oom_sakkie_playwright_behavior.spec.js`:
+  - stubs a pending learning-influence proposal.
+  - asserts `Prepare Proposals` POSTs only after an explicit owner click.
+  - asserts `Approve For Future Planning` records only a proposal event after an explicit owner click.
+  - asserts both clicks create no interval polling.
+- Frontend route contracts now pin those smoke/Playwright assertions.
+
+Safety envelope:
+
+- Test/CI hardening only.
+- No app runtime behavior changed.
+- No route, store, migration, prompt, runtime flag, proposal consumer, Sentinel runner UI, specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram, deploy, physical control, or financial path.
+
+Verification:
+
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` passed at 28 tests.
+
+Next gate:
+
+1. Run the focused Oom Sakkie suite and full local unittest suite.
+2. Push only after tests pass and confirm both GitHub Actions gates are green.
+3. Ask Claude to review 10.9CF-CG together.
+4. Do not build any proposal consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

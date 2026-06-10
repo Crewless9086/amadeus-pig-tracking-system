@@ -51,6 +51,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("window.__oomSakkieIntervals", playwright_spec)
         self.assertIn("kiosk startup performs no hidden POSTs or interval polling", playwright_spec)
         self.assertIn("dry-run/result/message POSTs require explicit owner clicks", playwright_spec)
+        self.assertIn("/api/oom-sakkie/agent-learning/influence-proposals/from-accepted", playwright_spec)
+        self.assertIn("Approve For Future Planning", playwright_spec)
+        self.assertIn("OSK-LEARNING-INFLUENCE-PLAYWRIGHT/events", playwright_spec)
         self.assertIn('page.locator(".oom-command-deck")', playwright_spec)
         self.assertIn('page.locator(".oom-quick-drawer")', playwright_spec)
         self.assertIn('.oom-command-deck [data-quick-ask]', playwright_spec)
@@ -145,6 +148,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("kiosk startup must not perform hidden POST requests", smoke)
         self.assertIn("Sentinel dry-run request must POST only after owner click", smoke)
         self.assertIn("Agent dry-run result recording must POST only after owner click", smoke)
+        self.assertIn("Learning influence proposal preparation must POST only after owner click", smoke)
         self.assertIn("quick ask should POST a single owner-triggered message", smoke)
 
     def test_oom_sakkie_kiosk_page_and_api_are_registered(self):
