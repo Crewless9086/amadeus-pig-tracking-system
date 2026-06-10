@@ -94,6 +94,9 @@
   const refreshAgentResultReviews = document.getElementById("oom_refresh_agent_result_reviews");
   const agentLearningLedger = document.getElementById("oom_agent_learning_ledger");
   const refreshAgentLearningLedger = document.getElementById("oom_refresh_agent_learning_ledger");
+  const learningInfluenceProposals = document.getElementById("oom_learning_influence_proposals");
+  const prepareLearningInfluenceButton = document.getElementById("oom_prepare_learning_influence");
+  const refreshLearningInfluence = document.getElementById("oom_refresh_learning_influence");
   const recentTraces = document.getElementById("oom_recent_traces");
   const refreshTraces = document.getElementById("oom_refresh_traces");
   const traceSearch = document.getElementById("oom_trace_search");
@@ -121,6 +124,7 @@
   let latestDeployDecisionsData = null;
   let latestAgentDryRunRequestsData = null;
   let latestAgentDryRunResultsData = null;
+  let latestLearningInfluenceData = null;
   const feedbackOptions = [
     ["", "Mark review"],
     ["correct", "Correct"],
@@ -1506,6 +1510,121 @@
     return row;
   }
 
+  function learningInfluenceStage(item) {
+    const latestEvent = (item && item.latest_event) || {};
+    if (!latestEvent.event_type || latestEvent.event_type === "review_note") return "pending";
+    return "closed";
+  }
+
+  function renderLearningInfluenceProposals(data) {
+    if (!learningInfluenceProposals) return;
+    if (!data || !data.success) {
+      const status = data && data.status ? data.status : "unavailable";
+      learningInfluenceProposals.innerHTML = "";
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = `Learning influence proposals: ${status}.`;
+      learningInfluenceProposals.appendChild(empty);
+      return;
+    }
+    learningInfluenceProposals.innerHTML = "";
+    const guard = document.createElement("p");
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `${data.mode || "learning_influence_proposal_queue"} | applies learning ${data.applies_learning_now ? "yes" : "no"} | changes prompt ${data.changes_prompt_now ? "yes" : "no"} | runtime change ${data.changes_runtime_now ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "on" : "off"} | writes ${data.writes ? "yes" : "no"}`;
+    learningInfluenceProposals.appendChild(guard);
+
+    const items = Array.isArray(data.learning_influence_proposals) ? data.learning_influence_proposals : [];
+    const pendingItems = items.filter((item) => learningInfluenceStage(item) === "pending");
+    const closedItems = items.filter((item) => learningInfluenceStage(item) !== "pending");
+    const list = document.createElement("div");
+    list.className = "oom-advisor-queue";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No learning influence proposals recorded yet. Prepare proposals only after evidence is accepted for learning.";
+      list.appendChild(empty);
+    } else {
+      appendQueueSection(list, "Needs Owner Review", pendingItems, "No learning influence proposals need review right now.", renderLearningInfluenceRow);
+      appendQueueSection(list, "Reviewed / Closed", closedItems.slice(0, 6), "No reviewed learning influence proposals yet.", renderLearningInfluenceRow);
+    }
+    learningInfluenceProposals.appendChild(list);
+  }
+
+  function renderLearningInfluenceRow(item) {
+    const row = document.createElement("article");
+    const title = document.createElement("strong");
+    const badge = document.createElement("span");
+    const meta = document.createElement("span");
+    const text = document.createElement("p");
+    const rules = document.createElement("p");
+    const event = document.createElement("p");
+    const guard = document.createElement("p");
+    const actionGroup = document.createElement("div");
+    const approveButton = document.createElement("button");
+    const rejectButton = document.createElement("button");
+    const noteButton = document.createElement("button");
+    const latestEvent = item.latest_event || {};
+    const stage = learningInfluenceStage(item);
+    const proposedRules = Array.isArray(item.proposed_rules) ? item.proposed_rules : [];
+    row.className = stage === "pending" ? "oom-work-item oom-work-item-active" : "oom-work-item oom-work-item-muted";
+    badge.className = "oom-work-badge";
+    badge.textContent = stage === "pending" ? "Needs learning review" : "Reviewed";
+    title.textContent = item.proposal_title || item.proposal_id || "Learning influence proposal";
+    meta.textContent = `${item.proposal_id || "-"} | source ${item.source_result_id || "-"} | ${item.specialist_slug || "agent"} | ${item.created_at || ""}`;
+    text.textContent = (item.proposal_text || "No proposal text supplied.").slice(0, 900);
+    rules.textContent = `Rules: ${proposedRules.slice(0, 4).join("; ") || "planning-only; no prompt/runtime changes"}`;
+    event.textContent = latestEvent.event_type
+      ? `Latest event: ${latestEvent.event_type} by ${latestEvent.recorded_by || "owner"} | ${latestEvent.notes || "no note"}`
+      : "Latest event: none recorded.";
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `proposal only | applies learning ${item.applies_learning_now ? "yes" : "no"} | prompt change ${item.changes_prompt_now ? "yes" : "no"} | runtime change ${item.changes_runtime_now ? "yes" : "no"} | dispatch ${item.dispatch_enabled ? "on" : "off"} | writes ${item.writes ? "yes" : "no"}`;
+    actionGroup.className = "oom-work-actions";
+    approveButton.type = "button";
+    approveButton.className = "oom-build-brief-button";
+    approveButton.textContent = "Approve For Future Planning";
+    approveButton.addEventListener("click", () => {
+      recordLearningInfluenceEvent(
+        item.proposal_id,
+        "approved_for_future_planning",
+        "Approved as future planning evidence only. No learning was applied.",
+        approveButton,
+      );
+    });
+    rejectButton.type = "button";
+    rejectButton.className = "oom-build-brief-button";
+    rejectButton.textContent = "Reject";
+    rejectButton.addEventListener("click", () => {
+      recordLearningInfluenceEvent(
+        item.proposal_id,
+        "rejected",
+        "Rejected from owner learning review. No learning was applied.",
+        rejectButton,
+      );
+    });
+    noteButton.type = "button";
+    noteButton.className = "oom-build-brief-button";
+    noteButton.textContent = "Add Note";
+    noteButton.addEventListener("click", () => {
+      const note = window.prompt("Review note for this learning proposal. This records text only; no learning is applied.") || "";
+      if (!note.trim()) return;
+      recordLearningInfluenceEvent(item.proposal_id, "review_note", note.trim(), noteButton);
+    });
+    if (stage === "pending") {
+      actionGroup.appendChild(approveButton);
+      actionGroup.appendChild(rejectButton);
+    }
+    actionGroup.appendChild(noteButton);
+    row.appendChild(badge);
+    row.appendChild(title);
+    row.appendChild(meta);
+    row.appendChild(text);
+    row.appendChild(rules);
+    row.appendChild(event);
+    row.appendChild(guard);
+    row.appendChild(actionGroup);
+    return row;
+  }
+
   function renderAgentDryRunRequests(data) {
     if (!agentDryRunRequests) return;
     if (!data || !data.success) {
@@ -1826,6 +1945,9 @@
     const agentResultItems = latestAgentDryRunResultsData && Array.isArray(latestAgentDryRunResultsData.dry_run_results)
       ? latestAgentDryRunResultsData.dry_run_results
       : [];
+    const learningInfluenceItems = latestLearningInfluenceData && Array.isArray(latestLearningInfluenceData.learning_influence_proposals)
+      ? latestLearningInfluenceData.learning_influence_proposals
+      : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
     const pendingBuild = buildItems.filter((item) => buildRequestStage(item) === "pending");
@@ -1837,6 +1959,7 @@
       return agentDryRunRequestStage(item) === "pending" && !resultRequestIds.has(item.dry_run_request_id);
     });
     const pendingAgentResults = agentResultItems.filter((item) => agentResultStage(item) === "pending");
+    const pendingLearningInfluence = learningInfluenceItems.filter((item) => learningInfluenceStage(item) === "pending");
 
     workbenchNextAction.innerHTML = "";
     const title = document.createElement("strong");
@@ -1844,11 +1967,13 @@
     const next = document.createElement("p");
     const counts = document.createElement("div");
     title.textContent = "Next action";
-    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
+    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingLearningInfluence.length} learning proposal, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
     if (pendingAgentRequests.length) {
       next.textContent = `Open agent handoff for ${pendingAgentRequests[0].dry_run_request_id || "the oldest dry-run request"}.`;
     } else if (pendingAgentResults.length) {
       next.textContent = `Review Sentinel dry-run result ${pendingAgentResults[0].dry_run_result_id || "waiting for review"}.`;
+    } else if (pendingLearningInfluence.length) {
+      next.textContent = `Review learning proposal ${pendingLearningInfluence[0].proposal_id || "waiting for review"}.`;
     } else if (pendingBuild.length) {
       next.textContent = `Start with Forge Handoff for ${pendingBuild[0].build_request_id || "the oldest build request"}.`;
     } else if (pendingPatch.length) {
@@ -1862,6 +1987,7 @@
     [
       ["Agent handoff", pendingAgentRequests.length],
       ["Agent result", pendingAgentResults.length],
+      ["Learning proposal", pendingLearningInfluence.length],
       ["Build", pendingBuild.length],
       ["Patch", pendingPatch.length],
       ["Deploy", deployReady.length],
@@ -1891,6 +2017,9 @@
       : [];
     const agentResultItems = latestAgentDryRunResultsData && Array.isArray(latestAgentDryRunResultsData.dry_run_results)
       ? latestAgentDryRunResultsData.dry_run_results
+      : [];
+    const learningInfluenceItems = latestLearningInfluenceData && Array.isArray(latestLearningInfluenceData.learning_influence_proposals)
+      ? latestLearningInfluenceData.learning_influence_proposals
       : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
@@ -1925,6 +2054,19 @@
             openWorkbenchSection("oom_agent_dry_run_requests");
             buildAgentDryRunHandoff(item.dry_run_request_id, button);
           },
+        });
+      });
+
+    learningInfluenceItems
+      .filter((item) => learningInfluenceStage(item) === "pending")
+      .forEach((item) => {
+        items.push({
+          kind: "Learning Proposal",
+          title: item.proposal_title || item.proposal_id || "Learning proposal",
+          detail: `${item.source_result_id || "Accepted evidence"} can guide future planning only after owner review.`,
+          guard: "Proposal only | learning not applied | writes off",
+          actionLabel: "Open Proposal",
+          action: () => openWorkbenchSection("oom_learning_influence_proposals"),
         });
       });
 
@@ -2715,6 +2857,20 @@
     }
   }
 
+  async function loadLearningInfluenceProposals() {
+    if (!learningInfluenceProposals) return;
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-learning/influence-proposals?limit=8");
+      const data = await response.json();
+      latestLearningInfluenceData = data;
+      renderLearningInfluenceProposals(data);
+      renderWorkbenchNextAction();
+      renderApprovalConsole();
+    } catch (error) {
+      learningInfluenceProposals.innerHTML = '<p class="oom-empty">Learning influence proposals are unavailable.</p>';
+    }
+  }
+
   async function openAgentResultPacket(dryRunResultId, button) {
     if (!dryRunResultId || !agentResultReviews) return;
     const originalText = button ? button.textContent : "";
@@ -2950,6 +3106,78 @@
         line.className = "oom-empty";
         line.textContent = "Agent result review event could not be recorded.";
         agentResultReviews.appendChild(line);
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Review";
+      }
+    }
+  }
+
+  async function prepareLearningInfluenceProposals(button) {
+    if (!learningInfluenceProposals) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Preparing...";
+    }
+    try {
+      const response = await fetch("/api/oom-sakkie/agent-learning/influence-proposals/from-accepted", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 20 }),
+      });
+      const data = await response.json();
+      const card = document.createElement("article");
+      const title = document.createElement("strong");
+      const detail = document.createElement("p");
+      const guard = document.createElement("p");
+      card.className = "oom-work-item";
+      title.textContent = data.success ? "Learning proposals prepared" : "Learning proposals not prepared";
+      detail.textContent = data.success
+        ? `Created ${data.created_count || 0} proposal record(s) from ${data.accepted_count || 0} accepted result(s). No learning was applied.`
+        : `Status: ${data.status || "unavailable"}. No learning was applied.`;
+      guard.className = "oom-advisor-guard";
+      guard.textContent = `applies learning ${data.applies_learning_now ? "yes" : "no"} | prompt change ${data.changes_prompt_now ? "yes" : "no"} | runtime change ${data.changes_runtime_now ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "on" : "off"} | writes ${data.writes ? "yes" : "no"}`;
+      card.appendChild(title);
+      card.appendChild(detail);
+      card.appendChild(guard);
+      await loadLearningInfluenceProposals();
+      learningInfluenceProposals.prepend(card);
+    } catch (error) {
+      const line = document.createElement("p");
+      line.className = "oom-empty";
+      line.textContent = "Learning influence proposals could not be prepared.";
+      learningInfluenceProposals.prepend(line);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Prepare Proposals";
+      }
+    }
+  }
+
+  async function recordLearningInfluenceEvent(proposalId, eventType, notes, button) {
+    if (!proposalId) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      await fetch(`/api/oom-sakkie/agent-learning/influence-proposals/${encodeURIComponent(proposalId)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type: eventType, notes, recorded_by: "owner" }),
+      });
+      loadLearningInfluenceProposals();
+    } catch (error) {
+      if (learningInfluenceProposals) {
+        const line = document.createElement("p");
+        line.className = "oom-empty";
+        line.textContent = "Learning influence review event could not be recorded.";
+        learningInfluenceProposals.appendChild(line);
       }
     } finally {
       if (button) {
@@ -3222,6 +3450,7 @@
     loadPatchProposals();
     loadDeployDecisions();
     loadAgentResultReviews();
+    loadLearningInfluenceProposals();
     loadAgentRoadmap();
     loadAgentDryRunRequests();
   }
@@ -3332,6 +3561,14 @@
 
   if (refreshAgentLearningLedger) {
     refreshAgentLearningLedger.addEventListener("click", loadAgentResultReviews);
+  }
+
+  if (refreshLearningInfluence) {
+    refreshLearningInfluence.addEventListener("click", loadLearningInfluenceProposals);
+  }
+
+  if (prepareLearningInfluenceButton) {
+    prepareLearningInfluenceButton.addEventListener("click", () => prepareLearningInfluenceProposals(prepareLearningInfluenceButton));
   }
 
   if (voiceButton) {

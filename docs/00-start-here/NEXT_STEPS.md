@@ -10952,6 +10952,50 @@ Next gate:
 3. Owner still reviews `OSK-AGENT-DRYRUN-RESULT-C63AF980E948`; after that, the owner can generate learning influence proposals from accepted evidence.
 4. Do not build any consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
 
+### 10.9CF Oom Sakkie Learning Influence Workbench UI - Local Ready
+
+Purpose:
+
+- Make the accepted-evidence -> learning-proposal path visible and usable from the kiosk.
+- Keep all proposal generation/review actions explicit, local, append-only, and review-only.
+- Surface pending learning proposals in the owner approval queue without adding first-screen approve/apply controls.
+
+What changed:
+
+- Added a `Learning Influence Proposals` panel to the System Workbench.
+- Added Workbench buttons:
+  - `Prepare Proposals` calls the protected `POST /api/oom-sakkie/agent-learning/influence-proposals/from-accepted` route.
+  - `Refresh` calls the protected `GET /api/oom-sakkie/agent-learning/influence-proposals?limit=8` route.
+- Proposal rows show source result, specialist, proposal text, proposed planning rules, latest event, and guard flags.
+- Proposal review buttons record append-only events only:
+  - `approved_for_future_planning`
+  - `rejected`
+  - `review_note`
+- Workbench `Next action` now includes pending learning influence proposals.
+- The first-screen owner approval console can list pending learning proposals, but the action is navigation-only: it opens the Workbench panel and does not approve/generate/apply learning.
+
+Safety envelope:
+
+- `approved_for_future_planning` still means future planning evidence only.
+- No proposal consumer was added.
+- No prompt rewrite, routing change, runtime flag, specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram, deploy, physical control, or financial action.
+- The Sentinel runner remains unreferenced from the UI and the env flag remains off.
+
+Verification:
+
+- Frontend contract coverage pins the panel, fetch routes, review event types, and approval-console navigation-only behavior.
+- `node --check static/js/oomSakkie.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` passed at 28 tests.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+Next gate:
+
+1. Run the focused Oom Sakkie suite and full local unittest suite.
+2. Push only after tests pass.
+3. Confirm both GitHub Actions gates are green.
+4. Ask Claude to review 10.9CF with 10.9CD/CE as the context.
+5. Do not build a consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

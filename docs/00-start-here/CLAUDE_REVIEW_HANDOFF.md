@@ -183,6 +183,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Consumed-Once Migration Assertion that also pins the unique-index name in the normal migration-content test so the one-shot DB guard is visible even when live Postgres is not configured
 - Learning Influence Proposal Rail that converts accepted agent learning evidence into append-only `learning_influence_proposal_only` records for owner review while forcing all apply/prompt/runtime/dispatch/write flags false
 - Learning Influence Status Tool that lets Oom Sakkie answer self-learning / Sentinel suggestion questions by reading proposal counts only, without generating or applying proposals from chat
+- Learning Influence Workbench UI that lets the owner explicitly prepare proposal records from accepted evidence, review pending proposals, and record append-only proposal events while keeping the first-screen approval console navigation-only
 
 ## Files/folders to inspect
 
@@ -1161,6 +1162,7 @@ Please inspect specifically:
 135. **Learning Influence Proposal Rail:** Does Phase 10.9CD correctly create an append-only proposal-only rail from accepted agent learning evidence, forcing `applies_learning_now`, `changes_prompt_now`, `changes_runtime_now`, `dispatch_enabled`, and `writes` false at DB and application layers, and avoiding any consumer that applies learning or changes behavior?
 136. **Learning Influence Status Tool:** Does Phase 10.9CE give useful read-only self-learning / Sentinel suggestion status while avoiding proposal generation from chat, prompt changes, runtime changes, dispatch, tool execution, farm-data writes, public/customer output, deploy, Telegram, physical controls, and financial actions?
 137. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
+138. **Learning Influence Workbench UI:** Does Phase 10.9CF make learning proposals visible and reviewable without applying learning, changing prompts/routes/runtime, adding a proposal consumer, wiring the Sentinel runner into the UI, or adding first-screen approve/run/apply controls?
 138. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
 139. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 

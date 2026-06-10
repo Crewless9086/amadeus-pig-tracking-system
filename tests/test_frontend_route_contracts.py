@@ -99,6 +99,43 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("recordAgentResultEvent", render_rows)
         self.assertIn("openAgentResultPacket", render_rows)
 
+    def test_oom_sakkie_learning_influence_workbench_is_review_only(self):
+        template = Path("templates/oom-sakkie.html").read_text(encoding="utf-8")
+        js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
+
+        self.assertIn("Learning Influence Proposals", template)
+        self.assertIn('id="oom_prepare_learning_influence"', template)
+        self.assertIn('id="oom_refresh_learning_influence"', template)
+        self.assertIn('id="oom_learning_influence_proposals"', template)
+        self.assertIn("Proposal-only learning updates from accepted evidence. Nothing applies here.", template)
+
+        self.assertIn("let latestLearningInfluenceData = null", js)
+        self.assertIn("function learningInfluenceStage", js)
+        self.assertIn("function renderLearningInfluenceProposals", js)
+        self.assertIn("function renderLearningInfluenceRow", js)
+        self.assertIn("async function loadLearningInfluenceProposals", js)
+        self.assertIn("async function prepareLearningInfluenceProposals", js)
+        self.assertIn("async function recordLearningInfluenceEvent", js)
+        self.assertIn('fetch("/api/oom-sakkie/agent-learning/influence-proposals?limit=8")', js)
+        self.assertIn('fetch("/api/oom-sakkie/agent-learning/influence-proposals/from-accepted"', js)
+        self.assertIn('/api/oom-sakkie/agent-learning/influence-proposals/${encodeURIComponent(proposalId)}/events', js)
+        self.assertIn('"approved_for_future_planning"', js)
+        self.assertIn('"rejected"', js)
+        self.assertIn('"review_note"', js)
+        self.assertIn("No learning was applied.", js)
+        self.assertIn("learning not applied", js)
+        self.assertIn("Learning proposal", js)
+        self.assertIn("loadLearningInfluenceProposals();", js)
+        self.assertIn("refreshLearningInfluence.addEventListener", js)
+        self.assertIn("prepareLearningInfluenceButton.addEventListener", js)
+
+        approval_items = js[js.index("function currentApprovalItems"):js.index("function renderApprovalConsole")]
+        self.assertIn("Learning Proposal", approval_items)
+        self.assertIn('openWorkbenchSection("oom_learning_influence_proposals")', approval_items)
+        self.assertNotIn("recordLearningInfluenceEvent", approval_items)
+        self.assertNotIn("prepareLearningInfluenceProposals", approval_items)
+        self.assertNotIn("from-accepted", approval_items)
+
     def test_oom_sakkie_browser_behavior_smoke_executes_real_kiosk_script(self):
         smoke = Path("tests/oom_sakkie_browser_behavior_smoke.js").read_text(encoding="utf-8")
 
