@@ -10857,10 +10857,30 @@ Verification:
 - The test skips safely when `DATABASE_URL` is not configured.
 - It will run in the existing disposable-Postgres audit-rail GitHub workflow after push.
 
+### 10.9CC Oom Sakkie Consumed-Once Migration Assertion - Local Ready
+
+Purpose:
+
+- Make the consumed-once DB guard visible in the normal non-live service test too.
+- Clarify that Claude's last feedback saw the single-shot contract alignment but missed the already-added live-PG consumed-once test.
+
+What changed:
+
+- `test_dispatch_execution_approval_migration_is_append_only_and_no_execution` now asserts the migration contains:
+  - `create unique index if not exists idx_oom_sakkie_dispatch_execution_approval_consumed_once`
+  - the partial-index filter `where event_type = 'consumed_by_single_dry_run_result'`
+- The DATABASE_URL-gated live-PG test remains the stronger proof because it actually inserts one consumed event and verifies the second insert fails.
+
+Safety envelope:
+
+- Test/docs clarification only.
+- No app behavior changed.
+- No env flag enabled, no Sentinel runner UI, no authority widening, and no farm-data/public/deploy/Telegram/physical/financial path.
+
 Next gate:
 
-1. Push this hardening batch and confirm both GitHub Actions gates are green.
-2. Ask Claude to review 10.9CA-CB together with the already-passed 10.9BW-BZ UI batch.
+1. Push this hardening clarification and confirm both GitHub Actions gates are green.
+2. Ask Claude to review 10.9CA-CC together with the already-passed 10.9BW-BZ UI batch.
 3. Owner still reviews `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design.
 
 7.3E weather LLM triage note:

@@ -1822,6 +1822,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("writes = false", migration)
         self.assertIn("applies_runtime_change = false", migration)
         self.assertIn("dispatches_further = false", migration)
+        self.assertIn("create unique index if not exists idx_oom_sakkie_dispatch_execution_approval_consumed_once", migration)
         self.assertIn("where event_type = 'consumed_by_single_dry_run_result'", migration)
         self.assertIn("before update on public.oom_sakkie_dispatch_execution_approvals", migration)
         self.assertIn("before delete on public.oom_sakkie_dispatch_execution_approval_events", migration)

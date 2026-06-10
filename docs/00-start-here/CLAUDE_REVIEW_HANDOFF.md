@@ -180,6 +180,7 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Command UI Browser Gate Hardening that extends the Playwright real-browser spec to assert the new command deck/drawer are visible, opening the drawer creates no hidden POST or interval polling, and command-deck clicks still use the explicit owner-triggered `/message` path; test-only
 - Sentinel Single-Shot Contract Alignment that adds a Python source of truth for the Sentinel single-shot result identity/flag shape and uses it in the result store, review packet, runner, and tests while keeping migration SQL static and contract-tested
 - Dispatch Execution Consumed-Once Live-PG Test that proves the partial unique index rejects a second `consumed_by_single_dry_run_result` event for one execution approval while still allowing normal review-note evidence
+- Consumed-Once Migration Assertion that also pins the unique-index name in the normal migration-content test so the one-shot DB guard is visible even when live Postgres is not configured
 
 ## Files/folders to inspect
 
@@ -1154,9 +1155,10 @@ Please inspect specifically:
 131. **Command UI Browser Gate Hardening:** Does Phase 10.9BZ correctly extend the real-browser safety gate for the new command deck/drawer, proving drawer open does not POST/poll and command-deck clicks still require explicit owner action through `/message`, while staying test-only?
 132. **Sentinel Single-Shot Contract Alignment:** Does Phase 10.9CA reduce drift risk by deriving the runner/store/review-packet/tests from one Sentinel single-shot contract, while keeping the migration SQL static and contract-tested against that source without widening the single-shot authority?
 133. **Consumed-Once Live-PG Test:** Does Phase 10.9CB adequately prove the DB-level one-shot guard by asserting a second `consumed_by_single_dry_run_result` event is rejected for the same execution approval while normal review notes remain append-only evidence?
-134. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
-135. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
-136. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+134. **Consumed-Once Migration Assertion:** Does Phase 10.9CC make the partial unique index visible in the offline migration-content test while leaving the live-PG test as the actual insert-level proof?
+135. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
+136. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+137. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 
