@@ -113,7 +113,23 @@ function responseFor(url, options = {}) {
     return { success: true, result_text: "Packet only.", findings: [], owner_options: [] };
   }
   if (url.includes("/agent-dry-run-results") && url.includes("/events")) return { success: true };
-  if (url.includes("/agent-dry-run-results")) return { success: true, results: [] };
+  if (url.includes("/agent-dry-run-results")) {
+    return {
+      success: true,
+      dry_run_results: [{
+        dry_run_result_id: "OSK-AGENT-DRYRUN-RESULT-SMOKE",
+        dry_run_request_id: "OSK-AGENT-DRYRUN-SMOKE",
+        specialist_slug: "sentinel",
+        result_text: "Owner cockpit smoke result.",
+        findings: ["Finding one"],
+        latest_event: null,
+      }],
+      runs_specialist: false,
+      dispatch_enabled: false,
+      writes: false,
+      applies_runtime_change: false,
+    };
+  }
   if (url.includes("/traces/review-summary")) return { success: true, summary: {} };
   if (url.includes("/traces/") && url.includes("/feedback")) return { success: true };
   if (url.includes("/traces")) return { success: true, traces: [] };
@@ -237,6 +253,16 @@ function startupPostCalls() {
   return fetchCalls.filter((call) => call.method !== "GET");
 }
 
+function findByText(root, text) {
+  if (!root) return null;
+  if (root.textContent === text) return root;
+  for (const child of root.children || []) {
+    const match = findByText(child, text);
+    if (match) return match;
+  }
+  return null;
+}
+
 async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
@@ -267,6 +293,17 @@ async function flushPromises() {
     "Agent dry-run result recording must POST only after owner click",
   );
   assert.strictEqual(intervalCalls.length, 0, "Agent dry-run result recording click must not start interval polling");
+
+  fetchCalls.length = 0;
+  const acceptButton = findByText(element("oom_owner_primary_decision"), "Accept For Learning");
+  assert(acceptButton, "Owner cockpit should expose one clear Accept For Learning action");
+  await acceptButton.trigger("click");
+  await flushPromises();
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url.includes("/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-SMOKE/events")),
+    "Owner cockpit Accept For Learning must POST only after owner click",
+  );
+  assert.strictEqual(intervalCalls.length, 0, "Owner cockpit evidence decision click must not start interval polling");
 
   fetchCalls.length = 0;
   await element("oom_prepare_learning_influence").trigger("click");

@@ -56,6 +56,22 @@ async function stubOomSakkieApi(page) {
           writes: false,
         },
       };
+    } else if (url.includes("/agent-dry-run-results") && request.method() === "GET") {
+      body = {
+        success: true,
+        dry_run_results: [{
+          dry_run_result_id: "OSK-AGENT-DRYRUN-RESULT-PLAYWRIGHT",
+          dry_run_request_id: "OSK-AGENT-DRYRUN-PLAYWRIGHT",
+          specialist_slug: "sentinel",
+          result_text: "Owner cockpit Playwright result.",
+          findings: ["Finding one"],
+          latest_event: null,
+        }],
+        runs_specialist: false,
+        dispatch_enabled: false,
+        writes: false,
+        applies_runtime_change: false,
+      };
     } else if (url.includes("/events")) {
       body = { success: true };
     } else if (url.includes("/agent-learning/influence-proposals/from-accepted")) {
@@ -182,6 +198,14 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
   await page.locator("#oom_record_agent_dry_run_result").click();
   await expect.poll(() => requests.some((request) =>
     request.method === "POST" && request.url.includes("/api/oom-sakkie/agent-dry-runs/OSK-AGENT-DRYRUN-PLAYWRIGHT/results"),
+  )).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
+
+  requests.length = 0;
+  await expect(page.locator("#oom_owner_primary_decision")).toBeVisible();
+  await page.getByRole("button", { name: "Accept For Learning" }).first().click();
+  await expect.poll(() => requests.some((request) =>
+    request.method === "POST" && request.url.includes("/api/oom-sakkie/agent-dry-run-results/OSK-AGENT-DRYRUN-RESULT-PLAYWRIGHT/events"),
   )).toBe(true);
   await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
 

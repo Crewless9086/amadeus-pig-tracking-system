@@ -56,6 +56,11 @@
   const refreshImplementationQueue = document.getElementById("oom_refresh_implementation_queue");
   const approvalConsole = document.getElementById("oom_approval_console");
   const refreshApprovalConsole = document.getElementById("oom_refresh_approval_console");
+  const ownerPrimaryDecision = document.getElementById("oom_owner_primary_decision");
+  const ownerDecisionSearch = document.getElementById("oom_owner_decision_search");
+  const ownerDecisionJump = document.getElementById("oom_owner_decision_jump");
+  const ownerCockpitStatus = document.getElementById("oom_owner_cockpit_status");
+  const openAuditWorkbenchButton = document.getElementById("oom_open_audit_workbench");
   const workbenchNextAction = document.getElementById("oom_workbench_next_action");
   const buildRequests = document.getElementById("oom_build_requests");
   const forgeHandoff = document.getElementById("oom_forge_handoff");
@@ -2033,10 +2038,30 @@
           title: item.dry_run_result_id || "Agent result waiting for review",
           detail: `${item.specialist_slug || "sentinel"} result needs accept, reject, or note.`,
           guard: "Review only | no runtime change | no farm-data write",
-          actionLabel: "Open Review",
+          ownerPrompt: "Do you want to accept this agent result as learning evidence, or reject it?",
+          ids: [item.dry_run_result_id, item.dry_run_request_id, item.specialist_slug],
+          actionLabel: "Open Packet",
           action: (button) => {
             openWorkbenchSection("oom_agent_result_reviews");
             openAgentResultPacket(item.dry_run_result_id, button);
+          },
+          primaryLabel: "Accept For Learning",
+          primaryAction: (button) => {
+            recordAgentResultEvent(
+              item.dry_run_result_id,
+              "accepted_for_learning",
+              "Accepted from Owner Cockpit. Evidence only; no runtime change.",
+              button,
+            );
+          },
+          secondaryLabel: "Reject",
+          secondaryAction: (button) => {
+            recordAgentResultEvent(
+              item.dry_run_result_id,
+              "rejected",
+              "Rejected from Owner Cockpit. No specialist ran.",
+              button,
+            );
           },
         });
       });
@@ -2049,6 +2074,8 @@
           title: item.dry_run_request_id || "Agent dry-run request",
           detail: `${item.specialist_slug || "sentinel"} request is waiting for a handoff or future result.`,
           guard: "Dry-run request only | dispatch off | writes off",
+          ownerPrompt: "Open the handoff packet when you are ready to review what this agent should inspect.",
+          ids: [item.dry_run_request_id, item.specialist_slug],
           actionLabel: "Open Handoff",
           action: (button) => {
             openWorkbenchSection("oom_agent_dry_run_requests");
@@ -2065,8 +2092,28 @@
           title: item.proposal_title || item.proposal_id || "Learning proposal",
           detail: `${item.source_result_id || "Accepted evidence"} can guide future planning only after owner review.`,
           guard: "Proposal only | learning not applied | writes off",
+          ownerPrompt: "Do you want this evidence to be remembered as future planning input only?",
+          ids: [item.proposal_id, item.source_result_id, item.specialist_slug],
           actionLabel: "Open Proposal",
           action: () => openWorkbenchSection("oom_learning_influence_proposals"),
+          primaryLabel: "Approve Future Planning",
+          primaryAction: (button) => {
+            recordLearningInfluenceEvent(
+              item.proposal_id,
+              "approved_for_future_planning",
+              "Approved from Owner Cockpit as future planning evidence only. No learning was applied.",
+              button,
+            );
+          },
+          secondaryLabel: "Reject",
+          secondaryAction: (button) => {
+            recordLearningInfluenceEvent(
+              item.proposal_id,
+              "rejected",
+              "Rejected from Owner Cockpit. No learning was applied.",
+              button,
+            );
+          },
         });
       });
 
@@ -2079,6 +2126,8 @@
           title: proposal.title || proposal.objective || item.build_request_id || "Build request",
           detail: item.build_request_id || "Approved build request needs Forge handoff.",
           guard: "Text handoff only | builder not run | files not changed",
+          ownerPrompt: "Open the Forge handoff packet for manual review. This does not run Builder.",
+          ids: [item.build_request_id, proposal.title, proposal.objective],
           actionLabel: "Open Forge",
           action: (button) => {
             openWorkbenchSection("oom_build_requests");
@@ -2095,6 +2144,8 @@
           title: item.patch_proposal_id || "Patch proposal",
           detail: (item.proposal_text || "Patch proposal needs owner review.").slice(0, 180),
           guard: "Records decision only | patch not applied",
+          ownerPrompt: "Review the patch proposal in the Workbench before recording a patch decision.",
+          ids: [item.patch_proposal_id, item.build_request_id],
           actionLabel: "Go To Patch",
           action: () => openWorkbenchSection("oom_patch_proposals"),
         });
@@ -2108,6 +2159,8 @@
           title: item.patch_proposal_id || "Approved patch",
           detail: "Patch is approved for manual application and needs a deploy decision record.",
           guard: "Records decision only | deploy not run",
+          ownerPrompt: "Prepare the deploy decision only after manual verification. This does not deploy.",
+          ids: [item.patch_proposal_id],
           actionLabel: "Prepare Decision",
           action: () => {
             openWorkbenchSection("oom_deploy_decisions");
@@ -2123,55 +2176,145 @@
     if (!approvalConsole) return;
     approvalConsole.innerHTML = "";
     const items = currentApprovalItems();
-    const summary = document.createElement("div");
-    const title = document.createElement("strong");
-    const detail = document.createElement("p");
-    summary.className = "oom-approval-summary";
-    title.textContent = items.length ? `${items.length} owner decision${items.length === 1 ? "" : "s"} waiting` : "No owner approvals waiting right now.";
-    detail.textContent = items.length
-      ? "Start with the first card. Each action opens the exact review area below."
-      : "Oom Sakkie will surface the next build, agent, patch, or deploy approval here.";
-    summary.appendChild(title);
-    summary.appendChild(detail);
-    approvalConsole.appendChild(summary);
-
-    if (!items.length) return;
-    items.slice(0, 6).forEach((item, index) => {
+    renderOwnerCockpitStatus(items);
+    renderOwnerPrimaryDecision(items[0] || null);
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No decisions are waiting. Ask for a daily command brief or open the audit trail if you want the full system log.";
+      approvalConsole.appendChild(empty);
+      return;
+    }
+    const queueTitle = document.createElement("p");
+    queueTitle.className = "oom-owner-queue-title";
+    queueTitle.textContent = items.length === 1 ? "Nothing else is waiting." : `Next in line (${Math.min(items.length - 1, 5)} shown)`;
+    approvalConsole.appendChild(queueTitle);
+    items.slice(1, 6).forEach((item, index) => {
       approvalConsole.appendChild(renderApprovalConsoleItem(item, index));
     });
   }
 
-  function renderApprovalConsoleItem(item, index) {
+  function renderOwnerCockpitStatus(items) {
+    if (!ownerCockpitStatus) return;
+    if (!items.length) {
+      ownerCockpitStatus.textContent = "No owner decisions waiting.";
+      return;
+    }
+    const counts = items.reduce((acc, item) => {
+      const key = item.kind || "Decision";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    ownerCockpitStatus.textContent = Object.entries(counts)
+      .map(([label, value]) => `${label}: ${value}`)
+      .join(" | ");
+  }
+
+  function renderOwnerPrimaryDecision(item) {
+    if (!ownerPrimaryDecision) return;
+    ownerPrimaryDecision.innerHTML = "";
+    if (!item) {
+      const empty = document.createElement("div");
+      const title = document.createElement("strong");
+      const detail = document.createElement("p");
+      empty.className = "oom-owner-primary-empty";
+      title.textContent = "No decision waiting";
+      detail.textContent = "Oom Sakkie will put the next owner decision here instead of making you hunt through the Workbench.";
+      empty.appendChild(title);
+      empty.appendChild(detail);
+      ownerPrimaryDecision.appendChild(empty);
+      return;
+    }
+    ownerPrimaryDecision.appendChild(renderOwnerDecisionCard(item, true));
+  }
+
+  function renderOwnerDecisionCard(item, isPrimary) {
     const card = document.createElement("article");
     const meta = document.createElement("div");
     const badge = document.createElement("span");
-    const order = document.createElement("span");
     const title = document.createElement("strong");
+    const prompt = document.createElement("p");
     const detail = document.createElement("p");
     const guard = document.createElement("code");
-    const button = document.createElement("button");
-    card.className = index === 0 ? "oom-approval-item oom-approval-item-primary" : "oom-approval-item";
+    const actions = document.createElement("div");
+    card.className = isPrimary ? "oom-owner-decision-card oom-owner-decision-card-primary" : "oom-owner-decision-card";
     meta.className = "oom-approval-meta";
     badge.className = "oom-approval-badge";
-    badge.textContent = item.kind || "Approval";
-    order.textContent = index === 0 ? "Next" : `Queue ${index + 1}`;
-    title.textContent = item.title || "Approval item";
+    badge.textContent = item.kind || "Decision";
+    title.textContent = item.title || "Owner decision";
+    prompt.className = "oom-owner-question";
+    prompt.textContent = item.ownerPrompt || "Review this item and choose the next safe step.";
     detail.textContent = item.detail || "Open this item to review.";
     guard.textContent = item.guard || "Owner review only";
-    button.type = "button";
-    button.className = "oom-approval-action";
-    button.textContent = item.actionLabel || "Open";
-    button.addEventListener("click", () => {
-      if (item.action) item.action(button);
-    });
+    actions.className = "oom-owner-actions";
     meta.appendChild(badge);
-    meta.appendChild(order);
     card.appendChild(meta);
     card.appendChild(title);
+    card.appendChild(prompt);
     card.appendChild(detail);
     card.appendChild(guard);
-    card.appendChild(button);
+    if (item.primaryAction && item.primaryLabel) {
+      const primary = document.createElement("button");
+      primary.type = "button";
+      primary.className = "oom-owner-action-primary";
+      primary.textContent = item.primaryLabel;
+      primary.addEventListener("click", () => item.primaryAction(primary));
+      actions.appendChild(primary);
+    }
+    if (item.secondaryAction && item.secondaryLabel) {
+      const secondary = document.createElement("button");
+      secondary.type = "button";
+      secondary.className = "oom-owner-action-secondary";
+      secondary.textContent = item.secondaryLabel;
+      secondary.addEventListener("click", () => item.secondaryAction(secondary));
+      actions.appendChild(secondary);
+    }
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "oom-owner-action-open";
+    openButton.textContent = item.actionLabel || "Open Details";
+    openButton.addEventListener("click", () => {
+      if (item.action) item.action(openButton);
+    });
+    actions.appendChild(openButton);
+    card.appendChild(actions);
     return card;
+  }
+
+  function renderApprovalConsoleItem(item, index) {
+    const card = renderOwnerDecisionCard(item, false);
+    const order = document.createElement("span");
+    order.className = "oom-owner-queue-index";
+    order.textContent = `Queue ${index + 2}`;
+    card.prepend(order);
+    return card;
+  }
+
+  function jumpToOwnerDecision() {
+    if (!ownerDecisionSearch) return;
+    const query = (ownerDecisionSearch.value || "").trim().toLowerCase();
+    if (!query) {
+      if (ownerCockpitStatus) ownerCockpitStatus.textContent = "Paste an OSK ID first.";
+      return;
+    }
+    const match = currentApprovalItems().find((item) => {
+      const haystack = [
+        item.kind,
+        item.title,
+        item.detail,
+        ...(Array.isArray(item.ids) ? item.ids : []),
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+    if (!match) {
+      if (ownerCockpitStatus) ownerCockpitStatus.textContent = `No loaded decision matches ${ownerDecisionSearch.value}. Refresh or open the audit trail.`;
+      return;
+    }
+    renderOwnerPrimaryDecision(match);
+    if (ownerCockpitStatus) ownerCockpitStatus.textContent = `Loaded ${match.kind || "decision"} for ${match.title || ownerDecisionSearch.value}.`;
+    if (ownerPrimaryDecision && ownerPrimaryDecision.scrollIntoView) {
+      ownerPrimaryDecision.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 
   function openWorkbenchSection(sectionId) {
@@ -3491,6 +3634,23 @@
 
   if (refreshApprovalConsole) {
     refreshApprovalConsole.addEventListener("click", refreshReviewData);
+  }
+
+  if (ownerDecisionJump) {
+    ownerDecisionJump.addEventListener("click", jumpToOwnerDecision);
+  }
+
+  if (ownerDecisionSearch) {
+    ownerDecisionSearch.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        jumpToOwnerDecision();
+      }
+    });
+  }
+
+  if (openAuditWorkbenchButton) {
+    openAuditWorkbenchButton.addEventListener("click", () => openWorkbenchSection());
   }
 
   if (refreshBuildRequests) {

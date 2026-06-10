@@ -157,13 +157,25 @@
         </dl>
       </details>
 
-      <section class="oom-approval-console" aria-label="Owner approval console">
+      <section class="oom-approval-console oom-owner-cockpit" aria-label="Owner cockpit">
         <div class="oom-section-heading">
           <div>
-            <p class="oom-label">Needs Your Approval</p>
-            <p class="oom-empty">Current decisions only. Full traceability stays in the System Workbench.</p>
+            <p class="oom-label">Owner Cockpit</p>
+            <p class="oom-empty">One clear decision at a time. The full audit trail stays in the System Workbench.</p>
           </div>
-          <button type="button" id="oom_refresh_approval_console">Refresh</button>
+          <div class="oom-section-actions">
+            <button type="button" id="oom_refresh_approval_console">Refresh</button>
+            <button type="button" id="oom_open_audit_workbench">Audit Trail</button>
+          </div>
+        </div>
+        <div class="oom-owner-cockpit-tools">
+          <label class="sr-only" for="oom_owner_decision_search">Find approval by ID</label>
+          <input id="oom_owner_decision_search" type="search" autocomplete="off" placeholder="Paste an OSK ID to jump straight to it">
+          <button type="button" id="oom_owner_decision_jump">Find ID</button>
+          <p id="oom_owner_cockpit_status">Loading owner decisions...</p>
+        </div>
+        <div id="oom_owner_primary_decision" class="oom-owner-primary-decision">
+          <p class="oom-empty">Oom Sakkie is loading the next decision.</p>
         </div>
         <div id="oom_approval_console" class="oom-approval-console-list">
           <p class="oom-empty">Approval queue not loaded yet.</p>

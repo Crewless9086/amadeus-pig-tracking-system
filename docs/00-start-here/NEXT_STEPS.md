@@ -11036,6 +11036,49 @@ Next gate:
 3. Ask Claude to review 10.9CF-CG together.
 4. Do not build any proposal consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
 
+### 10.9CH Oom Sakkie Owner Cockpit UI - Local Ready
+
+Purpose:
+
+- Replace the busy first-screen approval list with a cleaner owner-facing cockpit.
+- Keep the System Workbench as the complete audit/debug surface for Codex, Claude, and traceability.
+- Let the owner handle simple evidence/proposal review decisions from the first screen without hunting through the Workbench.
+
+What changed:
+
+- Renamed the first-screen decision area to `Owner Cockpit`.
+- Added one primary decision card, a compact `Next in line` queue, and an OSK ID search/jump input.
+- Added an `Audit Trail` button that opens the full System Workbench without hiding or removing the detailed audit trail.
+- Direct cockpit actions are limited to append-only review records:
+  - agent dry-run result: `accepted_for_learning` or `rejected`.
+  - learning influence proposal: `approved_for_future_planning` or `rejected`.
+- Build handoff, patch review, deploy decision, dry-run handoff, and proposal preparation remain detailed Workbench flows. The cockpit opens those areas but does not approve, run, apply, deploy, send, sell, trade, or control anything.
+
+Safety envelope:
+
+- The Sentinel runner is still not referenced from the UI.
+- `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` remains off outside supervised runs.
+- No proposal consumer was added.
+- No prompt rewrite, routing change, runtime flag, specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram, deploy, physical control, or financial action.
+- The new direct cockpit buttons create only append-only evidence/proposal review events and are covered by explicit-click/no-polling browser gates.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `node --check tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `node --check tests/oom_sakkie_playwright_behavior.spec.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` passed at 28 tests.
+- `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` passed at 293 tests, 1 live-DB skip.
+- `python -m unittest` passed at 623 tests, 1 live-DB skip.
+
+Next gate:
+
+1. Run the focused Oom Sakkie suite and full local unittest suite.
+2. Push only after tests pass and confirm both GitHub Actions gates are green.
+3. Ask Claude to review 10.9CH specifically as an owner-facing action-surface change.
+4. Do not add direct `Approve Patch`, `Run Sentinel`, `Deploy`, `Send`, `Post`, `Sell`, `Trade`, or `Control` buttons to the first-screen cockpit without a dedicated owner + Claude-reviewed gate.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
