@@ -10779,6 +10779,90 @@ Next gate:
 2. Owner reviews the visible kiosk in the browser.
 3. Claude reviews the 10.9BW-BZ UI/test batch before any further UI action surfaces are added.
 
+### Morning Decision Queue - Owner Gate
+
+This is the single live decision that should be front-and-center before any next authority design:
+
+1. Review Sentinel single-shot smoke result `OSK-AGENT-DRYRUN-RESULT-C63AF980E948`.
+2. Confirm whether the accepted learning evidence should remain planning-only evidence.
+3. Do not design accept-result-into-learning automation, Sentinel widening, tool execution, public/customer output, Telegram, deploy, physical controls, farm-data writes, or financial/trading paths until this review is complete and separately Claude-reviewed.
+
+Current safe state:
+
+- `OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED` stays off outside a supervised run.
+- The owner approval console stays read + navigate only.
+- First-screen command buttons stay ask-only through `/message`.
+- The full audit trail stays available inside System Workbench.
+
+### 10.9CA Oom Sakkie Sentinel Single-Shot Contract Alignment - Local Ready
+
+Purpose:
+
+- Remove drift risk between the Sentinel single-shot runner, result store, review packet, tests, and migration contract.
+- Keep the first execution path narrow and unchanged.
+
+What changed:
+
+- Added `modules/oom_sakkie/sentinel_single_shot_contract.py`.
+- Centralized the Sentinel single-shot result identity:
+  - `mode = single_shot_sentinel_advisory_result`
+  - `status = recorded_from_single_shot_sentinel_llm`
+  - `specialist_slug = sentinel`
+- Centralized the allowed result flags:
+  - `runs_specialist = true`
+  - `runs_specialist_llm = true`
+  - `dispatch_enabled = false`
+  - `runs_specialist_tools = false`
+  - `writes = false`
+  - `applies_runtime_change = false`
+- The store, review packet, runner, and tests now use this contract.
+- The static migration SQL remains unchanged, and tests now assert it matches the contract constants.
+
+Safety envelope:
+
+- Hardening only.
+- No env flag was enabled.
+- No UI runner wiring.
+- No specialist tool execution, farm-data write, public/customer output, deploy, Telegram cutover, physical control, or financial action.
+
+Verification:
+
+- `python -m unittest tests.test_oom_sakkie_service` -> 174 tests OK, 4 expected skips.
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+
+### 10.9CB Oom Sakkie Dispatch Execution Consumed-Once Live-PG Test - Local Ready
+
+Purpose:
+
+- Prove the database-level one-shot guard for execution approvals, not only the application check.
+
+What changed:
+
+- Added a DATABASE_URL-gated live Postgres test that:
+  - inserts a valid Sentinel dispatch request,
+  - inserts one execution approval,
+  - inserts one `consumed_by_single_dry_run_result` event,
+  - verifies a second consumed event for the same approval raises a unique constraint error,
+  - verifies a normal `review_note` event can still be appended.
+
+Safety envelope:
+
+- Test-only.
+- No app behavior changed.
+- No runner execution, no env enablement, no tool execution, no writes outside audit rails, and no public/customer output.
+
+Verification:
+
+- The test skips safely when `DATABASE_URL` is not configured.
+- It will run in the existing disposable-Postgres audit-rail GitHub workflow after push.
+
+Next gate:
+
+1. Push this hardening batch and confirm both GitHub Actions gates are green.
+2. Ask Claude to review 10.9CA-CB together with the already-passed 10.9BW-BZ UI batch.
+3. Owner still reviews `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

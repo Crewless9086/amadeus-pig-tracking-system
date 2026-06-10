@@ -19,6 +19,11 @@ from modules.oom_sakkie.llm_router import (
     MODEL_ENV,
     TIMEOUT_ENV,
 )
+from modules.oom_sakkie.sentinel_single_shot_contract import (
+    SENTINEL_SINGLE_SHOT_POLICY_MODE,
+    SENTINEL_SINGLE_SHOT_SPECIALIST,
+    sentinel_single_shot_identity,
+)
 
 
 SPECIALIST_DRY_RUN_ENABLED_ENV = "OOM_SAKKIE_SPECIALIST_DRYRUN_ENABLED"
@@ -39,8 +44,8 @@ def specialist_dry_run_policy():
         "provider": "openai_compatible_chat_completions",
         "outbound_endpoint_when_enabled": os.getenv(API_URL_ENV, DEFAULT_API_URL).strip() or DEFAULT_API_URL,
         "sends_capped_read_only_context_when_enabled": True,
-        "specialist_slug": "sentinel",
-        "mode": "single_shot_advisory_only",
+        "specialist_slug": SENTINEL_SINGLE_SHOT_SPECIALIST,
+        "mode": SENTINEL_SINGLE_SHOT_POLICY_MODE,
         "requires_dispatch_execution_approval": True,
         "runs_specialist_tools": False,
         "writes": False,
@@ -144,7 +149,7 @@ def run_sentinel_single_shot_dry_run(approval_id, database_url=None):
     return {
         "success": True,
         "status": "ok",
-        "mode": "single_shot_sentinel_advisory_result",
+        "mode": sentinel_single_shot_identity()["mode"],
         "approval_id": approval_id,
         "dispatch_request_id": approval.get("dispatch_request_id", ""),
         "dry_run_request_id": dry_run_request_id,
@@ -192,7 +197,7 @@ def _validate_approval_for_execution(approval, database_url=None):
             "status": "approval_not_for_single_dry_run_execution",
             "approval_type": approval.get("approval_type", ""),
         }, 409
-    if approval.get("specialist_slug") != "sentinel":
+    if approval.get("specialist_slug") != SENTINEL_SINGLE_SHOT_SPECIALIST:
         return {
             "success": False,
             "status": "single_shot_execution_is_sentinel_only",
@@ -205,7 +210,7 @@ def _validate_approval_for_execution(approval, database_url=None):
         return request_result, request_status
     dispatch_request = request_result.get("dispatch_request", {})
     latest_decision = dispatch_request.get("latest_decision") or {}
-    if dispatch_request.get("specialist_slug") != "sentinel":
+    if dispatch_request.get("specialist_slug") != SENTINEL_SINGLE_SHOT_SPECIALIST:
         return {"success": False, "status": "dispatch_request_is_not_sentinel"}, 400
     if latest_decision.get("decision_type") != "approved_for_design_review":
         return {

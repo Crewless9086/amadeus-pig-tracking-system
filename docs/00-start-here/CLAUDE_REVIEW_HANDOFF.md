@@ -178,6 +178,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Primary Command Deck that adds first-screen explicit-click read-only asks for daily brief, approvals, command center, and safety gates through the existing `data-quick-ask` path; no new fetch path or direct action buttons
 - Quick Checks Drawer that collapses the larger farm/business/agent quick-action grid behind `More read-only checks` while preserving existing prompts and JavaScript binding; presentation only
 - Command UI Browser Gate Hardening that extends the Playwright real-browser spec to assert the new command deck/drawer are visible, opening the drawer creates no hidden POST or interval polling, and command-deck clicks still use the explicit owner-triggered `/message` path; test-only
+- Sentinel Single-Shot Contract Alignment that adds a Python source of truth for the Sentinel single-shot result identity/flag shape and uses it in the result store, review packet, runner, and tests while keeping migration SQL static and contract-tested
+- Dispatch Execution Consumed-Once Live-PG Test that proves the partial unique index rejects a second `consumed_by_single_dry_run_result` event for one execution approval while still allowing normal review-note evidence
 
 ## Files/folders to inspect
 
@@ -1150,8 +1152,11 @@ Please inspect specifically:
 129. **Primary Command Deck:** Does Phase 10.9BX make the most common read-only owner asks easier to reach through the existing explicit-click `data-quick-ask` path, without adding hidden POSTs, polling, direct approve/run/deploy/send/sell/trade/control buttons, or new authority?
 130. **Quick Checks Drawer:** Does Phase 10.9BY reduce visual clutter by collapsing the larger quick-action grid while preserving existing prompts/bindings and adding no backend or authority surface?
 131. **Command UI Browser Gate Hardening:** Does Phase 10.9BZ correctly extend the real-browser safety gate for the new command deck/drawer, proving drawer open does not POST/poll and command-deck clicks still require explicit owner action through `/message`, while staying test-only?
-132. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
-133. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+132. **Sentinel Single-Shot Contract Alignment:** Does Phase 10.9CA reduce drift risk by deriving the runner/store/review-packet/tests from one Sentinel single-shot contract, while keeping the migration SQL static and contract-tested against that source without widening the single-shot authority?
+133. **Consumed-Once Live-PG Test:** Does Phase 10.9CB adequately prove the DB-level one-shot guard by asserting a second `consumed_by_single_dry_run_result` event is rejected for the same execution approval while normal review notes remain append-only evidence?
+134. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
+135. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+136. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

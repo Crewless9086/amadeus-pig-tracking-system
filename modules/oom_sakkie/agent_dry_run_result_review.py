@@ -1,3 +1,10 @@
+from modules.oom_sakkie.sentinel_single_shot_contract import (
+    SENTINEL_SINGLE_SHOT_RESULT_MODE,
+    is_sentinel_single_shot_result,
+    sentinel_single_shot_flag_errors,
+)
+
+
 _RESULT_REVIEW_PROFILES = {
     "sentinel": {
         "evidence_kind": "safety_guardrail_evidence",
@@ -193,27 +200,12 @@ def _is_supported_result_mode(dry_run_result):
     mode = dry_run_result.get("mode")
     if mode == "dry_run_result_review_only":
         return True
-    return (
-        mode == "single_shot_sentinel_advisory_result"
-        and dry_run_result.get("status") == "recorded_from_single_shot_sentinel_llm"
-        and str(dry_run_result.get("specialist_slug") or "").strip().lower() == "sentinel"
-    )
+    return is_sentinel_single_shot_result(dry_run_result)
 
 
 def _unsafe_result_flags(dry_run_result):
-    if dry_run_result.get("mode") == "single_shot_sentinel_advisory_result":
-        unsafe_flags = [
-            "dispatch_enabled",
-            "runs_specialist_tools",
-            "writes",
-            "applies_runtime_change",
-        ]
-        enabled = [flag for flag in unsafe_flags if dry_run_result.get(flag)]
-        if not dry_run_result.get("runs_specialist"):
-            enabled.append("missing_runs_specialist")
-        if not dry_run_result.get("runs_specialist_llm"):
-            enabled.append("missing_runs_specialist_llm")
-        return enabled
+    if dry_run_result.get("mode") == SENTINEL_SINGLE_SHOT_RESULT_MODE:
+        return sentinel_single_shot_flag_errors(dry_run_result)
     unsafe_flags = [
         "runs_specialist",
         "dispatch_enabled",

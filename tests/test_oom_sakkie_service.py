@@ -55,6 +55,17 @@ from modules.oom_sakkie.sentinel_single_shot_runner import (
     run_sentinel_single_shot_dry_run,
     specialist_dry_run_policy,
 )
+from modules.oom_sakkie.sentinel_single_shot_contract import (
+    SENTINEL_SINGLE_SHOT_FORBIDDEN_TRUE_FLAGS,
+    SENTINEL_SINGLE_SHOT_POLICY_MODE,
+    SENTINEL_SINGLE_SHOT_REQUIRED_TRUE_FLAGS,
+    SENTINEL_SINGLE_SHOT_RESULT_MODE,
+    SENTINEL_SINGLE_SHOT_RESULT_STATUS,
+    SENTINEL_SINGLE_SHOT_SPECIALIST,
+    sentinel_single_shot_flag_errors,
+    sentinel_single_shot_identity,
+    sentinel_single_shot_result_flags,
+)
 from modules.oom_sakkie.learning_advisor import build_learning_advice
 from modules.oom_sakkie.learning_llm import analyze_learning_with_llm, parse_learning_response
 from modules.oom_sakkie.build_request_store import (
@@ -1818,34 +1829,45 @@ class OomSakkieServiceTests(unittest.TestCase):
     def test_single_shot_sentinel_result_params_are_honest_but_no_tools_or_writes(self):
         params = _sentinel_single_shot_result_params({
             "dry_run_request_id": "OSK-AGENT-DRYRUN-SENTINEL",
-            "specialist_slug": "sentinel",
+            "specialist_slug": SENTINEL_SINGLE_SHOT_SPECIALIST,
         }, {
             "approval_id": "OSK-DISPATCH-EXEC-APPROVAL-1",
             "result_text": "Sentinel reviewed the gate.",
             "findings": ["No tools should run."],
         })
 
-        self.assertEqual(params["mode"], "single_shot_sentinel_advisory_result")
-        self.assertEqual(params["status"], "recorded_from_single_shot_sentinel_llm")
-        self.assertEqual(params["specialist_slug"], "sentinel")
-        self.assertTrue(params["runs_specialist"])
-        self.assertTrue(params["runs_specialist_llm"])
-        self.assertFalse(params["dispatch_enabled"])
-        self.assertFalse(params["runs_specialist_tools"])
-        self.assertFalse(params["writes"])
-        self.assertFalse(params["applies_runtime_change"])
+        self.assertEqual(
+            {key: params[key] for key in ("mode", "status", "specialist_slug")},
+            sentinel_single_shot_identity(),
+        )
+        for flag, expected in sentinel_single_shot_result_flags().items():
+            self.assertEqual(params[flag], expected)
+
+    def test_single_shot_contract_flags_are_used_by_review_validation(self):
+        valid = {
+            **sentinel_single_shot_identity(),
+            **sentinel_single_shot_result_flags(),
+        }
+        self.assertEqual(sentinel_single_shot_flag_errors(valid), [])
+
+        for flag in SENTINEL_SINGLE_SHOT_FORBIDDEN_TRUE_FLAGS:
+            unsafe = dict(valid)
+            unsafe[flag] = True
+            self.assertEqual(sentinel_single_shot_flag_errors(unsafe), [flag])
+
+        for flag in SENTINEL_SINGLE_SHOT_REQUIRED_TRUE_FLAGS:
+            unsafe = dict(valid)
+            unsafe[flag] = False
+            self.assertEqual(sentinel_single_shot_flag_errors(unsafe), [f"missing_{flag}"])
 
     def test_single_shot_sentinel_result_migration_adds_narrow_result_mode(self):
         migration = Path("supabase/migrations/202606090003_allow_single_shot_sentinel_dry_run_results.sql").read_text(encoding="utf-8")
 
-        self.assertIn("single_shot_sentinel_advisory_result", migration)
-        self.assertIn("recorded_from_single_shot_sentinel_llm", migration)
-        self.assertIn("specialist_slug = 'sentinel'", migration)
-        self.assertIn("runs_specialist = true", migration)
-        self.assertIn("runs_specialist_llm = true", migration)
-        self.assertIn("runs_specialist_tools = false", migration)
-        self.assertIn("writes = false", migration)
-        self.assertIn("applies_runtime_change = false", migration)
+        self.assertIn(SENTINEL_SINGLE_SHOT_RESULT_MODE, migration)
+        self.assertIn(SENTINEL_SINGLE_SHOT_RESULT_STATUS, migration)
+        self.assertIn(f"specialist_slug = '{SENTINEL_SINGLE_SHOT_SPECIALIST}'", migration)
+        for flag, expected in sentinel_single_shot_result_flags().items():
+            self.assertIn(f"{flag} = {str(expected).lower()}", migration)
         self.assertIn("mode = 'dry_run_result_review_only'", migration)
 
     @patch("modules.oom_sakkie.sentinel_single_shot_runner.urllib_request.urlopen")
@@ -2020,8 +2042,8 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertTrue(policy["enabled"])
         self.assertTrue(policy["configured"])
-        self.assertEqual(policy["specialist_slug"], "sentinel")
-        self.assertEqual(policy["mode"], "single_shot_advisory_only")
+        self.assertEqual(policy["specialist_slug"], SENTINEL_SINGLE_SHOT_SPECIALIST)
+        self.assertEqual(policy["mode"], SENTINEL_SINGLE_SHOT_POLICY_MODE)
         self.assertFalse(policy["runs_specialist_tools"])
         self.assertFalse(policy["writes"])
         self.assertFalse(policy["dispatches_further"])
@@ -4577,6 +4599,95 @@ class OomSakkieServiceTests(unittest.TestCase):
                         )
                     connection.rollback()
                     self.assertIn("append-only", str(delete_error.exception).lower())
+
+    def test_live_pg_dispatch_execution_consumed_event_is_unique_when_database_url_is_configured(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for dispatch execution unique-consume integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        suffix = build_trace_id().replace("OSK-", "")
+        dispatch_request_id = f"OSK-DISPATCH-REQ-CONSUME-{suffix}"
+        approval_id = f"OSK-DISPATCH-EXEC-APPROVAL-CONSUME-{suffix}"
+        consumed_event_id = f"OSK-DISPATCH-EXEC-EVENT-CONSUME-{suffix}"
+        duplicate_event_id = f"OSK-DISPATCH-EXEC-EVENT-CONSUME-DUP-{suffix}"
+        review_note_event_id = f"OSK-DISPATCH-EXEC-EVENT-NOTE-{suffix}"
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select to_regclass('public.oom_sakkie_dispatch_execution_approval_events')")
+                if cursor.fetchone()[0] is None:
+                    self.skipTest("dispatch execution approval tables are not migrated")
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_dispatch_requests (
+                        dispatch_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'requested_for_dispatch_design_review',
+                        'dispatch_decision_request_only', 'sentinel',
+                        'unittest', 'unique consumed event test'
+                    )
+                    """,
+                    (dispatch_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_dispatch_execution_approvals (
+                        approval_id, dispatch_request_id, status, mode,
+                        specialist_slug, approval_type, notes, approved_by
+                    )
+                    values (
+                        %s, %s, 'recorded_for_single_dry_run_execution_gate',
+                        'single_dry_run_execution_approval_only', 'sentinel',
+                        'approved_for_single_dry_run_execution',
+                        'unique consumed event test', 'unittest'
+                    )
+                    """,
+                    (approval_id, dispatch_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_dispatch_execution_approval_events (
+                        event_id, approval_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'consumed_by_single_dry_run_result', 'first consume', 'unittest')
+                    """,
+                    (consumed_event_id, approval_id),
+                )
+                connection.commit()
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                with self.assertRaises(Exception) as duplicate_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_dispatch_execution_approval_events (
+                            event_id, approval_id, event_type, notes, recorded_by
+                        )
+                        values (%s, %s, 'consumed_by_single_dry_run_result', 'second consume', 'unittest')
+                        """,
+                        (duplicate_event_id, approval_id),
+                    )
+                connection.rollback()
+                self.assertIn("unique", str(duplicate_error.exception).lower())
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_dispatch_execution_approval_events (
+                        event_id, approval_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'review_note', 'non-consume notes remain append-only evidence', 'unittest')
+                    """,
+                    (review_note_event_id, approval_id),
+                )
+                connection.commit()
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")

@@ -4,6 +4,11 @@ import os
 from datetime import datetime, timezone
 
 from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs, get_agent_dry_run_request
+from modules.oom_sakkie.sentinel_single_shot_contract import (
+    SENTINEL_SINGLE_SHOT_SPECIALIST,
+    sentinel_single_shot_identity,
+    sentinel_single_shot_result_flags,
+)
 from services.database_service import DATABASE_URL_ENV
 
 
@@ -119,7 +124,7 @@ def record_sentinel_single_shot_result(dry_run_request_id, payload, database_url
         return request, request_status
     dry_run_request = request.get("dry_run_request", {})
     specialist_slug = str(dry_run_request.get("specialist_slug") or "").strip().lower()
-    if specialist_slug != "sentinel":
+    if specialist_slug != SENTINEL_SINGLE_SHOT_SPECIALIST:
         return {
             "success": False,
             "status": "single_shot_result_is_sentinel_only",
@@ -194,16 +199,11 @@ def record_sentinel_single_shot_result(dry_run_request_id, payload, database_url
         "success": True,
         "configured": True,
         "status": "ok",
-        "mode": "single_shot_sentinel_advisory_result",
+        "mode": sentinel_single_shot_identity()["mode"],
         "dry_run_result_id": params["dry_run_result_id"],
         "dry_run_request_id": params["dry_run_request_id"],
-        "specialist_slug": "sentinel",
-        "runs_specialist": True,
-        "dispatch_enabled": False,
-        "runs_specialist_llm": True,
-        "runs_specialist_tools": False,
-        "writes": False,
-        "applies_runtime_change": False,
+        "specialist_slug": SENTINEL_SINGLE_SHOT_SPECIALIST,
+        **sentinel_single_shot_result_flags(),
         "next_gate": params["recommended_next_gate"],
     }, 201
 
@@ -451,13 +451,14 @@ def _agent_dry_run_result_params(dry_run_request, payload):
 def _sentinel_single_shot_result_params(dry_run_request, payload):
     findings = payload.get("findings") or []
     approval_id = _clean_text(payload.get("approval_id", ""), 100)
+    identity = sentinel_single_shot_identity()
     return {
         "dry_run_result_id": _clean_text(payload.get("dry_run_result_id", ""), 100)
         or _single_shot_result_id(dry_run_request.get("dry_run_request_id", ""), approval_id),
         "dry_run_request_id": _clean_text(dry_run_request.get("dry_run_request_id", ""), 100),
-        "status": "recorded_from_single_shot_sentinel_llm",
-        "mode": "single_shot_sentinel_advisory_result",
-        "specialist_slug": "sentinel",
+        "status": identity["status"],
+        "mode": identity["mode"],
+        "specialist_slug": identity["specialist_slug"],
         "result_text": _clean_text(payload.get("result_text", ""), 6000),
         "findings_json": _json([str(item)[:500] for item in list(findings)[:20]]),
         "recommended_next_gate": _clean_text(
@@ -465,12 +466,7 @@ def _sentinel_single_shot_result_params(dry_run_request, payload):
             160,
         ),
         "recorded_by": _clean_text(payload.get("recorded_by", "sentinel_single_shot_runner"), 80),
-        "runs_specialist": True,
-        "dispatch_enabled": False,
-        "runs_specialist_llm": True,
-        "runs_specialist_tools": False,
-        "writes": False,
-        "applies_runtime_change": False,
+        **sentinel_single_shot_result_flags(),
     }
 
 
