@@ -10877,11 +10877,80 @@ Safety envelope:
 - No app behavior changed.
 - No env flag enabled, no Sentinel runner UI, no authority widening, and no farm-data/public/deploy/Telegram/physical/financial path.
 
+### 10.9CD Oom Sakkie Learning Influence Proposal Rail - Local Ready
+
+Purpose:
+
+- Start making accepted Sentinel/agent evidence useful without silently changing the system.
+- Convert accepted evidence into proposed learning influence records that the owner can review.
+- Keep learning influence as proposal-only until a separate owner + Claude-reviewed gate exists to apply anything.
+
+What changed:
+
+- Added migration `supabase/migrations/202606100001_create_oom_sakkie_learning_influence_proposals.sql`.
+- Added `modules/oom_sakkie/learning_influence_store.py`.
+- Added protected routes:
+  - `GET /api/oom-sakkie/agent-learning/influence-proposals`
+  - `POST /api/oom-sakkie/agent-learning/influence-proposals/from-accepted`
+  - `POST /api/oom-sakkie/agent-learning/influence-proposals/<proposal_id>/events`
+- Proposal rows are generated from accepted dry-run results only.
+- One source result can produce one proposal (`idx_oom_sakkie_learning_influence_source_once`).
+- Owner events are append-only and limited to:
+  - `approved_for_future_planning`
+  - `rejected`
+  - `review_note`
+
+Safety envelope:
+
+- `applies_learning_now = false`
+- `changes_prompt_now = false`
+- `changes_runtime_now = false`
+- `dispatch_enabled = false`
+- `writes = false`
+- No prompt rewrite, routing change, runtime flag, specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram, deploy, physical control, or financial action.
+
+Verification:
+
+- Migration content test pins mode/status/event types/no-apply flags/append-only triggers.
+- DATABASE_URL-gated live-PG test verifies `applies_learning_now = true` is rejected and update/delete triggers reject mutation.
+- Route tests verify protected endpoints return false apply/write flags and deny non-local access.
+
+### 10.9CE Oom Sakkie Learning Influence Status Tool - Local Ready
+
+Purpose:
+
+- Let the owner ask Oom Sakkie about self-learning progress and Sentinel suggestions in normal language.
+- Explain what is waiting for owner review without applying it.
+
+What changed:
+
+- Added read-only `learning_influence_status`.
+- Added deterministic routing for:
+  - `learning influence`
+  - `learning proposals`
+  - `sentinel suggestions`
+  - `self-learning`
+  - `what learning needs approval`
+- The tool reads proposal counts and reports waiting / approved-for-future-planning / rejected status.
+
+Safety envelope:
+
+- Read-only status only.
+- Chat cannot generate proposals or apply learning.
+- No runtime/prompt/tool/data/public/deploy/Telegram/control/financial authority.
+
+Verification:
+
+- Tool registry contract includes `learning_influence_status` and still asserts every tool is read-only.
+- Focused Oom Sakkie service/routes/frontend tests passed locally at 292 tests.
+- Browser behavior smoke passed.
+
 Next gate:
 
 1. Push this hardening clarification and confirm both GitHub Actions gates are green.
-2. Ask Claude to review 10.9CA-CC together with the already-passed 10.9BW-BZ UI batch.
-3. Owner still reviews `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design.
+2. Ask Claude to review 10.9CA-CE together with the already-passed 10.9BW-BZ UI batch.
+3. Owner still reviews `OSK-AGENT-DRYRUN-RESULT-C63AF980E948`; after that, the owner can generate learning influence proposals from accepted evidence.
+4. Do not build any consumer that applies approved learning proposals until that consumer has its own dedicated owner + Claude-reviewed gate.
 
 7.3E weather LLM triage note:
 

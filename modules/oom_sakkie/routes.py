@@ -58,6 +58,11 @@ from modules.oom_sakkie.learning_packet import (
     build_learning_packet,
     get_implementation_queue,
 )
+from modules.oom_sakkie.learning_influence_store import (
+    list_learning_influence_proposals,
+    record_learning_influence_proposal_event,
+    record_learning_influence_proposals_from_accepted,
+)
 from modules.oom_sakkie.patch_proposal_store import (
     list_patch_proposals,
     record_patch_proposal,
@@ -376,6 +381,35 @@ def oom_sakkie_agent_dry_run_result_review_packet(dry_run_result_id):
         return jsonify(loaded), load_status
     dry_run_result = loaded.get("dry_run_result", {})
     result, status_code = build_agent_dry_run_result_review_packet(dry_run_result)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/influence-proposals", methods=["GET"])
+def oom_sakkie_learning_influence_proposals():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_learning_influence_proposals(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/influence-proposals/from-accepted", methods=["POST"])
+def oom_sakkie_learning_influence_proposals_from_accepted():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_learning_influence_proposals_from_accepted(limit=payload.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/influence-proposals/<proposal_id>/events", methods=["POST"])
+def oom_sakkie_learning_influence_proposal_events(proposal_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_learning_influence_proposal_event(proposal_id, payload)
     return jsonify(result), status_code
 
 

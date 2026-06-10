@@ -331,6 +331,102 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    @patch("modules.oom_sakkie.routes.list_learning_influence_proposals")
+    def test_learning_influence_proposals_route_lists_without_applying_learning(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "learning_influence_proposals": [{
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            }],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/agent-learning/influence-proposals")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+
+    @patch("modules.oom_sakkie.routes.record_learning_influence_proposals_from_accepted")
+    def test_learning_influence_from_accepted_route_records_proposals_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 1,
+            "learning_influence_proposals": [],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post("/api/oom-sakkie/agent-learning/influence-proposals/from-accepted", json={"limit": 8})
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["created_count"], 1)
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+
+    @patch("modules.oom_sakkie.routes.record_learning_influence_proposal_event")
+    def test_learning_influence_event_route_records_review_only_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-LEARNING-INFLUENCE-EVENT-1",
+            "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+            "event_type": "approved_for_future_planning",
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/influence-proposals/OSK-LEARNING-INFLUENCE-1/events",
+            json={"event_type": "approved_for_future_planning", "notes": "Planning only."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["event_type"], "approved_for_future_planning")
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+
+    def test_learning_influence_routes_deny_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/influence-proposals/from-accepted",
+            json={"limit": 8},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     @patch("modules.oom_sakkie.routes.list_agent_dry_run_requests")
     def test_agent_dry_runs_route_lists_without_execution(self, mock_list):
         mock_list.return_value = ({

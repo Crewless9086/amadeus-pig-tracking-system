@@ -25,6 +25,7 @@ from modules.oom_sakkie.agent_dry_run_store import list_agent_dry_run_requests
 from modules.oom_sakkie.build_request_store import list_build_requests
 from modules.oom_sakkie.deploy_decision_store import list_deploy_decisions
 from modules.oom_sakkie.dispatch_decision_store import list_dispatch_requests
+from modules.oom_sakkie.learning_influence_store import list_learning_influence_proposals
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
 from modules.reports.report_service import get_farm_attention_summary
 from modules.pig_weights.pig_weights_controller import (
@@ -1806,6 +1807,64 @@ def agent_learning_evidence_handler(_args):
     }
 
 
+def learning_influence_status_handler(_args):
+    proposals_result, proposals_status = list_learning_influence_proposals(limit=8)
+    proposals = proposals_result.get("learning_influence_proposals", []) if isinstance(proposals_result, dict) else []
+    waiting = [
+        item for item in proposals
+        if not (item.get("latest_event") or {}).get("event_type")
+    ]
+    approved_for_planning = [
+        item for item in proposals
+        if (item.get("latest_event") or {}).get("event_type") == "approved_for_future_planning"
+    ]
+    rejected = [
+        item for item in proposals
+        if (item.get("latest_event") or {}).get("event_type") == "rejected"
+    ]
+    if proposals_status == 200:
+        summary = (
+            "Learning influence proposals: {} waiting for owner review, {} approved for future planning, {} rejected. "
+            "These proposals do not change prompts, runtime, tools, or farm data."
+        ).format(len(waiting), len(approved_for_planning), len(rejected))
+    else:
+        summary = (
+            f"Learning influence proposals are unavailable (status {proposals_status}). "
+            "No learning was applied and no runtime changed."
+        )
+    return {
+        "success": proposals_status == 200,
+        "status": proposals_result.get("status", "unavailable") if isinstance(proposals_result, dict) else "unavailable",
+        "summary": summary,
+        "links": [{"label": "Learning Influence Proposals", "href": "/api/oom-sakkie/agent-learning/influence-proposals"}],
+        "stale_warnings": [] if proposals_status == 200 else [f"Learning influence store unavailable (status {proposals_status})."],
+        "safety_notes": [
+            "Learning influence status is read-only. Proposals may guide future planning only after owner review; no prompt was changed, no runtime flag was enabled, no specialist was dispatched, no tool ran, and no farm data was written."
+        ],
+        "llm_context": {
+            "kind": "learning_influence_status",
+            "counts": {
+                "total": len(proposals),
+                "waiting_for_owner_review": len(waiting),
+                "approved_for_future_planning": len(approved_for_planning),
+                "rejected": len(rejected),
+            },
+            "waiting": waiting[:5],
+            "runtime_flags": {
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            },
+        },
+        "raw": {
+            "mode": "learning_influence_status",
+            "learning_influence_proposals": proposals,
+        },
+    }
+
+
 def accepted_agent_learning_snapshot(limit=20):
     results_result, status_code = list_agent_dry_run_results(limit=limit)
     dry_run_results = results_result.get("dry_run_results", []) if isinstance(results_result, dict) else []
@@ -1956,6 +2015,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=agent_learning_evidence_handler,
         description="Read-only accepted agent learning evidence. Never applies runtime changes or dispatches agents.",
+    ),
+    "learning_influence_status": OomSakkieTool(
+        name="learning_influence_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=learning_influence_status_handler,
+        description="Read-only status of proposed learning influence records. Never applies learning, prompts, runtime changes, or writes farm data.",
     ),
     "agent_runtime_readiness": OomSakkieTool(
         name="agent_runtime_readiness",

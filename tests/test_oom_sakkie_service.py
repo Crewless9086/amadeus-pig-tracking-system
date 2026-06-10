@@ -100,6 +100,10 @@ from modules.oom_sakkie.learning_packet import (
     build_learning_packet,
     get_implementation_queue,
 )
+from modules.oom_sakkie.learning_influence_store import (
+    _learning_influence_params,
+    record_learning_influence_proposal_event,
+)
 from modules.oom_sakkie.patch_proposal_store import (
     _patch_proposal_params,
     _patch_proposal_row,
@@ -138,6 +142,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sentinel_dry_run_review",
                 "agent_dry_run_status",
                 "agent_learning_evidence",
+                "learning_influence_status",
                 "agent_activation_preflight",
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
@@ -1338,6 +1343,86 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runtime_flags"]["applies_runtime_change"])
         self.assertIn("read-only", result["safety_notes"][0])
+
+    def test_learning_influence_params_are_review_only(self):
+        params = _learning_influence_params({
+            "dry_run_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948",
+            "dry_run_request_id": "OSK-AGENT-DRYRUN-499E983FAF",
+            "specialist_slug": "sentinel",
+            "result_text": "Sentinel suggests checking guardrails before runtime changes.",
+            "findings": ["No tools should run."],
+            "latest_event": {
+                "event_type": "accepted_for_learning",
+                "notes": "Accepted as planning evidence.",
+                "created_at": "2026-06-09T10:00:00+00:00",
+            },
+        })
+
+        self.assertEqual(params["mode"], "learning_influence_proposal_only")
+        self.assertEqual(params["status"], "proposed_for_owner_review")
+        self.assertEqual(params["specialist_slug"], "sentinel")
+        self.assertEqual(params["source_result_id"], "OSK-AGENT-DRYRUN-RESULT-C63AF980E948")
+        self.assertFalse(params["applies_learning_now"])
+        self.assertFalse(params["changes_prompt_now"])
+        self.assertFalse(params["changes_runtime_now"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["writes"])
+
+    @patch("modules.oom_sakkie.tools.list_learning_influence_proposals")
+    def test_learning_influence_status_is_read_only(self, mock_list):
+        from modules.oom_sakkie.tools import learning_influence_status_handler
+
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "learning_influence_proposals": [{
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "proposal_title": "Learning proposal from sentinel evidence",
+                "latest_event": None,
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            }],
+        }, 200)
+
+        result = learning_influence_status_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertIn("1 waiting", result["summary"])
+        self.assertEqual(result["llm_context"]["kind"], "learning_influence_status")
+        self.assertEqual(result["llm_context"]["counts"]["waiting_for_owner_review"], 1)
+        self.assertFalse(result["llm_context"]["runtime_flags"]["applies_learning_now"])
+        self.assertFalse(result["llm_context"]["runtime_flags"]["changes_prompt_now"])
+        self.assertFalse(result["llm_context"]["runtime_flags"]["writes"])
+
+    def test_learning_influence_event_rejects_apply_event_types_before_database(self):
+        result, status_code = record_learning_influence_proposal_event(
+            "OSK-LEARNING-INFLUENCE-1",
+            {"event_type": "apply_now"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "invalid_event_type")
+
+    def test_learning_influence_migration_is_append_only_and_no_apply(self):
+        migration = Path("supabase/migrations/202606100001_create_oom_sakkie_learning_influence_proposals.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_learning_influence_proposals", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_learning_influence_proposal_events", migration)
+        self.assertIn("mode = 'learning_influence_proposal_only'", migration)
+        self.assertIn("status = 'proposed_for_owner_review'", migration)
+        self.assertIn("event_type in ('approved_for_future_planning', 'rejected', 'review_note')", migration)
+        self.assertIn("applies_learning_now = false", migration)
+        self.assertIn("changes_prompt_now = false", migration)
+        self.assertIn("changes_runtime_now = false", migration)
+        self.assertIn("dispatch_enabled = false", migration)
+        self.assertIn("writes = false", migration)
+        self.assertIn("create unique index if not exists idx_oom_sakkie_learning_influence_source_once", migration)
+        self.assertIn("before update on public.oom_sakkie_learning_influence_proposals", migration)
+        self.assertIn("before delete on public.oom_sakkie_learning_influence_proposal_events", migration)
 
     def test_agent_dry_run_request_params_force_no_execution_flags(self):
         params = _agent_dry_run_request_params({
@@ -3162,6 +3247,9 @@ class OomSakkieServiceTests(unittest.TestCase):
             "what must agents not do": "agent_operating_contracts",
             "what did sentinel learn": "agent_learning_evidence",
             "show me agent learning evidence": "agent_learning_evidence",
+            "show me learning influence proposals": "learning_influence_status",
+            "what learning needs approval": "learning_influence_status",
+            "how is self-learning going": "learning_influence_status",
             "run the sentinel dry-run review": "sentinel_dry_run_review",
             "first agent dry run": "sentinel_dry_run_review",
             "what needs my approval": "system_work_status",
@@ -4689,6 +4777,150 @@ class OomSakkieServiceTests(unittest.TestCase):
                     (review_note_event_id, approval_id),
                 )
                 connection.commit()
+
+    def test_live_pg_learning_influence_tables_are_append_only_and_no_apply_when_database_url_is_configured(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for learning influence integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        suffix = build_trace_id().replace("OSK-", "")
+        dry_run_request_id = f"OSK-AGENT-DRYRUN-LEARN-{suffix}"
+        dry_run_result_id = f"OSK-AGENT-DRYRUN-RESULT-LEARN-{suffix}"
+        proposal_id = f"OSK-LEARNING-INFLUENCE-{suffix}"
+        event_id = f"OSK-LEARNING-INFLUENCE-EVENT-{suffix}"
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select to_regclass('public.oom_sakkie_learning_influence_proposals')")
+                if cursor.fetchone()[0] is None:
+                    self.skipTest("learning influence proposal tables are not migrated")
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_requests (
+                        dry_run_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'approved_for_read_only_dry_run',
+                        'read_only_dry_run_request_only', 'sentinel',
+                        'unittest', 'learning influence test'
+                    )
+                    """,
+                    (dry_run_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_results (
+                        dry_run_result_id, dry_run_request_id, status, mode,
+                        specialist_slug, result_text, recorded_by
+                    )
+                    values (
+                        %s, %s, 'recorded_for_owner_review',
+                        'dry_run_result_review_only', 'sentinel',
+                        'learning influence source', 'unittest'
+                    )
+                    """,
+                    (dry_run_result_id, dry_run_request_id),
+                )
+                with self.assertRaises(Exception) as proposal_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_learning_influence_proposals (
+                            proposal_id, source_result_id, status, mode, specialist_slug,
+                            proposal_title, proposal_text, applies_learning_now
+                        )
+                        values (
+                            %s, %s, 'proposed_for_owner_review',
+                            'learning_influence_proposal_only', 'sentinel',
+                            'bad proposal', 'should fail', true
+                        )
+                        """,
+                        (f"{proposal_id}-BAD", dry_run_result_id),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(proposal_error.exception).lower())
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_requests (
+                        dry_run_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'approved_for_read_only_dry_run',
+                        'read_only_dry_run_request_only', 'sentinel',
+                        'unittest', 'learning influence test'
+                    )
+                    on conflict (dry_run_request_id) do nothing
+                    """,
+                    (dry_run_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_results (
+                        dry_run_result_id, dry_run_request_id, status, mode,
+                        specialist_slug, result_text, recorded_by
+                    )
+                    values (
+                        %s, %s, 'recorded_for_owner_review',
+                        'dry_run_result_review_only', 'sentinel',
+                        'learning influence source', 'unittest'
+                    )
+                    on conflict (dry_run_result_id) do nothing
+                    """,
+                    (dry_run_result_id, dry_run_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_learning_influence_proposals (
+                        proposal_id, source_result_id, status, mode, specialist_slug,
+                        proposal_title, proposal_text
+                    )
+                    values (
+                        %s, %s, 'proposed_for_owner_review',
+                        'learning_influence_proposal_only', 'sentinel',
+                        'learning proposal', 'planning only'
+                    )
+                    """,
+                    (proposal_id, dry_run_result_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_learning_influence_proposal_events (
+                        event_id, proposal_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'review_note', 'append-only event', 'unittest')
+                    """,
+                    (event_id, proposal_id),
+                )
+                connection.commit()
+
+        for table_name, id_column, row_id, text_column in (
+            ("public.oom_sakkie_learning_influence_proposals", "proposal_id", proposal_id, "proposal_text"),
+            ("public.oom_sakkie_learning_influence_proposal_events", "event_id", event_id, "notes"),
+        ):
+            with psycopg.connect(database_url, connect_timeout=10) as connection:
+                with connection.cursor() as cursor:
+                    with self.assertRaises(Exception) as update_error:
+                        cursor.execute(
+                            f"update {table_name} set {text_column} = {text_column} where {id_column} = %s",
+                            (row_id,),
+                        )
+                    connection.rollback()
+                    self.assertIn("append-only", str(update_error.exception).lower())
+
+            with psycopg.connect(database_url, connect_timeout=10) as connection:
+                with connection.cursor() as cursor:
+                    with self.assertRaises(Exception) as delete_error:
+                        cursor.execute(f"delete from {table_name} where {id_column} = %s", (row_id,))
+                    connection.rollback()
+                    self.assertIn("append-only", str(delete_error.exception).lower())
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")

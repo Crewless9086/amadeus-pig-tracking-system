@@ -181,6 +181,8 @@ Review the current Oom Sakkie local-only read path and planning scaffolding befo
 - Sentinel Single-Shot Contract Alignment that adds a Python source of truth for the Sentinel single-shot result identity/flag shape and uses it in the result store, review packet, runner, and tests while keeping migration SQL static and contract-tested
 - Dispatch Execution Consumed-Once Live-PG Test that proves the partial unique index rejects a second `consumed_by_single_dry_run_result` event for one execution approval while still allowing normal review-note evidence
 - Consumed-Once Migration Assertion that also pins the unique-index name in the normal migration-content test so the one-shot DB guard is visible even when live Postgres is not configured
+- Learning Influence Proposal Rail that converts accepted agent learning evidence into append-only `learning_influence_proposal_only` records for owner review while forcing all apply/prompt/runtime/dispatch/write flags false
+- Learning Influence Status Tool that lets Oom Sakkie answer self-learning / Sentinel suggestion questions by reading proposal counts only, without generating or applying proposals from chat
 
 ## Files/folders to inspect
 
@@ -1156,9 +1158,11 @@ Please inspect specifically:
 132. **Sentinel Single-Shot Contract Alignment:** Does Phase 10.9CA reduce drift risk by deriving the runner/store/review-packet/tests from one Sentinel single-shot contract, while keeping the migration SQL static and contract-tested against that source without widening the single-shot authority?
 133. **Consumed-Once Live-PG Test:** Does Phase 10.9CB adequately prove the DB-level one-shot guard by asserting a second `consumed_by_single_dry_run_result` event is rejected for the same execution approval while normal review notes remain append-only evidence?
 134. **Consumed-Once Migration Assertion:** Does Phase 10.9CC make the partial unique index visible in the offline migration-content test while leaving the live-PG test as the actual insert-level proof?
-135. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
-136. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
-137. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
+135. **Learning Influence Proposal Rail:** Does Phase 10.9CD correctly create an append-only proposal-only rail from accepted agent learning evidence, forcing `applies_learning_now`, `changes_prompt_now`, `changes_runtime_now`, `dispatch_enabled`, and `writes` false at DB and application layers, and avoiding any consumer that applies learning or changes behavior?
+136. **Learning Influence Status Tool:** Does Phase 10.9CE give useful read-only self-learning / Sentinel suggestion status while avoiding proposal generation from chat, prompt changes, runtime changes, dispatch, tool execution, farm-data writes, public/customer output, deploy, Telegram, physical controls, and financial actions?
+137. **Morning Decision Queue:** Is the owner gate now clear enough that the real pending decision is review of `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` before any next authority design?
+138. **Reverse proxy deployment rule:** Does the PRD now state strongly enough that same-host reverse proxying in front of review routes is forbidden until trusted proxy handling/auth is deliberately configured?
+139. **Tests:** What missing tests or browser checks should happen before this is considered daily-use ready?
 
 ## Deliverable format
 

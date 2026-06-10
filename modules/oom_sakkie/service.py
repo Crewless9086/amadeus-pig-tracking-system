@@ -103,6 +103,10 @@ RULES = [
         IntentMatch("agent_learning_evidence", "agent_learning_evidence", 0.95, "rule:agent_learning_evidence"),
     ),
     (
+        re.compile(r"\b(learning influence|learning proposal|learning proposals|sentinel suggestions|sentinel improvement suggestions|automatic learning|self learning|self-learning|what learning needs approval|what should sentinel suggest)\b", re.I),
+        IntentMatch("learning_influence_status", "learning_influence_status", 0.95, "rule:learning_influence_status"),
+    ),
+    (
         re.compile(r"\b(sentinel dry[- ]?run|safety dry[- ]?run|first agent dry[- ]?run|agent dry[- ]?run review|specialist dry[- ]?run|dry[- ]?run sentinel)\b", re.I),
         IntentMatch("sentinel_dry_run_review", "sentinel_dry_run_review", 0.95, "rule:sentinel_dry_run_review"),
     ),
