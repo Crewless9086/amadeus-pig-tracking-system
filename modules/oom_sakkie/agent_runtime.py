@@ -6,6 +6,31 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CK"
+CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
+CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
+CURRENT_CLAUDE_REVIEW_FOCUS = [
+    "Owner Cockpit direct actions remain append-only review records only.",
+    "Accepted-result proposal prep targets exactly one clicked source result after accepted_for_learning.",
+    "Learning influence remains proposal-only; no prompt/runtime/routing/tool/farm-data behavior is applied.",
+    "Browser behavior and audit-rail CI gates are green for the latest learning/cockpit checkpoint.",
+]
+CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
+    {
+        "workflow": "Oom Sakkie Browser Behavior",
+        "run_id": "27278878196",
+        "status": "success",
+        "commit": "164a467",
+    },
+    {
+        "workflow": "Oom Sakkie Audit Rails",
+        "run_id": "27278878464",
+        "status": "success",
+        "commit": "164a467",
+    },
+]
+
+
 @dataclass(frozen=True)
 class AgentRuntimeManifest:
     slug: str
@@ -1363,7 +1388,19 @@ def get_jarvis_owner_review_packet():
         "public_output_enabled": False,
         "physical_controls_enabled": False,
         "review_readiness": readiness,
+        "current_review": {
+            "scope": CURRENT_CLAUDE_REVIEW_SCOPE,
+            "handoff_file": CURRENT_CLAUDE_REVIEW_HANDOFF,
+            "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
+            "focus": list(CURRENT_CLAUDE_REVIEW_FOCUS),
+            "ci_evidence": [dict(item) for item in CURRENT_CLAUDE_REVIEW_CI_EVIDENCE],
+            "learning_influence_consumer_enabled": False,
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+        },
         "review_focus": [
+            *CURRENT_CLAUDE_REVIEW_FOCUS,
             "Safety gates are configured and owner-reported green, but Oom Sakkie does not call GitHub.",
             "Agent Command Center remains read-only visualization.",
             "Dispatch rail remains append-only/no-execution and no decision is consumed for runtime behavior.",
@@ -1376,7 +1413,7 @@ def get_jarvis_owner_review_packet():
             "jarvis_safety_gate_board": safety_gates,
             "agent_runtime_review_packet": runtime_review,
         },
-        "claude_prompt": "Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.",
+        "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
         "next_gate": "owner_and_claude_review_before_any_runtime_authority_change",
     }

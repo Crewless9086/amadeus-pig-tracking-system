@@ -11189,6 +11189,38 @@ Next gate:
 1. Owner can ask Claude Code: `Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.`
 2. Keep learning influence proposal consumption locked until a separate owner + Claude-reviewed gate exists.
 
+### 10.9CL Oom Sakkie Owner Review Packet Scope Evidence - Local Ready
+
+Purpose:
+
+- Make Oom Sakkie's own read-only `prepare Claude review` answer match the refreshed handoff scope.
+- Keep review readiness visible from the kiosk without calling Claude, GitHub, or enabling authority.
+
+What changed:
+
+- Added current review metadata to `get_jarvis_owner_review_packet()`:
+  - scope: `Oom Sakkie 10.6 through 10.9CK`,
+  - handoff file and exact Claude prompt,
+  - focus items for Owner Cockpit, accepted-result proposal prep, learning proposal-only boundaries, and CI gates,
+  - latest green CI run evidence from the local `gh` check.
+- The `jarvis_owner_review_packet` tool summary now names the current scope and counts the recorded green CI gates.
+- Tests pin that the packet still has no learning influence consumer and does not apply learning, change prompts, or change runtime.
+
+Safety envelope:
+
+- Read-only packet content only.
+- No Claude call, GitHub call, endpoint, store, migration, UI action, runtime flag, specialist dispatch/tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, financial action, or learning proposal consumer was added.
+
+Verification:
+
+- Targeted owner review packet service tests passed.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Ask Oom Sakkie `prepare Claude review` and confirm it names the 10.9CK scope and says the packet does not approve authority.
+2. Keep learning influence proposal consumption locked until a separate owner + Claude-reviewed gate exists.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -1246,15 +1246,20 @@ def jarvis_safety_gate_board_handler(_args):
 def jarvis_owner_review_packet_handler(_args):
     packet = get_jarvis_owner_review_packet()
     readiness = packet.get("review_readiness") or {}
+    current_review = packet.get("current_review") or {}
+    scope = current_review.get("scope") or "current Oom Sakkie review"
+    ci_green = sum(1 for item in current_review.get("ci_evidence", []) if item.get("status") == "success")
     summary = (
-        "Owner review packet is ready: Jarvis progress is {}%, {} safety gate(s) are configured, "
+        "Owner review packet is ready for {}: Jarvis progress is {}%, {} safety gate(s) are configured, "
         "{} authority gate(s) remain locked, and {} manual check(s) remain owner-confirmed. "
-        "Use the Claude handoff prompt when you want the batched review."
+        "{} current CI gate(s) are recorded green. Use the Claude handoff prompt when you want the batched review."
     ).format(
+        scope,
         readiness.get("progress_overall_percent", 0),
         readiness.get("configured_gate_count", 0),
         readiness.get("locked_gate_count", 0),
         readiness.get("manual_check_count", 0),
+        ci_green,
     )
     return {
         "success": True,
@@ -1270,6 +1275,7 @@ def jarvis_owner_review_packet_handler(_args):
         "llm_context": {
             "kind": "jarvis_owner_review_packet",
             "review_packet": packet,
+            "current_review": current_review,
             "claude_prompt": packet.get("claude_prompt"),
             "selected_agent": {
                 "slug": "gatekeeper",
