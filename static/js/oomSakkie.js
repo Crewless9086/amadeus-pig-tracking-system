@@ -3237,12 +3237,19 @@
       button.textContent = "Recording...";
     }
     try {
-      await fetch(`/api/oom-sakkie/agent-dry-run-results/${encodeURIComponent(dryRunResultId)}/events`, {
+      const response = await fetch(`/api/oom-sakkie/agent-dry-run-results/${encodeURIComponent(dryRunResultId)}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event_type: eventType, notes, recorded_by: "owner" }),
       });
-      loadAgentResultReviews();
+      const data = await response.json();
+      await loadAgentResultReviews();
+      await loadLearningInfluenceProposals();
+      if (ownerCockpitStatus) {
+        ownerCockpitStatus.textContent = data.success
+          ? `${eventType} recorded for ${dryRunResultId}. Evidence only; no runtime change.`
+          : `Result review was not recorded: ${data.status || "unknown"}.`;
+      }
     } catch (error) {
       if (agentResultReviews) {
         const line = document.createElement("p");
@@ -3250,6 +3257,7 @@
         line.textContent = "Agent result review event could not be recorded.";
         agentResultReviews.appendChild(line);
       }
+      if (ownerCockpitStatus) ownerCockpitStatus.textContent = "Agent result review event could not be recorded.";
     } finally {
       if (button) {
         button.disabled = false;
@@ -3309,12 +3317,18 @@
       button.textContent = "Recording...";
     }
     try {
-      await fetch(`/api/oom-sakkie/agent-learning/influence-proposals/${encodeURIComponent(proposalId)}/events`, {
+      const response = await fetch(`/api/oom-sakkie/agent-learning/influence-proposals/${encodeURIComponent(proposalId)}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event_type: eventType, notes, recorded_by: "owner" }),
       });
-      loadLearningInfluenceProposals();
+      const data = await response.json();
+      await loadLearningInfluenceProposals();
+      if (ownerCockpitStatus) {
+        ownerCockpitStatus.textContent = data.success
+          ? `${eventType} recorded for ${proposalId}. Planning evidence only; no learning was applied.`
+          : `Learning proposal review was not recorded: ${data.status || "unknown"}.`;
+      }
     } catch (error) {
       if (learningInfluenceProposals) {
         const line = document.createElement("p");
@@ -3322,6 +3336,7 @@
         line.textContent = "Learning influence review event could not be recorded.";
         learningInfluenceProposals.appendChild(line);
       }
+      if (ownerCockpitStatus) ownerCockpitStatus.textContent = "Learning influence review event could not be recorded.";
     } finally {
       if (button) {
         button.disabled = false;

@@ -11079,6 +11079,37 @@ Next gate:
 3. Ask Claude to review 10.9CH specifically as an owner-facing action-surface change.
 4. Do not add direct `Approve Patch`, `Run Sentinel`, `Deploy`, `Send`, `Post`, `Sell`, `Trade`, or `Control` buttons to the first-screen cockpit without a dedicated owner + Claude-reviewed gate.
 
+### 10.9CI Oom Sakkie Owner Cockpit Decision Feedback - Local Ready
+
+Purpose:
+
+- Make owner-clicked cockpit decisions visibly confirm what happened.
+- Avoid the owner feeling like `Accept For Learning` disappeared or did nothing.
+
+What changed:
+
+- Confirmed `OSK-AGENT-DRYRUN-RESULT-C63AF980E948` now has `latest_event.event_type = accepted_for_learning`.
+- Updated cockpit result/proposal event handlers to await the event response, refresh the result/proposal queues, and write a clear status message in the cockpit.
+- Status copy explicitly says the record is evidence/planning only and that no runtime change or learning application occurred.
+
+Safety envelope:
+
+- UI feedback/refresh polish only.
+- Still no Sentinel runner UI.
+- Still no proposal consumer or apply-learning path.
+- Still no prompt rewrite, routing change, runtime flag, specialist dispatch, specialist tool execution, farm-data write, public/customer output, Telegram, deploy, physical control, or financial action.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` passed.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `python -m unittest tests.test_frontend_route_contracts` passed at 28 tests.
+
+Next gate:
+
+1. Owner visually confirms the cockpit now shows a clear status after append-only review actions.
+2. Do not add any first-screen run/apply/deploy/send/sell/control/trade action without a dedicated owner + Claude-reviewed gate.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
