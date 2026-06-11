@@ -746,6 +746,7 @@ Known verification from Codex:
 - 10.9CV live-gated focused audit suite with `.env` loaded -> 326 OK.
 - 10.9CV browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9CV full local unittest suite: `.\venv\Scripts\python.exe -m unittest` -> 656 OK.
+- 10.9CV GitHub Actions after commit `0db102a`: `Oom Sakkie Browser Behavior` run `27341856836` success; `Oom Sakkie Audit Rails` run `27341856819` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1145,6 +1146,7 @@ Known verification from Codex:
   - Syntax errors in scanned Python files now produce explicit `:parse_error` findings instead of raising from the packet route.
   - New regression tests prove the default scan still works after `os.chdir()` to a temporary directory and that a syntactically invalid scanned file returns a `:parse_error` marker.
   - This is scanner/test/packet hardening only: no consumer, no production `allow_consumed` caller, no applyable diff, and no authority was added.
+  - GitHub Actions for commit `0db102a` are green: Browser Behavior run `27341856836`, Audit Rails run `27341856819`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
