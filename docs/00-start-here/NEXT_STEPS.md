@@ -11575,6 +11575,46 @@ Next gate:
 1. Run focused/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CT before any learning proposal consumer implementation.
 
+### 10.9CU Oom Sakkie Source-Backed Allow-Consumed Caller Evidence - Local Ready
+
+Purpose:
+
+- Act on Claude's carried-forward note that `allow_consumed_production_callers = []` was documentation backed by a separate static test.
+- Make the consumer-design packet's no-production-caller claim source-backed without implementing a consumer.
+- Reuse one scanner for both the packet evidence and the regression guard.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CT: `pass`.
+- Claude noted the remaining hardcoded `allow_consumed_production_callers: []` field was acceptable, but depended on the separate AST test for honesty.
+- This slice folds that fact into live packet evidence before any future consumer gate.
+
+What changed:
+
+- `agent_runtime.py` now exposes `find_learning_influence_allow_consumed_callers()`.
+- `get_learning_influence_consumer_design_packet()` now derives `allow_consumed_production_callers` from that scanner instead of returning a hardcoded empty list.
+- The static regression test uses the shared scanner.
+- A synthetic scanner test proves detection for alias calls, module calls, positional fourth-argument overrides, `**kwargs`, and non-literal-false `allow_consumed` values while allowing literal `False`.
+- Scope metadata moved to `10.9CU`.
+
+Safety envelope:
+
+- Evidence/test/packet hardening only.
+- No consumer, no production `allow_consumed` caller, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Focused audit suite: `324 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+- Live-gated focused audit suite with `.env` loaded: `324 OK`.
+- Browser behavior smoke passed.
+- Full local unittest suite: `654 OK`.
+
+Next gate:
+
+1. Run focused/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CU before any learning proposal consumer implementation.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

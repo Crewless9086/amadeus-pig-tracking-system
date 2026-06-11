@@ -1,12 +1,18 @@
+import ast
 from dataclasses import asdict, dataclass
 import os
 import re
+from pathlib import Path
 
 from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CT"
+LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE = "modules.oom_sakkie.learning_influence_consumption_store"
+LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION = "record_learning_influence_consumption_event"
+
+
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CU"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -26,7 +32,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence consumer design remains review-only; allow_consumed has a hardened static no-production-caller guard.",
+    "Learning influence consumer design remains review-only; allow_consumed production callers are source-scanned.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1664,6 +1670,7 @@ def get_learning_influence_consumption_audit_rail_blueprint():
 
 
 def get_learning_influence_consumer_design_packet():
+    allow_consumed_callers = find_learning_influence_allow_consumed_callers()
     allowed_target_contract = {
         "first_consumer_output": "review_note_artifact_only",
         "allowed_target_kinds": [
@@ -1710,7 +1717,7 @@ def get_learning_influence_consumer_design_packet():
         {
             "guard": "no_production_allow_consumed_true",
             "purpose": "A production caller cannot pass a positional fourth argument, keyword allow_consumed value, alias call, module-attribute call, **kwargs, or any non-literal-false allow_consumed override without updating the deliberate static regression test.",
-            "current_state": "no production caller",
+            "current_state": "source_scan_no_production_caller",
         },
         {
             "guard": "consumer_not_implemented",
@@ -1743,7 +1750,7 @@ def get_learning_influence_consumer_design_packet():
         "applies_learning_now": False,
         "changes_prompt_now": False,
         "changes_runtime_now": False,
-        "allow_consumed_production_callers": [],
+        "allow_consumed_production_callers": allow_consumed_callers,
         "allowed_target_contract": allowed_target_contract,
         "owner_approval_gate": owner_approval_gate,
         "rollback_artifact_contract": rollback_artifact_contract,
@@ -1757,6 +1764,71 @@ def get_learning_influence_consumer_design_packet():
         ],
         "next_gate": "owner_and_claude_review_before_any_learning_consumer_implementation",
     }
+
+
+def find_learning_influence_allow_consumed_callers(root="modules"):
+    offenders = []
+    for path in Path(root).rglob("*.py"):
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError:
+            offenders.append(f"{path}:read_error")
+            continue
+        offenders.extend(_learning_influence_allow_consumed_callers_from_source(source, str(path)))
+    return sorted(offenders)
+
+
+def _learning_influence_allow_consumed_callers_from_source(source, path="<source>"):
+    tree = ast.parse(source, filename=path)
+    function_aliases = {LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION}
+    module_aliases = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE:
+                    module_aliases.add(alias.asname or alias.name.split(".")[-1])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE:
+                for alias in node.names:
+                    if alias.name == LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION:
+                        function_aliases.add(alias.asname or alias.name)
+            elif node.module == "modules.oom_sakkie":
+                for alias in node.names:
+                    if alias.name == "learning_influence_consumption_store":
+                        module_aliases.add(alias.asname or alias.name)
+
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not _is_learning_influence_consumption_event_call(node, function_aliases, module_aliases):
+            continue
+        if len(node.args) >= 4 and not _ast_literal_false(node.args[3]):
+            offenders.append(f"{path}:{node.lineno}:positional")
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                offenders.append(f"{path}:{node.lineno}:kwargs")
+                continue
+            if keyword.arg != "allow_consumed":
+                continue
+            if not _ast_literal_false(keyword.value):
+                offenders.append(f"{path}:{node.lineno}:keyword")
+    return offenders
+
+
+def _is_learning_influence_consumption_event_call(node, function_aliases, module_aliases):
+    if isinstance(node.func, ast.Name):
+        return node.func.id in function_aliases
+    if isinstance(node.func, ast.Attribute):
+        if node.func.attr == LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION:
+            return True
+        if isinstance(node.func.value, ast.Name) and node.func.value.id in module_aliases:
+            return node.func.attr == LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION
+    return False
+
+
+def _ast_literal_false(node):
+    return isinstance(node, ast.Constant) and node.value is False
 
 
 def _specialist_dry_run_policy_snapshot():
