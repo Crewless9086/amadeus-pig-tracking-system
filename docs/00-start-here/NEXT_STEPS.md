@@ -11289,6 +11289,51 @@ Next gate:
 1. Owner runs Claude review with: `Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.`
 2. Keep learning proposal consumption, runtime unlocks, and live specialist authority locked until a separate owner + Claude-reviewed gate exists.
 
+### 10.9CO Oom Sakkie Learning Influence Live-PG Closure - Local Ready
+
+Purpose:
+
+- Act on Claude's review feedback for 10.9CA-CM.
+- Close the remaining offline-only gap for the learning-influence `from-result` rail before relying on it in daily kiosk use.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CA-CM: `pass`.
+- Concrete next step: apply migration `202606100001_create_oom_sakkie_learning_influence_proposals.sql` to live Postgres and add DATABASE_URL-gated coverage for:
+  - the `source_result_not_accepted_for_learning` 409 guard,
+  - `on conflict do nothing` idempotency returning the existing proposal.
+
+What changed:
+
+- Applied migration `202606100001_create_oom_sakkie_learning_influence_proposals.sql` with the reviewed migration script.
+- Added a DATABASE_URL-gated live-PG test proving:
+  - a persisted dry-run result with no `accepted_for_learning` latest event is rejected with 409,
+  - after recording `accepted_for_learning`, `record_learning_influence_proposal_from_result()` creates exactly one proposal,
+  - a repeated call returns the existing proposal with `created_count = 0`,
+  - proposal/app response flags remain `applies_learning_now = false`, `changes_prompt_now = false`, `changes_runtime_now = false`, `dispatch_enabled = false`, and `writes = false`.
+- Added route-contract coverage for `/api/oom-sakkie/agent-learning/influence-proposals/from-result` to pin:
+  - success,
+  - 409 not-accepted guard propagation,
+  - existing-proposal idempotency response.
+- Updated the owner/Claude review packet scope to `Oom Sakkie 10.6 through 10.9CO`.
+
+Safety envelope:
+
+- Migration application plus tests/docs/metadata only.
+- No learning proposal consumer, prompt/routing/runtime change, live specialist dispatch, specialist tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, financial action, or broader authority was added.
+
+Verification:
+
+- Migration apply command succeeded.
+- New live-PG `from-result` test passed with `.env` loaded.
+- Existing plus new learning-influence live-PG tests passed.
+- Route contract tests for `from-result` success/409/idempotency passed.
+
+Next gate:
+
+1. Run focused and full local verification, then push and confirm GitHub Actions.
+2. Ask Claude to review 10.9CO before any learning proposal consumption or runtime-authority work.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

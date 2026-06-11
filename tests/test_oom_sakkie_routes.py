@@ -423,6 +423,79 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["writes"])
         mock_record.assert_called_once_with("OSK-AGENT-DRYRUN-RESULT-C63AF980E948")
 
+    @patch("modules.oom_sakkie.routes.record_learning_influence_proposal_from_result")
+    def test_learning_influence_from_result_route_propagates_not_accepted_guard(self, mock_record):
+        mock_record.return_value = ({
+            "success": False,
+            "status": "source_result_not_accepted_for_learning",
+            "source_result_id": "OSK-AGENT-DRYRUN-RESULT-PENDING",
+            "learning_influence_proposals": [],
+            "created_count": 0,
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 409)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/influence-proposals/from-result",
+            json={"source_result_id": "OSK-AGENT-DRYRUN-RESULT-PENDING"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "source_result_not_accepted_for_learning")
+        self.assertEqual(data["created_count"], 0)
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once_with("OSK-AGENT-DRYRUN-RESULT-PENDING")
+
+    @patch("modules.oom_sakkie.routes.record_learning_influence_proposal_from_result")
+    def test_learning_influence_from_result_route_returns_existing_proposal_without_apply(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 0,
+            "accepted_count": 1,
+            "learning_influence_proposals": [{
+                "proposal_id": "OSK-LEARNING-INFLUENCE-EXISTING",
+                "source_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948",
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            }],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/influence-proposals/from-result",
+            json={"source_result_id": "OSK-AGENT-DRYRUN-RESULT-C63AF980E948"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["created_count"], 0)
+        self.assertEqual(data["accepted_count"], 1)
+        self.assertEqual(data["learning_influence_proposals"][0]["proposal_id"], "OSK-LEARNING-INFLUENCE-EXISTING")
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once_with("OSK-AGENT-DRYRUN-RESULT-C63AF980E948")
+
     @patch("modules.oom_sakkie.routes.record_learning_influence_proposal_event")
     def test_learning_influence_event_route_records_review_only_event(self, mock_record):
         mock_record.return_value = ({

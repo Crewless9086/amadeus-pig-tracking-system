@@ -428,8 +428,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CM")
-        self.assertIn("10.9CM", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CO")
+        self.assertIn("10.9CO", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -438,10 +438,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         workflows = {item["workflow"]: item for item in packet["current_review"]["ci_evidence"]}
         self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["status"], "success")
         self.assertEqual(workflows["Oom Sakkie Audit Rails"]["status"], "success")
-        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["commit"], "5de5d9d")
-        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27314056931")
+        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["commit"], "0d3da2f")
+        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27314349303")
         self.assertIn("clicked source result", " ".join(packet["current_review"]["focus"]))
         self.assertIn("review-readiness only", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("409 acceptance guard", " ".join(packet["current_review"]["focus"]))
         self.assertIn("Do not treat it as approval", packet["owner_instruction"])
         self.assertIn("review_before_any_runtime_authority_change", packet["next_gate"])
 
@@ -925,14 +926,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CM", result["summary"])
+        self.assertIn("10.9CO", result["summary"])
         self.assertIn("2 current CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CM")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CO")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -953,7 +954,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CM", result["answer"])
+        self.assertIn("10.9CO", result["answer"])
         self.assertIn("2 current CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -5045,6 +5046,116 @@ class OomSakkieServiceTests(unittest.TestCase):
                         cursor.execute(f"delete from {table_name} where {id_column} = %s", (row_id,))
                     connection.rollback()
                     self.assertIn("append-only", str(delete_error.exception).lower())
+
+    def test_live_pg_learning_influence_from_result_requires_acceptance_and_is_idempotent(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for learning influence from-result integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        suffix = build_trace_id().replace("OSK-", "")
+        dry_run_request_id = f"OSK-AGENT-DRYRUN-FROM-RESULT-{suffix}"
+        dry_run_result_id = f"OSK-AGENT-DRYRUN-RESULT-FROM-RESULT-{suffix}"
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select to_regclass('public.oom_sakkie_learning_influence_proposals')")
+                if cursor.fetchone()[0] is None:
+                    self.skipTest("learning influence proposal tables are not migrated")
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_requests (
+                        dry_run_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'approved_for_read_only_dry_run',
+                        'read_only_dry_run_request_only', 'sentinel',
+                        'unittest', 'learning influence from-result test'
+                    )
+                    """,
+                    (dry_run_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_results (
+                        dry_run_result_id, dry_run_request_id, status, mode,
+                        specialist_slug, result_text, findings_json, recorded_by
+                    )
+                    values (
+                        %s, %s, 'recorded_for_owner_review',
+                        'dry_run_result_review_only', 'sentinel',
+                        'from-result source evidence', '["from-result finding"]'::jsonb,
+                        'unittest'
+                    )
+                    """,
+                    (dry_run_result_id, dry_run_request_id),
+                )
+                connection.commit()
+
+        rejected, rejected_status = record_learning_influence_proposal_from_result(
+            dry_run_result_id,
+            database_url=database_url,
+        )
+
+        self.assertEqual(rejected_status, 409)
+        self.assertFalse(rejected["success"])
+        self.assertEqual(rejected["status"], "source_result_not_accepted_for_learning")
+        self.assertEqual(rejected["source_result_id"], dry_run_result_id)
+        self.assertEqual(rejected["created_count"], 0)
+        self.assertFalse(rejected["applies_learning_now"])
+        self.assertFalse(rejected["changes_prompt_now"])
+        self.assertFalse(rejected["changes_runtime_now"])
+        self.assertFalse(rejected["dispatch_enabled"])
+        self.assertFalse(rejected["writes"])
+
+        accepted_event, accepted_status = record_agent_dry_run_result_event(
+            dry_run_result_id,
+            {
+                "event_type": "accepted_for_learning",
+                "notes": "accepted only as planning evidence",
+                "recorded_by": "unittest",
+            },
+            database_url=database_url,
+        )
+
+        self.assertEqual(accepted_status, 201)
+        self.assertTrue(accepted_event["success"])
+
+        created, created_status = record_learning_influence_proposal_from_result(
+            dry_run_result_id,
+            database_url=database_url,
+        )
+
+        self.assertEqual(created_status, 201)
+        self.assertTrue(created["success"])
+        self.assertEqual(created["created_count"], 1)
+        self.assertEqual(created["accepted_count"], 1)
+        self.assertEqual(len(created["learning_influence_proposals"]), 1)
+        proposal = created["learning_influence_proposals"][0]
+        self.assertEqual(proposal["source_result_id"], dry_run_result_id)
+        self.assertEqual(proposal["mode"], "learning_influence_proposal_only")
+        self.assertFalse(proposal["applies_learning_now"])
+        self.assertFalse(proposal["changes_prompt_now"])
+        self.assertFalse(proposal["changes_runtime_now"])
+        self.assertFalse(proposal["dispatch_enabled"])
+        self.assertFalse(proposal["writes"])
+
+        existing, existing_status = record_learning_influence_proposal_from_result(
+            dry_run_result_id,
+            database_url=database_url,
+        )
+
+        self.assertEqual(existing_status, 201)
+        self.assertTrue(existing["success"])
+        self.assertEqual(existing["created_count"], 0)
+        self.assertEqual(existing["accepted_count"], 1)
+        self.assertEqual(len(existing["learning_influence_proposals"]), 1)
+        self.assertEqual(existing["learning_influence_proposals"][0]["proposal_id"], proposal["proposal_id"])
+        self.assertEqual(existing["learning_influence_proposals"][0]["source_result_id"], dry_run_result_id)
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")

@@ -6,7 +6,7 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CM"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CO"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_FOCUS = [
@@ -15,20 +15,21 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence remains proposal-only; no prompt/runtime/routing/tool/farm-data behavior is applied.",
     "Owner review packet evidence names the current scope and remains review-readiness only.",
     "Prepare Claude review chat routing is deterministic and does not approve runtime authority.",
+    "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
     {
         "workflow": "Oom Sakkie Browser Behavior",
-        "run_id": "27314056906",
+        "run_id": "27314349337",
         "status": "success",
-        "commit": "5de5d9d",
+        "commit": "0d3da2f",
     },
     {
         "workflow": "Oom Sakkie Audit Rails",
-        "run_id": "27314056931",
+        "run_id": "27314349303",
         "status": "success",
-        "commit": "5de5d9d",
+        "commit": "0d3da2f",
     },
 ]
 
