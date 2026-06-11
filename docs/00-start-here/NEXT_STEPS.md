@@ -11758,7 +11758,7 @@ What changed:
 - Added `modules/oom_sakkie/learning_influence_consumer.py`.
 - Added protected `POST /api/oom-sakkie/agent-learning/consumption-requests/<consumption_request_id>/review-note-artifact`.
 - The consumer is the single reviewed production caller allowed to pass `allow_consumed=True` to `record_learning_influence_consumption_event`.
-- The shared scanner still reports unreviewed `allow_consumed` production callers as `[]` and separately lists the reviewed consumer module.
+- The shared scanner still reports unreviewed `allow_consumed` production callers as `[]` and separately lists the reviewed consumer call site.
 - Before writing the consumed marker, the consumer rechecks:
   - the request exists,
   - no prior consumed marker exists,
@@ -11787,6 +11787,45 @@ Next gate:
 
 1. Run full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CY before any applyable prompt/route/runtime diff, UI consume button, wider consumer output, runtime unlock, live dispatch, Telegram cutover, write path, physical control, or financial authority.
+
+### 10.9CZ Oom Sakkie Allow-Consumed Call-Site Guard Hardening - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CY nit that the reviewed allowlist was module-granular.
+- Restore call-site-granular protection around the single `allow_consumed=True` hinge.
+- Keep the existing review-note consumer unchanged in behavior and add no apply path.
+
+What changed:
+
+- The scanner now has one internal all-call-site scan.
+- `find_learning_influence_allow_consumed_callers()` still returns unreviewed offenders only.
+- `find_reviewed_learning_influence_allow_consumed_callers()` returns reviewed call sites separately.
+- The design packet exposes `reviewed_allow_consumed_call_sites`.
+- Tests assert:
+  - unreviewed production callers are `[]`,
+  - exactly one reviewed call site exists,
+  - the reviewed call site is in `modules/oom_sakkie/learning_influence_consumer.py`,
+  - a path that merely contains the allowlisted string in the wrong location is not treated as reviewed.
+
+Safety envelope:
+
+- Guard/test/packet hardening only.
+- No second consumer, no prompt/route/runtime/tool mutation, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Targeted guard tests: `2 OK`.
+- Focused audit suite: `330 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+- Browser behavior smoke passed.
+- Live-gated focused audit suite with `.env` loaded: `330 OK`.
+- Full local unittest suite: `660 OK`.
+
+Next gate:
+
+1. Run focused/full verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CZ before any supervised live consumer smoke or applyable prompt/route/runtime diff design.
 
 7.3E weather LLM triage note:
 

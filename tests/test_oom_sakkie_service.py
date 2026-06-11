@@ -28,7 +28,9 @@ from modules.oom_sakkie.agent_runtime import (
     get_learning_influence_consumption_readiness,
     get_learning_influence_consumer_design_packet,
     find_learning_influence_allow_consumed_callers,
+    find_reviewed_learning_influence_allow_consumed_callers,
     _learning_influence_allow_consumed_callers_from_source,
+    _is_reviewed_allow_consumed_caller,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
@@ -443,8 +445,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CY")
-        self.assertIn("10.9CY", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CZ")
+        self.assertIn("10.9CZ", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -568,6 +570,10 @@ class OomSakkieServiceTests(unittest.TestCase):
             packet["reviewed_allow_consumed_production_callers"],
             ["modules/oom_sakkie/learning_influence_consumer.py"],
         )
+        self.assertEqual(len(packet["reviewed_allow_consumed_call_sites"]), 1)
+        reviewed_call_site = packet["reviewed_allow_consumed_call_sites"][0].replace("\\", "/")
+        self.assertTrue(reviewed_call_site.endswith(":keyword"))
+        self.assertIn("/modules/oom_sakkie/learning_influence_consumer.py:", reviewed_call_site)
         self.assertEqual(packet["allowed_target_contract"]["first_consumer_output"], "review_note_artifact_only")
         self.assertTrue(packet["allowed_target_contract"]["proposal_text_is_untrusted"])
         self.assertTrue(packet["allowed_target_contract"]["manual_application_outside_kiosk_only"])
@@ -608,13 +614,21 @@ class OomSakkieServiceTests(unittest.TestCase):
         guard = next(item for item in packet["static_guards"] if item["guard"] == "no_production_allow_consumed_true")
         self.assertIn("positional fourth argument", guard["purpose"])
         self.assertIn("non-literal-false", guard["purpose"])
-        self.assertEqual(guard["current_state"], "single_reviewed_consumer_module_allowed")
+        self.assertEqual(guard["current_state"], "single_reviewed_consumer_callsite_allowed")
         apply_guard = next(item for item in packet["static_guards"] if item["guard"] == "consumer_applies_nothing")
         self.assertEqual(apply_guard["current_state"], "review_note_artifact_only")
         self.assertIn("owner_and_claude_review", packet["next_gate"])
 
     def test_learning_influence_consumption_has_no_production_allow_consumed_true_caller(self):
         self.assertEqual(find_learning_influence_allow_consumed_callers(), [])
+        reviewed_callers = find_reviewed_learning_influence_allow_consumed_callers()
+        self.assertEqual(len(reviewed_callers), 1)
+        reviewed_caller = reviewed_callers[0].replace("\\", "/")
+        self.assertTrue(reviewed_caller.endswith(":keyword"))
+        self.assertIn("/modules/oom_sakkie/learning_influence_consumer.py:", reviewed_caller)
+        self.assertFalse(_is_reviewed_allow_consumed_caller(
+            "modules/oom_sakkie/not_modules/oom_sakkie/learning_influence_consumer.py:67:keyword"
+        ))
 
     @patch("modules.oom_sakkie.learning_influence_consumer.record_learning_influence_consumption_event")
     @patch("modules.oom_sakkie.learning_influence_consumer._load_consumption_design_record")
@@ -1245,14 +1259,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CY", result["summary"])
+        self.assertIn("10.9CZ", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CY")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CZ")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1330,7 +1344,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CY", result["answer"])
+        self.assertIn("10.9CZ", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

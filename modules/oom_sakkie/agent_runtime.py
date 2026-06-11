@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CY"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CZ"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -35,7 +35,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence review-note consumer is the single reviewed allow_consumed caller and still applies no prompt, route, runtime, or data change.",
+    "Learning influence review-note consumer is the single reviewed allow_consumed call site and still applies no prompt, route, runtime, or data change.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1674,6 +1674,7 @@ def get_learning_influence_consumption_audit_rail_blueprint():
 
 def get_learning_influence_consumer_design_packet():
     allow_consumed_callers = find_learning_influence_allow_consumed_callers()
+    reviewed_allow_consumed_call_sites = find_reviewed_learning_influence_allow_consumed_callers()
     allowed_target_contract = {
         "first_consumer_output": "review_note_artifact_only",
         "allowed_target_kinds": [
@@ -1771,7 +1772,7 @@ def get_learning_influence_consumer_design_packet():
         {
             "guard": "no_production_allow_consumed_true",
             "purpose": "A production caller cannot pass a positional fourth argument, keyword allow_consumed value, alias call, module-attribute call, **kwargs, or any non-literal-false allow_consumed override without updating the deliberate static regression test.",
-            "current_state": "single_reviewed_consumer_module_allowed",
+            "current_state": "single_reviewed_consumer_callsite_allowed",
         },
         {
             "guard": "consumer_applies_nothing",
@@ -1780,7 +1781,7 @@ def get_learning_influence_consumer_design_packet():
         },
     ]
     proposed_first_consumer_tests = [
-        "static guard permits exactly one reviewed consumer module to pass allow_consumed=True",
+        "static guard permits exactly one reviewed consumer call site to pass allow_consumed=True",
         "consumer rejects request without latest approved_for_design_review event",
         "consumer rejects if source proposal is no longer approved_for_future_planning",
         "consumer output is review_note_artifact_only and all authority flags remain false",
@@ -1806,6 +1807,7 @@ def get_learning_influence_consumer_design_packet():
         "changes_runtime_now": False,
         "allow_consumed_production_callers": allow_consumed_callers,
         "reviewed_allow_consumed_production_callers": list(REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS),
+        "reviewed_allow_consumed_call_sites": reviewed_allow_consumed_call_sites,
         "allowed_target_contract": allowed_target_contract,
         "owner_approval_gate": owner_approval_gate,
         "rollback_artifact_contract": rollback_artifact_contract,
@@ -1822,6 +1824,24 @@ def get_learning_influence_consumer_design_packet():
 
 
 def find_learning_influence_allow_consumed_callers(root="modules"):
+    offenders = _find_all_learning_influence_allow_consumed_callers(root=root)
+    offenders = [
+        offender for offender in offenders
+        if not _is_reviewed_allow_consumed_caller(offender)
+    ]
+    return sorted(offenders)
+
+
+def find_reviewed_learning_influence_allow_consumed_callers(root="modules"):
+    offenders = _find_all_learning_influence_allow_consumed_callers(root=root)
+    offenders = [
+        offender for offender in offenders
+        if _is_reviewed_allow_consumed_caller(offender)
+    ]
+    return sorted(offenders)
+
+
+def _find_all_learning_influence_allow_consumed_callers(root="modules"):
     offenders = []
     scan_root = _resolve_allow_consumed_scan_root(root)
     for path in scan_root.rglob("*.py"):
@@ -1831,10 +1851,6 @@ def find_learning_influence_allow_consumed_callers(root="modules"):
             offenders.append(f"{path}:read_error")
             continue
         offenders.extend(_learning_influence_allow_consumed_callers_from_source(source, str(path)))
-    offenders = [
-        offender for offender in offenders
-        if not _is_reviewed_allow_consumed_caller(offender)
-    ]
     return sorted(offenders)
 
 
@@ -1903,8 +1919,21 @@ def _resolve_allow_consumed_scan_root(root):
 
 
 def _is_reviewed_allow_consumed_caller(offender):
-    normalized = offender.replace("\\", "/")
-    return any(path in normalized for path in REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS)
+    normalized_path = _allow_consumed_offender_path(offender).replace("\\", "/")
+    return any(
+        normalized_path == path or normalized_path.endswith(f"/{path}")
+        for path in REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS
+    )
+
+
+def _allow_consumed_offender_path(offender):
+    text = str(offender)
+    parts = text.rsplit(":", 2)
+    if len(parts) == 3 and parts[-1] in {"positional", "keyword", "kwargs"}:
+        return parts[0]
+    if text.endswith(":parse_error") or text.endswith(":read_error"):
+        return text.rsplit(":", 1)[0]
+    return text
 
 
 def _specialist_dry_run_policy_snapshot():
