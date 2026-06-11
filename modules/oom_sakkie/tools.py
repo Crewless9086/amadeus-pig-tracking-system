@@ -18,6 +18,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_jarvis_owner_review_packet,
     get_jarvis_product_progress,
     get_jarvis_safety_gate_board,
+    get_learning_influence_consumption_audit_rail_blueprint,
     get_learning_influence_consumption_readiness,
     recommend_agent_for_text,
 )
@@ -1327,6 +1328,41 @@ def learning_influence_consumption_readiness_handler(_args):
     }
 
 
+def learning_influence_consumption_audit_rail_blueprint_handler(_args):
+    blueprint = get_learning_influence_consumption_audit_rail_blueprint()
+    summary = (
+        "Learning consumption audit rail blueprint is review-only: {} proposed table(s), {} live-PG test(s), "
+        "and no consumer, migration, store, route writer, or apply-learning behavior."
+    ).format(
+        len(blueprint.get("proposed_tables", [])),
+        len(blueprint.get("required_live_pg_tests", [])),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Learning consumption audit rail blueprint is read-only. It does not create tables, write requests/events, consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
+        ],
+        "llm_context": {
+            "kind": "learning_influence_consumption_audit_rail_blueprint",
+            "blueprint": blueprint,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": blueprint,
+    }
+
+
 def agent_command_center_handler(_args):
     center = get_agent_command_center()
     work_status = system_work_status_handler({})
@@ -2075,6 +2111,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=learning_influence_consumption_readiness_handler,
         description="Read-only threat model and gate checklist for any future learning proposal consumer. Never consumes proposals or applies learning.",
+    ),
+    "learning_influence_consumption_audit_rail_blueprint": OomSakkieTool(
+        name="learning_influence_consumption_audit_rail_blueprint",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=learning_influence_consumption_audit_rail_blueprint_handler,
+        description="Read-only blueprint for a future append-only learning-consumption audit rail. Never creates tables, writes events, consumes proposals, or applies learning.",
     ),
     "agent_runtime_readiness": OomSakkieTool(
         name="agent_runtime_readiness",

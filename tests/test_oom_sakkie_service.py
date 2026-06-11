@@ -23,6 +23,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_jarvis_owner_review_packet,
     get_jarvis_product_progress,
     get_jarvis_safety_gate_board,
+    get_learning_influence_consumption_audit_rail_blueprint,
     get_learning_influence_consumption_readiness,
     recommend_agent_for_text,
 )
@@ -146,6 +147,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "agent_learning_evidence",
                 "learning_influence_status",
                 "learning_influence_consumption_readiness",
+                "learning_influence_consumption_audit_rail_blueprint",
                 "agent_activation_preflight",
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
@@ -430,8 +432,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CP")
-        self.assertIn("10.9CP", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CQ")
+        self.assertIn("10.9CQ", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -440,8 +442,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         workflows = {item["workflow"]: item for item in packet["current_review"]["ci_evidence"]}
         self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["status"], "success")
         self.assertEqual(workflows["Oom Sakkie Audit Rails"]["status"], "success")
-        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["recorded_commit"], "4635a56")
-        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27326005346")
+        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["recorded_commit"], "cc6e1ac")
+        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27328989635")
         self.assertFalse(packet["current_review"]["ci_evidence_policy"]["runtime_calls_github"])
         self.assertFalse(packet["current_review"]["ci_evidence_policy"]["auto_trusts_ci"])
         self.assertIn("may trail newer commits", packet["current_review"]["ci_evidence_policy"]["note"])
@@ -454,6 +456,11 @@ class OomSakkieServiceTests(unittest.TestCase):
             "learning_influence_consumption_readiness_only",
         )
         self.assertFalse(packet["payloads"]["learning_influence_consumption_readiness"]["learning_influence_consumer_enabled"])
+        self.assertEqual(
+            packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["mode"],
+            "learning_influence_consumption_audit_rail_blueprint_only",
+        )
+        self.assertFalse(packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["creates_tables_now"])
         self.assertIn("Do not treat it as approval", packet["owner_instruction"])
         self.assertIn("review_before_any_runtime_authority_change", packet["next_gate"])
 
@@ -479,11 +486,44 @@ class OomSakkieServiceTests(unittest.TestCase):
         threats = {item["threat"] for item in readiness["threat_scenarios"]}
         self.assertIn("prompt_or_route_poisoning", threats)
         self.assertIn("authority_creep", threats)
+        self.assertIn("evidence_provenance_and_integrity", threats)
+        self.assertIn("oversized_or_multi_target_blast_radius", threats)
         self.assertIn("rollback_gap", threats)
         self.assertIn("append_only_consumption_audit_rail", readiness["required_gates"])
         self.assertIn("consumed_once_live_pg_test", readiness["required_gates"])
+        self.assertIn("untrusted_proposal_text_policy", readiness["required_gates"])
+        self.assertIn("one_target_field_per_consumption", readiness["required_gates"])
+        self.assertIn("size_capped_reviewable_diff", readiness["required_gates"])
         self.assertIn("No consumer implementation.", readiness["non_goals"])
         self.assertIn("threat_model_review", readiness["next_gate"])
+
+    def test_learning_influence_consumption_audit_rail_blueprint_is_design_only(self):
+        blueprint = get_learning_influence_consumption_audit_rail_blueprint()
+
+        self.assertTrue(blueprint["success"])
+        self.assertEqual(blueprint["mode"], "learning_influence_consumption_audit_rail_blueprint_only")
+        self.assertEqual(blueprint["summary_status"], "blueprint_only_no_consumption_no_apply")
+        self.assertFalse(blueprint["runtime_enabled"])
+        self.assertFalse(blueprint["dispatch_enabled"])
+        self.assertFalse(blueprint["autonomous_loops_enabled"])
+        self.assertFalse(blueprint["writes_enabled"])
+        self.assertFalse(blueprint["specialist_llm_enabled"])
+        self.assertFalse(blueprint["specialist_tools_enabled"])
+        self.assertFalse(blueprint["public_output_enabled"])
+        self.assertFalse(blueprint["physical_controls_enabled"])
+        self.assertFalse(blueprint["learning_influence_consumer_enabled"])
+        self.assertFalse(blueprint["applies_learning_now"])
+        self.assertFalse(blueprint["changes_prompt_now"])
+        self.assertFalse(blueprint["changes_runtime_now"])
+        self.assertFalse(blueprint["creates_tables_now"])
+        self.assertFalse(blueprint["adds_routes_now"])
+        self.assertEqual(len(blueprint["proposed_tables"]), 2)
+        self.assertEqual(blueprint["allowlisted_target_contract"]["first_slice_limit"], "one_target_field_per_consumption")
+        self.assertTrue(blueprint["allowlisted_target_contract"]["diff_contract"]["proposal_text_is_untrusted"])
+        self.assertEqual(blueprint["allowlisted_target_contract"]["diff_contract"]["max_diff_chars"], 1200)
+        self.assertIn("partial unique index", " ".join(blueprint["required_live_pg_tests"]))
+        self.assertIn("No migration in this slice.", blueprint["non_goals"])
+        self.assertIn("audit_rail_implementation", blueprint["next_gate"])
 
     def test_agent_command_center_is_read_only_visibility(self):
         center = get_agent_command_center()
@@ -726,6 +766,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "jarvis_safety_gate_board": get_jarvis_safety_gate_board(),
             "jarvis_owner_review_packet": get_jarvis_owner_review_packet(),
             "learning_influence_consumption_readiness": get_learning_influence_consumption_readiness(),
+            "learning_influence_consumption_audit_rail_blueprint": get_learning_influence_consumption_audit_rail_blueprint(),
             "agent_command_center": get_agent_command_center(),
             "dispatch_rail_blueprint": get_agent_dispatch_decision_rail_blueprint(),
             "runtime_review_packet": get_agent_runtime_review_packet(),
@@ -966,14 +1007,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CP", result["summary"])
+        self.assertIn("10.9CQ", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CP")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CQ")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -999,6 +1040,25 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["writes"])
         self.assertFalse(result["llm_context"]["applies_runtime_change"])
 
+    def test_learning_influence_consumption_audit_rail_blueprint_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import learning_influence_consumption_audit_rail_blueprint_handler
+
+        result = learning_influence_consumption_audit_rail_blueprint_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("review-only", result["summary"])
+        self.assertIn("read-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "learning_influence_consumption_audit_rail_blueprint")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+        self.assertFalse(result["llm_context"]["blueprint"]["learning_influence_consumer_enabled"])
+        self.assertFalse(result["llm_context"]["blueprint"]["creates_tables_now"])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["applies_runtime_change"])
+
     @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     def test_prepare_claude_review_answer_names_scope_without_authority(self, _write_trace, _compose):
@@ -1012,7 +1072,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CP", result["answer"])
+        self.assertIn("10.9CQ", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -3435,6 +3495,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "how is self-learning going": "learning_influence_status",
             "show me the learning consumption threat model": "learning_influence_consumption_readiness",
             "what blocks the learning consumer": "learning_influence_consumption_readiness",
+            "show me the learning consumption audit rail": "learning_influence_consumption_audit_rail_blueprint",
+            "proposal consumption rail blueprint": "learning_influence_consumption_audit_rail_blueprint",
             "run the sentinel dry-run review": "sentinel_dry_run_review",
             "first agent dry run": "sentinel_dry_run_review",
             "what needs my approval": "system_work_status",

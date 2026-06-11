@@ -6,12 +6,12 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CP"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CQ"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
     "mode": "recorded_operator_evidence_only",
-    "recorded_at_utc": "2026-06-11T05:31:30Z",
+    "recorded_at_utc": "2026-06-11T06:44:30Z",
     "source": "local gh run list after push",
     "runtime_calls_github": False,
     "auto_trusts_ci": False,
@@ -30,15 +30,15 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
     {
         "workflow": "Oom Sakkie Browser Behavior",
-        "run_id": "27326005359",
+        "run_id": "27328989665",
         "status": "success",
-        "recorded_commit": "4635a56",
+        "recorded_commit": "cc6e1ac",
     },
     {
         "workflow": "Oom Sakkie Audit Rails",
-        "run_id": "27326005346",
+        "run_id": "27328989635",
         "status": "success",
-        "recorded_commit": "4635a56",
+        "recorded_commit": "cc6e1ac",
     },
 ]
 
@@ -1378,6 +1378,7 @@ def get_jarvis_owner_review_packet():
     safety_gates = get_jarvis_safety_gate_board()
     runtime_review = get_agent_runtime_review_packet()
     learning_consumption = get_learning_influence_consumption_readiness()
+    consumption_audit_rail = get_learning_influence_consumption_audit_rail_blueprint()
     readiness = {
         "progress_overall_percent": progress.get("overall_percent", 0),
         "progress_summary_status": progress.get("summary_status"),
@@ -1427,6 +1428,7 @@ def get_jarvis_owner_review_packet():
             "jarvis_safety_gate_board": safety_gates,
             "agent_runtime_review_packet": runtime_review,
             "learning_influence_consumption_readiness": learning_consumption,
+            "learning_influence_consumption_audit_rail_blueprint": consumption_audit_rail,
         },
         "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
@@ -1465,6 +1467,16 @@ def get_learning_influence_consumption_readiness():
             "required_control": "Future design needs source result age, specialist, latest event, reviewer, and rollback metadata surfaced before any proposal can be used.",
         },
         {
+            "threat": "evidence_provenance_and_integrity",
+            "risk": "Accepted proposal text may include LLM-produced content and must be treated as untrusted input, not safe instructions for future prompt or route patches.",
+            "required_control": "Future consumer must preserve source specialist, source result, reviewer, and event chain provenance, treat proposal text as untrusted, and only map it through an allowlisted target contract.",
+        },
+        {
+            "threat": "oversized_or_multi_target_blast_radius",
+            "risk": "A malformed or oversized proposal could smuggle a broad prompt rewrite or multiple route changes into one tired human review.",
+            "required_control": "Future consumer must allow at most one allowlisted target field per consumption and emit a size-capped reviewable diff before any manual application.",
+        },
+        {
             "threat": "idempotency_or_replay",
             "risk": "The same proposal could be consumed repeatedly or partially applied.",
             "required_control": "Future rail needs consumed-once semantics, append-only events, and a safe failed-state strategy before any consumer exists.",
@@ -1479,6 +1491,9 @@ def get_learning_influence_consumption_readiness():
         "owner_named_scope_for_learning_consumer",
         "claude_threat_model_review",
         "allowlisted_target_contract",
+        "untrusted_proposal_text_policy",
+        "one_target_field_per_consumption",
+        "size_capped_reviewable_diff",
         "append_only_consumption_audit_rail",
         "consumed_once_live_pg_test",
         "offline_no_authority_regression_tests",
@@ -1511,6 +1526,7 @@ def get_learning_influence_consumption_readiness():
             "Should consumed-once state live in a new table or as proposal events?",
             "What rollback artifact must exist before any prompt/routing patch is manually applied?",
             "Which tests prove no runtime authority changes even when a proposal is approved_for_future_planning?",
+            "What size cap and target-field shape make a first consumption diff reviewable under farm-operating pressure?",
         ],
         "non_goals": [
             "No consumer implementation.",
@@ -1518,6 +1534,128 @@ def get_learning_influence_consumption_readiness():
             "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
         ],
         "next_gate": "owner_and_claude_threat_model_review_before_learning_consumer_design",
+    }
+
+
+def get_learning_influence_consumption_audit_rail_blueprint():
+    proposed_tables = [
+        {
+            "name": "oom_sakkie_learning_influence_consumption_requests",
+            "purpose": "Append-only request record for a future owner-approved attempt to turn one approved learning proposal into a reviewable planning diff.",
+            "key_fields": [
+                "consumption_request_id",
+                "proposal_id",
+                "source_result_id",
+                "requested_target_kind",
+                "requested_target_field",
+                "requested_by",
+                "status",
+                "mode",
+                "created_at",
+            ],
+            "forced_false_flags": [
+                "applies_learning_now",
+                "changes_prompt_now",
+                "changes_runtime_now",
+                "dispatch_enabled",
+                "writes",
+            ],
+        },
+        {
+            "name": "oom_sakkie_learning_influence_consumption_events",
+            "purpose": "Append-only review/audit events for the request, including consumed-once marker in a later implementation slice.",
+            "key_fields": [
+                "event_id",
+                "consumption_request_id",
+                "event_type",
+                "notes",
+                "recorded_by",
+                "created_at",
+            ],
+            "allowed_event_types": [
+                "review_note",
+                "approved_for_design_review",
+                "rejected",
+                "consumed_for_patch_proposal",
+            ],
+            "forced_false_flags": [
+                "applies_learning_now",
+                "changes_prompt_now",
+                "changes_runtime_now",
+                "dispatch_enabled",
+                "writes",
+            ],
+        },
+    ]
+    allowlisted_target_contract = {
+        "status": "proposed_for_claude_review",
+        "first_slice_limit": "one_target_field_per_consumption",
+        "target_kind_candidates": [
+            "planning_context_note",
+            "routing_hint_review_note",
+            "answer_style_review_note",
+        ],
+        "excluded_targets": [
+            "runtime flags",
+            "tool registry",
+            "specialist permissions",
+            "farm data",
+            "customer/public output",
+            "deployment configuration",
+            "Telegram routing",
+            "physical controls",
+            "financial behavior",
+        ],
+        "diff_contract": {
+            "max_diff_chars": 1200,
+            "max_source_excerpt_chars": 500,
+            "must_include_before_after": True,
+            "must_include_rollback_text": True,
+            "must_include_source_provenance": True,
+            "proposal_text_is_untrusted": True,
+        },
+    }
+    required_live_pg_tests = [
+        "approved proposal can create one consumption request with all no-apply flags false",
+        "non-approved proposal is rejected before request insert",
+        "second consumed_for_patch_proposal event for the same request is rejected by a partial unique index",
+        "review_note events remain append-only evidence and do not consume the request",
+        "update/delete on request and event tables raises append-only error",
+    ]
+    required_route_tests = [
+        "protected route denies non-local review access",
+        "request route records a request only and returns false apply/runtime/write flags",
+        "event route rejects consumed_for_patch_proposal unless called by the later reviewed consumer path",
+    ]
+    return {
+        "success": True,
+        "mode": "learning_influence_consumption_audit_rail_blueprint_only",
+        "summary_status": "blueprint_only_no_consumption_no_apply",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "learning_influence_consumer_enabled": False,
+        "applies_learning_now": False,
+        "changes_prompt_now": False,
+        "changes_runtime_now": False,
+        "creates_tables_now": False,
+        "adds_routes_now": False,
+        "proposed_tables": proposed_tables,
+        "allowlisted_target_contract": allowlisted_target_contract,
+        "required_live_pg_tests": required_live_pg_tests,
+        "required_route_tests": required_route_tests,
+        "non_goals": [
+            "No migration in this slice.",
+            "No store or event writer in this slice.",
+            "No proposal consumer.",
+            "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
+        ],
+        "next_gate": "owner_and_claude_review_before_consumption_audit_rail_implementation",
     }
 
 

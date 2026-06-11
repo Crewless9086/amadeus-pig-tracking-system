@@ -11378,6 +11378,57 @@ Next gate:
 1. Run focused and full local verification, push, and confirm CI.
 2. Ask Claude to review the combined 10.9CO/10.9CP follow-up before designing any learning proposal consumer.
 
+### 10.9CQ Oom Sakkie Consumption Audit Rail Blueprint - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CO/CP pass feedback without implementing a consumer.
+- Fold Claude's two extra threat items into the readiness packet before they become expensive to retrofit.
+- Prepare one large Claude-reviewable design packet for the first future implementation slice: append-only consumption audit rail with zero apply behavior.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CO/CP: `pass`.
+- Claude explicitly did not authorize the consumer itself.
+- Claude asked to keep two added threat items in scope:
+  - evidence provenance / integrity: proposal text may be LLM-produced untrusted input,
+  - blast-radius bound: one consumption should touch at most one allowlisted target field and emit a size-capped reviewable diff.
+- Claude recommended the first future implementation slice should be the append-only consumption audit rail plus consumed-once live-PG test with zero apply behavior.
+
+What changed:
+
+- Added threat scenario `evidence_provenance_and_integrity`.
+- Added threat scenario `oversized_or_multi_target_blast_radius`.
+- Added required gates:
+  - `untrusted_proposal_text_policy`,
+  - `one_target_field_per_consumption`,
+  - `size_capped_reviewable_diff`.
+- Added read-only `get_learning_influence_consumption_audit_rail_blueprint()`.
+- Added read-only Oom Sakkie tool `learning_influence_consumption_audit_rail_blueprint` and deterministic routing for learning-consumption-audit-rail / consumer-blueprint questions.
+- Added protected read-only route `GET /api/oom-sakkie/agent-learning/consumption-audit-rail-blueprint`.
+- The blueprint proposes:
+  - request/event table shape,
+  - allowed future target contract,
+  - untrusted proposal text policy,
+  - size-capped diff contract,
+  - consumed-once live-PG tests,
+  - route contract tests.
+- The owner/Claude review packet now embeds this blueprint and scopes the next bundled review through `10.9CQ`.
+
+Safety envelope:
+
+- Read-only blueprint, route, tool, docs, and tests only.
+- No migration, store, event writer, proposal consumer, proposal application, prompt/routing/runtime change, hidden POST or polling, specialist dispatch, specialist LLM/tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, or financial action.
+
+Verification:
+
+- Targeted owner packet, threat model, audit-rail blueprint, route, routing, and JS syntax checks passed.
+
+Next gate:
+
+1. Run focused and full local verification, push, and confirm CI.
+2. Ask Claude to review 10.9CQ before implementing the append-only consumption audit rail.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
