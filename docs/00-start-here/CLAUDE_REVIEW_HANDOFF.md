@@ -739,6 +739,7 @@ Known verification from Codex:
 - 10.9CU live-gated focused audit suite with `.env` loaded -> 324 OK.
 - 10.9CU browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9CU full local unittest suite: `.\venv\Scripts\python.exe -m unittest` -> 654 OK.
+- 10.9CU GitHub Actions after commit `d6ca87b`: `Oom Sakkie Browser Behavior` run `27340979776` success; `Oom Sakkie Audit Rails` run `27340979805` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1131,6 +1132,7 @@ Known verification from Codex:
   - The consumer-design packet now calls `find_learning_influence_allow_consumed_callers()` so `allow_consumed_production_callers` is source-backed by the same AST scanner used by the static regression guard.
   - The scanner lives in `agent_runtime.py` and is unit-tested with synthetic direct/alias/module/positional/`**kwargs`/non-literal-false examples, while literal `allow_consumed=False` remains allowed.
   - This is evidence/test/packet hardening only: no consumer, no production `allow_consumed` caller, no applyable diff, and no authority was added.
+  - GitHub Actions for commit `d6ca87b` are green: Browser Behavior run `27340979776`, Audit Rails run `27340979805`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
