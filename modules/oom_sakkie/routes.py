@@ -16,6 +16,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_review_packet,
     get_agent_runtime_status,
     recommend_agent_for_text,
+    get_learning_influence_consumption_readiness,
 )
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
 from modules.oom_sakkie.agent_dry_run_store import (
@@ -422,6 +423,25 @@ def oom_sakkie_learning_influence_proposal_events(proposal_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_learning_influence_proposal_event(proposal_id, payload)
     return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/consumption-readiness", methods=["GET"])
+def oom_sakkie_learning_influence_consumption_readiness():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    readiness = get_learning_influence_consumption_readiness()
+    return jsonify({
+        **readiness,
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200
 
 
 @oom_sakkie_bp.route("/oom-sakkie/review-packet", methods=["GET"])

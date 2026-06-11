@@ -6,9 +6,17 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CO"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CP"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
+CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
+    "mode": "recorded_operator_evidence_only",
+    "recorded_at_utc": "2026-06-11T05:31:30Z",
+    "source": "local gh run list after push",
+    "runtime_calls_github": False,
+    "auto_trusts_ci": False,
+    "note": "These are the latest green runs recorded when the review packet was updated; they are not live GitHub status and may trail newer commits until the packet is intentionally refreshed.",
+}
 CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Owner Cockpit direct actions remain append-only review records only.",
     "Accepted-result proposal prep targets exactly one clicked source result after accepted_for_learning.",
@@ -16,20 +24,21 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Owner review packet evidence names the current scope and remains review-readiness only.",
     "Prepare Claude review chat routing is deterministic and does not approve runtime authority.",
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
+    "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
     {
         "workflow": "Oom Sakkie Browser Behavior",
-        "run_id": "27314349337",
+        "run_id": "27326005359",
         "status": "success",
-        "commit": "0d3da2f",
+        "recorded_commit": "4635a56",
     },
     {
         "workflow": "Oom Sakkie Audit Rails",
-        "run_id": "27314349303",
+        "run_id": "27326005346",
         "status": "success",
-        "commit": "0d3da2f",
+        "recorded_commit": "4635a56",
     },
 ]
 
@@ -1368,6 +1377,7 @@ def get_jarvis_owner_review_packet():
     command_center = get_agent_command_center()
     safety_gates = get_jarvis_safety_gate_board()
     runtime_review = get_agent_runtime_review_packet()
+    learning_consumption = get_learning_influence_consumption_readiness()
     readiness = {
         "progress_overall_percent": progress.get("overall_percent", 0),
         "progress_summary_status": progress.get("summary_status"),
@@ -1397,6 +1407,7 @@ def get_jarvis_owner_review_packet():
             "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
             "focus": list(CURRENT_CLAUDE_REVIEW_FOCUS),
             "ci_evidence": [dict(item) for item in CURRENT_CLAUDE_REVIEW_CI_EVIDENCE],
+            "ci_evidence_policy": dict(CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY),
             "learning_influence_consumer_enabled": False,
             "applies_learning_now": False,
             "changes_prompt_now": False,
@@ -1415,10 +1426,98 @@ def get_jarvis_owner_review_packet():
             "agent_command_center": command_center,
             "jarvis_safety_gate_board": safety_gates,
             "agent_runtime_review_packet": runtime_review,
+            "learning_influence_consumption_readiness": learning_consumption,
         },
         "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
         "next_gate": "owner_and_claude_review_before_any_runtime_authority_change",
+    }
+
+
+def get_learning_influence_consumption_readiness():
+    allowed_future_scope = [
+        "Read only owner-approved learning influence proposals whose latest event is approved_for_future_planning.",
+        "Produce a proposed planning-context patch or prompt diff for owner review; do not apply it automatically.",
+        "Limit each proposed change to advisory wording, routing hints, or planning-question framing after a separate Claude-approved implementation gate.",
+        "Record any future consumption attempt in an append-only audit rail before a human applies code or prompt changes outside the kiosk.",
+    ]
+    hard_no_scope = [
+        "Do not change prompts, routes, runtime flags, specialist permissions, tools, or farm data from inside the kiosk.",
+        "Do not let a proposal approve itself, consume itself, or bypass owner and Claude review.",
+        "Do not create a background worker, timer, polling loop, autonomous learning job, or hidden POST.",
+        "Do not dispatch specialists, run specialist LLM loops, execute tools, deploy, cut over Telegram, message customers, publish content, control equipment, or take financial action.",
+        "Do not treat a green CI run, Claude review, or owner review note as automatic runtime authority.",
+    ]
+    threat_scenarios = [
+        {
+            "threat": "prompt_or_route_poisoning",
+            "risk": "A plausible accepted proposal could broaden Oom Sakkie's instructions or route unsafe user text into a tool.",
+            "required_control": "Future consumer must emit a bounded patch proposal only, with allowlisted target files/fields, owner review, Claude review, and tests before manual application.",
+        },
+        {
+            "threat": "authority_creep",
+            "risk": "Planning evidence could be mistaken for permission to enable live dispatch, writes, tools, public output, or physical control.",
+            "required_control": "Every consumer output must preserve false runtime/dispatch/tool/write/public/deploy/Telegram/control flags and fail if any target would widen authority.",
+        },
+        {
+            "threat": "stale_or_bad_evidence",
+            "risk": "Old or low-quality accepted evidence could steer future behavior after farm conditions change.",
+            "required_control": "Future design needs source result age, specialist, latest event, reviewer, and rollback metadata surfaced before any proposal can be used.",
+        },
+        {
+            "threat": "idempotency_or_replay",
+            "risk": "The same proposal could be consumed repeatedly or partially applied.",
+            "required_control": "Future rail needs consumed-once semantics, append-only events, and a safe failed-state strategy before any consumer exists.",
+        },
+        {
+            "threat": "rollback_gap",
+            "risk": "Applied learning could degrade answers without a clean reversal path.",
+            "required_control": "Future implementation must produce explicit rollback instructions and preserve the previous prompt/routing state outside the kiosk.",
+        },
+    ]
+    required_gates = [
+        "owner_named_scope_for_learning_consumer",
+        "claude_threat_model_review",
+        "allowlisted_target_contract",
+        "append_only_consumption_audit_rail",
+        "consumed_once_live_pg_test",
+        "offline_no_authority_regression_tests",
+        "browser_behavior_no_hidden_post_or_polling_test",
+        "manual_patch_or_prompt_application_outside_kiosk",
+        "rollback_plan_verified_before_apply",
+    ]
+    return {
+        "success": True,
+        "mode": "learning_influence_consumption_readiness_only",
+        "summary_status": "not_ready_consumer_requires_owner_claude_threat_model",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "learning_influence_consumer_enabled": False,
+        "applies_learning_now": False,
+        "changes_prompt_now": False,
+        "changes_runtime_now": False,
+        "allowed_future_scope": allowed_future_scope,
+        "hard_no_scope": hard_no_scope,
+        "threat_scenarios": threat_scenarios,
+        "required_gates": required_gates,
+        "review_questions": [
+            "Is the allowed target set narrow enough for a first consumer design?",
+            "Should consumed-once state live in a new table or as proposal events?",
+            "What rollback artifact must exist before any prompt/routing patch is manually applied?",
+            "Which tests prove no runtime authority changes even when a proposal is approved_for_future_planning?",
+        ],
+        "non_goals": [
+            "No consumer implementation.",
+            "No proposal application.",
+            "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
+        ],
+        "next_gate": "owner_and_claude_threat_model_review_before_learning_consumer_design",
     }
 
 

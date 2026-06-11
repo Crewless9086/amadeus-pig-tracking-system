@@ -103,6 +103,10 @@ RULES = [
         IntentMatch("agent_learning_evidence", "agent_learning_evidence", 0.95, "rule:agent_learning_evidence"),
     ),
     (
+        re.compile(r"\b(learning consumption|consume learning|consume proposals|proposal consumer|learning consumer|apply learning|learning threat model|learning rollback|learning.*threat|what blocks.*learning.*consumer)\b", re.I),
+        IntentMatch("learning_influence_consumption_readiness", "learning_influence_consumption_readiness", 0.95, "rule:learning_influence_consumption_readiness"),
+    ),
+    (
         re.compile(r"\b(learning influence|learning proposal|learning proposals|sentinel suggestions|sentinel improvement suggestions|automatic learning|self learning|self-learning|what learning needs approval|what should sentinel suggest)\b", re.I),
         IntentMatch("learning_influence_status", "learning_influence_status", 0.95, "rule:learning_influence_status"),
     ),

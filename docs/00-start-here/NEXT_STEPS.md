@@ -11334,6 +11334,50 @@ Next gate:
 1. Run focused and full local verification, then push and confirm GitHub Actions.
 2. Ask Claude to review 10.9CO before any learning proposal consumption or runtime-authority work.
 
+### 10.9CP Oom Sakkie Learning Consumption Threat Model Packet - Local Ready
+
+Purpose:
+
+- Act on Claude's carried-forward CI-evidence drift nit without adding runtime GitHub calls.
+- Build the largest safe pre-review slice before the high-risk learning proposal consumer gate: a read-only threat model and readiness packet for future consumption design.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CO: `pass`.
+- Claude repeated that CI evidence commit pins can drift after every push and suggested generating/dating evidence rather than treating hand-pinned commit IDs as exact current-HEAD proof.
+- Claude explicitly did not authorize actual learning proposal consumption or runtime authority.
+
+What changed:
+
+- `CURRENT_CLAUDE_REVIEW_CI_EVIDENCE` now records `recorded_commit` values from the latest green run evidence and includes `ci_evidence_policy`:
+  - `mode = recorded_operator_evidence_only`,
+  - `runtime_calls_github = false`,
+  - `auto_trusts_ci = false`,
+  - note says evidence may trail newer commits until intentionally refreshed.
+- Added read-only `get_learning_influence_consumption_readiness()`.
+- Added read-only Oom Sakkie tool `learning_influence_consumption_readiness` and deterministic routing for learning-consumption / proposal-consumer / learning-threat-model questions.
+- Added protected read-only route `GET /api/oom-sakkie/agent-learning/consumption-readiness`.
+- The readiness packet lists:
+  - allowed future scope for a first consumer design,
+  - hard no-go scope,
+  - threat scenarios for prompt/route poisoning, authority creep, stale evidence, replay/idempotency, and rollback gaps,
+  - required gates before any consumer exists.
+- The owner/Claude review packet now embeds the readiness packet and scopes the next bundled review through `10.9CP`.
+
+Safety envelope:
+
+- Read-only metadata, route, tool, and tests only.
+- No proposal consumer, no proposal application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Targeted owner-review packet, learning-consumption readiness, routing, route, and JS syntax checks passed.
+
+Next gate:
+
+1. Run focused and full local verification, push, and confirm CI.
+2. Ask Claude to review the combined 10.9CO/10.9CP follow-up before designing any learning proposal consumer.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

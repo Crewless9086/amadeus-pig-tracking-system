@@ -18,6 +18,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_jarvis_owner_review_packet,
     get_jarvis_product_progress,
     get_jarvis_safety_gate_board,
+    get_learning_influence_consumption_readiness,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_results
@@ -1252,7 +1253,7 @@ def jarvis_owner_review_packet_handler(_args):
     summary = (
         "Owner review packet is ready for {}: Jarvis progress is {}%, {} safety gate(s) are configured, "
         "{} authority gate(s) remain locked, and {} manual check(s) remain owner-confirmed. "
-        "{} current CI gate(s) are recorded green. Use the Claude handoff prompt when you want the batched review."
+        "{} recorded CI gate(s) are green evidence. Use the Claude handoff prompt when you want the batched review."
     ).format(
         scope,
         readiness.get("progress_overall_percent", 0),
@@ -1288,6 +1289,41 @@ def jarvis_owner_review_packet_handler(_args):
             "applies_runtime_change": False,
         },
         "raw": packet,
+    }
+
+
+def learning_influence_consumption_readiness_handler(_args):
+    readiness = get_learning_influence_consumption_readiness()
+    summary = (
+        "Learning influence consumption is not ready: {} threat scenario(s) and {} required gate(s) are listed "
+        "for owner and Claude review before any proposal can influence prompts, routing, runtime, tools, or farm data."
+    ).format(
+        len(readiness.get("threat_scenarios", [])),
+        len(readiness.get("required_gates", [])),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Learning consumption readiness is read-only. It does not consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
+        ],
+        "llm_context": {
+            "kind": "learning_influence_consumption_readiness",
+            "readiness": readiness,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": readiness,
     }
 
 
@@ -2030,6 +2066,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=learning_influence_status_handler,
         description="Read-only status of proposed learning influence records. Never applies learning, prompts, runtime changes, or writes farm data.",
+    ),
+    "learning_influence_consumption_readiness": OomSakkieTool(
+        name="learning_influence_consumption_readiness",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=learning_influence_consumption_readiness_handler,
+        description="Read-only threat model and gate checklist for any future learning proposal consumer. Never consumes proposals or applies learning.",
     ),
     "agent_runtime_readiness": OomSakkieTool(
         name="agent_runtime_readiness",
