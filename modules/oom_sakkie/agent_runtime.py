@@ -12,7 +12,7 @@ LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE = "modules.oom_sakkie.learning_influ
 LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION = "record_learning_influence_consumption_event"
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CV"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CW"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -32,7 +32,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence consumer design remains review-only; allow_consumed production caller scan is repo-root anchored and parse-error tolerant.",
+    "Learning influence consumer design remains review-only; the owner/Claude design agreement is explicit but no consumer is implemented.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1713,6 +1713,54 @@ def get_learning_influence_consumer_design_packet():
         ],
         "non_goal": "This is not an applyable prompt or route patch.",
     }
+    consumer_design_review_agreement = {
+        "status": "ready_for_owner_and_claude_design_review_no_implementation",
+        "implementation_authorized_now": False,
+        "allow_consumed_true_authorized_now": False,
+        "review_note_artifact_shape": {
+            "kind": "review_note_only",
+            "stored_on": "oom_sakkie_learning_influence_consumption_requests.review_note_artifact_json",
+            "required_fields": [
+                "kind",
+                "target_kind",
+                "target_field",
+                "proposed_review_note_text",
+                "source_excerpt",
+                "source_provenance",
+                "rollback_artifact",
+            ],
+            "forbidden_fields": [
+                "prompt_patch",
+                "route_patch",
+                "runtime_flag_patch",
+                "tool_permission_patch",
+                "sql_to_execute",
+                "farm_data_write",
+                "public_output",
+            ],
+            "max_artifact_chars": allowed_target_contract["max_artifact_chars"],
+            "max_source_excerpt_chars": allowed_target_contract["max_source_excerpt_chars"],
+            "proposal_text_is_untrusted": True,
+        },
+        "must_recheck_before_marker_enforcement": {
+            "ordered_steps": [
+                "load consumption request by id",
+                "verify request latest event is approved_for_design_review",
+                "verify source proposal latest event is still approved_for_future_planning",
+                "verify target kind and target field still match the allowlist",
+                "verify no prior consumed_for_patch_proposal marker exists",
+                "write consumed_for_patch_proposal marker once",
+                "return review_note_artifact_only with all authority flags false",
+            ],
+            "failure_behavior": "Return an error and write no consumed marker if any recheck fails.",
+        },
+        "rollback_artifact_contract": {
+            "required_fields": rollback_artifact_contract["required_fields"],
+            "manual_application_outside_kiosk_only": True,
+            "non_goal": rollback_artifact_contract["non_goal"],
+        },
+        "static_guard_update_required_for_future_consumer": True,
+    }
     static_guards = [
         {
             "guard": "no_production_allow_consumed_true",
@@ -1754,6 +1802,7 @@ def get_learning_influence_consumer_design_packet():
         "allowed_target_contract": allowed_target_contract,
         "owner_approval_gate": owner_approval_gate,
         "rollback_artifact_contract": rollback_artifact_contract,
+        "consumer_design_review_agreement": consumer_design_review_agreement,
         "static_guards": static_guards,
         "proposed_first_consumer_tests": proposed_first_consumer_tests,
         "non_goals": [

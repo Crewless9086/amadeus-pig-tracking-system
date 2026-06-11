@@ -11650,12 +11650,59 @@ Verification:
 - Live-gated focused audit suite with `.env` loaded: `326 OK`.
 - Browser behavior smoke passed.
 - Full local unittest suite: `656 OK`.
+- Live-gated focused audit suite with `.env` loaded: `326 OK`.
+- Browser behavior smoke passed.
+- Full local unittest suite: `656 OK`.
 - GitHub Actions after commit `0db102a`: `Oom Sakkie Browser Behavior` run `27341856836` success; `Oom Sakkie Audit Rails` run `27341856819` success.
 
 Next gate:
 
 1. Run focused/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CV before any learning proposal consumer implementation.
+
+### 10.9CW Oom Sakkie Read-Only Consumer Design Agreement - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CV pass feedback that the scanner thread is closed and the next useful checkpoint is consumer design review, not consumer implementation.
+- Make the design-review agenda concrete in the existing read-only consumer design packet.
+- Preserve the pre-consumer gate: no production `allow_consumed=True`, no consumer, no applyable diff.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CV: `pass`.
+- Claude said the substantive next step is owner + Claude consumer-design review: agree review-note artifact shape, `must_recheck_before_marker` enforcement, and rollback artifact contract.
+- Claude explicitly said this is design, not code that consumes proposals.
+
+What changed:
+
+- `get_learning_influence_consumer_design_packet()` now includes `consumer_design_review_agreement`.
+- The agreement sets `implementation_authorized_now = false` and `allow_consumed_true_authorized_now = false`.
+- The agreement pins:
+  - review-note artifact shape,
+  - required source provenance,
+  - forbidden patch/write/public-output fields,
+  - ordered `must_recheck_before_marker` sequence,
+  - failure behavior that writes no consumed marker,
+  - rollback artifact contract,
+  - future static-guard update requirement.
+- Service and route tests pin the agreement and the no-authority posture.
+- Scope metadata moved to `10.9CW`.
+
+Safety envelope:
+
+- Design/test/packet hardening only.
+- No consumer, no production `allow_consumed` caller, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Focused audit suite: `326 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Run focused/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CW before any learning proposal consumer implementation.
 
 7.3E weather LLM triage note:
 

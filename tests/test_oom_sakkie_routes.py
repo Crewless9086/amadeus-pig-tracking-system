@@ -622,6 +622,16 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["allow_consumed_production_callers"], [])
         self.assertEqual(data["allowed_target_contract"]["first_consumer_output"], "review_note_artifact_only")
         self.assertTrue(data["allowed_target_contract"]["proposal_text_is_untrusted"])
+        self.assertEqual(
+            data["consumer_design_review_agreement"]["status"],
+            "ready_for_owner_and_claude_design_review_no_implementation",
+        )
+        self.assertFalse(data["consumer_design_review_agreement"]["implementation_authorized_now"])
+        self.assertFalse(data["consumer_design_review_agreement"]["allow_consumed_true_authorized_now"])
+        self.assertIn(
+            "prompt_patch",
+            data["consumer_design_review_agreement"]["review_note_artifact_shape"]["forbidden_fields"],
+        )
         self.assertFalse(data["review_guard"]["dispatch_enabled"])
         self.assertFalse(data["review_guard"]["runs_specialist_tools"])
         self.assertFalse(data["review_guard"]["writes"])
