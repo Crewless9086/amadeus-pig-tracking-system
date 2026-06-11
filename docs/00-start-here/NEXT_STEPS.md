@@ -11828,6 +11828,61 @@ Next gate:
 1. Run focused/full verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CZ before any supervised live consumer smoke or applyable prompt/route/runtime diff design.
 
+### 10.9DA Oom Sakkie Browser Voice Capture And Live Consumer Smoke - Local Ready
+
+Purpose:
+
+- Fix the owner-reported local Talk/Talk & Ask capture issue enough to make failure causes visible and testable.
+- Run the owner-approved supervised live consumer smoke before moving toward read-only Telegram/Oom Sakkie access.
+- Preserve the no-apply/no-write/no-dispatch safety envelope.
+
+What changed:
+
+- `static/js/oomSakkie.js` now gives clearer browser speech recognition errors:
+  - microphone permission blocked,
+  - unsupported browser,
+  - no speech captured,
+  - missing audio input,
+  - recognition service/network failure.
+- `tests/oom_sakkie_browser_behavior_smoke.js` now includes a fake Web Speech recognizer:
+  - `Talk` fills the input and visible draft with the recognized transcript and does not POST,
+  - `Talk & Ask` schedules the existing two-second cancel window and POSTs only after recognized text plus timer,
+  - voice capture still starts no interval polling.
+- Ran the supervised live consumer smoke through the protected Flask route against configured Postgres:
+  - created isolated smoke request/proposal/consumption records,
+  - recorded `approved_for_design_review`,
+  - POSTed `/api/oom-sakkie/agent-learning/consumption-requests/<id>/review-note-artifact`,
+  - replayed the same POST,
+  - verified exactly one consumed marker.
+
+Smoke evidence:
+
+- `consumption_request_id = OSK-LEARNING-CONSUME-69FA189A6E4C`.
+- First route POST: `201`, mode `learning_influence_review_note_consumer_only`, artifact kind `review_note_only`.
+- Replay route POST: `409`, status `already_consumed`, artifact `{}`.
+- DB consumed marker count: `1`.
+- `applies_learning_now`, `changes_prompt_now`, `changes_runtime_now`, `dispatch_enabled`, and `writes` all false.
+
+Safety envelope:
+
+- Browser reliability + supervised evidence only.
+- No Telegram cutover, no second consumer, no applyable prompt/route/runtime diff, no prompt/routing/runtime/tool mutation, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no physical control, and no financial action.
+
+Verification:
+
+- `node tests/oom_sakkie_browser_behavior_smoke.js` passed.
+- `node --check static/js/oomSakkie.js` passed.
+- Frontend route contracts: `28 OK`.
+- Supervised live consumer smoke passed as above.
+- Focused audit suite: `330 OK`.
+- Live-gated focused audit suite with `.env` loaded: `330 OK`.
+- Full local unittest suite: `660 OK`.
+
+Next gate:
+
+1. Run focused/full verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9DA before implementing the read-only Telegram/Oom Sakkie access path.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

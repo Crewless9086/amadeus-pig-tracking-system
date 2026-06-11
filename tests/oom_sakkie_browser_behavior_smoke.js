@@ -9,6 +9,7 @@ const elements = new Map();
 const fetchCalls = [];
 const intervalCalls = [];
 const timeoutCalls = [];
+const recognitionInstances = [];
 
 class FakeElement {
   constructor(id = "") {
@@ -213,10 +214,48 @@ const document = {
   },
 };
 
+class FakeSpeechRecognition {
+  constructor() {
+    this.lang = "";
+    this.interimResults = false;
+    this.continuous = false;
+    this.onstart = null;
+    this.onerror = null;
+    this.onend = null;
+    this.onresult = null;
+    this.started = false;
+    recognitionInstances.push(this);
+  }
+
+  start() {
+    this.started = true;
+    if (this.onstart) this.onstart();
+  }
+
+  stop() {
+    this.started = false;
+    if (this.onend) this.onend();
+  }
+
+  emitTranscript(text) {
+    if (this.onresult) {
+      this.onresult({
+        results: [[{ transcript: text }]],
+      });
+    }
+  }
+
+  emitEnd() {
+    this.started = false;
+    if (this.onend) this.onend();
+  }
+}
+
 const window = {
   SpeechRecognition: null,
-  webkitSpeechRecognition: null,
+  webkitSpeechRecognition: FakeSpeechRecognition,
   speechSynthesis: null,
+  isSecureContext: true,
   localStorage: {
     _values: new Map(),
     getItem(key) {
@@ -338,6 +377,34 @@ async function flushPromises() {
     "Learning influence proposal preparation must POST only after owner click",
   );
   assert.strictEqual(intervalCalls.length, 0, "Learning influence proposal preparation click must not start interval polling");
+
+  fetchCalls.length = 0;
+  await element("oom_voice_button").trigger("click");
+  await flushPromises();
+  assert.strictEqual(recognitionInstances.length, 1, "Talk should create one browser speech recognition instance");
+  recognitionInstances[0].emitTranscript("show me the safety gates");
+  recognitionInstances[0].emitEnd();
+  await flushPromises();
+  assert.strictEqual(element("oom_text").value, "show me the safety gates", "Talk should copy recognized speech into the input box");
+  assert.strictEqual(element("oom_user_text").textContent, "show me the safety gates", "Talk should show the recognized draft");
+  assert.deepStrictEqual(fetchCalls, [], "Talk draft capture must not POST until the owner sends it");
+
+  fetchCalls.length = 0;
+  timeoutCalls.length = 0;
+  await element("oom_voice_ask_button").trigger("click");
+  await flushPromises();
+  recognitionInstances[0].emitTranscript("what needs my approval");
+  recognitionInstances[0].emitEnd();
+  await flushPromises();
+  assert.strictEqual(timeoutCalls.length, 1, "Talk & Ask should schedule the explicit short auto-send window after capture");
+  assert.strictEqual(timeoutCalls[0].ms, 2000, "Talk & Ask auto-send window should remain two seconds");
+  await timeoutCalls[0].handler();
+  await flushPromises();
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url === "/api/oom-sakkie/message"),
+    "Talk & Ask should POST the captured text only after browser recognition returns text and the auto-send timer fires",
+  );
+  assert.strictEqual(intervalCalls.length, 0, "voice capture must not start interval polling");
 
   fetchCalls.length = 0;
   await quickAskButton.trigger("click");

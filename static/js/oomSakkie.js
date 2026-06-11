@@ -410,6 +410,19 @@
     if (voiceStatus) voiceStatus.textContent = value;
   }
 
+  function voiceRecognitionErrorMessage(errorCode) {
+    const code = errorCode || "unknown error";
+    const messages = {
+      "not-allowed": "Microphone permission was blocked. Allow microphone access for this site, then press Talk again.",
+      "service-not-allowed": "Speech recognition is blocked by the browser or network. Try Chrome/Edge on localhost, or type the question.",
+      "no-speech": "No speech was captured. Move closer to the microphone, check the selected input device, or type the question.",
+      "audio-capture": "No microphone input was found. Check Windows microphone permissions and the browser's selected input device.",
+      network: "Browser speech recognition could not reach its recognition service. Check connectivity or type the question.",
+      aborted: "Speech recognition was stopped before it captured a question.",
+    };
+    return messages[code] || `Speech recognition stopped: ${code}. Try again or type the question.`;
+  }
+
   function renderVoiceLoopCounter() {
     if (!voiceLoopCounter) return;
     const active = !!(continueConversation && continueConversation.checked);
@@ -485,7 +498,7 @@
       voiceAutoSubmitMode = false;
       setStatus("Voice error", "error");
       logVoiceEvent("Recognition error", event.error || "unknown error");
-      setVoiceStatus(`Speech recognition stopped: ${event.error || "unknown error"}.`);
+      setVoiceStatus(voiceRecognitionErrorMessage(event.error));
     };
 
     recognition.onend = () => {
@@ -530,7 +543,7 @@
     clearVoiceAutoSubmit();
     const activeRecognition = ensureRecognition();
     if (!activeRecognition) {
-      setVoiceStatus("Speech recognition is not available in this browser.");
+      setVoiceStatus("Speech recognition is not available in this browser. Use Chrome or Edge on this local kiosk, or type the question.");
       return;
     }
     if (speechSynthesisApi) {
@@ -544,7 +557,7 @@
     try {
       activeRecognition.start();
     } catch (error) {
-      setVoiceStatus("Speech recognition could not start. Try again after the current capture ends.");
+      setVoiceStatus("Speech recognition could not start. Check microphone permission, then try again after the current capture ends.");
     }
   }
 
@@ -556,7 +569,7 @@
   function startVoiceAskCapture(cancelSpeechFirst) {
     const activeRecognition = ensureRecognition();
     if (!activeRecognition) {
-      setVoiceStatus("Speech recognition is not available in this browser.");
+      setVoiceStatus("Speech recognition is not available in this browser. Use Chrome or Edge on this local kiosk, or type the question.");
       return;
     }
     if (cancelSpeechFirst && speechSynthesisApi) {
@@ -574,7 +587,7 @@
       activeRecognition.start();
     } catch (error) {
       voiceAutoSubmitMode = false;
-      setVoiceStatus("Speech recognition could not start. Try again after the current capture ends.");
+      setVoiceStatus("Speech recognition could not start. Check microphone permission, then try again after the current capture ends.");
     }
   }
 
