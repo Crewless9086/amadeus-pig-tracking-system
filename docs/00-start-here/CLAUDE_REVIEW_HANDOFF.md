@@ -776,6 +776,7 @@ Known verification from Codex:
 - 10.9CZ browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9CZ live-gated focused audit suite with `.env` loaded -> 330 OK.
 - 10.9CZ full local unittest suite: `.\venv\Scripts\python.exe -m unittest` -> 660 OK.
+- 10.9CZ GitHub Actions after commit `d69ffdd`: `Oom Sakkie Browser Behavior` run `27361204620` success; `Oom Sakkie Audit Rails` run `27361204040` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
