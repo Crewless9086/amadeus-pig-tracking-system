@@ -144,6 +144,10 @@ from modules.oom_sakkie.trace_store import (
 from modules.oom_sakkie.tools import RiskLevel, TOOL_REGISTRY, list_tool_catalog
 
 
+def _ast_literal_false(node):
+    return isinstance(node, ast.Constant) and node.value is False
+
+
 class OomSakkieServiceTests(unittest.TestCase):
     def test_tool_registry_contract(self):
         self.assertEqual(
@@ -440,8 +444,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CS")
-        self.assertIn("10.9CS", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CT")
+        self.assertIn("10.9CT", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -570,28 +574,58 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         self.assertIn("No consumer implementation.", packet["non_goals"])
         self.assertIn("No allow_consumed=True production caller.", packet["non_goals"])
+        guard = next(item for item in packet["static_guards"] if item["guard"] == "no_production_allow_consumed_true")
+        self.assertIn("positional fourth argument", guard["purpose"])
+        self.assertIn("non-literal-false", guard["purpose"])
         self.assertIn("owner_and_claude_review", packet["next_gate"])
 
     def test_learning_influence_consumption_has_no_production_allow_consumed_true_caller(self):
+        target_module = "modules.oom_sakkie.learning_influence_consumption_store"
+        target_function = "record_learning_influence_consumption_event"
         offenders = []
         for path in Path("modules").rglob("*.py"):
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(path))
+            function_aliases = {target_function}
+            module_aliases = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == target_module:
+                            module_aliases.add(alias.asname or alias.name.split(".")[-1])
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module == target_module:
+                        for alias in node.names:
+                            if alias.name == target_function:
+                                function_aliases.add(alias.asname or alias.name)
+                    elif node.module == "modules.oom_sakkie":
+                        for alias in node.names:
+                            if alias.name == "learning_influence_consumption_store":
+                                module_aliases.add(alias.asname or alias.name)
+
             for node in ast.walk(tree):
                 if not isinstance(node, ast.Call):
                     continue
-                func_name = ""
+                is_target_call = False
                 if isinstance(node.func, ast.Name):
-                    func_name = node.func.id
+                    is_target_call = node.func.id in function_aliases
                 elif isinstance(node.func, ast.Attribute):
-                    func_name = node.func.attr
-                if func_name != "record_learning_influence_consumption_event":
+                    if node.func.attr == target_function:
+                        is_target_call = True
+                    elif isinstance(node.func.value, ast.Name) and node.func.value.id in module_aliases:
+                        is_target_call = node.func.attr == target_function
+                if not is_target_call:
                     continue
+                if len(node.args) >= 4 and not _ast_literal_false(node.args[3]):
+                    offenders.append(f"{path}:{node.lineno}:positional")
                 for keyword in node.keywords:
+                    if keyword.arg is None:
+                        offenders.append(f"{path}:{node.lineno}:kwargs")
+                        continue
                     if keyword.arg != "allow_consumed":
                         continue
-                    if isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
-                        offenders.append(f"{path}:{node.lineno}")
+                    if not _ast_literal_false(keyword.value):
+                        offenders.append(f"{path}:{node.lineno}:keyword")
 
         self.assertEqual(offenders, [])
 
@@ -1077,14 +1111,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CS", result["summary"])
+        self.assertIn("10.9CT", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CS")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CT")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1162,7 +1196,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CS", result["answer"])
+        self.assertIn("10.9CT", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

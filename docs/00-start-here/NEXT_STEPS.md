@@ -11523,11 +11523,57 @@ Verification:
 
 - Focused audit suite: `323 OK`.
 - `node --check static/js/oomSakkie.js` passed.
+- Live-gated focused audit suite with `.env` loaded: `323 OK`.
+- Browser behavior smoke passed.
+- Full local unittest suite: `653 OK`.
 
 Next gate:
 
 1. Run browser smoke/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CS before any learning proposal consumer implementation.
+
+### 10.9CT Oom Sakkie Allow-Consumed Static Guard Hardening - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CS pass feedback without implementing a consumer.
+- Close Claude's low-priority static-guard nit before any future consumer code exists.
+- Make the automated guard harder to evade accidentally.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CS: `pass`.
+- Claude noted the AST guard caught only keyword `allow_consumed=True` with literal `True`.
+- Claude suggested hardening the guard to also catch aliased calls, positional fourth-argument use, and non-literal truthy values.
+
+What changed:
+
+- The static AST test now tracks:
+  - direct imports,
+  - aliased function imports,
+  - module imports,
+  - module-attribute calls.
+- The guard now flags:
+  - positional fourth arguments to `record_learning_influence_consumption_event`,
+  - `**kwargs`,
+  - any `allow_consumed` keyword value that is not literal `False`.
+- The consumer-design packet wording now documents this stronger trip-wire.
+- Scope metadata moved to `10.9CT`.
+
+Safety envelope:
+
+- Test/packet/docs hardening only.
+- No consumer, no production `allow_consumed` caller, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Focused audit suite: `323 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Run focused/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CT before any learning proposal consumer implementation.
 
 7.3E weather LLM triage note:
 

@@ -6,7 +6,7 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CS"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CT"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -26,7 +26,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence consumer design remains review-only; allow_consumed=True has a static no-production-caller guard.",
+    "Learning influence consumer design remains review-only; allow_consumed has a hardened static no-production-caller guard.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1709,7 +1709,7 @@ def get_learning_influence_consumer_design_packet():
     static_guards = [
         {
             "guard": "no_production_allow_consumed_true",
-            "purpose": "A production caller cannot pass allow_consumed=True without updating the deliberate static regression test.",
+            "purpose": "A production caller cannot pass a positional fourth argument, keyword allow_consumed value, alias call, module-attribute call, **kwargs, or any non-literal-false allow_consumed override without updating the deliberate static regression test.",
             "current_state": "no production caller",
         },
         {
