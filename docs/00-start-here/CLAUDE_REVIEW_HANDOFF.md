@@ -721,6 +721,7 @@ Known verification from Codex:
 - 10.9CR migration apply: `.\venv\Scripts\python.exe scripts\apply_supabase_migration.py supabase\migrations\202606110001_create_oom_sakkie_learning_influence_consumption_audit_rail.sql` -> applied.
 - 10.9CR live-PG audit suite with `.env` loaded: `.\venv\Scripts\python.exe -c "from dotenv import load_dotenv; load_dotenv(); import unittest; ..."` -> 318 OK, including the new live Postgres consumption audit rail test.
 - 10.9CR JavaScript syntax: `node --check static/js/oomSakkie.js` -> OK.
+- 10.9CR GitHub Actions after commit `0e64852`: `Oom Sakkie Browser Behavior` run `27332832970` success; `Oom Sakkie Audit Rails` run `27332832941` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1094,6 +1095,7 @@ Known verification from Codex:
   - The migration forces `applies_learning_now = false`, `changes_prompt_now = false`, `changes_runtime_now = false`, `dispatch_enabled = false`, and `writes = false` on both request and event tables, blocks update/delete, and enforces one consumed marker per request through partial unique index `idx_oom_sakkie_learning_consumption_consumed_once`.
   - The audit rail status now reports `creates_tables_now = true`, `adds_routes_now = true`, `review_note_only_first_slice = true`, and still reports `learning_influence_consumer_enabled = false` with no apply/prompt/runtime/dispatch/write authority.
   - New live-PG coverage proves: non-approved proposal rejects, approved proposal creates one request, repeated same target returns existing request with `created_count = 0`, review notes do not consume, second consumed marker fails, and update/delete on both new tables raises append-only errors.
+  - GitHub Actions for commit `0e64852` are green: Browser Behavior run `27332832970`, Audit Rails run `27332832941`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
