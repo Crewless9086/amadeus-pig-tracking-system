@@ -753,6 +753,7 @@ Known verification from Codex:
 - 10.9CW live-gated focused audit suite with `.env` loaded -> 326 OK.
 - 10.9CW browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9CW full local unittest suite: `.\venv\Scripts\python.exe -m unittest` -> 656 OK.
+- 10.9CW GitHub Actions after commit `aaaa4a4`: `Oom Sakkie Browser Behavior` run `27345986022` success; `Oom Sakkie Audit Rails` run `27345985975` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1158,6 +1159,7 @@ Known verification from Codex:
   - The existing read-only consumer design packet now includes `consumer_design_review_agreement` with `implementation_authorized_now = false` and `allow_consumed_true_authorized_now = false`.
   - The agreement pins the review-note artifact shape, required source provenance, forbidden patch/write/public-output fields, ordered `must_recheck_before_marker` sequence, failure behavior that writes no consumed marker, rollback artifact contract, and the required future static-guard update.
   - Route and service tests pin that the agreement is exposed only as read-only design data and still has no consumer, no production `allow_consumed` caller, no applyable diff, and no authority.
+  - GitHub Actions for commit `aaaa4a4` are green: Browser Behavior run `27345986022`, Audit Rails run `27345985975`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
