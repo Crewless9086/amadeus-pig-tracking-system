@@ -725,6 +725,7 @@ Known verification from Codex:
 - 10.9CR GitHub Actions after commit `0e64852`: `Oom Sakkie Browser Behavior` run `27332832970` success; `Oom Sakkie Audit Rails` run `27332832941` success.
 - 10.9CS focused audit suite: `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 323 OK.
 - 10.9CS JavaScript syntax: `node --check static/js/oomSakkie.js` -> OK.
+- 10.9CS GitHub Actions after commit `a136d5f`: `Oom Sakkie Browser Behavior` run `27334034813` success; `Oom Sakkie Audit Rails` run `27334034805` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1105,6 +1106,7 @@ Known verification from Codex:
   - Added read-only `get_learning_influence_consumer_design_packet()`, tool `learning_influence_consumer_design_packet`, deterministic routing for consumer-design / allow-consumed guard questions, and protected `GET /api/oom-sakkie/agent-learning/consumer-design-packet`.
   - The design packet answers the next consumer gate questions: only an approved-for-design-review request could later call the marker, first output must be `review_note_artifact_only`, proposal text remains untrusted, one target field is allowed, rollback/manual-application artifacts are required, and manual application stays outside the kiosk.
   - This is design/static-guard only: `allow_consumed_production_callers = []`, `learning_influence_consumer_enabled = false`, and no consumer or applyable diff exists.
+  - GitHub Actions for commit `a136d5f` are green: Browser Behavior run `27334034813`, Audit Rails run `27334034805`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
