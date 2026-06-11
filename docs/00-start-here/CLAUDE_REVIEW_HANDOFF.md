@@ -760,6 +760,7 @@ Known verification from Codex:
 - 10.9CX live-gated focused audit suite with `.env` loaded -> 326 OK.
 - 10.9CX browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9CX full local unittest suite: `.\venv\Scripts\python.exe -m unittest` -> 656 OK.
+- 10.9CX GitHub Actions after commit `049f37c`: `Oom Sakkie Browser Behavior` run `27354775052` success; `Oom Sakkie Audit Rails` run `27354774018` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1171,6 +1172,7 @@ Known verification from Codex:
   - The design agreement now says `idx_oom_sakkie_learning_consumption_consumed_once` is the authoritative atomic race guard for `consumed_for_patch_proposal`.
   - The agreement now requires unique-violation at marker write to return `already_consumed` and produce no second review-note artifact.
   - Route and service tests pin this TOCTOU wording while still asserting no consumer, no production `allow_consumed` caller, no applyable diff, and no authority.
+  - GitHub Actions for commit `049f37c` are green: Browser Behavior run `27354775052`, Audit Rails run `27354774018`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
