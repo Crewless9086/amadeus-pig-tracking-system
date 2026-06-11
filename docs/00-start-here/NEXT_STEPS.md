@@ -11745,6 +11745,48 @@ Next gate:
 1. Run focused/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CX before any learning proposal consumer implementation.
 
+### 10.9CY Oom Sakkie Review-Note Consumer Implementation - Local Ready
+
+Purpose:
+
+- Act on the owner's explicit approval of the 10.9CW/CX consumer design agreement.
+- Build the first learning-influence consumer exactly against that agreement.
+- Keep the output review-note-only with no prompt, route, runtime, tool, farm-data, public-output, deploy, Telegram, physical-control, or financial application.
+
+What changed:
+
+- Added `modules/oom_sakkie/learning_influence_consumer.py`.
+- Added protected `POST /api/oom-sakkie/agent-learning/consumption-requests/<consumption_request_id>/review-note-artifact`.
+- The consumer is the single reviewed production caller allowed to pass `allow_consumed=True` to `record_learning_influence_consumption_event`.
+- The shared scanner still reports unreviewed `allow_consumed` production callers as `[]` and separately lists the reviewed consumer module.
+- Before writing the consumed marker, the consumer rechecks:
+  - the request exists,
+  - no prior consumed marker exists,
+  - latest request event is `approved_for_design_review`,
+  - source proposal latest event is still `approved_for_future_planning`,
+  - requested target kind/field remains allowlisted.
+- The DB partial unique index remains the consumed-once atomic race guard. Repeat calls or unique-violation return `already_consumed` and no second review-note artifact.
+- The returned artifact includes source provenance, `proposal_text_is_untrusted = true`, rollback text, `manual_application_outside_kiosk_only = true`, and all apply/prompt/runtime/dispatch/write flags false.
+
+Safety envelope:
+
+- Review-note artifact only.
+- No applyable prompt, route, or runtime diff.
+- No prompt/routing/runtime/tool mutation, specialist dispatch, specialist LLM/tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, or financial action.
+
+Verification:
+
+- Focused audit suite: `330 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+- Browser behavior smoke passed.
+- Live-gated focused audit suite with `.env` loaded: `330 OK`.
+- Full local unittest suite: `660 OK`.
+
+Next gate:
+
+1. Run full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CY before any applyable prompt/route/runtime diff, UI consume button, wider consumer output, runtime unlock, live dispatch, Telegram cutover, write path, physical control, or financial authority.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

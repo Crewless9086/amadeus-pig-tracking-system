@@ -1368,7 +1368,7 @@ def learning_influence_consumer_design_packet_handler(_args):
     packet = get_learning_influence_consumer_design_packet()
     summary = (
         "Learning influence consumer design packet is review-only: {} proposed guard(s), {} first-consumer test(s), "
-        "and no production allow_consumed caller or applyable diff."
+        "and one reviewed review-note-only allow_consumed caller with no applyable diff."
     ).format(
         len(packet.get("static_guards", [])),
         len(packet.get("proposed_first_consumer_tests", [])),
@@ -1380,7 +1380,7 @@ def learning_influence_consumer_design_packet_handler(_args):
         "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
         "stale_warnings": [],
         "safety_notes": [
-            "Learning influence consumer design packet is read-only. It does not implement a consumer, call allow_consumed=True, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
+            "Learning influence consumer design packet is read-only. The reviewed consumer can produce a review-note artifact only; it does not apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
         ],
         "llm_context": {
             "kind": "learning_influence_consumer_design_packet",
@@ -2164,7 +2164,7 @@ TOOL_REGISTRY = {
         risk_level=RiskLevel.READ_ONLY,
         requires_confirmation=False,
         handler=learning_influence_consumer_design_packet_handler,
-        description="Read-only design packet for a future learning proposal consumer. Never consumes proposals, calls allow_consumed=True, or applies learning.",
+        description="Read-only design packet for the reviewed learning proposal consumer. The packet itself never consumes proposals or applies learning.",
     ),
     "agent_runtime_readiness": OomSakkieTool(
         name="agent_runtime_readiness",

@@ -72,6 +72,7 @@ from modules.oom_sakkie.learning_influence_consumption_store import (
     record_learning_influence_consumption_event,
     record_learning_influence_consumption_request,
 )
+from modules.oom_sakkie.learning_influence_consumer import produce_learning_influence_review_note_artifact
 from modules.oom_sakkie.patch_proposal_store import (
     list_patch_proposals,
     record_patch_proposal,
@@ -515,6 +516,16 @@ def oom_sakkie_learning_influence_consumption_request_events(consumption_request
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_learning_influence_consumption_event(consumption_request_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/consumption-requests/<consumption_request_id>/review-note-artifact", methods=["POST"])
+def oom_sakkie_learning_influence_consumption_review_note_artifact(consumption_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = produce_learning_influence_review_note_artifact(consumption_request_id, payload)
     return jsonify(result), status_code
 
 

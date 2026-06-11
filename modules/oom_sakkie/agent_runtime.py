@@ -10,9 +10,12 @@ from modules.oom_sakkie.specialists import list_specialist_manifests
 
 LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE = "modules.oom_sakkie.learning_influence_consumption_store"
 LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION = "record_learning_influence_consumption_event"
+REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
+    "modules/oom_sakkie/learning_influence_consumer.py",
+]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CX"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CY"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -32,7 +35,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence consumer design remains review-only; the DB consumed-once constraint is named as the future consumer's atomic race guard.",
+    "Learning influence review-note consumer is the single reviewed allow_consumed caller and still applies no prompt, route, runtime, or data change.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1418,7 +1421,7 @@ def get_jarvis_owner_review_packet():
             "focus": list(CURRENT_CLAUDE_REVIEW_FOCUS),
             "ci_evidence": [dict(item) for item in CURRENT_CLAUDE_REVIEW_CI_EVIDENCE],
             "ci_evidence_policy": dict(CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY),
-            "learning_influence_consumer_enabled": False,
+            "learning_influence_consumer_enabled": True,
             "applies_learning_now": False,
             "changes_prompt_now": False,
             "changes_runtime_now": False,
@@ -1714,9 +1717,10 @@ def get_learning_influence_consumer_design_packet():
         "non_goal": "This is not an applyable prompt or route patch.",
     }
     consumer_design_review_agreement = {
-        "status": "ready_for_owner_and_claude_design_review_no_implementation",
-        "implementation_authorized_now": False,
-        "allow_consumed_true_authorized_now": False,
+        "status": "owner_approved_review_note_consumer_implemented_no_apply",
+        "implementation_authorized_now": True,
+        "allow_consumed_true_authorized_now": True,
+        "authorized_allow_consumed_true_callers": list(REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS),
         "review_note_artifact_shape": {
             "kind": "review_note_only",
             "stored_on": "oom_sakkie_learning_influence_consumption_requests.review_note_artifact_json",
@@ -1767,12 +1771,12 @@ def get_learning_influence_consumer_design_packet():
         {
             "guard": "no_production_allow_consumed_true",
             "purpose": "A production caller cannot pass a positional fourth argument, keyword allow_consumed value, alias call, module-attribute call, **kwargs, or any non-literal-false allow_consumed override without updating the deliberate static regression test.",
-            "current_state": "source_scan_no_production_caller",
+            "current_state": "single_reviewed_consumer_module_allowed",
         },
         {
-            "guard": "consumer_not_implemented",
-            "purpose": "No function reads a consumption request to produce a patch, mutate a prompt, mutate routing, change runtime, or write farm data.",
-            "current_state": "not implemented",
+            "guard": "consumer_applies_nothing",
+            "purpose": "The reviewed consumer may only emit a review-note artifact and consumed marker; it must not produce a patch, mutate a prompt, mutate routing, change runtime, or write farm data.",
+            "current_state": "review_note_artifact_only",
         },
     ]
     proposed_first_consumer_tests = [
@@ -1787,7 +1791,7 @@ def get_learning_influence_consumer_design_packet():
     return {
         "success": True,
         "mode": "learning_influence_consumer_design_packet_only",
-        "summary_status": "design_review_only_no_consumer_no_applyable_diff",
+        "summary_status": "review_note_consumer_allowed_no_applyable_diff",
         "runtime_enabled": False,
         "dispatch_enabled": False,
         "autonomous_loops_enabled": False,
@@ -1796,11 +1800,12 @@ def get_learning_influence_consumer_design_packet():
         "specialist_tools_enabled": False,
         "public_output_enabled": False,
         "physical_controls_enabled": False,
-        "learning_influence_consumer_enabled": False,
+        "learning_influence_consumer_enabled": True,
         "applies_learning_now": False,
         "changes_prompt_now": False,
         "changes_runtime_now": False,
         "allow_consumed_production_callers": allow_consumed_callers,
+        "reviewed_allow_consumed_production_callers": list(REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS),
         "allowed_target_contract": allowed_target_contract,
         "owner_approval_gate": owner_approval_gate,
         "rollback_artifact_contract": rollback_artifact_contract,
@@ -1808,12 +1813,11 @@ def get_learning_influence_consumer_design_packet():
         "static_guards": static_guards,
         "proposed_first_consumer_tests": proposed_first_consumer_tests,
         "non_goals": [
-            "No consumer implementation.",
-            "No allow_consumed=True production caller.",
+            "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial application from the consumer.",
             "No applyable prompt, route, or runtime diff.",
             "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
         ],
-        "next_gate": "owner_and_claude_review_before_any_learning_consumer_implementation",
+        "next_gate": "owner_and_claude_review_before_any_applyable_prompt_route_runtime_diff",
     }
 
 
@@ -1827,6 +1831,10 @@ def find_learning_influence_allow_consumed_callers(root="modules"):
             offenders.append(f"{path}:read_error")
             continue
         offenders.extend(_learning_influence_allow_consumed_callers_from_source(source, str(path)))
+    offenders = [
+        offender for offender in offenders
+        if not _is_reviewed_allow_consumed_caller(offender)
+    ]
     return sorted(offenders)
 
 
@@ -1892,6 +1900,11 @@ def _resolve_allow_consumed_scan_root(root):
         return scan_root
     repo_root = Path(__file__).resolve().parents[2]
     return repo_root / scan_root
+
+
+def _is_reviewed_allow_consumed_caller(offender):
+    normalized = offender.replace("\\", "/")
+    return any(path in normalized for path in REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS)
 
 
 def _specialist_dry_run_policy_snapshot():

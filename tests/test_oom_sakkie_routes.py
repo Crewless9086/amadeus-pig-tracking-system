@@ -613,7 +613,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(data["success"])
         self.assertEqual(data["mode"], "learning_influence_consumer_design_packet_only")
-        self.assertFalse(data["learning_influence_consumer_enabled"])
+        self.assertTrue(data["learning_influence_consumer_enabled"])
         self.assertFalse(data["applies_learning_now"])
         self.assertFalse(data["changes_prompt_now"])
         self.assertFalse(data["changes_runtime_now"])
@@ -624,10 +624,14 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertTrue(data["allowed_target_contract"]["proposal_text_is_untrusted"])
         self.assertEqual(
             data["consumer_design_review_agreement"]["status"],
-            "ready_for_owner_and_claude_design_review_no_implementation",
+            "owner_approved_review_note_consumer_implemented_no_apply",
         )
-        self.assertFalse(data["consumer_design_review_agreement"]["implementation_authorized_now"])
-        self.assertFalse(data["consumer_design_review_agreement"]["allow_consumed_true_authorized_now"])
+        self.assertTrue(data["consumer_design_review_agreement"]["implementation_authorized_now"])
+        self.assertTrue(data["consumer_design_review_agreement"]["allow_consumed_true_authorized_now"])
+        self.assertEqual(
+            data["reviewed_allow_consumed_production_callers"],
+            ["modules/oom_sakkie/learning_influence_consumer.py"],
+        )
         self.assertIn(
             "prompt_patch",
             data["consumer_design_review_agreement"]["review_note_artifact_shape"]["forbidden_fields"],
@@ -760,6 +764,40 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["writes"])
         mock_record.assert_called_once()
 
+    @patch("modules.oom_sakkie.routes.produce_learning_influence_review_note_artifact")
+    def test_learning_influence_review_note_consumer_route_produces_review_note_only(self, mock_consumer):
+        mock_consumer.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "learning_influence_review_note_consumer_only",
+            "review_note_artifact": {"kind": "review_note_only"},
+            "review_note_artifact_only": True,
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+        payload = {"recorded_by": "unittest"}
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/consumption-requests/OSK-LEARNING-CONSUME-1/review-note-artifact",
+            json=payload,
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "learning_influence_review_note_consumer_only")
+        self.assertEqual(data["review_note_artifact"]["kind"], "review_note_only")
+        self.assertTrue(data["review_note_artifact_only"])
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_consumer.assert_called_once_with("OSK-LEARNING-CONSUME-1", payload)
+
     def test_learning_influence_consumption_routes_deny_non_local_review_access(self):
         response = self.client.post(
             "/api/oom-sakkie/agent-learning/consumption-requests",
@@ -774,6 +812,16 @@ class OomSakkieRouteTests(unittest.TestCase):
         response = self.client.post(
             "/api/oom-sakkie/agent-learning/consumption-requests/OSK-LEARNING-CONSUME-1/events",
             json={"event_type": "review_note"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/consumption-requests/OSK-LEARNING-CONSUME-1/review-note-artifact",
+            json={},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

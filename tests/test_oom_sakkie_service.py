@@ -116,6 +116,7 @@ from modules.oom_sakkie.learning_influence_consumption_store import (
     record_learning_influence_consumption_event,
     record_learning_influence_consumption_request,
 )
+from modules.oom_sakkie.learning_influence_consumer import produce_learning_influence_review_note_artifact
 from modules.oom_sakkie.patch_proposal_store import (
     _patch_proposal_params,
     _patch_proposal_row,
@@ -442,10 +443,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CX")
-        self.assertIn("10.9CX", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CY")
+        self.assertIn("10.9CY", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
-        self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
+        self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
         self.assertFalse(packet["current_review"]["changes_prompt_now"])
         self.assertFalse(packet["current_review"]["changes_runtime_now"])
@@ -478,7 +479,7 @@ class OomSakkieServiceTests(unittest.TestCase):
             "learning_influence_consumer_design_packet_only",
         )
         self.assertEqual(packet["payloads"]["learning_influence_consumer_design_packet"]["allow_consumed_production_callers"], [])
-        self.assertFalse(packet["payloads"]["learning_influence_consumer_design_packet"]["learning_influence_consumer_enabled"])
+        self.assertTrue(packet["payloads"]["learning_influence_consumer_design_packet"]["learning_influence_consumer_enabled"])
         self.assertIn("Do not treat it as approval", packet["owner_instruction"])
         self.assertIn("review_before_any_runtime_authority_change", packet["next_gate"])
 
@@ -549,7 +550,7 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertTrue(packet["success"])
         self.assertEqual(packet["mode"], "learning_influence_consumer_design_packet_only")
-        self.assertEqual(packet["summary_status"], "design_review_only_no_consumer_no_applyable_diff")
+        self.assertEqual(packet["summary_status"], "review_note_consumer_allowed_no_applyable_diff")
         self.assertFalse(packet["runtime_enabled"])
         self.assertFalse(packet["dispatch_enabled"])
         self.assertFalse(packet["autonomous_loops_enabled"])
@@ -558,18 +559,26 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(packet["specialist_tools_enabled"])
         self.assertFalse(packet["public_output_enabled"])
         self.assertFalse(packet["physical_controls_enabled"])
-        self.assertFalse(packet["learning_influence_consumer_enabled"])
+        self.assertTrue(packet["learning_influence_consumer_enabled"])
         self.assertFalse(packet["applies_learning_now"])
         self.assertFalse(packet["changes_prompt_now"])
         self.assertFalse(packet["changes_runtime_now"])
         self.assertEqual(packet["allow_consumed_production_callers"], [])
+        self.assertEqual(
+            packet["reviewed_allow_consumed_production_callers"],
+            ["modules/oom_sakkie/learning_influence_consumer.py"],
+        )
         self.assertEqual(packet["allowed_target_contract"]["first_consumer_output"], "review_note_artifact_only")
         self.assertTrue(packet["allowed_target_contract"]["proposal_text_is_untrusted"])
         self.assertTrue(packet["allowed_target_contract"]["manual_application_outside_kiosk_only"])
         agreement = packet["consumer_design_review_agreement"]
-        self.assertEqual(agreement["status"], "ready_for_owner_and_claude_design_review_no_implementation")
-        self.assertFalse(agreement["implementation_authorized_now"])
-        self.assertFalse(agreement["allow_consumed_true_authorized_now"])
+        self.assertEqual(agreement["status"], "owner_approved_review_note_consumer_implemented_no_apply")
+        self.assertTrue(agreement["implementation_authorized_now"])
+        self.assertTrue(agreement["allow_consumed_true_authorized_now"])
+        self.assertEqual(
+            agreement["authorized_allow_consumed_true_callers"],
+            ["modules/oom_sakkie/learning_influence_consumer.py"],
+        )
         self.assertEqual(agreement["review_note_artifact_shape"]["kind"], "review_note_only")
         self.assertIn("source_provenance", agreement["review_note_artifact_shape"]["required_fields"])
         self.assertIn("prompt_patch", agreement["review_note_artifact_shape"]["forbidden_fields"])
@@ -595,16 +604,117 @@ class OomSakkieServiceTests(unittest.TestCase):
             packet["owner_approval_gate"]["required_before_allow_consumed_true"],
             "approved_for_design_review event on the consumption request",
         )
-        self.assertIn("No consumer implementation.", packet["non_goals"])
-        self.assertIn("No allow_consumed=True production caller.", packet["non_goals"])
+        self.assertIn("No applyable prompt, route, or runtime diff.", packet["non_goals"])
         guard = next(item for item in packet["static_guards"] if item["guard"] == "no_production_allow_consumed_true")
         self.assertIn("positional fourth argument", guard["purpose"])
         self.assertIn("non-literal-false", guard["purpose"])
-        self.assertEqual(guard["current_state"], "source_scan_no_production_caller")
+        self.assertEqual(guard["current_state"], "single_reviewed_consumer_module_allowed")
+        apply_guard = next(item for item in packet["static_guards"] if item["guard"] == "consumer_applies_nothing")
+        self.assertEqual(apply_guard["current_state"], "review_note_artifact_only")
         self.assertIn("owner_and_claude_review", packet["next_gate"])
 
     def test_learning_influence_consumption_has_no_production_allow_consumed_true_caller(self):
         self.assertEqual(find_learning_influence_allow_consumed_callers(), [])
+
+    @patch("modules.oom_sakkie.learning_influence_consumer.record_learning_influence_consumption_event")
+    @patch("modules.oom_sakkie.learning_influence_consumer._load_consumption_design_record")
+    def test_learning_influence_review_note_consumer_emits_artifact_after_consumed_marker(self, mock_load, mock_event):
+        mock_load.return_value = ({
+            "success": True,
+            "consumption_request_id": "OSK-LEARNING-CONSUME-1",
+            "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+            "source_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+            "specialist_slug": "sentinel",
+            "requested_target_kind": "planning_context_note",
+            "requested_target_field": "owner_review_notes",
+            "request_note": "Use this as a planning note.",
+            "proposal_text": "source proposal text",
+            "review_note_artifact": {"source_excerpt": "source excerpt"},
+            "request_latest_event": {"event_type": "approved_for_design_review"},
+            "proposal_latest_event": {"event_type": "approved_for_future_planning"},
+            "has_consumed_marker": False,
+        }, 200)
+        mock_event.return_value = ({
+            "success": True,
+            "event_id": "OSK-LEARNING-CONSUME-EVENT-1",
+            "event_type": "consumed_for_patch_proposal",
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+
+        result, status = produce_learning_influence_review_note_artifact(
+            "OSK-LEARNING-CONSUME-1",
+            {"recorded_by": "unittest", "previous_review_note_text": "old note"},
+            database_url="postgres://unit",
+        )
+
+        self.assertEqual(status, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "learning_influence_review_note_consumer_only")
+        self.assertTrue(result["review_note_artifact_only"])
+        self.assertEqual(result["review_note_artifact"]["kind"], "review_note_only")
+        self.assertEqual(result["review_note_artifact"]["source_provenance"]["proposal_id"], "OSK-LEARNING-INFLUENCE-1")
+        self.assertEqual(result["review_note_artifact"]["rollback_artifact"]["previous_review_note_text"], "old note")
+        self.assertFalse(result["review_note_artifact"]["changes_prompt_now"])
+        self.assertFalse(result["applies_learning_now"])
+        self.assertFalse(result["writes"])
+        mock_event.assert_called_once()
+        self.assertTrue(mock_event.call_args.kwargs["allow_consumed"])
+
+    @patch("modules.oom_sakkie.learning_influence_consumer.record_learning_influence_consumption_event")
+    @patch("modules.oom_sakkie.learning_influence_consumer._load_consumption_design_record")
+    def test_learning_influence_review_note_consumer_handles_unique_violation_without_second_artifact(self, mock_load, mock_event):
+        mock_load.return_value = ({
+            "success": True,
+            "consumption_request_id": "OSK-LEARNING-CONSUME-1",
+            "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+            "source_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+            "requested_target_kind": "planning_context_note",
+            "requested_target_field": "owner_review_notes",
+            "request_latest_event": {"event_type": "approved_for_design_review"},
+            "proposal_latest_event": {"event_type": "approved_for_future_planning"},
+            "has_consumed_marker": False,
+        }, 200)
+        mock_event.return_value = ({
+            "success": False,
+            "status": "learning_influence_consumption_event_write_failed",
+            "error_type": "UniqueViolation",
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 503)
+
+        result, status = produce_learning_influence_review_note_artifact("OSK-LEARNING-CONSUME-1", database_url="postgres://unit")
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "already_consumed")
+        self.assertEqual(result["review_note_artifact"], {})
+        self.assertFalse(result["writes"])
+
+    @patch("modules.oom_sakkie.learning_influence_consumer._load_consumption_design_record")
+    def test_learning_influence_review_note_consumer_requires_design_approval(self, mock_load):
+        mock_load.return_value = ({
+            "success": True,
+            "consumption_request_id": "OSK-LEARNING-CONSUME-1",
+            "requested_target_kind": "planning_context_note",
+            "requested_target_field": "owner_review_notes",
+            "request_latest_event": {"event_type": "review_note"},
+            "proposal_latest_event": {"event_type": "approved_for_future_planning"},
+            "has_consumed_marker": False,
+        }, 200)
+
+        result, status = produce_learning_influence_review_note_artifact("OSK-LEARNING-CONSUME-1", database_url="postgres://unit")
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "consumption_request_not_approved_for_design_review")
+        self.assertFalse(result["changes_runtime_now"])
 
     def test_learning_influence_allow_consumed_scanner_is_cwd_independent(self):
         original_cwd = os.getcwd()
@@ -1135,15 +1245,15 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CX", result["summary"])
+        self.assertIn("10.9CY", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CX")
-        self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CY")
+        self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
         self.assertFalse(result["llm_context"]["runs_specialist_tools"])
@@ -1199,7 +1309,7 @@ def literal_false_is_allowed():
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "learning_influence_consumer_design_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
-        self.assertFalse(result["llm_context"]["design_packet"]["learning_influence_consumer_enabled"])
+        self.assertTrue(result["llm_context"]["design_packet"]["learning_influence_consumer_enabled"])
         self.assertEqual(result["llm_context"]["design_packet"]["allow_consumed_production_callers"], [])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1220,7 +1330,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CX", result["answer"])
+        self.assertIn("10.9CY", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -5693,14 +5803,45 @@ def literal_false_is_allowed():
         self.assertTrue(review_event["success"])
         self.assertFalse(review_event["changes_prompt_now"])
 
-        first_consumed, first_consumed_status = record_learning_influence_consumption_event(
+        design_approval, design_approval_status = record_learning_influence_consumption_event(
             consumption_request_id,
-            {"event_type": "consumed_for_patch_proposal", "notes": "runner-only marker", "recorded_by": "unittest"},
+            {"event_type": "approved_for_design_review", "notes": "owner approved review-note consumer", "recorded_by": "unittest"},
             database_url=database_url,
-            allow_consumed=True,
         )
-        self.assertEqual(first_consumed_status, 201)
-        self.assertTrue(first_consumed["success"])
+        self.assertEqual(design_approval_status, 201)
+        self.assertTrue(design_approval["success"])
+
+        consumer_result, consumer_status = produce_learning_influence_review_note_artifact(
+            consumption_request_id,
+            {
+                "recorded_by": "unittest",
+                "previous_review_note_text": "old planning note",
+                "proposed_review_note_text": "new review note only",
+            },
+            database_url=database_url,
+        )
+        self.assertEqual(consumer_status, 201)
+        self.assertTrue(consumer_result["success"])
+        self.assertEqual(consumer_result["mode"], "learning_influence_review_note_consumer_only")
+        self.assertTrue(consumer_result["review_note_artifact_only"])
+        self.assertEqual(consumer_result["review_note_artifact"]["kind"], "review_note_only")
+        self.assertEqual(consumer_result["review_note_artifact"]["proposed_review_note_text"], "new review note only")
+        self.assertFalse(consumer_result["review_note_artifact"]["applies_learning_now"])
+        self.assertFalse(consumer_result["applies_learning_now"])
+        self.assertFalse(consumer_result["changes_prompt_now"])
+        self.assertFalse(consumer_result["changes_runtime_now"])
+        self.assertFalse(consumer_result["dispatch_enabled"])
+        self.assertFalse(consumer_result["writes"])
+
+        repeated_consumer, repeated_consumer_status = produce_learning_influence_review_note_artifact(
+            consumption_request_id,
+            {"recorded_by": "unittest"},
+            database_url=database_url,
+        )
+        self.assertEqual(repeated_consumer_status, 409)
+        self.assertFalse(repeated_consumer["success"])
+        self.assertEqual(repeated_consumer["status"], "already_consumed")
+        self.assertEqual(repeated_consumer["review_note_artifact"], {})
 
         second_consumed, second_consumed_status = record_learning_influence_consumption_event(
             consumption_request_id,
@@ -5723,7 +5864,7 @@ def literal_false_is_allowed():
             (
                 "public.oom_sakkie_learning_influence_consumption_events",
                 "event_id",
-                review_event["event_id"],
+                consumer_result["event_id"],
                 "notes",
             ),
         ):
