@@ -11254,6 +11254,41 @@ Next gate:
 1. Keep this owner review packet as review-readiness only.
 2. Do not build learning proposal consumption or runtime unlocks until a separate owner + Claude-reviewed gate exists.
 
+### 10.9CN Oom Sakkie Review Packet Final Scope Sync - Local Ready
+
+Purpose:
+
+- Make the owner/Claude handoff and Oom Sakkie's read-only review packet include the latest 10.9CL/10.9CM review-readiness hardening.
+- Stop the unattended build at a clean review gate instead of starting any learning consumer or runtime unlock.
+
+What changed:
+
+- Updated `get_jarvis_owner_review_packet()` metadata scope to `Oom Sakkie 10.6 through 10.9CM`.
+- Updated the packet focus list to include owner review packet evidence and the `prepare Claude review` chat gate.
+- Updated recorded CI evidence to the latest green commit `5de5d9d`:
+  - `Oom Sakkie Browser Behavior` run `27314056906`,
+  - `Oom Sakkie Audit Rails` run `27314056931`.
+- Updated `docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md` so Claude's current review packet names the 10.9CA-CM scope, latest verification, and design checks for 10.9CL/10.9CM.
+- Updated service tests to pin the new scope, CI evidence, and no-authority guard behavior.
+
+Safety envelope:
+
+- Review-readiness metadata/docs/test hardening only.
+- No endpoint, store, migration, UI action, prompt/routing rule, runtime flag, specialist dispatch/tool execution, farm-data write, public/customer output, deploy, Telegram, physical control, financial action, or learning proposal consumer was added.
+
+Verification:
+
+- Targeted owner review packet service tests passed.
+- Focused Oom Sakkie route/service/frontend suite passed.
+- Browser behavior smoke passed.
+- Full local unittest suite passed.
+- GitHub Actions passed for commit `5de5d9d` before this final metadata sync.
+
+Next gate:
+
+1. Owner runs Claude review with: `Read docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md and run the current review.`
+2. Keep learning proposal consumption, runtime unlocks, and live specialist authority locked until a separate owner + Claude-reviewed gate exists.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

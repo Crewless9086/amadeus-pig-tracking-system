@@ -6,27 +6,29 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CK"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CM"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Owner Cockpit direct actions remain append-only review records only.",
     "Accepted-result proposal prep targets exactly one clicked source result after accepted_for_learning.",
     "Learning influence remains proposal-only; no prompt/runtime/routing/tool/farm-data behavior is applied.",
-    "Browser behavior and audit-rail CI gates are green for the latest learning/cockpit checkpoint.",
+    "Owner review packet evidence names the current scope and remains review-readiness only.",
+    "Prepare Claude review chat routing is deterministic and does not approve runtime authority.",
+    "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
     {
         "workflow": "Oom Sakkie Browser Behavior",
-        "run_id": "27278878196",
+        "run_id": "27314056906",
         "status": "success",
-        "commit": "164a467",
+        "commit": "5de5d9d",
     },
     {
         "workflow": "Oom Sakkie Audit Rails",
-        "run_id": "27278878464",
+        "run_id": "27314056931",
         "status": "success",
-        "commit": "164a467",
+        "commit": "5de5d9d",
     },
 ]
 
