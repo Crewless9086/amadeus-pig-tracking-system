@@ -8,6 +8,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
+from modules.oom_sakkie.voice_stt import (
+    backend_voice_stt_policy,
+    transcribe_oom_sakkie_voice_audio,
+)
 from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_agent_activity,
@@ -227,6 +231,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["write_tools_enabled"])
         self.assertFalse(policy["physical_controls_enabled"])
         self.assertFalse(policy["backend_voice_vendors_enabled"])
+        self.assertFalse(policy["backend_voice_stt"]["enabled"])
+        self.assertFalse(policy["backend_voice_stt"]["stores_audio"])
         self.assertFalse(policy["always_on_mic_enabled"])
         self.assertFalse(policy["llm_router"]["enabled"])
         self.assertFalse(policy["llm_router"]["configured"])
@@ -258,6 +264,66 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["kiosk_policy"]["requires_confirmation_tools"], [])
         self.assertEqual(policy["tool_counts"]["write_or_confirmation"], 0)
         self.assertIn("write tools", policy["blocked_capabilities"])
+        self.assertIn("backend STT vendors", policy["blocked_capabilities"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_STT_ENABLED": "1", "OPENAI_API_KEY": "test-key"}, clear=True)
+    def test_runtime_policy_enables_backend_stt_only_as_push_to_talk_fallback(self):
+        policy = get_runtime_policy()
+
+        self.assertTrue(policy["backend_voice_vendors_enabled"])
+        self.assertTrue(policy["backend_voice_stt"]["enabled"])
+        self.assertTrue(policy["backend_voice_stt"]["configured"])
+        self.assertEqual(policy["backend_voice_stt"]["mode"], "push_to_talk_backend_stt_fallback")
+        self.assertEqual(policy["browser_speech_mode"], "push_to_talk_with_backend_stt_fallback")
+        self.assertFalse(policy["backend_voice_stt"]["stores_audio"])
+        self.assertFalse(policy["backend_voice_stt"]["always_on_mic_enabled"])
+        self.assertFalse(policy["backend_voice_stt"]["writes"])
+        self.assertFalse(policy["backend_voice_stt"]["dispatch_enabled"])
+        self.assertNotIn("backend STT vendors", policy["blocked_capabilities"])
+        self.assertIn("backend TTS vendors", policy["blocked_capabilities"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_STT_ENABLED": "1", "OPENAI_API_KEY": "test-key"}, clear=True)
+    @patch("modules.oom_sakkie.voice_stt.urllib.request.urlopen")
+    def test_backend_voice_stt_transcribes_without_storage_or_writes(self, urlopen):
+        response = Mock()
+        response.read.return_value = json.dumps({"text": "show me the safety gates"}).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        urlopen.return_value = response
+        upload = Mock()
+        upload.mimetype = "audio/webm"
+        upload.read.return_value = b"fake-audio"
+
+        result, status_code = transcribe_oom_sakkie_voice_audio(upload)
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["text"], "show me the safety gates")
+        self.assertFalse(result["always_on_mic_enabled"])
+        self.assertFalse(result["stores_audio"])
+        self.assertFalse(result["writes"])
+        self.assertFalse(result["dispatch_enabled"])
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_method(), "POST")
+        self.assertIn("multipart/form-data", request.headers["Content-type"])
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_backend_voice_stt_is_fail_closed_without_explicit_enable(self):
+        upload = Mock()
+        upload.mimetype = "audio/webm"
+        upload.read.return_value = b"fake-audio"
+
+        result, status_code = transcribe_oom_sakkie_voice_audio(upload)
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "backend_stt_disabled")
+        self.assertFalse(result["backend_voice_stt"]["enabled"])
+        self.assertFalse(result["writes"])
+
+        policy = backend_voice_stt_policy()
+        self.assertFalse(policy["enabled"])
+        self.assertFalse(policy["stores_audio"])
 
     @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ANSWER_ENABLED": "1"}, clear=True)
     def test_runtime_policy_declares_message_guard_when_llm_enabled(self):

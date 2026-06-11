@@ -109,14 +109,28 @@
   const quickAskButtons = Array.from(document.querySelectorAll("[data-quick-ask]"));
   const reviewFilterButtons = Array.from(document.querySelectorAll("[data-review-filter]"));
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const MediaRecorderApi = window.MediaRecorder || null;
   const speechSynthesisApi = window.speechSynthesis || null;
   const MAX_CONTINUE_TURNS = 5;
   const MAX_VOICE_EVENTS = 12;
+  const DEFAULT_BACKEND_VOICE_SECONDS = 10;
   const SESSION_STORAGE_KEY = "oom_sakkie_session_id";
   let activeReviewFilter = "all";
   let traceSearchTimer = null;
   let recognition = null;
   let isListening = false;
+  let backendVoiceStt = {
+    enabled: false,
+    configured: false,
+    max_audio_seconds: DEFAULT_BACKEND_VOICE_SECONDS,
+  };
+  let backendVoiceRecorder = null;
+  let backendVoiceStream = null;
+  let backendVoiceChunks = [];
+  let backendVoiceAutoSubmitMode = false;
+  let backendVoiceStopTimer = null;
+  let backendVoiceSuppressTranscript = false;
+  let isBackendVoiceRecording = false;
   let voiceAutoSubmitMode = false;
   let voiceAutoSubmitTimer = null;
   let lastAnswerText = "";
@@ -388,8 +402,17 @@
       },
       {
         label: "Speech input",
-        ok: !!SpeechRecognition,
-        detail: SpeechRecognition ? "available" : "not available",
+        ok: !!SpeechRecognition || hasBackendVoiceStt(),
+        detail: hasBackendVoiceStt()
+          ? "backend STT fallback ready"
+          : (SpeechRecognition ? "browser recognition available" : "not available"),
+      },
+      {
+        label: "Backend STT",
+        ok: hasBackendVoiceStt(),
+        detail: backendVoiceStt.enabled
+          ? "push-to-talk only"
+          : (backendVoiceStt.configured ? "disabled by policy" : "not configured"),
       },
       {
         label: "Browser TTS",
@@ -421,6 +444,40 @@
       aborted: "Speech recognition was stopped before it captured a question.",
     };
     return messages[code] || `Speech recognition stopped: ${code}. Try again or type the question.`;
+  }
+
+  function applyVoicePolicy(data) {
+    const stt = (data && data.backend_voice_stt) || {};
+    backendVoiceStt = {
+      enabled: !!stt.enabled,
+      configured: !!stt.configured,
+      max_audio_seconds: Number(stt.max_audio_seconds) || DEFAULT_BACKEND_VOICE_SECONDS,
+    };
+    updateVoiceControlAvailability();
+  }
+
+  function hasBackendVoiceStt() {
+    return !!(
+      backendVoiceStt.enabled &&
+      backendVoiceStt.configured &&
+      MediaRecorderApi &&
+      window.FormData &&
+      window.Blob &&
+      navigator.mediaDevices &&
+      navigator.mediaDevices.getUserMedia
+    );
+  }
+
+  function voiceCaptureAvailable() {
+    return !!SpeechRecognition || hasBackendVoiceStt();
+  }
+
+  function updateVoiceControlAvailability() {
+    const available = voiceCaptureAvailable();
+    if (voiceButton) voiceButton.disabled = !available;
+    if (voiceAskButton) voiceAskButton.disabled = !available;
+    if (continueConversation) continueConversation.disabled = !speechSynthesisApi || !available;
+    renderVoiceReadiness();
   }
 
   function renderVoiceLoopCounter() {
@@ -539,8 +596,172 @@
     return recognition;
   }
 
+  function resetBackendVoiceButtons() {
+    if (voiceButton) voiceButton.textContent = "Talk";
+    if (voiceAskButton) voiceAskButton.textContent = "Talk & Ask";
+    updateConversationStopVisibility();
+  }
+
+  function stopBackendVoiceTracks() {
+    if (backendVoiceStream) {
+      backendVoiceStream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch (error) {
+          // Track may already be stopped by the browser.
+        }
+      });
+      backendVoiceStream = null;
+    }
+  }
+
+  function stopBackendVoiceCapture() {
+    if (backendVoiceStopTimer) {
+      window.clearTimeout(backendVoiceStopTimer);
+      backendVoiceStopTimer = null;
+    }
+    if (backendVoiceRecorder && isBackendVoiceRecording) {
+      try {
+        backendVoiceRecorder.stop();
+      } catch (error) {
+        isBackendVoiceRecording = false;
+        stopBackendVoiceTracks();
+        resetBackendVoiceButtons();
+      }
+    }
+  }
+
+  function abortBackendVoiceCapture() {
+    if (!isBackendVoiceRecording) return;
+    backendVoiceSuppressTranscript = true;
+    stopBackendVoiceCapture();
+  }
+
+  async function toggleBackendVoiceCapture(autoSubmit) {
+    clearVoiceAutoSubmit();
+    if (isBackendVoiceRecording) {
+      backendVoiceAutoSubmitMode = !!autoSubmit;
+      stopBackendVoiceCapture();
+      return;
+    }
+    await startBackendVoiceCapture(autoSubmit);
+  }
+
+  async function startBackendVoiceCapture(autoSubmit) {
+    if (!hasBackendVoiceStt()) {
+      setVoiceStatus("Backend voice capture is not ready. Use Chrome speech recognition or type the question.");
+      return;
+    }
+    if (speechSynthesisApi) {
+      speechRunId += 1;
+      speechSynthesisApi.cancel();
+    }
+    try {
+      backendVoiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      backendVoiceChunks = [];
+      backendVoiceAutoSubmitMode = !!autoSubmit;
+      backendVoiceSuppressTranscript = false;
+      backendVoiceRecorder = new MediaRecorderApi(backendVoiceStream);
+      backendVoiceRecorder.ondataavailable = (event) => {
+        if (event.data && (event.data.size === undefined || event.data.size > 0)) {
+          backendVoiceChunks.push(event.data);
+        }
+      };
+      backendVoiceRecorder.onstop = () => {
+        const suppress = backendVoiceSuppressTranscript;
+        isBackendVoiceRecording = false;
+        stopBackendVoiceTracks();
+        resetBackendVoiceButtons();
+        if (suppress) {
+          backendVoiceChunks = [];
+          setVoiceStatus("Voice capture stopped. Mic stayed off.");
+          return;
+        }
+        transcribeBackendVoiceCapture(backendVoiceAutoSubmitMode);
+      };
+      backendVoiceRecorder.start();
+      isBackendVoiceRecording = true;
+      if (autoSubmit && voiceAskButton) {
+        voiceAskButton.textContent = "Recording";
+      } else if (voiceButton) {
+        voiceButton.textContent = "Recording";
+      }
+      setStatus("Listening", "listening");
+      logVoiceEvent("Recording", autoSubmit ? "Talk & Ask backend STT capture started" : "Draft backend STT capture started");
+      const maxSeconds = Math.max(3, Math.min(Number(backendVoiceStt.max_audio_seconds) || DEFAULT_BACKEND_VOICE_SECONDS, 20));
+      setVoiceStatus(
+        autoSubmit
+          ? `Recording. Speak one question; press Talk & Ask again to stop, or wait ${maxSeconds} seconds.`
+          : `Recording. Speak one question; press Talk again to stop, or wait ${maxSeconds} seconds.`
+      );
+      updateConversationStopVisibility();
+      backendVoiceStopTimer = window.setTimeout(() => {
+        backendVoiceStopTimer = null;
+        stopBackendVoiceCapture();
+      }, maxSeconds * 1000);
+    } catch (error) {
+      isBackendVoiceRecording = false;
+      stopBackendVoiceTracks();
+      resetBackendVoiceButtons();
+      setStatus("Voice error", "error");
+      logVoiceEvent("Recording error", error && error.name ? error.name : "unknown error");
+      setVoiceStatus("Microphone recording could not start. Check Chrome microphone permission and Windows input settings.");
+    }
+  }
+
+  async function transcribeBackendVoiceCapture(autoSubmit) {
+    const chunks = backendVoiceChunks.slice();
+    backendVoiceChunks = [];
+    if (!chunks.length) {
+      setStatus("Voice error", "error");
+      setVoiceStatus("No audio was recorded. Try again or type the question.");
+      return;
+    }
+    setStatus("Checking voice", "checking");
+    setVoiceStatus("Transcribing your voice. Audio is not stored by Oom Sakkie.");
+    try {
+      const blob = new window.Blob(chunks, { type: "audio/webm" });
+      const formData = new window.FormData();
+      formData.append("audio", blob, "oom-sakkie-voice.webm");
+      const response = await fetch("/api/oom-sakkie/voice/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success || !data.text) {
+        throw new Error((data && data.status) || "voice_transcription_failed");
+      }
+      const transcript = data.text.trim();
+      if (!transcript) {
+        throw new Error("no_speech_transcribed");
+      }
+      if (input) input.value = transcript;
+      if (userText) userText.textContent = transcript;
+      logVoiceEvent("Transcript", transcript);
+      if (autoSubmit) {
+        if (isVoiceStopCommand(transcript)) {
+          logVoiceEvent("Stop phrase heard", transcript);
+          stopConversation("Voice stop command heard. Conversation stopped.");
+          return;
+        }
+        scheduleVoiceAutoSubmit();
+      } else {
+        setStatus("Idle", "idle");
+        setVoiceStatus("Heard draft. Check the text, then press Ask.");
+      }
+    } catch (error) {
+      setStatus("Voice error", "error");
+      logVoiceEvent("Transcription error", error && error.message ? error.message : "unknown error");
+      setVoiceStatus("Voice transcription failed. Type the question or try Talk again.");
+    }
+  }
+
   function toggleVoiceDraft() {
     clearVoiceAutoSubmit();
+    if (hasBackendVoiceStt()) {
+      toggleBackendVoiceCapture(false);
+      return;
+    }
     const activeRecognition = ensureRecognition();
     if (!activeRecognition) {
       setVoiceStatus("Speech recognition is not available in this browser. Use Chrome or Edge on this local kiosk, or type the question.");
@@ -563,10 +784,18 @@
 
   function toggleVoiceAsk() {
     clearVoiceAutoSubmit();
+    if (hasBackendVoiceStt()) {
+      toggleBackendVoiceCapture(true);
+      return;
+    }
     startVoiceAskCapture(true);
   }
 
   function startVoiceAskCapture(cancelSpeechFirst) {
+    if (hasBackendVoiceStt()) {
+      toggleBackendVoiceCapture(true);
+      return;
+    }
     const activeRecognition = ensureRecognition();
     if (!activeRecognition) {
       setVoiceStatus("Speech recognition is not available in this browser. Use Chrome or Edge on this local kiosk, or type the question.");
@@ -598,7 +827,7 @@
       continueConversation.checked &&
       autoSpeak &&
       autoSpeak.checked &&
-      SpeechRecognition
+      voiceCaptureAvailable()
     );
   }
 
@@ -631,6 +860,7 @@
       (continueConversation && continueConversation.checked) ||
       voiceAutoSubmitTimer ||
       isListening ||
+      isBackendVoiceRecording ||
       statusText.textContent === "Speaking"
     );
     stopConversationButton.hidden = !active;
@@ -648,6 +878,7 @@
         // Browser recognition may already be stopping.
       }
     }
+    abortBackendVoiceCapture();
     if (speechSynthesisApi) {
       speechRunId += 1;
       speechSynthesisApi.cancel();
@@ -699,6 +930,7 @@
     if (recognition && isListening) {
       recognition.stop();
     }
+    abortBackendVoiceCapture();
   }
 
   function speakText(text, automatic) {
@@ -2442,6 +2674,7 @@
     const messageAccess = data.message_endpoint_access || {};
     const llmRouter = data.llm_router || {};
     const llmAnswer = data.llm_answer || {};
+    const backendStt = data.backend_voice_stt || {};
     [
       ["Mode", data.mode || "unknown"],
       ["Backend brain", data.backend_as_brain ? "on" : "off"],
@@ -2459,6 +2692,7 @@
       ["Write tools", data.write_tools_enabled ? "enabled" : "off"],
       ["Telegram cutover", data.telegram_cutover_enabled ? "enabled" : "off"],
       ["Voice", data.browser_speech_mode || "unknown"],
+      ["Backend STT", backendStt.enabled ? "enabled" : (backendStt.configured ? "configured, disabled" : "off")],
       ["Continue cap", `${data.continue_conversation_max_turns || 0} turns`],
       ["Auto-send", `${data.voice_auto_send_ms || 0} ms`],
       ["Always-on mic", data.always_on_mic_enabled ? "enabled" : "off"],
@@ -3459,6 +3693,7 @@
     try {
       const response = await fetch("/api/oom-sakkie/policy");
       const data = await response.json();
+      applyVoicePolicy(data);
       renderPolicyStatus(data);
     } catch (error) {
       policyStatus.innerHTML = '<p class="oom-empty">Safety policy is unavailable.</p>';
@@ -3794,12 +4029,10 @@
   }
 
   if (voiceButton) {
-    voiceButton.disabled = !SpeechRecognition;
     voiceButton.addEventListener("click", toggleVoiceDraft);
   }
 
   if (voiceAskButton) {
-    voiceAskButton.disabled = !SpeechRecognition;
     voiceAskButton.addEventListener("click", toggleVoiceAsk);
   }
 
@@ -3836,7 +4069,6 @@
   }
 
   if (continueConversation) {
-    continueConversation.disabled = !speechSynthesisApi || !SpeechRecognition;
     continueConversation.addEventListener("change", () => {
       if (continueConversation.checked && autoSpeak) {
         autoSpeak.checked = true;
@@ -3852,6 +4084,7 @@
     });
   }
 
+  updateVoiceControlAvailability();
   renderVoiceLoopCounter();
   renderApprovalConsole();
 

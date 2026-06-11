@@ -89,6 +89,7 @@ from modules.oom_sakkie.trace_store import (
     list_recent_traces,
     record_trace_feedback,
 )
+from modules.oom_sakkie.voice_stt import transcribe_oom_sakkie_voice_audio
 
 
 oom_sakkie_bp = Blueprint("oom_sakkie", __name__)
@@ -133,6 +134,15 @@ def oom_sakkie_policy():
     if denied:
         return denied
     return jsonify(get_runtime_policy()), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/voice/transcribe", methods=["POST"])
+def oom_sakkie_voice_transcribe():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = transcribe_oom_sakkie_voice_audio(request.files.get("audio"))
+    return jsonify(result), status_code
 
 
 @oom_sakkie_bp.route("/oom-sakkie/specialists", methods=["GET"])

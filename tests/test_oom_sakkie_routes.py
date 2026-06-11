@@ -1,3 +1,4 @@
+from io import BytesIO
 import os
 import unittest
 from unittest.mock import patch
@@ -43,8 +44,67 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(data["kiosk_policy"]["max_risk_level"], 0)
         self.assertEqual(data["continue_conversation_max_turns"], 5)
         self.assertEqual(data["voice_auto_send_ms"], 2000)
+        self.assertFalse(data["backend_voice_stt"]["enabled"])
+        self.assertFalse(data["backend_voice_stt"]["stores_audio"])
+        self.assertIn("backend STT vendors", data["blocked_capabilities"])
         self.assertEqual(data["message_endpoint_access"]["default"], "reachable_wherever_flask_is_reachable")
         self.assertIn("reverse_proxy_caveat", data["review_endpoints_access"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_STT_ENABLED": "1", "OPENAI_API_KEY": "test-key"}, clear=True)
+    def test_policy_route_reports_push_to_talk_backend_stt_when_configured(self):
+        response = self.client.get("/api/oom-sakkie/policy")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["backend_voice_vendors_enabled"])
+        self.assertTrue(data["backend_voice_stt"]["enabled"])
+        self.assertEqual(data["backend_voice_stt"]["mode"], "push_to_talk_backend_stt_fallback")
+        self.assertFalse(data["backend_voice_stt"]["stores_audio"])
+        self.assertFalse(data["always_on_mic_enabled"])
+        self.assertEqual(data["browser_speech_mode"], "push_to_talk_with_backend_stt_fallback")
+
+    @patch("modules.oom_sakkie.routes.transcribe_oom_sakkie_voice_audio")
+    def test_voice_transcribe_route_is_review_gated_and_returns_false_flags(self, transcribe):
+        transcribe.return_value = ({
+            "success": True,
+            "status": "transcribed",
+            "text": "show me the safety gates",
+            "always_on_mic_enabled": False,
+            "stores_audio": False,
+            "writes": False,
+            "dispatch_enabled": False,
+            "changes_runtime_now": False,
+            "changes_prompt_now": False,
+        }, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/voice/transcribe",
+            data={"audio": (BytesIO(b"fake-webm"), "voice.webm")},
+            content_type="multipart/form-data",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["text"], "show me the safety gates")
+        self.assertFalse(data["always_on_mic_enabled"])
+        self.assertFalse(data["stores_audio"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        transcribe.assert_called_once()
+
+        denied = self.client.post(
+            "/api/oom-sakkie/voice/transcribe",
+            data={"audio": (BytesIO(b"fake-webm"), "voice.webm")},
+            content_type="multipart/form-data",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        denied_data = denied.get_json()
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied_data["status"], "review_access_denied")
 
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(

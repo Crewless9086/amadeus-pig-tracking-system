@@ -10,6 +10,8 @@ const fetchCalls = [];
 const intervalCalls = [];
 const timeoutCalls = [];
 const recognitionInstances = [];
+const mediaRecorderInstances = [];
+let backendVoiceSttEnabled = false;
 
 class FakeElement {
   constructor(id = "") {
@@ -99,7 +101,31 @@ function responseFor(url, options = {}) {
     };
   }
   if (url.includes("/tools")) return { success: true, tools: [] };
-  if (url.includes("/policy")) return { success: true, mode: "local_kiosk_read_only", blocked_capabilities: [] };
+  if (url.includes("/voice/transcribe")) {
+    return {
+      success: true,
+      status: "transcribed",
+      text: "show me the safety gates",
+      always_on_mic_enabled: false,
+      stores_audio: false,
+      writes: false,
+      dispatch_enabled: false,
+      changes_runtime_now: false,
+      changes_prompt_now: false,
+    };
+  }
+  if (url.includes("/policy")) {
+    return {
+      success: true,
+      mode: backendVoiceSttEnabled ? "local_kiosk_read_only" : "local_kiosk_read_only",
+      blocked_capabilities: [],
+      backend_voice_stt: {
+        enabled: backendVoiceSttEnabled,
+        configured: backendVoiceSttEnabled,
+        max_audio_seconds: 10,
+      },
+    };
+  }
   if (url.includes("/agents/activation-plan")) return { success: true, candidates: [], accepted_learning_summary: [] };
   if (url.endsWith("/api/oom-sakkie/agents") || url.includes("/agents")) return { success: true, agents: [] };
   if (url.includes("/agent-dry-runs/handoff")) return { success: true, prompt: "Prompt only.", no_go_rules: [] };
@@ -251,9 +277,50 @@ class FakeSpeechRecognition {
   }
 }
 
+class FakeMediaRecorder {
+  constructor(stream) {
+    this.stream = stream;
+    this.ondataavailable = null;
+    this.onstop = null;
+    this.started = false;
+    mediaRecorderInstances.push(this);
+  }
+
+  start() {
+    this.started = true;
+  }
+
+  stop() {
+    this.started = false;
+    if (this.ondataavailable) this.ondataavailable({ data: { size: 12, type: "audio/webm", value: "fake-audio" } });
+    if (this.onstop) this.onstop();
+  }
+}
+
+class FakeBlob {
+  constructor(parts, options = {}) {
+    this.parts = parts;
+    this.type = options.type || "";
+    this.size = parts.length;
+  }
+}
+
+class FakeFormData {
+  constructor() {
+    this.items = [];
+  }
+
+  append(name, value, filename) {
+    this.items.push({ name, value, filename });
+  }
+}
+
 const window = {
   SpeechRecognition: null,
   webkitSpeechRecognition: FakeSpeechRecognition,
+  MediaRecorder: FakeMediaRecorder,
+  Blob: FakeBlob,
+  FormData: FakeFormData,
   speechSynthesis: null,
   isSecureContext: true,
   localStorage: {
@@ -283,6 +350,13 @@ const sandbox = {
   navigator: {
     clipboard: {
       writeText: async () => {},
+    },
+    mediaDevices: {
+      getUserMedia: async () => ({
+        getTracks: () => [{
+          stop: () => {},
+        }],
+      }),
     },
   },
   console,
@@ -316,6 +390,8 @@ function findByText(root, text) {
 }
 
 async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
 }
@@ -405,6 +481,24 @@ async function flushPromises() {
     "Talk & Ask should POST the captured text only after browser recognition returns text and the auto-send timer fires",
   );
   assert.strictEqual(intervalCalls.length, 0, "voice capture must not start interval polling");
+
+  fetchCalls.length = 0;
+  timeoutCalls.length = 0;
+  backendVoiceSttEnabled = true;
+  await element("oom_refresh_policy").trigger("click");
+  await flushPromises();
+  await element("oom_voice_button").trigger("click");
+  await flushPromises();
+  assert.strictEqual(mediaRecorderInstances.length, 1, "Talk should prefer backend STT fallback when configured");
+  mediaRecorderInstances[0].stop();
+  await flushPromises();
+  await flushPromises();
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url === "/api/oom-sakkie/voice/transcribe"),
+    "backend STT fallback should POST audio only after the owner clicks Talk",
+  );
+  assert.strictEqual(element("oom_text").value, "show me the safety gates", "backend STT should copy transcribed text into the input box");
+  assert.strictEqual(intervalCalls.length, 0, "backend STT fallback must not start interval polling");
 
   fetchCalls.length = 0;
   await quickAskButton.trigger("click");

@@ -3,6 +3,7 @@ from modules.oom_sakkie.llm_answer import llm_answer_policy
 from modules.oom_sakkie.llm_router import llm_router_policy
 from modules.oom_sakkie.sentinel_single_shot_runner import specialist_dry_run_policy
 from modules.oom_sakkie.tools import TOOL_REGISTRY, RiskLevel
+from modules.oom_sakkie.voice_stt import backend_voice_stt_policy
 
 
 def get_runtime_policy():
@@ -10,6 +11,7 @@ def get_runtime_policy():
     llm_answer = llm_answer_policy()
     llm_router = llm_router_policy()
     specialist_dry_run = specialist_dry_run_policy()
+    backend_voice_stt = backend_voice_stt_policy()
     llm_message_guard_active = is_llm_message_guard_active()
     write_tools = [
         tool.name
@@ -26,6 +28,18 @@ def get_runtime_policy():
         for tool in tools
         if tool.risk_level == RiskLevel.READ_ONLY and not tool.requires_confirmation
     ]
+    blocked_capabilities = [
+        "Telegram cutover",
+        "write tools",
+        "physical controls",
+        "backend TTS vendors",
+        "wake word",
+        "always-on microphone",
+        "Ungated LLM router",
+        "customer-facing messages",
+    ]
+    if not backend_voice_stt["enabled"]:
+        blocked_capabilities.insert(3, "backend STT vendors")
     return {
         "success": True,
         "mode": "local_kiosk_read_only",
@@ -39,9 +53,10 @@ def get_runtime_policy():
         "specialist_dry_run": specialist_dry_run,
         "write_tools_enabled": False,
         "physical_controls_enabled": False,
-        "backend_voice_vendors_enabled": False,
+        "backend_voice_vendors_enabled": backend_voice_stt["enabled"],
+        "backend_voice_stt": backend_voice_stt,
         "always_on_mic_enabled": False,
-        "browser_speech_mode": "push_to_talk_only",
+        "browser_speech_mode": "push_to_talk_with_backend_stt_fallback" if backend_voice_stt["enabled"] else "push_to_talk_only",
         "continue_conversation_enabled": True,
         "continue_conversation_max_turns": 5,
         "voice_auto_send_ms": 2000,
@@ -71,14 +86,5 @@ def get_runtime_policy():
             "read_only": len(read_only_tools),
             "write_or_confirmation": len(write_tools),
         },
-        "blocked_capabilities": [
-            "Telegram cutover",
-            "write tools",
-            "physical controls",
-            "backend STT/TTS vendors",
-            "wake word",
-            "always-on microphone",
-            "Ungated LLM router",
-            "customer-facing messages",
-        ],
+        "blocked_capabilities": blocked_capabilities,
     }
