@@ -632,6 +632,14 @@ class OomSakkieRouteTests(unittest.TestCase):
             "prompt_patch",
             data["consumer_design_review_agreement"]["review_note_artifact_shape"]["forbidden_fields"],
         )
+        self.assertIn(
+            "idx_oom_sakkie_learning_consumption_consumed_once",
+            data["consumer_design_review_agreement"]["must_recheck_before_marker_enforcement"]["atomicity_guard"],
+        )
+        self.assertIn(
+            "produce no second review-note artifact",
+            data["consumer_design_review_agreement"]["must_recheck_before_marker_enforcement"]["unique_violation_behavior"],
+        )
         self.assertFalse(data["review_guard"]["dispatch_enabled"])
         self.assertFalse(data["review_guard"]["runs_specialist_tools"])
         self.assertFalse(data["review_guard"]["writes"])

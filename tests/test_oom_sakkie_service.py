@@ -442,8 +442,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CW")
-        self.assertIn("10.9CW", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CX")
+        self.assertIn("10.9CX", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -580,6 +580,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn(
             "write no consumed marker",
             agreement["must_recheck_before_marker_enforcement"]["failure_behavior"],
+        )
+        self.assertIn(
+            "idx_oom_sakkie_learning_consumption_consumed_once",
+            agreement["must_recheck_before_marker_enforcement"]["atomicity_guard"],
+        )
+        self.assertIn(
+            "produce no second review-note artifact",
+            agreement["must_recheck_before_marker_enforcement"]["unique_violation_behavior"],
         )
         self.assertTrue(agreement["rollback_artifact_contract"]["manual_application_outside_kiosk_only"])
         self.assertTrue(agreement["static_guard_update_required_for_future_consumer"])
@@ -1127,14 +1135,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CW", result["summary"])
+        self.assertIn("10.9CX", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CW")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CX")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1212,7 +1220,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CW", result["answer"])
+        self.assertIn("10.9CX", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

@@ -11650,6 +11650,9 @@ Verification:
 - Live-gated focused audit suite with `.env` loaded: `326 OK`.
 - Browser behavior smoke passed.
 - Full local unittest suite: `656 OK`.
+- Live-gated focused audit suite with `.env` loaded: `326 OK`.
+- Browser behavior smoke passed.
+- Full local unittest suite: `656 OK`.
 - GitHub Actions after commit `aaaa4a4`: `Oom Sakkie Browser Behavior` run `27345986022` success; `Oom Sakkie Audit Rails` run `27345985975` success.
 - Live-gated focused audit suite with `.env` loaded: `326 OK`.
 - Browser behavior smoke passed.
@@ -11704,6 +11707,42 @@ Next gate:
 
 1. Run focused/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CW before any learning proposal consumer implementation.
+
+### 10.9CX Oom Sakkie Consumed-Once Atomicity Wording - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CW spec refinement before any consumer implementation.
+- Make the future consumer contract explicit that the DB consumed-once partial unique index, not the step-5 read, is the atomic race guard.
+- Preserve the pre-consumer gate: no production `allow_consumed=True`, no consumer, no applyable diff.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CW: `pass`.
+- Claude noted the TOCTOU window between verifying no prior `consumed_for_patch_proposal` marker and writing that marker.
+- Claude recommended the agreement state that the DB consumed-once constraint is authoritative and unique-violation must return safely with no second artifact.
+
+What changed:
+
+- `consumer_design_review_agreement.must_recheck_before_marker_enforcement.atomicity_guard` now names `idx_oom_sakkie_learning_consumption_consumed_once`.
+- `unique_violation_behavior` now requires returning `already_consumed` and producing no second review-note artifact.
+- Service and route tests pin both fields.
+- Scope metadata moved to `10.9CX`.
+
+Safety envelope:
+
+- Design/test/packet wording only.
+- No consumer, no production `allow_consumed` caller, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Focused audit suite: `326 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Run focused/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CX before any learning proposal consumer implementation.
 
 7.3E weather LLM triage note:
 

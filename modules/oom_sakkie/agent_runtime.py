@@ -12,7 +12,7 @@ LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE = "modules.oom_sakkie.learning_influ
 LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION = "record_learning_influence_consumption_event"
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CW"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CX"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -32,7 +32,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence consumer design remains review-only; the owner/Claude design agreement is explicit but no consumer is implemented.",
+    "Learning influence consumer design remains review-only; the DB consumed-once constraint is named as the future consumer's atomic race guard.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1753,6 +1753,8 @@ def get_learning_influence_consumer_design_packet():
                 "return review_note_artifact_only with all authority flags false",
             ],
             "failure_behavior": "Return an error and write no consumed marker if any recheck fails.",
+            "atomicity_guard": "The DB partial unique index idx_oom_sakkie_learning_consumption_consumed_once is the authoritative race guard for consumed_for_patch_proposal.",
+            "unique_violation_behavior": "If step 6 hits the consumed-once unique constraint, return already_consumed and produce no second review-note artifact.",
         },
         "rollback_artifact_contract": {
             "required_fields": rollback_artifact_contract["required_fields"],
