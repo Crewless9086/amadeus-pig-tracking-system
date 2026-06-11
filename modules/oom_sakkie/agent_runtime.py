@@ -12,7 +12,7 @@ LEARNING_INFLUENCE_CONSUMPTION_STORE_MODULE = "modules.oom_sakkie.learning_influ
 LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION = "record_learning_influence_consumption_event"
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CU"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CV"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -32,7 +32,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
-    "Learning influence consumer design remains review-only; allow_consumed production callers are source-scanned.",
+    "Learning influence consumer design remains review-only; allow_consumed production caller scan is repo-root anchored and parse-error tolerant.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1768,7 +1768,8 @@ def get_learning_influence_consumer_design_packet():
 
 def find_learning_influence_allow_consumed_callers(root="modules"):
     offenders = []
-    for path in Path(root).rglob("*.py"):
+    scan_root = _resolve_allow_consumed_scan_root(root)
+    for path in scan_root.rglob("*.py"):
         try:
             source = path.read_text(encoding="utf-8")
         except OSError:
@@ -1779,7 +1780,10 @@ def find_learning_influence_allow_consumed_callers(root="modules"):
 
 
 def _learning_influence_allow_consumed_callers_from_source(source, path="<source>"):
-    tree = ast.parse(source, filename=path)
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError:
+        return [f"{path}:parse_error"]
     function_aliases = {LEARNING_INFLUENCE_CONSUMPTION_EVENT_FUNCTION}
     module_aliases = set()
     for node in ast.walk(tree):
@@ -1829,6 +1833,14 @@ def _is_learning_influence_consumption_event_call(node, function_aliases, module
 
 def _ast_literal_false(node):
     return isinstance(node, ast.Constant) and node.value is False
+
+
+def _resolve_allow_consumed_scan_root(root):
+    scan_root = Path(root)
+    if scan_root.is_absolute():
+        return scan_root
+    repo_root = Path(__file__).resolve().parents[2]
+    return repo_root / scan_root
 
 
 def _specialist_dry_run_policy_snapshot():

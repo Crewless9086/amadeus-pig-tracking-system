@@ -1,6 +1,7 @@
 import unittest
 import os
 import json
+import tempfile
 from urllib import error as urllib_error
 from datetime import datetime, timezone
 from pathlib import Path
@@ -441,8 +442,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CU")
-        self.assertIn("10.9CU", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CV")
+        self.assertIn("10.9CV", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -579,6 +580,24 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     def test_learning_influence_consumption_has_no_production_allow_consumed_true_caller(self):
         self.assertEqual(find_learning_influence_allow_consumed_callers(), [])
+
+    def test_learning_influence_allow_consumed_scanner_is_cwd_independent(self):
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                self.assertEqual(find_learning_influence_allow_consumed_callers(), [])
+            finally:
+                os.chdir(original_cwd)
+
+    def test_learning_influence_allow_consumed_scanner_reports_parse_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            broken = Path(tmp) / "broken.py"
+            broken.write_text("def broken(:\n", encoding="utf-8")
+
+            offenders = find_learning_influence_allow_consumed_callers(root=tmp)
+
+        self.assertEqual(offenders, [f"{broken}:parse_error"])
 
     def test_learning_influence_allow_consumed_scanner_flags_evasion_patterns(self):
         source = """
@@ -1091,14 +1110,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CU", result["summary"])
+        self.assertIn("10.9CV", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CU")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CV")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1176,7 +1195,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CU", result["answer"])
+        self.assertIn("10.9CV", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

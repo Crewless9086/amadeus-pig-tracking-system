@@ -11616,6 +11616,46 @@ Next gate:
 1. Run focused/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CU before any learning proposal consumer implementation.
 
+### 10.9CV Oom Sakkie Allow-Consumed Scanner Resilience - Local Ready
+
+Purpose:
+
+- Act on Claude's two low-priority 10.9CU scanner robustness nits.
+- Keep the source-backed `allow_consumed_production_callers` packet field honest even if the process CWD is not the repo root.
+- Make syntax failures explicit scanner evidence instead of route exceptions.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CU: `pass`.
+- Claude noted `ast.parse` was not guarded and could raise from the packet route.
+- Claude noted the default `root="modules"` was CWD-relative and could soft-fail to `[]` if called outside the repo root.
+
+What changed:
+
+- `find_learning_influence_allow_consumed_callers()` now resolves relative scan roots from `agent_runtime.py`'s repo location.
+- `_learning_influence_allow_consumed_callers_from_source()` now catches `SyntaxError` and returns a `:parse_error` marker.
+- Tests prove the scanner remains clean after changing CWD to a temporary directory.
+- Tests prove a syntactically invalid scanned file returns explicit parse-error evidence.
+- Scope metadata moved to `10.9CV`.
+
+Safety envelope:
+
+- Scanner/test/packet hardening only.
+- No consumer, no production `allow_consumed` caller, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Focused audit suite: `326 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+- Live-gated focused audit suite with `.env` loaded: `326 OK`.
+- Browser behavior smoke passed.
+- Full local unittest suite: `656 OK`.
+
+Next gate:
+
+1. Run focused/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CV before any learning proposal consumer implementation.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
