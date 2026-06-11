@@ -587,8 +587,9 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["changes_runtime_now"])
         self.assertFalse(data["dispatch_enabled"])
         self.assertFalse(data["writes_enabled"])
-        self.assertFalse(data["creates_tables_now"])
-        self.assertFalse(data["adds_routes_now"])
+        self.assertTrue(data["creates_tables_now"])
+        self.assertTrue(data["adds_routes_now"])
+        self.assertTrue(data["review_note_only_first_slice"])
         self.assertFalse(data["review_guard"]["dispatch_enabled"])
         self.assertFalse(data["review_guard"]["runs_specialist_tools"])
         self.assertFalse(data["review_guard"]["writes"])
@@ -598,6 +599,133 @@ class OomSakkieRouteTests(unittest.TestCase):
     def test_learning_influence_consumption_audit_rail_blueprint_route_denies_non_local_review_access(self):
         response = self.client.get(
             "/api/oom-sakkie/agent-learning/consumption-audit-rail-blueprint",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+    @patch("modules.oom_sakkie.routes.list_learning_influence_consumption_requests")
+    def test_learning_influence_consumption_requests_route_lists_without_applying_learning(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "learning_influence_consumption_request_queue",
+            "learning_influence_consumption_requests": [{
+                "consumption_request_id": "OSK-LEARNING-CONSUME-1",
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "review_note_artifact": {"kind": "review_note_only"},
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            }],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/agent-learning/consumption-requests?limit=8")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_list.assert_called_once_with(limit="8")
+
+    @patch("modules.oom_sakkie.routes.record_learning_influence_consumption_request")
+    def test_learning_influence_consumption_request_route_records_review_note_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 1,
+            "learning_influence_consumption_requests": [{
+                "consumption_request_id": "OSK-LEARNING-CONSUME-1",
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "review_note_artifact": {"kind": "review_note_only"},
+                "applies_learning_now": False,
+                "changes_prompt_now": False,
+                "changes_runtime_now": False,
+                "dispatch_enabled": False,
+                "writes": False,
+            }],
+            "review_note_artifact_only": True,
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 201)
+        payload = {
+            "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+            "requested_target_kind": "planning_context_note",
+            "requested_target_field": "owner_review_notes",
+            "request_note": "Review-note only.",
+        }
+
+        response = self.client.post("/api/oom-sakkie/agent-learning/consumption-requests", json=payload)
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertTrue(data["review_note_artifact_only"])
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once_with(payload)
+
+    @patch("modules.oom_sakkie.routes.record_learning_influence_consumption_event")
+    def test_learning_influence_consumption_event_route_rejects_future_consumed_marker(self, mock_record):
+        mock_record.return_value = ({
+            "success": False,
+            "status": "consumed_event_is_future_consumer_only",
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 403)
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/consumption-requests/OSK-LEARNING-CONSUME-1/events",
+            json={"event_type": "consumed_for_patch_proposal"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "consumed_event_is_future_consumer_only")
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes"])
+        mock_record.assert_called_once()
+
+    def test_learning_influence_consumption_routes_deny_non_local_review_access(self):
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/consumption-requests",
+            json={"proposal_id": "OSK-LEARNING-INFLUENCE-1"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
+        response = self.client.post(
+            "/api/oom-sakkie/agent-learning/consumption-requests/OSK-LEARNING-CONSUME-1/events",
+            json={"event_type": "review_note"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

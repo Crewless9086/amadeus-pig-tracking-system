@@ -6,12 +6,12 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CQ"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CR"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
     "mode": "recorded_operator_evidence_only",
-    "recorded_at_utc": "2026-06-11T06:44:30Z",
+    "recorded_at_utc": "2026-06-11T07:20:00Z",
     "source": "local gh run list after push",
     "runtime_calls_github": False,
     "auto_trusts_ci": False,
@@ -25,20 +25,21 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Prepare Claude review chat routing is deterministic and does not approve runtime authority.",
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
+    "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
     {
         "workflow": "Oom Sakkie Browser Behavior",
-        "run_id": "27328989665",
+        "run_id": "27330030938",
         "status": "success",
-        "recorded_commit": "cc6e1ac",
+        "recorded_commit": "b255afd",
     },
     {
         "workflow": "Oom Sakkie Audit Rails",
-        "run_id": "27328989635",
+        "run_id": "27330030978",
         "status": "success",
-        "recorded_commit": "cc6e1ac",
+        "recorded_commit": "b255afd",
     },
 ]
 
@@ -1541,7 +1542,7 @@ def get_learning_influence_consumption_audit_rail_blueprint():
     proposed_tables = [
         {
             "name": "oom_sakkie_learning_influence_consumption_requests",
-            "purpose": "Append-only request record for a future owner-approved attempt to turn one approved learning proposal into a reviewable planning diff.",
+            "purpose": "Append-only request record for a future owner-approved attempt to turn one approved learning proposal into a review-note artifact.",
             "key_fields": [
                 "consumption_request_id",
                 "proposal_id",
@@ -1563,7 +1564,7 @@ def get_learning_influence_consumption_audit_rail_blueprint():
         },
         {
             "name": "oom_sakkie_learning_influence_consumption_events",
-            "purpose": "Append-only review/audit events for the request, including consumed-once marker in a later implementation slice.",
+            "purpose": "Append-only review/audit events for the request, including a DB-enforced consumed-once marker reserved for a later reviewed consumer path.",
             "key_fields": [
                 "event_id",
                 "consumption_request_id",
@@ -1630,7 +1631,7 @@ def get_learning_influence_consumption_audit_rail_blueprint():
     return {
         "success": True,
         "mode": "learning_influence_consumption_audit_rail_blueprint_only",
-        "summary_status": "blueprint_only_no_consumption_no_apply",
+        "summary_status": "audit_rail_implemented_no_consumption_no_apply",
         "runtime_enabled": False,
         "dispatch_enabled": False,
         "autonomous_loops_enabled": False,
@@ -1643,19 +1644,19 @@ def get_learning_influence_consumption_audit_rail_blueprint():
         "applies_learning_now": False,
         "changes_prompt_now": False,
         "changes_runtime_now": False,
-        "creates_tables_now": False,
-        "adds_routes_now": False,
+        "creates_tables_now": True,
+        "adds_routes_now": True,
+        "review_note_only_first_slice": True,
         "proposed_tables": proposed_tables,
         "allowlisted_target_contract": allowlisted_target_contract,
         "required_live_pg_tests": required_live_pg_tests,
         "required_route_tests": required_route_tests,
         "non_goals": [
-            "No migration in this slice.",
-            "No store or event writer in this slice.",
             "No proposal consumer.",
+            "No applyable prompt, route, or runtime diff.",
             "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
         ],
-        "next_gate": "owner_and_claude_review_before_consumption_audit_rail_implementation",
+        "next_gate": "owner_and_claude_review_before_any_learning_consumer_or_patch_diff",
     }
 
 

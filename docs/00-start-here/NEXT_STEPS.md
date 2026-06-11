@@ -11429,6 +11429,59 @@ Next gate:
 1. Run focused and full local verification, push, and confirm CI.
 2. Ask Claude to review 10.9CQ before implementing the append-only consumption audit rail.
 
+### 10.9CR Oom Sakkie Consumption Audit Rail Implementation - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CQ pass without implementing a learning consumer.
+- Implement only the append-only consumption audit rail Claude cleared: request records, review events, DB consumed-once proof, and route/live-PG tests.
+- Keep the first slice review-note-only with zero prompt/route diff application.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CQ: `pass`.
+- Claude cleared implementation of the append-only audit rail as the next gate.
+- Claude recommended the first rail slice produce only request/event records plus a review-note artifact, with no applyable diff machinery.
+- Claude explicitly did not authorize a learning proposal consumer or runtime authority.
+
+What changed:
+
+- Added migration `supabase/migrations/202606110001_create_oom_sakkie_learning_influence_consumption_audit_rail.sql`.
+- Added `modules/oom_sakkie/learning_influence_consumption_store.py`.
+- Added protected routes:
+  - `GET /api/oom-sakkie/agent-learning/consumption-requests`,
+  - `POST /api/oom-sakkie/agent-learning/consumption-requests`,
+  - `POST /api/oom-sakkie/agent-learning/consumption-requests/<consumption_request_id>/events`.
+- A consumption request requires the source learning proposal's latest event to be `approved_for_future_planning`; non-approved proposals return `409 proposal_not_approved_for_future_planning`.
+- Each request is limited to one allowlisted target kind/field and stores a `review_note_only` artifact with untrusted proposal-text policy and source provenance.
+- The generic event route rejects `consumed_for_patch_proposal` with `403 consumed_event_is_future_consumer_only`; the marker is present only as a later reviewed consumer-path DB guard.
+- The migration forces `applies_learning_now = false`, `changes_prompt_now = false`, `changes_runtime_now = false`, `dispatch_enabled = false`, and `writes = false` on both request and event tables, blocks update/delete, and enforces one `consumed_for_patch_proposal` marker per request through a partial unique index.
+- The owner/Claude review packet now scopes through `10.9CR` and says the audit rail is implemented but still has no consumer and no apply path.
+
+Safety envelope:
+
+- Records only.
+- No learning proposal consumer, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Applied migration `202606110001_create_oom_sakkie_learning_influence_consumption_audit_rail.sql`.
+- Focused audit suite without dotenv: `318 OK`, with the DATABASE_URL-gated live test skipped as expected.
+- Focused audit suite with `.env` loaded: `318 OK`, including the new live-PG consumption audit rail test.
+- The live-PG test proves:
+  - non-approved proposal rejects with 409 before request insert,
+  - approved proposal creates one request,
+  - repeated same target returns the existing request with `created_count = 0`,
+  - review-note events remain evidence and do not consume,
+  - second `consumed_for_patch_proposal` marker fails through the partial unique index,
+  - update/delete on both new tables raises append-only errors.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Run browser smoke/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CR before any learning proposal consumer or applyable prompt/route diff design.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -66,6 +66,11 @@ from modules.oom_sakkie.learning_influence_store import (
     record_learning_influence_proposal_from_result,
     record_learning_influence_proposals_from_accepted,
 )
+from modules.oom_sakkie.learning_influence_consumption_store import (
+    list_learning_influence_consumption_requests,
+    record_learning_influence_consumption_event,
+    record_learning_influence_consumption_request,
+)
 from modules.oom_sakkie.patch_proposal_store import (
     list_patch_proposals,
     record_patch_proposal,
@@ -462,6 +467,35 @@ def oom_sakkie_learning_influence_consumption_audit_rail_blueprint():
             "applies_runtime_change": False,
         },
     }), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/consumption-requests", methods=["GET"])
+def oom_sakkie_learning_influence_consumption_requests():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_learning_influence_consumption_requests(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/consumption-requests", methods=["POST"])
+def oom_sakkie_learning_influence_consumption_request_create():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_learning_influence_consumption_request(payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/consumption-requests/<consumption_request_id>/events", methods=["POST"])
+def oom_sakkie_learning_influence_consumption_request_events(consumption_request_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_learning_influence_consumption_event(consumption_request_id, payload)
+    return jsonify(result), status_code
 
 
 @oom_sakkie_bp.route("/oom-sakkie/review-packet", methods=["GET"])

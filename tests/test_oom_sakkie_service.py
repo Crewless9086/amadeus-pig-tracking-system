@@ -107,6 +107,11 @@ from modules.oom_sakkie.learning_influence_store import (
     record_learning_influence_proposal_from_result,
     record_learning_influence_proposal_event,
 )
+from modules.oom_sakkie.learning_influence_consumption_store import (
+    _consumption_request_params,
+    record_learning_influence_consumption_event,
+    record_learning_influence_consumption_request,
+)
 from modules.oom_sakkie.patch_proposal_store import (
     _patch_proposal_params,
     _patch_proposal_row,
@@ -432,8 +437,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CQ")
-        self.assertIn("10.9CQ", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CR")
+        self.assertIn("10.9CR", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -442,8 +447,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         workflows = {item["workflow"]: item for item in packet["current_review"]["ci_evidence"]}
         self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["status"], "success")
         self.assertEqual(workflows["Oom Sakkie Audit Rails"]["status"], "success")
-        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["recorded_commit"], "cc6e1ac")
-        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27328989635")
+        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["recorded_commit"], "b255afd")
+        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27330030978")
         self.assertFalse(packet["current_review"]["ci_evidence_policy"]["runtime_calls_github"])
         self.assertFalse(packet["current_review"]["ci_evidence_policy"]["auto_trusts_ci"])
         self.assertIn("may trail newer commits", packet["current_review"]["ci_evidence_policy"]["note"])
@@ -451,6 +456,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("review-readiness only", " ".join(packet["current_review"]["focus"]))
         self.assertIn("409 acceptance guard", " ".join(packet["current_review"]["focus"]))
         self.assertIn("threat-model-only", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("append-only request/event evidence only", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -460,7 +466,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["mode"],
             "learning_influence_consumption_audit_rail_blueprint_only",
         )
-        self.assertFalse(packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["creates_tables_now"])
+        self.assertTrue(packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["creates_tables_now"])
+        self.assertTrue(packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["review_note_only_first_slice"])
         self.assertIn("Do not treat it as approval", packet["owner_instruction"])
         self.assertIn("review_before_any_runtime_authority_change", packet["next_gate"])
 
@@ -502,7 +509,7 @@ class OomSakkieServiceTests(unittest.TestCase):
 
         self.assertTrue(blueprint["success"])
         self.assertEqual(blueprint["mode"], "learning_influence_consumption_audit_rail_blueprint_only")
-        self.assertEqual(blueprint["summary_status"], "blueprint_only_no_consumption_no_apply")
+        self.assertEqual(blueprint["summary_status"], "audit_rail_implemented_no_consumption_no_apply")
         self.assertFalse(blueprint["runtime_enabled"])
         self.assertFalse(blueprint["dispatch_enabled"])
         self.assertFalse(blueprint["autonomous_loops_enabled"])
@@ -515,15 +522,16 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(blueprint["applies_learning_now"])
         self.assertFalse(blueprint["changes_prompt_now"])
         self.assertFalse(blueprint["changes_runtime_now"])
-        self.assertFalse(blueprint["creates_tables_now"])
-        self.assertFalse(blueprint["adds_routes_now"])
+        self.assertTrue(blueprint["creates_tables_now"])
+        self.assertTrue(blueprint["adds_routes_now"])
+        self.assertTrue(blueprint["review_note_only_first_slice"])
         self.assertEqual(len(blueprint["proposed_tables"]), 2)
         self.assertEqual(blueprint["allowlisted_target_contract"]["first_slice_limit"], "one_target_field_per_consumption")
         self.assertTrue(blueprint["allowlisted_target_contract"]["diff_contract"]["proposal_text_is_untrusted"])
         self.assertEqual(blueprint["allowlisted_target_contract"]["diff_contract"]["max_diff_chars"], 1200)
         self.assertIn("partial unique index", " ".join(blueprint["required_live_pg_tests"]))
-        self.assertIn("No migration in this slice.", blueprint["non_goals"])
-        self.assertIn("audit_rail_implementation", blueprint["next_gate"])
+        self.assertIn("No proposal consumer.", blueprint["non_goals"])
+        self.assertIn("any_learning_consumer_or_patch_diff", blueprint["next_gate"])
 
     def test_agent_command_center_is_read_only_visibility(self):
         center = get_agent_command_center()
@@ -1007,14 +1015,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CQ", result["summary"])
+        self.assertIn("10.9CR", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CQ")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CR")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1052,7 +1060,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["llm_context"]["kind"], "learning_influence_consumption_audit_rail_blueprint")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertFalse(result["llm_context"]["blueprint"]["learning_influence_consumer_enabled"])
-        self.assertFalse(result["llm_context"]["blueprint"]["creates_tables_now"])
+        self.assertTrue(result["llm_context"]["blueprint"]["creates_tables_now"])
+        self.assertTrue(result["llm_context"]["blueprint"]["review_note_only_first_slice"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
         self.assertFalse(result["llm_context"]["runs_specialist_tools"])
@@ -1072,7 +1081,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CQ", result["answer"])
+        self.assertIn("10.9CR", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -1666,6 +1675,106 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("create unique index if not exists idx_oom_sakkie_learning_influence_source_once", migration)
         self.assertIn("before update on public.oom_sakkie_learning_influence_proposals", migration)
         self.assertIn("before delete on public.oom_sakkie_learning_influence_proposal_events", migration)
+
+    def test_learning_influence_consumption_request_params_are_review_note_only(self):
+        params = _consumption_request_params(
+            {
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "source_result_id": "OSK-AGENT-DRYRUN-RESULT-1",
+                "specialist_slug": "sentinel",
+                "proposal_text": "Treat this LLM proposal as untrusted.",
+                "latest_event": {
+                    "event_type": "approved_for_future_planning",
+                    "recorded_by": "owner",
+                },
+            },
+            {
+                "requested_target_kind": "planning_context_note",
+                "requested_target_field": "owner_review_notes",
+                "request_note": "Review-note only.",
+                "requested_by": "unittest",
+            },
+        )
+
+        artifact = json.loads(params["review_note_artifact_json"])
+        self.assertEqual(params["mode"], "learning_influence_consumption_request_only")
+        self.assertEqual(params["status"], "requested_for_consumption_design_review")
+        self.assertEqual(params["requested_target_kind"], "planning_context_note")
+        self.assertTrue(artifact["proposal_text_is_untrusted"])
+        self.assertTrue(artifact["single_target_field"])
+        self.assertEqual(artifact["kind"], "review_note_only")
+        self.assertFalse(params["applies_learning_now"])
+        self.assertFalse(params["changes_prompt_now"])
+        self.assertFalse(params["changes_runtime_now"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["writes"])
+
+    @patch("modules.oom_sakkie.learning_influence_consumption_store._get_learning_influence_proposal")
+    def test_learning_influence_consumption_request_requires_approved_proposal(self, mock_get):
+        mock_get.return_value = ({
+            "success": True,
+            "learning_influence_proposal": {
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "latest_event": {"event_type": "review_note"},
+            },
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "dispatch_enabled": False,
+            "writes": False,
+        }, 200)
+
+        result, status_code = record_learning_influence_consumption_request(
+            {
+                "proposal_id": "OSK-LEARNING-INFLUENCE-1",
+                "requested_target_kind": "planning_context_note",
+                "requested_target_field": "owner_review_notes",
+            },
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertEqual(result["status"], "proposal_not_approved_for_future_planning")
+        self.assertFalse(result["applies_learning_now"])
+        self.assertFalse(result["changes_prompt_now"])
+        self.assertFalse(result["changes_runtime_now"])
+        self.assertFalse(result["dispatch_enabled"])
+        self.assertFalse(result["writes"])
+
+    def test_learning_influence_consumption_event_rejects_consumed_marker_before_database(self):
+        result, status_code = record_learning_influence_consumption_event(
+            "OSK-LEARNING-CONSUME-1",
+            {"event_type": "consumed_for_patch_proposal"},
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 403)
+        self.assertEqual(result["status"], "consumed_event_is_future_consumer_only")
+        self.assertFalse(result["applies_learning_now"])
+        self.assertFalse(result["changes_prompt_now"])
+        self.assertFalse(result["changes_runtime_now"])
+        self.assertFalse(result["dispatch_enabled"])
+        self.assertFalse(result["writes"])
+
+    def test_learning_influence_consumption_migration_is_append_only_no_apply_and_consumed_once(self):
+        migration = Path("supabase/migrations/202606110001_create_oom_sakkie_learning_influence_consumption_audit_rail.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_learning_influence_consumption_requests", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_learning_influence_consumption_events", migration)
+        self.assertIn("mode = 'learning_influence_consumption_request_only'", migration)
+        self.assertIn("status = 'requested_for_consumption_design_review'", migration)
+        self.assertIn("requested_target_kind in (", migration)
+        self.assertIn("event_type in (", migration)
+        self.assertIn("'consumed_for_patch_proposal'", migration)
+        self.assertIn("applies_learning_now = false", migration)
+        self.assertIn("changes_prompt_now = false", migration)
+        self.assertIn("changes_runtime_now = false", migration)
+        self.assertIn("dispatch_enabled = false", migration)
+        self.assertIn("writes = false", migration)
+        self.assertIn("create unique index if not exists idx_oom_sakkie_learning_consumption_consumed_once", migration)
+        self.assertIn("where event_type = 'consumed_for_patch_proposal'", migration)
+        self.assertIn("before update on public.oom_sakkie_learning_influence_consumption_requests", migration)
+        self.assertIn("before delete on public.oom_sakkie_learning_influence_consumption_events", migration)
 
     def test_agent_dry_run_request_params_force_no_execution_flags(self):
         params = _agent_dry_run_request_params({
@@ -5278,6 +5387,221 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(len(existing["learning_influence_proposals"]), 1)
         self.assertEqual(existing["learning_influence_proposals"][0]["proposal_id"], proposal["proposal_id"])
         self.assertEqual(existing["learning_influence_proposals"][0]["source_result_id"], dry_run_result_id)
+
+    def test_live_pg_learning_influence_consumption_audit_rail_is_append_only_and_consumed_once(self):
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            self.skipTest("DATABASE_URL not configured for learning influence consumption integration test")
+        try:
+            import psycopg
+        except ImportError:
+            self.skipTest("psycopg not installed")
+
+        suffix = build_trace_id().replace("OSK-", "")
+        dry_run_request_id = f"OSK-AGENT-DRYRUN-CONSUME-{suffix}"
+        dry_run_result_id = f"OSK-AGENT-DRYRUN-RESULT-CONSUME-{suffix}"
+        proposal_id = f"OSK-LEARNING-INFLUENCE-CONSUME-{suffix}"
+        proposal_event_id = f"OSK-LEARNING-INFLUENCE-EVENT-CONSUME-{suffix}"
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("select to_regclass('public.oom_sakkie_learning_influence_consumption_requests')")
+                if cursor.fetchone()[0] is None:
+                    self.skipTest("learning influence consumption audit rail tables are not migrated")
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_requests (
+                        dry_run_request_id, status, mode, specialist_slug,
+                        requested_by, purpose
+                    )
+                    values (
+                        %s, 'approved_for_read_only_dry_run',
+                        'read_only_dry_run_request_only', 'sentinel',
+                        'unittest', 'learning influence consumption test'
+                    )
+                    """,
+                    (dry_run_request_id,),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_agent_dry_run_results (
+                        dry_run_result_id, dry_run_request_id, status, mode,
+                        specialist_slug, result_text, recorded_by
+                    )
+                    values (
+                        %s, %s, 'recorded_for_owner_review',
+                        'dry_run_result_review_only', 'sentinel',
+                        'consumption rail source evidence', 'unittest'
+                    )
+                    """,
+                    (dry_run_result_id, dry_run_request_id),
+                )
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_learning_influence_proposals (
+                        proposal_id, source_result_id, status, mode, specialist_slug,
+                        proposal_title, proposal_text
+                    )
+                    values (
+                        %s, %s, 'proposed_for_owner_review',
+                        'learning_influence_proposal_only', 'sentinel',
+                        'consumption rail proposal', 'planning note only'
+                    )
+                    """,
+                    (proposal_id, dry_run_result_id),
+                )
+                connection.commit()
+                with self.assertRaises(Exception) as request_error:
+                    cursor.execute(
+                        """
+                        insert into public.oom_sakkie_learning_influence_consumption_requests (
+                            consumption_request_id, proposal_id, source_result_id,
+                            requested_target_kind, requested_target_field,
+                            changes_prompt_now
+                        )
+                        values (
+                            %s, %s, %s,
+                            'planning_context_note', 'owner_review_notes',
+                            true
+                        )
+                        """,
+                        (f"OSK-LEARNING-CONSUME-BAD-{suffix}", proposal_id, dry_run_result_id),
+                    )
+                connection.rollback()
+                self.assertIn("check", str(request_error.exception).lower())
+
+        rejected, rejected_status = record_learning_influence_consumption_request(
+            {
+                "proposal_id": proposal_id,
+                "requested_target_kind": "planning_context_note",
+                "requested_target_field": "owner_review_notes",
+            },
+            database_url=database_url,
+        )
+
+        self.assertEqual(rejected_status, 409)
+        self.assertFalse(rejected["success"])
+        self.assertEqual(rejected["status"], "proposal_not_approved_for_future_planning")
+        self.assertFalse(rejected["applies_learning_now"])
+        self.assertFalse(rejected["changes_prompt_now"])
+        self.assertFalse(rejected["changes_runtime_now"])
+        self.assertFalse(rejected["dispatch_enabled"])
+        self.assertFalse(rejected["writes"])
+
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_learning_influence_proposal_events (
+                        event_id, proposal_id, event_type, notes, recorded_by
+                    )
+                    values (%s, %s, 'approved_for_future_planning', 'approved for design review rail', 'unittest')
+                    """,
+                    (proposal_event_id, proposal_id),
+                )
+                connection.commit()
+
+        created, created_status = record_learning_influence_consumption_request(
+            {
+                "proposal_id": proposal_id,
+                "requested_target_kind": "planning_context_note",
+                "requested_target_field": "owner_review_notes",
+                "request_note": "Review-note artifact only.",
+                "requested_by": "unittest",
+            },
+            database_url=database_url,
+        )
+
+        self.assertEqual(created_status, 201)
+        self.assertTrue(created["success"])
+        self.assertEqual(created["created_count"], 1)
+        self.assertTrue(created["review_note_artifact_only"])
+        self.assertEqual(len(created["learning_influence_consumption_requests"]), 1)
+        consumption_request = created["learning_influence_consumption_requests"][0]
+        consumption_request_id = consumption_request["consumption_request_id"]
+        self.assertEqual(consumption_request["proposal_id"], proposal_id)
+        self.assertEqual(consumption_request["requested_target_kind"], "planning_context_note")
+        self.assertEqual(consumption_request["review_note_artifact"]["kind"], "review_note_only")
+        self.assertTrue(consumption_request["review_note_artifact"]["proposal_text_is_untrusted"])
+        self.assertFalse(consumption_request["applies_learning_now"])
+        self.assertFalse(consumption_request["changes_prompt_now"])
+        self.assertFalse(consumption_request["changes_runtime_now"])
+        self.assertFalse(consumption_request["dispatch_enabled"])
+        self.assertFalse(consumption_request["writes"])
+
+        existing, existing_status = record_learning_influence_consumption_request(
+            {
+                "proposal_id": proposal_id,
+                "requested_target_kind": "planning_context_note",
+                "requested_target_field": "owner_review_notes",
+            },
+            database_url=database_url,
+        )
+
+        self.assertEqual(existing_status, 201)
+        self.assertTrue(existing["success"])
+        self.assertEqual(existing["created_count"], 0)
+        self.assertEqual(existing["learning_influence_consumption_requests"][0]["consumption_request_id"], consumption_request_id)
+
+        review_event, review_status = record_learning_influence_consumption_event(
+            consumption_request_id,
+            {"event_type": "review_note", "notes": "review note only", "recorded_by": "unittest"},
+            database_url=database_url,
+        )
+        self.assertEqual(review_status, 201)
+        self.assertTrue(review_event["success"])
+        self.assertFalse(review_event["changes_prompt_now"])
+
+        first_consumed, first_consumed_status = record_learning_influence_consumption_event(
+            consumption_request_id,
+            {"event_type": "consumed_for_patch_proposal", "notes": "runner-only marker", "recorded_by": "unittest"},
+            database_url=database_url,
+            allow_consumed=True,
+        )
+        self.assertEqual(first_consumed_status, 201)
+        self.assertTrue(first_consumed["success"])
+
+        second_consumed, second_consumed_status = record_learning_influence_consumption_event(
+            consumption_request_id,
+            {"event_type": "consumed_for_patch_proposal", "notes": "second marker", "recorded_by": "unittest"},
+            database_url=database_url,
+            allow_consumed=True,
+        )
+        self.assertEqual(second_consumed_status, 503)
+        self.assertFalse(second_consumed["success"])
+        self.assertEqual(second_consumed["status"], "learning_influence_consumption_event_write_failed")
+        self.assertIn(second_consumed["error_type"], {"UniqueViolation", "IntegrityError"})
+
+        for table_name, id_column, row_id, text_column in (
+            (
+                "public.oom_sakkie_learning_influence_consumption_requests",
+                "consumption_request_id",
+                consumption_request_id,
+                "request_note",
+            ),
+            (
+                "public.oom_sakkie_learning_influence_consumption_events",
+                "event_id",
+                review_event["event_id"],
+                "notes",
+            ),
+        ):
+            with psycopg.connect(database_url, connect_timeout=10) as connection:
+                with connection.cursor() as cursor:
+                    with self.assertRaises(Exception) as update_error:
+                        cursor.execute(
+                            f"update {table_name} set {text_column} = {text_column} where {id_column} = %s",
+                            (row_id,),
+                        )
+                    connection.rollback()
+                    self.assertIn("append-only", str(update_error.exception).lower())
+
+            with psycopg.connect(database_url, connect_timeout=10) as connection:
+                with connection.cursor() as cursor:
+                    with self.assertRaises(Exception) as delete_error:
+                        cursor.execute(f"delete from {table_name} where {id_column} = %s", (row_id,))
+                    connection.rollback()
+                    self.assertIn("append-only", str(delete_error.exception).lower())
 
     def test_trace_list_not_configured_is_safe(self):
         result, status = list_recent_traces(database_url="")
