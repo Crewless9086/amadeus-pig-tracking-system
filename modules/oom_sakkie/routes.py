@@ -16,6 +16,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_agent_runtime_review_packet,
     get_agent_runtime_status,
     get_learning_influence_consumption_audit_rail_blueprint,
+    get_learning_influence_consumer_design_packet,
     recommend_agent_for_text,
     get_learning_influence_consumption_readiness,
 )
@@ -458,6 +459,25 @@ def oom_sakkie_learning_influence_consumption_audit_rail_blueprint():
     blueprint = get_learning_influence_consumption_audit_rail_blueprint()
     return jsonify({
         **blueprint,
+        "review_guard": {
+            "runs_specialist": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+    }), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/agent-learning/consumer-design-packet", methods=["GET"])
+def oom_sakkie_learning_influence_consumer_design_packet():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    design_packet = get_learning_influence_consumer_design_packet()
+    return jsonify({
+        **design_packet,
         "review_guard": {
             "runs_specialist": False,
             "dispatch_enabled": False,

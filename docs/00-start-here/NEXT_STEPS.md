@@ -11482,6 +11482,53 @@ Next gate:
 1. Run browser smoke/full local verification, push, and confirm GitHub Actions.
 2. Ask Claude to review 10.9CR before any learning proposal consumer or applyable prompt/route diff design.
 
+### 10.9CS Oom Sakkie Learning Consumer Design Static Guard - Local Ready
+
+Purpose:
+
+- Act on Claude's 10.9CR pass without implementing a consumer.
+- Guard the one dangerous hinge Claude identified: `allow_consumed=True`.
+- Package the next consumer-design questions into a read-only packet for owner + Claude review.
+
+Claude feedback acted on:
+
+- Claude verdict for 10.9CR: `pass`.
+- Claude called `allow_consumed` the single hinge to guard hardest.
+- Claude recommended a regression test now that asserts no production module calls `record_learning_influence_consumption_event(..., allow_consumed=True)`.
+- Claude recommended the next consumer slice stay review-note-only, owner-gated, and covered by no-authority/static guards.
+
+What changed:
+
+- Added a static AST regression test over `modules/**/*.py` that fails if any production caller passes `allow_consumed=True` to the learning-consumption event writer.
+- Added read-only `get_learning_influence_consumer_design_packet()`.
+- Added read-only Oom Sakkie tool `learning_influence_consumer_design_packet`.
+- Added deterministic routing for learning-consumer-design and `allow_consumed` guard questions.
+- Added protected read-only route `GET /api/oom-sakkie/agent-learning/consumer-design-packet`.
+- The design packet states:
+  - `allow_consumed_production_callers = []`,
+  - `learning_influence_consumer_enabled = false`,
+  - first future output must be `review_note_artifact_only`,
+  - proposal text is untrusted,
+  - one target field per consumption,
+  - owner approval event required before any future consumed marker,
+  - rollback/manual-application artifact required,
+  - manual application remains outside the kiosk.
+
+Safety envelope:
+
+- Static guard, read-only packet, tool, route, docs, and tests only.
+- No consumer, no production `allow_consumed=True` caller, no prompt/route diff application, no prompt/routing/runtime change, no hidden POST or polling, no specialist dispatch, no specialist LLM/tool execution, no farm-data write, no public/customer output, no deploy, no Telegram, no physical control, and no financial action.
+
+Verification:
+
+- Focused audit suite: `323 OK`.
+- `node --check static/js/oomSakkie.js` passed.
+
+Next gate:
+
+1. Run browser smoke/full local verification, push, and confirm GitHub Actions.
+2. Ask Claude to review 10.9CS before any learning proposal consumer implementation.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

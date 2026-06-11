@@ -1,4 +1,5 @@
 import unittest
+import ast
 import os
 import json
 from urllib import error as urllib_error
@@ -25,6 +26,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_jarvis_safety_gate_board,
     get_learning_influence_consumption_audit_rail_blueprint,
     get_learning_influence_consumption_readiness,
+    get_learning_influence_consumer_design_packet,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_handoff import build_agent_dry_run_handoff
@@ -153,6 +155,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "learning_influence_status",
                 "learning_influence_consumption_readiness",
                 "learning_influence_consumption_audit_rail_blueprint",
+                "learning_influence_consumer_design_packet",
                 "agent_activation_preflight",
                 "agent_authority_matrix",
                 "agent_authority_unlock_readiness",
@@ -437,8 +440,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CR")
-        self.assertIn("10.9CR", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CS")
+        self.assertIn("10.9CS", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertFalse(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -468,6 +471,12 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         self.assertTrue(packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["creates_tables_now"])
         self.assertTrue(packet["payloads"]["learning_influence_consumption_audit_rail_blueprint"]["review_note_only_first_slice"])
+        self.assertEqual(
+            packet["payloads"]["learning_influence_consumer_design_packet"]["mode"],
+            "learning_influence_consumer_design_packet_only",
+        )
+        self.assertEqual(packet["payloads"]["learning_influence_consumer_design_packet"]["allow_consumed_production_callers"], [])
+        self.assertFalse(packet["payloads"]["learning_influence_consumer_design_packet"]["learning_influence_consumer_enabled"])
         self.assertIn("Do not treat it as approval", packet["owner_instruction"])
         self.assertIn("review_before_any_runtime_authority_change", packet["next_gate"])
 
@@ -532,6 +541,59 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("partial unique index", " ".join(blueprint["required_live_pg_tests"]))
         self.assertIn("No proposal consumer.", blueprint["non_goals"])
         self.assertIn("any_learning_consumer_or_patch_diff", blueprint["next_gate"])
+
+    def test_learning_influence_consumer_design_packet_is_review_only(self):
+        packet = get_learning_influence_consumer_design_packet()
+
+        self.assertTrue(packet["success"])
+        self.assertEqual(packet["mode"], "learning_influence_consumer_design_packet_only")
+        self.assertEqual(packet["summary_status"], "design_review_only_no_consumer_no_applyable_diff")
+        self.assertFalse(packet["runtime_enabled"])
+        self.assertFalse(packet["dispatch_enabled"])
+        self.assertFalse(packet["autonomous_loops_enabled"])
+        self.assertFalse(packet["writes_enabled"])
+        self.assertFalse(packet["specialist_llm_enabled"])
+        self.assertFalse(packet["specialist_tools_enabled"])
+        self.assertFalse(packet["public_output_enabled"])
+        self.assertFalse(packet["physical_controls_enabled"])
+        self.assertFalse(packet["learning_influence_consumer_enabled"])
+        self.assertFalse(packet["applies_learning_now"])
+        self.assertFalse(packet["changes_prompt_now"])
+        self.assertFalse(packet["changes_runtime_now"])
+        self.assertEqual(packet["allow_consumed_production_callers"], [])
+        self.assertEqual(packet["allowed_target_contract"]["first_consumer_output"], "review_note_artifact_only")
+        self.assertTrue(packet["allowed_target_contract"]["proposal_text_is_untrusted"])
+        self.assertTrue(packet["allowed_target_contract"]["manual_application_outside_kiosk_only"])
+        self.assertEqual(
+            packet["owner_approval_gate"]["required_before_allow_consumed_true"],
+            "approved_for_design_review event on the consumption request",
+        )
+        self.assertIn("No consumer implementation.", packet["non_goals"])
+        self.assertIn("No allow_consumed=True production caller.", packet["non_goals"])
+        self.assertIn("owner_and_claude_review", packet["next_gate"])
+
+    def test_learning_influence_consumption_has_no_production_allow_consumed_true_caller(self):
+        offenders = []
+        for path in Path("modules").rglob("*.py"):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func_name = ""
+                if isinstance(node.func, ast.Name):
+                    func_name = node.func.id
+                elif isinstance(node.func, ast.Attribute):
+                    func_name = node.func.attr
+                if func_name != "record_learning_influence_consumption_event":
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg != "allow_consumed":
+                        continue
+                    if isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
+                        offenders.append(f"{path}:{node.lineno}")
+
+        self.assertEqual(offenders, [])
 
     def test_agent_command_center_is_read_only_visibility(self):
         center = get_agent_command_center()
@@ -1015,14 +1077,14 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9CR", result["summary"])
+        self.assertIn("10.9CS", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CR")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9CS")
         self.assertFalse(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1068,6 +1130,25 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["llm_context"]["writes"])
         self.assertFalse(result["llm_context"]["applies_runtime_change"])
 
+    def test_learning_influence_consumer_design_packet_tool_is_read_only(self):
+        from modules.oom_sakkie.tools import learning_influence_consumer_design_packet_handler
+
+        result = learning_influence_consumer_design_packet_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("review-only", result["summary"])
+        self.assertIn("read-only", result["safety_notes"][0])
+        self.assertEqual(result["llm_context"]["kind"], "learning_influence_consumer_design_packet")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
+        self.assertFalse(result["llm_context"]["design_packet"]["learning_influence_consumer_enabled"])
+        self.assertEqual(result["llm_context"]["design_packet"]["allow_consumed_production_callers"], [])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["applies_runtime_change"])
+
     @patch("modules.oom_sakkie.service.compose_answer_with_llm", return_value=None)
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
     def test_prepare_claude_review_answer_names_scope_without_authority(self, _write_trace, _compose):
@@ -1081,7 +1162,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9CR", result["answer"])
+        self.assertIn("10.9CS", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -3606,6 +3687,8 @@ class OomSakkieServiceTests(unittest.TestCase):
             "what blocks the learning consumer": "learning_influence_consumption_readiness",
             "show me the learning consumption audit rail": "learning_influence_consumption_audit_rail_blueprint",
             "proposal consumption rail blueprint": "learning_influence_consumption_audit_rail_blueprint",
+            "show me the learning consumer design packet": "learning_influence_consumer_design_packet",
+            "what is the allow_consumed guard": "learning_influence_consumer_design_packet",
             "run the sentinel dry-run review": "sentinel_dry_run_review",
             "first agent dry run": "sentinel_dry_run_review",
             "what needs my approval": "system_work_status",

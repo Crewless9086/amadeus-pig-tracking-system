@@ -20,6 +20,7 @@ from modules.oom_sakkie.agent_runtime import (
     get_jarvis_safety_gate_board,
     get_learning_influence_consumption_audit_rail_blueprint,
     get_learning_influence_consumption_readiness,
+    get_learning_influence_consumer_design_packet,
     recommend_agent_for_text,
 )
 from modules.oom_sakkie.agent_dry_run_result_store import list_agent_dry_run_results
@@ -1331,8 +1332,8 @@ def learning_influence_consumption_readiness_handler(_args):
 def learning_influence_consumption_audit_rail_blueprint_handler(_args):
     blueprint = get_learning_influence_consumption_audit_rail_blueprint()
     summary = (
-        "Learning consumption audit rail blueprint is review-only: {} proposed table(s), {} live-PG test(s), "
-        "and no consumer, migration, store, route writer, or apply-learning behavior."
+        "Learning consumption audit rail status is review-only: {} table design(s), {} live-PG test(s), "
+        "and no consumer or apply-learning behavior."
     ).format(
         len(blueprint.get("proposed_tables", [])),
         len(blueprint.get("required_live_pg_tests", [])),
@@ -1344,7 +1345,7 @@ def learning_influence_consumption_audit_rail_blueprint_handler(_args):
         "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
         "stale_warnings": [],
         "safety_notes": [
-            "Learning consumption audit rail blueprint is read-only. It does not create tables, write requests/events, consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
+            "Learning consumption audit rail status is read-only. It does not consume proposals, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
         ],
         "llm_context": {
             "kind": "learning_influence_consumption_audit_rail_blueprint",
@@ -1360,6 +1361,41 @@ def learning_influence_consumption_audit_rail_blueprint_handler(_args):
             "applies_runtime_change": False,
         },
         "raw": blueprint,
+    }
+
+
+def learning_influence_consumer_design_packet_handler(_args):
+    packet = get_learning_influence_consumer_design_packet()
+    summary = (
+        "Learning influence consumer design packet is review-only: {} proposed guard(s), {} first-consumer test(s), "
+        "and no production allow_consumed caller or applyable diff."
+    ).format(
+        len(packet.get("static_guards", [])),
+        len(packet.get("proposed_first_consumer_tests", [])),
+    )
+    return {
+        "success": True,
+        "status": "ok",
+        "summary": summary,
+        "links": [{"label": "Claude Review Handoff", "href": "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"}],
+        "stale_warnings": [],
+        "safety_notes": [
+            "Learning influence consumer design packet is read-only. It does not implement a consumer, call allow_consumed=True, apply learning, change prompts/routes/runtime, dispatch specialists, run tools, write farm data, create public/customer output, deploy, cut over Telegram, control hardware, or take financial action."
+        ],
+        "llm_context": {
+            "kind": "learning_influence_consumer_design_packet",
+            "design_packet": packet,
+            "selected_agent": {
+                "slug": "gatekeeper",
+                "name": "Gatekeeper",
+            },
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+            "writes": False,
+            "applies_runtime_change": False,
+        },
+        "raw": packet,
     }
 
 
@@ -2120,6 +2156,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=learning_influence_consumption_audit_rail_blueprint_handler,
         description="Read-only blueprint for a future append-only learning-consumption audit rail. Never creates tables, writes events, consumes proposals, or applies learning.",
+    ),
+    "learning_influence_consumer_design_packet": OomSakkieTool(
+        name="learning_influence_consumer_design_packet",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=learning_influence_consumer_design_packet_handler,
+        description="Read-only design packet for a future learning proposal consumer. Never consumes proposals, calls allow_consumed=True, or applies learning.",
     ),
     "agent_runtime_readiness": OomSakkieTool(
         name="agent_runtime_readiness",

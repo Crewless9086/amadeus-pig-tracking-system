@@ -107,6 +107,10 @@ RULES = [
         IntentMatch("learning_influence_consumption_audit_rail_blueprint", "learning_influence_consumption_audit_rail_blueprint", 0.95, "rule:learning_influence_consumption_audit_rail_blueprint"),
     ),
     (
+        re.compile(r"\b(learning consumer design|consumer design packet|learning proposal consumer design|proposal consumer design|allow_consumed guard|allow consumed guard|first consumer slice|learning consumer implementation review)\b", re.I),
+        IntentMatch("learning_influence_consumer_design_packet", "learning_influence_consumer_design_packet", 0.95, "rule:learning_influence_consumer_design_packet"),
+    ),
+    (
         re.compile(r"\b(learning consumption|consume learning|consume proposals|proposal consumer|learning consumer|apply learning|learning threat model|learning rollback|learning.*threat|what blocks.*learning.*consumer)\b", re.I),
         IntentMatch("learning_influence_consumption_readiness", "learning_influence_consumption_readiness", 0.95, "rule:learning_influence_consumption_readiness"),
     ),

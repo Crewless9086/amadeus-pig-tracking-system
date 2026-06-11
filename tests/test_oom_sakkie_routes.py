@@ -606,6 +606,36 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(data["status"], "review_access_denied")
 
+    def test_learning_influence_consumer_design_packet_route_is_read_only(self):
+        response = self.client.get("/api/oom-sakkie/agent-learning/consumer-design-packet")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "learning_influence_consumer_design_packet_only")
+        self.assertFalse(data["learning_influence_consumer_enabled"])
+        self.assertFalse(data["applies_learning_now"])
+        self.assertFalse(data["changes_prompt_now"])
+        self.assertFalse(data["changes_runtime_now"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["writes_enabled"])
+        self.assertEqual(data["allow_consumed_production_callers"], [])
+        self.assertEqual(data["allowed_target_contract"]["first_consumer_output"], "review_note_artifact_only")
+        self.assertTrue(data["allowed_target_contract"]["proposal_text_is_untrusted"])
+        self.assertFalse(data["review_guard"]["dispatch_enabled"])
+        self.assertFalse(data["review_guard"]["runs_specialist_tools"])
+        self.assertFalse(data["review_guard"]["writes"])
+
+    def test_learning_influence_consumer_design_packet_route_denies_non_local_review_access(self):
+        response = self.client.get(
+            "/api/oom-sakkie/agent-learning/consumer-design-packet",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+
     @patch("modules.oom_sakkie.routes.list_learning_influence_consumption_requests")
     def test_learning_influence_consumption_requests_route_lists_without_applying_learning(self, mock_list):
         mock_list.return_value = ({

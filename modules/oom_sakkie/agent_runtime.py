@@ -6,7 +6,7 @@ from modules.oom_sakkie.agent_dry_run_store import allowed_agent_dry_run_slugs
 from modules.oom_sakkie.specialists import list_specialist_manifests
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CR"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9CS"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -26,6 +26,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence from-result live-PG coverage proves the 409 acceptance guard and idempotent existing-proposal path.",
     "Learning influence consumption readiness is threat-model-only and still has no consumer implementation.",
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
+    "Learning influence consumer design remains review-only; allow_consumed=True has a static no-production-caller guard.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
@@ -1380,6 +1381,7 @@ def get_jarvis_owner_review_packet():
     runtime_review = get_agent_runtime_review_packet()
     learning_consumption = get_learning_influence_consumption_readiness()
     consumption_audit_rail = get_learning_influence_consumption_audit_rail_blueprint()
+    consumer_design = get_learning_influence_consumer_design_packet()
     readiness = {
         "progress_overall_percent": progress.get("overall_percent", 0),
         "progress_summary_status": progress.get("summary_status"),
@@ -1430,6 +1432,7 @@ def get_jarvis_owner_review_packet():
             "agent_runtime_review_packet": runtime_review,
             "learning_influence_consumption_readiness": learning_consumption,
             "learning_influence_consumption_audit_rail_blueprint": consumption_audit_rail,
+            "learning_influence_consumer_design_packet": consumer_design,
         },
         "claude_prompt": CURRENT_CLAUDE_REVIEW_PROMPT,
         "owner_instruction": "Use this as a read-only review checklist. Do not treat it as approval to unlock runtime authority.",
@@ -1657,6 +1660,102 @@ def get_learning_influence_consumption_audit_rail_blueprint():
             "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
         ],
         "next_gate": "owner_and_claude_review_before_any_learning_consumer_or_patch_diff",
+    }
+
+
+def get_learning_influence_consumer_design_packet():
+    allowed_target_contract = {
+        "first_consumer_output": "review_note_artifact_only",
+        "allowed_target_kinds": [
+            "planning_context_note",
+            "routing_hint_review_note",
+            "answer_style_review_note",
+        ],
+        "one_target_field_per_consumption": True,
+        "max_artifact_chars": 1200,
+        "max_source_excerpt_chars": 500,
+        "proposal_text_is_untrusted": True,
+        "must_include_source_provenance": True,
+        "must_include_rollback_artifact": True,
+        "manual_application_outside_kiosk_only": True,
+    }
+    owner_approval_gate = {
+        "required_before_allow_consumed_true": "approved_for_design_review event on the consumption request",
+        "must_recheck_before_marker": [
+            "request latest event is approved_for_design_review",
+            "source proposal latest event is still approved_for_future_planning",
+            "request target kind and target field still match the allowlist",
+            "no prior consumed_for_patch_proposal marker exists",
+        ],
+        "forbidden_shortcuts": [
+            "No chat command may consume a proposal.",
+            "No owner cockpit button may call allow_consumed=True.",
+            "No background worker, timer, or hidden POST may consume a proposal.",
+        ],
+    }
+    rollback_artifact_contract = {
+        "required_fields": [
+            "source_proposal_id",
+            "source_result_id",
+            "target_kind",
+            "target_field",
+            "previous_review_note_text",
+            "proposed_review_note_text",
+            "rollback_text",
+            "manual_application_steps",
+        ],
+        "non_goal": "This is not an applyable prompt or route patch.",
+    }
+    static_guards = [
+        {
+            "guard": "no_production_allow_consumed_true",
+            "purpose": "A production caller cannot pass allow_consumed=True without updating the deliberate static regression test.",
+            "current_state": "no production caller",
+        },
+        {
+            "guard": "consumer_not_implemented",
+            "purpose": "No function reads a consumption request to produce a patch, mutate a prompt, mutate routing, change runtime, or write farm data.",
+            "current_state": "not implemented",
+        },
+    ]
+    proposed_first_consumer_tests = [
+        "static guard permits exactly one reviewed consumer module to pass allow_consumed=True",
+        "consumer rejects request without latest approved_for_design_review event",
+        "consumer rejects if source proposal is no longer approved_for_future_planning",
+        "consumer output is review_note_artifact_only and all authority flags remain false",
+        "consumer writes consumed_for_patch_proposal once before returning an artifact",
+        "repeated consumer call fails through consumed-once DB constraint",
+        "browser behavior proves no hidden POST or owner-cockpit consume button",
+    ]
+    return {
+        "success": True,
+        "mode": "learning_influence_consumer_design_packet_only",
+        "summary_status": "design_review_only_no_consumer_no_applyable_diff",
+        "runtime_enabled": False,
+        "dispatch_enabled": False,
+        "autonomous_loops_enabled": False,
+        "writes_enabled": False,
+        "specialist_llm_enabled": False,
+        "specialist_tools_enabled": False,
+        "public_output_enabled": False,
+        "physical_controls_enabled": False,
+        "learning_influence_consumer_enabled": False,
+        "applies_learning_now": False,
+        "changes_prompt_now": False,
+        "changes_runtime_now": False,
+        "allow_consumed_production_callers": [],
+        "allowed_target_contract": allowed_target_contract,
+        "owner_approval_gate": owner_approval_gate,
+        "rollback_artifact_contract": rollback_artifact_contract,
+        "static_guards": static_guards,
+        "proposed_first_consumer_tests": proposed_first_consumer_tests,
+        "non_goals": [
+            "No consumer implementation.",
+            "No allow_consumed=True production caller.",
+            "No applyable prompt, route, or runtime diff.",
+            "No prompt, route, runtime, tool, data, public output, deploy, Telegram, physical control, or financial change.",
+        ],
+        "next_gate": "owner_and_claude_review_before_any_learning_consumer_implementation",
     }
 
 
