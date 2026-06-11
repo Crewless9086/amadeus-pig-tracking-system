@@ -732,6 +732,7 @@ Known verification from Codex:
 - 10.9CT live-gated focused audit suite with `.env` loaded -> 323 OK.
 - 10.9CT browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9CT full local unittest suite: `.\venv\Scripts\python.exe -m unittest` -> 653 OK.
+- 10.9CT GitHub Actions after commit `fbdcec0`: `Oom Sakkie Browser Behavior` run `27335044663` success; `Oom Sakkie Audit Rails` run `27335044655` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
@@ -1118,6 +1119,7 @@ Known verification from Codex:
   - The AST guard now tracks direct imports, aliased imports, module imports, and module-attribute calls to `record_learning_influence_consumption_event`.
   - The guard now flags positional fourth arguments, `**kwargs`, and any `allow_consumed` value that is not literal `False`.
   - The consumer-design packet's static guard wording now describes this stronger behavior.
+  - GitHub Actions for commit `fbdcec0` are green: Browser Behavior run `27335044663`, Audit Rails run `27335044655`.
 - Applied Supabase migrations through `202606090003_allow_single_shot_sentinel_dry_run_results.sql` for the local supervised Sentinel smoke.
 - Route smokes confirmed:
   - `/api/oom-sakkie/message` stores traces.
