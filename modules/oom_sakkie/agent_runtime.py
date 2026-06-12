@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DA"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DC"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -37,6 +37,8 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Learning influence consumption audit rail records append-only request/event evidence only; no proposal is consumed or applied.",
     "Learning influence review-note consumer is the single reviewed allow_consumed call site and still applies no prompt, route, runtime, or data change.",
     "Browser voice capture has a simulated transcript smoke and clearer microphone/browser diagnostics.",
+    "Backend push-to-talk STT fallback is explicitly env-gated, stores no audio, and leaves always-on mic off.",
+    "Read-only Telegram gateway is token-gated, returns a caller-send reply payload only, and sends no Telegram message itself.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]

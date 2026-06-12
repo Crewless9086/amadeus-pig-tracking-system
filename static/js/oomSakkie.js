@@ -2672,6 +2672,7 @@
     const policy = data.kiosk_policy || {};
     const reviewAccess = data.review_endpoints_access || {};
     const messageAccess = data.message_endpoint_access || {};
+    const telegramGateway = data.telegram_gateway || {};
     const llmRouter = data.llm_router || {};
     const llmAnswer = data.llm_answer || {};
     const backendStt = data.backend_voice_stt || {};
@@ -2691,6 +2692,7 @@
       ["Message access", messageAccess.default || "unknown"],
       ["Write tools", data.write_tools_enabled ? "enabled" : "off"],
       ["Telegram cutover", data.telegram_cutover_enabled ? "enabled" : "off"],
+      ["Telegram gateway", telegramGateway.enabled ? "read-only" : "off"],
       ["Voice", data.browser_speech_mode || "unknown"],
       ["Backend STT", backendStt.enabled ? "enabled" : (backendStt.configured ? "configured, disabled" : "off")],
       ["Continue cap", `${data.continue_conversation_max_turns || 0} turns`],

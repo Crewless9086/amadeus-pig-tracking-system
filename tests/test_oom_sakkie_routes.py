@@ -47,6 +47,9 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["backend_voice_stt"]["enabled"])
         self.assertFalse(data["backend_voice_stt"]["stores_audio"])
         self.assertIn("backend STT vendors", data["blocked_capabilities"])
+        self.assertFalse(data["telegram_gateway_enabled"])
+        self.assertFalse(data["telegram_gateway"]["sends_telegram"])
+        self.assertIn("Telegram read-only gateway", data["blocked_capabilities"])
         self.assertEqual(data["message_endpoint_access"]["default"], "reachable_wherever_flask_is_reachable")
         self.assertIn("reverse_proxy_caveat", data["review_endpoints_access"])
 
@@ -105,6 +108,74 @@ class OomSakkieRouteTests(unittest.TestCase):
 
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(denied_data["status"], "review_access_denied")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_telegram_gateway_route_is_disabled_by_default(self):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/message",
+            json={"text": "what needs attention today"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "telegram_gateway_disabled")
+        self.assertFalse(data["sends_telegram"])
+        self.assertFalse(data["writes"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    def test_telegram_gateway_route_requires_token(self):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/message",
+            json={"text": "what needs attention today"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "telegram_gateway_auth_denied")
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.handle_message")
+    def test_telegram_gateway_route_returns_read_only_reply_payload(self, mock_handle):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Read-only answer.",
+            "tool_used": "farm_attention_summary",
+            "risk_level": 0,
+            "trace_id": "OSK-TRACE-ROUTE",
+            "safety_notes": ["No write."],
+        }, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/message",
+            json={
+                "message": {
+                    "text": "what needs attention today",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"Authorization": "Bearer secret"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["answer"], "Read-only answer.")
+        self.assertEqual(data["reply"]["chat_id"], "67890")
+        self.assertFalse(data["reply"]["sends_telegram"])
+        self.assertFalse(data["sends_telegram"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["dispatch_enabled"])
+        mock_handle.assert_called_once_with({
+            "text": "what needs attention today",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+        })
 
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(

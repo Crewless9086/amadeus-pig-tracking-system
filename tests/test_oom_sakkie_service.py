@@ -12,6 +12,11 @@ from modules.oom_sakkie.voice_stt import (
     backend_voice_stt_policy,
     transcribe_oom_sakkie_voice_audio,
 )
+from modules.oom_sakkie.telegram_gateway import (
+    handle_telegram_gateway_message,
+    parse_telegram_gateway_payload,
+    telegram_gateway_policy,
+)
 from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
     build_agent_activity,
@@ -226,6 +231,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["mode"], "local_kiosk_read_only")
         self.assertTrue(policy["backend_as_brain"])
         self.assertFalse(policy["telegram_cutover_enabled"])
+        self.assertFalse(policy["telegram_gateway_enabled"])
+        self.assertFalse(policy["telegram_gateway"]["enabled"])
+        self.assertFalse(policy["telegram_gateway"]["sends_telegram"])
         self.assertFalse(policy["llm_answer_enabled"])
         self.assertFalse(policy["llm_router_enabled"])
         self.assertFalse(policy["write_tools_enabled"])
@@ -265,6 +273,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["tool_counts"]["write_or_confirmation"], 0)
         self.assertIn("write tools", policy["blocked_capabilities"])
         self.assertIn("backend STT vendors", policy["blocked_capabilities"])
+        self.assertIn("Telegram read-only gateway", policy["blocked_capabilities"])
 
     @patch.dict(os.environ, {"OOM_SAKKIE_STT_ENABLED": "1", "OPENAI_API_KEY": "test-key"}, clear=True)
     def test_runtime_policy_enables_backend_stt_only_as_push_to_talk_fallback(self):
@@ -324,6 +333,114 @@ class OomSakkieServiceTests(unittest.TestCase):
         policy = backend_voice_stt_policy()
         self.assertFalse(policy["enabled"])
         self.assertFalse(policy["stores_audio"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    def test_runtime_policy_reports_read_only_telegram_gateway_when_configured(self):
+        policy = get_runtime_policy()
+
+        self.assertFalse(policy["telegram_cutover_enabled"])
+        self.assertTrue(policy["telegram_gateway_enabled"])
+        self.assertTrue(policy["telegram_gateway"]["enabled"])
+        self.assertEqual(policy["telegram_gateway"]["mode"], "read_only_owner_gateway")
+        self.assertFalse(policy["telegram_gateway"]["sends_telegram"])
+        self.assertFalse(policy["telegram_gateway"]["writes"])
+        self.assertFalse(policy["telegram_gateway"]["dispatch_enabled"])
+        self.assertNotIn("Telegram read-only gateway", policy["blocked_capabilities"])
+
+    def test_telegram_gateway_payload_parser_accepts_telegram_update_shape(self):
+        parsed = parse_telegram_gateway_payload({
+            "message": {
+                "text": "what needs attention today",
+                "from": {"id": 12345},
+                "chat": {"id": 67890},
+            },
+        })
+
+        self.assertEqual(parsed["text"], "what needs attention today")
+        self.assertEqual(parsed["telegram_user_id"], "12345")
+        self.assertEqual(parsed["telegram_chat_id"], "67890")
+        self.assertEqual(parsed["session_id"], "telegram-67890")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_telegram_gateway_is_fail_closed_by_default(self):
+        result, status_code = handle_telegram_gateway_message({"text": "farm status"}, headers={})
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_gateway_disabled")
+        self.assertFalse(result["telegram_gateway"]["enabled"])
+        self.assertFalse(result["sends_telegram"])
+        self.assertFalse(result["writes"])
+
+        policy = telegram_gateway_policy()
+        self.assertFalse(policy["enabled"])
+        self.assertFalse(policy["sends_telegram"])
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    def test_telegram_gateway_requires_token(self):
+        result, status_code = handle_telegram_gateway_message({"text": "farm status"}, headers={})
+
+        self.assertEqual(status_code, 403)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_gateway_auth_denied")
+        self.assertFalse(result["sends_telegram"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_gateway.handle_message")
+    def test_telegram_gateway_returns_answer_payload_without_sending_telegram(self, mock_handle):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Read-only farm status.",
+            "tool_used": "farm_attention_summary",
+            "risk_level": 0,
+            "trace_id": "OSK-TRACE-TELEGRAM",
+            "safety_notes": ["No write."],
+        }, 200)
+
+        result, status_code = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "what needs attention today",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"Authorization": "Bearer secret"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["answer"], "Read-only farm status.")
+        self.assertEqual(result["reply"]["chat_id"], "67890")
+        self.assertEqual(result["reply"]["text"], "Read-only farm status.")
+        self.assertFalse(result["reply"]["sends_telegram"])
+        self.assertFalse(result["sends_telegram"])
+        self.assertFalse(result["writes"])
+        mock_handle.assert_called_once_with({
+            "text": "what needs attention today",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+        })
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_gateway_rejects_unapproved_user_id(self):
+        result, status_code = handle_telegram_gateway_message(
+            {"text": "farm status", "telegram_user_id": "999"},
+            headers={"X-Oom-Sakkie-Telegram-Token": "secret"},
+        )
+
+        self.assertEqual(status_code, 403)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_user_not_allowed")
+        self.assertFalse(result["sends_telegram"])
 
     @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ANSWER_ENABLED": "1"}, clear=True)
     def test_runtime_policy_declares_message_guard_when_llm_enabled(self):
@@ -511,8 +628,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DA")
-        self.assertIn("10.9DA", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DC")
+        self.assertIn("10.9DC", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -531,6 +648,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("409 acceptance guard", " ".join(packet["current_review"]["focus"]))
         self.assertIn("threat-model-only", " ".join(packet["current_review"]["focus"]))
         self.assertIn("append-only request/event evidence only", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("push-to-talk STT", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("Read-only Telegram gateway", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -1325,14 +1444,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DA", result["summary"])
+        self.assertIn("10.9DC", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DA")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DC")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1410,7 +1529,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DA", result["answer"])
+        self.assertIn("10.9DC", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
