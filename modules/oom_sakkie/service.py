@@ -10,6 +10,7 @@ from modules.oom_sakkie.trace_store import build_trace_id, hash_tool_result, wri
 
 CONFIDENCE_FLOOR = 0.65
 MAX_USER_TEXT_CHARS = 2000
+DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}
 
 
 ACTION_GUARD_PATTERN = re.compile(
@@ -197,6 +198,7 @@ def handle_message(payload):
     text = str((payload or {}).get("text") or "").strip()[:MAX_USER_TEXT_CHARS]
     channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]
     session_id = str((payload or {}).get("session_id") or "").strip()[:120]
+    llm_allowed = channel not in DETERMINISTIC_ONLY_CHANNELS
     trace_id = build_trace_id()
 
     if not text:
@@ -305,7 +307,7 @@ def handle_message(payload):
             },
         }, 200
 
-    if not match:
+    if not match and llm_allowed:
         llm_match = route_with_llm(text)
         if llm_match:
             if llm_match.needs_clarification:
@@ -424,14 +426,16 @@ def handle_message(payload):
     if is_unsupported_action_request(text):
         safety_notes.append("I treated this as a read-only check. No write, message, control, or physical action was performed.")
     deterministic_answer = build_answer(tool_result, stale_warnings, safety_notes)
-    composed_answer = compose_answer_with_llm(
-        user_text=text,
-        tool_name=tool.name,
-        deterministic_answer=deterministic_answer,
-        stale_warnings=stale_warnings,
-        safety_notes=safety_notes,
-        raw_context=tool_result.get("llm_context") or tool_result.get("raw") or tool_result,
-    )
+    composed_answer = None
+    if llm_allowed:
+        composed_answer = compose_answer_with_llm(
+            user_text=text,
+            tool_name=tool.name,
+            deterministic_answer=deterministic_answer,
+            stale_warnings=stale_warnings,
+            safety_notes=safety_notes,
+            raw_context=tool_result.get("llm_context") or tool_result.get("raw") or tool_result,
+        )
     answer = composed_answer or deterministic_answer
     answer_source = "llm_composer" if composed_answer else "deterministic"
     agent_activity = build_agent_activity(

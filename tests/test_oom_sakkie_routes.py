@@ -177,6 +177,42 @@ class OomSakkieRouteTests(unittest.TestCase):
             "session_id": "telegram-67890",
         })
 
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_route, mock_compose):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/message",
+            json={
+                "message": {
+                    "text": "what needs attention today",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Oom-Sakkie-Telegram-Token": "secret"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertFalse(data["can_trigger_outbound_llm"])
+        self.assertFalse(data["message"]["pipeline"]["llm_router_used"])
+        self.assertFalse(data["message"]["pipeline"]["llm_answer_used"])
+        self.assertEqual(data["message"]["pipeline"]["answer_source"], "deterministic")
+        mock_route.assert_not_called()
+        mock_compose.assert_not_called()
+
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(
             "/api/oom-sakkie/review-packet",

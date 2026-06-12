@@ -343,6 +343,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(policy["telegram_gateway"]["enabled"])
         self.assertEqual(policy["telegram_gateway"]["mode"], "read_only_owner_gateway")
         self.assertFalse(policy["telegram_gateway"]["sends_telegram"])
+        self.assertTrue(policy["telegram_gateway"]["deterministic_only"])
+        self.assertFalse(policy["telegram_gateway"]["can_trigger_outbound_llm"])
         self.assertFalse(policy["telegram_gateway"]["writes"])
         self.assertFalse(policy["telegram_gateway"]["dispatch_enabled"])
         self.assertNotIn("Telegram read-only gateway", policy["blocked_capabilities"])
@@ -419,12 +421,76 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["reply"]["text"], "Read-only farm status.")
         self.assertFalse(result["reply"]["sends_telegram"])
         self.assertFalse(result["sends_telegram"])
+        self.assertTrue(result["deterministic_only"])
+        self.assertFalse(result["can_trigger_outbound_llm"])
         self.assertFalse(result["writes"])
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
         })
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_telegram_gateway_is_deterministic_only_when_llm_surfaces_are_enabled(self, _write_trace, mock_route, mock_compose):
+        result, status_code = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "what needs attention today",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"Authorization": "Bearer secret"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["message"]["tool_used"], "farm_attention_summary")
+        self.assertEqual(result["message"]["pipeline"]["route_source"], "rule")
+        self.assertEqual(result["message"]["pipeline"]["answer_source"], "deterministic")
+        self.assertFalse(result["message"]["pipeline"]["llm_router_used"])
+        self.assertFalse(result["message"]["pipeline"]["llm_answer_used"])
+        self.assertFalse(result["can_trigger_outbound_llm"])
+        self.assertFalse(result["sends_telegram"])
+        mock_route.assert_not_called()
+        mock_compose.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    @patch("modules.oom_sakkie.service.compose_answer_with_llm")
+    @patch("modules.oom_sakkie.service.route_with_llm")
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_telegram_read_only_channel_suppresses_llm_without_gateway(self, _write_trace, mock_route, mock_compose):
+        result, status_code = handle_message({
+            "text": "what needs attention today",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-direct-test",
+        })
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["tool_used"], "farm_attention_summary")
+        self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
+        self.assertFalse(result["pipeline"]["llm_router_used"])
+        self.assertFalse(result["pipeline"]["llm_answer_used"])
+        mock_route.assert_not_called()
+        mock_compose.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
@@ -628,8 +694,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DC")
-        self.assertIn("10.9DC", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DD")
+        self.assertIn("10.9DD", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -650,6 +716,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("append-only request/event evidence only", " ".join(packet["current_review"]["focus"]))
         self.assertIn("push-to-talk STT", " ".join(packet["current_review"]["focus"]))
         self.assertIn("Read-only Telegram gateway", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("cannot trigger outbound LLM calls", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -1444,14 +1511,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DC", result["summary"])
+        self.assertIn("10.9DD", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DC")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DD")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1529,7 +1596,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DC", result["answer"])
+        self.assertIn("10.9DD", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

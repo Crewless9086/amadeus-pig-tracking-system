@@ -1,3 +1,4 @@
+import hmac
 import os
 
 from modules.oom_sakkie.service import handle_message
@@ -26,6 +27,9 @@ def telegram_gateway_policy(environ=None):
         "allowed_user_ids_count": len(allowed_ids),
         "sends_telegram": False,
         "reply_transport": "caller_handles_telegram_send",
+        "deterministic_only": True,
+        "can_trigger_outbound_llm": False,
+        "minimum_token_entropy": "Use a long random token; 32+ bytes of entropy recommended.",
         "direct_bot_cutover_enabled": False,
         "writes": False,
         "dispatch_enabled": False,
@@ -101,6 +105,8 @@ def _gateway_result(success, status, policy, status_code):
         "telegram_gateway": policy,
         "sends_telegram": False,
         "reply_transport": "caller_handles_telegram_send",
+        "deterministic_only": True,
+        "can_trigger_outbound_llm": False,
         "writes": False,
         "dispatch_enabled": False,
         "changes_runtime_now": False,
@@ -117,10 +123,10 @@ def _token_matches(headers, environ=None):
         return False
     authorization = str(_header_value(headers, "Authorization") or "").strip()
     bearer_prefix = "Bearer "
-    if authorization.startswith(bearer_prefix) and authorization[len(bearer_prefix):].strip() == expected:
+    if authorization.startswith(bearer_prefix) and hmac.compare_digest(authorization[len(bearer_prefix):].strip(), expected):
         return True
     provided = str(_header_value(headers, "X-Oom-Sakkie-Telegram-Token") or "").strip()
-    return provided == expected
+    return hmac.compare_digest(provided, expected)
 
 
 def _header_value(headers, name):

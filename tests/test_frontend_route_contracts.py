@@ -11,6 +11,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         playwright_config = Path("playwright.config.js").read_text(encoding="utf-8")
         package_json = Path("package.json").read_text(encoding="utf-8")
         telegram_smoke = Path("scripts/oom_sakkie_telegram_gateway_smoke.py").read_text(encoding="utf-8")
+        telegram_gateway = Path("modules/oom_sakkie/telegram_gateway.py").read_text(encoding="utf-8")
+        service = Path("modules/oom_sakkie/service.py").read_text(encoding="utf-8")
 
         self.assertIn("postgres:16", workflow)
         self.assertIn('FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"', workflow)
@@ -32,6 +34,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("/api/oom-sakkie/channels/telegram/message", telegram_smoke)
         self.assertIn('"sends_telegram"', telegram_smoke)
         self.assertIn('"writes"', telegram_smoke)
+        self.assertIn("hmac.compare_digest", telegram_gateway)
+        self.assertIn('"can_trigger_outbound_llm": False', telegram_gateway)
+        self.assertIn('DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}', service)
 
         self.assertIn("No specialist dispatch.", checklist)
         self.assertIn("No Background Polling", checklist)

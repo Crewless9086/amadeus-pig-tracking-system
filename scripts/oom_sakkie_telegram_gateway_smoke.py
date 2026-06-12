@@ -51,13 +51,14 @@ def main():
     print("success:", response_body.get("success"))
     print("gateway_status:", response_body.get("status"))
     print("sends_telegram:", response_body.get("sends_telegram"))
+    print("can_trigger_outbound_llm:", response_body.get("can_trigger_outbound_llm"))
     print("writes:", response_body.get("writes"))
     print("dispatch_enabled:", response_body.get("dispatch_enabled"))
     print("tool:", (response_body.get("message") or {}).get("tool_used"))
     print("answer:", response_body.get("answer"))
     if status_code != 200 or not response_body.get("success"):
         return 1
-    if response_body.get("sends_telegram") or response_body.get("writes") or response_body.get("dispatch_enabled"):
+    if response_body.get("sends_telegram") or response_body.get("can_trigger_outbound_llm") or response_body.get("writes") or response_body.get("dispatch_enabled"):
         return 1
     return 0
 
