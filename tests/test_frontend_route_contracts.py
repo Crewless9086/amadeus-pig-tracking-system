@@ -35,6 +35,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"sends_telegram"', telegram_smoke)
         self.assertIn('"writes"', telegram_smoke)
         self.assertIn("hmac.compare_digest", telegram_gateway)
+        self.assertIn("MIN_TOKEN_CHARS = 32", telegram_gateway)
+        self.assertIn('"allowed_user_ids_required": True', telegram_gateway)
+        self.assertIn('"records_audit_trace": True', telegram_gateway)
+        self.assertIn("AUTH_FAILURE_LIMIT", telegram_gateway)
         self.assertIn('"can_trigger_outbound_llm": False', telegram_gateway)
         self.assertIn('DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}', service)
 

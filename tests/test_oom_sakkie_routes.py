@@ -5,11 +5,16 @@ from unittest.mock import patch
 
 from app import app
 from modules.oom_sakkie.access import is_review_request_allowed
+from modules.oom_sakkie.telegram_gateway import _reset_auth_rate_limit_for_tests
+
+
+TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
 
 
 class OomSakkieRouteTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
+        _reset_auth_rate_limit_for_tests()
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "not_configured"})
@@ -124,7 +129,11 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["sends_telegram"])
         self.assertFalse(data["writes"])
 
-    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
     def test_telegram_gateway_route_requires_token(self):
         response = self.client.post(
             "/api/oom-sakkie/channels/telegram/message",
@@ -137,7 +146,48 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["success"])
         self.assertEqual(data["status"], "telegram_gateway_auth_denied")
 
-    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "short-token",
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_gateway_route_rejects_short_token_configuration(self):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/message",
+            json={"text": "what needs attention today", "telegram_user_id": "12345"},
+            headers={"Authorization": "Bearer short-token"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "telegram_gateway_token_too_short")
+        self.assertFalse(data["telegram_gateway"]["enabled"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+    }, clear=True)
+    def test_telegram_gateway_route_requires_allowed_user_list(self):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/message",
+            json={"text": "what needs attention today", "telegram_user_id": "12345"},
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "telegram_gateway_allowed_user_ids_required")
+        self.assertFalse(data["telegram_gateway"]["enabled"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
     def test_telegram_gateway_route_returns_read_only_reply_payload(self, mock_handle):
         mock_handle.return_value = ({
@@ -158,7 +208,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                     "chat": {"id": 67890},
                 },
             },
-            headers={"Authorization": "Bearer secret"},
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()
@@ -170,6 +220,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["reply"]["sends_telegram"])
         self.assertFalse(data["sends_telegram"])
         self.assertFalse(data["writes"])
+        self.assertTrue(data["records_audit_trace"])
         self.assertFalse(data["dispatch_enabled"])
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
@@ -179,7 +230,8 @@ class OomSakkieRouteTests(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
-        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
@@ -199,7 +251,7 @@ class OomSakkieRouteTests(unittest.TestCase):
                     "chat": {"id": 67890},
                 },
             },
-            headers={"X-Oom-Sakkie-Telegram-Token": "secret"},
+            headers={"X-Oom-Sakkie-Telegram-Token": TELEGRAM_TEST_TOKEN},
             environ_base={"REMOTE_ADDR": "203.0.113.10"},
         )
         data = response.get_json()

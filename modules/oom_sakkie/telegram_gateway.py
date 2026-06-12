@@ -1,5 +1,6 @@
 import hmac
 import os
+import time
 
 from modules.oom_sakkie.service import handle_message
 
@@ -9,29 +10,50 @@ ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED"
 TOKEN_ENV = "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN"
 ALLOWED_USER_IDS_ENV = "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"
 MAX_TELEGRAM_TEXT_CHARS = 2000
+MIN_TOKEN_CHARS = 32
+AUTH_FAILURE_LIMIT = 8
+AUTH_FAILURE_WINDOW_SECONDS = 60
+AUTH_LOCKOUT_SECONDS = 300
+_AUTH_FAILURE_TIMES = []
+_AUTH_LOCKED_UNTIL = 0.0
 
 
 def telegram_gateway_policy(environ=None):
     source = environ if environ is not None else os.environ
     explicitly_enabled = _env_truthy(source.get(ENABLED_ENV))
-    token_configured = bool(str(source.get(TOKEN_ENV, "") or "").strip())
+    token = str(source.get(TOKEN_ENV, "") or "").strip()
+    token_configured = bool(token)
+    token_meets_minimum = len(token) >= MIN_TOKEN_CHARS
     allowed_ids = _allowed_user_ids(source)
+    auth_locked = _auth_locked()
     return {
-        "enabled": explicitly_enabled and token_configured,
+        "enabled": explicitly_enabled and token_configured and token_meets_minimum and bool(allowed_ids) and not auth_locked,
         "explicitly_enabled": explicitly_enabled,
         "configured": token_configured,
+        "token_meets_minimum_entropy": token_meets_minimum,
+        "minimum_token_chars": MIN_TOKEN_CHARS,
         "mode": "read_only_owner_gateway",
         "route": "POST /api/oom-sakkie/channels/telegram/message",
         "auth": "bearer_or_x_oom_sakkie_telegram_token",
+        "allowed_user_ids_required": True,
         "allowed_user_ids_configured": bool(allowed_ids),
         "allowed_user_ids_count": len(allowed_ids),
+        "auth_rate_limit": {
+            "enabled": True,
+            "failure_limit": AUTH_FAILURE_LIMIT,
+            "window_seconds": AUTH_FAILURE_WINDOW_SECONDS,
+            "lockout_seconds": AUTH_LOCKOUT_SECONDS,
+            "locked": auth_locked,
+        },
         "sends_telegram": False,
         "reply_transport": "caller_handles_telegram_send",
         "deterministic_only": True,
         "can_trigger_outbound_llm": False,
-        "minimum_token_entropy": "Use a long random token; 32+ bytes of entropy recommended.",
+        "minimum_token_entropy": "Requires a long random token of at least 32 characters before the gateway can enable.",
         "direct_bot_cutover_enabled": False,
         "writes": False,
+        "records_audit_trace": True,
+        "writes_note": "writes=false means no farm/control/public-output write; successful messages still append the normal Oom Sakkie audit trace.",
         "dispatch_enabled": False,
         "changes_runtime_now": False,
         "changes_prompt_now": False,
@@ -46,7 +68,14 @@ def handle_telegram_gateway_message(payload, headers=None, environ=None):
         return _gateway_result(False, "telegram_gateway_disabled", policy, 503)
     if not policy["configured"]:
         return _gateway_result(False, "telegram_gateway_token_not_configured", policy, 503)
+    if not policy["token_meets_minimum_entropy"]:
+        return _gateway_result(False, "telegram_gateway_token_too_short", policy, 503)
+    if not policy["allowed_user_ids_configured"]:
+        return _gateway_result(False, "telegram_gateway_allowed_user_ids_required", policy, 503)
+    if policy["auth_rate_limit"]["locked"]:
+        return _gateway_result(False, "telegram_gateway_auth_rate_limited", policy, 429)
     if not _token_matches(headers or {}, environ=environ):
+        _record_auth_failure()
         return _gateway_result(False, "telegram_gateway_auth_denied", policy, 403)
 
     parsed = parse_telegram_gateway_payload(payload)
@@ -108,6 +137,8 @@ def _gateway_result(success, status, policy, status_code):
         "deterministic_only": True,
         "can_trigger_outbound_llm": False,
         "writes": False,
+        "records_audit_trace": True,
+        "writes_note": "writes=false means no farm/control/public-output write; successful messages still append the normal Oom Sakkie audit trace.",
         "dispatch_enabled": False,
         "changes_runtime_now": False,
         "changes_prompt_now": False,
@@ -146,3 +177,25 @@ def _allowed_user_ids(source):
 
 def _env_truthy(value):
     return str(value or "").strip().lower() in TRUTHY
+
+
+def _auth_locked(now=None):
+    now = time.monotonic() if now is None else now
+    return now < _AUTH_LOCKED_UNTIL
+
+
+def _record_auth_failure(now=None):
+    global _AUTH_LOCKED_UNTIL
+    now = time.monotonic() if now is None else now
+    cutoff = now - AUTH_FAILURE_WINDOW_SECONDS
+    kept = [stamp for stamp in _AUTH_FAILURE_TIMES if stamp >= cutoff]
+    kept.append(now)
+    _AUTH_FAILURE_TIMES[:] = kept
+    if len(_AUTH_FAILURE_TIMES) >= AUTH_FAILURE_LIMIT:
+        _AUTH_LOCKED_UNTIL = now + AUTH_LOCKOUT_SECONDS
+
+
+def _reset_auth_rate_limit_for_tests():
+    global _AUTH_LOCKED_UNTIL
+    _AUTH_FAILURE_TIMES.clear()
+    _AUTH_LOCKED_UNTIL = 0.0

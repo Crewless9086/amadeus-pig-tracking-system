@@ -14,9 +14,10 @@ def main():
     load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     enabled = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED", "") or "").strip().lower() in {"1", "true", "yes", "on"}
     token = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", "") or "").strip()
+    allowed_user_ids = str(os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "") or "").strip()
     url = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_URL", "") or "").strip() or DEFAULT_URL
-    if not enabled or not token:
-        print("SKIP: set OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED=1 and OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN in .env.")
+    if not enabled or not token or len(token) < 32 or not allowed_user_ids:
+        print("SKIP: set OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED=1, a 32+ character OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN, and OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS in .env.")
         return 2
 
     payload = {
@@ -53,6 +54,7 @@ def main():
     print("sends_telegram:", response_body.get("sends_telegram"))
     print("can_trigger_outbound_llm:", response_body.get("can_trigger_outbound_llm"))
     print("writes:", response_body.get("writes"))
+    print("records_audit_trace:", response_body.get("records_audit_trace"))
     print("dispatch_enabled:", response_body.get("dispatch_enabled"))
     print("tool:", (response_body.get("message") or {}).get("tool_used"))
     print("answer:", response_body.get("answer"))

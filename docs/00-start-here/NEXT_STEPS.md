@@ -11882,7 +11882,7 @@ Verification:
 Next gate:
 
 1. Run focused/full verification, push, and confirm GitHub Actions.
-2. Ask Claude to review 10.9DD before any direct Telegram bot send/cutover, wider public/customer output, write authority, runtime dispatch, or applyable prompt/route/runtime diff. The read-only Telegram gateway access path exists, returns a caller-send reply payload only, uses constant-time token comparison, and cannot trigger outbound LLM calls on `telegram_read_only`.
+2. Ask Claude to review 10.9DE before any direct Telegram bot send/cutover, wider public/customer output, write authority, runtime dispatch, or applyable prompt/route/runtime diff. The read-only Telegram gateway access path exists, returns a caller-send reply payload only, uses constant-time token comparison, requires a 32+ character token plus configured Telegram user allowlist, has fail-closed auth lockout, records only the normal audit trace, and cannot trigger outbound LLM or HTTP egress on `telegram_read_only`.
 
 7.3E weather LLM triage note:
 

@@ -16,6 +16,7 @@ from modules.oom_sakkie.telegram_gateway import (
     handle_telegram_gateway_message,
     parse_telegram_gateway_payload,
     telegram_gateway_policy,
+    _reset_auth_rate_limit_for_tests,
 )
 from modules.oom_sakkie.agent_runtime import (
     build_agent_crew_brief,
@@ -158,7 +159,13 @@ from modules.oom_sakkie.trace_store import (
 from modules.oom_sakkie.tools import RiskLevel, TOOL_REGISTRY, list_tool_catalog
 
 
+TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
+
+
 class OomSakkieServiceTests(unittest.TestCase):
+    def setUp(self):
+        _reset_auth_rate_limit_for_tests()
+
     def test_tool_registry_contract(self):
         self.assertEqual(
             set(TOOL_REGISTRY),
@@ -334,7 +341,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["enabled"])
         self.assertFalse(policy["stores_audio"])
 
-    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
     def test_runtime_policy_reports_read_only_telegram_gateway_when_configured(self):
         policy = get_runtime_policy()
 
@@ -346,6 +357,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(policy["telegram_gateway"]["deterministic_only"])
         self.assertFalse(policy["telegram_gateway"]["can_trigger_outbound_llm"])
         self.assertFalse(policy["telegram_gateway"]["writes"])
+        self.assertTrue(policy["telegram_gateway"]["records_audit_trace"])
+        self.assertTrue(policy["telegram_gateway"]["token_meets_minimum_entropy"])
+        self.assertTrue(policy["telegram_gateway"]["allowed_user_ids_required"])
+        self.assertTrue(policy["telegram_gateway"]["allowed_user_ids_configured"])
+        self.assertTrue(policy["telegram_gateway"]["auth_rate_limit"]["enabled"])
         self.assertFalse(policy["telegram_gateway"]["dispatch_enabled"])
         self.assertNotIn("Telegram read-only gateway", policy["blocked_capabilities"])
 
@@ -378,7 +394,11 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["enabled"])
         self.assertFalse(policy["sends_telegram"])
 
-    @patch.dict(os.environ, {"OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1", "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret"}, clear=True)
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
     def test_telegram_gateway_requires_token(self):
         result, status_code = handle_telegram_gateway_message({"text": "farm status"}, headers={})
 
@@ -389,7 +409,41 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
-        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "short-token",
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_gateway_rejects_short_configured_token(self):
+        result, status_code = handle_telegram_gateway_message(
+            {"text": "farm status", "telegram_user_id": "12345"},
+            headers={"Authorization": "Bearer short-token"},
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_gateway_token_too_short")
+        self.assertFalse(result["telegram_gateway"]["enabled"])
+        self.assertFalse(result["telegram_gateway"]["token_meets_minimum_entropy"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+    }, clear=True)
+    def test_telegram_gateway_requires_allowed_user_list_when_enabled(self):
+        result, status_code = handle_telegram_gateway_message(
+            {"text": "farm status", "telegram_user_id": "12345"},
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "telegram_gateway_allowed_user_ids_required")
+        self.assertFalse(result["telegram_gateway"]["enabled"])
+        self.assertTrue(result["telegram_gateway"]["allowed_user_ids_required"])
+        self.assertFalse(result["telegram_gateway"]["allowed_user_ids_configured"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
     }, clear=True)
     @patch("modules.oom_sakkie.telegram_gateway.handle_message")
@@ -411,7 +465,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                     "chat": {"id": 67890},
                 },
             },
-            headers={"Authorization": "Bearer secret"},
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
         )
 
         self.assertEqual(status_code, 200)
@@ -424,6 +478,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["deterministic_only"])
         self.assertFalse(result["can_trigger_outbound_llm"])
         self.assertFalse(result["writes"])
+        self.assertTrue(result["records_audit_trace"])
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
@@ -432,7 +487,8 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
-        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
@@ -451,7 +507,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                     "chat": {"id": 67890},
                 },
             },
-            headers={"Authorization": "Bearer secret"},
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
         )
 
         self.assertEqual(status_code, 200)
@@ -465,6 +521,36 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["sends_telegram"])
         mock_route.assert_not_called()
         mock_compose.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+        "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
+        "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
+        "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
+        "OPENAI_API_KEY": "test-key",
+    }, clear=True)
+    @patch("urllib.request.urlopen")
+    @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
+    def test_telegram_read_only_channel_makes_no_outbound_http_egress(self, _write_trace, urlopen):
+        result, status_code = handle_telegram_gateway_message(
+            {
+                "message": {
+                    "text": "what needs attention today",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["can_trigger_outbound_llm"])
+        self.assertEqual(result["message"]["pipeline"]["answer_source"], "deterministic")
+        urlopen.assert_not_called()
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
@@ -494,19 +580,44 @@ class OomSakkieServiceTests(unittest.TestCase):
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
-        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": "secret",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
     }, clear=True)
     def test_telegram_gateway_rejects_unapproved_user_id(self):
         result, status_code = handle_telegram_gateway_message(
             {"text": "farm status", "telegram_user_id": "999"},
-            headers={"X-Oom-Sakkie-Telegram-Token": "secret"},
+            headers={"X-Oom-Sakkie-Telegram-Token": TELEGRAM_TEST_TOKEN},
         )
 
         self.assertEqual(status_code, 403)
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "telegram_user_not_allowed")
         self.assertFalse(result["sends_telegram"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_gateway_rate_limits_repeated_bad_tokens(self):
+        for _ in range(8):
+            result, status_code = handle_telegram_gateway_message(
+                {"text": "farm status", "telegram_user_id": "12345"},
+                headers={"Authorization": "Bearer wrong-token"},
+            )
+
+        self.assertEqual(status_code, 403)
+        self.assertEqual(result["status"], "telegram_gateway_auth_denied")
+
+        locked, locked_status = handle_telegram_gateway_message(
+            {"text": "farm status", "telegram_user_id": "12345"},
+            headers={"Authorization": f"Bearer {TELEGRAM_TEST_TOKEN}"},
+        )
+
+        self.assertEqual(locked_status, 429)
+        self.assertFalse(locked["success"])
+        self.assertEqual(locked["status"], "telegram_gateway_auth_rate_limited")
+        self.assertTrue(locked["telegram_gateway"]["auth_rate_limit"]["locked"])
 
     @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ANSWER_ENABLED": "1"}, clear=True)
     def test_runtime_policy_declares_message_guard_when_llm_enabled(self):
@@ -694,8 +805,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DD")
-        self.assertIn("10.9DD", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DE")
+        self.assertIn("10.9DE", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -1511,14 +1622,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DD", result["summary"])
+        self.assertIn("10.9DE", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DD")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DE")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1596,7 +1707,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DD", result["answer"])
+        self.assertIn("10.9DE", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
