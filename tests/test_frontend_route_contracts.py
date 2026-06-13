@@ -10,6 +10,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         workflow_text = workflow_path.read_text(encoding="utf-8")
         workflow = json.loads(workflow_text)
         node_types = {node["type"] for node in workflow["nodes"]}
+        build_gateway_node = next(node for node in workflow["nodes"] if node["name"] == "Code - Build Backend Gateway Request")
+        build_gateway_js = build_gateway_node["parameters"]["jsCode"]
 
         self.assertFalse(workflow["active"])
         self.assertIn("n8n-nodes-base.executeWorkflowTrigger", node_types)
@@ -26,12 +28,17 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("changes_runtime_now", workflow_text)
         self.assertIn("changes_prompt_now", workflow_text)
         self.assertIn("customer_public_output_enabled", workflow_text)
+        self.assertIn("baseUrlIsLocalOrTls", build_gateway_js)
+        self.assertIn('parsed.protocol === "https:"', build_gateway_js)
+        self.assertIn('"127.0.0.1", "localhost", "[::1]"', build_gateway_js)
+        self.assertIn("must use https, or local http", build_gateway_js)
         self.assertNotIn("test-telegram-token", workflow_text)
         self.assertNotIn("5721652188", workflow_text)
 
         self.assertIn("Do not add a Telegram Trigger", readme)
         self.assertIn("No Telegram send node", readme)
         self.assertIn("remains the only normal Telegram `message` owner", readme)
+        self.assertIn("Remote plain HTTP is rejected", readme)
 
     def test_oom_sakkie_audit_rail_ci_and_browser_checklist_are_documented(self):
         workflow = Path(".github/workflows/oom-sakkie-audit-rails.yml").read_text(encoding="utf-8")

@@ -4,7 +4,7 @@ Callable relay contract for testing the Flask-owned Oom Sakkie backend from the 
 
 Status: import-ready / inactive by default  
 Created for docs: 2026-06-14  
-Phase: 10.9DI private Telegram relay contract
+Phase: 10.9DJ private Telegram relay contract
 
 ## Role
 
@@ -37,6 +37,7 @@ Do not add a Telegram Trigger to this workflow. `2 - The GateKeeper` remains the
 - `OOM_SAKKIE_GATEWAY_BASE_URL`
   - Example private/local value: `http://127.0.0.1:5000`
   - Example HTTPS value: `https://amadeus-pig-tracking-system.onrender.com`
+  - Remote plain HTTP is rejected before the bearer token is used. Use HTTPS for remote/private endpoints, or local HTTP only on localhost/127.0.0.1/::1.
 - `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
   - Must match the Flask `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
   - Must be at least 32 characters
@@ -91,6 +92,7 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 - No Telegram send node.
 - No OpenAI, LLM, Google Sheets, Supabase, shell, or code execution outside n8n JavaScript nodes.
 - Backend token comes only from n8n env.
+- Refuse remote plain HTTP base URLs before using the bearer token.
 - Do not continue when backend says `sends_telegram = true`.
 - Do not continue when backend says `can_trigger_outbound_llm = true`.
 - Do not continue when backend says `writes = true`, `dispatch_enabled = true`, `changes_runtime_now = true`, or `changes_prompt_now = true`.
