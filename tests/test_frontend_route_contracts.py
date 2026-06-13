@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 import unittest
 
+from scripts.oom_sakkie_n8n_relay_contract_check import validate_relay_contract
+
 
 class FrontendRouteContractTests(unittest.TestCase):
     def test_oom_sakkie_backend_read_only_relay_workflow_is_safe_contract(self):
@@ -39,6 +41,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("No Telegram send node", readme)
         self.assertIn("remains the only normal Telegram `message` owner", readme)
         self.assertIn("Remote plain HTTP is rejected", readme)
+        self.assertEqual(validate_relay_contract(), [])
 
     def test_oom_sakkie_audit_rail_ci_and_browser_checklist_are_documented(self):
         workflow = Path(".github/workflows/oom-sakkie-audit-rails.yml").read_text(encoding="utf-8")

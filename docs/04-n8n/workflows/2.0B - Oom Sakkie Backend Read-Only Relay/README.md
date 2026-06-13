@@ -110,6 +110,25 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 7. Execute again with a non-allowlisted `user_id` and confirm it fails closed.
 8. Only after Claude/owner review, wire `2 - The GateKeeper` to call this workflow for a narrow private test.
 
+## Local Contract Check
+
+Before importing the workflow export, run:
+
+```powershell
+.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py
+```
+
+Expected result:
+
+- `relay_contract_status: ok`
+- `active: false`
+- `telegram_trigger: absent`
+- `telegram_send_node: absent`
+- `transport_guard: localhost_or_https`
+- `authority_validation: present`
+
+This check reads the committed workflow JSON and README only. It does not call n8n, Telegram, Flask, OpenAI, Google Sheets, or Supabase.
+
 ## Not In This Slice
 
 - No direct bot cutover.

@@ -11957,6 +11957,45 @@ Next gate:
 1. Verify focused tests and JSON parse.
 2. Ask Claude to review 10.9DJ before importing/wiring the relay into GateKeeper.
 
+### 10.9DK Oom Sakkie n8n Relay Import Preflight - Local Ready
+
+Purpose:
+
+- Keep building while Claude review is temporarily unavailable without crossing into live GateKeeper wiring.
+- Give the owner/operator one local command to verify the committed `2.0B` relay export is still safe before import.
+
+What changed:
+
+- Added `scripts/oom_sakkie_n8n_relay_contract_check.py`.
+- The script reads the committed workflow JSON and README only.
+- It verifies:
+  - workflow imports inactive,
+  - `Execute Workflow Trigger` exists,
+  - no Telegram Trigger exists,
+  - no Telegram send node exists,
+  - backend gateway path and env-token references exist,
+  - no test token or owner chat ID is committed,
+  - localhost/HTTPS transport guard exists,
+  - all no-authority flags are checked before `send_allowed = true`,
+  - README documents the single-trigger and transport-guard rules.
+- `tests/test_frontend_route_contracts.py` now calls the same validator so the script and test cannot drift.
+- The `2.0B` README documents the command and expected output.
+
+Safety envelope:
+
+- No n8n API call.
+- No Telegram API call.
+- No Flask/backend request.
+- No GateKeeper wiring.
+- No Telegram send/cutover.
+- No write authority, dispatch, public output, runtime change, or prompt/tool mutation.
+
+Next gate:
+
+1. Run the local import preflight script and focused tests.
+2. When Claude is available again, ask for a compact review of 10.9DJ-DK.
+3. After review/payment is sorted, import `2.0B` inactive and run its manual execution test before any GateKeeper wiring.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
