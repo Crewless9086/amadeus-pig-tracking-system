@@ -1,0 +1,162 @@
+{
+  "name": "2.0B - Oom Sakkie Backend Read-Only Relay",
+  "description": "Callable, inactive relay contract for the existing GateKeeper to call the Flask-owned read-only Oom Sakkie Telegram gateway. No Telegram trigger or send node.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        0
+      ],
+      "id": "2d0b4a5a-0001-4f41-b7db-2c3c5d1a9d01",
+      "name": "Execute Workflow Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\n\nfunction clean(value, max = 2000) {\n  return String(value ?? \"\").trim().slice(0, max);\n}\n\nconst text = clean(input.message_text || input.text || input.message || \"\");\nconst telegramUserId = clean(input.user_id || input.telegram_user_id || input.from_user_id || \"\", 80);\nconst telegramChatId = clean(input.chat_id || input.telegram_chat_id || \"\", 80);\nconst messageId = clean(input.message_id || \"\", 80);\nconst userName = clean(input.user_name || input.telegram_user_name || \"\", 120);\nconst errors = [];\n\nif (!text) errors.push(\"message_text is required\");\nif (!telegramUserId) errors.push(\"user_id is required\");\nif (!telegramChatId) errors.push(\"chat_id is required\");\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      success: false,\n      send_allowed: false,\n      status: \"invalid_relay_input\",\n      errors,\n      sends_telegram: false,\n      can_trigger_outbound_llm: false,\n      writes: false,\n      records_audit_trace: false,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    status: \"normalized\",\n    text,\n    telegram_user_id: telegramUserId,\n    telegram_chat_id: telegramChatId,\n    message_id: messageId,\n    user_name: userName,\n    gateway_payload: {\n      text,\n      telegram_user_id: telegramUserId,\n      telegram_chat_id: telegramChatId,\n      session_id: `telegram-${telegramChatId}`,\n      source: \"n8n_gatekeeper_private_relay\",\n    },\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        0
+      ],
+      "id": "2d0b4a5a-0002-4f41-b7db-2c3c5d1a9d02",
+      "name": "Code - Normalize GateKeeper Message"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json || {};\nif (item.success !== true) return [{ json: item }];\n\nconst baseUrl = String($env.OOM_SAKKIE_GATEWAY_BASE_URL || \"\").trim().replace(/\\/+$/, \"\");\nconst token = String($env.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN || \"\").trim();\nconst errors = [];\n\nif (!baseUrl) errors.push(\"OOM_SAKKIE_GATEWAY_BASE_URL is required\");\nif (token.length < 32) errors.push(\"OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN must be at least 32 characters\");\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      ...item,\n      success: false,\n      send_allowed: false,\n      status: \"relay_env_not_ready\",\n      errors,\n      sends_telegram: false,\n      can_trigger_outbound_llm: false,\n      writes: false,\n      records_audit_trace: false,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    ...item,\n    gateway_url: `${baseUrl}/api/oom-sakkie/channels/telegram/message`,\n    gateway_token: token,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ],
+      "id": "2d0b4a5a-0003-4f41-b7db-2c3c5d1a9d03",
+      "name": "Code - Build Backend Gateway Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json.gateway_url}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{`Bearer ${$json.gateway_token}`}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.gateway_payload}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "neverError": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2d0b4a5a-0004-4f41-b7db-2c3c5d1a9d04",
+      "name": "HTTP - Call Oom Sakkie Gateway",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $json || {};\nconst message = response.message && typeof response.message === \"object\" ? response.message : {};\nconst reply = response.reply && typeof response.reply === \"object\" ? response.reply : {};\n\nconst forbiddenAuthority = [\n  response.sends_telegram === true,\n  response.direct_bot_cutover_enabled === true,\n  response.can_trigger_outbound_llm === true,\n  response.writes === true,\n  response.dispatch_enabled === true,\n  response.changes_runtime_now === true,\n  response.changes_prompt_now === true,\n  response.physical_controls_enabled === true,\n  response.customer_public_output_enabled === true,\n];\n\nconst safe = response.success === true\n  && response.status === \"answered\"\n  && response.reply_transport === \"caller_handles_telegram_send\"\n  && forbiddenAuthority.every((flag) => flag === false)\n  && String(reply.chat_id || \"\").trim() !== \"\"\n  && String(reply.text || response.answer || \"\").trim() !== \"\";\n\nif (!safe) {\n  return [{\n    json: {\n      success: false,\n      send_allowed: false,\n      status: response.status || \"backend_gateway_rejected\",\n      backend_status: response.status || \"\",\n      backend_success: response.success === true,\n      sends_telegram: response.sends_telegram === true,\n      direct_bot_cutover_enabled: response.direct_bot_cutover_enabled === true,\n      can_trigger_outbound_llm: response.can_trigger_outbound_llm === true,\n      writes: response.writes === true,\n      records_audit_trace: response.records_audit_trace === true,\n      dispatch_enabled: response.dispatch_enabled === true,\n      changes_runtime_now: response.changes_runtime_now === true,\n      changes_prompt_now: response.changes_prompt_now === true,\n      physical_controls_enabled: response.physical_controls_enabled === true,\n      customer_public_output_enabled: response.customer_public_output_enabled === true,\n      backend_response: response,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    success: true,\n    send_allowed: true,\n    status: \"relay_reply_ready\",\n    backend_status: response.status,\n    chat_id: String(reply.chat_id).trim(),\n    telegram_text: String(reply.text || response.answer).trim().slice(0, 4000),\n    reply_transport: response.reply_transport,\n    sends_telegram: false,\n    direct_bot_cutover_enabled: false,\n    can_trigger_outbound_llm: false,\n    writes: false,\n    records_audit_trace: response.records_audit_trace === true,\n    dispatch_enabled: false,\n    changes_runtime_now: false,\n    changes_prompt_now: false,\n    physical_controls_enabled: false,\n    customer_public_output_enabled: false,\n    backend_message_mode: message.mode || \"\",\n    backend_response: response,\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "2d0b4a5a-0005-4f41-b7db-2c3c5d1a9d05",
+      "name": "Code - Validate Caller-Send Reply"
+    },
+    {
+      "parameters": {
+        "content": "Phase 10.9DI read-only backend relay contract. Callable only from GateKeeper. No Telegram Trigger and no Telegram send node. Backend owns answer and safety flags; this workflow returns a guarded caller-send payload only."
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -260
+      ],
+      "id": "2d0b4a5a-0006-4f41-b7db-2c3c5d1a9d06",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code - Normalize GateKeeper Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Normalize GateKeeper Message": {
+      "main": [
+        [
+          {
+            "node": "Code - Build Backend Gateway Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Build Backend Gateway Request": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Call Oom Sakkie Gateway",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Call Oom Sakkie Gateway": {
+      "main": [
+        [
+          {
+            "node": "Code - Validate Caller-Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "pinData": {},
+  "versionId": "phase-10-9di-backend-read-only-relay-contract"
+}

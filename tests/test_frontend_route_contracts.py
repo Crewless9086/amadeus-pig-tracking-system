@@ -1,8 +1,38 @@
 from pathlib import Path
+import json
 import unittest
 
 
 class FrontendRouteContractTests(unittest.TestCase):
+    def test_oom_sakkie_backend_read_only_relay_workflow_is_safe_contract(self):
+        workflow_path = Path("docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/workflow.json")
+        readme = Path("docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/README.md").read_text(encoding="utf-8")
+        workflow_text = workflow_path.read_text(encoding="utf-8")
+        workflow = json.loads(workflow_text)
+        node_types = {node["type"] for node in workflow["nodes"]}
+
+        self.assertFalse(workflow["active"])
+        self.assertIn("n8n-nodes-base.executeWorkflowTrigger", node_types)
+        self.assertIn("n8n-nodes-base.httpRequest", node_types)
+        self.assertNotIn("n8n-nodes-base.telegramTrigger", node_types)
+        self.assertNotIn("n8n-nodes-base.telegram", node_types)
+        self.assertIn("/api/oom-sakkie/channels/telegram/message", workflow_text)
+        self.assertIn("OOM_SAKKIE_GATEWAY_BASE_URL", workflow_text)
+        self.assertIn("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", workflow_text)
+        self.assertIn("caller_handles_telegram_send", workflow_text)
+        self.assertIn("send_allowed", workflow_text)
+        self.assertIn("can_trigger_outbound_llm", workflow_text)
+        self.assertIn("direct_bot_cutover_enabled", workflow_text)
+        self.assertIn("changes_runtime_now", workflow_text)
+        self.assertIn("changes_prompt_now", workflow_text)
+        self.assertIn("customer_public_output_enabled", workflow_text)
+        self.assertNotIn("test-telegram-token", workflow_text)
+        self.assertNotIn("5721652188", workflow_text)
+
+        self.assertIn("Do not add a Telegram Trigger", readme)
+        self.assertIn("No Telegram send node", readme)
+        self.assertIn("remains the only normal Telegram `message` owner", readme)
+
     def test_oom_sakkie_audit_rail_ci_and_browser_checklist_are_documented(self):
         workflow = Path(".github/workflows/oom-sakkie-audit-rails.yml").read_text(encoding="utf-8")
         checklist = Path("docs/06-operations/OOM_SAKKIE_BROWSER_BEHAVIOR_CHECKLIST.md").read_text(encoding="utf-8")

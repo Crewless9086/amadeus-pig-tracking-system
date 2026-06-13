@@ -11882,7 +11882,48 @@ Verification:
 Next gate:
 
 1. Run focused/full verification, push, and confirm GitHub Actions.
-2. Ask Claude to review 10.9DH before any direct Telegram bot send/cutover, wider public/customer output, write authority, runtime dispatch, or applyable prompt/route/runtime diff. The read-only Telegram gateway access path exists, returns a caller-send reply payload only, uses constant-time token comparison, requires a 32+ character token plus configured Telegram user allowlist, has fail-closed auth lockout, records only the normal audit trace, and cannot trigger outbound LLM or HTTP egress on `telegram_read_only`. The exposure preflight records Claude's L-4 caveat: the current rate limiter is in-process/global and acceptable for a single-owner private/test trial, but public/multi-worker production should either explicitly accept that model or replace it with shared per-source throttling; TLS termination must also be confirmed before public exposure. The private relay smoke helper verifies preflight plus caller-send reply payload without sending Telegram, and now refuses non-local plain-HTTP smoke URLs before sending the token.
+2. Ask Claude to review 10.9DI before any direct Telegram bot send/cutover, wider public/customer output, write authority, runtime dispatch, or applyable prompt/route/runtime diff. The read-only Telegram gateway access path exists, returns a caller-send reply payload only, uses constant-time token comparison, requires a 32+ character token plus configured Telegram user allowlist, has fail-closed auth lockout, records only the normal audit trace, and cannot trigger outbound LLM or HTTP egress on `telegram_read_only`. The exposure preflight records Claude's L-4 caveat: the current rate limiter is in-process/global and acceptable for a single-owner private/test trial, but public/multi-worker production should either explicitly accept that model or replace it with shared per-source throttling; TLS termination must also be confirmed before public exposure. The private relay smoke helper verifies preflight plus caller-send reply payload without sending Telegram, refuses non-local plain-HTTP smoke URLs before sending the token, and the new inactive `2.0B - Oom Sakkie Backend Read-Only Relay` workflow template gives GateKeeper a callable no-trigger/no-send backend relay contract for review.
+
+### 10.9DI Oom Sakkie n8n Backend Read-Only Relay Contract - Local Ready
+
+Purpose:
+
+- Move from local gateway smoke to an import-ready n8n relay contract without creating a second Telegram listener or send path.
+- Preserve GateKeeper as the normal Telegram message owner.
+- Keep Flask as the Oom Sakkie brain and n8n as a thin adapter.
+
+What changed:
+
+- Added `docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/README.md`.
+- Added inactive `workflow.json` with:
+  - `Execute Workflow Trigger`,
+  - message normalization from GateKeeper-style fields,
+  - env-only backend base URL and gateway token,
+  - HTTP POST to `/api/oom-sakkie/channels/telegram/message`,
+  - caller-send reply validation.
+- Updated `docs/04-n8n/WORKFLOW_MAP.md` to document `2.0B` as a backend relay contract.
+- Added a frontend route contract test that parses the workflow JSON and asserts:
+  - `active = false`,
+  - no `telegramTrigger`,
+  - no Telegram send node,
+  - no hardcoded smoke token or Charl chat ID,
+  - gateway endpoint and env names are present,
+  - no-authority flags are validated.
+
+Safety envelope:
+
+- No Telegram Trigger.
+- No Telegram send node.
+- No GateKeeper wiring yet.
+- No public exposure.
+- No backend route change.
+- No prompt/route/runtime/tool/farm-data mutation.
+- No write authority, dispatch, public output, physical control, or financial action.
+
+Next gate:
+
+1. Verify tests and JSON parse locally.
+2. Ask Claude to review 10.9DI before importing/wiring the relay into GateKeeper.
 
 7.3E weather LLM triage note:
 
