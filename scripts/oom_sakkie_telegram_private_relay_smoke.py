@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from dotenv import load_dotenv
@@ -20,6 +21,9 @@ def main():
     chat_id = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_CHAT_ID", "") or "").strip() or "local-smoke-chat"
     text = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_TEXT", "") or "").strip() or "what needs attention today"
 
+    if not _base_url_is_local_or_tls(base_url):
+        print("ERROR: use localhost/127.0.0.1 for HTTP smoke URLs, or HTTPS for remote/private endpoints.")
+        return 2
     if len(token) < 32:
         print("SKIP: set OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN to a 32+ character value.")
         return 2
@@ -88,6 +92,16 @@ def _post_json(url, payload, token):
             return response.status, json.loads(response.read().decode("utf-8"))
     except urllib_error.HTTPError as error:
         return error.code, json.loads(error.read().decode("utf-8") or "{}")
+
+
+def _base_url_is_local_or_tls(base_url):
+    parsed = urllib_parse.urlparse(base_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme == "http" and host in {"127.0.0.1", "localhost", "::1"}:
+        return True
+    return False
 
 
 def _has_authority(payload):
