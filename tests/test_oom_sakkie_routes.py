@@ -11,6 +11,22 @@ from modules.oom_sakkie.telegram_gateway import _reset_auth_rate_limit_for_tests
 TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
 
 
+def _fake_farm_attention_tool():
+    tool = unittest.mock.Mock()
+    tool.name = "farm_attention_summary"
+    tool.risk_level = 0
+    tool.handler.return_value = {
+        "success": True,
+        "status": "ok",
+        "summary": "No current farm attention items are showing.",
+        "links": [],
+        "stale_warnings": [],
+        "safety_notes": [],
+        "raw": {},
+    }
+    return tool
+
+
 class OomSakkieRouteTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
@@ -240,8 +256,11 @@ class OomSakkieRouteTests(unittest.TestCase):
     }, clear=True)
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
     @patch("modules.oom_sakkie.service.route_with_llm")
+    @patch("modules.oom_sakkie.service.get_tool")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_route, mock_compose):
+    def test_telegram_gateway_route_suppresses_llm_egress_when_llm_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose):
+        mock_get_tool.return_value = _fake_farm_attention_tool()
+
         response = self.client.post(
             "/api/oom-sakkie/channels/telegram/message",
             json={
@@ -262,6 +281,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["message"]["pipeline"]["llm_router_used"])
         self.assertFalse(data["message"]["pipeline"]["llm_answer_used"])
         self.assertEqual(data["message"]["pipeline"]["answer_source"], "deterministic")
+        mock_get_tool.assert_called_once_with("farm_attention_summary")
         mock_route.assert_not_called()
         mock_compose.assert_not_called()
 

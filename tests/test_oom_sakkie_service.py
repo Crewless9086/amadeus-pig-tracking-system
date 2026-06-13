@@ -163,6 +163,22 @@ from modules.oom_sakkie.tools import RiskLevel, TOOL_REGISTRY, list_tool_catalog
 TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
 
 
+def _fake_farm_attention_tool():
+    tool = Mock()
+    tool.name = "farm_attention_summary"
+    tool.risk_level = RiskLevel.READ_ONLY
+    tool.handler.return_value = {
+        "success": True,
+        "status": "ok",
+        "summary": "No current farm attention items are showing.",
+        "links": [],
+        "stale_warnings": [],
+        "safety_notes": [],
+        "raw": {},
+    }
+    return tool
+
+
 class OomSakkieServiceTests(unittest.TestCase):
     def setUp(self):
         _reset_auth_rate_limit_for_tests()
@@ -498,8 +514,11 @@ class OomSakkieServiceTests(unittest.TestCase):
     }, clear=True)
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
     @patch("modules.oom_sakkie.service.route_with_llm")
+    @patch("modules.oom_sakkie.service.get_tool")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_gateway_is_deterministic_only_when_llm_surfaces_are_enabled(self, _write_trace, mock_route, mock_compose):
+    def test_telegram_gateway_is_deterministic_only_when_llm_surfaces_are_enabled(self, _write_trace, mock_get_tool, mock_route, mock_compose):
+        mock_get_tool.return_value = _fake_farm_attention_tool()
+
         result, status_code = handle_telegram_gateway_message(
             {
                 "message": {
@@ -520,6 +539,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(result["message"]["pipeline"]["llm_answer_used"])
         self.assertFalse(result["can_trigger_outbound_llm"])
         self.assertFalse(result["sends_telegram"])
+        mock_get_tool.assert_called_once_with("farm_attention_summary")
         mock_route.assert_not_called()
         mock_compose.assert_not_called()
 
@@ -533,9 +553,12 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_LLM_ANSWER_MODEL": "test-answer",
         "OPENAI_API_KEY": "test-key",
     }, clear=True)
+    @patch("modules.oom_sakkie.service.get_tool")
     @patch("urllib.request.urlopen")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_read_only_channel_makes_no_outbound_http_egress(self, _write_trace, urlopen):
+    def test_telegram_read_only_channel_makes_no_outbound_http_egress(self, _write_trace, urlopen, mock_get_tool):
+        mock_get_tool.return_value = _fake_farm_attention_tool()
+
         result, status_code = handle_telegram_gateway_message(
             {
                 "message": {
@@ -551,6 +574,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertFalse(result["can_trigger_outbound_llm"])
         self.assertEqual(result["message"]["pipeline"]["answer_source"], "deterministic")
+        mock_get_tool.assert_called_once_with("farm_attention_summary")
         urlopen.assert_not_called()
 
     @patch.dict(os.environ, {
@@ -562,8 +586,11 @@ class OomSakkieServiceTests(unittest.TestCase):
     }, clear=True)
     @patch("modules.oom_sakkie.service.compose_answer_with_llm")
     @patch("modules.oom_sakkie.service.route_with_llm")
+    @patch("modules.oom_sakkie.service.get_tool")
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "test"})
-    def test_telegram_read_only_channel_suppresses_llm_without_gateway(self, _write_trace, mock_route, mock_compose):
+    def test_telegram_read_only_channel_suppresses_llm_without_gateway(self, _write_trace, mock_get_tool, mock_route, mock_compose):
+        mock_get_tool.return_value = _fake_farm_attention_tool()
+
         result, status_code = handle_message({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
@@ -576,6 +603,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
         self.assertFalse(result["pipeline"]["llm_router_used"])
         self.assertFalse(result["pipeline"]["llm_answer_used"])
+        mock_get_tool.assert_called_once_with("farm_attention_summary")
         mock_route.assert_not_called()
         mock_compose.assert_not_called()
 
