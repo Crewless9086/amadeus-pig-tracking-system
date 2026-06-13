@@ -39,6 +39,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('"allowed_user_ids_required": True', telegram_gateway)
         self.assertIn('"records_audit_trace": True', telegram_gateway)
         self.assertIn("AUTH_FAILURE_LIMIT", telegram_gateway)
+        self.assertIn("telegram_gateway_exposure_preflight", telegram_gateway)
+        self.assertIn("OOM_SAKKIE_TELEGRAM_TLS_CONFIRMED", telegram_gateway)
+        self.assertIn("OOM_SAKKIE_TELEGRAM_RATE_LIMIT_MODEL_ACCEPTED", telegram_gateway)
         self.assertIn('"can_trigger_outbound_llm": False', telegram_gateway)
         self.assertIn('DETERMINISTIC_ONLY_CHANNELS = {"telegram_read_only"}', service)
 
@@ -181,6 +184,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('app.register_blueprint(oom_sakkie_bp, url_prefix="/api")', app_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/channels/telegram/message", methods=["POST"])', route_source)
+        self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/channels/telegram/exposure-preflight", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/tools", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/policy", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/voice/transcribe", methods=["POST"])', route_source)

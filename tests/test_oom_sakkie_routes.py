@@ -265,6 +265,36 @@ class OomSakkieRouteTests(unittest.TestCase):
         mock_route.assert_not_called()
         mock_compose.assert_not_called()
 
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_gateway_exposure_preflight_route_is_review_gated(self):
+        response = self.client.get("/api/oom-sakkie/channels/telegram/exposure-preflight")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "private_test_ready_manual_public_checks_pending")
+        self.assertTrue(data["private_test_ready"])
+        self.assertFalse(data["public_exposure_ready"])
+        self.assertFalse(data["sends_telegram"])
+        self.assertFalse(data["direct_bot_cutover_enabled"])
+        self.assertFalse(data["can_trigger_outbound_llm"])
+        self.assertFalse(data["writes"])
+        self.assertTrue(data["records_audit_trace"])
+
+        denied = self.client.get(
+            "/api/oom-sakkie/channels/telegram/exposure-preflight",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        denied_data = denied.get_json()
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertFalse(denied_data["success"])
+        self.assertEqual(denied_data["status"], "review_access_denied")
+
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(
             "/api/oom-sakkie/review-packet",

@@ -83,7 +83,10 @@ from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
-from modules.oom_sakkie.telegram_gateway import handle_telegram_gateway_message
+from modules.oom_sakkie.telegram_gateway import (
+    handle_telegram_gateway_message,
+    telegram_gateway_exposure_preflight,
+)
 from modules.oom_sakkie.tools import accepted_agent_learning_snapshot, list_tool_catalog
 from modules.oom_sakkie.trace_store import (
     get_trace_review_summary,
@@ -118,6 +121,14 @@ def oom_sakkie_telegram_message():
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_telegram_gateway_message(payload, headers=request.headers)
     return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/channels/telegram/exposure-preflight", methods=["GET"])
+def oom_sakkie_telegram_exposure_preflight():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    return jsonify(telegram_gateway_exposure_preflight()), 200
 
 
 @oom_sakkie_bp.route("/oom-sakkie/tools", methods=["GET"])

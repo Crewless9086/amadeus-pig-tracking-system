@@ -15,6 +15,7 @@ from modules.oom_sakkie.voice_stt import (
 from modules.oom_sakkie.telegram_gateway import (
     handle_telegram_gateway_message,
     parse_telegram_gateway_payload,
+    telegram_gateway_exposure_preflight,
     telegram_gateway_policy,
     _reset_auth_rate_limit_for_tests,
 )
@@ -619,6 +620,54 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(locked["status"], "telegram_gateway_auth_rate_limited")
         self.assertTrue(locked["telegram_gateway"]["auth_rate_limit"]["locked"])
 
+    @patch.dict(os.environ, {}, clear=True)
+    def test_telegram_gateway_exposure_preflight_is_blocked_by_default(self):
+        preflight = telegram_gateway_exposure_preflight()
+
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertFalse(preflight["private_test_ready"])
+        self.assertFalse(preflight["public_exposure_ready"])
+        self.assertFalse(preflight["sends_telegram"])
+        self.assertFalse(preflight["direct_bot_cutover_enabled"])
+        self.assertFalse(preflight["can_trigger_outbound_llm"])
+        self.assertFalse(preflight["writes"])
+        self.assertTrue(preflight["records_audit_trace"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_gateway_exposure_preflight_separates_private_test_from_public_ready(self):
+        preflight = telegram_gateway_exposure_preflight()
+
+        self.assertEqual(preflight["status"], "private_test_ready_manual_public_checks_pending")
+        self.assertTrue(preflight["private_test_ready"])
+        self.assertFalse(preflight["public_exposure_ready"])
+        self.assertIn("OOM_SAKKIE_TELEGRAM_TLS_CONFIRMED", preflight["manual_confirm_envs"])
+        self.assertIn("OOM_SAKKIE_TELEGRAM_RATE_LIMIT_MODEL_ACCEPTED", preflight["manual_confirm_envs"])
+        self.assertTrue(all(item["pass"] for item in preflight["automated_checks"]))
+        self.assertFalse(all(item["pass"] for item in preflight["manual_checks"]))
+        self.assertIn("in-process and global", preflight["rate_limit_note"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN": TELEGRAM_TEST_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+        "OOM_SAKKIE_TELEGRAM_TLS_CONFIRMED": "1",
+        "OOM_SAKKIE_TELEGRAM_RATE_LIMIT_MODEL_ACCEPTED": "1",
+    }, clear=True)
+    def test_telegram_gateway_exposure_preflight_requires_explicit_public_confirmations(self):
+        preflight = telegram_gateway_exposure_preflight()
+
+        self.assertEqual(preflight["status"], "public_exposure_ready")
+        self.assertTrue(preflight["private_test_ready"])
+        self.assertTrue(preflight["public_exposure_ready"])
+        self.assertTrue(all(item["pass"] for item in preflight["automated_checks"]))
+        self.assertTrue(all(item["pass"] for item in preflight["manual_checks"]))
+        self.assertFalse(preflight["sends_telegram"])
+        self.assertFalse(preflight["direct_bot_cutover_enabled"])
+
     @patch.dict(os.environ, {"OOM_SAKKIE_LLM_ANSWER_ENABLED": "1"}, clear=True)
     def test_runtime_policy_declares_message_guard_when_llm_enabled(self):
         policy = get_runtime_policy()
@@ -805,8 +854,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DE")
-        self.assertIn("10.9DE", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DF")
+        self.assertIn("10.9DF", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -1622,14 +1671,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DE", result["summary"])
+        self.assertIn("10.9DF", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DE")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DF")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -1707,7 +1756,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DE", result["answer"])
+        self.assertIn("10.9DF", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

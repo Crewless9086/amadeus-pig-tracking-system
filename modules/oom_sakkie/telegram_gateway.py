@@ -9,6 +9,8 @@ TRUTHY = {"1", "true", "yes", "on"}
 ENABLED_ENV = "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED"
 TOKEN_ENV = "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN"
 ALLOWED_USER_IDS_ENV = "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS"
+TLS_CONFIRMED_ENV = "OOM_SAKKIE_TELEGRAM_TLS_CONFIRMED"
+RATE_LIMIT_MODEL_ACCEPTED_ENV = "OOM_SAKKIE_TELEGRAM_RATE_LIMIT_MODEL_ACCEPTED"
 MAX_TELEGRAM_TEXT_CHARS = 2000
 MIN_TOKEN_CHARS = 32
 AUTH_FAILURE_LIMIT = 8
@@ -54,6 +56,58 @@ def telegram_gateway_policy(environ=None):
         "writes": False,
         "records_audit_trace": True,
         "writes_note": "writes=false means no farm/control/public-output write; successful messages still append the normal Oom Sakkie audit trace.",
+        "dispatch_enabled": False,
+        "changes_runtime_now": False,
+        "changes_prompt_now": False,
+        "physical_controls_enabled": False,
+        "customer_public_output_enabled": False,
+    }
+
+
+def telegram_gateway_exposure_preflight(environ=None):
+    source = environ if environ is not None else os.environ
+    policy = telegram_gateway_policy(environ=source)
+    automated_checks = [
+        _check("explicitly_enabled", policy["explicitly_enabled"], "OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED is truthy."),
+        _check("token_configured", policy["configured"], "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN is configured."),
+        _check("token_minimum_length", policy["token_meets_minimum_entropy"], f"Token is at least {MIN_TOKEN_CHARS} characters."),
+        _check("allowed_user_ids_configured", policy["allowed_user_ids_configured"], "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS is configured."),
+        _check("constant_time_compare", True, "Token comparison uses hmac.compare_digest."),
+        _check("auth_lockout_enabled", policy["auth_rate_limit"]["enabled"], "Repeated bad tokens trigger a fail-closed lockout."),
+        _check("deterministic_only", policy["deterministic_only"], "telegram_read_only never uses LLM router or answer composer."),
+        _check("no_outbound_llm", not policy["can_trigger_outbound_llm"], "Gateway cannot trigger outbound LLM calls."),
+        _check("no_telegram_send", not policy["sends_telegram"] and not policy["direct_bot_cutover_enabled"], "Gateway returns caller-send payload only."),
+        _check("no_farm_control_write", not policy["writes"] and not policy["dispatch_enabled"], "Gateway does not write farm/control/public output or dispatch."),
+        _check("audit_trace_disclosed", policy["records_audit_trace"], "Successful messages append the normal Oom Sakkie audit trace."),
+    ]
+    manual_checks = [
+        _check("tls_termination_confirmed", _env_truthy(source.get(TLS_CONFIRMED_ENV)), "Confirm HTTPS/TLS terminates before public traffic reaches the route."),
+        _check("rate_limit_model_accepted", _env_truthy(source.get(RATE_LIMIT_MODEL_ACCEPTED_ENV)), "Accept current in-process global lockout, or replace it with shared per-IP throttling before multi-worker production."),
+    ]
+    automated_ready = all(item["pass"] for item in automated_checks)
+    public_ready = automated_ready and all(item["pass"] for item in manual_checks)
+    if public_ready:
+        status = "public_exposure_ready"
+    elif automated_ready:
+        status = "private_test_ready_manual_public_checks_pending"
+    else:
+        status = "blocked"
+    return {
+        "success": True,
+        "status": status,
+        "mode": "telegram_gateway_exposure_preflight_only",
+        "telegram_gateway": policy,
+        "private_test_ready": automated_ready,
+        "public_exposure_ready": public_ready,
+        "automated_checks": automated_checks,
+        "manual_checks": manual_checks,
+        "manual_confirm_envs": [TLS_CONFIRMED_ENV, RATE_LIMIT_MODEL_ACCEPTED_ENV],
+        "rate_limit_note": "Current auth lockout is in-process and global: acceptable for the local/private trial, but not owner-immune or shared across multiple workers.",
+        "sends_telegram": False,
+        "direct_bot_cutover_enabled": False,
+        "can_trigger_outbound_llm": False,
+        "writes": False,
+        "records_audit_trace": policy["records_audit_trace"],
         "dispatch_enabled": False,
         "changes_runtime_now": False,
         "changes_prompt_now": False,
@@ -177,6 +231,14 @@ def _allowed_user_ids(source):
 
 def _env_truthy(value):
     return str(value or "").strip().lower() in TRUTHY
+
+
+def _check(name, passed, note):
+    return {
+        "name": name,
+        "pass": bool(passed),
+        "note": note,
+    }
 
 
 def _auth_locked(now=None):
