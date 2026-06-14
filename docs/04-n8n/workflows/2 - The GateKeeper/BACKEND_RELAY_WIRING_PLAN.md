@@ -34,6 +34,7 @@ Run from the repo:
 ```powershell
 .\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py
 .\venv\Scripts\python.exe scripts\oom_sakkie_telegram_private_relay_smoke.py
+.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_manual_test.py --payload
 ```
 
 Expected:
@@ -44,6 +45,38 @@ Expected:
 - gateway returns `can_trigger_outbound_llm = false`
 - gateway returns `writes = false`
 - gateway returns `records_audit_trace = true`
+- manual payload prints no token and includes `message_text`, `user_id`, `chat_id`, `message_id`, and `user_name`
+
+## Manual 2.0B Execution Test
+
+Before wiring GateKeeper:
+
+1. Run:
+
+   ```powershell
+   .\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_manual_test.py --payload
+   ```
+
+2. Paste the printed JSON into a manual execution of imported `2.0B - Oom Sakkie Backend Read-Only Relay`.
+3. Copy the 2.0B output JSON into a local temporary file, for example `tmp\n8n-2-0b-output.json`.
+4. Validate it:
+
+   ```powershell
+   .\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_manual_test.py --validate-output tmp\n8n-2-0b-output.json
+   ```
+
+Expected:
+
+- `relay_manual_output_status: ok`
+- `success = true`
+- `send_allowed = true`
+- `reply_transport = caller_handles_telegram_send`
+- `sends_telegram = false`
+- `can_trigger_outbound_llm = false`
+- `writes = false`
+- `dispatch_enabled = false`
+- `changes_runtime_now = false`
+- `changes_prompt_now = false`
 
 ## Manual GateKeeper Edit
 

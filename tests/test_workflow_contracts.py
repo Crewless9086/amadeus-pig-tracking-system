@@ -3,6 +3,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from scripts.oom_sakkie_n8n_relay_manual_test import build_manual_payload, validate_relay_output
+
 
 WORKFLOW_ROOT = Path("docs/04-n8n/workflows")
 STEWARD_WORKFLOW = WORKFLOW_ROOT / "1.2 - order-steward" / "workflow.json"
@@ -376,6 +378,43 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("GateKeeper sends exactly one reply", plan)
         self.assertIn("No second Telegram Trigger", plan)
         self.assertIn("restore the exported GateKeeper backup", plan)
+
+    def test_backend_relay_manual_test_helper_builds_safe_payload_and_validates_output(self):
+        payload = build_manual_payload()
+
+        self.assertEqual(payload["message_text"], "what needs attention today")
+        self.assertIn("user_id", payload)
+        self.assertIn("chat_id", payload)
+        self.assertIn("message_id", payload)
+        self.assertNotIn("token", json.dumps(payload).lower())
+
+        good_output = [{
+            "json": {
+                "success": True,
+                "send_allowed": True,
+                "chat_id": "123",
+                "telegram_text": "Read-only answer.",
+                "reply_transport": "caller_handles_telegram_send",
+                "sends_telegram": False,
+                "direct_bot_cutover_enabled": False,
+                "can_trigger_outbound_llm": False,
+                "writes": False,
+                "dispatch_enabled": False,
+                "changes_runtime_now": False,
+                "changes_prompt_now": False,
+                "physical_controls_enabled": False,
+                "customer_public_output_enabled": False,
+            }
+        }]
+        self.assertEqual(validate_relay_output(good_output), [])
+
+        blocked_output = [{
+            "json": {
+                **good_output[0]["json"],
+                "writes": True,
+            }
+        }]
+        self.assertIn("writes must be false", validate_relay_output(blocked_output))
 
     def test_weather_workflow_uses_backend_weather_endpoints(self):
         workflow = load_workflow(WEATHER_WORKFLOW)

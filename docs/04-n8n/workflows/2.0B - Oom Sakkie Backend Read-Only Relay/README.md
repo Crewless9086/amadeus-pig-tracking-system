@@ -110,6 +110,18 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 7. Execute again with a non-allowlisted `user_id` and confirm it fails closed.
 8. After owner approval, follow `../2 - The GateKeeper/BACKEND_RELAY_WIRING_PLAN.md` to wire `2 - The GateKeeper` for a narrow private test.
 
+Helper command for step 5:
+
+```powershell
+.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_manual_test.py --payload
+```
+
+After copying the manual execution output to a local JSON file:
+
+```powershell
+.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_manual_test.py --validate-output tmp\n8n-2-0b-output.json
+```
+
 ## Local Contract Check
 
 Before importing the workflow export, run:

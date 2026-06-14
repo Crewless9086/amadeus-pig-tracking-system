@@ -12075,6 +12075,54 @@ Next gate:
 4. Edit GateKeeper manually in n8n UI following `BACKEND_RELAY_WIRING_PLAN.md`.
 5. Send one owner Telegram test message and confirm exactly one guarded reply.
 
+### 10.9DN Oom Sakkie 2.0B Manual Execution Helper - Local Ready
+
+Purpose:
+
+- Support the owner-reported n8n upload of `2.0B` with a safe manual execution step before GateKeeper wiring.
+- Avoid guessing the payload shape in n8n and avoid accidentally pasting tokens into docs or workflow JSON.
+
+What changed:
+
+- Added `scripts/oom_sakkie_n8n_relay_manual_test.py`.
+- `--payload` prints the exact JSON shape to paste into a manual `2.0B` execution:
+  - `message_text`,
+  - `user_id`,
+  - `chat_id`,
+  - `message_id`,
+  - `user_name`.
+- `--validate-output <path>` validates a copied `2.0B` output JSON before GateKeeper wiring.
+- The validator requires:
+  - `success = true`,
+  - `send_allowed = true`,
+  - non-empty `chat_id`,
+  - non-empty `telegram_text`,
+  - `reply_transport = caller_handles_telegram_send`,
+  - all authority flags false.
+- Updated the `2.0B` README and GateKeeper wiring plan to use the helper.
+- Added workflow-contract coverage for the helper's safe payload and blocked-output behavior.
+
+Safety envelope:
+
+- No n8n API call.
+- No Telegram API call.
+- No backend call.
+- No token output.
+- No GateKeeper edit.
+- No send/cutover/write/dispatch/runtime/prompt/tool/farm-data/deploy/control/financial authority.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_manual_test.py --payload` -> prints token-free payload.
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py` -> `relay_contract_status: ok`.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 24 OK.
+
+Next gate:
+
+1. In n8n, manually execute uploaded inactive `2.0B` with the helper payload using the allowed Telegram user/chat IDs.
+2. Copy the output JSON locally and run `--validate-output`.
+3. Only then wire GateKeeper following `BACKEND_RELAY_WIRING_PLAN.md`.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
