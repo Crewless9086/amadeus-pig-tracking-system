@@ -17,10 +17,15 @@ def get_runtime_policy():
     telegram_gateway = telegram_gateway_policy()
     telegram_direct = telegram_direct_policy()
     llm_message_guard_active = is_llm_message_guard_active()
+    draft_tools = [
+        tool.name
+        for tool in tools
+        if tool.risk_level == RiskLevel.DRAFT_ONLY and not tool.requires_confirmation
+    ]
     write_tools = [
         tool.name
         for tool in tools
-        if tool.risk_level > RiskLevel.READ_ONLY or tool.requires_confirmation
+        if tool.risk_level > RiskLevel.DRAFT_ONLY or tool.requires_confirmation
     ]
     confirmation_tools = [
         tool.name
@@ -89,13 +94,14 @@ def get_runtime_policy():
         },
         "kiosk_policy": {
             "channel": "kiosk",
-            "max_risk_level": int(RiskLevel.READ_ONLY),
-            "allowed_risk_label": RiskLevel.READ_ONLY.name,
+            "max_risk_level": int(RiskLevel.DRAFT_ONLY),
+            "allowed_risk_label": RiskLevel.DRAFT_ONLY.name,
             "requires_confirmation_tools": confirmation_tools,
         },
         "tool_counts": {
             "total": len(tools),
             "read_only": len(read_only_tools),
+            "draft_only": len(draft_tools),
             "write_or_confirmation": len(write_tools),
         },
         "blocked_capabilities": blocked_capabilities,

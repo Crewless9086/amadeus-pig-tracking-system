@@ -144,6 +144,10 @@ RULES = [
         IntentMatch("farm_operating_brief", "farm_operating_brief", 0.95, "rule:farm_operating_brief"),
     ),
     (
+        re.compile(r"\b(customer draft|customer message draft|draft customer message|draft buyer message|prepare customer draft|prepare buyer draft|sales customer draft|whatsapp draft|sam draft)\b", re.I),
+        IntentMatch("sales_customer_draft", "sales_customer_draft", 0.95, "rule:sales_customer_draft"),
+    ),
+    (
         re.compile(r"\b(sales offer brief|offer draft|draft offer brief|owner offer brief|prepare.*sales.*offer|prepare.*draft.*offer|meat offer brief)\b", re.I),
         IntentMatch("sales_offer_brief", "sales_offer_brief", 0.95, "rule:sales_offer_brief"),
     ),

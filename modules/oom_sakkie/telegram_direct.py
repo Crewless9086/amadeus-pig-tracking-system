@@ -289,6 +289,8 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
         return _format_agent_command_center(context, title=title, footer=footer)
     if tool_used == "sales_offer_brief":
         return _format_sales_offer_brief(context, title=title, footer=footer)
+    if tool_used == "sales_customer_draft":
+        return _format_sales_customer_draft(context, title=title, footer=footer)
     return ""
 
 
@@ -419,6 +421,32 @@ def _format_sales_offer_brief(context, title="Oom Sakkie", footer=None):
     return "\n".join(lines).strip()
 
 
+def _format_sales_customer_draft(context, title="Oom Sakkie", footer=None):
+    draft = (context or {}).get("customer_draft") or {}
+    if not draft:
+        return ""
+    lines = [
+        title,
+        "",
+        "Customer Draft",
+        f"- Mode: {draft.get('mode', 'owner_review_customer_copy_draft_only')}",
+        f"- Type: {_clip(str(draft.get('draft_type') or ''), 140)}",
+        f"- Basis: {_clip(str(draft.get('basis_summary') or ''), 220)}",
+        "",
+        "Draft",
+        _clip(str(draft.get("message") or ""), 900),
+        "",
+        "Owner Checks",
+    ]
+    for item in (draft.get("owner_checks") or [])[:3]:
+        lines.append(f"- {_clip(item, 180)}")
+    lines.extend([
+        "",
+        footer or "Owner-review copy only. Nothing was sent to customers, Chatwoot, WhatsApp, Telegram, or public channels; no quote, order, reservation, stock change, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
 def _summary(sections, name):
     return _clip(str(((sections.get(name) or {}).get("summary")) or "unavailable"), 180)
 
@@ -447,6 +475,8 @@ def _telegram_command_for_text(text):
         "agents": ("ask", "agent command center"),
         "/offer": ("ask", "sales offer brief"),
         "offer": ("ask", "sales offer brief"),
+        "/draft": ("ask", "sales customer draft"),
+        "draft": ("ask", "sales customer draft"),
         "/progress": ("ask", "jarvis progress"),
         "progress": ("ask", "jarvis progress"),
         "/approvals": ("ask", "what needs my approval"),
@@ -467,6 +497,7 @@ def _help_message_result(text):
         "/gates - safety and CI gates\n"
         "/agents - command center\n"
         "/offer - owner-review sales offer brief\n"
+        "/draft - owner-review customer message draft\n"
         "/approvals - owner approval queue\n"
         "/progress - Jarvis progress\n"
         "/learning - learning backlog status\n\n"

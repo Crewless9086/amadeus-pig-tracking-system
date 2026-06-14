@@ -12544,6 +12544,29 @@ Next live steps:
 3. If the preview is correct, run one supervised send with the existing gated script path.
 4. Only after one supervised success, consider Render Cron or another scheduler.
 
+### 10.9EA Owner-Review Customer Draft Rail - Local Ready
+
+Goal:
+- Let Oom Sakkie prepare useful buyer-interest wording from the sales offer brief without sending it or touching Sam/Chatwoot/n8n.
+
+What is built:
+- New Oom Sakkie tool: `sales_customer_draft`.
+- New direct Telegram shortcut: `/draft`.
+- Deterministic routing for customer draft / buyer message / WhatsApp draft wording.
+- The draft uses the current `sales_offer_brief` context and creates short owner-review copy with placeholders and owner checks.
+- Runtime policy now counts `sales_customer_draft` as `DRAFT_ONLY`, separate from write/confirmation tools.
+
+Safety boundary:
+- Owner-review copy only.
+- No call to Chatwoot, n8n, WhatsApp, Telegram customer chats, or public channels.
+- No quote, order, reservation, price change, stock change, specialist LLM/tool execution, dispatch, runtime change, farm/control write, or financial action.
+
+Next live steps:
+1. Deploy the latest commit.
+2. In Telegram, send `/draft`.
+3. Check whether the draft is commercially useful.
+4. If useful, the next gated build should be an append-only owner approval rail for drafts; still no automatic customer send.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -228,6 +228,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "farm_operating_brief",
                 "business_growth_brief",
                 "sales_offer_brief",
+                "sales_customer_draft",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -243,7 +244,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         for tool in TOOL_REGISTRY.values():
             with self.subTest(tool=tool.name):
-                self.assertEqual(tool.risk_level, RiskLevel.READ_ONLY)
+                expected_risk = RiskLevel.DRAFT_ONLY if tool.name == "sales_customer_draft" else RiskLevel.READ_ONLY
+                self.assertEqual(tool.risk_level, expected_risk)
                 self.assertFalse(tool.requires_confirmation)
                 self.assertEqual(tool.input_schema["type"], "object")
                 self.assertEqual(tool.output_schema["type"], "object")
@@ -260,6 +262,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(irrigation["requires_confirmation"])
         self.assertIn("Never starts or stops irrigation", irrigation["description"])
         self.assertEqual(irrigation["input_schema"]["additionalProperties"], False)
+        draft = next(item for item in catalog if item["name"] == "sales_customer_draft")
+        self.assertEqual(draft["risk_level"], 1)
+        self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
+        self.assertFalse(draft["requires_confirmation"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
@@ -309,8 +315,10 @@ class OomSakkieServiceTests(unittest.TestCase):
             ],
         )
         self.assertIn("reverse_proxy_assumption", policy["review_endpoints_access"])
-        self.assertEqual(policy["kiosk_policy"]["max_risk_level"], 0)
+        self.assertEqual(policy["kiosk_policy"]["max_risk_level"], 1)
+        self.assertEqual(policy["kiosk_policy"]["allowed_risk_label"], "DRAFT_ONLY")
         self.assertEqual(policy["kiosk_policy"]["requires_confirmation_tools"], [])
+        self.assertEqual(policy["tool_counts"]["draft_only"], 1)
         self.assertEqual(policy["tool_counts"]["write_or_confirmation"], 0)
         self.assertIn("write tools", policy["blocked_capabilities"])
         self.assertIn("backend STT vendors", policy["blocked_capabilities"])
@@ -1014,6 +1022,55 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_draft_command_routes_to_customer_draft_without_sending_customer_message(self, mock_handle, mock_send):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Customer draft answer.",
+            "tool_used": "sales_customer_draft",
+            "risk_level": 1,
+            "safety_notes": ["No customer message was sent."],
+            "tool_context": {
+                "customer_draft": {
+                    "mode": "owner_review_customer_copy_draft_only",
+                    "draft_type": "buyer_interest_check",
+                    "basis_summary": "tag 22 in D1 at 58.8 kg",
+                    "message": "Hi [Name], I am checking interest before we process the next small batch.",
+                    "owner_checks": ["Confirm price and exact availability before sending."],
+                },
+            },
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "message": {
+                    "text": "/draft",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        mock_handle.assert_called_once_with({
+            "text": "sales customer draft",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+        })
+        self.assertIn("Customer Draft", result["telegram_text"])
+        self.assertIn("Nothing was sent to customers", result["telegram_text"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
@@ -1163,6 +1220,30 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("- Angle: ready-meat preorder check", text)
         self.assertIn("Owner Checks", text)
         self.assertIn("No customer message", text)
+        self.assertNotIn("Long paragraph should not be used.", text)
+
+    def test_telegram_sales_customer_draft_format_is_compact_and_owner_only(self):
+        text = format_telegram_owner_reply({
+            "answer": "Long paragraph should not be used.",
+            "tool_used": "sales_customer_draft",
+            "tool_context": {
+                "customer_draft": {
+                    "mode": "owner_review_customer_copy_draft_only",
+                    "draft_type": "buyer_interest_check",
+                    "basis_summary": "tag 22 in D1 at 58.8 kg",
+                    "message": "Hi [Name], I am checking interest before we process the next small batch.",
+                    "owner_checks": [
+                        "Confirm price, exact availability, cuts/stock type, timing, and collection/delivery before sending.",
+                    ],
+                },
+            },
+        })
+
+        self.assertIn("Customer Draft", text)
+        self.assertIn("- Mode: owner_review_customer_copy_draft_only", text)
+        self.assertIn("Hi [Name]", text)
+        self.assertIn("Owner Checks", text)
+        self.assertIn("Nothing was sent to customers", text)
         self.assertNotIn("Long paragraph should not be used.", text)
 
     @patch.dict(os.environ, {
@@ -1461,8 +1542,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DZ")
-        self.assertIn("10.9DZ", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EA")
+        self.assertIn("10.9EA", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -1502,6 +1583,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Sam keeps Chatwoot/n8n", " ".join(packet["current_review"]["focus"]))
         self.assertIn("Telegram /offer", " ".join(packet["current_review"]["focus"]))
         self.assertIn("--dry-run preview", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("Telegram /draft", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -2296,14 +2378,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DZ", result["summary"])
+        self.assertIn("10.9EA", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DZ")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EA")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2381,7 +2463,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DZ", result["answer"])
+        self.assertIn("10.9EA", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -2675,7 +2757,7 @@ def literal_false_is_allowed():
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
         self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runtime_flags"]["specialist_llm_enabled"])
-        self.assertEqual(result["llm_context"]["tool_audit"]["non_read_only_tools"], [])
+        self.assertEqual(result["llm_context"]["tool_audit"]["non_read_only_tools"], ["sales_customer_draft"])
         self.assertEqual(result["llm_context"]["tool_audit"]["requires_confirmation_tools"], [])
         blockers = result["llm_context"]["sentinel_review"]["blockers_before_live_dry_run"]
         self.assertTrue(any("dispatch/audit" in blocker for blocker in blockers))
@@ -4285,6 +4367,60 @@ def literal_false_is_allowed():
         self.assertIn("No customer message was sent", result["safety_notes"][0])
         self.assertIn("no quote was created", result["safety_notes"][0])
 
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_sales_customer_draft_is_owner_review_copy_only_and_never_sends_or_writes(self, mock_sales, mock_meat):
+        from modules.oom_sakkie.tools import sales_customer_draft_handler
+
+        mock_sales.return_value = {
+            "success": True,
+            "totals": [
+                {"sale_category": "Grower Pigs", "qty_available": 4, "status": "Available"},
+            ],
+        }
+        mock_meat.return_value = {
+            "success": True,
+            "summary": {"ready_now": 1, "next_14_days": 0},
+            "pigs": [{
+                "planning_bucket": "ready_now",
+                "pig_id": "PIG-22",
+                "tag_number": "22",
+                "current_pen_name": "D1",
+                "latest_weight_kg": 58.8,
+                "recommended_action": "Prioritize for meat preorder marketing.",
+                "marketing_readiness": "Ready For Interest",
+            }],
+        }
+
+        result = sales_customer_draft_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "draft_only")
+        self.assertEqual(result["llm_context"]["kind"], "sales_customer_draft")
+        self.assertEqual(result["llm_context"]["mode"], "owner_review_customer_copy_draft_only")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "ledger")
+        self.assertFalse(result["llm_context"]["sends_customer_message"])
+        self.assertFalse(result["llm_context"]["sends_telegram"])
+        self.assertFalse(result["llm_context"]["calls_chatwoot"])
+        self.assertFalse(result["llm_context"]["calls_n8n"])
+        self.assertFalse(result["llm_context"]["customer_public_output_enabled"])
+        self.assertFalse(result["llm_context"]["creates_quote"])
+        self.assertFalse(result["llm_context"]["creates_order"])
+        self.assertFalse(result["llm_context"]["changes_stock"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        draft = result["llm_context"]["customer_draft"]
+        self.assertEqual(draft["mode"], "owner_review_customer_copy_draft_only")
+        self.assertEqual(draft["draft_type"], "buyer_interest_check")
+        self.assertIn("Hi [Name]", draft["message"])
+        self.assertIn("checking interest", draft["message"])
+        self.assertIn("send_message", draft["forbidden_actions"])
+        self.assertIn("chatwoot_post", draft["forbidden_actions"])
+        self.assertIn("create_quote", draft["forbidden_actions"])
+        self.assertIn("reserve_stock", draft["forbidden_actions"])
+        self.assertIn("not sent to any customer", result["safety_notes"][0])
+        self.assertIn("no quote", result["safety_notes"][0])
+
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
             summary={
@@ -4977,6 +5113,9 @@ def literal_false_is_allowed():
             "prepare an offer brief": "business_growth_brief",
             "prepare a sales offer brief": "sales_offer_brief",
             "draft offer brief for meat": "sales_offer_brief",
+            "prepare a customer draft": "sales_customer_draft",
+            "draft buyer message": "sales_customer_draft",
+            "whatsapp draft for meat buyers": "sales_customer_draft",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",
@@ -5386,6 +5525,8 @@ def literal_false_is_allowed():
         self.assertIn("ask exactly one approval-style follow-up question", system)
         self.assertIn("For sales_offer_brief, summarize the owner-review draft only", system)
         self.assertIn("never imply a message, quote, sale, reservation, or stock change happened", system)
+        self.assertIn("For sales_customer_draft, show the draft as owner-review copy only", system)
+        self.assertIn("never add prices, promises, confirmed availability, or quote/order language", system)
         self.assertIn("For system_work_status, state the next owner action first", system)
         self.assertIn("stay in that tool's lane", system)
         self.assertIn("Do not mention unrelated systems", system)

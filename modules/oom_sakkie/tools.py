@@ -332,6 +332,53 @@ def sales_offer_brief_handler(_args):
     }
 
 
+def sales_customer_draft_handler(_args):
+    offer_result = sales_offer_brief_handler({})
+    context = offer_result.get("llm_context") or {}
+    offer = context.get("offer_brief") or {}
+    customer_draft = _sales_customer_draft_from_offer(offer)
+    safety_notes = [
+        "Sales customer draft is owner-review copy only. It was not sent to any customer, Chatwoot, WhatsApp, Telegram chat, or public channel; no quote, order, reservation, price change, or stock change was made."
+    ]
+    safety_notes.extend(offer_result.get("safety_notes") or [])
+    summary = (
+        "Customer draft prepared for owner review only. "
+        f"Draft type: {customer_draft['draft_type']}. "
+        f"Owner must confirm: {customer_draft['owner_checks'][0]}"
+    )
+    return {
+        "success": offer_result.get("success") is True,
+        "status": "draft_only" if offer_result.get("success") else "partial",
+        "summary": summary,
+        "links": offer_result.get("links") or [{"label": "Sales Dashboard", "href": "/sales-dashboard"}],
+        "stale_warnings": offer_result.get("stale_warnings") or [],
+        "safety_notes": safety_notes[:6],
+        "llm_context": {
+            "kind": "sales_customer_draft",
+            "mode": "owner_review_customer_copy_draft_only",
+            "selected_agent": {"slug": "ledger", "name": "Ledger"},
+            "customer_draft": customer_draft,
+            "source_offer_brief": offer,
+            "sends_customer_message": False,
+            "sends_telegram": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "customer_public_output_enabled": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+        },
+        "raw": {
+            "kind": "sales_customer_draft",
+            "sales_offer_brief": offer_result,
+        },
+    }
+
+
 def jarvis_daily_command_brief_handler(_args):
     sections = {
         "farm": farm_operating_brief_handler({}),
@@ -640,6 +687,56 @@ def _sales_offer_brief_from_outline(*, outline, counts, ready_candidates, market
             "stock_reservation",
             "price_change",
         ],
+    }
+
+
+def _sales_customer_draft_from_offer(offer):
+    angle = str(offer.get("angle") or "").strip()
+    basis = str(offer.get("basis_summary") or "limited stock").strip()
+    target = str(offer.get("target") or "known customer").strip()
+    if "ready-meat" in angle:
+        draft_type = "buyer_interest_check"
+        message = (
+            "Hi [Name], I am checking interest before we process the next small batch. "
+            "We have a few pigs that look ready for the meat pipeline, and I can confirm cuts, timing, and price before anything is booked. "
+            "Would you like me to keep you in mind for this batch?"
+        )
+    elif "listed-stock" in angle:
+        draft_type = "listed_stock_interest_check"
+        message = (
+            "Hi [Name], I am checking interest in available pigs from our current stock. "
+            "I can confirm exact availability, price, and collection details before anything is reserved. "
+            "Would you like details on what is available?"
+        )
+    else:
+        draft_type = "demand_discovery"
+        message = (
+            "Hi [Name], I am checking what you may need next so we can plan stock properly. "
+            "Are you currently looking for pork, meat cuts, piglets, or growers?"
+        )
+    return {
+        "mode": "owner_review_customer_copy_draft_only",
+        "draft_type": draft_type,
+        "target": target,
+        "basis_summary": basis,
+        "message": message,
+        "owner_checks": [
+            "Confirm price, exact availability, cuts/stock type, timing, and collection/delivery before sending.",
+            "Choose the exact customer or buyer group before sending.",
+            "Confirm the message still matches current stock and health status.",
+        ],
+        "forbidden_actions": [
+            "send_message",
+            "chatwoot_post",
+            "whatsapp_send",
+            "telegram_customer_send",
+            "create_quote",
+            "create_order",
+            "reserve_stock",
+            "change_price",
+            "change_stock",
+        ],
+        "send_gate": "owner_must_copy_or_approve_a_future_send_path_separately",
     }
 
 
@@ -2466,6 +2563,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=sales_offer_brief_handler,
         description="Owner-review sales offer brief built from read-only sales/meat context. Never sends, posts, quotes, reserves, or changes stock.",
+    ),
+    "sales_customer_draft": OomSakkieTool(
+        name="sales_customer_draft",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.DRAFT_ONLY,
+        requires_confirmation=False,
+        handler=sales_customer_draft_handler,
+        description="Owner-review customer message draft from sales/meat context. Never sends, posts, quotes, reserves, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",
