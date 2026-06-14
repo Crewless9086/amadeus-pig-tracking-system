@@ -12298,6 +12298,48 @@ Next gate:
 3. Execute `2.0B` manually or send one owner Telegram test message.
 4. Expected result: `2.0B` no longer errors on env access and returns a guarded caller-send reply payload.
 
+### 10.9DS Oom Sakkie 2.0B Request-Ready Gate - Local Ready
+
+Purpose:
+
+- Fix the follow-up live `2.0B` error: `URL parameter must be a string, got undefined`.
+- Keep setup validation fail-closed without letting the HTTP node execute.
+- Document the exact Render base URL format required in n8n Variables.
+
+Root cause:
+
+- The Build node correctly returned `relay_env_not_ready`.
+- The linear workflow still continued into `HTTP - Call Oom Sakkie Gateway`.
+- Because setup validation failed, `gateway_url` was absent, and the HTTP node raised `URL parameter must be a string, got undefined`.
+- The screenshot also showed `OOM_SAKKIE_GATEWAY_BASE_URL must use https...`, meaning the n8n Variable value is not being accepted as a full HTTPS URL.
+
+What changed:
+
+- Added `IF - Gateway Request Ready` between `Code - Build Backend Gateway Request` and `HTTP - Call Oom Sakkie Gateway`.
+- The IF true branch calls the backend only when `success === true` and `gateway_url` is a non-empty string.
+- The IF false branch routes directly to `Code - Validate Caller-Send Reply`, returning a clean failure payload instead of an HTTP node error.
+- The README and GateKeeper wiring plan now say the Render variable should be exactly `https://amadeus-pig-tracking-system.onrender.com` or another full HTTPS URL, with no quotes.
+- Contract tests now require the IF gate.
+
+Safety envelope:
+
+- No Telegram Trigger added to `2.0B`.
+- No Telegram send node added to `2.0B`.
+- No Flask/backend runtime change.
+- No write, dispatch, runtime, prompt, tool, farm-data, deploy, control, public-output, or financial authority.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py` -> `relay_contract_status: ok`.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_frontend_route_contracts` -> 29 OK.
+
+Next gate:
+
+1. In n8n Variables, set `OOM_SAKKIE_GATEWAY_BASE_URL` exactly to `https://amadeus-pig-tracking-system.onrender.com` with no quotes.
+2. Re-import/replace uploaded `2.0B` from the updated repo export so `IF - Gateway Request Ready` exists.
+3. Retry one owner Telegram message.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

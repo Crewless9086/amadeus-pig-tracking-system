@@ -43,6 +43,38 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "gateway-request-ready",
+              "leftValue": "={{ $json.success === true && typeof $json.gateway_url === \"string\" && $json.gateway_url.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "2d0b4a5a-0007-4f41-b7db-2c3c5d1a9d07",
+      "name": "IF - Gateway Request Ready"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "={{$json.gateway_url}}",
         "sendHeaders": true,
@@ -73,7 +105,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        0,
+        240,
         0
       ],
       "id": "2d0b4a5a-0004-4f41-b7db-2c3c5d1a9d04",
@@ -87,7 +119,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        480,
         0
       ],
       "id": "2d0b4a5a-0005-4f41-b7db-2c3c5d1a9d05",
@@ -95,7 +127,7 @@
     },
     {
       "parameters": {
-        "content": "Phase 10.9DJ read-only backend relay contract. Callable only from GateKeeper. No Telegram Trigger and no Telegram send node. Backend owns answer and safety flags; this workflow returns a guarded caller-send payload only and refuses remote plain HTTP before using the token."
+        "content": "Phase 10.9DS read-only backend relay contract. Callable only from GateKeeper. No Telegram Trigger and no Telegram send node. Backend owns answer and safety flags; this workflow returns a guarded caller-send payload only, refuses remote plain HTTP before using the token, and does not call HTTP when setup validation fails."
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
@@ -134,7 +166,25 @@
       "main": [
         [
           {
+            "node": "IF - Gateway Request Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Gateway Request Ready": {
+      "main": [
+        [
+          {
             "node": "HTTP - Call Oom Sakkie Gateway",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code - Validate Caller-Send Reply",
             "type": "main",
             "index": 0
           }
@@ -158,5 +208,5 @@
   },
   "staticData": null,
   "pinData": {},
-  "versionId": "phase-10-9dr-backend-read-only-relay-vars-compat"
+  "versionId": "phase-10-9ds-backend-read-only-relay-request-ready-gate"
 }

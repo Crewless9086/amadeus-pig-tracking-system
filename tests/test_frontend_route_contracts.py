@@ -18,9 +18,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertFalse(workflow["active"])
         self.assertIn("n8n-nodes-base.executeWorkflowTrigger", node_types)
         self.assertIn("n8n-nodes-base.httpRequest", node_types)
+        self.assertIn("n8n-nodes-base.if", node_types)
         self.assertNotIn("n8n-nodes-base.telegramTrigger", node_types)
         self.assertNotIn("n8n-nodes-base.telegram", node_types)
         self.assertIn("/api/oom-sakkie/channels/telegram/message", workflow_text)
+        self.assertIn("IF - Gateway Request Ready", workflow_text)
         self.assertIn("OOM_SAKKIE_GATEWAY_BASE_URL", workflow_text)
         self.assertIn("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", workflow_text)
         self.assertIn("$vars", workflow_text)
@@ -45,6 +47,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("remains the only normal Telegram `message` owner", readme)
         self.assertIn("Remote plain HTTP is rejected", readme)
         self.assertIn("Do not use `$env`", readme)
+        self.assertIn("URL parameter must be a string", readme)
         self.assertEqual(validate_relay_contract(), [])
 
     def test_oom_sakkie_audit_rail_ci_and_browser_checklist_are_documented(self):

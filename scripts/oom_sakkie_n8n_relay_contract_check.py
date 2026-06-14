@@ -55,6 +55,8 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
         errors.append("telegram_send_node_must_be_absent")
     if "HTTP - Call Oom Sakkie Gateway" not in node_names:
         errors.append("backend_gateway_http_node_missing")
+    if "IF - Gateway Request Ready" not in node_names:
+        errors.append("gateway_request_ready_if_missing")
     if "/api/oom-sakkie/channels/telegram/message" not in workflow_text:
         errors.append("backend_gateway_path_missing")
     if "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN" not in workflow_text:
@@ -78,6 +80,14 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
         errors.append("n8n_variable_reader_missing")
     if "gateway_token" in build_js:
         errors.append("token_must_not_be_emitted_into_item_json")
+
+    if_node = _node_by_name(nodes, "IF - Gateway Request Ready")
+    if_text = json.dumps(if_node, sort_keys=True)
+    if "gateway_url" not in if_text or "success === true" not in if_text:
+        errors.append("gateway_request_ready_condition_missing")
+    build_connections = workflow.get("connections", {}).get("Code - Build Backend Gateway Request", {})
+    if "IF - Gateway Request Ready" not in json.dumps(build_connections):
+        errors.append("build_node_must_route_to_request_ready_if")
 
     validate_node = _node_by_name(nodes, "Code - Validate Caller-Send Reply")
     validate_js = _node_js(validate_node)

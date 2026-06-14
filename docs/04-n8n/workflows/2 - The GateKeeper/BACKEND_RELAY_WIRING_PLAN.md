@@ -29,6 +29,8 @@ The n8n `2.0B` workflow must have these configured as n8n Variables, not Code-no
 
 Reason: n8n Cloud can deny Code node access to environment variables with `access to env vars denied`; the relay reads `$vars.OOM_SAKKIE_GATEWAY_BASE_URL` and `$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN` instead.
 
+For Render, set `OOM_SAKKIE_GATEWAY_BASE_URL` to `https://amadeus-pig-tracking-system.onrender.com`. Do not use a bare domain and do not wrap the value in quotes.
+
 ## Preflight Before Wiring
 
 Run from the repo:

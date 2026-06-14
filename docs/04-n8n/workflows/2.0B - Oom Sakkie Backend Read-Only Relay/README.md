@@ -39,6 +39,7 @@ n8n Cloud can block Code node access to environment variables. Configure these a
 - `OOM_SAKKIE_GATEWAY_BASE_URL`
   - Example private/local value: `http://127.0.0.1:5000`
   - Example HTTPS value: `https://amadeus-pig-tracking-system.onrender.com`
+  - Include the `https://` scheme for Render. Do not paste quotes around the value.
   - Remote plain HTTP is rejected before the bearer token is used. Use HTTPS for remote/private endpoints, or local HTTP only on localhost/127.0.0.1/::1.
 - `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
   - Must match the Flask `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
@@ -96,6 +97,7 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 - No OpenAI, LLM, Google Sheets, Supabase, shell, or code execution outside n8n JavaScript nodes.
 - Backend token comes only from n8n Variables.
 - Do not use `$env` in this workflow; Cloud Code nodes may throw `access to env vars denied`.
+- `IF - Gateway Request Ready` must stay between the Build node and HTTP node so fail-closed setup errors do not continue into an undefined URL call.
 - Refuse remote plain HTTP base URLs before using the bearer token.
 - Do not continue when backend says `sends_telegram = true`.
 - Do not continue when backend says `can_trigger_outbound_llm = true`.
@@ -144,6 +146,12 @@ Expected result:
 - `authority_validation: present`
 
 This check reads the committed workflow JSON and README only. It does not call n8n, Telegram, Flask, OpenAI, Google Sheets, or Supabase.
+
+## Common Setup Errors
+
+- `access to env vars denied`: the live workflow is still using `$env`; re-import this workflow export and configure n8n Variables.
+- `URL parameter must be a string, got undefined`: the HTTP node is being reached without `gateway_url`; re-import this workflow export with `IF - Gateway Request Ready`.
+- `OOM_SAKKIE_GATEWAY_BASE_URL must use https...`: set the n8n Variable to `https://amadeus-pig-tracking-system.onrender.com` or another full HTTPS URL. Do not use a bare domain and do not wrap the value in quotes.
 
 ## Not In This Slice
 
