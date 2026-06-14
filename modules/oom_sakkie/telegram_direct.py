@@ -241,6 +241,25 @@ def send_daily_brief_to_allowed_owners(environ=None):
     return _proactive_result(overall_success, "telegram_daily_brief_sent" if overall_success else "telegram_daily_brief_partial", policy, deliveries, message_result), 200 if overall_success else 502
 
 
+def preview_daily_brief_for_allowed_owners(environ=None):
+    source = environ if environ is not None else os.environ
+    policy = telegram_direct_policy(environ=source)
+    message_result, message_status = handle_message({
+        "text": "daily command brief",
+        "channel": "telegram_read_only",
+        "session_id": "telegram-proactive-daily-brief-preview",
+    })
+    if message_status >= 400 or not message_result.get("success"):
+        return _proactive_preview_result(False, "telegram_daily_brief_preview_failed", policy, source, "", message_result), message_status
+
+    text = format_telegram_owner_reply(
+        message_result,
+        title="Oom Sakkie Daily Brief",
+        footer="Dry-run preview only. No Telegram message, write, dispatch, runtime, or physical action was performed.",
+    )
+    return _proactive_preview_result(True, "telegram_daily_brief_preview_ready", policy, source, text, message_result), 200
+
+
 def format_telegram_owner_reply(message_result, title="Oom Sakkie", footer=None):
     message_result = message_result or {}
     compact = _compact_telegram_reply(message_result, title=title, footer=footer)
@@ -561,6 +580,28 @@ def _proactive_result(success, status, policy, deliveries, message=None):
         "physical_controls_enabled": False,
         "customer_public_output_enabled": False,
         "background_loop_enabled": False,
+    }
+
+
+def _proactive_preview_result(success, status, policy, source, telegram_text, message=None):
+    allowed_ids = _allowed_user_ids(source)
+    return {
+        "success": success,
+        "status": status,
+        "mode": "owner_only_direct_telegram_proactive_daily_brief_preview",
+        "telegram_direct": _public_policy(policy),
+        "would_send_to_count": len(allowed_ids),
+        "telegram_text": telegram_text[:MAX_REPLY_CHARS],
+        "message": message or {},
+        "sends_telegram": False,
+        "can_trigger_outbound_llm": False,
+        "writes": False,
+        "records_audit_trace": bool((message or {}).get("trace_store", {}).get("stored")),
+        "dispatch_enabled": False,
+        "changes_runtime_now": False,
+        "changes_prompt_now": False,
+        "physical_controls_enabled": False,
+        "customer_public_output_enabled": False,
     }
 
 

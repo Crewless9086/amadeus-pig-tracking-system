@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DY"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DZ"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -58,6 +58,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Live Telegram test feedback tightened formatting: daily brief, safety gates, and agent command center now use compact structured Telegram layouts instead of dense kiosk paragraphs.",
     "Agent/Sam direction is logged: Oom Sakkie remains the owner orchestrator, specialist agents start as backend draft/review-only lanes, and Sam keeps Chatwoot/n8n as customer-facing transport until a separate sales-agent authority review.",
     "Owner Telegram /offer now produces a Ledger-shaped sales offer brief for owner review only, with no customer send, public post, quote, stock reservation, stock change, specialist execution, or write authority.",
+    "Daily Telegram brief now has a script --dry-run preview path that builds the owner brief and recipient count without sending Telegram.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]

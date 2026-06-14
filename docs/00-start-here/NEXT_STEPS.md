@@ -12518,6 +12518,32 @@ Next live steps:
 3. Confirm the brief is useful enough for owner planning.
 4. If useful, next build can add an owner-approved "prepare customer draft" rail, still with no automatic customer send.
 
+### 10.9DZ Daily Brief Dry-Run Preview - Local Ready
+
+Goal:
+- Let the owner verify the proactive daily brief content and readiness before sending Telegram or adding any scheduler.
+
+What is built:
+- `scripts/oom_sakkie_telegram_daily_brief.py --dry-run`
+- The dry run:
+  - loads `.env`,
+  - builds the same `daily command brief` through `telegram_read_only`,
+  - formats the same owner Telegram text,
+  - reports the allowed-recipient count,
+  - prints send/write/dispatch/LLM authority flags,
+  - does not call Telegram `sendMessage`.
+
+Safety boundary:
+- Preview only.
+- No Telegram send, no scheduler, no background loop, no farm/control write, no dispatch, no runtime change, no physical control, no customer/public output, and no financial action.
+
+Next live steps:
+1. Deploy the latest commit.
+2. Run local preview:
+   - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_daily_brief.py --dry-run`
+3. If the preview is correct, run one supervised send with the existing gated script path.
+4. Only after one supervised success, consider Render Cron or another scheduler.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -22,6 +22,7 @@ from modules.oom_sakkie.telegram_gateway import (
 from modules.oom_sakkie.telegram_direct import (
     format_telegram_owner_reply,
     handle_telegram_direct_webhook,
+    preview_daily_brief_for_allowed_owners,
     send_daily_brief_to_allowed_owners,
     send_owner_telegram_reply,
     telegram_direct_parity_report,
@@ -1222,6 +1223,43 @@ class OomSakkieServiceTests(unittest.TestCase):
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_PROACTIVE_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DAILY_BRIEF_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345,67890",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_daily_brief_preview_builds_text_without_sending(self, mock_handle):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Daily command brief.",
+            "tool_used": "jarvis_daily_command_brief",
+            "risk_level": 0,
+            "safety_notes": [],
+        }, 200)
+
+        result, status_code = preview_daily_brief_for_allowed_owners()
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "telegram_daily_brief_preview_ready")
+        self.assertEqual(result["mode"], "owner_only_direct_telegram_proactive_daily_brief_preview")
+        self.assertEqual(result["would_send_to_count"], 2)
+        self.assertIn("Oom Sakkie Daily Brief", result["telegram_text"])
+        self.assertFalse(result["sends_telegram"])
+        self.assertFalse(result["can_trigger_outbound_llm"])
+        self.assertFalse(result["writes"])
+        self.assertFalse(result["dispatch_enabled"])
+        mock_handle.assert_called_once_with({
+            "text": "daily command brief",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-proactive-daily-brief-preview",
+        })
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
@@ -1423,8 +1461,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DY")
-        self.assertIn("10.9DY", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DZ")
+        self.assertIn("10.9DZ", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -1463,6 +1501,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("compact structured Telegram layouts", " ".join(packet["current_review"]["focus"]))
         self.assertIn("Sam keeps Chatwoot/n8n", " ".join(packet["current_review"]["focus"]))
         self.assertIn("Telegram /offer", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("--dry-run preview", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -2257,14 +2296,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DY", result["summary"])
+        self.assertIn("10.9DZ", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DY")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DZ")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2342,7 +2381,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DY", result["answer"])
+        self.assertIn("10.9DZ", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
