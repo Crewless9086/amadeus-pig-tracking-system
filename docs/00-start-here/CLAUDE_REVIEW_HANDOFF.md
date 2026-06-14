@@ -867,6 +867,11 @@ Known verification from Codex:
 - 10.9DW Telegram module/script compile: `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\telegram_direct.py scripts\oom_sakkie_telegram_daily_brief.py` -> OK.
 - 10.9DW JavaScript syntax: `node --check static/js/oomSakkie.js` -> OK.
 - 10.9DW browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
+- 10.9DX focused audit suite: `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 379 OK, 7 skipped.
+- 10.9DX workflow contracts: `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+- 10.9DX JavaScript syntax: `node --check static/js/oomSakkie.js` -> OK.
+- 10.9DX browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
+- 10.9DX CI evidence after push `381645a`: Oom Sakkie Audit Rails run `27489910972` -> success; Oom Sakkie Browser Behavior run `27489910967` -> success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
