@@ -892,6 +892,7 @@ Known verification from Codex:
 - 10.9EA browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
 - 10.9EB focused audit suite: `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 393 OK, 7 skipped.
 - 10.9EB module compile: `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\ledger_agent.py modules\oom_sakkie\tools.py modules\oom_sakkie\telegram_direct.py modules\oom_sakkie\service.py modules\oom_sakkie\policy.py modules\oom_sakkie\agent_runtime.py modules\oom_sakkie\llm_answer.py` -> OK.
+- 10.9EB CI evidence after push `ecc0546`: Oom Sakkie Audit Rails run `27491432948` -> success; Oom Sakkie Browser Behavior run `27491432958` -> success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
