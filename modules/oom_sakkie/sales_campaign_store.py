@@ -13,6 +13,44 @@ SALES_CAMPAIGN_EVENT_TYPES = {
     "deferred",
 }
 
+SALES_LEAD_EVENT_TYPES = {
+    "review_note",
+    "status_observed",
+    "owner_followup_needed",
+    "deposit_followup_needed",
+    "linked_order_observed",
+    "closed",
+}
+
+SALES_LEAD_STATUSES = {
+    "new",
+    "interested",
+    "asked_price",
+    "needs_callback",
+    "deposit_pending",
+    "not_interested",
+    "order_ready_for_approval",
+    "closed",
+}
+
+SALES_CAMPAIGN_SOURCES = {
+    "ready_meat_preorder",
+    "social_post",
+    "direct_known_buyer",
+    "inbound_chatwoot",
+    "whatsapp_status",
+    "manual_owner_note",
+    "other",
+}
+
+WHATSAPP_WINDOW_STATES = {
+    "unknown",
+    "open",
+    "closed",
+    "template_required",
+    "manual_owner_only",
+}
+
 
 def record_sales_campaign(payload, database_url=None):
     payload = payload if isinstance(payload, dict) else {}
@@ -299,6 +337,296 @@ def list_sales_send_design_requests(limit=20, database_url=None):
         "send_design_requests": [_sales_send_design_row(row) for row in rows],
         **_false_flags(),
     }, 200
+
+
+def record_sales_lead(payload, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    params = _sales_lead_params(payload)
+    if not params["lead_label"]:
+        return {"success": False, "status": "lead_label_required", "sales_leads": [], **_false_flags()}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _sales_leads_unavailable("not_configured", configured=False), 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return _sales_leads_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_sales_leads (
+                        lead_id,
+                        campaign_id,
+                        draft_id,
+                        send_design_id,
+                        status,
+                        mode,
+                        campaign_source,
+                        lead_label,
+                        contact_label,
+                        channel,
+                        chatwoot_conversation_id,
+                        whatsapp_window_state,
+                        last_inbound_at,
+                        opt_in_state,
+                        interest_json,
+                        next_owner_action,
+                        linked_order_id,
+                        linked_preorder_id,
+                        created_by,
+                        sends_customer_message,
+                        calls_chatwoot,
+                        calls_n8n,
+                        creates_quote,
+                        creates_order,
+                        changes_stock,
+                        dispatch_enabled,
+                        changes_runtime_now,
+                        changes_prompt_now,
+                        physical_controls_enabled,
+                        customer_public_output_enabled,
+                        writes_farm_data,
+                        created_at
+                    )
+                    values (
+                        %(lead_id)s,
+                        %(campaign_id)s,
+                        %(draft_id)s,
+                        %(send_design_id)s,
+                        %(status)s,
+                        %(mode)s,
+                        %(campaign_source)s,
+                        %(lead_label)s,
+                        %(contact_label)s,
+                        %(channel)s,
+                        %(chatwoot_conversation_id)s,
+                        %(whatsapp_window_state)s,
+                        %(last_inbound_at)s,
+                        %(opt_in_state)s,
+                        %(interest_json)s::jsonb,
+                        %(next_owner_action)s,
+                        %(linked_order_id)s,
+                        %(linked_preorder_id)s,
+                        %(created_by)s,
+                        %(sends_customer_message)s,
+                        %(calls_chatwoot)s,
+                        %(calls_n8n)s,
+                        %(creates_quote)s,
+                        %(creates_order)s,
+                        %(changes_stock)s,
+                        %(dispatch_enabled)s,
+                        %(changes_runtime_now)s,
+                        %(changes_prompt_now)s,
+                        %(physical_controls_enabled)s,
+                        %(customer_public_output_enabled)s,
+                        %(writes_farm_data)s,
+                        now()
+                    )
+                    on conflict (lead_id) do nothing
+                    returning lead_id
+                    """,
+                    params,
+                )
+                created_count = 1 if cursor.fetchone() else 0
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_lead_write_failed",
+            "error_type": exc.__class__.__name__,
+            "sales_leads": [],
+            **_false_flags(),
+        }, 503
+
+    listed, list_status = list_sales_leads(limit=50, database_url=database_url)
+    if list_status != 200:
+        return listed, list_status
+    leads = [item for item in listed.get("sales_leads", []) if item.get("lead_id") == params["lead_id"]]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "sales_lead_tracking_queue",
+        "created_count": created_count,
+        "lead_id": params["lead_id"],
+        "sales_leads": leads,
+        "next_gate": "owner_or_sam_review_before_any_customer_send_quote_order_or_stock_write",
+        "records_sales_lead": True,
+        **_false_flags(),
+    }, 201
+
+
+def list_sales_leads(limit=20, database_url=None):
+    parsed_limit = _bounded_limit(limit)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _sales_leads_unavailable("not_configured", configured=False), 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return _sales_leads_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select l.lead_id, l.campaign_id, l.draft_id, l.send_design_id,
+                           l.status, l.mode, l.campaign_source, l.lead_label,
+                           l.contact_label, l.channel, l.chatwoot_conversation_id,
+                           l.whatsapp_window_state, l.last_inbound_at, l.opt_in_state,
+                           l.interest_json, l.next_owner_action, l.linked_order_id,
+                           l.linked_preorder_id, l.created_by,
+                           l.sends_customer_message, l.calls_chatwoot, l.calls_n8n,
+                           l.creates_quote, l.creates_order, l.changes_stock,
+                           l.dispatch_enabled, l.changes_runtime_now, l.changes_prompt_now,
+                           l.physical_controls_enabled, l.customer_public_output_enabled,
+                           l.writes_farm_data, l.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_sales_leads l
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_sales_lead_events e
+                        where e.lead_id = l.lead_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    order by l.created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": parsed_limit},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_lead_read_failed",
+            "error_type": exc.__class__.__name__,
+            "mode": "sales_lead_tracking_queue",
+            "sales_leads": [],
+            **_false_flags(),
+        }, 503
+
+    leads = [_sales_lead_row(row) for row in rows]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "sales_lead_tracking_queue",
+        "sales_leads": leads,
+        "counts": _sales_lead_counts(leads),
+        **_false_flags(),
+    }, 200
+
+
+def record_sales_lead_event(lead_id, payload, database_url=None):
+    lead_id = _clean_text(lead_id, 100)
+    payload = payload if isinstance(payload, dict) else {}
+    event_type = _clean_text(payload.get("event_type", ""), 80)
+    if not lead_id:
+        return {"success": False, "status": "lead_id_required", **_false_flags()}, 400
+    if event_type not in SALES_LEAD_EVENT_TYPES:
+        return {
+            "success": False,
+            "status": "invalid_event_type",
+            "allowed_event_types": sorted(SALES_LEAD_EVENT_TYPES),
+            **_false_flags(),
+        }, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured", **_false_flags()}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
+
+    params = {
+        "event_id": _lead_event_id(lead_id, event_type),
+        "lead_id": lead_id,
+        "event_type": event_type,
+        "notes": _clean_text(payload.get("notes", ""), 1200),
+        "recorded_by": _clean_text(payload.get("recorded_by", "owner"), 80),
+        "status_observed": _status_or_default(payload.get("status_observed"), default=""),
+        **_false_flags(),
+    }
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_sales_lead_events (
+                        event_id,
+                        lead_id,
+                        event_type,
+                        notes,
+                        recorded_by,
+                        status_observed,
+                        sends_customer_message,
+                        calls_chatwoot,
+                        calls_n8n,
+                        creates_quote,
+                        creates_order,
+                        changes_stock,
+                        dispatch_enabled,
+                        changes_runtime_now,
+                        changes_prompt_now,
+                        physical_controls_enabled,
+                        customer_public_output_enabled,
+                        writes_farm_data,
+                        created_at
+                    )
+                    values (
+                        %(event_id)s,
+                        %(lead_id)s,
+                        %(event_type)s,
+                        %(notes)s,
+                        %(recorded_by)s,
+                        %(status_observed)s,
+                        %(sends_customer_message)s,
+                        %(calls_chatwoot)s,
+                        %(calls_n8n)s,
+                        %(creates_quote)s,
+                        %(creates_order)s,
+                        %(changes_stock)s,
+                        %(dispatch_enabled)s,
+                        %(changes_runtime_now)s,
+                        %(changes_prompt_now)s,
+                        %(physical_controls_enabled)s,
+                        %(customer_public_output_enabled)s,
+                        %(writes_farm_data)s,
+                        now()
+                    )
+                    """,
+                    params,
+                )
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_lead_event_write_failed",
+            "error_type": exc.__class__.__name__,
+            **_false_flags(),
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "event_id": params["event_id"],
+        "lead_id": lead_id,
+        "event_type": event_type,
+        "next_gate": "review_tracking_only_before_any_customer_send_quote_order_or_stock_write",
+        **_false_flags(),
+    }, 201
 
 
 def record_sales_send_design_request_from_draft(draft_id, payload=None, database_url=None):
@@ -822,6 +1150,52 @@ def _sales_send_design_row(row):
     }
 
 
+def _sales_lead_row(row):
+    latest_event = None
+    if row[32]:
+        latest_event = {
+            "event_type": row[32],
+            "notes": row[33] or "",
+            "recorded_by": row[34] or "",
+            "created_at": _iso(row[35]),
+        }
+    return {
+        "lead_id": row[0],
+        "campaign_id": row[1] or "",
+        "draft_id": row[2] or "",
+        "send_design_id": row[3] or "",
+        "status": row[4],
+        "mode": row[5],
+        "campaign_source": row[6],
+        "lead_label": row[7],
+        "contact_label": row[8] or "",
+        "channel": row[9] or "",
+        "chatwoot_conversation_id": row[10] or "",
+        "whatsapp_window_state": row[11],
+        "last_inbound_at": _iso(row[12]),
+        "opt_in_state": row[13] or "",
+        "interest": row[14] or {},
+        "next_owner_action": row[15] or "",
+        "linked_order_id": row[16] or "",
+        "linked_preorder_id": row[17] or "",
+        "created_by": row[18] or "",
+        "sends_customer_message": bool(row[19]),
+        "calls_chatwoot": bool(row[20]),
+        "calls_n8n": bool(row[21]),
+        "creates_quote": bool(row[22]),
+        "creates_order": bool(row[23]),
+        "changes_stock": bool(row[24]),
+        "dispatch_enabled": bool(row[25]),
+        "changes_runtime_now": bool(row[26]),
+        "changes_prompt_now": bool(row[27]),
+        "physical_controls_enabled": bool(row[28]),
+        "customer_public_output_enabled": bool(row[29]),
+        "writes_farm_data": bool(row[30]),
+        "created_at": _iso(row[31]),
+        "latest_event": latest_event,
+    }
+
+
 def _fetch_campaign_row(cursor, campaign_id):
     cursor.execute(
         """
@@ -985,9 +1359,100 @@ def _sales_send_design_params(draft, payload):
     }
 
 
+def _sales_lead_params(payload):
+    interest = payload.get("interest") if isinstance(payload.get("interest"), dict) else {}
+    lead_label = _clean_text(
+        payload.get("lead_label")
+        or payload.get("contact_label")
+        or interest.get("customer_name")
+        or interest.get("name")
+        or "Buyer lead",
+        160,
+    )
+    campaign_source = _clean_text(payload.get("campaign_source") or "inbound_chatwoot", 80)
+    if campaign_source not in SALES_CAMPAIGN_SOURCES:
+        campaign_source = "other"
+    whatsapp_state = _clean_text(payload.get("whatsapp_window_state") or "unknown", 80)
+    if whatsapp_state not in WHATSAPP_WINDOW_STATES:
+        whatsapp_state = "unknown"
+    seed = json.dumps({
+        "campaign_id": _clean_text(payload.get("campaign_id"), 100),
+        "draft_id": _clean_text(payload.get("draft_id"), 100),
+        "send_design_id": _clean_text(payload.get("send_design_id"), 100),
+        "lead_label": lead_label,
+        "contact_label": _clean_text(payload.get("contact_label"), 160),
+        "channel": _clean_text(payload.get("channel") or "chatwoot_whatsapp", 80),
+        "chatwoot_conversation_id": _clean_text(payload.get("chatwoot_conversation_id"), 100),
+        "campaign_source": campaign_source,
+    }, sort_keys=True, default=str)
+    return {
+        "lead_id": _lead_id(seed),
+        "campaign_id": _clean_text(payload.get("campaign_id"), 100),
+        "draft_id": _clean_text(payload.get("draft_id"), 100),
+        "send_design_id": _clean_text(payload.get("send_design_id"), 100),
+        "status": _status_or_default(payload.get("status"), default="new"),
+        "mode": "sales_lead_tracking_only",
+        "campaign_source": campaign_source,
+        "lead_label": lead_label,
+        "contact_label": _clean_text(payload.get("contact_label"), 160),
+        "channel": _clean_text(payload.get("channel") or "chatwoot_whatsapp", 80),
+        "chatwoot_conversation_id": _clean_text(payload.get("chatwoot_conversation_id"), 100),
+        "whatsapp_window_state": whatsapp_state,
+        "last_inbound_at": _clean_text(payload.get("last_inbound_at"), 80) or None,
+        "opt_in_state": _clean_text(payload.get("opt_in_state") or "unknown", 80),
+        "interest_json": _json(interest),
+        "next_owner_action": _clean_text(payload.get("next_owner_action"), 700),
+        "linked_order_id": _clean_text(payload.get("linked_order_id"), 100),
+        "linked_preorder_id": _clean_text(payload.get("linked_preorder_id"), 100),
+        "created_by": _clean_text(payload.get("created_by") or "sam_or_owner_review", 80),
+        **_false_flags(),
+    }
+
+
+def _sales_lead_counts(leads):
+    by_status = {}
+    whatsapp_window = {}
+    for item in leads:
+        status = item.get("status") or "unknown"
+        by_status[status] = by_status.get(status, 0) + 1
+        window = item.get("whatsapp_window_state") or "unknown"
+        whatsapp_window[window] = whatsapp_window.get(window, 0) + 1
+    return {
+        "total": len(leads),
+        "by_status": by_status,
+        "whatsapp_window": whatsapp_window,
+        "deposit_pending": by_status.get("deposit_pending", 0),
+        "owner_followup_needed": (
+            by_status.get("asked_price", 0)
+            + by_status.get("needs_callback", 0)
+            + by_status.get("order_ready_for_approval", 0)
+        ),
+        "template_required": whatsapp_window.get("template_required", 0),
+    }
+
+
+def _status_or_default(value, default):
+    status = _clean_text(value, 80)
+    if not status:
+        return default
+    return status if status in SALES_LEAD_STATUSES else default
+
+
 def _send_design_id(draft_id, target_transport):
     digest = hashlib.sha256(f"{draft_id}|{target_transport}".encode("utf-8")).hexdigest()[:16].upper()
     return f"OSK-SALES-SEND-DESIGN-{digest}"
+
+
+def _lead_id(seed):
+    digest = hashlib.sha256(str(seed or "").encode("utf-8")).hexdigest()[:16].upper()
+    return f"OSK-SALES-LEAD-{digest}"
+
+
+def _lead_event_id(lead_id, event_type):
+    digest = hashlib.sha256(
+        f"{lead_id}|{event_type}|{datetime.now(timezone.utc).isoformat()}".encode("utf-8")
+    ).hexdigest()[:16].upper()
+    return f"OSK-SALES-LEAD-EVENT-{digest}"
 
 
 def _send_design_unavailable(status, configured):
@@ -997,6 +1462,17 @@ def _send_design_unavailable(status, configured):
         "status": status,
         "mode": "customer_send_design_request_queue",
         "send_design_requests": [],
+        **_false_flags(),
+    }
+
+
+def _sales_leads_unavailable(status, configured):
+    return {
+        "success": False,
+        "configured": configured,
+        "status": status,
+        "mode": "sales_lead_tracking_queue",
+        "sales_leads": [],
         **_false_flags(),
     }
 

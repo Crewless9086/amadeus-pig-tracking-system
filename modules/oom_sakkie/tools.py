@@ -33,6 +33,7 @@ from modules.oom_sakkie.ledger_agent import ledger_agent_policy, run_ledger_sale
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
 from modules.oom_sakkie.sales_campaign_store import (
     list_sales_campaigns,
+    list_sales_leads,
     list_sales_outreach_drafts,
     list_sales_send_design_requests,
     record_sales_campaign,
@@ -652,6 +653,51 @@ def sales_send_design_status_handler(_args):
     }
 
 
+def sales_lead_tracking_status_handler(_args):
+    result, status_code = list_sales_leads(limit=20)
+    leads = result.get("sales_leads", []) if isinstance(result, dict) else []
+    counts = result.get("counts", {}) if isinstance(result, dict) else {}
+    if status_code == 200:
+        summary = (
+            f"Sales lead tracking queue: {len(leads)} tracked lead(s), "
+            f"{int(counts.get('deposit_pending') or 0)} deposit follow-up(s), "
+            f"{int(counts.get('owner_followup_needed') or 0)} owner follow-up(s), "
+            f"{int(counts.get('template_required') or 0)} template-required WhatsApp window(s). "
+            "No customer message was sent."
+        )
+    else:
+        summary = "Sales lead tracking queue is unavailable. No customer message was sent and no order or stock change was made."
+    return {
+        "success": status_code == 200,
+        "status": result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+        "summary": summary,
+        "links": [{"label": "Sales Leads", "href": "/api/oom-sakkie/sales-leads"}],
+        "stale_warnings": [] if status_code == 200 else [f"Sales lead store unavailable (status {status_code})."],
+        "safety_notes": [
+            "Sales lead tracking is record/status review only. It does not send customers, call Chatwoot/n8n/WhatsApp, create quotes or orders, reserve stock, change stock, dispatch agents, change runtime, or perform physical actions."
+        ],
+        "llm_context": {
+            "kind": "sales_lead_tracking_status",
+            "counts": counts or {
+                "total": len(leads),
+                "deposit_pending": 0,
+                "owner_followup_needed": 0,
+                "template_required": 0,
+            },
+            "leads": leads[:8],
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+        },
+        "raw": result if isinstance(result, dict) else {},
+    }
+
+
 def jarvis_daily_command_brief_handler(_args):
     sections = {
         "farm": farm_operating_brief_handler({}),
@@ -659,6 +705,7 @@ def jarvis_daily_command_brief_handler(_args):
         "sales_campaigns": sales_campaign_status_handler({}),
         "outreach_drafts": sales_outreach_draft_queue_handler({}),
         "send_design": sales_send_design_status_handler({}),
+        "sales_leads": sales_lead_tracking_status_handler({}),
         "command_center": agent_command_center_handler({}),
     }
     stale_warnings = []
@@ -771,6 +818,12 @@ def _daily_command_next_actions(sections, failed):
     if waiting_send_design:
         actions.append(f"Review {waiting_send_design} customer send-design request(s) before any Sam/Chatwoot handoff.")
 
+    sales_leads = ((sections.get("sales_leads") or {}).get("llm_context") or {})
+    lead_counts = sales_leads.get("counts") or {}
+    lead_followups = int(lead_counts.get("deposit_pending") or 0) + int(lead_counts.get("owner_followup_needed") or 0)
+    if lead_followups:
+        actions.append(f"Review {lead_followups} sales lead follow-up item(s); no customer reply is automatic.")
+
     farm_context = (sections.get("farm") or {}).get("llm_context") or {}
     farm_failed = failed or farm_context.get("failed_sections") or []
     if farm_failed:
@@ -782,12 +835,13 @@ def _daily_command_next_actions(sections, failed):
 
 
 def _daily_optional_section_unavailable(name, section):
-    return name in {"sales_campaigns", "outreach_drafts", "send_design"} and section.get("status") in {
+    return name in {"sales_campaigns", "outreach_drafts", "send_design", "sales_leads"} and section.get("status") in {
         "not_configured",
         "dependency_missing",
         "sales_campaign_read_failed",
         "sales_outreach_draft_read_failed",
         "sales_send_design_read_failed",
+        "sales_lead_read_failed",
     }
 
 
@@ -2912,6 +2966,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=sales_send_design_status_handler,
         description="Read-only customer send-design queue for future Sam/Chatwoot review. Never sends customers, creates orders, reserves stock, or changes stock.",
+    ),
+    "sales_lead_tracking_status": OomSakkieTool(
+        name="sales_lead_tracking_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=sales_lead_tracking_status_handler,
+        description="Read-only sales outreach and lead tracking queue. Tracks inbound/customer state and WhatsApp window facts; never sends customers, creates orders, reserves stock, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",

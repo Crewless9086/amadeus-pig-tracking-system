@@ -152,11 +152,14 @@ from modules.oom_sakkie.patch_proposal_store import (
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.sales_campaign_store import (
+    _sales_lead_params,
     _sales_outreach_draft_params,
     _sales_send_design_params,
     _sales_campaign_params,
     approve_first_waiting_sales_campaign,
     record_sales_campaign_event,
+    record_sales_lead,
+    record_sales_lead_event,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
 )
@@ -243,6 +246,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sales_campaign_status",
                 "sales_outreach_draft_queue",
                 "sales_send_design_status",
+                "sales_lead_tracking_status",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -294,6 +298,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(send_design["risk_label"], "READ_ONLY")
         self.assertFalse(send_design["requires_confirmation"])
         self.assertIn("Never sends customers", send_design["description"])
+        leads = next(item for item in catalog if item["name"] == "sales_lead_tracking_status")
+        self.assertEqual(leads["risk_label"], "READ_ONLY")
+        self.assertFalse(leads["requires_confirmation"])
+        self.assertIn("never sends customers", leads["description"].lower())
 
     @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
@@ -5021,6 +5029,53 @@ def literal_false_is_allowed():
         self.assertFalse(result["calls_chatwoot"])
         self.assertFalse(result["creates_order"])
 
+    def test_sales_lead_params_force_tracking_only_no_authority_flags(self):
+        params = _sales_lead_params({
+            "campaign_source": "ready_meat_preorder",
+            "lead_label": "Buyer A half carcass",
+            "contact_label": "Buyer A",
+            "status": "deposit_pending",
+            "channel": "chatwoot_whatsapp",
+            "chatwoot_conversation_id": "123",
+            "whatsapp_window_state": "template_required",
+            "interest": {"product": "half carcass", "cut_set": "Set A"},
+            "next_owner_action": "Confirm deposit follow-up wording.",
+        })
+
+        self.assertTrue(params["lead_id"].startswith("OSK-SALES-LEAD-"))
+        self.assertEqual(params["status"], "deposit_pending")
+        self.assertEqual(params["mode"], "sales_lead_tracking_only")
+        self.assertEqual(params["campaign_source"], "ready_meat_preorder")
+        self.assertEqual(params["whatsapp_window_state"], "template_required")
+        self.assertIn("half carcass", params["interest_json"])
+        self.assertFalse(params["sends_customer_message"])
+        self.assertFalse(params["calls_chatwoot"])
+        self.assertFalse(params["calls_n8n"])
+        self.assertFalse(params["creates_quote"])
+        self.assertFalse(params["creates_order"])
+        self.assertFalse(params["changes_stock"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["writes_farm_data"])
+
+    def test_sales_lead_rejects_invalid_event_type_before_database(self):
+        result, status_code = record_sales_lead_event("OSK-SALES-LEAD-1", {"event_type": "send_now"}, database_url="")
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_event_type")
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_sales_lead_requires_database_before_write(self):
+        result, status_code = record_sales_lead({"lead_label": "Buyer A"}, database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertEqual(result["sales_leads"], [])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["creates_order"])
+
     def test_approve_first_waiting_sales_campaign_returns_unavailable_without_database(self):
         result, status_code = approve_first_waiting_sales_campaign(database_url="")
 
@@ -5031,6 +5086,7 @@ def literal_false_is_allowed():
 
     def test_sales_campaign_migration_is_append_only_and_no_authority(self):
         migration = Path("supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql").read_text(encoding="utf-8")
+        lead_migration = Path("supabase/migrations/202606140002_create_oom_sakkie_sales_leads.sql").read_text(encoding="utf-8")
 
         self.assertIn("create table if not exists public.oom_sakkie_sales_campaigns", migration)
         self.assertIn("create table if not exists public.oom_sakkie_sales_campaign_events", migration)
@@ -5051,6 +5107,20 @@ def literal_false_is_allowed():
         self.assertIn("before delete on public.oom_sakkie_sales_campaign_events", migration)
         self.assertIn("before delete on public.oom_sakkie_sales_outreach_drafts", migration)
         self.assertIn("before delete on public.oom_sakkie_sales_send_design_requests", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_sales_leads", lead_migration)
+        self.assertIn("create table if not exists public.oom_sakkie_sales_lead_events", lead_migration)
+        self.assertIn("mode = 'sales_lead_tracking_only'", lead_migration)
+        self.assertIn("whatsapp_window_state in (", lead_migration)
+        self.assertIn("'template_required'", lead_migration)
+        self.assertIn("event_type in (", lead_migration)
+        self.assertIn("'deposit_followup_needed'", lead_migration)
+        self.assertIn("sends_customer_message = false", lead_migration)
+        self.assertIn("calls_chatwoot = false", lead_migration)
+        self.assertIn("calls_n8n = false", lead_migration)
+        self.assertIn("creates_order = false", lead_migration)
+        self.assertIn("changes_stock = false", lead_migration)
+        self.assertIn("before update on public.oom_sakkie_sales_leads", lead_migration)
+        self.assertIn("before delete on public.oom_sakkie_sales_lead_events", lead_migration)
 
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
@@ -5757,6 +5827,9 @@ def literal_false_is_allowed():
             "send design queue": "sales_send_design_status",
             "show sam chatwoot handoff design": "sales_send_design_status",
             "customer send design requests": "sales_send_design_status",
+            "show sales leads": "sales_lead_tracking_status",
+            "buyer lead tracking": "sales_lead_tracking_status",
+            "which whatsapp window needs template required": "sales_lead_tracking_status",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",

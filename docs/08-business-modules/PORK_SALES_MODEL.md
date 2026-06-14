@@ -40,6 +40,52 @@ No pig is slaughtered for meat sales unless it is pre-sold.
 
 This protects cashflow and avoids unsold frozen stock, waste, unnecessary feed costs, overproduction, storage pressure, and poor planning.
 
+## Sales System Direction
+
+The sales system should be broader than direct messages to old buyers. Telegram remains the owner control channel for Oom Sakkie alerts and approvals, not the customer sales transport.
+
+Target roles:
+
+- Oom Sakkie / Jarvis: owner command center, approvals, summaries, and escalation.
+- Ledger: business and sales strategy agent.
+- Beacon: public/social content draft agent for Facebook, Instagram, WhatsApp status/channel style copy, and later other public surfaces.
+- Sam: customer conversation and order-intake agent in Chatwoot/WhatsApp.
+- Backend: source of truth for campaigns, leads, approvals, orders, deposits, stock/allocation, and traceability.
+
+Preferred sales flow:
+
+1. Ledger sees a meat opportunity from allocation/meat-planning signals.
+2. Beacon prepares public demand-generation drafts.
+3. Owner approves content and wording before anything is posted or sent.
+4. Customers reach out inbound through public/social/status/channel exposure or existing relationship channels.
+5. Sam handles inbound Chatwoot/WhatsApp conversations and collects buyer facts.
+6. Backend records campaign, lead, conversation/order intent, deposit state, allocation state, and owner approvals.
+7. Oom Sakkie reports the queue back to the owner.
+
+The strongest path is inbound interest generation, not uncontrolled cold WhatsApp blasting.
+
+WhatsApp customer communication must respect the 24-hour customer-service window. If a customer messages first, Sam may reply inside that window once the approved Sam/Chatwoot flow exists. If the window is closed, the system must treat the lead as requiring one of these safe paths:
+
+- approved WhatsApp template message,
+- public/social/status/channel post and wait for inbound reply,
+- owner manual contact,
+- or a properly approved opt-in/outreach process.
+
+The backend must track:
+
+- last inbound message time,
+- whether the 24-hour WhatsApp window is open,
+- whether a template is required,
+- whether the customer opted in,
+- which campaign/contact/source caused the lead,
+- whether Sam may reply, must use a template, or must wait,
+- campaign copy,
+- customer reply copy,
+- WhatsApp template candidate,
+- linked preorder/order/deposit state when that exists.
+
+Current implementation direction: build a Sales Outreach / Lead Tracking rail first. It records the opportunity and lead state needed for owner review, but it does not send messages, call Chatwoot/n8n/WhatsApp, create quotes or orders, reserve stock, change stock, or post publicly.
+
 ## Sales Modules
 
 ### Module A: Live Pig Sales

@@ -90,6 +90,7 @@
   const salesCampaignsPanel = document.getElementById("oom_sales_campaigns");
   const salesOutreachDraftsPanel = document.getElementById("oom_sales_outreach_drafts");
   const salesSendDesignsPanel = document.getElementById("oom_sales_send_designs");
+  const salesLeadsPanel = document.getElementById("oom_sales_leads");
   const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
   const requestPrismDryRunButton = document.getElementById("oom_request_prism_dry_run");
   const agentDryRunSpecialistSelect = document.getElementById("oom_agent_dry_run_specialist_select");
@@ -153,6 +154,7 @@
   let latestSalesCampaignsData = null;
   let latestSalesOutreachDraftsData = null;
   let latestSalesSendDesignsData = null;
+  let latestSalesLeadsData = null;
   const feedbackOptions = [
     ["", "Mark review"],
     ["correct", "Correct"],
@@ -2217,18 +2219,22 @@
     renderSalesCampaigns(latestSalesCampaignsData || {});
     renderSalesOutreachDrafts(latestSalesOutreachDraftsData || {});
     renderSalesSendDesigns(latestSalesSendDesignsData || {});
+    renderSalesLeads(latestSalesLeadsData || {});
     if (!salesWorkbenchStatus) return;
     const campaigns = Array.isArray((latestSalesCampaignsData || {}).sales_campaigns) ? latestSalesCampaignsData.sales_campaigns : [];
     const drafts = Array.isArray((latestSalesOutreachDraftsData || {}).outreach_drafts) ? latestSalesOutreachDraftsData.outreach_drafts : [];
     const designs = Array.isArray((latestSalesSendDesignsData || {}).send_design_requests) ? latestSalesSendDesignsData.send_design_requests : [];
+    const leads = Array.isArray((latestSalesLeadsData || {}).sales_leads) ? latestSalesLeadsData.sales_leads : [];
     const waitingCampaigns = campaigns.filter((item) => salesCampaignStage(item) === "waiting").length;
     const approvedCampaigns = campaigns.filter((item) => salesCampaignStage(item) === "approved").length;
+    const depositPending = leads.filter((item) => item.status === "deposit_pending").length;
+    const templateRequired = leads.filter((item) => item.whatsapp_window_state === "template_required").length;
     salesWorkbenchStatus.innerHTML = "";
     const title = document.createElement("strong");
     const summary = document.createElement("p");
     const guard = document.createElement("p");
     title.textContent = "Ledger sales queue";
-    summary.textContent = `${waitingCampaigns} campaign waiting, ${approvedCampaigns} approved, ${drafts.length} outreach draft waiting, ${designs.length} send-design request waiting.`;
+    summary.textContent = `${waitingCampaigns} campaign waiting, ${approvedCampaigns} approved, ${drafts.length} outreach draft waiting, ${designs.length} send-design request waiting, ${leads.length} lead tracked, ${depositPending} deposit pending, ${templateRequired} template required.`;
     guard.className = "oom-advisor-guard";
     guard.textContent = "owner review only | no customer send | no Chatwoot/n8n call | no order or stock write";
     salesWorkbenchStatus.appendChild(title);
@@ -2361,6 +2367,43 @@
     });
   }
 
+  function renderSalesLeads(data) {
+    if (!salesLeadsPanel) return;
+    const items = Array.isArray(data.sales_leads) ? data.sales_leads : [];
+    salesLeadsPanel.innerHTML = "";
+    if (!data.success) {
+      salesLeadsPanel.innerHTML = '<p class="oom-empty">Sales leads are unavailable.</p>';
+      return;
+    }
+    if (!items.length) {
+      salesLeadsPanel.innerHTML = '<p class="oom-empty">No sales leads tracked yet. Future Sam/Chatwoot intake can record inbound buyer state here after review.</p>';
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("article");
+      const title = document.createElement("strong");
+      const detail = document.createElement("p");
+      const interest = document.createElement("p");
+      const guard = document.createElement("p");
+      const product = String(((item.interest || {}).product || (item.interest || {}).cut_set || "") || "");
+      row.className = item.status === "deposit_pending" || item.status === "asked_price" || item.status === "order_ready_for_approval"
+        ? "oom-work-item oom-work-item-active"
+        : "oom-work-item";
+      title.textContent = item.lead_label || item.lead_id || "Sales lead";
+      detail.textContent = `${item.status || "new"} | ${item.campaign_source || "unknown source"} | WhatsApp: ${item.whatsapp_window_state || "unknown"} | ${item.channel || "channel unknown"}`;
+      interest.textContent = product
+        ? `${product} | ${item.next_owner_action || "No owner action recorded."}`
+        : (item.next_owner_action || "No owner action recorded.");
+      guard.className = "oom-advisor-guard";
+      guard.textContent = "lead tracking only | no customer send | no Chatwoot/n8n call | no quote/order/stock write";
+      row.appendChild(title);
+      row.appendChild(detail);
+      row.appendChild(interest);
+      row.appendChild(guard);
+      salesLeadsPanel.appendChild(row);
+    });
+  }
+
   function renderWorkbenchNextAction() {
     if (!workbenchNextAction) return;
     const buildItems = latestBuildRequestsData && Array.isArray(latestBuildRequestsData.build_requests)
@@ -2390,6 +2433,9 @@
     const salesSendDesignItems = latestSalesSendDesignsData && Array.isArray(latestSalesSendDesignsData.send_design_requests)
       ? latestSalesSendDesignsData.send_design_requests
       : [];
+    const salesLeadItems = latestSalesLeadsData && Array.isArray(latestSalesLeadsData.sales_leads)
+      ? latestSalesLeadsData.sales_leads
+      : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
     const pendingBuild = buildItems.filter((item) => buildRequestStage(item) === "pending");
@@ -2410,7 +2456,7 @@
     const next = document.createElement("p");
     const counts = document.createElement("div");
     title.textContent = "Next action";
-    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingLearningInfluence.length} learning proposal, ${pendingSalesCampaigns.length} sales campaign, ${salesDraftItems.length} outreach draft, ${salesSendDesignItems.length} send design, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
+    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingLearningInfluence.length} learning proposal, ${pendingSalesCampaigns.length} sales campaign, ${salesDraftItems.length} outreach draft, ${salesSendDesignItems.length} send design, ${salesLeadItems.length} sales lead, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
     if (pendingAgentRequests.length) {
       next.textContent = `Open agent handoff for ${pendingAgentRequests[0].dry_run_request_id || "the oldest dry-run request"}.`;
     } else if (pendingAgentResults.length) {
@@ -2423,6 +2469,8 @@
       next.textContent = `Review ${salesDraftItems.length} customer outreach draft(s) before any Sam/Chatwoot handoff.`;
     } else if (salesSendDesignItems.length) {
       next.textContent = `Review ${salesSendDesignItems.length} send-design request(s) before any customer-send consumer.`;
+    } else if (salesLeadItems.length) {
+      next.textContent = `Review ${salesLeadItems.length} sales lead(s) before any customer follow-up.`;
     } else if (pendingBuild.length) {
       next.textContent = `Start with Forge Handoff for ${pendingBuild[0].build_request_id || "the oldest build request"}.`;
     } else if (pendingPatch.length) {
@@ -2440,6 +2488,7 @@
       ["Sales campaign", pendingSalesCampaigns.length],
       ["Draft", salesDraftItems.length],
       ["Send design", salesSendDesignItems.length],
+      ["Sales lead", salesLeadItems.length],
       ["Build", pendingBuild.length],
       ["Patch", pendingPatch.length],
       ["Deploy", deployReady.length],
@@ -2613,6 +2662,19 @@
         guard: "Design only | no customer send | no Chatwoot/n8n call | no order write",
         ownerPrompt: "Review this design before any customer-send consumer is built.",
         ids: [item.send_design_id, item.draft_id],
+        actionLabel: "Open Ledger",
+        action: () => openWorkbenchSection("oom_ledger_sales_workbench_section"),
+      });
+    });
+
+    salesLeadItems.forEach((item) => {
+      items.push({
+        kind: "Sales Lead",
+        title: item.lead_label || item.lead_id || "Sales lead",
+        detail: `${item.status || "new"} | ${item.campaign_source || "unknown source"} | WhatsApp: ${item.whatsapp_window_state || "unknown"}`,
+        guard: "Lead tracking only | no customer send | no Chatwoot/n8n call | no order write",
+        ownerPrompt: "Review this lead state before any Sam/customer follow-up.",
+        ids: [item.lead_id, item.contact_label, item.chatwoot_conversation_id],
         actionLabel: "Open Ledger",
         action: () => openWorkbenchSection("oom_ledger_sales_workbench_section"),
       });
@@ -3506,16 +3568,18 @@
   }
 
   async function loadSalesWorkbench() {
-    if (!salesCampaignsPanel && !salesOutreachDraftsPanel && !salesSendDesignsPanel) return;
+    if (!salesCampaignsPanel && !salesOutreachDraftsPanel && !salesSendDesignsPanel && !salesLeadsPanel) return;
     try {
-      const [campaignResponse, draftResponse, designResponse] = await Promise.all([
+      const [campaignResponse, draftResponse, designResponse, leadResponse] = await Promise.all([
         fetch("/api/oom-sakkie/sales-campaigns?limit=12"),
         fetch("/api/oom-sakkie/sales-outreach-drafts?limit=12"),
         fetch("/api/oom-sakkie/sales-send-design-requests?limit=12"),
+        fetch("/api/oom-sakkie/sales-leads?limit=12"),
       ]);
       latestSalesCampaignsData = await campaignResponse.json();
       latestSalesOutreachDraftsData = await draftResponse.json();
       latestSalesSendDesignsData = await designResponse.json();
+      latestSalesLeadsData = await leadResponse.json();
       renderSalesWorkbench();
       renderWorkbenchNextAction();
       renderApprovalConsole();

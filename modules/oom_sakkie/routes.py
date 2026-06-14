@@ -82,10 +82,13 @@ from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.sales_campaign_store import (
     list_sales_campaigns,
+    list_sales_leads,
     list_sales_outreach_drafts,
     list_sales_send_design_requests,
     record_sales_campaign,
     record_sales_campaign_event,
+    record_sales_lead,
+    record_sales_lead_event,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
 )
@@ -239,6 +242,35 @@ def oom_sakkie_sales_send_design_requests():
     if denied:
         return denied
     result, status_code = list_sales_send_design_requests(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads", methods=["GET"])
+def oom_sakkie_sales_leads():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_sales_leads(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads", methods=["POST"])
+def oom_sakkie_sales_lead_create():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sales_lead(payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/events", methods=["POST"])
+def oom_sakkie_sales_lead_events(lead_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sales_lead_event(lead_id, payload)
     return jsonify(result), status_code
 
 

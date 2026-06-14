@@ -221,6 +221,38 @@ Self-selling system direction 2026-06-05:
 - Future Telegram summaries and Meta-compliant Facebook/Instagram post drafts should be generated from the same read-only allocation signals.
 - Do not auto-post or auto-message yet. First build read-only outlet priorities and recommended actions, then review compliance wording and approval flow before any automation.
 
+Sales outreach and lead tracking direction 2026-06-14:
+
+- Oom Sakkie/Jarvis remains the owner command center and approval channel.
+- Ledger owns business/sales strategy advice.
+- Beacon should eventually draft public/social demand-generation content.
+- Sam remains the customer conversation/order-intake agent in Chatwoot/WhatsApp.
+- The backend is the source of truth for campaigns, leads, approval state, orders, deposits, stock/allocation, and traceability.
+- Telegram must not become the customer sales tunnel. It is for owner alerts, summaries, and approval prompts.
+- The preferred flow is inbound demand generation: Ledger identifies opportunity, Beacon drafts public/status/channel copy, owner approves, customers reply inbound, Sam handles the conversation, and the backend tracks the lead/order state.
+- The first customer-facing build must be tracking only: no direct sending, no Chatwoot/n8n/WhatsApp calls, no public posting, no quote/order creation, no stock reservation, and no allocation writes.
+
+The Sales Outreach / Lead Tracking rail should track:
+
+| Field | Purpose |
+| --- | --- |
+| Campaign source | Identifies whether the lead came from ready-meat preorder, social post, direct known buyer, inbound Chatwoot, WhatsApp status, owner note, or another source. |
+| Lead status | Tracks practical sales state such as interested, asked price, needs callback, deposit pending, not interested, or order ready for approval. |
+| 24-hour WhatsApp state | Shows whether Sam may reply inside the customer-service window, whether the window is closed, whether a template is required, or whether the owner must handle it manually. |
+| Last inbound time | Supports WhatsApp window decisions. |
+| Opt-in state | Prevents uncontrolled outreach assumptions. |
+| Interest details | Captures half/full carcass, cut set, location, timing, payment/deposit preference, and customer notes as structured context. |
+| Linked order/preorder | Connects lead tracking to a future order/deposit workflow without using chat history as truth. |
+| Owner approval needs | Surfaces price approval, follow-up approval, deposit follow-up, or Sam handoff review. |
+
+Implementation decision 2026-06-14:
+
+- Add append-only `oom_sakkie_sales_leads` and `oom_sakkie_sales_lead_events` tables.
+- Add review-gated backend routes for listing/recording leads and lead events.
+- Add an Oom Sakkie read-only `sales_lead_tracking_status` tool and include it in the daily command brief.
+- Keep all authority flags false: no customer send, no Chatwoot/n8n call, no quote, no order, no stock change, no dispatch, no runtime/prompt change, no public output, and no farm-data write.
+- This rail is a tracking and approval queue only. Future Sam/Chatwoot consumers must be reviewed separately before they can create or update these records from live conversations.
+
 ## Backend-Owned Actions Later
 
 These actions should not be built as direct table edits in the UI.

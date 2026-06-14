@@ -531,6 +531,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertIn("sales_campaign_status", ledger["allowed_tools"])
         self.assertIn("sales_outreach_draft_queue", ledger["allowed_tools"])
         self.assertIn("sales_send_design_status", ledger["allowed_tools"])
+        self.assertIn("sales_lead_tracking_status", ledger["allowed_tools"])
 
     @patch("modules.oom_sakkie.routes.list_sales_campaigns")
     def test_sales_campaigns_route_lists_owner_review_queue(self, mock_list):
@@ -731,6 +732,111 @@ class OomSakkieRouteTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 405)
+
+    @patch("modules.oom_sakkie.routes.record_sales_lead")
+    def test_sales_lead_route_records_tracking_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "sales_lead_tracking_queue",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "records_sales_lead": True,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-leads",
+            json={
+                "lead_label": "Buyer A half carcass",
+                "campaign_source": "ready_meat_preorder",
+                "whatsapp_window_state": "template_required",
+            },
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["lead_id"], "OSK-SALES-LEAD-TEST")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.list_sales_leads")
+    def test_sales_lead_route_lists_tracking_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "sales_lead_tracking_queue",
+            "sales_leads": [],
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-leads?limit=5")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "sales_lead_tracking_queue")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_list.assert_called_once_with(limit="5")
+
+    @patch("modules.oom_sakkie.routes.record_sales_lead_event")
+    def test_sales_lead_event_route_records_append_only_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-SALES-LEAD-EVENT-TEST",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "event_type": "deposit_followup_needed",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-leads/OSK-SALES-LEAD-TEST/events",
+            json={"event_type": "deposit_followup_needed", "notes": "Needs deposit confirmation."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["event_type"], "deposit_followup_needed")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.list_sales_leads")
+    def test_sales_lead_routes_are_review_gated(self, mock_list):
+        response = self.client.get(
+            "/api/oom-sakkie/sales-leads",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+        mock_list.assert_not_called()
 
     def test_agents_route_denies_non_local_review_access(self):
         response = self.client.get(
