@@ -280,7 +280,7 @@
           <div class="oom-section-heading">
             <div>
               <p class="oom-label">Agent Dry-Run Requests</p>
-              <p class="oom-empty">Append-only request queue and handoff packets. Agents do not run here.</p>
+              <p class="oom-empty">Append-only request queue and handoff packets. Closed/test backlog is evidence only. Agents do not run here.</p>
             </div>
             <button type="button" id="oom_refresh_agent_dry_run_requests">Refresh</button>
           </div>
@@ -307,7 +307,7 @@
           <div class="oom-section-heading">
             <div>
               <p class="oom-label">Agent Result Review</p>
-              <p class="oom-empty">Owner review for recorded dry-run results. No specialist runs here.</p>
+              <p class="oom-empty">Owner review for active dry-run results. No specialist runs here. Closed backlog stays visible as audit evidence only.</p>
             </div>
             <button type="button" id="oom_refresh_agent_result_reviews">Refresh</button>
           </div>
@@ -319,7 +319,7 @@
           <div class="oom-section-heading">
             <div>
               <p class="oom-label">Agent Learning Ledger</p>
-              <p class="oom-empty">Accepted dry-run evidence only. No agent behavior changes here.</p>
+              <p class="oom-empty">Accepted dry-run evidence only. This does not retrain agents or change behavior by itself.</p>
             </div>
             <button type="button" id="oom_refresh_agent_learning_ledger">Refresh</button>
           </div>
@@ -331,7 +331,7 @@
           <div class="oom-section-heading">
             <div>
               <p class="oom-label">Learning Influence Proposals</p>
-              <p class="oom-empty">Proposal-only learning updates from accepted evidence. Nothing applies here.</p>
+              <p class="oom-empty">Proposal-only future-planning notes from accepted evidence. Nothing self-applies here.</p>
             </div>
             <div class="oom-section-actions">
               <button type="button" id="oom_prepare_learning_influence">Prepare Proposals</button>

@@ -1678,6 +1678,7 @@
     guard.className = "oom-advisor-guard";
     guard.textContent = `${data.mode || "dry_run_result_review_queue"} | runs specialist ${data.runs_specialist ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "yes" : "no"} | writes ${data.writes ? "yes" : "no"} | runtime change ${data.applies_runtime_change ? "yes" : "no"}`;
     agentResultReviews.appendChild(guard);
+    appendLearningBacklogNotice(agentResultReviews);
 
     const items = Array.isArray(data.dry_run_results) ? data.dry_run_results : [];
     const pendingItems = items.filter((item) => agentResultStage(item) === "pending");
@@ -1690,8 +1691,8 @@
       empty.textContent = "No Sentinel dry-run results recorded yet.";
       list.appendChild(empty);
     } else {
-      appendQueueSection(list, "Needs Owner Review", pendingItems, "No agent results need owner review right now.", renderAgentResultRow);
-      appendQueueSection(list, "Reviewed / Closed", closedItems.slice(0, 5), "No reviewed agent results yet.", renderAgentResultRow);
+      appendQueueSection(list, "Active Owner Review", pendingItems, "No agent results need owner review right now.", renderAgentResultRow);
+      appendQueueSection(list, "Closed Audit Backlog", closedItems.slice(0, 5), "No closed agent-result audit records yet.", renderAgentResultRow);
     }
     agentResultReviews.appendChild(list);
   }
@@ -1712,6 +1713,7 @@
     guard.className = "oom-advisor-guard";
     guard.textContent = "accepted evidence only | runs specialist no | dispatch no | writes no | runtime change no";
     agentLearningLedger.appendChild(guard);
+    appendLearningBacklogNotice(agentLearningLedger);
 
     const items = Array.isArray(data.dry_run_results) ? data.dry_run_results : [];
     const acceptedItems = items.filter((item) => {
@@ -1782,6 +1784,7 @@
     guard.className = "oom-advisor-guard";
     guard.textContent = `${data.mode || "learning_influence_proposal_queue"} | applies learning ${data.applies_learning_now ? "yes" : "no"} | changes prompt ${data.changes_prompt_now ? "yes" : "no"} | runtime change ${data.changes_runtime_now ? "yes" : "no"} | dispatch ${data.dispatch_enabled ? "on" : "off"} | writes ${data.writes ? "yes" : "no"}`;
     learningInfluenceProposals.appendChild(guard);
+    appendLearningBacklogNotice(learningInfluenceProposals);
 
     const items = Array.isArray(data.learning_influence_proposals) ? data.learning_influence_proposals : [];
     const pendingItems = items.filter((item) => learningInfluenceStage(item) === "pending");
@@ -1794,8 +1797,8 @@
       empty.textContent = "No learning influence proposals recorded yet. Prepare proposals only after evidence is accepted for learning.";
       list.appendChild(empty);
     } else {
-      appendQueueSection(list, "Needs Owner Review", pendingItems, "No learning influence proposals need review right now.", renderLearningInfluenceRow);
-      appendQueueSection(list, "Reviewed / Closed", closedItems.slice(0, 6), "No reviewed learning influence proposals yet.", renderLearningInfluenceRow);
+      appendQueueSection(list, "Active Owner Review", pendingItems, "No learning influence proposals need review right now.", renderLearningInfluenceRow);
+      appendQueueSection(list, "Closed Proposal Backlog", closedItems.slice(0, 6), "No closed learning proposal audit records yet.", renderLearningInfluenceRow);
     }
     learningInfluenceProposals.appendChild(list);
   }
@@ -1891,10 +1894,14 @@
     guard.className = "oom-policy-blocked";
     guard.textContent = `${data.mode || "read_only_dry_run_request_queue"} | dry-run ${data.dry_run_enabled ? "on" : "off"} | dispatch ${data.dispatch_enabled ? "yes" : "no"} | specialist LLM ${data.runs_specialist_llm ? "yes" : "no"} | writes ${data.writes ? "yes" : "no"}`;
     agentDryRunRequests.appendChild(guard);
+    appendLearningBacklogNotice(agentDryRunRequests);
 
     const items = Array.isArray(data.dry_run_requests) ? data.dry_run_requests : [];
-    const pending = items.filter((item) => agentDryRunRequestStage(item) === "pending");
-    const closed = items.filter((item) => agentDryRunRequestStage(item) !== "pending");
+    const resultRequestIds = latestAgentDryRunResultsData && Array.isArray(latestAgentDryRunResultsData.dry_run_results)
+      ? new Set(latestAgentDryRunResultsData.dry_run_results.map((item) => item.dry_run_request_id).filter(Boolean))
+      : new Set();
+    const pending = items.filter((item) => agentDryRunRequestStage(item, resultRequestIds) === "pending");
+    const closed = items.filter((item) => agentDryRunRequestStage(item, resultRequestIds) !== "pending");
     const list = document.createElement("div");
     list.className = "oom-advisor-queue";
     if (!items.length) {
@@ -1903,21 +1910,23 @@
       empty.textContent = "No Sentinel dry-run requests recorded yet.";
       list.appendChild(empty);
     } else {
-      appendQueueSection(list, "Needs Handoff / Future Result", pending, "No agent dry-run requests need handoff right now.", renderAgentDryRunRequestRow);
-      appendQueueSection(list, "Closed / Not Active", closed.slice(0, 5), "No closed agent dry-run requests yet.", renderAgentDryRunRequestRow);
+      appendQueueSection(list, "Active Handoff Needed", pending, "No agent dry-run requests need handoff right now.", (item) => renderAgentDryRunRequestRow(item, resultRequestIds));
+      appendQueueSection(list, "Closed Request Backlog", closed.slice(0, 5), "No closed dry-run request audit records yet.", (item) => renderAgentDryRunRequestRow(item, resultRequestIds));
     }
     agentDryRunRequests.appendChild(list);
   }
 
-  function agentDryRunRequestStage(item) {
+  function agentDryRunRequestStage(item, resultRequestIds = null) {
     const latestEvent = (item && item.latest_event) || {};
+    if (resultRequestIds && resultRequestIds.has(item.dry_run_request_id)) return "closed";
     if (latestEvent.event_type === "cancelled") return "closed";
     return "pending";
   }
 
-  function renderAgentDryRunRequestRow(item) {
+  function renderAgentDryRunRequestRow(item, resultRequestIds = null) {
     const latestEvent = item.latest_event || {};
-    const stage = agentDryRunRequestStage(item);
+    const hasResult = Boolean(resultRequestIds && resultRequestIds.has(item.dry_run_request_id));
+    const stage = agentDryRunRequestStage(item, resultRequestIds);
     const row = document.createElement("article");
     row.className = "oom-work-item";
     const badge = document.createElement("span");
@@ -1929,10 +1938,13 @@
     const handoffButton = document.createElement("button");
     const useForResultButton = document.createElement("button");
     badge.className = "oom-work-badge";
-    badge.textContent = stage === "pending" ? "Needs handoff" : "Closed";
+    badge.textContent = stage === "pending" ? "Needs handoff" : (hasResult ? "Has result" : "Closed");
     title.textContent = item.dry_run_request_id || "Sentinel dry-run request";
     meta.textContent = `${item.specialist_slug || "sentinel"} | ${item.created_at || ""}`;
     purpose.textContent = item.purpose || item.owner_text || "Read-only dry-run request.";
+    if (hasResult) {
+      purpose.textContent = `${purpose.textContent} Result already exists; this request is closed audit backlog.`;
+    }
     guard.className = "oom-policy-blocked";
     guard.textContent = `dispatch ${item.dispatch_enabled ? "on" : "off"} | specialist LLM ${item.runs_specialist_llm ? "on" : "off"} | tools ${item.runs_specialist_tools ? "on" : "off"} | writes ${item.writes ? "on" : "off"}`;
     actions.className = "oom-work-actions";
@@ -2176,6 +2188,13 @@
       items.forEach((item) => section.appendChild(renderItem(item)));
     }
     parent.appendChild(section);
+  }
+
+  function appendLearningBacklogNotice(parent) {
+    const notice = document.createElement("p");
+    notice.className = "oom-advisor-guard";
+    notice.textContent = "Backlog records are append-only audit evidence. Closed dry-runs, accepted evidence, and reviewed proposals are not active self-learning and do not change prompts, routes, runtime, tools, farm data, or Telegram.";
+    parent.appendChild(notice);
   }
 
   function renderWorkbenchNextAction() {

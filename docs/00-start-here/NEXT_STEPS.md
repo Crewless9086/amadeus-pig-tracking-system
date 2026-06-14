@@ -11996,6 +11996,42 @@ Next gate:
 2. When Claude is available again, ask for a compact review of 10.9DJ-DK.
 3. After review/payment is sorted, import `2.0B` inactive and run its manual execution test before any GateKeeper wiring.
 
+### 10.9DL Oom Sakkie Learning Backlog Clarity - Local Ready
+
+Purpose:
+
+- Make the self-learning and dry-run Workbench sections clearer for daily owner use.
+- Prevent old smoke/test/backlog records from looking like active autonomous learning.
+
+What changed:
+
+- Added a shared Workbench notice: backlog records are append-only audit evidence only.
+- Agent dry-run requests with a recorded result are now treated as closed request backlog in the Workbench, matching the Owner Cockpit's active-decision logic.
+- Renamed learning/dry-run queue sections from generic `Reviewed / Closed` wording to active-owner-review and closed-backlog wording.
+- Updated the kiosk copy to state that accepted evidence does not retrain agents or change behavior by itself.
+- Added frontend contract assertions for the new wording and closed-request classification.
+
+Safety envelope:
+
+- UI clarity only.
+- No backend route.
+- No migration or store change.
+- No delete/archive mutation.
+- No learning application, prompt/route/runtime change, tool permission change, farm-data write, Telegram send/cutover, dispatch, deploy, physical control, or financial action.
+
+Verification:
+
+- `node --check static/js/oomSakkie.js` -> OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
+- `.\venv\Scripts\python.exe -m unittest tests.test_frontend_route_contracts` -> 29 OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 358 OK.
+
+Next gate:
+
+1. Owner can use the Workbench without cancelling closed/test backlog just to clean the screen.
+2. Continue toward private Telegram relay import/manual sub-workflow testing only after the existing private-smoke/preflight checks remain green.
+3. Ask Claude later for one compact review of 10.9DJ-DL when payment/API access is restored.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
