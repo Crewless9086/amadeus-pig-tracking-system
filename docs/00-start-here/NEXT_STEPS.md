@@ -12402,6 +12402,49 @@ Next live steps after deploy:
    - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_direct_smoke.py`
 5. Send one Telegram message directly to the Oom Sakkie bot and confirm exactly one owner-only reply.
 
+### 10.9DV Oom Sakkie Direct Telegram Parity, Menu, And Daily Brief - Local Ready
+
+Goal:
+- Make the backend-owned Telegram bot usable day to day, not just technically connected.
+- Preserve the current safety envelope while adding owner-friendly commands and a default-off daily brief sender.
+
+What is built:
+- Review-gated parity report:
+  - `GET /api/oom-sakkie/channels/telegram/direct-parity`
+  - lists carried-over backend capabilities, what still belongs to n8n/Sam, and what is intentionally not built yet.
+- Direct Telegram shortcut commands:
+  - `/start` / `/help` / `/menu`
+  - `/brief`
+  - `/attention`
+  - `/gates`
+  - `/agents`
+  - `/approvals`
+  - `/progress`
+  - `/learning`
+- Formatted Telegram replies:
+  - title,
+  - answer,
+  - check/tool used,
+  - safety footer.
+- Default-off proactive daily brief:
+  - `scripts/oom_sakkie_telegram_daily_brief.py`
+  - requires `OOM_SAKKIE_TELEGRAM_PROACTIVE_ENABLED=1`
+  - requires `OOM_SAKKIE_TELEGRAM_DAILY_BRIEF_ENABLED=1`
+  - sends only to `OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS`
+
+Safety boundary:
+- No Flask background loop or hidden scheduler was added.
+- Proactive sending only happens when the script is explicitly run by an operator or future scheduler.
+- All Telegram paths use `telegram_read_only`; no outbound LLM, farm/control write, dispatch, prompt/runtime change, physical control, customer/public broadcast expansion, or financial action.
+
+Next live steps:
+1. Deploy the latest commit.
+2. Send `/help`, `/brief`, `/attention`, and `/gates` to the Oom Sakkie bot.
+3. Keep `OOM_SAKKIE_TELEGRAM_PROACTIVE_ENABLED` and `OOM_SAKKIE_TELEGRAM_DAILY_BRIEF_ENABLED` off until the owner wants the daily brief to actually send.
+4. When ready, turn those two env flags on and run one supervised daily brief:
+   - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_daily_brief.py`
+5. Only after one supervised success, decide whether to add a Render Cron or another scheduler for that script.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

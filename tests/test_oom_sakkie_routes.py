@@ -137,6 +137,37 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertEqual(denied_data["status"], "review_access_denied")
 
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_direct_parity_route_is_review_gated(self):
+        response = self.client.get("/api/oom-sakkie/channels/telegram/direct-parity")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertTrue(data["backend_owns_oom_sakkie_chat"])
+        self.assertFalse(data["n8n_required_for_oom_sakkie_chat"])
+        self.assertIn("farm attention", data["carried_over_backend_capabilities"])
+        self.assertIn("Telegram voice-note transcription", data["not_carried_over_yet"])
+        self.assertFalse(data["can_trigger_outbound_llm"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["dispatch_enabled"])
+
+        denied = self.client.get(
+            "/api/oom-sakkie/channels/telegram/direct-parity",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        denied_data = denied.get_json()
+
+        self.assertEqual(denied.status_code, 403)
+        self.assertFalse(denied_data["success"])
+        self.assertEqual(denied_data["status"], "review_access_denied")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_telegram_gateway_route_is_disabled_by_default(self):
         response = self.client.post(
@@ -405,11 +436,48 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["dispatch_enabled"])
         self.assertFalse(data["can_trigger_outbound_llm"])
         self.assertEqual(data["answer"], "Read-only answer.")
+        self.assertIn("Oom Sakkie", data["telegram_text"])
+        self.assertIn("Read-only answer.", data["telegram_text"])
         mock_handle.assert_called_once_with({
             "text": "what needs attention today",
             "channel": "telegram_read_only",
             "session_id": "telegram-67890",
         })
+        mock_send.assert_called_once()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_route_help_menu_is_local_and_formatted(self, mock_handle, mock_send):
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={
+                "message": {
+                    "text": "/start",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertIn("/brief", data["telegram_text"])
+        self.assertIn("/attention", data["telegram_text"])
+        self.assertFalse(data["can_trigger_outbound_llm"])
+        self.assertFalse(data["writes"])
+        mock_handle.assert_not_called()
         mock_send.assert_called_once()
 
     def test_review_packet_denies_non_local_review_access(self):
