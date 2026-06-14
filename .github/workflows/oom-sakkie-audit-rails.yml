@@ -61,6 +61,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202606100001_create_oom_sakkie_learning_influence_proposals.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606110001_create_oom_sakkie_learning_influence_consumption_audit_rail.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606140002_create_oom_sakkie_sales_leads.sql
 
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
         run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts

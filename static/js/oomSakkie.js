@@ -2531,6 +2531,9 @@
     const salesSendDesignItems = latestSalesSendDesignsData && Array.isArray(latestSalesSendDesignsData.send_design_requests)
       ? latestSalesSendDesignsData.send_design_requests
       : [];
+    const salesLeadItems = latestSalesLeadsData && Array.isArray(latestSalesLeadsData.sales_leads)
+      ? latestSalesLeadsData.sales_leads
+      : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
     const items = [];
