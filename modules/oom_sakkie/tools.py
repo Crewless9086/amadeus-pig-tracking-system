@@ -687,7 +687,11 @@ def _daily_command_next_actions(sections, failed):
 
 
 def _daily_optional_section_unavailable(name, section):
-    return name == "sales_campaigns" and section.get("status") in {"not_configured", "dependency_missing"}
+    return name == "sales_campaigns" and section.get("status") in {
+        "not_configured",
+        "dependency_missing",
+        "sales_campaign_read_failed",
+    }
 
 
 def _business_marketable_stock(sales_totals):

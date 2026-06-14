@@ -80,6 +80,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("202606090003_allow_single_shot_sentinel_dry_run_results.sql", workflow)
         self.assertIn("202606100001_create_oom_sakkie_learning_influence_proposals.sql", workflow)
         self.assertIn("202606110001_create_oom_sakkie_learning_influence_consumption_audit_rail.sql", workflow)
+        self.assertIn("202606140001_create_oom_sakkie_sales_campaigns.sql", workflow)
         self.assertIn("python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts", workflow)
         self.assertIn("node --check static/js/oomSakkie.js", workflow)
         self.assertIn("node tests/oom_sakkie_browser_behavior_smoke.js", workflow)
