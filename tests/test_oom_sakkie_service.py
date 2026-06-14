@@ -1815,8 +1815,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         workflows = {item["workflow"]: item for item in packet["current_review"]["ci_evidence"]}
         self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["status"], "success")
         self.assertEqual(workflows["Oom Sakkie Audit Rails"]["status"], "success")
-        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["recorded_commit"], "ccd9f44")
-        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27494604446")
+        self.assertEqual(workflows["Oom Sakkie Browser Behavior"]["recorded_commit"], "52b046e")
+        self.assertEqual(workflows["Oom Sakkie Audit Rails"]["run_id"], "27506005854")
         self.assertFalse(packet["current_review"]["ci_evidence_policy"]["runtime_calls_github"])
         self.assertFalse(packet["current_review"]["ci_evidence_policy"]["auto_trusts_ci"])
         self.assertIn("may trail newer commits", packet["current_review"]["ci_evidence_policy"]["note"])

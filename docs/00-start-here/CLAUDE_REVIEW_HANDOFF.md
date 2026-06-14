@@ -914,6 +914,7 @@ Known verification from Codex:
 - 10.9EE live DB migration: `.\venv\Scripts\python.exe scripts\apply_supabase_migration.py supabase\migrations\202606140001_create_oom_sakkie_sales_campaigns.sql` -> Applied migration; live send-design smoke created `OSK-SALES-SEND-DESIGN-BCD9E5D9C2DD80C9` from `OSK-SALES-DRAFT-605CF5027CC5BC44`, `created_count=1`, all authority flags false.
 - 10.9EE JavaScript syntax: `node --check static/js/oomSakkie.js` -> OK.
 - 10.9EE browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed, including owner-clicked sales campaign approval and send-design POST checks with no startup POSTs.
+- 10.9EE CI evidence after push `52b046e`: Oom Sakkie Audit Rails run `27506005854` -> success; Oom Sakkie Browser Behavior run `27506005848` -> success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
