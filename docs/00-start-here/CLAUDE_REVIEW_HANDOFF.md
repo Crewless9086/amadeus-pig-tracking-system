@@ -838,6 +838,7 @@ Known verification from Codex:
 - 10.9DP Render gateway smoke: `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_gateway_smoke.py` with `OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_URL=https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message` -> HTTP 503 `telegram_gateway_disabled`, no send/LLM/write/dispatch authority; this proves the Render URL/path is correct and the remaining blocker is Render env enablement.
 - 10.9DP frontend route contracts: `.\venv\Scripts\python.exe -m unittest tests.test_frontend_route_contracts` -> 29 OK.
 - 10.9DP workflow contracts: `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+- 10.9DP GitHub Actions after commit `f8c07a0`: `Oom Sakkie Browser Behavior` run `27485561120` success; `Oom Sakkie Audit Rails` run `27485561128` success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
