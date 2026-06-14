@@ -12467,6 +12467,28 @@ Next live steps:
 2. Re-test `/brief`, `/gates`, and `/agents` in Telegram.
 3. If the compact layout reads well, next build should add supervised proactive daily brief live proof before any Render Cron scheduling.
 
+### 10.9DX Agent/Sam Direction Log - Local Ready
+
+Goal:
+- Keep the path to a live Jarvis clear without accidentally moving customer-facing Sam or farm-control authority too early.
+
+Decision:
+- Oom Sakkie/Jarvis is the owner orchestrator and backend command center.
+- Specialist agents should first come alive as backend-owned draft/review-only lanes with narrow tool contracts, source provenance, and audit records.
+- Sam should not immediately replace or take over the Chatwoot/n8n sales workflows. Chatwoot/WhatsApp plus the existing n8n/order-steward path remain the customer-facing transport and proven order plumbing for now.
+- A future backend Sales/Sam agent should start by reading backend-confirmed sales/order context and producing owner-reviewable draft replies, offer briefs, and quote/order recommendations.
+- Only after separate review should that sales agent be allowed to send customer messages, create/update orders, send documents, or alter Chatwoot state.
+- Irrigation follows the same ladder: read-only status and recommendations first, then owner-approved action requests, then physical-control authority only after a dedicated safety review.
+
+Practical next build direction:
+1. Prove one supervised proactive daily brief from backend direct Telegram.
+2. Build the first useful owner-only LLM-backed agent lane as draft/review-only, preferably Sales/Ledger offer drafting for ready meat stock or Rootline irrigation recommendations.
+3. Add approval/audit rails for any future customer send or irrigation action before enabling those actions.
+
+Safety boundary:
+- No new runtime authority in this note.
+- No live specialist dispatch, customer-facing Sam send, order write, quote/document send, irrigation start/stop, prompt/runtime change, public output, or financial action is authorized here.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
