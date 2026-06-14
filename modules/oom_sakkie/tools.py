@@ -31,7 +31,11 @@ from modules.oom_sakkie.dispatch_decision_store import list_dispatch_requests
 from modules.oom_sakkie.learning_influence_store import list_learning_influence_proposals
 from modules.oom_sakkie.ledger_agent import ledger_agent_policy, run_ledger_sales_agent
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
-from modules.oom_sakkie.sales_campaign_store import list_sales_campaigns, record_sales_campaign
+from modules.oom_sakkie.sales_campaign_store import (
+    list_sales_campaigns,
+    list_sales_outreach_drafts,
+    record_sales_campaign,
+)
 from modules.reports.report_service import get_farm_attention_summary
 from modules.pig_weights.pig_weights_controller import (
     get_dashboard_data,
@@ -569,11 +573,51 @@ def sales_campaign_status_handler(_args):
     }
 
 
+def sales_outreach_draft_queue_handler(_args):
+    result, status_code = list_sales_outreach_drafts(limit=12)
+    drafts = result.get("outreach_drafts", []) if isinstance(result, dict) else []
+    if status_code == 200:
+        summary = (
+            f"Customer outreach draft queue: {len(drafts)} owner-review draft(s) waiting. "
+            "No customer message was sent."
+        )
+    else:
+        summary = "Customer outreach draft queue is unavailable. No customer message was sent."
+    return {
+        "success": status_code == 200,
+        "status": result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+        "summary": summary,
+        "links": [{"label": "Outreach Drafts", "href": "/api/oom-sakkie/sales-outreach-drafts"}],
+        "stale_warnings": [] if status_code == 200 else [f"Outreach draft store unavailable (status {status_code})."],
+        "safety_notes": [
+            "Customer outreach draft queue is owner-review only. It does not send customers, call Chatwoot/n8n/WhatsApp, create quotes or orders, reserve stock, change stock, dispatch agents, change runtime, or perform physical actions."
+        ],
+        "llm_context": {
+            "kind": "sales_outreach_draft_queue",
+            "counts": {
+                "total": len(drafts),
+                "waiting_for_owner_review": len(drafts),
+            },
+            "drafts": drafts[:5],
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+        },
+        "raw": result if isinstance(result, dict) else {},
+    }
+
+
 def jarvis_daily_command_brief_handler(_args):
     sections = {
         "farm": farm_operating_brief_handler({}),
         "business": business_growth_brief_handler({}),
         "sales_campaigns": sales_campaign_status_handler({}),
+        "outreach_drafts": sales_outreach_draft_queue_handler({}),
         "command_center": agent_command_center_handler({}),
     }
     stale_warnings = []
@@ -666,15 +710,20 @@ def _daily_command_next_actions(sections, failed):
     if pending_work:
         actions.append(f"Review {pending_work} pending approval/design item(s) in the Oom Sakkie workbench.")
 
+    business_context = (sections.get("business") or {}).get("llm_context") or {}
+    owner_question = business_context.get("owner_question")
+    if owner_question:
+        actions.append(str(owner_question))
+
     sales_campaigns = ((sections.get("sales_campaigns") or {}).get("llm_context") or {})
     waiting_campaigns = int((sales_campaigns.get("counts") or {}).get("waiting_for_owner_review") or 0)
     if waiting_campaigns:
         actions.append(f"Review {waiting_campaigns} sales campaign(s) waiting for owner review.")
 
-    business_context = (sections.get("business") or {}).get("llm_context") or {}
-    owner_question = business_context.get("owner_question")
-    if owner_question:
-        actions.append(str(owner_question))
+    outreach_drafts = ((sections.get("outreach_drafts") or {}).get("llm_context") or {})
+    waiting_drafts = int((outreach_drafts.get("counts") or {}).get("waiting_for_owner_review") or 0)
+    if waiting_drafts:
+        actions.append(f"Review {waiting_drafts} customer outreach draft(s) waiting for owner approval.")
 
     farm_context = (sections.get("farm") or {}).get("llm_context") or {}
     farm_failed = failed or farm_context.get("failed_sections") or []
@@ -687,10 +736,11 @@ def _daily_command_next_actions(sections, failed):
 
 
 def _daily_optional_section_unavailable(name, section):
-    return name == "sales_campaigns" and section.get("status") in {
+    return name in {"sales_campaigns", "outreach_drafts"} and section.get("status") in {
         "not_configured",
         "dependency_missing",
         "sales_campaign_read_failed",
+        "sales_outreach_draft_read_failed",
     }
 
 
@@ -2797,6 +2847,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=sales_campaign_status_handler,
         description="Read-only owner-review sales campaign queue. Never sends customers, creates orders, reserves stock, or changes stock.",
+    ),
+    "sales_outreach_draft_queue": OomSakkieTool(
+        name="sales_outreach_draft_queue",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=sales_outreach_draft_queue_handler,
+        description="Read-only owner-review customer outreach draft queue. Never sends customers, creates orders, reserves stock, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",

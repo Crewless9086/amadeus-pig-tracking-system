@@ -152,8 +152,11 @@ from modules.oom_sakkie.patch_proposal_store import (
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.sales_campaign_store import (
+    _sales_outreach_draft_params,
     _sales_campaign_params,
+    approve_first_waiting_sales_campaign,
     record_sales_campaign_event,
+    record_sales_outreach_draft_from_campaign,
 )
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -236,6 +239,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sales_customer_draft",
                 "ledger_sales_agent",
                 "sales_campaign_status",
+                "sales_outreach_draft_queue",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -280,6 +284,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         campaign_status = next(item for item in catalog if item["name"] == "sales_campaign_status")
         self.assertEqual(campaign_status["risk_label"], "READ_ONLY")
         self.assertFalse(campaign_status["requires_confirmation"])
+        draft_queue = next(item for item in catalog if item["name"] == "sales_outreach_draft_queue")
+        self.assertEqual(draft_queue["risk_label"], "READ_ONLY")
+        self.assertFalse(draft_queue["requires_confirmation"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
@@ -1161,6 +1168,100 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.approve_first_waiting_sales_campaign")
+    def test_telegram_direct_approve_campaign_records_owner_review_state_only(self, mock_approve, mock_send):
+        mock_approve.return_value = ({
+            "success": True,
+            "status": "sales_campaign_approved_and_draft_queued",
+            "campaign_id": "OSK-SALES-CAMPAIGN-TEST",
+            "campaign_title": "Ready meat preorder interest check",
+            "draft": {
+                "success": True,
+                "outreach_drafts": [{
+                    "draft_id": "OSK-SALES-DRAFT-TEST",
+                    "audience_label": "known meat buyers",
+                    "draft_text": "Hi [Name], checking interest before processing.",
+                }],
+            },
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "message": {
+                    "text": "/approve_campaign",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertIn("Sales Campaign Owner Action", result["telegram_text"])
+        self.assertIn("Draft queued: yes", result["telegram_text"])
+        self.assertIn("No customer message", result["telegram_text"])
+        mock_approve.assert_called_once_with({
+            "recorded_by": "telegram_owner",
+            "notes": "Approved from owner direct Telegram command.",
+        })
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_drafts_command_routes_to_outreach_draft_queue(self, mock_handle, mock_send):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Draft queue answer.",
+            "tool_used": "sales_outreach_draft_queue",
+            "risk_level": 0,
+            "safety_notes": ["No customer message was sent."],
+            "tool_context": {
+                "counts": {"waiting_for_owner_review": 1},
+                "drafts": [{"draft_id": "OSK-SALES-DRAFT-TEST", "audience_label": "known meat buyers"}],
+            },
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "message": {
+                    "text": "/drafts",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        mock_handle.assert_called_once_with({
+            "text": "customer outreach drafts",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+        })
+        self.assertIn("Customer Outreach Draft Queue", result["telegram_text"])
+        self.assertIn("known meat buyers", result["telegram_text"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
@@ -1264,6 +1365,16 @@ class OomSakkieServiceTests(unittest.TestCase):
                             "owner_question": "Prepare a draft offer brief?",
                         },
                     },
+                    "sales_campaigns": {
+                        "llm_context": {
+                            "counts": {"waiting_for_owner_review": 1, "approved_for_customer_outreach": 0},
+                        },
+                    },
+                    "outreach_drafts": {
+                        "llm_context": {
+                            "counts": {"waiting_for_owner_review": 2},
+                        },
+                    },
                     "command_center": {
                         "llm_context": {
                             "command_center": {
@@ -1282,6 +1393,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("- Attention: No current farm attention items are showing.", text)
         self.assertIn("Business", text)
         self.assertIn("- Marketable stock: 21", text)
+        self.assertIn("Sales Work", text)
+        self.assertIn("- Campaigns waiting: 1", text)
+        self.assertIn("- Drafts waiting: 2", text)
         self.assertIn("Command Center", text)
         self.assertIn("- Jarvis progress: 54%", text)
         self.assertNotIn("Long paragraph should not be used.", text)
@@ -1684,8 +1798,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EC")
-        self.assertIn("10.9EC", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9ED")
+        self.assertIn("10.9ED", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -2520,14 +2634,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9EC", result["summary"])
+        self.assertIn("10.9ED", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EC")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9ED")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2605,7 +2719,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9EC", result["answer"])
+        self.assertIn("10.9ED", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -4837,19 +4951,61 @@ def literal_false_is_allowed():
         self.assertEqual(result["status"], "invalid_event_type")
         self.assertFalse(result["sends_customer_message"])
 
+    def test_sales_outreach_draft_params_force_owner_review_no_authority_flags(self):
+        params = _sales_outreach_draft_params({
+            "campaign_id": "OSK-SALES-CAMPAIGN-1",
+            "campaign_title": "Ready meat preorder interest check",
+            "opportunity": {"target": "Known buyers"},
+            "draft": {"message": "Hi [Name], checking interest before processing."},
+            "latest_event": {"event_type": "approved_for_customer_outreach"},
+        }, {})
+
+        self.assertTrue(params["draft_id"].startswith("OSK-SALES-DRAFT-"))
+        self.assertEqual(params["status"], "pending_owner_review")
+        self.assertEqual(params["mode"], "owner_review_customer_outreach_draft_only")
+        self.assertEqual(params["audience_label"], "Known buyers")
+        self.assertIn("Hi [Name]", params["draft_text"])
+        self.assertFalse(params["sends_customer_message"])
+        self.assertFalse(params["calls_chatwoot"])
+        self.assertFalse(params["calls_n8n"])
+        self.assertFalse(params["creates_order"])
+        self.assertFalse(params["changes_stock"])
+        self.assertFalse(params["writes_farm_data"])
+
+    def test_sales_outreach_draft_requires_database_before_campaign_lookup(self):
+        result, status_code = record_sales_outreach_draft_from_campaign("OSK-SALES-CAMPAIGN-1", {}, database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_approve_first_waiting_sales_campaign_returns_unavailable_without_database(self):
+        result, status_code = approve_first_waiting_sales_campaign(database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertFalse(result["sends_customer_message"])
+
     def test_sales_campaign_migration_is_append_only_and_no_authority(self):
         migration = Path("supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql").read_text(encoding="utf-8")
 
         self.assertIn("create table if not exists public.oom_sakkie_sales_campaigns", migration)
         self.assertIn("create table if not exists public.oom_sakkie_sales_campaign_events", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_sales_outreach_drafts", migration)
         self.assertIn("status = 'pending_owner_review'", migration)
         self.assertIn("mode = 'owner_review_sales_campaign_only'", migration)
+        self.assertIn("mode = 'owner_review_customer_outreach_draft_only'", migration)
         self.assertIn("event_type in ('review_note', 'approved_for_customer_outreach', 'rejected', 'deferred')", migration)
         self.assertIn("sends_customer_message = false", migration)
+        self.assertIn("calls_chatwoot = false", migration)
+        self.assertIn("calls_n8n = false", migration)
         self.assertIn("creates_order = false", migration)
         self.assertIn("changes_stock = false", migration)
         self.assertIn("before update on public.oom_sakkie_sales_campaigns", migration)
         self.assertIn("before delete on public.oom_sakkie_sales_campaign_events", migration)
+        self.assertIn("before delete on public.oom_sakkie_sales_outreach_drafts", migration)
 
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
@@ -5549,6 +5705,10 @@ def literal_false_is_allowed():
             "ledger help me sell this meat": "ledger_sales_agent",
             "use the sales agent": "ledger_sales_agent",
             "make this offer better": "ledger_sales_agent",
+            "campaign queue": "sales_campaign_status",
+            "what sales campaigns are waiting": "sales_campaign_status",
+            "customer drafts waiting": "sales_outreach_draft_queue",
+            "show outreach drafts": "sales_outreach_draft_queue",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",

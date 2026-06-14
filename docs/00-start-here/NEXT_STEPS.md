@@ -12642,6 +12642,53 @@ Next live steps:
 4. Run `/campaigns`; confirm the campaign appears as waiting for owner review.
 5. Next build: owner approval/customer outreach rail that can send to selected customers only after an explicit campaign approval.
 
+### 10.9ED Sales Campaign Approval + Outreach Draft Queue - Local Ready
+
+Goal:
+- Turn the campaign queue into a practical owner approval workflow without sending anything to customers yet.
+
+What is built:
+- Extended migration `supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql` now also creates:
+  - `oom_sakkie_sales_outreach_drafts`
+- New store functions:
+  - `list_sales_outreach_drafts`
+  - `record_sales_outreach_draft_from_campaign`
+  - `approve_first_waiting_sales_campaign`
+- New review-gated routes:
+  - `GET /api/oom-sakkie/sales-outreach-drafts`
+  - `POST /api/oom-sakkie/sales-campaigns/<campaign_id>/outreach-drafts`
+- New Oom Sakkie tool: `sales_outreach_draft_queue`.
+- New direct Telegram shortcuts:
+  - `/drafts`
+  - `/approve_campaign`
+- `/approve_campaign` approves the first waiting campaign by recording an append-only `approved_for_customer_outreach` event, then queues one internal customer outreach draft for owner review.
+- Daily command brief now has a Sales Work section covering campaigns waiting, campaigns approved, and drafts waiting.
+
+Safety boundary:
+- Owner-review records only.
+- No customer message is sent.
+- No Chatwoot, n8n, WhatsApp, public post, quote, order, reservation, stock change, farm-data write, dispatch, runtime/prompt change, physical control, or financial action is performed.
+- The generated outreach draft is still a draft queue item only; a future reviewed send/order rail is required before any customer can be contacted by the backend.
+
+Live DB:
+- Migration `202606140001_create_oom_sakkie_sales_campaigns.sql` was re-applied successfully after the outreach-draft table was added.
+- Live store check after migration:
+  - campaign list: `200 ok`, 1 campaign.
+  - outreach draft list: `200 ok`, 0 drafts before owner approval.
+
+Verification:
+- `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\sales_campaign_store.py modules\oom_sakkie\tools.py modules\oom_sakkie\routes.py modules\oom_sakkie\service.py modules\oom_sakkie\telegram_direct.py modules\oom_sakkie\agent_runtime.py` -> OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 410 OK.
+- `node --check static/js/oomSakkie.js` -> OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
+
+Next live steps:
+1. Deploy latest commit.
+2. In Telegram, run `/campaigns` and confirm 1 waiting campaign.
+3. Run `/approve_campaign` only if owner wants to approve the first waiting campaign for internal draft preparation.
+4. Run `/drafts`; confirm the outreach draft appears.
+5. Next build after this should be a reviewed customer-send/order-intake design rail, still default-off and owner-gated, before any Chatwoot/WhatsApp/customer message or order write is allowed.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

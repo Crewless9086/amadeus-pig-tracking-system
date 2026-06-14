@@ -529,6 +529,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertIn("business_growth_brief", ledger["allowed_tools"])
         self.assertIn("ledger_sales_agent", ledger["allowed_tools"])
         self.assertIn("sales_campaign_status", ledger["allowed_tools"])
+        self.assertIn("sales_outreach_draft_queue", ledger["allowed_tools"])
 
     @patch("modules.oom_sakkie.routes.list_sales_campaigns")
     def test_sales_campaigns_route_lists_owner_review_queue(self, mock_list):
@@ -601,6 +602,56 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["creates_order"])
         self.assertFalse(data["changes_stock"])
         mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.record_sales_outreach_draft_from_campaign")
+    def test_sales_campaign_outreach_draft_route_records_internal_draft_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "draft_id": "OSK-SALES-DRAFT-TEST",
+            "campaign_id": "OSK-SALES-CAMPAIGN-TEST",
+            "records_customer_outreach_draft": True,
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-campaigns/OSK-SALES-CAMPAIGN-TEST/outreach-drafts",
+            json={"audience_label": "known meat buyers"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["draft_id"], "OSK-SALES-DRAFT-TEST")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.list_sales_outreach_drafts")
+    def test_sales_outreach_drafts_route_lists_owner_review_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "owner_review_customer_outreach_draft_queue",
+            "outreach_drafts": [],
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-outreach-drafts?limit=5")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "owner_review_customer_outreach_draft_queue")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_list.assert_called_once_with(limit="5")
 
     def test_agents_route_denies_non_local_review_access(self):
         response = self.client.get(

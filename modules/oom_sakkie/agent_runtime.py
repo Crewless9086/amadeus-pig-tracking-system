@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9EC"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9ED"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -62,6 +62,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Owner Telegram /draft now produces customer-message copy for owner review only; it calls no Chatwoot/n8n/customer channel and creates no quote, order, reservation, stock change, or write.",
     "Ledger sales agent is the first env-gated owner-only specialist LLM advisory lane: only explicit /ledger authorization may call it, it may produce sales strategy and buyer-copy improvements for owner review, but cannot send customer messages, call Chatwoot/n8n, create quotes/orders/reservations, change stock, dispatch agents, or write farm/customer data.",
     "Sales campaign rail persists Ledger opportunities as append-only owner-review campaign records, but has no customer-send, quote/order, stock-change, dispatch, runtime, prompt, public-output, or physical-control consumer.",
+    "Sales campaign approval now records an append-only owner event and queues an internal customer outreach draft only; /approve_campaign and /drafts remain owner-only and do not send to customers, call Chatwoot/n8n, create quotes/orders, reserve/change stock, or dispatch agents.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
@@ -117,7 +118,7 @@ _AGENT_TOOLS = {
     "sentinel": ("system_work_status", "farm_operating_brief"),
     "forge": ("system_work_status",),
     "prism": ("system_work_status",),
-    "ledger": ("business_growth_brief", "sales_offer_brief", "sales_customer_draft", "ledger_sales_agent", "sales_campaign_status", "sales_dashboard", "meat_planning"),
+    "ledger": ("business_growth_brief", "sales_offer_brief", "sales_customer_draft", "ledger_sales_agent", "sales_campaign_status", "sales_outreach_draft_queue", "sales_dashboard", "meat_planning"),
     "atlas": ("farm_operating_brief", "dashboard_summary", "pig_allocation_readiness", "power_recent"),
     "rootline": ("weather_now", "weather_today", "weather_forecast", "irrigation_status"),
     "herdmaster": ("dashboard_summary", "pig_allocation_readiness", "meat_planning", "farm_attention_summary"),
@@ -151,6 +152,7 @@ _TOOL_PRIMARY_AGENT = {
     "sales_customer_draft": "ledger",
     "ledger_sales_agent": "ledger",
     "sales_campaign_status": "ledger",
+    "sales_outreach_draft_queue": "ledger",
     "farm_attention_summary": "quartermaster",
     "power_current": "atlas",
     "power_recent": "atlas",

@@ -6,6 +6,7 @@ from urllib import error as urllib_error
 
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.ledger_agent import ledger_agent_policy
+from modules.oom_sakkie.sales_campaign_store import approve_first_waiting_sales_campaign
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -169,6 +170,12 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
     command = _telegram_command_for_text(parsed["text"])
     if command["kind"] == "help":
         message_result, message_status = _help_message_result(parsed["text"]), 200
+    elif command["kind"] == "approve_campaign":
+        action_result, action_status = approve_first_waiting_sales_campaign({
+            "recorded_by": "telegram_owner",
+            "notes": "Approved from owner direct Telegram command.",
+        })
+        message_result, message_status = _campaign_action_message_result(action_result), action_status
     else:
         routed_text = command["text"] or parsed["text"]
         allow_specialist_llm = command.get("allow_specialist_llm") is True
@@ -303,6 +310,10 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
         return _format_ledger_sales_agent(context, title=title, footer=footer)
     if tool_used == "sales_campaign_status":
         return _format_sales_campaign_status(context, title=title, footer=footer)
+    if tool_used == "sales_campaign_owner_action":
+        return _format_sales_campaign_owner_action(context, title=title, footer=footer)
+    if tool_used == "sales_outreach_draft_queue":
+        return _format_sales_outreach_draft_queue(context, title=title, footer=footer)
     return ""
 
 
@@ -333,6 +344,16 @@ def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
             f"- Marketable stock: {counts.get('marketable_sales_stock', 0)}",
             f"- Meat ready now: {counts.get('meat_ready_now', 0)}",
             f"- Next: {_clip(owner_question, 180) if owner_question else _clip(str(business.get('next_action') or ''), 180)}",
+            "",
+        ])
+    campaign_counts = (((sections.get("sales_campaigns") or {}).get("llm_context") or {}).get("counts") or {})
+    draft_counts = (((sections.get("outreach_drafts") or {}).get("llm_context") or {}).get("counts") or {})
+    if campaign_counts or draft_counts:
+        lines.extend([
+            "Sales Work",
+            f"- Campaigns waiting: {campaign_counts.get('waiting_for_owner_review', 0)}",
+            f"- Campaigns approved for outreach: {campaign_counts.get('approved_for_customer_outreach', 0)}",
+            f"- Drafts waiting: {draft_counts.get('waiting_for_owner_review', 0)}",
             "",
         ])
     if command_center:
@@ -527,6 +548,52 @@ def _format_sales_campaign_status(context, title="Oom Sakkie", footer=None):
     return "\n".join(lines).strip()
 
 
+def _format_sales_campaign_owner_action(context, title="Oom Sakkie", footer=None):
+    draft = ((context or {}).get("draft") or {})
+    drafts = list(draft.get("outreach_drafts") or [])
+    lines = [
+        title,
+        "",
+        "Sales Campaign Owner Action",
+        f"- Status: {(context or {}).get('status', 'unknown')}",
+        f"- Campaign: {_clip((context or {}).get('campaign_title') or (context or {}).get('campaign_id') or 'none', 180)}",
+        f"- Draft queued: {'yes' if drafts else 'no'}",
+    ]
+    if drafts:
+        item = drafts[0]
+        lines.extend([
+            f"- Audience: {_clip(item.get('audience_label') or 'known meat buyers', 180)}",
+            "",
+            "Draft",
+            _clip(item.get("draft_text") or "", 1200),
+        ])
+    lines.extend([
+        "",
+        footer or "Owner approval recorded as an internal campaign event and draft queue item only. No customer message, quote, order, stock change, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
+def _format_sales_outreach_draft_queue(context, title="Oom Sakkie", footer=None):
+    counts = (context or {}).get("counts") or {}
+    drafts = list((context or {}).get("drafts") or [])[:4]
+    lines = [
+        title,
+        "",
+        "Customer Outreach Draft Queue",
+        f"- Waiting for owner review: {counts.get('waiting_for_owner_review', 0)}",
+    ]
+    if drafts:
+        lines.extend(["", "Drafts"])
+        for item in drafts:
+            lines.append(f"- {_clip(item.get('audience_label') or item.get('draft_id') or 'draft', 180)}")
+    lines.extend([
+        "",
+        footer or "Owner-review draft queue only. No customer message, quote, order, stock change, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
 def _summary(sections, name):
     return _clip(str(((sections.get(name) or {}).get("summary")) or "unavailable"), 180)
 
@@ -561,6 +628,11 @@ def _telegram_command_for_text(text):
         "ledger": ("ask", "ledger sales agent", True),
         "/campaigns": ("ask", "sales campaign status"),
         "campaigns": ("ask", "sales campaign status"),
+        "/drafts": ("ask", "customer outreach drafts"),
+        "drafts": ("ask", "customer outreach drafts"),
+        "/approve_campaign": ("approve_campaign", ""),
+        "/approve-campaign": ("approve_campaign", ""),
+        "approve campaign": ("approve_campaign", ""),
         "/progress": ("ask", "jarvis progress"),
         "progress": ("ask", "jarvis progress"),
         "/approvals": ("ask", "what needs my approval"),
@@ -572,6 +644,32 @@ def _telegram_command_for_text(text):
     kind, routed = item[0], item[1]
     allow_specialist_llm = len(item) > 2 and item[2] is True
     return {"kind": kind, "text": routed, "allow_specialist_llm": allow_specialist_llm}
+
+
+def _campaign_action_message_result(action_result):
+    success = action_result.get("success") is True
+    return {
+        "success": success,
+        "answer": "Sales campaign approved for internal draft preparation. No customer message was sent."
+        if success
+        else f"Sales campaign owner action did not complete: {action_result.get('status', 'unknown')}.",
+        "tool_used": "sales_campaign_owner_action",
+        "risk_level": 1,
+        "trace_id": "",
+        "safety_notes": [
+            "Owner action records append-only campaign/draft review state only. It does not send customer messages, create quotes or orders, reserve or change stock, dispatch agents, change runtime, or perform physical actions."
+        ],
+        "tool_context": action_result,
+        "pipeline": {
+            "route_source": "telegram_direct_command",
+            "answer_source": "local",
+            "llm_router_used": False,
+            "llm_answer_used": False,
+        },
+        "links": [],
+        "stale_warnings": [],
+        "needs_clarification": False,
+    }
 
 
 def _help_message_result(text):
@@ -586,6 +684,8 @@ def _help_message_result(text):
         "/draft - owner-review customer message draft\n"
         "/ledger - owner-only Ledger sales advisor\n"
         "/campaigns - sales campaign review queue\n"
+        "/drafts - customer outreach draft queue\n"
+        "/approve_campaign - approve first waiting campaign and queue an internal draft\n"
         "/approvals - owner approval queue\n"
         "/progress - Jarvis progress\n"
         "/learning - learning backlog status\n\n"

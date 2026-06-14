@@ -108,3 +108,59 @@ drop trigger if exists trg_oom_sakkie_sales_campaign_events_no_delete on public.
 create trigger trg_oom_sakkie_sales_campaign_events_no_delete
     before delete on public.oom_sakkie_sales_campaign_events
     for each row execute function public.oom_sakkie_sales_campaigns_block_update_delete();
+
+create table if not exists public.oom_sakkie_sales_outreach_drafts (
+    draft_id text primary key,
+    campaign_id text not null references public.oom_sakkie_sales_campaigns(campaign_id),
+    status text not null check (status = 'pending_owner_review'),
+    mode text not null check (mode = 'owner_review_customer_outreach_draft_only'),
+    audience_label text not null default 'known meat buyers',
+    draft_text text not null check (length(trim(draft_text)) > 0),
+    owner_checks_json jsonb not null default '[]'::jsonb,
+    source_campaign_snapshot_json jsonb not null default '{}'::jsonb,
+    created_by text not null default 'ledger',
+    sends_customer_message boolean not null default false,
+    calls_chatwoot boolean not null default false,
+    calls_n8n boolean not null default false,
+    creates_quote boolean not null default false,
+    creates_order boolean not null default false,
+    changes_stock boolean not null default false,
+    dispatch_enabled boolean not null default false,
+    changes_runtime_now boolean not null default false,
+    changes_prompt_now boolean not null default false,
+    physical_controls_enabled boolean not null default false,
+    customer_public_output_enabled boolean not null default false,
+    writes_farm_data boolean not null default false,
+    created_at timestamptz not null default now(),
+    constraint oom_sakkie_sales_outreach_drafts_one_per_campaign_audience unique (campaign_id, audience_label),
+    constraint oom_sakkie_sales_outreach_drafts_no_authority_check check (
+        sends_customer_message = false
+        and calls_chatwoot = false
+        and calls_n8n = false
+        and creates_quote = false
+        and creates_order = false
+        and changes_stock = false
+        and dispatch_enabled = false
+        and changes_runtime_now = false
+        and changes_prompt_now = false
+        and physical_controls_enabled = false
+        and customer_public_output_enabled = false
+        and writes_farm_data = false
+    )
+);
+
+create index if not exists idx_oom_sakkie_sales_outreach_drafts_created_at
+    on public.oom_sakkie_sales_outreach_drafts(created_at desc);
+
+create index if not exists idx_oom_sakkie_sales_outreach_drafts_campaign
+    on public.oom_sakkie_sales_outreach_drafts(campaign_id, created_at desc);
+
+drop trigger if exists trg_oom_sakkie_sales_outreach_drafts_no_update on public.oom_sakkie_sales_outreach_drafts;
+create trigger trg_oom_sakkie_sales_outreach_drafts_no_update
+    before update on public.oom_sakkie_sales_outreach_drafts
+    for each row execute function public.oom_sakkie_sales_campaigns_block_update_delete();
+
+drop trigger if exists trg_oom_sakkie_sales_outreach_drafts_no_delete on public.oom_sakkie_sales_outreach_drafts;
+create trigger trg_oom_sakkie_sales_outreach_drafts_no_delete
+    before delete on public.oom_sakkie_sales_outreach_drafts
+    for each row execute function public.oom_sakkie_sales_campaigns_block_update_delete();
