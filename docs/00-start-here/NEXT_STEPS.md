@@ -12123,6 +12123,56 @@ Next gate:
 2. Copy the output JSON locally and run `--validate-output`.
 3. Only then wire GateKeeper following `BACKEND_RELAY_WIRING_PLAN.md`.
 
+### 10.9DO Oom Sakkie n8n Live State Inspector - Local Ready
+
+Purpose:
+
+- Verify the live n8n state after the owner uploaded `2.0B`.
+- Keep the check read-only and secret-free before GateKeeper is manually wired.
+
+What changed:
+
+- Added `scripts/oom_sakkie_n8n_live_state_check.py`.
+- The script uses `N8N_BASE_URL` and `N8N_API_KEY` from `.env` but prints no token values.
+- It verifies:
+  - `2 - The GateKeeper` exists and is active,
+  - GateKeeper has exactly one Telegram Trigger,
+  - GateKeeper still has auth and callback routing nodes,
+  - `2.0B - Oom Sakkie Backend Read-Only Relay` exists,
+  - `2.0B` has no Telegram Trigger,
+  - `2.0B` has no Telegram send node,
+  - `2.0B` still contains the backend relay no-authority fields.
+- Added workflow-contract tests for the live-state validator functions.
+
+Observed live n8n state:
+
+- `n8n_live_state_status: ok`
+- GateKeeper active: `True`
+- Backend relay active: `True`
+- GateKeeper normal-message target: `2.0_legacy_assistant`
+- Backend relay Telegram Trigger: `False`
+- Backend relay Telegram send: `False`
+
+Safety envelope:
+
+- Read-only n8n API calls only.
+- No workflow update.
+- No manual execution.
+- No Telegram send.
+- No GateKeeper wiring.
+- No write, dispatch, runtime, prompt, tool, farm-data, deploy, control, public-output, or financial authority.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_live_state_check.py` -> `n8n_live_state_status: ok`.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+
+Next gate:
+
+1. Manually execute uploaded `2.0B` in n8n using the `--payload` helper.
+2. Validate copied output with `--validate-output`.
+3. Wire GateKeeper manually through the n8n UI only after the manual output validates.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

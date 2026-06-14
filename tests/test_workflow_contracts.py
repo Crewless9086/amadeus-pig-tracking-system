@@ -4,6 +4,11 @@ import unittest
 from pathlib import Path
 
 from scripts.oom_sakkie_n8n_relay_manual_test import build_manual_payload, validate_relay_output
+from scripts.oom_sakkie_n8n_live_state_check import (
+    gatekeeper_message_target,
+    validate_gatekeeper,
+    validate_relay,
+)
 
 
 WORKFLOW_ROOT = Path("docs/04-n8n/workflows")
@@ -415,6 +420,20 @@ class WorkflowContractTests(unittest.TestCase):
             }
         }]
         self.assertIn("writes must be false", validate_relay_output(blocked_output))
+
+    def test_n8n_live_state_validator_keeps_gatekeeper_and_relay_boundaries(self):
+        gatekeeper = load_workflow(GATEKEEPER_WORKFLOW)
+        relay = load_workflow(OOM_SAKKIE_BACKEND_RELAY_WORKFLOW)
+
+        self.assertEqual(validate_gatekeeper(gatekeeper), [])
+        self.assertEqual(gatekeeper_message_target(gatekeeper), "2.0_legacy_assistant")
+        self.assertEqual(validate_relay(relay), [])
+
+        unsafe_relay = {
+            **relay,
+            "nodes": relay.get("nodes", []) + [{"name": "Telegram Send", "type": "n8n-nodes-base.telegram"}],
+        }
+        self.assertIn("2.0B must not have a Telegram send node", validate_relay(unsafe_relay))
 
     def test_weather_workflow_uses_backend_weather_endpoints(self):
         workflow = load_workflow(WEATHER_WORKFLOW)
