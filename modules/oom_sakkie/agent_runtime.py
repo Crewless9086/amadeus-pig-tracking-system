@@ -20,7 +20,7 @@ CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
     "mode": "recorded_operator_evidence_only",
-    "recorded_at_utc": "2026-06-14T07:07:00Z",
+    "recorded_at_utc": "2026-06-14T08:56:00Z",
     "source": "local gh run list after push",
     "runtime_calls_github": False,
     "auto_trusts_ci": False,
@@ -68,15 +68,15 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE = [
     {
         "workflow": "Oom Sakkie Browser Behavior",
-        "run_id": "27491432958",
+        "run_id": "27493830815",
         "status": "success",
-        "recorded_commit": "ecc0546",
+        "recorded_commit": "a1e5584",
     },
     {
         "workflow": "Oom Sakkie Audit Rails",
-        "run_id": "27491432948",
+        "run_id": "27493830823",
         "status": "success",
-        "recorded_commit": "ecc0546",
+        "recorded_commit": "a1e5584",
     },
 ]
 

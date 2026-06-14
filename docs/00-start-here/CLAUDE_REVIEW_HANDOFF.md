@@ -896,6 +896,7 @@ Known verification from Codex:
 - 10.9EB CI evidence after push `ecc0546`: Oom Sakkie Audit Rails run `27491432948` -> success; Oom Sakkie Browser Behavior run `27491432958` -> success.
 - 10.9EC focused audit suite: `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 403 OK, 7 skipped.
 - 10.9EC module compile: `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\sales_campaign_store.py modules\oom_sakkie\tools.py modules\oom_sakkie\routes.py modules\oom_sakkie\service.py modules\oom_sakkie\telegram_direct.py` -> OK.
+- 10.9EC CI evidence after push `a1e5584`: Oom Sakkie Audit Rails run `27493830823` -> success; Oom Sakkie Browser Behavior run `27493830815` -> success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
