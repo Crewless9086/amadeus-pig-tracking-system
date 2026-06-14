@@ -1351,6 +1351,35 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("Nothing was sent to customers", text)
         self.assertNotIn("Long paragraph should not be used.", text)
 
+    def test_telegram_ledger_sales_agent_disabled_format_shows_safe_env_diagnostics(self):
+        text = format_telegram_owner_reply({
+            "answer": "Long paragraph should not be used.",
+            "tool_used": "ledger_sales_agent",
+            "tool_context": {
+                "mode": "owner_only_ledger_agent_not_active",
+                "llm_called": False,
+                "ledger_agent_policy": {
+                    "enable_env": "OOM_SAKKIE_LEDGER_AGENT_ENABLED",
+                    "explicitly_enabled": False,
+                    "configured": True,
+                    "model_env": "OOM_SAKKIE_LLM_ROUTER_MODEL",
+                    "api_key_env": "OPENAI_API_KEY",
+                },
+                "strategy": "Ledger's LLM advisor is disabled.",
+                "owner_questions": ["Enable the env flag."],
+                "risks": ["No LLM advice was produced."],
+                "next_action": "Fix Render env.",
+            },
+        })
+
+        self.assertIn("Ledger Sales Agent", text)
+        self.assertIn("- Enable flag seen: false", text)
+        self.assertIn("- Model configured: true", text)
+        self.assertIn("- Model env: OOM_SAKKIE_LLM_ROUTER_MODEL", text)
+        self.assertIn("- API key env: OPENAI_API_KEY", text)
+        self.assertNotIn("test-key", text)
+        self.assertNotIn("Long paragraph should not be used.", text)
+
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",

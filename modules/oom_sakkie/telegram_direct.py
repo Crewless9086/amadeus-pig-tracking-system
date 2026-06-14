@@ -470,7 +470,13 @@ def _format_ledger_sales_agent(context, title="Oom Sakkie", footer=None):
         f"- LLM advisor: {'called' if llm_called else 'not active'}",
     ]
     if not llm_called:
-        lines.append(f"- Enable env: {policy.get('enable_env', 'OOM_SAKKIE_LEDGER_AGENT_ENABLED')}")
+        lines.extend([
+            f"- Enable env: {policy.get('enable_env', 'OOM_SAKKIE_LEDGER_AGENT_ENABLED')}",
+            f"- Enable flag seen: {str(policy.get('explicitly_enabled') is True).lower()}",
+            f"- Model configured: {str(policy.get('configured') is True).lower()}",
+            f"- Model env: {policy.get('model_env', 'OOM_SAKKIE_LLM_ROUTER_MODEL')}",
+            f"- API key env: {policy.get('api_key_env', 'OPENAI_API_KEY')}",
+        ])
     strategy = str(context.get("strategy") or "").strip()
     if strategy:
         lines.extend(["", "Strategy", _clip(strategy, 900)])
