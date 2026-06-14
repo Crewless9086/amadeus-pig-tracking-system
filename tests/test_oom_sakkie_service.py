@@ -4716,6 +4716,26 @@ def literal_false_is_allowed():
         self.assertEqual(parsed["risks"], ["Confirm price and timing before sending."])
         self.assertEqual(parsed["next_action"], "Pick the buyer list and confirm price.")
 
+    def test_ledger_agent_parser_allows_booking_wording_without_completed_action_claim(self):
+        body = json.dumps({
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "strategy": "Check interest with known buyers before anything is booked.",
+                        "customer_draft": "Hi [Name], I can confirm cuts, timing, and price before anything is booked.",
+                        "owner_questions": ["Which buyer should be checked first?"],
+                        "risks": ["Confirm availability before sending."],
+                        "next_action": "Confirm price and buyer list before using the draft.",
+                    })
+                }
+            }]
+        })
+
+        parsed = parse_ledger_agent_response(body)
+
+        self.assertIsNotNone(parsed)
+        self.assertIn("before anything is booked", parsed["customer_draft"])
+
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
             summary={

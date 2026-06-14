@@ -30,7 +30,7 @@ FORBIDDEN_RESPONSE_KEYS = {
 }
 UNSAFE_CLAIM_RE = re.compile(
     r"\b(sent|posted|published|created\s+(?:a\s+)?quote|created\s+(?:an?\s+)?order|"
-    r"reserved|booked|changed\s+stock|updated\s+stock|contacted\s+customers)\b",
+    r"changed\s+stock|updated\s+stock|contacted\s+customers)\b",
     re.I,
 )
 NEGATED_SAFETY_RE = re.compile(r"\b(no|not|never|nothing|did not|didn't|was not|wasn't|without)\b", re.I)
