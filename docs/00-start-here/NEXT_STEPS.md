@@ -12173,6 +12173,46 @@ Next gate:
 2. Validate copied output with `--validate-output`.
 3. Wire GateKeeper manually through the n8n UI only after the manual output validates.
 
+### 10.9DP Oom Sakkie Render Gateway Smoke Hardening - Local Ready
+
+Purpose:
+
+- Verify the owner-reported GateKeeper -> `2.0B` wiring without mutating n8n.
+- Make the gateway smoke script safe for the Render HTTPS endpoint.
+- Identify the exact remaining blocker before owner Telegram live testing.
+
+What changed:
+
+- `scripts/oom_sakkie_telegram_gateway_smoke.py` now uses the first configured `OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS` value as the smoke user when no explicit smoke user is set.
+- The smoke script now refuses to send the bearer token to remote plain-HTTP URLs; it allows HTTPS remotes and local HTTP only.
+- Frontend route contract tests pin both helper behaviors.
+- The owner-provided Render URL `https://amadeus-pig-tracking-system.onrender.com/` is acceptable; the relay trims the trailing slash and calls `/api/oom-sakkie/channels/telegram/message`.
+- Live n8n inspection now reports GateKeeper normal-message target `2.0B_backend_relay`, while `2.0B` still has no Telegram Trigger and no Telegram send node.
+- Render gateway smoke reached the deployed backend and failed closed with `503 telegram_gateway_disabled`.
+
+Safety envelope:
+
+- No n8n workflow update.
+- No Telegram API send from the script.
+- No direct bot cutover.
+- No write, dispatch, runtime, prompt, tool, farm-data, deploy, control, public-output, or financial authority.
+- Failed Render smoke returned `sends_telegram = False`, `can_trigger_outbound_llm = False`, `writes = False`, and `dispatch_enabled = False`.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_live_state_check.py` -> `n8n_live_state_status: ok`; GateKeeper target `2.0B_backend_relay`; backend relay Telegram Trigger `False`; backend relay Telegram send `False`.
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_gateway_smoke.py` against `https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message` -> `503 telegram_gateway_disabled`, no authority flags true.
+- `.\venv\Scripts\python.exe -m unittest tests.test_frontend_route_contracts` -> 29 OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+
+Next gate:
+
+1. In Render, set `OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED=1`.
+2. In Render, set `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN` to the same 32+ character token used by n8n.
+3. In Render, set `OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS` to the comma-separated allowed Telegram user IDs for Charl, mother, and father.
+4. Restart/redeploy the Render service.
+5. Re-run the Render gateway smoke; expected result is HTTP 200 `answered`, with `sends_telegram = False`, `can_trigger_outbound_llm = False`, `writes = False`, and `reply_transport = caller_handles_telegram_send`.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from urllib import error as urllib_error
+from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from dotenv import load_dotenv
@@ -16,15 +17,20 @@ def main():
     token = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", "") or "").strip()
     allowed_user_ids = str(os.getenv("OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS", "") or "").strip()
     url = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_URL", "") or "").strip() or DEFAULT_URL
+    smoke_user_id = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_USER_ID", "") or "").strip() or _first_allowed_user_id(allowed_user_ids)
+    smoke_chat_id = str(os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_CHAT_ID", "") or "").strip() or "local-smoke-chat"
     if not enabled or not token or len(token) < 32 or not allowed_user_ids:
         print("SKIP: set OOM_SAKKIE_TELEGRAM_GATEWAY_ENABLED=1, a 32+ character OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN, and OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS in .env.")
+        return 2
+    if not _url_is_local_or_tls(url):
+        print("ERROR: use localhost/127.0.0.1 for HTTP smoke URLs, or HTTPS for remote/private endpoints.")
         return 2
 
     payload = {
         "message": {
             "text": os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_TEXT", "what needs attention today"),
-            "from": {"id": os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_USER_ID", "local-smoke-user")},
-            "chat": {"id": os.getenv("OOM_SAKKIE_TELEGRAM_GATEWAY_SMOKE_CHAT_ID", "local-smoke-chat")},
+            "from": {"id": smoke_user_id},
+            "chat": {"id": smoke_chat_id},
         },
     }
     body = json.dumps(payload).encode("utf-8")
@@ -63,6 +69,24 @@ def main():
     if response_body.get("sends_telegram") or response_body.get("can_trigger_outbound_llm") or response_body.get("writes") or response_body.get("dispatch_enabled"):
         return 1
     return 0
+
+
+def _first_allowed_user_id(value):
+    for candidate in str(value or "").replace(";", ",").split(","):
+        candidate = candidate.strip()
+        if candidate:
+            return candidate
+    return "local-smoke-user"
+
+
+def _url_is_local_or_tls(url):
+    parsed = urllib_parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme == "http" and host in {"127.0.0.1", "localhost", "::1"}:
+        return True
+    return False
 
 
 if __name__ == "__main__":
