@@ -36,6 +36,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("changes_prompt_now", workflow_text)
         self.assertIn("customer_public_output_enabled", workflow_text)
         self.assertIn("baseUrlIsLocalOrTls", build_gateway_js)
+        self.assertIn("normalizeBaseUrl", build_gateway_js)
+        self.assertIn("base_url_diagnostic", build_gateway_js)
         self.assertIn('parsed.protocol === "https:"', build_gateway_js)
         self.assertIn('"127.0.0.1", "localhost", "[::1]"', build_gateway_js)
         self.assertIn("must use https, or local http", build_gateway_js)

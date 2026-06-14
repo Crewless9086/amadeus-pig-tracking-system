@@ -78,6 +78,10 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
         errors.append("local_http_allowlist_missing")
     if "workflowVariable" not in build_js:
         errors.append("n8n_variable_reader_missing")
+    if "normalizeBaseUrl" not in build_js or "cleanVariable" not in build_js:
+        errors.append("base_url_normalizer_missing")
+    if "base_url_diagnostic" not in build_js:
+        errors.append("base_url_diagnostic_missing")
     if "gateway_token" in build_js:
         errors.append("token_must_not_be_emitted_into_item_json")
 

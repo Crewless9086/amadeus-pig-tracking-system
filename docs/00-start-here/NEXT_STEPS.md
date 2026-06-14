@@ -12340,6 +12340,32 @@ Next gate:
 2. Re-import/replace uploaded `2.0B` from the updated repo export so `IF - Gateway Request Ready` exists.
 3. Retry one owner Telegram message.
 
+### 10.9DT Oom Sakkie 2.0B Base URL Normalizer - Local Ready
+
+Purpose:
+
+- Reduce repeated live failures from small n8n Variable paste mistakes.
+- Make the Build node output more useful when setup validation still fails.
+
+What changed:
+
+- `Code - Build Backend Gateway Request` now strips wrapping single/double/backtick quotes and invisible paste characters from n8n Variables.
+- It extracts a pasted `http://...` or `https://...` URL if the variable contains extra surrounding text.
+- If URL validation still fails, it returns `base_url_diagnostic` with non-secret fields: configured flag, starts-with-http flag, parsed protocol, parsed hostname, length, and a short public URL preview.
+- The token is still never printed or emitted into item JSON.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py` -> `relay_contract_status: ok`.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_frontend_route_contracts` -> 29 OK.
+
+Next gate:
+
+1. Re-import/replace uploaded `2.0B` from the updated repo export.
+2. Retry one owner Telegram message.
+3. If it still returns `relay_env_not_ready`, copy the `base_url_diagnostic` object so the URL shape can be corrected without exposing the token.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -359,6 +359,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("n8n-nodes-base.telegram", node_types)
         self.assertIn("/api/oom-sakkie/channels/telegram/message", workflow_text)
         self.assertIn("baseUrlIsLocalOrTls", workflow_text)
+        self.assertIn("normalizeBaseUrl", workflow_text)
+        self.assertIn("base_url_diagnostic", workflow_text)
         self.assertIn("IF - Gateway Request Ready", workflow_text)
         self.assertIn("gateway_url", workflow_text)
         self.assertIn("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", workflow_text)

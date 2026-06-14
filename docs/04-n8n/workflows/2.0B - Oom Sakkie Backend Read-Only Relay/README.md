@@ -40,6 +40,7 @@ n8n Cloud can block Code node access to environment variables. Configure these a
   - Example private/local value: `http://127.0.0.1:5000`
   - Example HTTPS value: `https://amadeus-pig-tracking-system.onrender.com`
   - Include the `https://` scheme for Render. Do not paste quotes around the value.
+  - The Build node strips common wrapping quotes and extracts a pasted `https://...` URL when possible, then reports `base_url_diagnostic` if validation still fails.
   - Remote plain HTTP is rejected before the bearer token is used. Use HTTPS for remote/private endpoints, or local HTTP only on localhost/127.0.0.1/::1.
 - `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
   - Must match the Flask `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
