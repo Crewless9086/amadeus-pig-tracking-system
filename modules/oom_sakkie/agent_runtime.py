@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DT"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DU"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -53,6 +53,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "2.0B n8n Cloud compatibility fix removes Code-node $env access, reads gateway configuration from n8n $vars, and keeps the bearer token out of item JSON.",
     "2.0B now gates HTTP execution behind IF - Gateway Request Ready so relay_env_not_ready setup failures do not continue into an undefined URL call.",
     "2.0B now normalizes common base-URL paste mistakes and returns a safe base_url_diagnostic if setup validation still fails.",
+    "Backend-owned direct Telegram is owner-only, default-off, webhook-secret-gated, explicit-send-enabled by env, uses telegram_read_only deterministic routing, sends only owner Telegram replies, and keeps farm/control writes, dispatch, runtime changes, and outbound LLM false.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]

@@ -5,10 +5,13 @@ from unittest.mock import patch
 
 from app import app
 from modules.oom_sakkie.access import is_review_request_allowed
+from modules.oom_sakkie.telegram_direct import _reset_direct_auth_rate_limit_for_tests
 from modules.oom_sakkie.telegram_gateway import _reset_auth_rate_limit_for_tests
 
 
 TELEGRAM_TEST_TOKEN = "test-telegram-token-32-chars-minimum"
+TELEGRAM_DIRECT_SECRET = "test-telegram-direct-secret-32-chars"
+TELEGRAM_BOT_TOKEN = "1234567890:test-bot-token-for-unit-tests"
 
 
 def _fake_farm_attention_tool():
@@ -31,6 +34,7 @@ class OomSakkieRouteTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
         _reset_auth_rate_limit_for_tests()
+        _reset_direct_auth_rate_limit_for_tests()
 
     @patch.dict(os.environ, {}, clear=True)
     @patch("modules.oom_sakkie.service.write_trace", return_value={"stored": False, "status": "not_configured"})
@@ -70,7 +74,10 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertIn("backend STT vendors", data["blocked_capabilities"])
         self.assertFalse(data["telegram_gateway_enabled"])
         self.assertFalse(data["telegram_gateway"]["sends_telegram"])
+        self.assertFalse(data["telegram_direct_enabled"])
+        self.assertFalse(data["telegram_direct"]["sends_telegram"])
         self.assertIn("Telegram read-only gateway", data["blocked_capabilities"])
+        self.assertIn("Telegram direct owner bot", data["blocked_capabilities"])
         self.assertEqual(data["message_endpoint_access"]["default"], "reachable_wherever_flask_is_reachable")
         self.assertIn("reverse_proxy_caveat", data["review_endpoints_access"])
 
@@ -314,6 +321,96 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 403)
         self.assertFalse(denied_data["success"])
         self.assertEqual(denied_data["status"], "review_access_denied")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_telegram_direct_route_is_disabled_by_default(self):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={"text": "what needs attention today"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "telegram_direct_disabled")
+        self.assertFalse(data["sends_telegram"])
+        self.assertFalse(data["writes"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    def test_telegram_direct_route_requires_webhook_secret_header(self):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={"text": "what needs attention today", "telegram_user_id": "12345"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(data["success"])
+        self.assertEqual(data["status"], "telegram_direct_auth_denied")
+        self.assertFalse(data["sends_telegram"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_route_sends_owner_reply_without_write_authority(self, mock_handle, mock_send):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Read-only answer.",
+            "tool_used": "farm_attention_summary",
+            "risk_level": 0,
+            "trace_id": "OSK-TRACE-DIRECT-ROUTE",
+            "safety_notes": ["No write."],
+        }, 200)
+        mock_send.return_value = ({
+            "success": True,
+            "status": "telegram_sent",
+            "sends_telegram": True,
+            "writes": False,
+            "dispatch_enabled": False,
+        }, 200)
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/telegram/direct-webhook",
+            json={
+                "message": {
+                    "text": "what needs attention today",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["status"], "telegram_sent")
+        self.assertTrue(data["sends_telegram"])
+        self.assertFalse(data["writes"])
+        self.assertFalse(data["dispatch_enabled"])
+        self.assertFalse(data["can_trigger_outbound_llm"])
+        self.assertEqual(data["answer"], "Read-only answer.")
+        mock_handle.assert_called_once_with({
+            "text": "what needs attention today",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+        })
+        mock_send.assert_called_once()
 
     def test_review_packet_denies_non_local_review_access(self):
         response = self.client.get(

@@ -12366,6 +12366,42 @@ Next gate:
 2. Retry one owner Telegram message.
 3. If it still returns `relay_env_not_ready`, copy the `base_url_diagnostic` object so the URL shape can be corrected without exposing the token.
 
+### 10.9DU Oom Sakkie Backend-Owned Direct Telegram - Local Ready
+
+Goal:
+- Move Oom Sakkie owner chat off n8n by letting the Flask backend receive Telegram webhooks and send the owner reply directly.
+- Keep it owner-only and default-off.
+
+What is built:
+- New route: `POST /api/oom-sakkie/channels/telegram/direct-webhook`.
+- New policy surface: `telegram_direct` in `/api/oom-sakkie/policy`.
+- New scripts:
+  - `scripts/oom_sakkie_telegram_direct_webhook.py info|set|delete`
+  - `scripts/oom_sakkie_telegram_direct_smoke.py`
+
+Required Render env before it can be live:
+- `OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED=1`
+- `OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED=1`
+- `OOM_SAKKIE_TELEGRAM_BOT_TOKEN=<Telegram bot token>`
+- `OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET=<32+ random chars>`
+- `OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS=<Charl ID,mother ID,father ID>`
+
+Safety boundary:
+- Telegram messages run through `channel=telegram_read_only`.
+- Direct Telegram cannot trigger outbound LLM calls.
+- It sends only the owner Telegram reply through Telegram `sendMessage`.
+- It still performs no farm/control write, no dispatch, no runtime/prompt change, no specialist tool execution, no customer/public broadcast, no physical control, and no financial action.
+
+Next live steps after deploy:
+1. Add the required Render env values and redeploy.
+2. Set the webhook with:
+   - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_direct_webhook.py set --base-url https://amadeus-pig-tracking-system.onrender.com`
+3. Check webhook status:
+   - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_direct_webhook.py info`
+4. Run one supervised direct smoke:
+   - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_direct_smoke.py`
+5. Send one Telegram message directly to the Oom Sakkie bot and confirm exactly one owner-only reply.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
