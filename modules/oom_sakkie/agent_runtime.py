@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DP"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DQ"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -48,7 +48,8 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Owner-approved Telegram live-test path is documented as a manual GateKeeper UI wiring plan: import 2.0B inactive, keep GateKeeper as the single Telegram Trigger owner, validate backend no-authority flags, send exactly one guarded owner reply, and keep rollback explicit.",
     "2.0B manual execution helper prints a token-free n8n payload and validates copied relay output before GateKeeper wiring.",
     "n8n live-state inspector confirmed GateKeeper now targets the uploaded 2.0B backend relay while 2.0B still has no Telegram trigger/send node.",
-    "Render gateway smoke helper now reuses the first allowed Telegram user ID by default, refuses remote plain-HTTP URLs before sending the bearer token, and confirms the current Render blocker is telegram_gateway_disabled until Render env is enabled.",
+    "Render gateway smoke helper now reuses the first allowed Telegram user ID by default, refuses remote plain-HTTP URLs before sending the bearer token, and confirms the deployed Render gateway answers safely with no send, LLM-egress, write, or dispatch authority.",
+    "Live n8n state plus Render smoke now prove the owner Telegram path is ready for one supervised GateKeeper message test.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]

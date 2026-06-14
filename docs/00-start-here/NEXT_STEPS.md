@@ -12213,6 +12213,47 @@ Next gate:
 4. Restart/redeploy the Render service.
 5. Re-run the Render gateway smoke; expected result is HTTP 200 `answered`, with `sends_telegram = False`, `can_trigger_outbound_llm = False`, `writes = False`, and `reply_transport = caller_handles_telegram_send`.
 
+### 10.9DQ Oom Sakkie Render Gateway Live Ready - Live-Smoke Verified
+
+Purpose:
+
+- Close the Render env blocker from 10.9DP.
+- Prove the deployed backend gateway answers through the public Render URL while keeping the read-only/no-send/no-egress boundary.
+- Confirm the n8n GateKeeper wiring still points to the safe backend relay.
+
+Observed live state:
+
+- Render gateway smoke returned HTTP 200 `answered`.
+- Tool used: `farm_attention_summary`.
+- Answer returned: `No current farm attention items are showing.`
+- `sends_telegram = False`.
+- `can_trigger_outbound_llm = False`.
+- `writes = False`.
+- `records_audit_trace = True`.
+- `dispatch_enabled = False`.
+- Live n8n state still reports GateKeeper target `2.0B_backend_relay`.
+- `2.0B` still has no Telegram Trigger and no Telegram send node.
+
+Safety envelope:
+
+- No direct Telegram API send from Flask.
+- No second Telegram owner.
+- No hidden bot cutover.
+- No outbound LLM from Telegram ingress.
+- No write, dispatch, runtime, prompt, tool, farm-data, deploy, control, or financial authority.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_gateway_smoke.py` against `https://amadeus-pig-tracking-system.onrender.com/api/oom-sakkie/channels/telegram/message` -> HTTP 200 `answered`, all authority flags false.
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_live_state_check.py` -> `n8n_live_state_status: ok`; GateKeeper target `2.0B_backend_relay`; backend relay Telegram Trigger `False`; backend relay Telegram send `False`.
+
+Next gate:
+
+1. Send one owner Telegram message to GateKeeper, such as `what needs attention today`.
+2. Confirm exactly one Telegram reply is sent.
+3. Confirm the reply is a read-only Oom Sakkie answer and not a legacy 2.0 assistant response.
+4. If the reply fails, use the n8n execution view to inspect GateKeeper -> `2.0B` output before changing any workflow logic.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.
