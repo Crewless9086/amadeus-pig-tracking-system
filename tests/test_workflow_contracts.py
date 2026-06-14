@@ -8,6 +8,9 @@ WORKFLOW_ROOT = Path("docs/04-n8n/workflows")
 STEWARD_WORKFLOW = WORKFLOW_ROOT / "1.2 - order-steward" / "workflow.json"
 SAM_WORKFLOW = WORKFLOW_ROOT / "1.0 - Sam-sales-agent-chatwoot" / "workflow.json"
 OOM_SAKKIE_WORKFLOW = WORKFLOW_ROOT / "2.0 - OOM SAKKIE - Amadeus Assistant Agent" / "workflow.json"
+GATEKEEPER_WORKFLOW = WORKFLOW_ROOT / "2 - The GateKeeper" / "workflow.json"
+OOM_SAKKIE_BACKEND_RELAY_WORKFLOW = WORKFLOW_ROOT / "2.0B - Oom Sakkie Backend Read-Only Relay" / "workflow.json"
+GATEKEEPER_BACKEND_RELAY_PLAN = WORKFLOW_ROOT / "2 - The GateKeeper" / "BACKEND_RELAY_WIRING_PLAN.md"
 WEATHER_WORKFLOW = WORKFLOW_ROOT / "2.1 - Amadeus Weather Sub-Agent" / "workflow.json"
 FORECAST_WORKFLOW = WORKFLOW_ROOT / "2.1.1 - Amadeus Forecast Tool" / "workflow.json"
 SUNSYNK_WORKFLOW = WORKFLOW_ROOT / "2.2 - Amadeus Sunsynk Sub-Agent" / "workflow.json"
@@ -139,6 +142,8 @@ WORKFLOW_EXPORTS = {
     "sam": SAM_WORKFLOW,
     "steward": STEWARD_WORKFLOW,
     "oom_sakkie": OOM_SAKKIE_WORKFLOW,
+    "gatekeeper": GATEKEEPER_WORKFLOW,
+    "oom_sakkie_backend_relay": OOM_SAKKIE_BACKEND_RELAY_WORKFLOW,
     "weather": WEATHER_WORKFLOW,
     "forecast": FORECAST_WORKFLOW,
     "sunsynk": SUNSYNK_WORKFLOW,
@@ -316,6 +321,61 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("weather_question", input_expression)
         self.assertIn("current weather at the farm", input_expression)
         self.assertLess(input_expression.index("$json.message_text"), input_expression.index("$fromAI"))
+
+    def test_gatekeeper_remains_single_telegram_owner_before_backend_relay_wiring(self):
+        workflow = load_workflow(GATEKEEPER_WORKFLOW)
+        workflow_text = json.dumps(workflow)
+        nodes = workflow.get("nodes", [])
+        node_names = {node.get("name") for node in nodes}
+        telegram_triggers = [node for node in nodes if node.get("type") == "n8n-nodes-base.telegramTrigger"]
+
+        self.assertTrue(workflow.get("active"))
+        self.assertEqual(len(telegram_triggers), 1)
+        self.assertIn("Telegram Trigger", node_names)
+        self.assertIn("Security Check", node_names)
+        self.assertIn("Switch - Telegram Update Type", node_names)
+        self.assertIn("Switch - Route Telegram Callback Type", node_names)
+        self.assertIn("Call '2.0 - OOM SAKKIE - Amadeus Assistant Agent'", node_names)
+        self.assertIn("Call 2.4 - Approval Callback Worker", node_names)
+        self.assertIn("Call 2.4.5 - Document Send Callback Worker", node_names)
+        self.assertNotIn("2.0B - Oom Sakkie Backend Read-Only Relay", workflow_text)
+
+    def test_backend_relay_workflow_is_import_inactive_and_has_no_telegram_authority(self):
+        workflow = load_workflow(OOM_SAKKIE_BACKEND_RELAY_WORKFLOW)
+        workflow_text = json.dumps(workflow)
+        node_types = {node.get("type") for node in workflow.get("nodes", [])}
+
+        self.assertFalse(workflow.get("active"))
+        self.assertIn("n8n-nodes-base.executeWorkflowTrigger", node_types)
+        self.assertNotIn("n8n-nodes-base.telegramTrigger", node_types)
+        self.assertNotIn("n8n-nodes-base.telegram", node_types)
+        self.assertIn("/api/oom-sakkie/channels/telegram/message", workflow_text)
+        self.assertIn("baseUrlIsLocalOrTls", workflow_text)
+        self.assertIn("OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN", workflow_text)
+        self.assertIn("send_allowed", workflow_text)
+        self.assertIn("caller_handles_telegram_send", workflow_text)
+        self.assertIn("can_trigger_outbound_llm", workflow_text)
+        self.assertIn("direct_bot_cutover_enabled", workflow_text)
+        self.assertNotIn("5721652188", workflow_text)
+
+    def test_gatekeeper_backend_relay_wiring_plan_is_owner_only_and_reversible(self):
+        plan = GATEKEEPER_BACKEND_RELAY_PLAN.read_text(encoding="utf-8")
+
+        self.assertIn("Upload this workflow first", plan)
+        self.assertIn("2.0B - Oom Sakkie Backend Read-Only Relay", plan)
+        self.assertIn("Import it inactive", plan)
+        self.assertIn("Do not upload or replace `2 - The GateKeeper`", plan)
+        self.assertIn("Export/download a backup", plan)
+        self.assertIn("Keep the existing `Telegram Trigger`", plan)
+        self.assertIn("replace the current call to `2.0 - OOM SAKKIE - Amadeus Assistant Agent`", plan)
+        self.assertIn("reply_transport === \"caller_handles_telegram_send\"", plan)
+        self.assertIn("sends_telegram === false", plan)
+        self.assertIn("can_trigger_outbound_llm === false", plan)
+        self.assertIn("writes === false", plan)
+        self.assertIn("dispatch_enabled === false", plan)
+        self.assertIn("GateKeeper sends exactly one reply", plan)
+        self.assertIn("No second Telegram Trigger", plan)
+        self.assertIn("restore the exported GateKeeper backup", plan)
 
     def test_weather_workflow_uses_backend_weather_endpoints(self):
         workflow = load_workflow(WEATHER_WORKFLOW)

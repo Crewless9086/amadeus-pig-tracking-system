@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DL"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DM"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -45,6 +45,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "n8n backend relay contract now refuses remote plain-HTTP base URLs before using the bearer token, matching the private smoke helper transport guard.",
     "n8n relay import preflight validates the committed 2.0B workflow export locally without calling n8n, Telegram, Flask, OpenAI, Google Sheets, or Supabase.",
     "Learning and dry-run Workbench queues now label closed/test backlog as append-only audit evidence only, and dry-run requests with recorded results are no longer shown as active handoff work.",
+    "Owner-approved Telegram live-test path is documented as a manual GateKeeper UI wiring plan: import 2.0B inactive, keep GateKeeper as the single Telegram Trigger owner, validate backend no-authority flags, send exactly one guarded owner reply, and keep rollback explicit.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]

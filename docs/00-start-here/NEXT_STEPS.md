@@ -12030,7 +12030,50 @@ Next gate:
 
 1. Owner can use the Workbench without cancelling closed/test backlog just to clean the screen.
 2. Continue toward private Telegram relay import/manual sub-workflow testing only after the existing private-smoke/preflight checks remain green.
-3. Ask Claude later for one compact review of 10.9DJ-DL when payment/API access is restored.
+3. Ask Claude later for one compact review of 10.9DJ-DM when payment/API access is restored.
+
+### 10.9DM Oom Sakkie GateKeeper Backend Relay Wiring Plan - Local Ready
+
+Purpose:
+
+- Move from an inactive backend relay contract toward the owner-approved live Telegram reply test.
+- Keep the live edit precise: `2 - The GateKeeper` remains the only Telegram Trigger owner and the only workflow that sends the Telegram reply.
+
+What changed:
+
+- Added `docs/04-n8n/workflows/2 - The GateKeeper/BACKEND_RELAY_WIRING_PLAN.md`.
+- The plan says to import `2.0B - Oom Sakkie Backend Read-Only Relay` inactive first.
+- The plan says not to replace GateKeeper from the repo export; edit the live GateKeeper manually in n8n UI after exporting a backup.
+- The manual edit replaces only the normal-message call target with `2.0B`, validates backend no-authority flags, then sends exactly one guarded owner reply from GateKeeper.
+- The plan includes backend/n8n env requirements, preflight commands, post-wiring live test checks, and rollback steps.
+- Added workflow contract tests proving:
+  - the current GateKeeper export still has exactly one Telegram Trigger,
+  - the current normal-message branch still points to old `2.0` before manual wiring,
+  - `2.0B` imports inactive and has no Telegram trigger/send node,
+  - the wiring plan requires backup, owner-only validation, no-authority flags, and rollback.
+- Updated the `2.0B` and GateKeeper README files to point to the plan.
+
+Safety envelope:
+
+- No live n8n API update.
+- No committed GateKeeper replacement workflow.
+- No second Telegram listener.
+- No Telegram send node inside `2.0B`.
+- No callback-route changes.
+- No write authority, specialist dispatch, public/customer broadcast expansion, prompt/route/runtime mutation, farm-data write, deploy, physical control, or financial action.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py` -> `relay_contract_status: ok`.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 23 OK.
+
+Next gate:
+
+1. Owner imports `docs/04-n8n/workflows/2.0B - Oom Sakkie Backend Read-Only Relay/workflow.json` into n8n inactive.
+2. Configure the backend and n8n env vars listed in `BACKEND_RELAY_WIRING_PLAN.md`.
+3. Run the private relay smoke.
+4. Edit GateKeeper manually in n8n UI following `BACKEND_RELAY_WIRING_PLAN.md`.
+5. Send one owner Telegram test message and confirm exactly one guarded reply.
 
 7.3E weather LLM triage note:
 

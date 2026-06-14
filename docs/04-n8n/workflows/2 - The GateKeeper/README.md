@@ -63,3 +63,10 @@ Imported for docs: 2026-05-19
 - Owner manually uploaded the cleaned GateKeeper workflow and replaced the Telegram Trigger node in n8n.
 - Live test passed: Telegram `Hi` reached GateKeeper, routed through `2.0`, and Oom Sakkie replied.
 - The repo export has been refreshed from the live n8n workflow so future imports keep the current trigger node.
+
+2026-06-14:
+
+- Owner approved moving toward a live Telegram reply test through the Flask backend.
+- Do not replace this workflow from the repo export for that test.
+- First import `2.0B - Oom Sakkie Backend Read-Only Relay` inactive.
+- Then follow `BACKEND_RELAY_WIRING_PLAN.md` in the n8n UI: keep this workflow as the only Telegram Trigger owner, replace only the normal-message call target, validate the backend no-authority flags, and send exactly one guarded owner reply from GateKeeper.

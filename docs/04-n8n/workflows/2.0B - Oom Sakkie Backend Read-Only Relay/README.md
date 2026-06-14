@@ -4,7 +4,7 @@ Callable relay contract for testing the Flask-owned Oom Sakkie backend from the 
 
 Status: import-ready / inactive by default  
 Created for docs: 2026-06-14  
-Phase: 10.9DJ private Telegram relay contract
+Phase: 10.9DM private Telegram relay contract
 
 ## Role
 
@@ -108,7 +108,7 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 5. Execute this workflow manually with a test payload whose `user_id` is in the backend allowlist.
 6. Confirm `success = true`, `send_allowed = true`, `sends_telegram = false`, `can_trigger_outbound_llm = false`, `writes = false`, and `records_audit_trace = true`.
 7. Execute again with a non-allowlisted `user_id` and confirm it fails closed.
-8. Only after Claude/owner review, wire `2 - The GateKeeper` to call this workflow for a narrow private test.
+8. After owner approval, follow `../2 - The GateKeeper/BACKEND_RELAY_WIRING_PLAN.md` to wire `2 - The GateKeeper` for a narrow private test.
 
 ## Local Contract Check
 
