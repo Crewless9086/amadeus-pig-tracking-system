@@ -452,6 +452,7 @@ def ledger_sales_agent_handler(args):
             "owner_questions": agent_result.get("owner_questions") or [],
             "risks": agent_result.get("risks") or [],
             "next_action": agent_result.get("next_action") or "",
+            "reject_reason": agent_result.get("reject_reason") or "",
             "source_offer_brief": offer_context.get("offer_brief") or {},
             "source_customer_draft": draft_context.get("customer_draft") or {},
             "sends_customer_message": False,

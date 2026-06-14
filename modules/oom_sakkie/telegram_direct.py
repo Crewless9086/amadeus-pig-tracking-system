@@ -480,6 +480,9 @@ def _format_ledger_sales_agent(context, title="Oom Sakkie", footer=None):
     strategy = str(context.get("strategy") or "").strip()
     if strategy:
         lines.extend(["", "Strategy", _clip(strategy, 900)])
+    reject_reason = str(context.get("reject_reason") or "").strip()
+    if reject_reason:
+        lines.append(f"- Reject reason: {_clip(reject_reason, 120)}")
     draft = str(context.get("customer_draft") or "").strip()
     if draft:
         lines.extend(["", "Draft", _clip(draft, 900)])

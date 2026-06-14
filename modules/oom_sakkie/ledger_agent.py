@@ -15,11 +15,12 @@ MAX_STRATEGY_CHARS = 900
 MAX_DRAFT_CHARS = 900
 MAX_LIST_ITEMS = 5
 FORBIDDEN_RESPONSE_KEYS = {
-    "send",
-    "sent",
-    "quote",
-    "order",
-    "reservation",
+    "send_now",
+    "send_message",
+    "sent_message",
+    "create_quote",
+    "create_order",
+    "reserve_stock",
     "stock_update",
     "sql",
     "tool_call",
@@ -100,9 +101,14 @@ def run_ledger_sales_agent(*, user_text, offer_context, draft_context, environ=N
     except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
         return _fallback("ledger_agent_unavailable", policy, "Ledger's LLM advisor could not be reached. No customer action was taken.")
 
-    parsed = parse_ledger_agent_response(body)
+    parsed, reject_reason = parse_ledger_agent_response_with_reason(body)
     if not parsed:
-        return _fallback("ledger_agent_rejected_response", policy, "Ledger's LLM advisor returned an unsafe or unusable draft. No customer action was taken.")
+        return _fallback(
+            "ledger_agent_rejected_response",
+            policy,
+            "Ledger's LLM advisor returned an unsafe or unusable draft. No customer action was taken.",
+            reject_reason=reject_reason,
+        )
 
     parsed.update({
         "success": True,
@@ -126,29 +132,42 @@ def run_ledger_sales_agent(*, user_text, offer_context, draft_context, environ=N
 
 
 def parse_ledger_agent_response(body):
+    parsed, _reason = parse_ledger_agent_response_with_reason(body)
+    return parsed
+
+
+def parse_ledger_agent_response_with_reason(body):
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
         parsed = json.loads(_strip_code_fence(str(content or "")))
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
-        return None
-    if _has_forbidden_key(parsed):
-        return None
-    strategy = _clean_text(parsed.get("strategy"), MAX_STRATEGY_CHARS)
-    customer_draft = _clean_text(parsed.get("customer_draft"), MAX_DRAFT_CHARS)
-    next_action = _clean_text(parsed.get("next_action"), 300)
-    if not strategy or not customer_draft or not next_action:
-        return None
+        return None, "invalid_chat_completion_json"
+    if not isinstance(parsed, dict):
+        return None, "response_not_object"
+    forbidden_key = _first_forbidden_key(parsed)
+    if forbidden_key:
+        return None, f"forbidden_key:{forbidden_key}"
+    strategy = _clean_text(_first_value(parsed, "strategy", "sales_strategy", "recommended_strategy", "plan"), MAX_STRATEGY_CHARS)
+    customer_draft = _clean_text(
+        _first_value(parsed, "customer_draft", "draft", "buyer_draft", "message_draft", "owner_review_draft"),
+        MAX_DRAFT_CHARS,
+    )
+    next_action = _clean_text(_first_value(parsed, "next_action", "next_step", "recommended_next_action"), 300)
+    if not strategy:
+        return None, "missing_strategy"
+    if not next_action:
+        return None, "missing_next_action"
     combined = " ".join([strategy, customer_draft, next_action])
     if _looks_unsafe(combined):
-        return None
+        return None, "unsafe_action_claim"
     return {
         "strategy": strategy,
         "customer_draft": customer_draft,
-        "owner_questions": _clean_list(parsed.get("owner_questions"), 180),
-        "risks": _clean_list(parsed.get("risks"), 180),
+        "owner_questions": _clean_list(_first_value(parsed, "owner_questions", "questions", "owner_checks"), 180),
+        "risks": _clean_list(_first_value(parsed, "risks", "checks", "cautions"), 180),
         "next_action": next_action,
-    }
+    }, ""
 
 
 def _build_payload(*, user_text, offer_context, draft_context, source):
@@ -185,7 +204,7 @@ def _build_payload(*, user_text, offer_context, draft_context, source):
     }
 
 
-def _fallback(status, policy, summary):
+def _fallback(status, policy, summary, reject_reason=""):
     return {
         "success": False,
         "status": status,
@@ -194,6 +213,7 @@ def _fallback(status, policy, summary):
         "owner_questions": ["Enable Ledger's LLM advisor only when you want owner-only sales strategy help."],
         "risks": ["No LLM advice was produced and no customer action was taken."],
         "next_action": "Use /offer or /draft, or enable Ledger's LLM advisor after setting the required env.",
+        "reject_reason": str(reject_reason or "")[:120],
         "policy": policy,
         "llm_called": False,
         "sends_customer_message": False,
@@ -211,17 +231,21 @@ def _fallback(status, policy, summary):
     }
 
 
-def _has_forbidden_key(value):
+def _first_forbidden_key(value):
     if isinstance(value, dict):
         for key, nested in value.items():
             clean = str(key or "").strip().lower()
             if any(token in clean for token in FORBIDDEN_RESPONSE_KEYS):
-                return True
-            if _has_forbidden_key(nested):
-                return True
+                return clean
+            nested_match = _first_forbidden_key(nested)
+            if nested_match:
+                return nested_match
     if isinstance(value, list):
-        return any(_has_forbidden_key(item) for item in value)
-    return False
+        for item in value:
+            nested_match = _first_forbidden_key(item)
+            if nested_match:
+                return nested_match
+    return ""
 
 
 def _looks_unsafe(text):
@@ -236,6 +260,15 @@ def _looks_unsafe(text):
 def _clean_text(value, limit):
     text = " ".join(str(value or "").split())
     return text[:limit]
+
+
+def _first_value(data, *keys):
+    if not isinstance(data, dict):
+        return ""
+    for key in keys:
+        if key in data and data.get(key) not in (None, ""):
+            return data.get(key)
+    return ""
 
 
 def _clean_list(value, limit):

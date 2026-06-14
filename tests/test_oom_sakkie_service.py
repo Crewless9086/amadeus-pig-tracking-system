@@ -4692,6 +4692,30 @@ def literal_false_is_allowed():
 
         self.assertIsNone(parse_ledger_agent_response(body))
 
+    def test_ledger_agent_parser_accepts_safe_synonym_keys(self):
+        body = json.dumps({
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "sales_strategy": "Start with known buyers and confirm interest before processing.",
+                        "draft": "Hi [Name], I am checking interest before we process the next small batch.",
+                        "questions": ["Which buyer group first?"],
+                        "checks": ["Confirm price and timing before sending."],
+                        "next_step": "Pick the buyer list and confirm price.",
+                    })
+                }
+            }]
+        })
+
+        parsed = parse_ledger_agent_response(body)
+
+        self.assertIsNotNone(parsed)
+        self.assertIn("known buyers", parsed["strategy"])
+        self.assertIn("Hi [Name]", parsed["customer_draft"])
+        self.assertEqual(parsed["owner_questions"], ["Which buyer group first?"])
+        self.assertEqual(parsed["risks"], ["Confirm price and timing before sending."])
+        self.assertEqual(parsed["next_action"], "Pick the buyer list and confirm price.")
+
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
             summary={
