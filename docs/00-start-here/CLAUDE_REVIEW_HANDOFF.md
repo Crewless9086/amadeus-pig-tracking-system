@@ -903,6 +903,7 @@ Known verification from Codex:
 - 10.9ED live DB migration: `.\venv\Scripts\python.exe scripts\apply_supabase_migration.py supabase\migrations\202606140001_create_oom_sakkie_sales_campaigns.sql` -> Applied migration; live campaign list `200 ok` with 1 campaign and outreach draft list `200 ok` with 0 drafts before owner approval.
 - 10.9ED JavaScript syntax: `node --check static/js/oomSakkie.js` -> OK.
 - 10.9ED browser behavior smoke: `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
+- 10.9ED CI evidence after push `ccd9f44`: Oom Sakkie Audit Rails run `27494604446` -> success; Oom Sakkie Browser Behavior run `27494604440` -> success.
 - `python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes`
 - `node --check static/js/oomSakkie.js`
 - `python -m unittest tests.test_frontend_route_contracts`
