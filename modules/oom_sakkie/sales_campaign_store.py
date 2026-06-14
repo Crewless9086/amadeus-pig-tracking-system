@@ -249,6 +249,172 @@ def list_sales_outreach_drafts(limit=20, database_url=None):
     }, 200
 
 
+def list_sales_send_design_requests(limit=20, database_url=None):
+    parsed_limit = _bounded_limit(limit)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _send_design_unavailable("not_configured", configured=False), 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return _send_design_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select send_design_id, draft_id, status, mode, target_transport,
+                           design_summary, required_owner_checks_json,
+                           source_draft_snapshot_json, created_by,
+                           sends_customer_message, calls_chatwoot, calls_n8n,
+                           creates_quote, creates_order, changes_stock,
+                           dispatch_enabled, changes_runtime_now, changes_prompt_now,
+                           physical_controls_enabled, customer_public_output_enabled,
+                           writes_farm_data, created_at
+                    from public.oom_sakkie_sales_send_design_requests
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": parsed_limit},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_send_design_read_failed",
+            "error_type": exc.__class__.__name__,
+            "mode": "customer_send_design_request_queue",
+            "send_design_requests": [],
+            **_false_flags(),
+        }, 503
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "customer_send_design_request_queue",
+        "send_design_requests": [_sales_send_design_row(row) for row in rows],
+        **_false_flags(),
+    }, 200
+
+
+def record_sales_send_design_request_from_draft(draft_id, payload=None, database_url=None):
+    draft_id = _clean_text(draft_id, 100)
+    payload = payload if isinstance(payload, dict) else {}
+    if not draft_id:
+        return {"success": False, "status": "draft_id_required", "send_design_requests": [], **_false_flags()}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _send_design_unavailable("not_configured", configured=False), 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return _send_design_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                draft = _fetch_outreach_draft_row(cursor, draft_id)
+                if not draft:
+                    return {
+                        "success": False,
+                        "configured": True,
+                        "status": "outreach_draft_not_found",
+                        "send_design_requests": [],
+                        **_false_flags(),
+                    }, 404
+                draft_record = _sales_outreach_draft_row(draft)
+                params = _sales_send_design_params(draft_record, payload)
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_sales_send_design_requests (
+                        send_design_id,
+                        draft_id,
+                        status,
+                        mode,
+                        target_transport,
+                        design_summary,
+                        required_owner_checks_json,
+                        source_draft_snapshot_json,
+                        created_by,
+                        sends_customer_message,
+                        calls_chatwoot,
+                        calls_n8n,
+                        creates_quote,
+                        creates_order,
+                        changes_stock,
+                        dispatch_enabled,
+                        changes_runtime_now,
+                        changes_prompt_now,
+                        physical_controls_enabled,
+                        customer_public_output_enabled,
+                        writes_farm_data,
+                        created_at
+                    )
+                    values (
+                        %(send_design_id)s,
+                        %(draft_id)s,
+                        %(status)s,
+                        %(mode)s,
+                        %(target_transport)s,
+                        %(design_summary)s,
+                        %(required_owner_checks_json)s::jsonb,
+                        %(source_draft_snapshot_json)s::jsonb,
+                        %(created_by)s,
+                        %(sends_customer_message)s,
+                        %(calls_chatwoot)s,
+                        %(calls_n8n)s,
+                        %(creates_quote)s,
+                        %(creates_order)s,
+                        %(changes_stock)s,
+                        %(dispatch_enabled)s,
+                        %(changes_runtime_now)s,
+                        %(changes_prompt_now)s,
+                        %(physical_controls_enabled)s,
+                        %(customer_public_output_enabled)s,
+                        %(writes_farm_data)s,
+                        now()
+                    )
+                    on conflict (draft_id, target_transport) do nothing
+                    returning send_design_id
+                    """,
+                    params,
+                )
+                created_count = 1 if cursor.fetchone() else 0
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_send_design_write_failed",
+            "error_type": exc.__class__.__name__,
+            "send_design_requests": [],
+            **_false_flags(),
+        }, 503
+
+    listed, list_status = list_sales_send_design_requests(limit=50, database_url=database_url)
+    if list_status != 200:
+        return listed, list_status
+    requests = [item for item in listed.get("send_design_requests", []) if item.get("send_design_id") == params["send_design_id"]]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "customer_send_design_request_queue",
+        "created_count": created_count,
+        "send_design_id": params["send_design_id"],
+        "draft_id": draft_id,
+        "send_design_requests": requests,
+        "next_gate": "owner_and_claude_review_before_any_customer_send_or_order_intake_consumer",
+        "records_send_design_request": True,
+        **_false_flags(),
+    }, 201
+
+
 def record_sales_outreach_draft_from_campaign(campaign_id, payload=None, database_url=None):
     campaign_id = _clean_text(campaign_id, 100)
     payload = payload if isinstance(payload, dict) else {}
@@ -629,6 +795,33 @@ def _sales_outreach_draft_row(row):
     }
 
 
+def _sales_send_design_row(row):
+    return {
+        "send_design_id": row[0],
+        "draft_id": row[1],
+        "status": row[2],
+        "mode": row[3],
+        "target_transport": row[4],
+        "design_summary": row[5] or "",
+        "required_owner_checks": row[6] or [],
+        "source_draft_snapshot": row[7] or {},
+        "created_by": row[8] or "",
+        "sends_customer_message": bool(row[9]),
+        "calls_chatwoot": bool(row[10]),
+        "calls_n8n": bool(row[11]),
+        "creates_quote": bool(row[12]),
+        "creates_order": bool(row[13]),
+        "changes_stock": bool(row[14]),
+        "dispatch_enabled": bool(row[15]),
+        "changes_runtime_now": bool(row[16]),
+        "changes_prompt_now": bool(row[17]),
+        "physical_controls_enabled": bool(row[18]),
+        "customer_public_output_enabled": bool(row[19]),
+        "writes_farm_data": bool(row[20]),
+        "created_at": _iso(row[21]),
+    }
+
+
 def _fetch_campaign_row(cursor, campaign_id):
     cursor.execute(
         """
@@ -653,6 +846,25 @@ def _fetch_campaign_row(cursor, campaign_id):
         where c.campaign_id = %(campaign_id)s
         """,
         {"campaign_id": campaign_id},
+    )
+    return cursor.fetchone()
+
+
+def _fetch_outreach_draft_row(cursor, draft_id):
+    cursor.execute(
+        """
+        select draft_id, campaign_id, status, mode, audience_label,
+               draft_text, owner_checks_json, source_campaign_snapshot_json,
+               created_by,
+               sends_customer_message, calls_chatwoot, calls_n8n,
+               creates_quote, creates_order, changes_stock,
+               dispatch_enabled, changes_runtime_now, changes_prompt_now,
+               physical_controls_enabled, customer_public_output_enabled,
+               writes_farm_data, created_at
+        from public.oom_sakkie_sales_outreach_drafts
+        where draft_id = %(draft_id)s
+        """,
+        {"draft_id": draft_id},
     )
     return cursor.fetchone()
 
@@ -736,6 +948,57 @@ def _event_id(campaign_id, event_type):
 def _draft_id(campaign_id, audience_label):
     digest = hashlib.sha256(f"{campaign_id}|{audience_label}".encode("utf-8")).hexdigest()[:16].upper()
     return f"OSK-SALES-DRAFT-{digest}"
+
+
+def _sales_send_design_params(draft, payload):
+    target_transport = _clean_text(payload.get("target_transport") or "sam_chatwoot_whatsapp_review", 80)
+    if target_transport not in {"sam_chatwoot_whatsapp_review", "manual_owner_send_review"}:
+        target_transport = "sam_chatwoot_whatsapp_review"
+    checks = [
+        "Owner and Claude must review before any consumer can call Chatwoot, n8n, WhatsApp, or Telegram customer channels.",
+        "Owner must confirm recipient, price, cuts, timing, delivery/collection, and stock health before any customer send.",
+        "Future implementation must keep quote/order/stock writes behind separate owner approval.",
+    ]
+    snapshot = {
+        "draft_id": draft.get("draft_id", ""),
+        "campaign_id": draft.get("campaign_id", ""),
+        "audience_label": draft.get("audience_label", ""),
+        "draft_text": draft.get("draft_text", ""),
+        "owner_checks": draft.get("owner_checks") or [],
+        "proposal_text_is_untrusted": True,
+    }
+    return {
+        "send_design_id": _send_design_id(draft.get("draft_id", ""), target_transport),
+        "draft_id": draft.get("draft_id", ""),
+        "status": "pending_owner_review",
+        "mode": "customer_send_design_request_only",
+        "target_transport": target_transport,
+        "design_summary": _clean_text(
+            payload.get("design_summary")
+            or "Design a future owner-approved Sam/Chatwoot handoff for this draft. Do not send now.",
+            700,
+        ),
+        "required_owner_checks_json": _json(checks),
+        "source_draft_snapshot_json": _json(snapshot),
+        "created_by": _clean_text(payload.get("created_by") or "owner", 80),
+        **_false_flags(),
+    }
+
+
+def _send_design_id(draft_id, target_transport):
+    digest = hashlib.sha256(f"{draft_id}|{target_transport}".encode("utf-8")).hexdigest()[:16].upper()
+    return f"OSK-SALES-SEND-DESIGN-{digest}"
+
+
+def _send_design_unavailable(status, configured):
+    return {
+        "success": False,
+        "configured": configured,
+        "status": status,
+        "mode": "customer_send_design_request_queue",
+        "send_design_requests": [],
+        **_false_flags(),
+    }
 
 
 def _json(value):

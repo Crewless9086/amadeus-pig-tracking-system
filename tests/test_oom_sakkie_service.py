@@ -153,10 +153,12 @@ from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_respon
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.sales_campaign_store import (
     _sales_outreach_draft_params,
+    _sales_send_design_params,
     _sales_campaign_params,
     approve_first_waiting_sales_campaign,
     record_sales_campaign_event,
     record_sales_outreach_draft_from_campaign,
+    record_sales_send_design_request_from_draft,
 )
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -240,6 +242,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "ledger_sales_agent",
                 "sales_campaign_status",
                 "sales_outreach_draft_queue",
+                "sales_send_design_status",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -287,6 +290,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         draft_queue = next(item for item in catalog if item["name"] == "sales_outreach_draft_queue")
         self.assertEqual(draft_queue["risk_label"], "READ_ONLY")
         self.assertFalse(draft_queue["requires_confirmation"])
+        send_design = next(item for item in catalog if item["name"] == "sales_send_design_status")
+        self.assertEqual(send_design["risk_label"], "READ_ONLY")
+        self.assertFalse(send_design["requires_confirmation"])
+        self.assertIn("Never sends customers", send_design["description"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
@@ -1798,8 +1805,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9ED")
-        self.assertIn("10.9ED", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EE")
+        self.assertIn("10.9EE", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -2634,14 +2641,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9ED", result["summary"])
+        self.assertIn("10.9EE", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9ED")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EE")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2719,7 +2726,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9ED", result["answer"])
+        self.assertIn("10.9EE", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -4980,6 +4987,40 @@ def literal_false_is_allowed():
         self.assertEqual(result["status"], "not_configured")
         self.assertFalse(result["sends_customer_message"])
 
+    def test_sales_send_design_params_force_review_design_no_authority_flags(self):
+        params = _sales_send_design_params({
+            "draft_id": "OSK-SALES-DRAFT-1",
+            "campaign_id": "OSK-SALES-CAMPAIGN-1",
+            "audience_label": "Known buyers",
+            "draft_text": "Hi [Name], checking interest before processing.",
+            "owner_checks": ["Confirm price before sending."],
+        }, {"target_transport": "sam_chatwoot_whatsapp_review"})
+
+        self.assertTrue(params["send_design_id"].startswith("OSK-SALES-SEND-DESIGN-"))
+        self.assertEqual(params["status"], "pending_owner_review")
+        self.assertEqual(params["mode"], "customer_send_design_request_only")
+        self.assertEqual(params["target_transport"], "sam_chatwoot_whatsapp_review")
+        self.assertIn("future owner-approved Sam/Chatwoot", params["design_summary"])
+        self.assertFalse(params["sends_customer_message"])
+        self.assertFalse(params["calls_chatwoot"])
+        self.assertFalse(params["calls_n8n"])
+        self.assertFalse(params["creates_quote"])
+        self.assertFalse(params["creates_order"])
+        self.assertFalse(params["changes_stock"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["writes_farm_data"])
+
+    def test_sales_send_design_request_requires_database_before_draft_lookup(self):
+        result, status_code = record_sales_send_design_request_from_draft("OSK-SALES-DRAFT-1", {}, database_url="")
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "not_configured")
+        self.assertEqual(result["send_design_requests"], [])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["creates_order"])
+
     def test_approve_first_waiting_sales_campaign_returns_unavailable_without_database(self):
         result, status_code = approve_first_waiting_sales_campaign(database_url="")
 
@@ -4994,9 +5035,12 @@ def literal_false_is_allowed():
         self.assertIn("create table if not exists public.oom_sakkie_sales_campaigns", migration)
         self.assertIn("create table if not exists public.oom_sakkie_sales_campaign_events", migration)
         self.assertIn("create table if not exists public.oom_sakkie_sales_outreach_drafts", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_sales_send_design_requests", migration)
         self.assertIn("status = 'pending_owner_review'", migration)
         self.assertIn("mode = 'owner_review_sales_campaign_only'", migration)
         self.assertIn("mode = 'owner_review_customer_outreach_draft_only'", migration)
+        self.assertIn("mode = 'customer_send_design_request_only'", migration)
+        self.assertIn("target_transport in ('sam_chatwoot_whatsapp_review', 'manual_owner_send_review')", migration)
         self.assertIn("event_type in ('review_note', 'approved_for_customer_outreach', 'rejected', 'deferred')", migration)
         self.assertIn("sends_customer_message = false", migration)
         self.assertIn("calls_chatwoot = false", migration)
@@ -5006,6 +5050,7 @@ def literal_false_is_allowed():
         self.assertIn("before update on public.oom_sakkie_sales_campaigns", migration)
         self.assertIn("before delete on public.oom_sakkie_sales_campaign_events", migration)
         self.assertIn("before delete on public.oom_sakkie_sales_outreach_drafts", migration)
+        self.assertIn("before delete on public.oom_sakkie_sales_send_design_requests", migration)
 
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
@@ -5709,6 +5754,9 @@ def literal_false_is_allowed():
             "what sales campaigns are waiting": "sales_campaign_status",
             "customer drafts waiting": "sales_outreach_draft_queue",
             "show outreach drafts": "sales_outreach_draft_queue",
+            "send design queue": "sales_send_design_status",
+            "show sam chatwoot handoff design": "sales_send_design_status",
+            "customer send design requests": "sales_send_design_status",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",

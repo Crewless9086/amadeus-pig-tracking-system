@@ -213,6 +213,75 @@ function responseFor(url, options = {}) {
   if (url.includes("/patch-proposals") && url.includes("/events")) return { success: true };
   if (url.includes("/patch-proposals")) return { success: true, patch_proposals: [] };
   if (url.includes("/deploy-decisions")) return { success: true, deploy_decisions: [] };
+  if (url.includes("/sales-campaigns") && url.includes("/events")) return { success: true };
+  if (url.includes("/sales-campaigns") && url.includes("/outreach-drafts")) {
+    return {
+      success: true,
+      draft_id: "OSK-SALES-DRAFT-SMOKE",
+      records_customer_outreach_draft: true,
+      sends_customer_message: false,
+      creates_order: false,
+      changes_stock: false,
+    };
+  }
+  if (url.includes("/sales-campaigns")) {
+    return {
+      success: true,
+      sales_campaigns: [{
+        campaign_id: "OSK-SALES-CAMPAIGN-SMOKE",
+        campaign_title: "Ready meat preorder interest check",
+        opportunity: { basis_summary: "3 ready meat candidates." },
+        draft: { message: "Hi [Name], checking interest before processing." },
+        latest_event: null,
+        sends_customer_message: false,
+        creates_order: false,
+        changes_stock: false,
+      }],
+      sends_customer_message: false,
+      creates_order: false,
+      changes_stock: false,
+    };
+  }
+  if (url.includes("/sales-outreach-drafts") && url.includes("/send-design-requests")) {
+    return {
+      success: true,
+      send_design_id: "OSK-SALES-SEND-DESIGN-SMOKE",
+      records_send_design_request: true,
+      sends_customer_message: false,
+      calls_chatwoot: false,
+      calls_n8n: false,
+      creates_order: false,
+      changes_stock: false,
+    };
+  }
+  if (url.includes("/sales-outreach-drafts")) {
+    return {
+      success: true,
+      outreach_drafts: [{
+        draft_id: "OSK-SALES-DRAFT-SMOKE",
+        campaign_id: "OSK-SALES-CAMPAIGN-SMOKE",
+        audience_label: "known meat buyers",
+        draft_text: "Hi [Name], checking interest before processing.",
+        sends_customer_message: false,
+        creates_order: false,
+        changes_stock: false,
+      }],
+      sends_customer_message: false,
+      creates_order: false,
+      changes_stock: false,
+    };
+  }
+  if (url.includes("/sales-send-design-requests")) {
+    return {
+      success: true,
+      send_design_requests: [],
+      sends_customer_message: false,
+      calls_chatwoot: false,
+      calls_n8n: false,
+      creates_order: false,
+      changes_stock: false,
+    };
+  }
   return { success: true };
 }
 
@@ -453,6 +522,30 @@ async function flushPromises() {
     "Learning influence proposal preparation must POST only after owner click",
   );
   assert.strictEqual(intervalCalls.length, 0, "Learning influence proposal preparation click must not start interval polling");
+
+  fetchCalls.length = 0;
+  await element("oom_approve_first_sales_campaign").trigger("click");
+  await flushPromises();
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url.includes("/api/oom-sakkie/sales-campaigns/OSK-SALES-CAMPAIGN-SMOKE/events")),
+    "Sales campaign approval must POST only after owner click",
+  );
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url.includes("/api/oom-sakkie/sales-campaigns/OSK-SALES-CAMPAIGN-SMOKE/outreach-drafts")),
+    "Sales campaign approval should queue an internal outreach draft only after owner click",
+  );
+  assert.strictEqual(intervalCalls.length, 0, "Sales campaign approval click must not start interval polling");
+
+  fetchCalls.length = 0;
+  const sendDesignButton = findByText(element("oom_sales_outreach_drafts"), "Prepare Send Design");
+  assert(sendDesignButton, "Ledger workbench should expose an explicit Prepare Send Design action");
+  await sendDesignButton.trigger("click");
+  await flushPromises();
+  assert(
+    fetchCalls.some((call) => call.method === "POST" && call.url.includes("/api/oom-sakkie/sales-outreach-drafts/OSK-SALES-DRAFT-SMOKE/send-design-requests")),
+    "Sales send-design request must POST only after owner click",
+  );
+  assert.strictEqual(intervalCalls.length, 0, "Sales send-design click must not start interval polling");
 
   fetchCalls.length = 0;
   await element("oom_voice_button").trigger("click");

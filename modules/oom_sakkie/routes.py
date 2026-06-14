@@ -83,9 +83,11 @@ from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.sales_campaign_store import (
     list_sales_campaigns,
     list_sales_outreach_drafts,
+    list_sales_send_design_requests,
     record_sales_campaign,
     record_sales_campaign_event,
     record_sales_outreach_draft_from_campaign,
+    record_sales_send_design_request_from_draft,
 )
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
@@ -218,6 +220,25 @@ def oom_sakkie_sales_outreach_drafts():
     if denied:
         return denied
     result, status_code = list_sales_outreach_drafts(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-outreach-drafts/<draft_id>/send-design-requests", methods=["POST"])
+def oom_sakkie_sales_send_design_request_create(draft_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sales_send_design_request_from_draft(draft_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-send-design-requests", methods=["GET"])
+def oom_sakkie_sales_send_design_requests():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_sales_send_design_requests(limit=request.args.get("limit", 20))
     return jsonify(result), status_code
 
 

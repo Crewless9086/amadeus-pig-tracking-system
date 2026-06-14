@@ -530,6 +530,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertIn("ledger_sales_agent", ledger["allowed_tools"])
         self.assertIn("sales_campaign_status", ledger["allowed_tools"])
         self.assertIn("sales_outreach_draft_queue", ledger["allowed_tools"])
+        self.assertIn("sales_send_design_status", ledger["allowed_tools"])
 
     @patch("modules.oom_sakkie.routes.list_sales_campaigns")
     def test_sales_campaigns_route_lists_owner_review_queue(self, mock_list):
@@ -652,6 +653,84 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["creates_order"])
         self.assertFalse(data["changes_stock"])
         mock_list.assert_called_once_with(limit="5")
+
+    @patch("modules.oom_sakkie.routes.record_sales_send_design_request_from_draft")
+    def test_sales_send_design_route_records_review_design_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "customer_send_design_request_queue",
+            "send_design_id": "OSK-SALES-SEND-DESIGN-TEST",
+            "draft_id": "OSK-SALES-DRAFT-TEST",
+            "records_send_design_request": True,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-outreach-drafts/OSK-SALES-DRAFT-TEST/send-design-requests",
+            json={"target_transport": "sam_chatwoot_whatsapp_review"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["send_design_id"], "OSK-SALES-SEND-DESIGN-TEST")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.list_sales_send_design_requests")
+    def test_sales_send_design_route_lists_review_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "customer_send_design_request_queue",
+            "send_design_requests": [],
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-send-design-requests?limit=5")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "customer_send_design_request_queue")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_list.assert_called_once_with(limit="5")
+
+    @patch("modules.oom_sakkie.routes.list_sales_send_design_requests")
+    def test_sales_send_design_routes_are_review_gated(self, mock_list):
+        response = self.client.get(
+            "/api/oom-sakkie/sales-send-design-requests",
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "review_access_denied")
+        mock_list.assert_not_called()
+
+    def test_sales_send_design_create_endpoint_is_post_only(self):
+        response = self.client.get(
+            "/api/oom-sakkie/sales-outreach-drafts/OSK-SALES-DRAFT-TEST/send-design-requests",
+        )
+
+        self.assertEqual(response.status_code, 405)
 
     def test_agents_route_denies_non_local_review_access(self):
         response = self.client.get(

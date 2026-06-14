@@ -12689,6 +12689,59 @@ Next live steps:
 4. Run `/drafts`; confirm the outreach draft appears.
 5. Next build after this should be a reviewed customer-send/order-intake design rail, still default-off and owner-gated, before any Chatwoot/WhatsApp/customer message or order write is allowed.
 
+### 10.9EE Ledger Sales Workbench + Send-Design Rail - Local Ready
+
+Goal:
+- Move Ledger/Sam sales work out of Telegram-only visibility and into the local Jarvis/Oom Sakkie workbench.
+- Prepare the next reviewed gate for a future Sam/Chatwoot customer-send/order-intake consumer without sending anything now.
+
+What is built:
+- Extended migration `supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql` now also creates:
+  - `oom_sakkie_sales_send_design_requests`
+- New store functions:
+  - `list_sales_send_design_requests`
+  - `record_sales_send_design_request_from_draft`
+- New review-gated routes:
+  - `GET /api/oom-sakkie/sales-send-design-requests`
+  - `POST /api/oom-sakkie/sales-outreach-drafts/<draft_id>/send-design-requests`
+- New read-only Oom Sakkie tool: `sales_send_design_status`.
+- Deterministic routing for send-design/customer-send/Sam/Chatwoot handoff design queue questions.
+- Local `/oom-sakkie` Ledger Sales Workbench showing:
+  - campaigns,
+  - outreach drafts,
+  - Sam/Chatwoot send-design requests.
+- Owner-clicked workbench actions:
+  - approve first waiting campaign into an internal outreach draft,
+  - prepare a send-design request from a draft.
+
+Safety boundary:
+- Review records only.
+- No customer message is sent.
+- No Chatwoot, n8n, WhatsApp, public post, quote, order, reservation, stock change, farm-data write, dispatch, runtime/prompt change, physical control, or financial action is performed.
+- `GET` on the create endpoint intentionally returns 405; send-design creation is `POST` only and must be triggered by an owner action.
+- The next real authority gate is a separate customer-send/order-intake consumer design review.
+
+Live DB:
+- Migration `202606140001_create_oom_sakkie_sales_campaigns.sql` was re-applied successfully after the send-design table was added.
+- Live store check after migration showed the existing approved campaign and outreach draft.
+- Live smoke created one internal send-design request:
+  - draft: `OSK-SALES-DRAFT-605CF5027CC5BC44`
+  - send design: `OSK-SALES-SEND-DESIGN-BCD9E5D9C2DD80C9`
+  - `created_count`: `1`
+  - all authority flags false.
+
+Verification:
+- `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\sales_campaign_store.py modules\oom_sakkie\tools.py modules\oom_sakkie\routes.py modules\oom_sakkie\service.py modules\oom_sakkie\agent_runtime.py` -> OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 417 OK.
+- `node --check static/js/oomSakkie.js` -> OK.
+- `node tests/oom_sakkie_browser_behavior_smoke.js` -> passed.
+
+Next live steps:
+1. Deploy latest commit.
+2. Open `/oom-sakkie`; confirm the Ledger Sales Workbench shows the campaign, outreach draft, and send-design request.
+3. In Telegram, run `/brief`; confirm Sales Work includes send-design waiting.
+4. Next big build should be a reviewed Sam/Chatwoot customer-send/order-intake consumer design packet first, still default-off and no customer send until approved.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -84,6 +84,12 @@
   const refreshAgents = document.getElementById("oom_refresh_agents");
   const agentRoadmap = document.getElementById("oom_agent_roadmap");
   const refreshAgentRoadmap = document.getElementById("oom_refresh_agent_roadmap");
+  const refreshSalesWorkbench = document.getElementById("oom_refresh_sales_workbench");
+  const approveFirstSalesCampaignButton = document.getElementById("oom_approve_first_sales_campaign");
+  const salesWorkbenchStatus = document.getElementById("oom_sales_workbench_status");
+  const salesCampaignsPanel = document.getElementById("oom_sales_campaigns");
+  const salesOutreachDraftsPanel = document.getElementById("oom_sales_outreach_drafts");
+  const salesSendDesignsPanel = document.getElementById("oom_sales_send_designs");
   const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
   const requestPrismDryRunButton = document.getElementById("oom_request_prism_dry_run");
   const agentDryRunSpecialistSelect = document.getElementById("oom_agent_dry_run_specialist_select");
@@ -144,6 +150,9 @@
   let latestAgentDryRunRequestsData = null;
   let latestAgentDryRunResultsData = null;
   let latestLearningInfluenceData = null;
+  let latestSalesCampaignsData = null;
+  let latestSalesOutreachDraftsData = null;
+  let latestSalesSendDesignsData = null;
   const feedbackOptions = [
     ["", "Mark review"],
     ["correct", "Correct"],
@@ -2197,6 +2206,161 @@
     parent.appendChild(notice);
   }
 
+  function salesCampaignStage(item) {
+    const eventType = ((item || {}).latest_event || {}).event_type || "";
+    if (!eventType) return "waiting";
+    if (eventType === "approved_for_customer_outreach") return "approved";
+    return "closed";
+  }
+
+  function renderSalesWorkbench() {
+    renderSalesCampaigns(latestSalesCampaignsData || {});
+    renderSalesOutreachDrafts(latestSalesOutreachDraftsData || {});
+    renderSalesSendDesigns(latestSalesSendDesignsData || {});
+    if (!salesWorkbenchStatus) return;
+    const campaigns = Array.isArray((latestSalesCampaignsData || {}).sales_campaigns) ? latestSalesCampaignsData.sales_campaigns : [];
+    const drafts = Array.isArray((latestSalesOutreachDraftsData || {}).outreach_drafts) ? latestSalesOutreachDraftsData.outreach_drafts : [];
+    const designs = Array.isArray((latestSalesSendDesignsData || {}).send_design_requests) ? latestSalesSendDesignsData.send_design_requests : [];
+    const waitingCampaigns = campaigns.filter((item) => salesCampaignStage(item) === "waiting").length;
+    const approvedCampaigns = campaigns.filter((item) => salesCampaignStage(item) === "approved").length;
+    salesWorkbenchStatus.innerHTML = "";
+    const title = document.createElement("strong");
+    const summary = document.createElement("p");
+    const guard = document.createElement("p");
+    title.textContent = "Ledger sales queue";
+    summary.textContent = `${waitingCampaigns} campaign waiting, ${approvedCampaigns} approved, ${drafts.length} outreach draft waiting, ${designs.length} send-design request waiting.`;
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "owner review only | no customer send | no Chatwoot/n8n call | no order or stock write";
+    salesWorkbenchStatus.appendChild(title);
+    salesWorkbenchStatus.appendChild(summary);
+    salesWorkbenchStatus.appendChild(guard);
+  }
+
+  function renderSalesCampaigns(data) {
+    if (!salesCampaignsPanel) return;
+    const items = Array.isArray(data.sales_campaigns) ? data.sales_campaigns : [];
+    salesCampaignsPanel.innerHTML = "";
+    if (!data.success) {
+      salesCampaignsPanel.innerHTML = '<p class="oom-empty">Sales campaigns are unavailable.</p>';
+      return;
+    }
+    if (!items.length) {
+      salesCampaignsPanel.innerHTML = '<p class="oom-empty">No Ledger campaigns recorded yet. Run /ledger or ask Ledger in chat.</p>';
+      return;
+    }
+    appendQueueSection(
+      salesCampaignsPanel,
+      "Waiting for Owner Review",
+      items.filter((item) => salesCampaignStage(item) === "waiting"),
+      "No campaigns are waiting for owner review.",
+      renderSalesCampaignRow,
+    );
+    appendQueueSection(
+      salesCampaignsPanel,
+      "Approved Campaigns",
+      items.filter((item) => salesCampaignStage(item) === "approved"),
+      "No campaigns are approved for internal outreach draft work.",
+      renderSalesCampaignRow,
+    );
+  }
+
+  function renderSalesCampaignRow(item) {
+    const row = document.createElement("article");
+    const badge = document.createElement("span");
+    const title = document.createElement("strong");
+    const detail = document.createElement("p");
+    const event = document.createElement("p");
+    const guard = document.createElement("p");
+    row.className = salesCampaignStage(item) === "waiting" ? "oom-work-item oom-work-item-active" : "oom-work-item";
+    badge.className = "oom-work-badge";
+    badge.textContent = salesCampaignStage(item) === "waiting" ? "Needs owner approval" : "Approved";
+    title.textContent = item.campaign_title || item.campaign_id || "Sales campaign";
+    detail.textContent = ((item.opportunity || {}).basis_summary || (item.draft || {}).message || "No campaign detail supplied.").slice(0, 360);
+    event.textContent = (item.latest_event || {}).event_type
+      ? `Latest event: ${(item.latest_event || {}).event_type}`
+      : "Latest event: none";
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "campaign record only | no customer send | no order or stock change";
+    row.appendChild(badge);
+    row.appendChild(title);
+    row.appendChild(detail);
+    row.appendChild(event);
+    row.appendChild(guard);
+    return row;
+  }
+
+  function renderSalesOutreachDrafts(data) {
+    if (!salesOutreachDraftsPanel) return;
+    const items = Array.isArray(data.outreach_drafts) ? data.outreach_drafts : [];
+    salesOutreachDraftsPanel.innerHTML = "";
+    if (!data.success) {
+      salesOutreachDraftsPanel.innerHTML = '<p class="oom-empty">Customer outreach drafts are unavailable.</p>';
+      return;
+    }
+    if (!items.length) {
+      salesOutreachDraftsPanel.innerHTML = '<p class="oom-empty">No outreach drafts yet. Approve a campaign first.</p>';
+      return;
+    }
+    items.forEach((item) => salesOutreachDraftsPanel.appendChild(renderSalesOutreachDraftRow(item)));
+  }
+
+  function renderSalesOutreachDraftRow(item) {
+    const row = document.createElement("article");
+    const title = document.createElement("strong");
+    const audience = document.createElement("p");
+    const draft = document.createElement("p");
+    const guard = document.createElement("p");
+    const actions = document.createElement("div");
+    const designButton = document.createElement("button");
+    row.className = "oom-work-item oom-work-item-active";
+    title.textContent = item.draft_id || "Customer outreach draft";
+    audience.textContent = `Audience: ${item.audience_label || "known meat buyers"}`;
+    draft.textContent = (item.draft_text || "No draft text supplied.").slice(0, 520);
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "draft only | not sent | no Chatwoot/n8n/order/stock action";
+    actions.className = "oom-work-actions";
+    designButton.type = "button";
+    designButton.className = "oom-build-brief-button";
+    designButton.textContent = "Prepare Send Design";
+    designButton.addEventListener("click", () => recordSalesSendDesign(item.draft_id, designButton));
+    actions.appendChild(designButton);
+    row.appendChild(title);
+    row.appendChild(audience);
+    row.appendChild(draft);
+    row.appendChild(guard);
+    row.appendChild(actions);
+    return row;
+  }
+
+  function renderSalesSendDesigns(data) {
+    if (!salesSendDesignsPanel) return;
+    const items = Array.isArray(data.send_design_requests) ? data.send_design_requests : [];
+    salesSendDesignsPanel.innerHTML = "";
+    if (!data.success) {
+      salesSendDesignsPanel.innerHTML = '<p class="oom-empty">Send-design requests are unavailable.</p>';
+      return;
+    }
+    if (!items.length) {
+      salesSendDesignsPanel.innerHTML = '<p class="oom-empty">No Sam/Chatwoot send-design request yet.</p>';
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("article");
+      const title = document.createElement("strong");
+      const detail = document.createElement("p");
+      const guard = document.createElement("p");
+      row.className = "oom-work-item";
+      title.textContent = item.send_design_id || "Send design";
+      detail.textContent = `${item.target_transport || "sam_chatwoot_whatsapp_review"} | ${(item.design_summary || "").slice(0, 360)}`;
+      guard.className = "oom-advisor-guard";
+      guard.textContent = "design only | no customer send | no Chatwoot/n8n call | no quote/order/stock write";
+      row.appendChild(title);
+      row.appendChild(detail);
+      row.appendChild(guard);
+      salesSendDesignsPanel.appendChild(row);
+    });
+  }
+
   function renderWorkbenchNextAction() {
     if (!workbenchNextAction) return;
     const buildItems = latestBuildRequestsData && Array.isArray(latestBuildRequestsData.build_requests)
@@ -2217,6 +2381,15 @@
     const learningInfluenceItems = latestLearningInfluenceData && Array.isArray(latestLearningInfluenceData.learning_influence_proposals)
       ? latestLearningInfluenceData.learning_influence_proposals
       : [];
+    const salesCampaignItems = latestSalesCampaignsData && Array.isArray(latestSalesCampaignsData.sales_campaigns)
+      ? latestSalesCampaignsData.sales_campaigns
+      : [];
+    const salesDraftItems = latestSalesOutreachDraftsData && Array.isArray(latestSalesOutreachDraftsData.outreach_drafts)
+      ? latestSalesOutreachDraftsData.outreach_drafts
+      : [];
+    const salesSendDesignItems = latestSalesSendDesignsData && Array.isArray(latestSalesSendDesignsData.send_design_requests)
+      ? latestSalesSendDesignsData.send_design_requests
+      : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
     const pendingBuild = buildItems.filter((item) => buildRequestStage(item) === "pending");
@@ -2229,6 +2402,7 @@
     });
     const pendingAgentResults = agentResultItems.filter((item) => agentResultStage(item) === "pending");
     const pendingLearningInfluence = learningInfluenceItems.filter((item) => learningInfluenceStage(item) === "pending");
+    const pendingSalesCampaigns = salesCampaignItems.filter((item) => salesCampaignStage(item) === "waiting");
 
     workbenchNextAction.innerHTML = "";
     const title = document.createElement("strong");
@@ -2236,13 +2410,19 @@
     const next = document.createElement("p");
     const counts = document.createElement("div");
     title.textContent = "Next action";
-    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingLearningInfluence.length} learning proposal, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
+    summary.textContent = `${pendingAgentRequests.length} agent handoff, ${pendingAgentResults.length} agent result review, ${pendingLearningInfluence.length} learning proposal, ${pendingSalesCampaigns.length} sales campaign, ${salesDraftItems.length} outreach draft, ${salesSendDesignItems.length} send design, ${pendingBuild.length} build handoff, ${pendingPatch.length} patch review, ${deployReady.length} deploy decision.`;
     if (pendingAgentRequests.length) {
       next.textContent = `Open agent handoff for ${pendingAgentRequests[0].dry_run_request_id || "the oldest dry-run request"}.`;
     } else if (pendingAgentResults.length) {
       next.textContent = `Review Sentinel dry-run result ${pendingAgentResults[0].dry_run_result_id || "waiting for review"}.`;
     } else if (pendingLearningInfluence.length) {
       next.textContent = `Review learning proposal ${pendingLearningInfluence[0].proposal_id || "waiting for review"}.`;
+    } else if (pendingSalesCampaigns.length) {
+      next.textContent = `Review Ledger campaign ${pendingSalesCampaigns[0].campaign_title || pendingSalesCampaigns[0].campaign_id || "waiting for review"}.`;
+    } else if (salesDraftItems.length) {
+      next.textContent = `Review ${salesDraftItems.length} customer outreach draft(s) before any Sam/Chatwoot handoff.`;
+    } else if (salesSendDesignItems.length) {
+      next.textContent = `Review ${salesSendDesignItems.length} send-design request(s) before any customer-send consumer.`;
     } else if (pendingBuild.length) {
       next.textContent = `Start with Forge Handoff for ${pendingBuild[0].build_request_id || "the oldest build request"}.`;
     } else if (pendingPatch.length) {
@@ -2257,6 +2437,9 @@
       ["Agent handoff", pendingAgentRequests.length],
       ["Agent result", pendingAgentResults.length],
       ["Learning proposal", pendingLearningInfluence.length],
+      ["Sales campaign", pendingSalesCampaigns.length],
+      ["Draft", salesDraftItems.length],
+      ["Send design", salesSendDesignItems.length],
       ["Build", pendingBuild.length],
       ["Patch", pendingPatch.length],
       ["Deploy", deployReady.length],
@@ -2289,6 +2472,15 @@
       : [];
     const learningInfluenceItems = latestLearningInfluenceData && Array.isArray(latestLearningInfluenceData.learning_influence_proposals)
       ? latestLearningInfluenceData.learning_influence_proposals
+      : [];
+    const salesCampaignItems = latestSalesCampaignsData && Array.isArray(latestSalesCampaignsData.sales_campaigns)
+      ? latestSalesCampaignsData.sales_campaigns
+      : [];
+    const salesDraftItems = latestSalesOutreachDraftsData && Array.isArray(latestSalesOutreachDraftsData.outreach_drafts)
+      ? latestSalesOutreachDraftsData.outreach_drafts
+      : [];
+    const salesSendDesignItems = latestSalesSendDesignsData && Array.isArray(latestSalesSendDesignsData.send_design_requests)
+      ? latestSalesSendDesignsData.send_design_requests
       : [];
     const deployDecidedPatchIds = new Set(deployItems.map((item) => item.patch_proposal_id).filter(Boolean));
     const resultRequestIds = new Set(agentResultItems.map((item) => item.dry_run_request_id).filter(Boolean));
@@ -2380,6 +2572,51 @@
           },
         });
       });
+
+    salesCampaignItems
+      .filter((item) => salesCampaignStage(item) === "waiting")
+      .forEach((item) => {
+        items.push({
+          kind: "Sales Campaign",
+          title: item.campaign_title || item.campaign_id || "Ledger sales campaign",
+          detail: ((item.opportunity || {}).basis_summary || (item.draft || {}).message || "Campaign is waiting for owner approval.").slice(0, 220),
+          guard: "Owner review only | no customer send | no order or stock change",
+          ownerPrompt: "Approve this campaign for internal outreach draft preparation, or leave it waiting?",
+          ids: [item.campaign_id],
+          actionLabel: "Open Ledger",
+          action: () => openWorkbenchSection("oom_ledger_sales_workbench_section"),
+          primaryLabel: "Approve Campaign",
+          primaryAction: (button) => approveFirstSalesCampaign(button),
+        });
+      });
+
+    salesDraftItems.forEach((item) => {
+      items.push({
+        kind: "Outreach Draft",
+        title: item.audience_label || item.draft_id || "Customer outreach draft",
+        detail: (item.draft_text || "Draft is waiting for owner review.").slice(0, 220),
+        guard: "Draft only | not sent | no Chatwoot/n8n/order/stock action",
+        ownerPrompt: "Prepare a send-design request for future Sam/Chatwoot review, or keep this draft waiting?",
+        ids: [item.draft_id, item.campaign_id],
+        actionLabel: "Open Ledger",
+        action: () => openWorkbenchSection("oom_ledger_sales_workbench_section"),
+        primaryLabel: "Prepare Send Design",
+        primaryAction: (button) => recordSalesSendDesign(item.draft_id, button),
+      });
+    });
+
+    salesSendDesignItems.forEach((item) => {
+      items.push({
+        kind: "Send Design",
+        title: item.send_design_id || "Sam/Chatwoot send design",
+        detail: (item.design_summary || "Future customer-send design waits for review.").slice(0, 220),
+        guard: "Design only | no customer send | no Chatwoot/n8n call | no order write",
+        ownerPrompt: "Review this design before any customer-send consumer is built.",
+        ids: [item.send_design_id, item.draft_id],
+        actionLabel: "Open Ledger",
+        action: () => openWorkbenchSection("oom_ledger_sales_workbench_section"),
+      });
+    });
 
     buildItems
       .filter((item) => buildRequestStage(item) === "pending")
@@ -3268,6 +3505,93 @@
     }
   }
 
+  async function loadSalesWorkbench() {
+    if (!salesCampaignsPanel && !salesOutreachDraftsPanel && !salesSendDesignsPanel) return;
+    try {
+      const [campaignResponse, draftResponse, designResponse] = await Promise.all([
+        fetch("/api/oom-sakkie/sales-campaigns?limit=12"),
+        fetch("/api/oom-sakkie/sales-outreach-drafts?limit=12"),
+        fetch("/api/oom-sakkie/sales-send-design-requests?limit=12"),
+      ]);
+      latestSalesCampaignsData = await campaignResponse.json();
+      latestSalesOutreachDraftsData = await draftResponse.json();
+      latestSalesSendDesignsData = await designResponse.json();
+      renderSalesWorkbench();
+      renderWorkbenchNextAction();
+      renderApprovalConsole();
+    } catch (error) {
+      if (salesWorkbenchStatus) salesWorkbenchStatus.innerHTML = '<p class="oom-empty">Ledger sales workbench is unavailable.</p>';
+    }
+  }
+
+  async function approveFirstSalesCampaign(button) {
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Approving...";
+    }
+    try {
+      const campaigns = Array.isArray((latestSalesCampaignsData || {}).sales_campaigns)
+        ? latestSalesCampaignsData.sales_campaigns
+        : [];
+      const waiting = campaigns.find((item) => salesCampaignStage(item) === "waiting");
+      if (!waiting || !waiting.campaign_id) {
+        if (salesWorkbenchStatus) salesWorkbenchStatus.innerHTML = '<p class="oom-empty">No waiting campaign to approve.</p>';
+        return;
+      }
+      await fetch(`/api/oom-sakkie/sales-campaigns/${encodeURIComponent(waiting.campaign_id)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: "approved_for_customer_outreach",
+          notes: "Approved from local Ledger Sales Workbench. Internal draft only; no customer send.",
+          recorded_by: "owner",
+        }),
+      });
+      await fetch(`/api/oom-sakkie/sales-campaigns/${encodeURIComponent(waiting.campaign_id)}/outreach-drafts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audience_label: "known meat buyers", created_by: "owner" }),
+      });
+      await loadSalesWorkbench();
+    } catch (error) {
+      if (salesWorkbenchStatus) salesWorkbenchStatus.innerHTML = '<p class="oom-empty">Campaign approval is unavailable.</p>';
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Approve First Campaign";
+      }
+    }
+  }
+
+  async function recordSalesSendDesign(draftId, button) {
+    if (!draftId) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      await fetch(`/api/oom-sakkie/sales-outreach-drafts/${encodeURIComponent(draftId)}/send-design-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_transport: "sam_chatwoot_whatsapp_review",
+          created_by: "owner",
+          design_summary: "Prepare a future Sam/Chatwoot handoff design for review. Do not send now.",
+        }),
+      });
+      await loadSalesWorkbench();
+    } catch (error) {
+      if (salesSendDesignsPanel) salesSendDesignsPanel.innerHTML = '<p class="oom-empty">Send-design request is unavailable.</p>';
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Prepare Send Design";
+      }
+    }
+  }
+
   async function loadLearningInfluenceProposals() {
     if (!learningInfluenceProposals) return;
     try {
@@ -4049,6 +4373,14 @@
     prepareLearningInfluenceButton.addEventListener("click", () => prepareLearningInfluenceProposals(prepareLearningInfluenceButton));
   }
 
+  if (refreshSalesWorkbench) {
+    refreshSalesWorkbench.addEventListener("click", loadSalesWorkbench);
+  }
+
+  if (approveFirstSalesCampaignButton) {
+    approveFirstSalesCampaignButton.addEventListener("click", () => approveFirstSalesCampaign(approveFirstSalesCampaignButton));
+  }
+
   if (voiceButton) {
     voiceButton.addEventListener("click", toggleVoiceDraft);
   }
@@ -4159,5 +4491,6 @@
   loadAgentCrew();
   loadAgentRoadmap();
   loadAgentDryRunRequests();
+  loadSalesWorkbench();
   refreshReviewData();
 })();

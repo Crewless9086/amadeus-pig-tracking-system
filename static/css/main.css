@@ -3713,6 +3713,13 @@ button:disabled {
   gap: 10px;
 }
 
+.oom-sales-workbench-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
+}
+
 .oom-advisor-guard {
   margin: 0;
   border: 1px solid rgba(45, 212, 168, 0.22);
