@@ -479,6 +479,7 @@ def handle_message(payload):
             tool_checked=True,
         ),
         "agent_activity": agent_activity,
+        "tool_context": tool_result.get("llm_context") or {},
         "trace_store": trace_status,
         "intent": {
             "name": match.intent,

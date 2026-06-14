@@ -12445,6 +12445,28 @@ Next live steps:
    - `.\venv\Scripts\python.exe scripts\oom_sakkie_telegram_daily_brief.py`
 5. Only after one supervised success, decide whether to add a Render Cron or another scheduler for that script.
 
+### 10.9DW Oom Sakkie Direct Telegram Formatting Polish - Local Ready
+
+Goal:
+- Make live Telegram replies easier to scan on a phone after the owner's first successful shortcut test.
+
+What is built:
+- Compact structured Telegram layouts for:
+  - `/brief` / `jarvis_daily_command_brief`
+  - `/gates` / `jarvis_safety_gate_board`
+  - `/agents` / `agent_command_center`
+- The backend response now exposes bounded `tool_context` from each tool's existing `llm_context`, so Telegram can format sections without parsing long prose.
+- Normal free-text answers still use the generic Telegram formatter.
+
+Safety boundary:
+- Presentation-only.
+- No new commands, no scheduler, no hidden sends, no outbound LLM, no farm/control write, no dispatch, no prompt/runtime change, no physical control, and no financial action.
+
+Next live steps:
+1. Deploy the latest commit.
+2. Re-test `/brief`, `/gates`, and `/agents` in Telegram.
+3. If the compact layout reads well, next build should add supervised proactive daily brief live proof before any Render Cron scheduling.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

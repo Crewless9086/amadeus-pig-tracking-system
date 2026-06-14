@@ -1044,6 +1044,50 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("- No write.", text)
         self.assertIn("No farm/control write", text)
 
+    def test_telegram_daily_brief_format_uses_compact_structured_sections(self):
+        text = format_telegram_owner_reply({
+            "answer": "Long paragraph should not be used.",
+            "tool_used": "jarvis_daily_command_brief",
+            "tool_context": {
+                "sections": {
+                    "farm": {
+                        "llm_context": {
+                            "sections": {
+                                "attention": {"summary": "No current farm attention items are showing."},
+                                "power": {"summary": "Battery: 49%. Load: 699 W."},
+                                "weather": {"summary": "Rain today: 0.0 mm."},
+                                "irrigation": {"summary": "Current status: IDLE."},
+                            },
+                        },
+                    },
+                    "business": {
+                        "llm_context": {
+                            "counts": {"marketable_sales_stock": 21, "meat_ready_now": 3},
+                            "owner_question": "Prepare a draft offer brief?",
+                        },
+                    },
+                    "command_center": {
+                        "llm_context": {
+                            "command_center": {
+                                "overall_percent": 54,
+                                "next_gate": "owner and Claude review before live authority",
+                            },
+                        },
+                    },
+                },
+                "next_actions": ["Review pending approval items."],
+            },
+        })
+
+        self.assertIn("Daily Command Brief", text)
+        self.assertIn("Farm", text)
+        self.assertIn("- Attention: No current farm attention items are showing.", text)
+        self.assertIn("Business", text)
+        self.assertIn("- Marketable stock: 21", text)
+        self.assertIn("Command Center", text)
+        self.assertIn("- Jarvis progress: 54%", text)
+        self.assertNotIn("Long paragraph should not be used.", text)
+
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
         "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
@@ -1303,8 +1347,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DV")
-        self.assertIn("10.9DV", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DW")
+        self.assertIn("10.9DW", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -1340,6 +1384,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("base_url_diagnostic", " ".join(packet["current_review"]["focus"]))
         self.assertIn("direct Telegram", " ".join(packet["current_review"]["focus"]))
         self.assertIn("proactive daily brief", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("compact structured Telegram layouts", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -2134,14 +2179,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DV", result["summary"])
+        self.assertIn("10.9DW", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DV")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DW")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2219,7 +2264,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DV", result["answer"])
+        self.assertIn("10.9DW", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")

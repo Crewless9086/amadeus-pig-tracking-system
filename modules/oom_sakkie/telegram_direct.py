@@ -243,6 +243,9 @@ def send_daily_brief_to_allowed_owners(environ=None):
 
 def format_telegram_owner_reply(message_result, title="Oom Sakkie", footer=None):
     message_result = message_result or {}
+    compact = _compact_telegram_reply(message_result, title=title, footer=footer)
+    if compact:
+        return compact[:MAX_REPLY_CHARS]
     answer = str(message_result.get("answer") or "").strip()
     tool_used = str(message_result.get("tool_used") or "").strip()
     safety_notes = [str(note).strip() for note in (message_result.get("safety_notes") or []) if str(note).strip()]
@@ -254,6 +257,127 @@ def format_telegram_owner_reply(message_result, title="Oom Sakkie", footer=None)
         lines.extend(["", "Safety:", *[f"- {note}" for note in safety_notes[:3]]])
     lines.extend(["", footer or "No farm/control write, dispatch, runtime change, or physical action was performed."])
     return "\n".join(lines).strip()[:MAX_REPLY_CHARS]
+
+
+def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
+    tool_used = str(message_result.get("tool_used") or "").strip()
+    context = message_result.get("tool_context") or {}
+    if tool_used == "jarvis_daily_command_brief":
+        return _format_daily_command_brief(context, title=title, footer=footer)
+    if tool_used == "jarvis_safety_gate_board":
+        return _format_safety_gate_board(context, title=title, footer=footer)
+    if tool_used == "agent_command_center":
+        return _format_agent_command_center(context, title=title, footer=footer)
+    return ""
+
+
+def _format_daily_command_brief(context, title="Oom Sakkie", footer=None):
+    sections = (context or {}).get("sections") or {}
+    if not sections:
+        return ""
+    farm = ((sections.get("farm") or {}).get("llm_context") or {}).get("sections") or {}
+    business = (sections.get("business") or {}).get("llm_context") or {}
+    command = (sections.get("command_center") or {}).get("llm_context") or {}
+    command_center = command.get("command_center") or {}
+    next_actions = list((context or {}).get("next_actions") or [])[:2]
+    lines = [title, "", "Daily Command Brief", ""]
+    if farm:
+        lines.extend([
+            "Farm",
+            f"- Attention: {_summary(farm, 'attention')}",
+            f"- Power: {_summary(farm, 'power')}",
+            f"- Weather: {_summary(farm, 'weather')}",
+            f"- Irrigation: {_summary(farm, 'irrigation')}",
+            "",
+        ])
+    if business:
+        counts = business.get("counts") or {}
+        owner_question = str(business.get("owner_question") or "").strip()
+        lines.extend([
+            "Business",
+            f"- Marketable stock: {counts.get('marketable_sales_stock', 0)}",
+            f"- Meat ready now: {counts.get('meat_ready_now', 0)}",
+            f"- Next: {_clip(owner_question, 180) if owner_question else _clip(str(business.get('next_action') or ''), 180)}",
+            "",
+        ])
+    if command_center:
+        lines.extend([
+            "Command Center",
+            f"- Jarvis progress: {command_center.get('overall_percent', 0)}%",
+            "- Live authority: locked",
+            f"- Next gate: {_clip(str(command_center.get('next_gate') or 'owner review before live authority'), 160)}",
+            "",
+        ])
+    if next_actions:
+        lines.append("Next")
+        lines.extend(f"- {_clip(action, 180)}" for action in next_actions)
+        lines.append("")
+    lines.append(footer or "Read-only brief. No write, dispatch, runtime change, or physical action was performed.")
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
+def _format_safety_gate_board(context, title="Oom Sakkie", footer=None):
+    board = (context or {}).get("gate_board") or {}
+    if not board:
+        return ""
+    gates = board.get("gates") or []
+    lines = [
+        title,
+        "",
+        "Safety Gates",
+        f"- Configured: {board.get('configured_count', 0)}",
+        f"- Locked authority gates: {board.get('locked_count', 0)}",
+        f"- Manual checks: {board.get('manual_check_count', 0)}",
+        "",
+        "Gates",
+    ]
+    for gate in gates[:5]:
+        lines.append(f"- {gate.get('label')}: {gate.get('status')}")
+    lines.extend([
+        "",
+        footer or "Read-only gate board. No write, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
+def _format_agent_command_center(context, title="Oom Sakkie", footer=None):
+    center = (context or {}).get("command_center") or {}
+    if not center:
+        return ""
+    queues = (context or {}).get("queue_snapshots") or {}
+    work_counts = ((queues.get("system_work_status") or {}).get("counts") or {})
+    pending = sum(int(work_counts.get(key) or 0) for key in (
+        "pending_build_requests",
+        "pending_patch_reviews",
+        "pending_dispatch_design_requests",
+    ))
+    lines = [
+        title,
+        "",
+        "Agent Command Center",
+        f"- Jarvis progress: {center.get('overall_percent', 0)}%",
+        f"- Visible lanes: {len(center.get('lanes') or [])}",
+        "- Live authority: locked",
+        f"- Pending approval/design: {pending}",
+        "",
+        "Lanes",
+    ]
+    for lane in (center.get("lanes") or [])[:6]:
+        lines.append(f"- {lane.get('label')}: {lane.get('current_state')}")
+    lines.extend([
+        "",
+        footer or "Read-only command center. No specialist ran and no write, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
+def _summary(sections, name):
+    return _clip(str(((sections.get(name) or {}).get("summary")) or "unavailable"), 180)
+
+
+def _clip(value, limit):
+    text = " ".join(str(value or "").split())
+    return text[: max(0, limit - 1)].rstrip() + ("..." if len(text) > limit else "")
 
 
 def _telegram_command_for_text(text):
