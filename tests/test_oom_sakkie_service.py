@@ -151,6 +151,10 @@ from modules.oom_sakkie.patch_proposal_store import (
 )
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
+from modules.oom_sakkie.sales_campaign_store import (
+    _sales_campaign_params,
+    record_sales_campaign_event,
+)
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
 from modules.oom_sakkie.specialists import list_specialist_manifests
 from modules.oom_sakkie.trace_store import (
@@ -231,6 +235,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sales_offer_brief",
                 "sales_customer_draft",
                 "ledger_sales_agent",
+                "sales_campaign_status",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -272,6 +277,9 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(ledger["risk_level"], 1)
         self.assertEqual(ledger["risk_label"], "DRAFT_ONLY")
         self.assertFalse(ledger["requires_confirmation"])
+        campaign_status = next(item for item in catalog if item["name"] == "sales_campaign_status")
+        self.assertEqual(campaign_status["risk_label"], "READ_ONLY")
+        self.assertFalse(campaign_status["requires_confirmation"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
@@ -1676,8 +1684,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EB")
-        self.assertIn("10.9EB", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EC")
+        self.assertIn("10.9EC", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -2512,14 +2520,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9EB", result["summary"])
+        self.assertIn("10.9EC", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EB")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EC")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2597,7 +2605,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9EB", result["answer"])
+        self.assertIn("10.9EC", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -4649,8 +4657,71 @@ def literal_false_is_allowed():
         self.assertFalse(result["llm_context"]["changes_stock"])
         self.assertFalse(result["llm_context"]["writes"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertEqual(result["llm_context"]["sales_campaign_record"]["status_code"], 503)
+        self.assertEqual(result["llm_context"]["sales_campaign_record"]["status"], "not_configured")
         request = mock_urlopen.call_args.args[0]
         self.assertIn("chat/completions", request.full_url)
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+    }, clear=True)
+    @patch("modules.oom_sakkie.tools.record_sales_campaign")
+    @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_ledger_sales_agent_records_owner_review_sales_campaign_after_llm_success(self, mock_sales, mock_meat, mock_urlopen, mock_record):
+        from modules.oom_sakkie.tools import ledger_sales_agent_handler
+
+        mock_sales.return_value = {
+            "success": True,
+            "totals": [{"sale_category": "Grower Pigs", "qty_available": 4, "status": "Available"}],
+        }
+        mock_meat.return_value = {
+            "success": True,
+            "summary": {"ready_now": 1, "next_14_days": 0},
+            "pigs": [{"planning_bucket": "ready_now", "tag_number": "22", "current_pen_name": "D1", "latest_weight_kg": 58.8}],
+        }
+        response = Mock()
+        response.read.return_value = json.dumps({
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "strategy": "Prioritize known meat buyers before processing.",
+                        "customer_draft": "Hi [Name], I am checking interest before we process the next small batch.",
+                        "owner_questions": ["Which buyer group first?"],
+                        "risks": ["Confirm price first."],
+                        "next_action": "Confirm buyer list and price.",
+                    })
+                }
+            }]
+        }).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = response
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 1,
+            "campaign_id": "OSK-SALES-CAMPAIGN-TEST",
+            "records_sales_campaign": True,
+            "next_gate": "owner_approval_before_any_customer_outreach_or_order_write",
+        }, 201)
+
+        result = ledger_sales_agent_handler({"user_text": "Ledger help me sell this meat", "allow_specialist_llm": True})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["llm_context"]["sales_campaign_record"]["status_code"], 201)
+        self.assertEqual(result["llm_context"]["sales_campaign_record"]["campaign_id"], "OSK-SALES-CAMPAIGN-TEST")
+        self.assertTrue(result["llm_context"]["sales_campaign_record"]["records_sales_campaign"])
+        payload = mock_record.call_args.args[0]
+        self.assertEqual(payload["source_tool"], "ledger_sales_agent")
+        self.assertEqual(payload["campaign_title"], "Ready meat preorder interest check")
+        self.assertIn("known meat buyers", payload["opportunity"]["strategy"])
+        self.assertIn("Hi [Name]", payload["draft"]["message"])
+        self.assertEqual(payload["owner_questions"], ["Which buyer group first?"])
+        self.assertEqual(payload["risks"], ["Confirm price first."])
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
@@ -4735,6 +4806,50 @@ def literal_false_is_allowed():
 
         self.assertIsNotNone(parsed)
         self.assertIn("before anything is booked", parsed["customer_draft"])
+
+    def test_sales_campaign_params_force_owner_review_no_authority_flags(self):
+        params = _sales_campaign_params({
+            "campaign_title": "Ready meat preorder interest check",
+            "opportunity": {"basis_summary": "tag 22 in D1"},
+            "draft": {"message": "Hi [Name]."},
+            "owner_questions": ["Confirm price."],
+            "risks": ["Confirm health."],
+            "next_action": "Review before outreach.",
+        })
+
+        self.assertTrue(params["campaign_id"].startswith("OSK-SALES-CAMPAIGN-"))
+        self.assertEqual(params["status"], "pending_owner_review")
+        self.assertEqual(params["mode"], "owner_review_sales_campaign_only")
+        self.assertFalse(params["sends_customer_message"])
+        self.assertFalse(params["calls_chatwoot"])
+        self.assertFalse(params["calls_n8n"])
+        self.assertFalse(params["creates_quote"])
+        self.assertFalse(params["creates_order"])
+        self.assertFalse(params["changes_stock"])
+        self.assertFalse(params["dispatch_enabled"])
+        self.assertFalse(params["writes_farm_data"])
+
+    def test_sales_campaign_event_rejects_invalid_type_before_database(self):
+        result, status_code = record_sales_campaign_event("OSK-SALES-CAMPAIGN-1", {"event_type": "send_now"}, database_url="")
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "invalid_event_type")
+        self.assertFalse(result["sends_customer_message"])
+
+    def test_sales_campaign_migration_is_append_only_and_no_authority(self):
+        migration = Path("supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql").read_text(encoding="utf-8")
+
+        self.assertIn("create table if not exists public.oom_sakkie_sales_campaigns", migration)
+        self.assertIn("create table if not exists public.oom_sakkie_sales_campaign_events", migration)
+        self.assertIn("status = 'pending_owner_review'", migration)
+        self.assertIn("mode = 'owner_review_sales_campaign_only'", migration)
+        self.assertIn("event_type in ('review_note', 'approved_for_customer_outreach', 'rejected', 'deferred')", migration)
+        self.assertIn("sends_customer_message = false", migration)
+        self.assertIn("creates_order = false", migration)
+        self.assertIn("changes_stock = false", migration)
+        self.assertIn("before update on public.oom_sakkie_sales_campaigns", migration)
+        self.assertIn("before delete on public.oom_sakkie_sales_campaign_events", migration)
 
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(

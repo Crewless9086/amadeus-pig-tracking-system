@@ -148,6 +148,10 @@ RULES = [
         IntentMatch("sales_customer_draft", "sales_customer_draft", 0.95, "rule:sales_customer_draft"),
     ),
     (
+        re.compile(r"\b(sales campaign status|sales campaigns|campaign queue|sales queue|customer outreach queue|what sales campaigns|campaigns waiting)\b", re.I),
+        IntentMatch("sales_campaign_status", "sales_campaign_status", 0.95, "rule:sales_campaign_status"),
+    ),
+    (
         re.compile(r"\b(ledger sales agent|ledger agent|ledger help|ledger.*sell|sales agent|help me sell|sell this meat|sell the meat|how should we sell|smart sales|make this offer better)\b", re.I),
         IntentMatch("ledger_sales_agent", "ledger_sales_agent", 0.95, "rule:ledger_sales_agent"),
     ),

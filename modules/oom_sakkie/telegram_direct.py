@@ -301,6 +301,8 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
         return _format_sales_customer_draft(context, title=title, footer=footer)
     if tool_used == "ledger_sales_agent":
         return _format_ledger_sales_agent(context, title=title, footer=footer)
+    if tool_used == "sales_campaign_status":
+        return _format_sales_campaign_status(context, title=title, footer=footer)
     return ""
 
 
@@ -504,6 +506,27 @@ def _format_ledger_sales_agent(context, title="Oom Sakkie", footer=None):
     return "\n".join(lines).strip()
 
 
+def _format_sales_campaign_status(context, title="Oom Sakkie", footer=None):
+    counts = (context or {}).get("counts") or {}
+    waiting = list((context or {}).get("waiting") or [])[:4]
+    lines = [
+        title,
+        "",
+        "Sales Campaign Queue",
+        f"- Waiting for owner review: {counts.get('waiting_for_owner_review', 0)}",
+        f"- Approved for future outreach: {counts.get('approved_for_customer_outreach', 0)}",
+    ]
+    if waiting:
+        lines.extend(["", "Waiting"])
+        for item in waiting:
+            lines.append(f"- {_clip(item.get('campaign_title') or item.get('campaign_id') or 'campaign', 180)}")
+    lines.extend([
+        "",
+        footer or "Owner-review campaign queue only. No customer message, quote, order, stock change, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
 def _summary(sections, name):
     return _clip(str(((sections.get(name) or {}).get("summary")) or "unavailable"), 180)
 
@@ -536,6 +559,8 @@ def _telegram_command_for_text(text):
         "draft": ("ask", "sales customer draft"),
         "/ledger": ("ask", "ledger sales agent", True),
         "ledger": ("ask", "ledger sales agent", True),
+        "/campaigns": ("ask", "sales campaign status"),
+        "campaigns": ("ask", "sales campaign status"),
         "/progress": ("ask", "jarvis progress"),
         "progress": ("ask", "jarvis progress"),
         "/approvals": ("ask", "what needs my approval"),
@@ -560,6 +585,7 @@ def _help_message_result(text):
         "/offer - owner-review sales offer brief\n"
         "/draft - owner-review customer message draft\n"
         "/ledger - owner-only Ledger sales advisor\n"
+        "/campaigns - sales campaign review queue\n"
         "/approvals - owner approval queue\n"
         "/progress - Jarvis progress\n"
         "/learning - learning backlog status\n\n"

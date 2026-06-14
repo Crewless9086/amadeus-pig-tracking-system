@@ -80,6 +80,11 @@ from modules.oom_sakkie.patch_proposal_store import (
 )
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
+from modules.oom_sakkie.sales_campaign_store import (
+    list_sales_campaigns,
+    record_sales_campaign,
+    record_sales_campaign_event,
+)
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -164,6 +169,35 @@ def oom_sakkie_tools():
             "write_tools_enabled": False,
         },
     }), 200
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-campaigns", methods=["GET"])
+def oom_sakkie_sales_campaigns():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = list_sales_campaigns(limit=request.args.get("limit", 20))
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-campaigns", methods=["POST"])
+def oom_sakkie_sales_campaign_create():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sales_campaign(payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-campaigns/<campaign_id>/events", methods=["POST"])
+def oom_sakkie_sales_campaign_events(campaign_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sales_campaign_event(campaign_id, payload)
+    return jsonify(result), status_code
 
 
 @oom_sakkie_bp.route("/oom-sakkie/policy", methods=["GET"])

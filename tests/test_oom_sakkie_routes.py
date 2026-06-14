@@ -528,6 +528,79 @@ class OomSakkieRouteTests(unittest.TestCase):
         ledger = next(item for item in data["agents"] if item["slug"] == "ledger")
         self.assertIn("business_growth_brief", ledger["allowed_tools"])
         self.assertIn("ledger_sales_agent", ledger["allowed_tools"])
+        self.assertIn("sales_campaign_status", ledger["allowed_tools"])
+
+    @patch("modules.oom_sakkie.routes.list_sales_campaigns")
+    def test_sales_campaigns_route_lists_owner_review_queue(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "owner_review_sales_campaign_queue",
+            "sales_campaigns": [],
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-campaigns?limit=5")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "owner_review_sales_campaign_queue")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_list.assert_called_once_with(limit="5")
+
+    @patch("modules.oom_sakkie.routes.record_sales_campaign")
+    def test_sales_campaigns_route_records_campaign_without_customer_send(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "campaign_id": "OSK-SALES-CAMPAIGN-TEST",
+            "records_sales_campaign": True,
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        response = self.client.post("/api/oom-sakkie/sales-campaigns", json={"campaign_title": "Ready meat"})
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["campaign_id"], "OSK-SALES-CAMPAIGN-TEST")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.record_sales_campaign_event")
+    def test_sales_campaign_event_route_records_append_only_review_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-SALES-CAMPAIGN-EVENT-TEST",
+            "event_type": "review_note",
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-campaigns/OSK-SALES-CAMPAIGN-TEST/events",
+            json={"event_type": "review_note", "notes": "Looks useful."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["event_type"], "review_note")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once()
 
     def test_agents_route_denies_non_local_review_access(self):
         response = self.client.get(

@@ -12601,6 +12601,47 @@ Next live steps:
 4. Test `/ledger` with ready meat context and confirm it gives useful strategy plus draft copy.
 5. Next build after this should be an append-only owner approval/send rail for selected customer drafts; still no automatic send until a separate approval gate.
 
+### 10.9EC Sales Campaign Rail - Local Ready
+
+Goal:
+- Move Ledger's useful sales advice into persistent Jarvis/Oom Sakkie queue state, not just a Telegram reply.
+
+What is built:
+- New migration: `supabase/migrations/202606140001_create_oom_sakkie_sales_campaigns.sql`.
+- New append-only tables:
+  - `oom_sakkie_sales_campaigns`
+  - `oom_sakkie_sales_campaign_events`
+- New store: `modules/oom_sakkie/sales_campaign_store.py`.
+- New review-gated routes:
+  - `GET /api/oom-sakkie/sales-campaigns`
+  - `POST /api/oom-sakkie/sales-campaigns`
+  - `POST /api/oom-sakkie/sales-campaigns/<campaign_id>/events`
+- New Oom Sakkie tool: `sales_campaign_status`.
+- New direct Telegram shortcut: `/campaigns`.
+- Successful `/ledger` runs now try to record an owner-review sales campaign containing:
+  - opportunity/basis,
+  - owner-review draft,
+  - owner questions,
+  - risks/checks,
+  - next action.
+- Daily command brief includes campaign review actions when the sales campaign table is available.
+
+Safety boundary:
+- Campaign records are owner-review queue state only.
+- No customer send, no Chatwoot/n8n call, no quote, no order, no reservation, no stock change, no farm-data write, no dispatch, no runtime/prompt change, no public output, and no physical action.
+- `approved_for_customer_outreach` is only an append-only event label in this slice; no consumer sends anything yet.
+
+Verification:
+- `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\sales_campaign_store.py modules\oom_sakkie\tools.py modules\oom_sakkie\routes.py modules\oom_sakkie\service.py modules\oom_sakkie\telegram_direct.py` -> OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 403 OK, 7 skipped.
+
+Next live steps:
+1. Apply migration `202606140001_create_oom_sakkie_sales_campaigns.sql`.
+2. Deploy the latest commit.
+3. Run `/ledger`; confirm it returns `sales_campaign_record` internally and creates one campaign.
+4. Run `/campaigns`; confirm the campaign appears as waiting for owner review.
+5. Next build: owner approval/customer outreach rail that can send to selected customers only after an explicit campaign approval.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -31,6 +31,7 @@ from modules.oom_sakkie.dispatch_decision_store import list_dispatch_requests
 from modules.oom_sakkie.learning_influence_store import list_learning_influence_proposals
 from modules.oom_sakkie.ledger_agent import ledger_agent_policy, run_ledger_sales_agent
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
+from modules.oom_sakkie.sales_campaign_store import list_sales_campaigns, record_sales_campaign
 from modules.reports.report_service import get_farm_attention_summary
 from modules.pig_weights.pig_weights_controller import (
     get_dashboard_data,
@@ -425,11 +426,17 @@ def ledger_sales_agent_handler(args):
     ]
     safety_notes.extend(draft_result.get("safety_notes") or [])
     if llm_called:
+        campaign_result, campaign_status = _record_ledger_sales_campaign(
+            agent_result=agent_result,
+            offer_context=offer_context,
+            draft_context=draft_context,
+        )
         summary = (
             "Ledger sales agent prepared owner-review sales advice. "
             f"Next action: {agent_result.get('next_action', 'Confirm the owner checks before using any draft.')}"
         )
     else:
+        campaign_result, campaign_status = {"success": False, "status": "not_attempted", "records_sales_campaign": False}, 200
         summary = (
             "Ledger sales agent LLM is not active. "
             f"{agent_result.get('strategy') or 'Use /offer and /draft for deterministic owner-review material.'}"
@@ -453,6 +460,14 @@ def ledger_sales_agent_handler(args):
             "risks": agent_result.get("risks") or [],
             "next_action": agent_result.get("next_action") or "",
             "reject_reason": agent_result.get("reject_reason") or "",
+            "sales_campaign_record": {
+                "status_code": campaign_status,
+                "status": campaign_result.get("status"),
+                "created_count": campaign_result.get("created_count", 0),
+                "campaign_id": campaign_result.get("campaign_id", ""),
+                "records_sales_campaign": campaign_result.get("records_sales_campaign") is True,
+                "next_gate": campaign_result.get("next_gate", ""),
+            },
             "source_offer_brief": offer_context.get("offer_brief") or {},
             "source_customer_draft": draft_context.get("customer_draft") or {},
             "sends_customer_message": False,
@@ -480,10 +495,85 @@ def ledger_sales_agent_handler(args):
     }
 
 
+def _record_ledger_sales_campaign(*, agent_result, offer_context, draft_context):
+    offer = offer_context.get("offer_brief") or {}
+    draft = draft_context.get("customer_draft") or {}
+    opportunity = {
+        "angle": offer.get("angle", "ready-meat preorder check"),
+        "target": offer.get("target", ""),
+        "basis_summary": offer.get("basis_summary", ""),
+        "strategy": agent_result.get("strategy", ""),
+        "source_offer_brief": offer,
+    }
+    draft_payload = {
+        "draft_type": draft.get("draft_type", "buyer_interest_check"),
+        "message": agent_result.get("customer_draft") or draft.get("message", ""),
+        "basis_summary": draft.get("basis_summary") or offer.get("basis_summary", ""),
+        "owner_review_only": True,
+    }
+    return record_sales_campaign({
+        "campaign_title": "Ready meat preorder interest check",
+        "source_tool": "ledger_sales_agent",
+        "opportunity": opportunity,
+        "draft": draft_payload,
+        "owner_questions": agent_result.get("owner_questions") or [],
+        "risks": agent_result.get("risks") or [],
+        "next_action": agent_result.get("next_action") or "",
+        "created_by": "ledger",
+    })
+
+
+def sales_campaign_status_handler(_args):
+    result, status_code = list_sales_campaigns(limit=12)
+    campaigns = result.get("sales_campaigns", []) if isinstance(result, dict) else []
+    pending = [
+        item for item in campaigns
+        if not (item.get("latest_event") or {}).get("event_type")
+    ]
+    approved = [
+        item for item in campaigns
+        if (item.get("latest_event") or {}).get("event_type") == "approved_for_customer_outreach"
+    ]
+    if status_code == 200:
+        summary = (
+            f"Sales campaign queue: {len(pending)} waiting for owner review, "
+            f"{len(approved)} approved for future customer outreach. No customer message was sent."
+        )
+    else:
+        summary = "Sales campaign queue is unavailable. No customer message was sent and no order or stock change was made."
+    return {
+        "success": status_code == 200,
+        "status": result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+        "summary": summary,
+        "links": [{"label": "Sales Campaigns", "href": "/api/oom-sakkie/sales-campaigns"}],
+        "stale_warnings": [] if status_code == 200 else [f"Sales campaign store unavailable (status {status_code})."],
+        "safety_notes": [
+            "Sales campaign status is an owner-review queue only. It does not send customer messages, create quotes or orders, reserve stock, change stock, dispatch agents, change runtime, or perform physical actions."
+        ],
+        "llm_context": {
+            "kind": "sales_campaign_status",
+            "counts": {
+                "total": len(campaigns),
+                "waiting_for_owner_review": len(pending),
+                "approved_for_customer_outreach": len(approved),
+            },
+            "waiting": pending[:5],
+            "sends_customer_message": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+        },
+        "raw": result if isinstance(result, dict) else {},
+    }
+
+
 def jarvis_daily_command_brief_handler(_args):
     sections = {
         "farm": farm_operating_brief_handler({}),
         "business": business_growth_brief_handler({}),
+        "sales_campaigns": sales_campaign_status_handler({}),
         "command_center": agent_command_center_handler({}),
     }
     stale_warnings = []
@@ -492,7 +582,7 @@ def jarvis_daily_command_brief_handler(_args):
     ]
     links = [{"label": "Oom Sakkie", "href": "/oom-sakkie"}]
     for label, section in sections.items():
-        if not section.get("success"):
+        if not section.get("success") and not _daily_optional_section_unavailable(label, section):
             stale_warnings.append(f"Daily command brief section unavailable or partial: {label}.")
         stale_warnings.extend(section.get("stale_warnings") or [])
         safety_notes.extend(section.get("safety_notes") or [])
@@ -507,7 +597,10 @@ def jarvis_daily_command_brief_handler(_args):
         seen_hrefs.add(href)
         unique_links.append(link)
 
-    failed = [name for name, section in sections.items() if not section.get("success")]
+    failed = [
+        name for name, section in sections.items()
+        if not section.get("success") and not _daily_optional_section_unavailable(name, section)
+    ]
     status = "partial" if failed else "ok"
     next_actions = _daily_command_next_actions(sections, failed)
     summary = (
@@ -573,6 +666,11 @@ def _daily_command_next_actions(sections, failed):
     if pending_work:
         actions.append(f"Review {pending_work} pending approval/design item(s) in the Oom Sakkie workbench.")
 
+    sales_campaigns = ((sections.get("sales_campaigns") or {}).get("llm_context") or {})
+    waiting_campaigns = int((sales_campaigns.get("counts") or {}).get("waiting_for_owner_review") or 0)
+    if waiting_campaigns:
+        actions.append(f"Review {waiting_campaigns} sales campaign(s) waiting for owner review.")
+
     business_context = (sections.get("business") or {}).get("llm_context") or {}
     owner_question = business_context.get("owner_question")
     if owner_question:
@@ -586,6 +684,10 @@ def _daily_command_next_actions(sections, failed):
     if not actions:
         actions.append("Use the farm, business, or command-center section that matters most today; no action was taken automatically.")
     return actions[:3]
+
+
+def _daily_optional_section_unavailable(name, section):
+    return name == "sales_campaigns" and section.get("status") in {"not_configured", "dependency_missing"}
 
 
 def _business_marketable_stock(sales_totals):
@@ -2682,6 +2784,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=ledger_sales_agent_handler,
         description="Owner-only env-gated Ledger sales advisor. May call an LLM for owner-review strategy/copy, but never sends, posts, quotes, reserves, orders, or changes stock.",
+    ),
+    "sales_campaign_status": OomSakkieTool(
+        name="sales_campaign_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=sales_campaign_status_handler,
+        description="Read-only owner-review sales campaign queue. Never sends customers, creates orders, reserves stock, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",
