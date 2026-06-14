@@ -22,10 +22,12 @@ The Flask/backend environment must have:
 - `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN=<32+ char random token>`
 - `OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS=<Charl Telegram user id>`
 
-The n8n environment must have:
+The n8n `2.0B` workflow must have these configured as n8n Variables, not Code-node `$env` values:
 
 - `OOM_SAKKIE_GATEWAY_BASE_URL=<https backend URL or http://127.0.0.1:5000 for local>`
 - `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN=<same token as Flask>`
+
+Reason: n8n Cloud can deny Code node access to environment variables with `access to env vars denied`; the relay reads `$vars.OOM_SAKKIE_GATEWAY_BASE_URL` and `$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN` instead.
 
 ## Preflight Before Wiring
 

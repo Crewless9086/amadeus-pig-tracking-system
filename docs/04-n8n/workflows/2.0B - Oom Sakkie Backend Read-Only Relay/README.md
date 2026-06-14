@@ -32,7 +32,9 @@ n8n owns only:
 
 Do not add a Telegram Trigger to this workflow. `2 - The GateKeeper` remains the only normal Telegram `message` owner.
 
-## Required n8n Environment Variables
+## Required n8n Variables
+
+n8n Cloud can block Code node access to environment variables. Configure these as n8n **Variables** and access them through `$vars`, not `$env`.
 
 - `OOM_SAKKIE_GATEWAY_BASE_URL`
   - Example private/local value: `http://127.0.0.1:5000`
@@ -42,6 +44,7 @@ Do not add a Telegram Trigger to this workflow. `2 - The GateKeeper` remains the
   - Must match the Flask `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
   - Must be at least 32 characters
   - Do not hardcode it in the workflow export
+  - The HTTP Request node reads it directly from `$vars`; the Build node validates length but does not copy the token into item JSON.
 
 The backend must also have:
 
@@ -91,7 +94,8 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 - No Telegram Trigger.
 - No Telegram send node.
 - No OpenAI, LLM, Google Sheets, Supabase, shell, or code execution outside n8n JavaScript nodes.
-- Backend token comes only from n8n env.
+- Backend token comes only from n8n Variables.
+- Do not use `$env` in this workflow; Cloud Code nodes may throw `access to env vars denied`.
 - Refuse remote plain HTTP base URLs before using the bearer token.
 - Do not continue when backend says `sends_telegram = true`.
 - Do not continue when backend says `can_trigger_outbound_llm = true`.
@@ -102,7 +106,7 @@ The backend still sends no Telegram message. `send_allowed = true` means the cal
 ## Manual Test Plan
 
 1. Import inactive.
-2. Configure n8n env vars with the private/local backend URL and token.
+2. Configure n8n Variables with the private/local backend URL and token.
 3. Keep the Flask backend private or HTTPS-protected.
 4. Run `GET /api/oom-sakkie/channels/telegram/exposure-preflight` and confirm `private_test_ready = true`.
 5. Execute this workflow manually with a test payload whose `user_id` is in the backend allowlist.

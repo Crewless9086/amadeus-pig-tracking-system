@@ -30,7 +30,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $json || {};\nif (item.success !== true) return [{ json: item }];\n\nfunction baseUrlIsLocalOrTls(value) {\n  try {\n    const parsed = new URL(value);\n    if (parsed.protocol === \"https:\") return true;\n    if (parsed.protocol !== \"http:\") return false;\n    return new Set([\"127.0.0.1\", \"localhost\", \"[::1]\"]).has(parsed.hostname);\n  } catch (error) {\n    return false;\n  }\n}\n\nconst baseUrl = String($env.OOM_SAKKIE_GATEWAY_BASE_URL || \"\").trim().replace(/\\/+$/, \"\");\nconst token = String($env.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN || \"\").trim();\nconst errors = [];\n\nif (!baseUrl) errors.push(\"OOM_SAKKIE_GATEWAY_BASE_URL is required\");\nif (baseUrl && !baseUrlIsLocalOrTls(baseUrl)) errors.push(\"OOM_SAKKIE_GATEWAY_BASE_URL must use https, or local http on localhost/127.0.0.1/::1\");\nif (token.length < 32) errors.push(\"OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN must be at least 32 characters\");\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      ...item,\n      success: false,\n      send_allowed: false,\n      status: \"relay_env_not_ready\",\n      errors,\n      sends_telegram: false,\n      can_trigger_outbound_llm: false,\n      writes: false,\n      records_audit_trace: false,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    ...item,\n    gateway_url: `${baseUrl}/api/oom-sakkie/channels/telegram/message`,\n    gateway_token: token,\n  },\n}];"
+        "jsCode": "const item = $json || {};\nif (item.success !== true) return [{ json: item }];\n\nfunction baseUrlIsLocalOrTls(value) {\n  try {\n    const parsed = new URL(value);\n    if (parsed.protocol === \"https:\") return true;\n    if (parsed.protocol !== \"http:\") return false;\n    return new Set([\"127.0.0.1\", \"localhost\", \"[::1]\"]).has(parsed.hostname);\n  } catch (error) {\n    return false;\n  }\n}\n\nfunction workflowVariable(name) {\n  try {\n    if (typeof $vars !== \"undefined\" && $vars && $vars[name] !== undefined) {\n      return String($vars[name] || \"\").trim();\n    }\n  } catch (error) {\n    return \"\";\n  }\n  return \"\";\n}\n\nconst baseUrl = workflowVariable(\"OOM_SAKKIE_GATEWAY_BASE_URL\").replace(/\\/+$/, \"\");\nconst tokenLength = workflowVariable(\"OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN\").length;\nconst errors = [];\n\nif (!baseUrl) errors.push(\"n8n variable OOM_SAKKIE_GATEWAY_BASE_URL is required\");\nif (baseUrl && !baseUrlIsLocalOrTls(baseUrl)) errors.push(\"OOM_SAKKIE_GATEWAY_BASE_URL must use https, or local http on localhost/127.0.0.1/::1\");\nif (tokenLength < 32) errors.push(\"n8n variable OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN must be at least 32 characters\");\n\nif (errors.length > 0) {\n  return [{\n    json: {\n      ...item,\n      success: false,\n      send_allowed: false,\n      status: \"relay_env_not_ready\",\n      errors,\n      sends_telegram: false,\n      can_trigger_outbound_llm: false,\n      writes: false,\n      records_audit_trace: false,\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    ...item,\n    gateway_url: `${baseUrl}/api/oom-sakkie/channels/telegram/message`,\n  },\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -50,7 +50,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{`Bearer ${$json.gateway_token}`}}"
+              "value": "={{`Bearer ${$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN}`}}"
             },
             {
               "name": "Content-Type",
@@ -158,5 +158,5 @@
   },
   "staticData": null,
   "pinData": {},
-  "versionId": "phase-10-9dj-backend-read-only-relay-transport-guard"
+  "versionId": "phase-10-9dr-backend-read-only-relay-vars-compat"
 }

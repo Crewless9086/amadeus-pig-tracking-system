@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DQ"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DR"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -50,6 +50,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "n8n live-state inspector confirmed GateKeeper now targets the uploaded 2.0B backend relay while 2.0B still has no Telegram trigger/send node.",
     "Render gateway smoke helper now reuses the first allowed Telegram user ID by default, refuses remote plain-HTTP URLs before sending the bearer token, and confirms the deployed Render gateway answers safely with no send, LLM-egress, write, or dispatch authority.",
     "Live n8n state plus Render smoke now prove the owner Telegram path is ready for one supervised GateKeeper message test.",
+    "2.0B n8n Cloud compatibility fix removes Code-node $env access, reads gateway configuration from n8n $vars, and keeps the bearer token out of item JSON.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]

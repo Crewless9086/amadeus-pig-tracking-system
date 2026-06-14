@@ -12254,6 +12254,50 @@ Next gate:
 3. Confirm the reply is a read-only Oom Sakkie answer and not a legacy 2.0 assistant response.
 4. If the reply fails, use the n8n execution view to inspect GateKeeper -> `2.0B` output before changing any workflow logic.
 
+### 10.9DR Oom Sakkie n8n Cloud Variable Compatibility Fix - Local Ready
+
+Purpose:
+
+- Fix the live `2.0B` failure: `Cannot assign to read only property 'name' of object 'Error: access to env vars denied'`.
+- Keep the backend relay safe on n8n Cloud, where Code node access to `$env` can be blocked.
+- Keep the gateway token out of workflow item JSON.
+
+Root cause:
+
+- `Code - Build Backend Gateway Request` read `$env.OOM_SAKKIE_GATEWAY_BASE_URL` and `$env.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`.
+- The live n8n runtime denied Code-node env access, so the Build node failed before calling Render.
+
+What changed:
+
+- `2.0B` now reads configuration from n8n Variables through `$vars`.
+- Required n8n Variables:
+  - `OOM_SAKKIE_GATEWAY_BASE_URL`
+  - `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`
+- `Code - Build Backend Gateway Request` validates the base URL and token length without using `$env`.
+- `HTTP - Call Oom Sakkie Gateway` reads the bearer token directly from `$vars.OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`.
+- The workflow no longer emits `gateway_token` into item JSON.
+- Contract tests now fail if `$env` appears in the `2.0B` workflow export.
+
+Safety envelope:
+
+- No Telegram Trigger added to `2.0B`.
+- No Telegram send node added to `2.0B`.
+- No Flask/backend runtime change.
+- No write, dispatch, runtime, prompt, tool, farm-data, deploy, control, public-output, or financial authority.
+
+Verification:
+
+- `.\venv\Scripts\python.exe scripts\oom_sakkie_n8n_relay_contract_check.py` -> `relay_contract_status: ok`.
+- `.\venv\Scripts\python.exe -m unittest tests.test_workflow_contracts` -> 25 OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_frontend_route_contracts` -> 29 OK.
+
+Next gate:
+
+1. In n8n, create/update Variables named `OOM_SAKKIE_GATEWAY_BASE_URL` and `OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN`.
+2. Re-import/replace the uploaded `2.0B` workflow from the updated repo export, or manually edit the live `2.0B` Build node and HTTP Authorization header to match.
+3. Execute `2.0B` manually or send one owner Telegram test message.
+4. Expected result: `2.0B` no longer errors on env access and returns a guarded caller-send reply payload.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

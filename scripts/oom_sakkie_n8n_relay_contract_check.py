@@ -58,7 +58,11 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
     if "/api/oom-sakkie/channels/telegram/message" not in workflow_text:
         errors.append("backend_gateway_path_missing")
     if "OOM_SAKKIE_TELEGRAM_GATEWAY_TOKEN" not in workflow_text:
-        errors.append("env_token_reference_missing")
+        errors.append("vars_token_reference_missing")
+    if "$env" in workflow_text:
+        errors.append("code_node_env_access_must_be_absent")
+    if "$vars" not in workflow_text:
+        errors.append("n8n_variables_reference_missing")
     if "test-telegram-token" in workflow_text or "5721652188" in workflow_text:
         errors.append("committed_workflow_must_not_contain_test_token_or_owner_chat_id")
 
@@ -70,8 +74,10 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
         errors.append("https_allow_rule_missing")
     if '"127.0.0.1", "localhost", "[::1]"' not in build_js:
         errors.append("local_http_allowlist_missing")
-    if "gateway_token: token" not in build_js:
-        errors.append("token_emit_missing_after_env_validation")
+    if "workflowVariable" not in build_js:
+        errors.append("n8n_variable_reader_missing")
+    if "gateway_token" in build_js:
+        errors.append("token_must_not_be_emitted_into_item_json")
 
     validate_node = _node_by_name(nodes, "Code - Validate Caller-Send Reply")
     validate_js = _node_js(validate_node)
@@ -95,6 +101,8 @@ def validate_relay_contract(workflow_path=WORKFLOW_PATH, readme_path=README_PATH
         errors.append("readme_single_trigger_warning_missing")
     if "Remote plain HTTP is rejected" not in readme:
         errors.append("readme_transport_guard_missing")
+    if "Do not use `$env`" not in readme:
+        errors.append("readme_env_access_warning_missing")
 
     return errors
 
