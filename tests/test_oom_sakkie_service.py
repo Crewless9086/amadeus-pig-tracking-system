@@ -97,6 +97,7 @@ from modules.oom_sakkie.sentinel_single_shot_contract import (
 )
 from modules.oom_sakkie.learning_advisor import build_learning_advice
 from modules.oom_sakkie.learning_llm import analyze_learning_with_llm, parse_learning_response
+from modules.oom_sakkie.ledger_agent import parse_ledger_agent_response
 from modules.oom_sakkie.build_request_store import (
     _build_request_params,
     _build_request_row,
@@ -229,6 +230,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "business_growth_brief",
                 "sales_offer_brief",
                 "sales_customer_draft",
+                "ledger_sales_agent",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -244,7 +246,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         )
         for tool in TOOL_REGISTRY.values():
             with self.subTest(tool=tool.name):
-                expected_risk = RiskLevel.DRAFT_ONLY if tool.name == "sales_customer_draft" else RiskLevel.READ_ONLY
+                expected_risk = RiskLevel.DRAFT_ONLY if tool.name in {"sales_customer_draft", "ledger_sales_agent"} else RiskLevel.READ_ONLY
                 self.assertEqual(tool.risk_level, expected_risk)
                 self.assertFalse(tool.requires_confirmation)
                 self.assertEqual(tool.input_schema["type"], "object")
@@ -266,6 +268,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(draft["risk_level"], 1)
         self.assertEqual(draft["risk_label"], "DRAFT_ONLY")
         self.assertFalse(draft["requires_confirmation"])
+        ledger = next(item for item in catalog if item["name"] == "ledger_sales_agent")
+        self.assertEqual(ledger["risk_level"], 1)
+        self.assertEqual(ledger["risk_label"], "DRAFT_ONLY")
+        self.assertFalse(ledger["requires_confirmation"])
 
     @patch.dict(os.environ, {}, clear=True)
     def test_runtime_policy_is_read_only_local_kiosk(self):
@@ -292,6 +298,10 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["llm_router"]["enabled"])
         self.assertFalse(policy["llm_router"]["configured"])
         self.assertFalse(policy["llm_router"]["can_write"])
+        self.assertFalse(policy["ledger_sales_agent_enabled"])
+        self.assertFalse(policy["ledger_sales_agent"]["enabled"])
+        self.assertFalse(policy["ledger_sales_agent"]["sends_customer_message"])
+        self.assertFalse(policy["ledger_sales_agent"]["writes"])
         self.assertTrue(policy["llm_router"]["sends_user_text_when_enabled"])
         self.assertIn("chat/completions", policy["llm_router"]["outbound_endpoint_when_enabled"])
         self.assertFalse(policy["llm_answer"]["enabled"])
@@ -318,7 +328,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(policy["kiosk_policy"]["max_risk_level"], 1)
         self.assertEqual(policy["kiosk_policy"]["allowed_risk_label"], "DRAFT_ONLY")
         self.assertEqual(policy["kiosk_policy"]["requires_confirmation_tools"], [])
-        self.assertEqual(policy["tool_counts"]["draft_only"], 1)
+        self.assertEqual(policy["tool_counts"]["draft_only"], 2)
         self.assertEqual(policy["tool_counts"]["write_or_confirmation"], 0)
         self.assertIn("write tools", policy["blocked_capabilities"])
         self.assertIn("backend STT vendors", policy["blocked_capabilities"])
@@ -431,6 +441,27 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertFalse(policy["telegram_direct"]["dispatch_enabled"])
         self.assertFalse(policy["telegram_direct"]["proactive"]["background_loop_enabled"])
         self.assertNotIn("Telegram direct owner bot", policy["blocked_capabilities"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+        "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+    }, clear=True)
+    def test_telegram_direct_policy_discloses_explicit_ledger_llm_egress_when_enabled(self):
+        policy = get_runtime_policy()
+
+        self.assertTrue(policy["telegram_direct"]["enabled"])
+        self.assertTrue(policy["ledger_sales_agent_enabled"])
+        self.assertTrue(policy["telegram_direct"]["can_trigger_outbound_llm"])
+        self.assertFalse(policy["telegram_direct"]["deterministic_only"])
+        self.assertIn("explicit /ledger", policy["telegram_direct"]["deterministic_only_note"])
+        self.assertTrue(policy["telegram_direct"]["ledger_sales_agent"]["enabled"])
+        self.assertFalse(policy["telegram_direct"]["ledger_sales_agent"]["writes"])
 
     @patch.dict(os.environ, {
         "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
@@ -1071,6 +1102,57 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_ledger_command_routes_to_owner_only_sales_agent(self, mock_handle, mock_send):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Ledger sales advice.",
+            "tool_used": "ledger_sales_agent",
+            "risk_level": 1,
+            "safety_notes": ["No customer message was sent."],
+            "tool_context": {
+                "mode": "owner_only_llm_sales_advisor",
+                "llm_called": True,
+                "strategy": "Prioritize the three ready pigs for known buyers before processing.",
+                "customer_draft": "Hi [Name], I am checking interest before we process the next small batch.",
+                "owner_questions": ["Which buyer group should be contacted first?"],
+                "risks": ["Confirm price and exact availability before sending."],
+                "next_action": "Confirm price and buyer list.",
+            },
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "message": {
+                    "text": "/ledger",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        mock_handle.assert_called_once_with({
+            "text": "ledger sales agent",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+            "allow_specialist_llm": True,
+        })
+        self.assertIn("Ledger Sales Agent", result["telegram_text"])
+        self.assertIn("LLM advisor: called", result["telegram_text"])
+        self.assertIn("Nothing was sent to customers", result["telegram_text"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
@@ -1243,6 +1325,29 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("- Mode: owner_review_customer_copy_draft_only", text)
         self.assertIn("Hi [Name]", text)
         self.assertIn("Owner Checks", text)
+        self.assertIn("Nothing was sent to customers", text)
+        self.assertNotIn("Long paragraph should not be used.", text)
+
+    def test_telegram_ledger_sales_agent_format_is_compact_and_owner_only(self):
+        text = format_telegram_owner_reply({
+            "answer": "Long paragraph should not be used.",
+            "tool_used": "ledger_sales_agent",
+            "tool_context": {
+                "mode": "owner_only_llm_sales_advisor",
+                "llm_called": True,
+                "strategy": "Prioritize the three ready pigs for known buyers before processing.",
+                "customer_draft": "Hi [Name], I am checking interest before we process the next small batch.",
+                "owner_questions": ["Which buyer group should be contacted first?"],
+                "risks": ["Confirm price and exact availability before sending."],
+                "next_action": "Confirm price and buyer list.",
+            },
+        })
+
+        self.assertIn("Ledger Sales Agent", text)
+        self.assertIn("- LLM advisor: called", text)
+        self.assertIn("Strategy", text)
+        self.assertIn("Draft", text)
+        self.assertIn("Owner Questions", text)
         self.assertIn("Nothing was sent to customers", text)
         self.assertNotIn("Long paragraph should not be used.", text)
 
@@ -1542,8 +1647,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EA")
-        self.assertIn("10.9EA", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EB")
+        self.assertIn("10.9EB", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -2378,14 +2483,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9EA", result["summary"])
+        self.assertIn("10.9EB", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EA")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9EB")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2463,7 +2568,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9EA", result["answer"])
+        self.assertIn("10.9EB", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -2757,7 +2862,10 @@ def literal_false_is_allowed():
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "sentinel")
         self.assertFalse(result["llm_context"]["runtime_flags"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runtime_flags"]["specialist_llm_enabled"])
-        self.assertEqual(result["llm_context"]["tool_audit"]["non_read_only_tools"], ["sales_customer_draft"])
+        self.assertEqual(
+            result["llm_context"]["tool_audit"]["non_read_only_tools"],
+            ["sales_customer_draft", "ledger_sales_agent"],
+        )
         self.assertEqual(result["llm_context"]["tool_audit"]["requires_confirmation_tools"], [])
         blockers = result["llm_context"]["sentinel_review"]["blockers_before_live_dry_run"]
         self.assertTrue(any("dispatch/audit" in blocker for blocker in blockers))
@@ -4421,6 +4529,140 @@ def literal_false_is_allowed():
         self.assertIn("not sent to any customer", result["safety_notes"][0])
         self.assertIn("no quote", result["safety_notes"][0])
 
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_ledger_sales_agent_is_disabled_without_network_and_never_writes(self, mock_sales, mock_meat, mock_urlopen):
+        from modules.oom_sakkie.tools import ledger_sales_agent_handler
+
+        mock_sales.return_value = {
+            "success": True,
+            "totals": [{"sale_category": "Grower Pigs", "qty_available": 4, "status": "Available"}],
+        }
+        mock_meat.return_value = {
+            "success": True,
+            "summary": {"ready_now": 1, "next_14_days": 0},
+            "pigs": [{"planning_bucket": "ready_now", "tag_number": "22", "current_pen_name": "D1", "latest_weight_kg": 58.8}],
+        }
+
+        result = ledger_sales_agent_handler({"user_text": "ledger help me sell this meat", "allow_specialist_llm": True})
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "ledger_agent_disabled")
+        self.assertEqual(result["llm_context"]["kind"], "ledger_sales_agent")
+        self.assertFalse(result["llm_context"]["llm_called"])
+        self.assertFalse(result["llm_context"]["ledger_agent_policy"]["enabled"])
+        self.assertFalse(result["llm_context"]["sends_customer_message"])
+        self.assertFalse(result["llm_context"]["calls_chatwoot"])
+        self.assertFalse(result["llm_context"]["calls_n8n"])
+        self.assertFalse(result["llm_context"]["creates_quote"])
+        self.assertFalse(result["llm_context"]["creates_order"])
+        self.assertFalse(result["llm_context"]["changes_stock"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        mock_urlopen.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+    }, clear=True)
+    @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_ledger_sales_agent_calls_llm_for_owner_review_advice_only(self, mock_sales, mock_meat, mock_urlopen):
+        from modules.oom_sakkie.tools import ledger_sales_agent_handler
+
+        mock_sales.return_value = {
+            "success": True,
+            "totals": [{"sale_category": "Grower Pigs", "qty_available": 4, "status": "Available"}],
+        }
+        mock_meat.return_value = {
+            "success": True,
+            "summary": {"ready_now": 1, "next_14_days": 0},
+            "pigs": [{"planning_bucket": "ready_now", "tag_number": "22", "current_pen_name": "D1", "latest_weight_kg": 58.8}],
+        }
+        response = Mock()
+        response.read.return_value = json.dumps({
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "strategy": "Prioritize known meat buyers for the ready D1 candidate before processing.",
+                        "customer_draft": "Hi [Name], I am checking interest before we process the next small batch.",
+                        "owner_questions": ["Which buyer group should be contacted first?", "What price should be confirmed?"],
+                        "risks": ["Confirm availability, cut set, and timing before sending."],
+                        "next_action": "Confirm buyer list, price, and availability before using the draft.",
+                    })
+                }
+            }]
+        }).encode("utf-8")
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = response
+
+        result = ledger_sales_agent_handler({"user_text": "Ledger help me sell this meat", "allow_specialist_llm": True})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ledger_agent_advice_ready")
+        self.assertTrue(result["llm_context"]["llm_called"])
+        self.assertTrue(result["llm_context"]["runs_specialist_llm"])
+        self.assertIn("known meat buyers", result["llm_context"]["strategy"])
+        self.assertIn("Hi [Name]", result["llm_context"]["customer_draft"])
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "ledger")
+        self.assertFalse(result["llm_context"]["sends_customer_message"])
+        self.assertFalse(result["llm_context"]["sends_telegram"])
+        self.assertFalse(result["llm_context"]["calls_chatwoot"])
+        self.assertFalse(result["llm_context"]["calls_n8n"])
+        self.assertFalse(result["llm_context"]["creates_quote"])
+        self.assertFalse(result["llm_context"]["creates_order"])
+        self.assertFalse(result["llm_context"]["changes_stock"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        request = mock_urlopen.call_args.args[0]
+        self.assertIn("chat/completions", request.full_url)
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_LEDGER_AGENT_ENABLED": "1",
+        "OPENAI_API_KEY": "test-key",
+        "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-ledger",
+    }, clear=True)
+    @patch("modules.oom_sakkie.ledger_agent.urllib_request.urlopen")
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_ledger_sales_agent_requires_explicit_owner_llm_authorization(self, mock_sales, mock_meat, mock_urlopen):
+        from modules.oom_sakkie.tools import ledger_sales_agent_handler
+
+        mock_sales.return_value = {"success": True, "totals": []}
+        mock_meat.return_value = {"success": True, "summary": {"ready_now": 0, "next_14_days": 0}, "pigs": []}
+
+        result = ledger_sales_agent_handler({"user_text": "Ledger help me sell this meat"})
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "ledger_agent_llm_not_authorized_for_this_request")
+        self.assertFalse(result["llm_context"]["llm_called"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["writes"])
+        mock_urlopen.assert_not_called()
+
+    def test_ledger_agent_parser_rejects_unsafe_action_claims(self):
+        body = json.dumps({
+            "choices": [{
+                "message": {
+                    "content": json.dumps({
+                        "strategy": "I sent the message to the buyers.",
+                        "customer_draft": "Hi [Name].",
+                        "owner_questions": [],
+                        "risks": [],
+                        "next_action": "Wait for replies.",
+                    })
+                }
+            }]
+        })
+
+        self.assertIsNone(parse_ledger_agent_response(body))
+
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
             summary={
@@ -5116,6 +5358,9 @@ def literal_false_is_allowed():
             "prepare a customer draft": "sales_customer_draft",
             "draft buyer message": "sales_customer_draft",
             "whatsapp draft for meat buyers": "sales_customer_draft",
+            "ledger help me sell this meat": "ledger_sales_agent",
+            "use the sales agent": "ledger_sales_agent",
+            "make this offer better": "ledger_sales_agent",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",
@@ -5527,6 +5772,8 @@ def literal_false_is_allowed():
         self.assertIn("never imply a message, quote, sale, reservation, or stock change happened", system)
         self.assertIn("For sales_customer_draft, show the draft as owner-review copy only", system)
         self.assertIn("never add prices, promises, confirmed availability, or quote/order language", system)
+        self.assertIn("For ledger_sales_agent, show Ledger's owner-review strategy and draft only", system)
+        self.assertIn("never imply a customer was contacted", system)
         self.assertIn("For system_work_status, state the next owner action first", system)
         self.assertIn("stay in that tool's lane", system)
         self.assertIn("Do not mention unrelated systems", system)

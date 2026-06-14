@@ -29,6 +29,7 @@ from modules.oom_sakkie.build_request_store import list_build_requests
 from modules.oom_sakkie.deploy_decision_store import list_deploy_decisions
 from modules.oom_sakkie.dispatch_decision_store import list_dispatch_requests
 from modules.oom_sakkie.learning_influence_store import list_learning_influence_proposals
+from modules.oom_sakkie.ledger_agent import ledger_agent_policy, run_ledger_sales_agent
 from modules.oom_sakkie.patch_proposal_store import list_patch_proposals
 from modules.reports.report_service import get_farm_attention_summary
 from modules.pig_weights.pig_weights_controller import (
@@ -375,6 +376,105 @@ def sales_customer_draft_handler(_args):
         "raw": {
             "kind": "sales_customer_draft",
             "sales_offer_brief": offer_result,
+        },
+    }
+
+
+def ledger_sales_agent_handler(args):
+    args = args or {}
+    offer_result = sales_offer_brief_handler({})
+    draft_result = sales_customer_draft_handler({})
+    offer_context = offer_result.get("llm_context") or {}
+    draft_context = draft_result.get("llm_context") or {}
+    policy = ledger_agent_policy()
+    if args.get("allow_specialist_llm") is True:
+        agent_result = run_ledger_sales_agent(
+            user_text=args.get("user_text") or "Help me sell the ready meat stock.",
+            offer_context=offer_context,
+            draft_context=draft_context,
+        )
+        policy = agent_result.get("policy") or policy
+    else:
+        agent_result = {
+            "success": False,
+            "status": "ledger_agent_llm_not_authorized_for_this_request",
+            "strategy": "Ledger's LLM advisor requires an explicit owner command path before it can call the configured LLM.",
+            "customer_draft": "",
+            "owner_questions": ["Use the explicit /ledger owner command after the Ledger env gate is enabled."],
+            "risks": ["No LLM advice was produced and no customer action was taken."],
+            "next_action": "Use /offer or /draft, or use /ledger from the owner direct Telegram bot after enabling Ledger.",
+            "policy": policy,
+            "llm_called": False,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+            "changes_runtime_now": False,
+            "changes_prompt_now": False,
+            "physical_controls_enabled": False,
+            "customer_public_output_enabled": False,
+        }
+    llm_called = agent_result.get("llm_called") is True
+    status = agent_result.get("status") or "ledger_agent_unavailable"
+    safety_notes = [
+        "Ledger sales agent is owner-review strategy and copy only. It does not send customer messages, call Chatwoot/n8n/WhatsApp, create quotes or orders, reserve stock, change stock, dispatch agents, change runtime, or control hardware."
+    ]
+    safety_notes.extend(draft_result.get("safety_notes") or [])
+    if llm_called:
+        summary = (
+            "Ledger sales agent prepared owner-review sales advice. "
+            f"Next action: {agent_result.get('next_action', 'Confirm the owner checks before using any draft.')}"
+        )
+    else:
+        summary = (
+            "Ledger sales agent LLM is not active. "
+            f"{agent_result.get('strategy') or 'Use /offer and /draft for deterministic owner-review material.'}"
+        )
+    return {
+        "success": bool(agent_result.get("success")),
+        "status": status,
+        "summary": summary,
+        "links": offer_result.get("links") or [{"label": "Sales Dashboard", "href": "/sales-dashboard"}],
+        "stale_warnings": (offer_result.get("stale_warnings") or []) + (draft_result.get("stale_warnings") or []),
+        "safety_notes": safety_notes[:6],
+        "llm_context": {
+            "kind": "ledger_sales_agent",
+            "mode": "owner_only_llm_sales_advisor" if llm_called else "owner_only_ledger_agent_not_active",
+            "selected_agent": {"slug": "ledger", "name": "Ledger"},
+            "ledger_agent_policy": policy,
+            "llm_called": llm_called,
+            "strategy": agent_result.get("strategy") or "",
+            "customer_draft": agent_result.get("customer_draft") or "",
+            "owner_questions": agent_result.get("owner_questions") or [],
+            "risks": agent_result.get("risks") or [],
+            "next_action": agent_result.get("next_action") or "",
+            "source_offer_brief": offer_context.get("offer_brief") or {},
+            "source_customer_draft": draft_context.get("customer_draft") or {},
+            "sends_customer_message": False,
+            "sends_telegram": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "customer_public_output_enabled": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": llm_called,
+            "runs_specialist_tools": False,
+            "changes_runtime_now": False,
+            "changes_prompt_now": False,
+            "physical_controls_enabled": False,
+        },
+        "raw": {
+            "kind": "ledger_sales_agent",
+            "agent_result": agent_result,
+            "sales_offer_brief": offer_result,
+            "sales_customer_draft": draft_result,
         },
     }
 
@@ -2572,6 +2672,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=sales_customer_draft_handler,
         description="Owner-review customer message draft from sales/meat context. Never sends, posts, quotes, reserves, or changes stock.",
+    ),
+    "ledger_sales_agent": OomSakkieTool(
+        name="ledger_sales_agent",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.DRAFT_ONLY,
+        requires_confirmation=False,
+        handler=ledger_sales_agent_handler,
+        description="Owner-only env-gated Ledger sales advisor. May call an LLM for owner-review strategy/copy, but never sends, posts, quotes, reserves, orders, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",

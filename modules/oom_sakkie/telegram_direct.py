@@ -5,6 +5,7 @@ from urllib import request as urllib_request
 from urllib import error as urllib_error
 
 from modules.oom_sakkie.service import handle_message
+from modules.oom_sakkie.ledger_agent import ledger_agent_policy
 from modules.oom_sakkie.telegram_gateway import (
     ALLOWED_USER_IDS_ENV,
     MAX_TELEGRAM_TEXT_CHARS,
@@ -36,6 +37,7 @@ def telegram_direct_policy(environ=None):
     webhook_secret = str(source.get(WEBHOOK_SECRET_ENV, "") or "").strip()
     allowed_ids = _allowed_user_ids(source)
     auth_locked = _auth_locked()
+    ledger_policy = ledger_agent_policy(source)
     configured = bool(bot_token)
     secret_configured = bool(webhook_secret)
     secret_meets_minimum = len(webhook_secret) >= MIN_TOKEN_CHARS
@@ -71,8 +73,10 @@ def telegram_direct_policy(environ=None):
         },
         "sends_telegram": ready,
         "reply_transport": "backend_sends_owner_telegram_reply" if ready else "disabled",
-        "deterministic_only": True,
-        "can_trigger_outbound_llm": False,
+        "deterministic_only": not ledger_policy["enabled"],
+        "deterministic_only_note": "Generic owner Telegram remains deterministic-only; explicit /ledger may call the Ledger LLM advisor when its env gate is enabled.",
+        "can_trigger_outbound_llm": ready and ledger_policy["enabled"],
+        "ledger_sales_agent": ledger_policy,
         "direct_bot_cutover_enabled": ready,
         "writes": False,
         "records_audit_trace": True,
@@ -167,11 +171,15 @@ def handle_telegram_direct_webhook(payload, headers=None, environ=None):
         message_result, message_status = _help_message_result(parsed["text"]), 200
     else:
         routed_text = command["text"] or parsed["text"]
-        message_result, message_status = handle_message({
+        allow_specialist_llm = command.get("allow_specialist_llm") is True
+        message_payload = {
             "text": routed_text[:MAX_TELEGRAM_TEXT_CHARS],
             "channel": "telegram_read_only",
             "session_id": parsed["session_id"],
-        })
+        }
+        if allow_specialist_llm:
+            message_payload["allow_specialist_llm"] = True
+        message_result, message_status = handle_message(message_payload)
     if message_status >= 400 or not message_result.get("success"):
         body, _ = _direct_result(False, "telegram_direct_answer_failed", policy, message_status)
         body.update({
@@ -291,6 +299,8 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
         return _format_sales_offer_brief(context, title=title, footer=footer)
     if tool_used == "sales_customer_draft":
         return _format_sales_customer_draft(context, title=title, footer=footer)
+    if tool_used == "ledger_sales_agent":
+        return _format_ledger_sales_agent(context, title=title, footer=footer)
     return ""
 
 
@@ -447,6 +457,44 @@ def _format_sales_customer_draft(context, title="Oom Sakkie", footer=None):
     return "\n".join(lines).strip()
 
 
+def _format_ledger_sales_agent(context, title="Oom Sakkie", footer=None):
+    if not context:
+        return ""
+    policy = context.get("ledger_agent_policy") or {}
+    llm_called = context.get("llm_called") is True
+    lines = [
+        title,
+        "",
+        "Ledger Sales Agent",
+        f"- Mode: {context.get('mode', 'owner_only_ledger_agent_not_active')}",
+        f"- LLM advisor: {'called' if llm_called else 'not active'}",
+    ]
+    if not llm_called:
+        lines.append(f"- Enable env: {policy.get('enable_env', 'OOM_SAKKIE_LEDGER_AGENT_ENABLED')}")
+    strategy = str(context.get("strategy") or "").strip()
+    if strategy:
+        lines.extend(["", "Strategy", _clip(strategy, 900)])
+    draft = str(context.get("customer_draft") or "").strip()
+    if draft:
+        lines.extend(["", "Draft", _clip(draft, 900)])
+    questions = list(context.get("owner_questions") or [])[:3]
+    if questions:
+        lines.extend(["", "Owner Questions"])
+        lines.extend(f"- {_clip(item, 180)}" for item in questions)
+    risks = list(context.get("risks") or [])[:3]
+    if risks:
+        lines.extend(["", "Checks"])
+        lines.extend(f"- {_clip(item, 180)}" for item in risks)
+    next_action = str(context.get("next_action") or "").strip()
+    if next_action:
+        lines.extend(["", f"Next: {_clip(next_action, 220)}"])
+    lines.extend([
+        "",
+        footer or "Owner-review Ledger advice only. Nothing was sent to customers; no quote, order, reservation, stock change, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
 def _summary(sections, name):
     return _clip(str(((sections.get(name) or {}).get("summary")) or "unavailable"), 180)
 
@@ -477,6 +525,8 @@ def _telegram_command_for_text(text):
         "offer": ("ask", "sales offer brief"),
         "/draft": ("ask", "sales customer draft"),
         "draft": ("ask", "sales customer draft"),
+        "/ledger": ("ask", "ledger sales agent", True),
+        "ledger": ("ask", "ledger sales agent", True),
         "/progress": ("ask", "jarvis progress"),
         "progress": ("ask", "jarvis progress"),
         "/approvals": ("ask", "what needs my approval"),
@@ -484,8 +534,10 @@ def _telegram_command_for_text(text):
         "/learning": ("ask", "self learning status"),
         "learning": ("ask", "self learning status"),
     }
-    kind, routed = aliases.get(clean, ("ask", ""))
-    return {"kind": kind, "text": routed}
+    item = aliases.get(clean, ("ask", ""))
+    kind, routed = item[0], item[1]
+    allow_specialist_llm = len(item) > 2 and item[2] is True
+    return {"kind": kind, "text": routed, "allow_specialist_llm": allow_specialist_llm}
 
 
 def _help_message_result(text):
@@ -498,6 +550,7 @@ def _help_message_result(text):
         "/agents - command center\n"
         "/offer - owner-review sales offer brief\n"
         "/draft - owner-review customer message draft\n"
+        "/ledger - owner-only Ledger sales advisor\n"
         "/approvals - owner approval queue\n"
         "/progress - Jarvis progress\n"
         "/learning - learning backlog status\n\n"
@@ -696,6 +749,7 @@ def _carried_over_capabilities():
         "sales dashboard",
         "business growth brief",
         "agent command center",
+        "Ledger sales agent",
         "safety gates",
         "review packet",
         "dry-run and learning backlog status",

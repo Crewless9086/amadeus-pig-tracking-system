@@ -117,6 +117,7 @@ def _build_payload(*, user_text, tool_name, deterministic_answer, stale_warnings
         "then ask exactly one approval-style follow-up question from backend_context.owner_question if present. "
         "For sales_offer_brief, summarize the owner-review draft only; explicitly avoid customer-facing copy and never imply a message, quote, sale, reservation, or stock change happened. "
         "For sales_customer_draft, show the draft as owner-review copy only and explicitly say it was not sent; never add prices, promises, confirmed availability, or quote/order language unless present in backend_context. "
+        "For ledger_sales_agent, show Ledger's owner-review strategy and draft only; never imply a customer was contacted, a quote/order/reservation was created, stock changed, or any sales action was taken. "
         "For system_work_status, state the next owner action first, then mention build/patch/deploy/dispatch-design counts only if useful. "
         "For every other tool, stay in that tool's lane. Do not mention unrelated systems that were not checked. "
         "Never say things like 'power is not part of this' or 'weather was not evaluated' unless a safety note explicitly says it. "

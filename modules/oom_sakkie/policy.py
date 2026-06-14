@@ -1,6 +1,7 @@
 from modules.oom_sakkie.access import LLM_MESSAGE_GUARD_ENVS, is_llm_message_guard_active
 from modules.oom_sakkie.llm_answer import llm_answer_policy
 from modules.oom_sakkie.llm_router import llm_router_policy
+from modules.oom_sakkie.ledger_agent import ledger_agent_policy
 from modules.oom_sakkie.sentinel_single_shot_runner import specialist_dry_run_policy
 from modules.oom_sakkie.telegram_direct import telegram_direct_policy
 from modules.oom_sakkie.telegram_gateway import telegram_gateway_policy
@@ -12,6 +13,7 @@ def get_runtime_policy():
     tools = list(TOOL_REGISTRY.values())
     llm_answer = llm_answer_policy()
     llm_router = llm_router_policy()
+    ledger_agent = ledger_agent_policy()
     specialist_dry_run = specialist_dry_run_policy()
     backend_voice_stt = backend_voice_stt_policy()
     telegram_gateway = telegram_gateway_policy()
@@ -66,6 +68,8 @@ def get_runtime_policy():
         "llm_answer": llm_answer,
         "llm_router_enabled": llm_router["enabled"],
         "llm_router": llm_router,
+        "ledger_sales_agent_enabled": ledger_agent["enabled"],
+        "ledger_sales_agent": ledger_agent,
         "specialist_dry_run_enabled": specialist_dry_run["enabled"],
         "specialist_dry_run": specialist_dry_run,
         "write_tools_enabled": False,

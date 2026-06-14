@@ -527,6 +527,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertGreaterEqual(data["agent_count"], 8)
         ledger = next(item for item in data["agents"] if item["slug"] == "ledger")
         self.assertIn("business_growth_brief", ledger["allowed_tools"])
+        self.assertIn("ledger_sales_agent", ledger["allowed_tools"])
 
     def test_agents_route_denies_non_local_review_access(self):
         response = self.client.get(

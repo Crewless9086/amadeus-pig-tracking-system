@@ -12567,6 +12567,40 @@ Next live steps:
 3. Check whether the draft is commercially useful.
 4. If useful, the next gated build should be an append-only owner approval rail for drafts; still no automatic customer send.
 
+### 10.9EB Ledger Sales Agent LLM Advisory Lane - Local Ready
+
+Goal:
+- Make the first genuinely "smart" business agent lane useful for sales, without giving it customer-send, order, stock, or financial authority.
+
+What is built:
+- New Oom Sakkie tool: `ledger_sales_agent`.
+- New direct Telegram shortcut: `/ledger`.
+- Deterministic routing for Ledger/sales-agent/help-me-sell wording.
+- Env-gated LLM helper in `modules/oom_sakkie/ledger_agent.py`.
+- Runtime policy now exposes `ledger_sales_agent` policy and counts both `sales_customer_draft` and `ledger_sales_agent` as `DRAFT_ONLY`.
+- Ledger sends capped owner sales/meat context to the configured OpenAI-compatible chat-completions endpoint only through the explicit owner `/ledger` command path and only when:
+  - `OOM_SAKKIE_LEDGER_AGENT_ENABLED=1`
+  - `OPENAI_API_KEY` is configured
+  - `OOM_SAKKIE_LLM_ROUTER_MODEL` is configured
+- Disabled, misconfigured, or non-authorized request mode fails closed and makes no network call.
+- Parser rejects unsafe LLM claims such as saying a customer was contacted, a quote/order/reservation was created, or stock changed.
+
+Safety boundary:
+- Owner-review strategy/copy only.
+- No customer Telegram, WhatsApp, Chatwoot, n8n, or public send.
+- No quote, order, reservation, stock change, specialist tool execution, dispatch, runtime/prompt change, farm/customer/control write, physical control, or financial action.
+
+Verification:
+- `.\venv\Scripts\python.exe -m py_compile modules\oom_sakkie\ledger_agent.py modules\oom_sakkie\tools.py modules\oom_sakkie\telegram_direct.py modules\oom_sakkie\service.py modules\oom_sakkie\policy.py modules\oom_sakkie\agent_runtime.py modules\oom_sakkie\llm_answer.py` -> OK.
+- `.\venv\Scripts\python.exe -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts` -> 393 OK, 7 skipped.
+
+Next live steps:
+1. Deploy the latest commit.
+2. Test `/ledger` with the env disabled first; it should explain Ledger is not active.
+3. If owner accepts OpenAI sales-context egress, set `OOM_SAKKIE_LEDGER_AGENT_ENABLED=1`, `OPENAI_API_KEY`, and `OOM_SAKKIE_LLM_ROUTER_MODEL` on Render.
+4. Test `/ledger` with ready meat context and confirm it gives useful strategy plus draft copy.
+5. Next build after this should be an append-only owner approval/send rail for selected customer drafts; still no automatic send until a separate approval gate.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

@@ -148,6 +148,10 @@ RULES = [
         IntentMatch("sales_customer_draft", "sales_customer_draft", 0.95, "rule:sales_customer_draft"),
     ),
     (
+        re.compile(r"\b(ledger sales agent|ledger agent|ledger help|ledger.*sell|sales agent|help me sell|sell this meat|sell the meat|how should we sell|smart sales|make this offer better)\b", re.I),
+        IntentMatch("ledger_sales_agent", "ledger_sales_agent", 0.95, "rule:ledger_sales_agent"),
+    ),
+    (
         re.compile(r"\b(sales offer brief|offer draft|draft offer brief|owner offer brief|prepare.*sales.*offer|prepare.*draft.*offer|meat offer brief)\b", re.I),
         IntentMatch("sales_offer_brief", "sales_offer_brief", 0.95, "rule:sales_offer_brief"),
     ),
@@ -206,6 +210,7 @@ def handle_message(payload):
     text = str((payload or {}).get("text") or "").strip()[:MAX_USER_TEXT_CHARS]
     channel = str((payload or {}).get("channel") or "kiosk").strip()[:40]
     session_id = str((payload or {}).get("session_id") or "").strip()[:120]
+    allow_specialist_llm = (payload or {}).get("allow_specialist_llm") is True
     llm_allowed = channel not in DETERMINISTIC_ONLY_CHANNELS
     trace_id = build_trace_id()
 
@@ -427,7 +432,7 @@ def handle_message(payload):
             "trace_store": trace_status,
         }, 500
 
-    tool_result = tool.handler({"user_text": text})
+    tool_result = tool.handler({"user_text": text, "allow_specialist_llm": allow_specialist_llm})
     stale_warnings = list(tool_result.get("stale_warnings") or [])
     safety_notes = list(tool_result.get("safety_notes") or [])
     links = list(tool_result.get("links") or [])
