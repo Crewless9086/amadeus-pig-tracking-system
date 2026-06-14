@@ -268,6 +268,8 @@ def _compact_telegram_reply(message_result, title="Oom Sakkie", footer=None):
         return _format_safety_gate_board(context, title=title, footer=footer)
     if tool_used == "agent_command_center":
         return _format_agent_command_center(context, title=title, footer=footer)
+    if tool_used == "sales_offer_brief":
+        return _format_sales_offer_brief(context, title=title, footer=footer)
     return ""
 
 
@@ -371,6 +373,33 @@ def _format_agent_command_center(context, title="Oom Sakkie", footer=None):
     return "\n".join(lines).strip()
 
 
+def _format_sales_offer_brief(context, title="Oom Sakkie", footer=None):
+    offer = (context or {}).get("offer_brief") or {}
+    if not offer:
+        return ""
+    lines = [
+        title,
+        "",
+        "Sales Offer Brief",
+        f"- Mode: {offer.get('mode', 'owner_review_draft_only')}",
+        f"- Angle: {_clip(str(offer.get('angle') or ''), 140)}",
+        f"- Target: {_clip(str(offer.get('target') or ''), 180)}",
+        f"- Basis: {_clip(str(offer.get('basis_summary') or ''), 220)}",
+        "",
+        "Owner Checks",
+    ]
+    for item in (offer.get("owner_checks") or [])[:3]:
+        lines.append(f"- {_clip(item, 180)}")
+    approval_question = str(offer.get("approval_question") or "").strip()
+    if approval_question:
+        lines.extend(["", f"Question: {_clip(approval_question, 220)}"])
+    lines.extend([
+        "",
+        footer or "Owner-review draft only. No customer message, quote, sale, reservation, stock change, dispatch, runtime change, or physical action was performed.",
+    ])
+    return "\n".join(lines).strip()
+
+
 def _summary(sections, name):
     return _clip(str(((sections.get(name) or {}).get("summary")) or "unavailable"), 180)
 
@@ -397,6 +426,8 @@ def _telegram_command_for_text(text):
         "gates": ("ask", "safety gates"),
         "/agents": ("ask", "agent command center"),
         "agents": ("ask", "agent command center"),
+        "/offer": ("ask", "sales offer brief"),
+        "offer": ("ask", "sales offer brief"),
         "/progress": ("ask", "jarvis progress"),
         "progress": ("ask", "jarvis progress"),
         "/approvals": ("ask", "what needs my approval"),
@@ -416,6 +447,7 @@ def _help_message_result(text):
         "/attention - what needs attention today\n"
         "/gates - safety and CI gates\n"
         "/agents - command center\n"
+        "/offer - owner-review sales offer brief\n"
         "/approvals - owner approval queue\n"
         "/progress - Jarvis progress\n"
         "/learning - learning backlog status\n\n"

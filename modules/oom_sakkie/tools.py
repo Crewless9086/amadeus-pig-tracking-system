@@ -277,6 +277,61 @@ def business_growth_brief_handler(_args):
     }
 
 
+def sales_offer_brief_handler(_args):
+    business = business_growth_brief_handler({})
+    context = business.get("llm_context") or {}
+    outline = context.get("offer_brief_outline") or {}
+    counts = context.get("counts") or {}
+    ready_candidates = context.get("ready_meat_candidates") or []
+    marketable_stock = context.get("marketable_stock") or {}
+    offer_brief = _sales_offer_brief_from_outline(
+        outline=outline,
+        counts=counts,
+        ready_candidates=ready_candidates,
+        marketable_stock=marketable_stock,
+        owner_question=context.get("owner_question"),
+    )
+    safety_notes = [
+        "Sales offer brief is owner-review draft material only. No customer message was sent, no public post was drafted, no quote was created, and no sale/reservation/stock change was made."
+    ]
+    safety_notes.extend(business.get("safety_notes") or [])
+    summary = (
+        "Sales offer brief prepared for owner review only. "
+        f"Angle: {offer_brief['angle']} "
+        f"Basis: {offer_brief['basis_summary']} "
+        f"Owner check: {offer_brief['owner_checks'][0]}"
+    )
+    return {
+        "success": business.get("success") is True,
+        "status": "draft_only" if business.get("success") else "partial",
+        "summary": summary,
+        "links": business.get("links") or [{"label": "Sales Dashboard", "href": "/sales-dashboard"}],
+        "stale_warnings": business.get("stale_warnings") or [],
+        "safety_notes": safety_notes[:6],
+        "llm_context": {
+            "kind": "sales_offer_brief",
+            "mode": "owner_review_draft_only",
+            "selected_agent": {"slug": "ledger", "name": "Ledger"},
+            "offer_brief": offer_brief,
+            "source_context": {
+                "business_growth_brief": context,
+            },
+            "sends_customer_message": False,
+            "customer_public_output_enabled": False,
+            "creates_quote": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+            "runs_specialist_llm": False,
+            "runs_specialist_tools": False,
+        },
+        "raw": {
+            "kind": "sales_offer_brief",
+            "business_growth_brief": business,
+        },
+    }
+
+
 def jarvis_daily_command_brief_handler(_args):
     sections = {
         "farm": farm_operating_brief_handler({}),
@@ -527,6 +582,63 @@ def _business_offer_brief_outline(*, focus, marketable_stock, ready_candidates, 
             "No public post drafted.",
             "No quote created.",
             "No sale, reservation, or stock change made.",
+        ],
+    }
+
+
+def _sales_offer_brief_from_outline(*, outline, counts, ready_candidates, marketable_stock, owner_question):
+    title = str(outline.get("title") or "Owner sales offer brief").strip()
+    stock_basis = [str(item).strip() for item in (outline.get("stock_basis") or []) if str(item).strip()]
+    categories = marketable_stock.get("categories") or []
+    if not stock_basis and categories:
+        stock_basis = [
+            "{}: {} available".format(item.get("category"), item.get("qty"))
+            for item in categories[:3]
+            if item.get("category")
+        ]
+    basis_summary = "; ".join(stock_basis[:3]) if stock_basis else str(outline.get("evidence") or "No immediate stock basis available.")
+    ready_now = int(counts.get("meat_ready_now") or 0)
+    marketable_total = int(counts.get("marketable_sales_stock") or 0)
+    if ready_candidates:
+        angle = "ready-meat preorder check"
+        owner_checks = [
+            "Confirm price, cut set, collection/delivery, and exact availability before any customer-facing wording.",
+            "Choose which known buyers should be contacted first.",
+            "Confirm whether the listed ready candidates are still available and healthy for the plan.",
+        ]
+    elif marketable_total > 0:
+        angle = "listed-stock sales push"
+        owner_checks = [
+            "Choose the buyer segment and price band before any customer-facing wording.",
+            "Confirm stock availability still matches the dashboard.",
+            "Confirm whether this should be a private buyer message or a later public post.",
+        ]
+    else:
+        angle = "demand discovery"
+        owner_checks = [
+            "Review recent customer demand before drafting any offer.",
+            "Check whether stock or meat candidates changed since the brief was generated.",
+            "Decide whether this should wait for clearer availability.",
+        ]
+    return {
+        "title": title,
+        "mode": "owner_review_draft_only",
+        "angle": angle,
+        "target": str(outline.get("target") or "Owner must choose target before customer wording.").strip(),
+        "basis_summary": basis_summary,
+        "stock_basis": stock_basis[:5],
+        "ready_now": ready_now,
+        "marketable_stock": marketable_total,
+        "owner_checks": owner_checks,
+        "approval_question": str(owner_question or outline.get("next_step") or "Do you want to approve a later customer-facing draft?").strip(),
+        "not_customer_copy": True,
+        "forbidden_outputs": [
+            "customer_message",
+            "public_post",
+            "quote",
+            "order_update",
+            "stock_reservation",
+            "price_change",
         ],
     }
 
@@ -2345,6 +2457,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=business_growth_brief_handler,
         description="Read-only business growth brief across sales stock and meat pipeline. Never drafts, posts, sells, or sends messages.",
+    ),
+    "sales_offer_brief": OomSakkieTool(
+        name="sales_offer_brief",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=sales_offer_brief_handler,
+        description="Owner-review sales offer brief built from read-only sales/meat context. Never sends, posts, quotes, reserves, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",

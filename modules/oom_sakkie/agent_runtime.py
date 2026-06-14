@@ -15,7 +15,7 @@ REVIEWED_LEARNING_INFLUENCE_ALLOW_CONSUMED_CALLERS = [
 ]
 
 
-CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DX"
+CURRENT_CLAUDE_REVIEW_SCOPE = "Oom Sakkie 10.6 through 10.9DY"
 CURRENT_CLAUDE_REVIEW_HANDOFF = "docs/00-start-here/CLAUDE_REVIEW_HANDOFF.md"
 CURRENT_CLAUDE_REVIEW_PROMPT = f"Read {CURRENT_CLAUDE_REVIEW_HANDOFF} and run the current review."
 CURRENT_CLAUDE_REVIEW_CI_EVIDENCE_POLICY = {
@@ -57,6 +57,7 @@ CURRENT_CLAUDE_REVIEW_FOCUS = [
     "Direct Telegram now has a review-gated parity report, owner help/menu commands, formatted replies, and a default-off script-invoked proactive daily brief sender with no background loop.",
     "Live Telegram test feedback tightened formatting: daily brief, safety gates, and agent command center now use compact structured Telegram layouts instead of dense kiosk paragraphs.",
     "Agent/Sam direction is logged: Oom Sakkie remains the owner orchestrator, specialist agents start as backend draft/review-only lanes, and Sam keeps Chatwoot/n8n as customer-facing transport until a separate sales-agent authority review.",
+    "Owner Telegram /offer now produces a Ledger-shaped sales offer brief for owner review only, with no customer send, public post, quote, stock reservation, stock change, specialist execution, or write authority.",
     "Supervised live consumer smoke produced one review-note artifact, replayed as already_consumed, and left all authority flags false.",
     "Browser behavior and audit-rail CI gates are green for the latest owner review packet checkpoint.",
 ]
@@ -112,7 +113,7 @@ _AGENT_TOOLS = {
     "sentinel": ("system_work_status", "farm_operating_brief"),
     "forge": ("system_work_status",),
     "prism": ("system_work_status",),
-    "ledger": ("business_growth_brief", "sales_dashboard", "meat_planning"),
+    "ledger": ("business_growth_brief", "sales_offer_brief", "sales_dashboard", "meat_planning"),
     "atlas": ("farm_operating_brief", "dashboard_summary", "pig_allocation_readiness", "power_recent"),
     "rootline": ("weather_now", "weather_today", "weather_forecast", "irrigation_status"),
     "herdmaster": ("dashboard_summary", "pig_allocation_readiness", "meat_planning", "farm_attention_summary"),
@@ -142,6 +143,7 @@ _TOOL_PRIMARY_AGENT = {
     "system_work_status": "forge",
     "farm_operating_brief": "atlas",
     "business_growth_brief": "ledger",
+    "sales_offer_brief": "ledger",
     "farm_attention_summary": "quartermaster",
     "power_current": "atlas",
     "power_recent": "atlas",

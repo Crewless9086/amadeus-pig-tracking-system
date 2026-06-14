@@ -144,6 +144,10 @@ RULES = [
         IntentMatch("farm_operating_brief", "farm_operating_brief", 0.95, "rule:farm_operating_brief"),
     ),
     (
+        re.compile(r"\b(sales offer brief|offer draft|draft offer brief|owner offer brief|prepare.*sales.*offer|prepare.*draft.*offer|meat offer brief)\b", re.I),
+        IntentMatch("sales_offer_brief", "sales_offer_brief", 0.95, "rule:sales_offer_brief"),
+    ),
+    (
         re.compile(r"\b(business advisor|business growth|grow sales|grow the business|make money|generate money|what should we sell|what can we sell|what should i promote|sales opportunity|commercial focus|next offer|offer brief|commercial brief|prepare.*offer)\b", re.I),
         IntentMatch("business_growth_brief", "business_growth_brief", 0.95, "rule:business_growth_brief"),
     ),

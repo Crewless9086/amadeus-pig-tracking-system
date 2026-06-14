@@ -12489,6 +12489,35 @@ Safety boundary:
 - No new runtime authority in this note.
 - No live specialist dispatch, customer-facing Sam send, order write, quote/document send, irrigation start/stop, prompt/runtime change, public output, or financial action is authorized here.
 
+### 10.9DY Owner Sales Offer Brief - Local Ready
+
+Goal:
+- Make the first sales-agent lane useful from Telegram without giving it customer-send or order-write authority.
+
+What is built:
+- New Oom Sakkie tool: `sales_offer_brief`.
+- New direct Telegram shortcut: `/offer`.
+- Deterministic routing for `sales offer brief`, `offer draft`, `draft offer brief`, and similar owner prompts.
+- The brief reuses read-only `business_growth_brief`, `sales_dashboard`, and `meat_planning` context.
+- Telegram renders a compact owner-review layout with:
+  - mode,
+  - sales angle,
+  - target,
+  - stock/meat basis,
+  - owner checks,
+  - approval question.
+
+Safety boundary:
+- Owner-review draft material only.
+- Not customer-facing copy.
+- No Telegram customer send, public post, quote, order update, stock reservation, stock change, specialist LLM/tool execution, dispatch, runtime change, farm/control write, or financial action.
+
+Next live steps:
+1. Deploy the latest commit.
+2. In Telegram, send `/offer`.
+3. Confirm the brief is useful enough for owner planning.
+4. If useful, next build can add an owner-approved "prepare customer draft" rail, still with no automatic customer send.
+
 7.3E weather LLM triage note:
 
 - Source note moved from `planning/ToDoList.md`: workflow `2.1` is giving LLM errors in the system.

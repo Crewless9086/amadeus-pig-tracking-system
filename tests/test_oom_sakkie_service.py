@@ -226,6 +226,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "system_work_status",
                 "farm_operating_brief",
                 "business_growth_brief",
+                "sales_offer_brief",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
@@ -963,6 +964,55 @@ class OomSakkieServiceTests(unittest.TestCase):
         "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
         "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
         "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
+    }, clear=True)
+    @patch("modules.oom_sakkie.telegram_direct.send_owner_telegram_reply")
+    @patch("modules.oom_sakkie.telegram_direct.handle_message")
+    def test_telegram_direct_offer_command_routes_to_owner_offer_brief(self, mock_handle, mock_send):
+        mock_handle.return_value = ({
+            "success": True,
+            "answer": "Offer brief answer.",
+            "tool_used": "sales_offer_brief",
+            "risk_level": 0,
+            "safety_notes": ["No customer message was sent."],
+            "tool_context": {
+                "offer_brief": {
+                    "mode": "owner_review_draft_only",
+                    "angle": "ready-meat preorder check",
+                    "target": "Existing meat buyers.",
+                    "basis_summary": "tag 22 in D1 at 58.8 kg",
+                    "owner_checks": ["Confirm price and exact availability."],
+                },
+            },
+        }, 200)
+        mock_send.return_value = ({"success": True, "status": "telegram_sent", "sends_telegram": True}, 200)
+
+        result, status_code = handle_telegram_direct_webhook(
+            {
+                "message": {
+                    "text": "/offer",
+                    "from": {"id": 12345},
+                    "chat": {"id": 67890},
+                },
+            },
+            headers={"X-Telegram-Bot-Api-Secret-Token": TELEGRAM_DIRECT_SECRET},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        mock_handle.assert_called_once_with({
+            "text": "sales offer brief",
+            "channel": "telegram_read_only",
+            "session_id": "telegram-67890",
+        })
+        self.assertIn("Sales Offer Brief", result["telegram_text"])
+        self.assertIn("Owner-review draft only", result["telegram_text"])
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_TELEGRAM_DIRECT_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_DIRECT_SEND_ENABLED": "1",
+        "OOM_SAKKIE_TELEGRAM_BOT_TOKEN": TELEGRAM_BOT_TOKEN,
+        "OOM_SAKKIE_TELEGRAM_WEBHOOK_SECRET": TELEGRAM_DIRECT_SECRET,
+        "OOM_SAKKIE_TELEGRAM_ALLOWED_USER_IDS": "12345",
         "OOM_SAKKIE_LLM_ROUTER_ENABLED": "1",
         "OOM_SAKKIE_LLM_ROUTER_MODEL": "test-router",
         "OOM_SAKKIE_LLM_ANSWER_ENABLED": "1",
@@ -1086,6 +1136,32 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("- Marketable stock: 21", text)
         self.assertIn("Command Center", text)
         self.assertIn("- Jarvis progress: 54%", text)
+        self.assertNotIn("Long paragraph should not be used.", text)
+
+    def test_telegram_sales_offer_brief_format_is_compact_and_owner_only(self):
+        text = format_telegram_owner_reply({
+            "answer": "Long paragraph should not be used.",
+            "tool_used": "sales_offer_brief",
+            "tool_context": {
+                "offer_brief": {
+                    "mode": "owner_review_draft_only",
+                    "angle": "ready-meat preorder check",
+                    "target": "Existing meat buyers.",
+                    "basis_summary": "tag 22 in D1 at 58.8 kg",
+                    "owner_checks": [
+                        "Confirm price, cut set, collection/delivery, and exact availability.",
+                        "Choose which known buyers should be contacted first.",
+                    ],
+                    "approval_question": "Should I prepare a later customer-facing draft?",
+                },
+            },
+        })
+
+        self.assertIn("Sales Offer Brief", text)
+        self.assertIn("- Mode: owner_review_draft_only", text)
+        self.assertIn("- Angle: ready-meat preorder check", text)
+        self.assertIn("Owner Checks", text)
+        self.assertIn("No customer message", text)
         self.assertNotIn("Long paragraph should not be used.", text)
 
     @patch.dict(os.environ, {
@@ -1347,8 +1423,8 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertEqual(packet["payloads"]["jarvis_safety_gate_board"]["mode"], "jarvis_safety_gate_board_only")
         self.assertEqual(packet["payloads"]["agent_runtime_review_packet"]["mode"], "agent_runtime_review_packet_only")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["claude_prompt"])
-        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DX")
-        self.assertIn("10.9DX", packet["current_review"]["scope"])
+        self.assertEqual(packet["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DY")
+        self.assertIn("10.9DY", packet["current_review"]["scope"])
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", packet["current_review"]["handoff_file"])
         self.assertTrue(packet["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(packet["current_review"]["applies_learning_now"])
@@ -1386,6 +1462,7 @@ class OomSakkieServiceTests(unittest.TestCase):
         self.assertIn("proactive daily brief", " ".join(packet["current_review"]["focus"]))
         self.assertIn("compact structured Telegram layouts", " ".join(packet["current_review"]["focus"]))
         self.assertIn("Sam keeps Chatwoot/n8n", " ".join(packet["current_review"]["focus"]))
+        self.assertIn("Telegram /offer", " ".join(packet["current_review"]["focus"]))
         self.assertEqual(
             packet["payloads"]["learning_influence_consumption_readiness"]["mode"],
             "learning_influence_consumption_readiness_only",
@@ -2180,14 +2257,14 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["status"], "ok")
         self.assertIn("Owner review packet is ready", result["summary"])
-        self.assertIn("10.9DX", result["summary"])
+        self.assertIn("10.9DY", result["summary"])
         self.assertIn("2 recorded CI gate", result["summary"])
         self.assertIn("does not call Claude", result["stale_warnings"][0])
         self.assertIn("read-only", result["safety_notes"][0])
         self.assertEqual(result["llm_context"]["kind"], "jarvis_owner_review_packet")
         self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "gatekeeper")
         self.assertIn("CLAUDE_REVIEW_HANDOFF.md", result["llm_context"]["claude_prompt"])
-        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DX")
+        self.assertEqual(result["llm_context"]["current_review"]["scope"], "Oom Sakkie 10.6 through 10.9DY")
         self.assertTrue(result["llm_context"]["current_review"]["learning_influence_consumer_enabled"])
         self.assertFalse(result["llm_context"]["dispatch_enabled"])
         self.assertFalse(result["llm_context"]["runs_specialist_llm"])
@@ -2265,7 +2342,7 @@ def literal_false_is_allowed():
         self.assertTrue(result["success"])
         self.assertEqual(result["tool_used"], "jarvis_owner_review_packet")
         self.assertEqual(result["pipeline"]["answer_source"], "deterministic")
-        self.assertIn("10.9DX", result["answer"])
+        self.assertIn("10.9DY", result["answer"])
         self.assertIn("2 recorded CI gate", result["answer"])
         self.assertIn("does not approve runtime authority", result["safety_notes"][0])
         self.assertEqual(result["agent_activity"]["active_agent"]["slug"], "gatekeeper")
@@ -4117,6 +4194,58 @@ def literal_false_is_allowed():
         self.assertIn("read-only advice", result["safety_notes"][0])
         self.assertIn("No customer message", result["safety_notes"][0])
 
+    @patch("modules.oom_sakkie.tools.get_meat_planning_data")
+    @patch("modules.oom_sakkie.tools.get_sales_dashboard_data")
+    def test_sales_offer_brief_is_owner_review_only_and_never_sends_or_writes(self, mock_sales, mock_meat):
+        from modules.oom_sakkie.tools import sales_offer_brief_handler
+
+        mock_sales.return_value = {
+            "success": True,
+            "totals": [
+                {"sale_category": "Grower Pigs", "qty_available": 4, "status": "Available"},
+            ],
+        }
+        mock_meat.return_value = {
+            "success": True,
+            "summary": {"ready_now": 1, "next_14_days": 0},
+            "pigs": [{
+                "planning_bucket": "ready_now",
+                "pig_id": "PIG-22",
+                "tag_number": "22",
+                "current_pen_name": "D1",
+                "latest_weight_kg": 58.8,
+                "recommended_action": "Prioritize for meat preorder marketing.",
+                "marketing_readiness": "Ready For Interest",
+            }],
+        }
+
+        result = sales_offer_brief_handler({})
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "draft_only")
+        self.assertIn("Sales offer brief prepared", result["summary"])
+        self.assertEqual(result["llm_context"]["kind"], "sales_offer_brief")
+        self.assertEqual(result["llm_context"]["mode"], "owner_review_draft_only")
+        self.assertEqual(result["llm_context"]["selected_agent"]["slug"], "ledger")
+        self.assertFalse(result["llm_context"]["sends_customer_message"])
+        self.assertFalse(result["llm_context"]["customer_public_output_enabled"])
+        self.assertFalse(result["llm_context"]["creates_quote"])
+        self.assertFalse(result["llm_context"]["changes_stock"])
+        self.assertFalse(result["llm_context"]["writes"])
+        self.assertFalse(result["llm_context"]["dispatch_enabled"])
+        self.assertFalse(result["llm_context"]["runs_specialist_llm"])
+        self.assertFalse(result["llm_context"]["runs_specialist_tools"])
+        offer = result["llm_context"]["offer_brief"]
+        self.assertEqual(offer["mode"], "owner_review_draft_only")
+        self.assertEqual(offer["angle"], "ready-meat preorder check")
+        self.assertIn("tag 22 in D1 at 58.8 kg", offer["basis_summary"])
+        self.assertTrue(offer["not_customer_copy"])
+        self.assertIn("customer_message", offer["forbidden_outputs"])
+        self.assertIn("quote", offer["forbidden_outputs"])
+        self.assertIn("stock_reservation", offer["forbidden_outputs"])
+        self.assertIn("No customer message was sent", result["safety_notes"][0])
+        self.assertIn("no quote was created", result["safety_notes"][0])
+
     def test_review_advisor_is_advisory_and_prioritizes_trace_review(self):
         advisor = build_review_advice(
             summary={
@@ -4807,6 +4936,8 @@ def literal_false_is_allowed():
             "how do we grow sales": "business_growth_brief",
             "what should i promote": "business_growth_brief",
             "prepare an offer brief": "business_growth_brief",
+            "prepare a sales offer brief": "sales_offer_brief",
+            "draft offer brief for meat": "sales_offer_brief",
             "what needs attention today": "farm_attention_summary",
             "give me the farm operating brief": "farm_operating_brief",
             "bring me up to speed": "farm_operating_brief",
@@ -5214,6 +5345,8 @@ def literal_false_is_allowed():
         self.assertIn("internal offer brief outline only", system)
         self.assertIn("not customer-facing copy", system)
         self.assertIn("ask exactly one approval-style follow-up question", system)
+        self.assertIn("For sales_offer_brief, summarize the owner-review draft only", system)
+        self.assertIn("never imply a message, quote, sale, reservation, or stock change happened", system)
         self.assertIn("For system_work_status, state the next owner action first", system)
         self.assertIn("stay in that tool's lane", system)
         self.assertIn("Do not mention unrelated systems", system)
