@@ -49,7 +49,7 @@ Do not overwrite old approved versions. Add a new version number and update the 
 
 | Agent ID | Display Name | Image Status | Voice Status | Notes |
 | --- | --- | --- | --- | --- |
-| `oom-sakkie` | Oom Sakkie | Pending file upload | Pending ElevenLabs selection | Start with static portrait and CSS state motion. |
+| `oom-sakkie` | Oom Sakkie | Static portrait added as `oom-sakkie_portrait_main_neutral_v01.png` and dock portrait | Voice candidate: Mikey Slater - Motivational Speaker (`3y3q5VpFXdeyf5ooB12e`), not production-approved yet | Start with static portrait and CSS state motion. |
 | `ledger` | Ledger | Pending generation/upload | Pending ElevenLabs selection | Same semi-realistic farm command style. |
 | `herdmaster` | Herdmaster | Pending generation/upload | Pending ElevenLabs selection | Same semi-realistic farm command style. |
 | `beacon` | Beacon | Pending generation/upload | Pending ElevenLabs selection | Same semi-realistic farm command style. |

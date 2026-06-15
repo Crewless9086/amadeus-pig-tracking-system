@@ -4,6 +4,7 @@
   const statusBadge = document.getElementById("oom_status");
   const statusText = document.getElementById("oom_status_text");
   const presenceOrb = document.getElementById("oom_presence_orb");
+  const presencePortrait = document.getElementById("oom_presence_portrait");
   const presenceLine = document.getElementById("oom_presence_line");
   const agentControllerState = document.getElementById("oom_agent_controller_state");
   const activeAgentWorkspace = document.getElementById("oom_active_agent_workspace");
@@ -367,10 +368,12 @@
         if (item && item.agent_id) acc[item.agent_id] = item;
         return acc;
       }, {});
+      setAvatarImage(presencePortrait, specialistProfiles.home, agentAssetRegistry["oom-sakkie"], "portrait_main");
       renderAgentDockAssets();
       openSpecialist(activeSpecialist);
     } catch (error) {
       agentAssetRegistry = {};
+      setAvatarImage(presencePortrait, specialistProfiles.home, null, "portrait_main");
       renderAgentDockAssets();
     }
   }

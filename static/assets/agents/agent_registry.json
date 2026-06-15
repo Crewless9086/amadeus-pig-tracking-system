@@ -17,8 +17,9 @@
       "voice_preview_en": "/assets/agents/oom-sakkie/voice/oom-sakkie_voice_preview_en_v01.mp3",
       "voice_preview_af": "/assets/agents/oom-sakkie/voice/oom-sakkie_voice_preview_af_v01.mp3",
       "voice_provider": "elevenlabs",
-      "voice_name": "TO_BE_SELECTED",
-      "voice_id": "TO_BE_SELECTED",
+      "voice_name": "Mikey Slater - Motivational Speaker",
+      "voice_id": "3y3q5VpFXdeyf5ooB12e",
+      "voice_model_id": "TO_BE_CONFIRMED",
       "voice_approved_for_production": false,
       "authority_boundary": "Can summarize, route, ask, and prepare owner decisions. Cannot approve, send, post, control hardware, or change farm records unless a specific approved workflow allows it."
     },
