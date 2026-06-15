@@ -2399,8 +2399,11 @@
       const title = document.createElement("strong");
       const detail = document.createElement("p");
       const interest = document.createElement("p");
+      const event = document.createElement("p");
       const guard = document.createElement("p");
+      const actions = document.createElement("div");
       const product = String(((item.interest || {}).product || (item.interest || {}).cut_set || "") || "");
+      const latestEvent = (item.latest_event || {}).event_type || "";
       row.className = item.status === "deposit_pending" || item.status === "asked_price" || item.status === "order_ready_for_approval"
         ? "oom-work-item oom-work-item-active"
         : "oom-work-item";
@@ -2409,12 +2412,28 @@
       interest.textContent = product
         ? `${product} | ${item.next_owner_action || "No owner action recorded."}`
         : (item.next_owner_action || "No owner action recorded.");
+      event.textContent = latestEvent ? `Latest owner event: ${latestEvent}` : "Latest owner event: none yet";
       guard.className = "oom-advisor-guard";
       guard.textContent = "lead tracking only | no customer send | no Chatwoot/n8n call | no quote/order/stock write";
+      actions.className = "oom-work-actions";
+      [
+        ["owner_followup_needed", "Owner Follow-up"],
+        ["deposit_followup_needed", "Deposit Follow-up"],
+        ["closed", "Close Lead"],
+      ].forEach(([eventType, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "oom-build-brief-button";
+        button.textContent = label;
+        button.addEventListener("click", () => recordSalesLeadEvent(item.lead_id, eventType, button));
+        actions.appendChild(button);
+      });
       row.appendChild(title);
       row.appendChild(detail);
       row.appendChild(interest);
+      row.appendChild(event);
       row.appendChild(guard);
+      row.appendChild(actions);
       salesLeadsPanel.appendChild(row);
     });
   }
@@ -3728,6 +3747,45 @@
       if (button) {
         button.disabled = false;
         button.textContent = originalText || "Record Lead";
+      }
+    }
+  }
+
+  async function recordSalesLeadEvent(leadId, eventType, button) {
+    if (!leadId || !eventType) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    try {
+      const response = await fetch(`/api/oom-sakkie/sales-leads/${encodeURIComponent(leadId)}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          notes: `Owner recorded ${eventType} from Ledger Sales Workbench. No customer send, order, or stock write.`,
+          recorded_by: "owner",
+          status_observed: eventType === "closed" ? "closed" : "",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.status || "sales_lead_event_failed");
+      }
+      if (salesLeadCaptureStatus) {
+        salesLeadCaptureStatus.textContent = "Lead event recorded. No customer send, order, or stock write happened.";
+      }
+      await loadSalesWorkbench();
+    } catch (error) {
+      if (salesLeadCaptureStatus) {
+        const reason = error && error.message ? ` Reason: ${error.message}.` : "";
+        salesLeadCaptureStatus.textContent = `Lead event failed.${reason} No customer send, order, or stock write happened.`;
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
       }
     }
   }
