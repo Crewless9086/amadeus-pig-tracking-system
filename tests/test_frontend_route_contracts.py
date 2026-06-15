@@ -314,6 +314,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("chatwoot.com", approval_items.lower())
 
     def test_oom_sakkie_product_vision_and_agent_dock_exist(self):
+        from app import app
+
         vision = Path("docs/00-start-here/PRODUCT_VISION.md").read_text(encoding="utf-8")
         asset_register = Path("docs/00-start-here/AGENT_ASSET_REGISTER.md").read_text(encoding="utf-8")
         agent_registry = Path("static/assets/agents/agent_registry.json").read_text(encoding="utf-8")
@@ -351,6 +353,13 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("function litterAttentionHref", js)
         self.assertIn("function loadSpecialistLiveSummaries", js)
         self.assertIn('fetchSpecialistJson(url)', js)
+        client = app.test_client()
+        registry_response = client.get("/assets/agents/agent_registry.json")
+        portrait_response = client.get("/assets/agents/oom-sakkie/portraits/oom-sakkie_portrait_main_neutral_v01.png")
+        self.assertEqual(registry_response.status_code, 200)
+        self.assertEqual(portrait_response.status_code, 200)
+        registry_response.close()
+        portrait_response.close()
         self.assertIn("/api/pig-weights/dashboard", js)
         self.assertIn("/api/pig-weights/purpose-review", js)
         self.assertIn("/api/pig-weights/meat-planning", js)

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, render_template
+from flask import Flask, render_template, send_from_directory
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
 from modules.orders.order_routes import orders_bp
@@ -71,6 +71,11 @@ def meat_planning_page():
 @app.route("/oom-sakkie")
 def oom_sakkie_page():
     return render_template("oom-sakkie.html")
+
+
+@app.route("/assets/<path:filename>")
+def public_assets(filename):
+    return send_from_directory(Path(app.static_folder) / "assets", filename)
 
 
 @app.route("/sales/slaughter")

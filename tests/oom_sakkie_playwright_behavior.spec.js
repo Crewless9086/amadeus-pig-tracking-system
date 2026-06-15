@@ -176,6 +176,9 @@ test("kiosk startup performs no hidden POSTs or interval polling", async ({ page
   await page.goto("/oom-sakkie");
   await page.waitForLoadState("networkidle");
 
+  const presencePortrait = page.locator("#oom_presence_portrait img");
+  await expect(presencePortrait).toBeVisible();
+  await expect.poll(() => presencePortrait.evaluate((img) => img.naturalWidth > 0 && img.naturalHeight > 0)).toBe(true);
   const startupPosts = requests.filter((request) =>
     request.method !== "GET" && request.url.includes("/api/oom-sakkie/"),
   );

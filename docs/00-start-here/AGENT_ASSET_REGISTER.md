@@ -20,6 +20,8 @@ Browser paths use:
 /assets/agents/
 ```
 
+The Flask app serves this browser path from `static/assets/` through the `/assets/<path>` route. Keep this route tested; otherwise the UI falls back to initials even when the files exist.
+
 Do not use `/public/assets/agents/` in this Flask app unless a new public static rule is deliberately added later.
 
 ## Naming Rules
