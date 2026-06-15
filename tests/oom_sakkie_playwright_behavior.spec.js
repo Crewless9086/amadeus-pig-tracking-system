@@ -266,6 +266,12 @@ test("dry-run/result/message POSTs require explicit owner clicks", async ({ page
   await expect.poll(() => page.evaluate(() => window.__oomSakkieIntervals.length)).toBe(0);
 
   requests.length = 0;
+  await page.locator(".oom-system-workbench").evaluate((element) => {
+    element.open = false;
+  });
+  await page.locator(".oom-quick-drawer").evaluate((element) => {
+    element.open = false;
+  });
   await page.locator(".oom-command-deck [data-quick-ask]").first().click();
   await expect.poll(() => requests.some((request) =>
     request.method === "POST" && request.url.endsWith("/api/oom-sakkie/message"),
