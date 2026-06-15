@@ -194,6 +194,92 @@ class LitterAttentionActionTests(unittest.TestCase):
         self.assertEqual(update_map["PIG-1"]["Litter_Size_Weaned"], 2)
         self.assertEqual(update_map["PIG-1"]["Wean_Date"], "26 May 2026")
 
+    def test_mark_litter_weaned_can_capture_latest_weights_as_wean_weights(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Tag_Number": "101",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Tag_Number": "102",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+            },
+        ]
+        weight_rows = [
+            {"Pig_ID": "PIG-1", "Weight_Date": "2026-05-25", "Weight_Kg": "6.4"},
+            {"Pig_ID": "PIG-2", "Weight_Date": "2026-05-25", "Weight_Kg": "7.1"},
+        ]
+        litter_values = [
+            ["Litter_ID", "Weaned_Count", "Wean_Date", "Updated_At"],
+            ["LIT-1", "", "", ""],
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]:
+                return pig_rows
+            if sheet_name == pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]:
+                return weight_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values", return_value=litter_values), \
+             patch.object(pig_weights_service, "update_row_by_first_column_match", return_value=2), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id", return_value=2) as update_pigs:
+
+            result, status_code = pig_weights_service.mark_litter_weaned(
+                "LIT-1",
+                "2026-05-26",
+                changed_by="test",
+                use_latest_weights_as_wean_weights=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["wean_weights_captured"], 2)
+        self.assertEqual(result["wean_weight_rows"][0]["wean_weight_kg"], 6.4)
+        update_map = update_pigs.call_args.args[1]
+        self.assertEqual(update_map["PIG-1"]["Wean_Weight_Kg"], 6.4)
+        self.assertEqual(update_map["PIG-2"]["Wean_Weight_Kg"], 7.1)
+
+    def test_mark_litter_weaned_blocks_weight_capture_when_latest_weight_is_missing(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+            }
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]:
+                return pig_rows
+            if sheet_name == pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]:
+                return []
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values") as get_values, \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.mark_litter_weaned(
+                "LIT-1",
+                "2026-05-26",
+                use_latest_weights_as_wean_weights=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["missing_wean_weight_pig_ids"], ["PIG-1"])
+        get_values.assert_not_called()
+        update_pigs.assert_not_called()
+
     def test_mark_litter_weaned_requires_active_on_farm_piglets(self):
         pig_rows = [
             {

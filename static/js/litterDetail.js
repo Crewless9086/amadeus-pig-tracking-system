@@ -4,8 +4,10 @@ const litterDetailBackLink = document.getElementById("litter_detail_back_link");
 const attentionPanel = document.getElementById("litter_attention_panel");
 const attentionTitle = document.getElementById("litter_attention_title");
 const attentionText = document.getElementById("litter_attention_text");
+const attentionLinks = document.getElementById("litter_attention_links");
 const markWeanedForm = document.getElementById("mark_weaned_form");
 const markWeanedDate = document.getElementById("mark_weaned_date");
+const markWeanedUseLatestWeights = document.getElementById("mark_weaned_use_latest_weights");
 const markWeanedButton = document.getElementById("mark_weaned_button");
 const newbornHealthForm = document.getElementById("newborn_health_form");
 const newbornHealthDate = document.getElementById("newborn_health_date");
@@ -184,12 +186,16 @@ function renderAttention(litter) {
   attentionPanel.classList.toggle("hidden", !hasReason && !canMarkWeaned && !canRecordNewbornHealth);
   markWeanedForm.classList.toggle("hidden", !canMarkWeaned);
   newbornHealthForm.classList.toggle("hidden", !canRecordNewbornHealth);
+  if (attentionLinks) {
+    attentionLinks.innerHTML = "";
+  }
 
   if (!hasReason && !canMarkWeaned && !canRecordNewbornHealth) return;
 
   attentionTitle.textContent = attention.reason || "Review Litter";
   attentionText.textContent = attention.recommended_action
     || "Confirm the litter status and update the weaning details when ready.";
+  renderAttentionLinks(litter.litter_id, attention.action_type);
   markWeanedDate.value = attention.wean_date || todayIsoDate();
   if (newbornHealthDate && !newbornHealthDate.value) {
     newbornHealthDate.value = todayIsoDate();
@@ -199,6 +205,22 @@ function renderAttention(litter) {
       showLitterMessage("Could not load products for newborn health.", "error");
     });
   }
+}
+
+function renderAttentionLinks(litterId, actionType) {
+  if (!attentionLinks) return;
+  const encodedLitterId = encodeURIComponent(litterId || getLitterIdFromUrl());
+  const links = [];
+  if (actionType === "review_purpose") {
+    links.push(`<a class="button-link button-link-secondary" href="/purpose-review?litter_id=${encodedLitterId}">Open Purpose Review</a>`);
+  }
+  if (actionType === "record_post_wean_weight") {
+    links.push(`<a class="button-link button-link-secondary" href="/bulk-weights?return_to=${encodeURIComponent(`/purpose-review?litter_id=${litterId || getLitterIdFromUrl()}`)}&return_label=${encodeURIComponent("Back to Purpose Review")}">Capture Weights</a>`);
+  }
+  if (actionType && actionType !== "mark_weaned") {
+    links.push('<a class="button-link button-link-secondary" href="/">Dashboard</a>');
+  }
+  attentionLinks.innerHTML = links.join("");
 }
 
 function renderLifecycleOutcomes(litter) {
@@ -620,6 +642,7 @@ async function submitMarkWeaned(event) {
       body: JSON.stringify({
         wean_date: weanDate,
         changed_by: "web_app",
+        use_latest_weights_as_wean_weights: markWeanedUseLatestWeights ? markWeanedUseLatestWeights.checked : false,
       }),
     });
     const data = await response.json();

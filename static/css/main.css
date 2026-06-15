@@ -428,6 +428,99 @@ textarea {
   grid-template-columns: minmax(180px, 0.8fr) minmax(180px, 0.8fr) minmax(280px, 1.4fr) auto;
 }
 
+.purpose-review-filters {
+  grid-template-columns: minmax(160px, 0.75fr) minmax(160px, 0.75fr) minmax(180px, 0.9fr) minmax(260px, 1.3fr) auto;
+}
+
+.purpose-review-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+  margin-bottom: 18px;
+}
+
+.purpose-review-actions strong,
+.purpose-review-actions span {
+  display: block;
+}
+
+.purpose-review-actions span {
+  color: var(--text-soft);
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.purpose-review-table th:nth-child(4),
+.purpose-review-table td:nth-child(4) {
+  min-width: 210px;
+  max-width: 260px;
+  white-space: normal;
+}
+
+.purpose-review-table th:nth-child(6),
+.purpose-review-table td:nth-child(6) {
+  min-width: 180px;
+  max-width: 240px;
+  white-space: normal;
+}
+
+.purpose-review-table th:nth-child(7),
+.purpose-review-table td:nth-child(7),
+.purpose-review-table th:nth-child(8),
+.purpose-review-table td:nth-child(8) {
+  min-width: 150px;
+}
+
+.purpose-review-table select {
+  min-width: 140px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.purpose-review-recheck {
+  margin-top: 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fffdf9;
+  padding: 16px;
+}
+
+.purpose-review-recheck-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.purpose-review-recheck-grid div {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.purpose-review-recheck-grid span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.purpose-review-recheck-grid strong {
+  display: block;
+  margin-top: 3px;
+}
+
+.purpose-review-points {
+  margin: 14px 0 0;
+  padding-left: 20px;
+  color: var(--text-main);
+}
+
 .meat-demand-panel {
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -2173,8 +2266,14 @@ button:disabled {
   .sales-overview-filters,
   .sales-overview-summary,
   .allocation-filters,
+  .purpose-review-recheck-grid,
   .sales-stock-row {
     grid-template-columns: 1fr;
+  }
+
+  .purpose-review-actions {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .slaughter-detail-grid,
@@ -3718,6 +3817,35 @@ button:disabled {
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   align-items: start;
+}
+
+.oom-sales-lead-capture {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: end;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.oom-sales-lead-capture > div,
+.oom-sales-lead-capture .oom-advisor-guard {
+  grid-column: 1 / -1;
+}
+
+.oom-sales-lead-capture input,
+.oom-sales-lead-capture select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  padding: 9px 10px;
 }
 
 .oom-advisor-guard {

@@ -58,6 +58,11 @@ def pig_allocation_page():
     return render_template("pig-allocation.html")
 
 
+@app.route("/purpose-review")
+def purpose_review_page():
+    return render_template("purpose-review.html")
+
+
 @app.route("/meat-planning")
 def meat_planning_page():
     return render_template("meat-planning.html")

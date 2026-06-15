@@ -49,6 +49,7 @@ LITTER_PIGLET_DEATH_REASONS = {
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
 DEFAULT_LITTER_WEAN_AGE_DAYS = 35
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
+POST_WEAN_PURPOSE_REVIEW_DAYS = 14
 LIVE_SALE_TARGET_KG = 60
 MEAT_TARGET_MIN_KG = 55
 MEAT_TARGET_MAX_KG = 70
@@ -88,6 +89,21 @@ DEFAULT_ALLOCATION_SETTINGS = {
     "extremely_slow_grower_adg_kg_day": EXTREMELY_SLOW_GROWER_ADG_KG_DAY,
     "good_litter_survival_rate": GOOD_LITTER_SURVIVAL_RATE,
     "stale_weight_days": STALE_WEIGHT_DAYS,
+}
+PURPOSE_REVIEW_ALLOWED_PURPOSES = {
+    "Breeding",
+    "Grow_Out",
+    "Sale",
+    "Replacement",
+    "House_Use",
+    "Unknown",
+}
+SUGGESTED_PURPOSE_TO_STORED_PURPOSE = {
+    "Grow Out": "Grow_Out",
+    "Livestock Sale": "Sale",
+    "Meat": "Grow_Out",
+    "Abattoir Slaughter": "Grow_Out",
+    "Breeding Review": "Breeding",
 }
 
 
@@ -438,6 +454,8 @@ def get_litter_attention_summary(limit: int = 5, today=None):
 
         reason = ""
         action_type = ""
+        recommended_action = ""
+        purpose_attention = None
         newborn_attention = _litter_newborn_health_attention(
             litter_id,
             litter_status,
@@ -449,12 +467,22 @@ def get_litter_attention_summary(limit: int = 5, today=None):
         if newborn_attention:
             reason = newborn_attention["reason"]
             action_type = newborn_attention["action_type"]
+            recommended_action = newborn_attention["recommended_action"]
         elif needs_attention == "Yes":
             reason = _litter_attention_reason(row)
             if _is_tag_number_attention(reason) and _wean_tag_attention_is_not_due(wean_timing):
                 reason = ""
-        elif litter_status == "Weaned" and _litter_needs_purpose_review(litter_id, pig_rows):
-            reason = "Weaned - review purpose"
+        elif litter_status == "Weaned":
+            purpose_attention = _litter_purpose_review_attention(
+                litter_id,
+                pig_rows=pig_rows,
+                pig_master_rows=pig_master_rows,
+                today=today,
+            )
+            if purpose_attention:
+                reason = purpose_attention["reason"]
+                action_type = purpose_attention["action_type"]
+                recommended_action = purpose_attention["recommended_action"]
 
         if not reason:
             continue
@@ -468,6 +496,7 @@ def get_litter_attention_summary(limit: int = 5, today=None):
             "needs_attention": needs_attention,
             "reason": reason,
             "action_type": action_type,
+            "recommended_action": recommended_action,
             "active_pig_count": active_pig_count,
             "weaned_count": to_float(row.get("Weaned_Count", "")),
             "youngest_age_days": row.get("Youngest_Age_Days", ""),
@@ -508,6 +537,265 @@ def _purpose_needs_review(purpose):
     return normalized in ("", "unknown")
 
 
+def _stored_purpose_for_suggestion(suggested_purpose):
+    return SUGGESTED_PURPOSE_TO_STORED_PURPOSE.get(to_clean_string(suggested_purpose), "")
+
+
+def _purpose_review_status(row):
+    purpose = to_clean_string(row.get("purpose", ""))
+    if _purpose_needs_review(purpose):
+        if row.get("readiness_bucket") == "Needs Data":
+            return "needs_data"
+        return "needs_owner_decision"
+    return "classified"
+
+
+def _purpose_review_row(row):
+    proposed_purpose = _stored_purpose_for_suggestion(row.get("suggested_purpose", ""))
+    review_status = _purpose_review_status(row)
+    if review_status == "needs_data":
+        owner_action = "Complete missing tag, sex, pen, or weight data before approving purpose."
+    elif proposed_purpose:
+        owner_action = f"Review Herdmaster suggestion and approve {proposed_purpose}, override it, or recheck."
+    elif review_status == "needs_owner_decision":
+        owner_action = "Review manually; the current data is not strong enough for a trusted auto-suggestion."
+    else:
+        owner_action = "Already classified; no purpose approval is required."
+
+    return {
+        "pig_id": row.get("pig_id", ""),
+        "tag_number": row.get("tag_number", ""),
+        "litter_id": row.get("litter_id", ""),
+        "sow_tag_number": row.get("sow_tag_number", ""),
+        "boar_tag_number": row.get("boar_tag_number", ""),
+        "animal_type": row.get("animal_type", ""),
+        "sex": row.get("sex", ""),
+        "status": row.get("status", ""),
+        "on_farm": row.get("on_farm", ""),
+        "current_pen_id": row.get("current_pen_id", ""),
+        "current_pen_name": row.get("current_pen_name", ""),
+        "purpose": row.get("purpose", ""),
+        "proposed_purpose": proposed_purpose,
+        "suggested_purpose": row.get("suggested_purpose", ""),
+        "suggested_purpose_reason": row.get("suggested_purpose_reason", ""),
+        "suggested_purpose_confidence": row.get("suggested_purpose_confidence", ""),
+        "readiness_bucket": row.get("readiness_bucket", ""),
+        "readiness_reason": row.get("readiness_reason", ""),
+        "review_status": review_status,
+        "owner_action": owner_action,
+        "latest_weight_kg": row.get("latest_weight_kg"),
+        "latest_weight_date": row.get("latest_weight_date", ""),
+        "days_since_weight": row.get("days_since_weight"),
+        "wean_date": row.get("wean_date", ""),
+        "wean_weight_kg": row.get("wean_weight_kg"),
+        "days_since_wean": row.get("days_since_wean"),
+        "average_daily_gain_kg": row.get("average_daily_gain_kg"),
+        "post_wean_daily_gain_kg": row.get("post_wean_daily_gain_kg"),
+        "growth_class": row.get("growth_class", ""),
+        "growth_reason": row.get("growth_reason", ""),
+        "litter_quality": row.get("litter_quality", ""),
+        "litter_quality_reason": row.get("litter_quality_reason", ""),
+        "litter_survival_rate": row.get("litter_survival_rate"),
+        "outlet_priority": row.get("outlet_priority", ""),
+        "recommended_action": row.get("recommended_action", ""),
+        "marketing_readiness": row.get("marketing_readiness", ""),
+        "existing_link": row.get("existing_link", ""),
+    }
+
+
+def get_purpose_review_queue(litter_id: str = "", today=None):
+    litter_id = to_clean_string(litter_id)
+    allocation = get_pig_allocation_readiness(today=today)
+    review_rows = []
+
+    for row in allocation.get("pigs", []):
+        if row.get("status") != "Active" or row.get("on_farm") != "Yes":
+            continue
+        if litter_id and row.get("litter_id") != litter_id:
+            continue
+        if not litter_id and not _purpose_needs_review(row.get("purpose", "")):
+            continue
+        review_rows.append(_purpose_review_row(row))
+
+    summary = {
+        "total": len(review_rows),
+        "needs_owner_decision": sum(1 for row in review_rows if row["review_status"] == "needs_owner_decision"),
+        "needs_data": sum(1 for row in review_rows if row["review_status"] == "needs_data"),
+        "classified": sum(1 for row in review_rows if row["review_status"] == "classified"),
+    }
+
+    return {
+        "success": True,
+        "mode": "herdmaster_purpose_review_queue",
+        "owner_agent": "Herdmaster",
+        "litter_id": litter_id,
+        "generated_date": allocation.get("generated_date", ""),
+        "summary": summary,
+        "business_rules": allocation.get("business_rules", {}),
+        "allowed_purposes": sorted(PURPOSE_REVIEW_ALLOWED_PURPOSES),
+        "pigs": review_rows,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+        "message": "Purpose review queue loaded. Suggestions are advisory until approved by a human.",
+    }
+
+
+def _append_purpose_review_note(existing_notes, changed_at, changed_by, old_purpose, new_purpose, reason, note):
+    clean_existing = to_clean_string(existing_notes)
+    reason = to_clean_string(reason)
+    note = to_clean_string(note)
+    entry = (
+        f"{format_date_for_sheet(changed_at)} purpose review: {old_purpose or 'Unknown'} "
+        f"to {new_purpose} approved by {changed_by}."
+    )
+    if reason:
+        entry = f"{entry} Reason: {reason}"
+    if note:
+        entry = f"{entry} Note: {note}"
+    return f"{clean_existing}\n{entry}" if clean_existing else entry
+
+
+def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_run: bool = True, allow_reclassify: bool = False):
+    changed_by = to_clean_string(changed_by) or "web_app"
+    dry_run = dry_run is True
+    allow_reclassify = allow_reclassify is True
+    if not isinstance(decisions, list) or not decisions:
+        return {"success": False, "errors": ["At least one purpose review decision is required."]}, 400
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_rows = get_all_records(pig_master_sheet)
+    pig_lookup = _build_pig_lookup(pig_rows, columns)
+    today = datetime.now().date()
+    today_sheet = format_date_for_sheet(today)
+    updates = {}
+    approved = []
+    errors = []
+
+    for index, decision in enumerate(decisions, start=1):
+        decision = decision or {}
+        pig_id = to_clean_string(decision.get("pig_id", ""))
+        new_purpose = to_clean_string(decision.get("purpose", ""))
+        reason = to_clean_string(decision.get("reason", ""))
+        note = to_clean_string(decision.get("note", ""))
+
+        if not pig_id:
+            errors.append(f"Decision {index}: Pig ID is required.")
+            continue
+        if new_purpose not in PURPOSE_REVIEW_ALLOWED_PURPOSES:
+            errors.append(f"Decision {index}: Purpose must be one of {', '.join(sorted(PURPOSE_REVIEW_ALLOWED_PURPOSES))}.")
+            continue
+
+        pig = pig_lookup.get(pig_id)
+        if not pig:
+            errors.append(f"Decision {index}: Pig '{pig_id}' was not found.")
+            continue
+
+        current_status = to_clean_string(pig.get(columns["status"], ""))
+        current_on_farm = to_clean_string(pig.get(columns["on_farm"], ""))
+        old_purpose = to_clean_string(pig.get("Purpose", ""))
+        if current_status != "Active" or current_on_farm != "Yes":
+            errors.append(f"Decision {index}: Pig '{pig_id}' is not active/on-farm.")
+            continue
+        if not allow_reclassify and not _purpose_needs_review(old_purpose):
+            errors.append(f"Decision {index}: Pig '{pig_id}' already has purpose '{old_purpose}'. Use a future reclassification workflow.")
+            continue
+
+        updates[pig_id] = {
+            "Purpose": new_purpose,
+            "Updated_At": today_sheet,
+            "General_Notes": _append_purpose_review_note(
+                pig.get("General_Notes", ""),
+                today,
+                changed_by,
+                old_purpose,
+                new_purpose,
+                reason,
+                note,
+            ),
+        }
+        approved.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(pig.get("Tag_Number", "")),
+            "litter_id": to_clean_string(pig.get("Litter_ID", "")),
+            "old_purpose": old_purpose or "Unknown",
+            "new_purpose": new_purpose,
+            "reason": reason,
+        })
+
+    if errors:
+        return {
+            "success": False,
+            "errors": errors,
+            "approved_count": len(approved),
+            "planned_updates": updates,
+            "source": {
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            },
+        }, 409
+
+    rows_updated = 0
+    if not dry_run:
+        rows_updated = batch_update_rows_by_id(pig_master_sheet, updates)
+
+    return {
+        "success": True,
+        "action": "apply_purpose_review_decisions",
+        "dry_run": dry_run,
+        "changed_by": changed_by,
+        "approved_count": len(approved),
+        "approved": approved,
+        "rows_updated": rows_updated,
+        "planned_updates": updates,
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+            "writes_orders": False,
+            "writes_sales": False,
+            "writes_slaughter": False,
+        },
+        "message": (
+            f"Purpose review previewed for {len(approved)} pig(s)."
+            if dry_run
+            else f"Purpose review saved for {len(approved)} pig(s)."
+        ),
+    }, 200
+
+
+def build_purpose_review_recheck(pig_id: str, question: str = "", today=None):
+    pig_id = to_clean_string(pig_id)
+    question = to_clean_string(question)
+    if not pig_id:
+        return {"success": False, "errors": ["Pig ID is required."]}, 400
+
+    allocation = get_pig_allocation_readiness(today=today)
+    row = next((item for item in allocation.get("pigs", []) if item.get("pig_id") == pig_id), None)
+    if not row:
+        return {"success": False, "errors": [f"Pig '{pig_id}' was not found in allocation readiness."]}, 404
+
+    review_row = _purpose_review_row(row)
+    focus = [
+        review_row["readiness_reason"],
+        review_row["suggested_purpose_reason"],
+        review_row["growth_reason"],
+        review_row["litter_quality_reason"],
+        review_row["recommended_action"],
+    ]
+    return {
+        "success": True,
+        "mode": "herdmaster_purpose_review_recheck",
+        "owner_agent": "Herdmaster",
+        "pig_id": pig_id,
+        "question": question,
+        "review": review_row,
+        "analysis_points": [item for item in focus if item],
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+        "message": "Herdmaster recheck packet built from current allocation signals. No records were changed.",
+    }, 200
+
+
 def _litter_needs_purpose_review(litter_id, pig_rows=None):
     litter_id = to_clean_string(litter_id)
     if not litter_id:
@@ -527,6 +815,95 @@ def _litter_needs_purpose_review(litter_id, pig_rows=None):
             return True
 
     return False
+
+
+def _litter_purpose_review_attention(litter_id, pig_rows=None, pig_master_rows=None, today=None):
+    today = today or datetime.now().date()
+    litter_id = to_clean_string(litter_id)
+    if not litter_id:
+        return None
+
+    if pig_rows is None:
+        pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    if pig_master_rows is None:
+        pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    master_lookup = _build_pig_lookup(pig_master_rows, columns)
+    candidates = []
+    for pig in pig_rows:
+        if to_clean_string(pig.get("Litter_ID", "")) != litter_id:
+            continue
+        if to_clean_string(pig.get("Status", "")) != "Active":
+            continue
+        if to_clean_string(pig.get("On_Farm", "")) != "Yes":
+            continue
+        if _purpose_needs_review(pig.get("Purpose", "")):
+            candidates.append(pig)
+
+    if not candidates:
+        return None
+
+    missing_wean_data = []
+    not_due_count = 0
+    missing_post_wean_weight = []
+    due_for_review = []
+
+    for pig in candidates:
+        pig_id = to_clean_string(pig.get(columns["pig_id"], ""))
+        master = master_lookup.get(pig_id, {})
+        wean_date = parse_sheet_date(master.get("Wean_Date", "")) or parse_sheet_date(pig.get("Wean_Date", ""))
+        wean_weight_kg = to_float(master.get("Wean_Weight_Kg", ""))
+        if wean_weight_kg is None:
+            wean_weight_kg = to_float(pig.get("Wean_Weight_Kg", ""))
+
+        if not wean_date or wean_weight_kg is None:
+            missing_wean_data.append(pig_id or to_clean_string(pig.get("Tag_Number", "")))
+            continue
+
+        days_since_wean = (today - wean_date).days
+        if days_since_wean < POST_WEAN_PURPOSE_REVIEW_DAYS:
+            not_due_count += 1
+            continue
+
+        latest_weight_date = parse_sheet_date(pig.get("Last_Weight_Date", ""))
+        if not latest_weight_date or latest_weight_date <= wean_date:
+            missing_post_wean_weight.append(pig_id or to_clean_string(pig.get("Tag_Number", "")))
+            continue
+
+        due_for_review.append(pig_id or to_clean_string(pig.get("Tag_Number", "")))
+
+    if missing_wean_data:
+        return {
+            "reason": "Weaned - complete wean data",
+            "recommended_action": "Complete piglet wean date and wean weight before Herdmaster purpose review.",
+            "action_type": "complete_wean_data",
+            "affected_pig_count": len(missing_wean_data),
+            "due_after_days": POST_WEAN_PURPOSE_REVIEW_DAYS,
+        }
+
+    if missing_post_wean_weight:
+        return {
+            "reason": "Post-wean weight needed",
+            "recommended_action": (
+                f"Capture a post-wean weight at least {POST_WEAN_PURPOSE_REVIEW_DAYS} days after weaning "
+                "before final purpose review."
+            ),
+            "action_type": "record_post_wean_weight",
+            "affected_pig_count": len(missing_post_wean_weight),
+            "due_after_days": POST_WEAN_PURPOSE_REVIEW_DAYS,
+        }
+
+    if due_for_review:
+        return {
+            "reason": "Purpose review due",
+            "recommended_action": "Herdmaster has enough post-wean context for owner purpose review.",
+            "action_type": "review_purpose",
+            "affected_pig_count": len(due_for_review),
+            "due_after_days": POST_WEAN_PURPOSE_REVIEW_DAYS,
+        }
+
+    return None
 
 
 def _newborn_health_product_ids(products=None):
@@ -589,7 +966,7 @@ def _litter_newborn_health_attention(litter_id, litter_status, wean_date_value, 
     }
 
 
-def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newborn_products=None, today=None):
+def _build_litter_attention(row, pig_rows=None, pig_master_rows=None, medical_rows=None, newborn_products=None, today=None):
     today = today or datetime.now().date()
     litter_id = to_clean_string(row.get("Litter_ID", ""))
     needs_attention = to_clean_string(row.get("Needs_Attention", ""))
@@ -639,10 +1016,17 @@ def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newbor
         else:
             recommended_action = "Review this litter and correct the source data shown in the attention reason."
             action_type = "review_litter"
-    elif litter_status == "Weaned" and _litter_needs_purpose_review(litter_id):
-        reason = "Weaned - review purpose"
-        recommended_action = "Litter is already weaned. Review linked piglet purpose/sales classification next."
-        action_type = "review_purpose"
+    elif litter_status == "Weaned":
+        purpose_attention = _litter_purpose_review_attention(
+            litter_id,
+            pig_rows=pig_rows,
+            pig_master_rows=pig_master_rows,
+            today=today,
+        )
+        if purpose_attention:
+            reason = purpose_attention["reason"]
+            recommended_action = purpose_attention["recommended_action"]
+            action_type = purpose_attention["action_type"]
     elif litter_status != "Weaned" and active_pig_count > 0 and not _wean_tag_attention_is_not_due(wean_timing):
         reason = ""
         recommended_action = "Confirm the litter status and mark it as weaned once the weaning date is known."
@@ -663,13 +1047,14 @@ def _build_litter_attention(row, pig_master_rows=None, medical_rows=None, newbor
 
 def _litter_attention_for_id(litter_id):
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
     medical_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"])
     newborn_products = _newborn_health_product_ids()
 
     for row in rows:
         if to_clean_string(row.get("Litter_ID", "")) == litter_id:
-            return _build_litter_attention(row, pig_master_rows, medical_rows, newborn_products)
+            return _build_litter_attention(row, pig_rows, pig_master_rows, medical_rows, newborn_products)
 
     return {
         "needs_attention": "",
@@ -718,9 +1103,56 @@ def _update_litter_weaning_fields(litter_id, wean_date, weaned_count):
     return update_row_by_first_column_match(sheet_name, litter_id, padded_row)
 
 
-def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_app"):
+def _wean_weight_updates_for_piglets(active_piglet_rows, latest_weights, explicit_wean_weights=None):
+    explicit_wean_weights = explicit_wean_weights or {}
+    updates = {}
+    selected = []
+    missing = []
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+
+    for row in active_piglet_rows:
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        if not pig_id:
+            continue
+
+        explicit_value = explicit_wean_weights.get(pig_id)
+        weight_kg = to_float(explicit_value) if explicit_value not in (None, "") else None
+        source = "explicit"
+        weight_date = None
+
+        if weight_kg is None:
+            latest = latest_weights.get(pig_id, {})
+            weight_kg = latest.get("weight_kg")
+            weight_date = latest.get("weight_date")
+            source = "latest_weight_log"
+
+        if weight_kg is None:
+            missing.append(pig_id)
+            continue
+
+        updates[pig_id] = weight_kg
+        selected.append({
+            "pig_id": pig_id,
+            "tag_number": to_clean_string(row.get("Tag_Number", "")),
+            "wean_weight_kg": weight_kg,
+            "weight_date": weight_date.isoformat() if weight_date else "",
+            "source": source,
+        })
+
+    return updates, selected, missing
+
+
+def mark_litter_weaned(
+    litter_id: str,
+    wean_date_value,
+    changed_by: str = "web_app",
+    use_latest_weights_as_wean_weights: bool = False,
+    wean_weights=None,
+):
     litter_id = str(litter_id or "").strip()
     wean_date = parse_sheet_date(wean_date_value)
+    use_latest_weights_as_wean_weights = use_latest_weights_as_wean_weights is True
+    wean_weights = wean_weights if isinstance(wean_weights, dict) else {}
 
     if not litter_id:
         return {"success": False, "errors": ["Litter ID is required."]}, 400
@@ -733,6 +1165,7 @@ def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_a
     pig_rows = get_all_records(pig_master_sheet)
 
     active_piglets = []
+    active_piglet_rows = []
     for row in pig_rows:
         if to_clean_string(row.get("Litter_ID", "")) != litter_id:
             continue
@@ -744,12 +1177,40 @@ def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_a
         pig_id = to_clean_string(row.get(columns["pig_id"], ""))
         if pig_id:
             active_piglets.append(pig_id)
+            active_piglet_rows.append(row)
 
     if not active_piglets:
         return {
             "success": False,
             "errors": ["No active on-farm piglets were found for this litter."],
         }, 409
+
+    latest_weights = {}
+    wean_weight_updates = {}
+    wean_weight_rows = []
+    missing_wean_weight_pig_ids = []
+    should_capture_wean_weights = use_latest_weights_as_wean_weights or bool(wean_weights)
+    if should_capture_wean_weights:
+        weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+        latest_weights = _latest_weights_by_pig(weight_rows, columns)
+        wean_weight_updates, wean_weight_rows, missing_wean_weight_pig_ids = _wean_weight_updates_for_piglets(
+            active_piglet_rows,
+            latest_weights,
+            explicit_wean_weights=wean_weights,
+        )
+        if missing_wean_weight_pig_ids:
+            return {
+                "success": False,
+                "errors": [
+                    "Wean weights were requested, but these piglets do not have explicit or latest weights: "
+                    + ", ".join(missing_wean_weight_pig_ids)
+                ],
+                "missing_wean_weight_pig_ids": missing_wean_weight_pig_ids,
+                "source": {
+                    "writes_to_sheets": False,
+                    "writes_to_supabase": False,
+                },
+            }, 409
 
     weaned_count = len(active_piglets)
     litter_row_updated = _update_litter_weaning_fields(litter_id, wean_date, weaned_count)
@@ -765,6 +1226,9 @@ def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_a
         }
         for pig_id in active_piglets
     }
+    for pig_id, weight_kg in wean_weight_updates.items():
+        pig_updates[pig_id]["Wean_Weight_Kg"] = weight_kg
+
     pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
@@ -773,10 +1237,17 @@ def mark_litter_weaned(litter_id: str, wean_date_value, changed_by: str = "web_a
         "litter_id": litter_id,
         "wean_date": wean_date.isoformat(),
         "weaned_count": weaned_count,
+        "wean_weights_captured": len(wean_weight_updates),
+        "wean_weight_rows": wean_weight_rows,
         "litter_row_updated": litter_row_updated,
         "pig_rows_updated": pig_rows_updated,
         "changed_by": updated_by,
-        "message": f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s).",
+        "message": (
+            f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s) "
+            f"and {len(wean_weight_updates)} wean weight(s)."
+            if wean_weight_updates
+            else f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s)."
+        ),
     }, 200
 
 
@@ -1884,11 +2355,47 @@ def _suggested_purpose_signal(bucket, outlet_action, growth, timing, litter_qual
             "suggested_purpose_reason": "Pig is no longer active/on farm.",
             "suggested_purpose_confidence": "High",
         }
-    if bucket in {"Needs Data", "Needs Classification"}:
+    if bucket == "Needs Data":
         return {
             "suggested_purpose": "Needs Review",
             "suggested_purpose_reason": "Complete missing data or confirm classification before assigning a business purpose.",
             "suggested_purpose_confidence": "Low",
+        }
+
+    if bucket == "Needs Classification":
+        has_wean_context = bool(growth.get("wean_date") and growth.get("wean_weight_kg") is not None)
+        confidence = "Medium" if has_wean_context else "Low"
+        growth_class = growth.get("growth_class", "Unknown")
+        latest_weight_kg = growth.get("latest_weight_kg")
+
+        if growth_class in {"Good", "Exceptional"} and litter_quality.get("litter_quality") == "Good":
+            return {
+                "suggested_purpose": "Breeding Review",
+                "suggested_purpose_reason": "Purpose is unknown, but growth and litter quality justify reviewing retention before meat, slaughter, or livestock sale.",
+                "suggested_purpose_confidence": confidence,
+            }
+        if growth_class in {"Extremely Slow", "Slow"}:
+            return {
+                "suggested_purpose": "Livestock Sale",
+                "suggested_purpose_reason": "Purpose is unknown and growth is slow; review for livestock sale instead of long grow-out if condition and market fit.",
+                "suggested_purpose_confidence": confidence,
+            }
+        if latest_weight_kg is not None and timing.get("meat_window_status") == "In meat window":
+            return {
+                "suggested_purpose": "Meat",
+                "suggested_purpose_reason": "Purpose is unknown, but weight is in the meat window; review for preorder demand before fallback outlets.",
+                "suggested_purpose_confidence": confidence,
+            }
+        if latest_weight_kg is not None and timing.get("abattoir_window_status") in {"In abattoir window", "Past abattoir window"}:
+            return {
+                "suggested_purpose": "Abattoir Slaughter",
+                "suggested_purpose_reason": "Purpose is unknown, but weight is in or past the abattoir planning window.",
+                "suggested_purpose_confidence": confidence,
+            }
+        return {
+            "suggested_purpose": "Grow Out",
+            "suggested_purpose_reason": "Purpose is unknown; current data supports keeping this pig growing until a clearer outlet or breeding signal appears.",
+            "suggested_purpose_confidence": confidence,
         }
     if bucket == "Retain / Breeding Candidate":
         return {
@@ -1970,6 +2477,24 @@ def _growth_profile(row, latest_weight, today, settings=None):
     }
 
 
+def _allocation_source_row(overview_row, master_row):
+    if not master_row:
+        return overview_row
+
+    row = dict(overview_row)
+    for field_name in (
+        "Wean_Date",
+        "Wean_Weight_Kg",
+        "Litter_Size_Weaned",
+        "Birth_Weight_Kg",
+        "General_Notes",
+    ):
+        master_value = master_row.get(field_name, "")
+        if master_value not in (None, ""):
+            row[field_name] = master_value
+    return row
+
+
 def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=None):
     settings = settings or _allocation_settings()
     status = to_clean_string(row.get("Status", ""))
@@ -2040,10 +2565,12 @@ def get_pig_allocation_readiness(today=None):
     settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
     overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
     weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
     sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
     litter_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
     pen_lookup = _build_pen_lookup()
+    master_lookup = _build_pig_lookup(pig_master_rows, columns)
     latest_weights = _latest_weights_by_pig(weight_rows, columns)
     sales_lookup = _sales_availability_by_pig(sales_rows, columns)
     litter_lookup = _litter_overview_by_id(litter_rows)
@@ -2066,6 +2593,7 @@ def get_pig_allocation_readiness(today=None):
         if not pig_id:
             continue
 
+        row = _allocation_source_row(row, master_lookup.get(pig_id, {}))
         latest_weight = latest_weights.get(pig_id, {})
         sales_meta = sales_lookup.get(pig_id, {})
         growth = _growth_profile(row, latest_weight, today, settings)

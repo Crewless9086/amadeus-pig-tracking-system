@@ -86,6 +86,16 @@ The backend must track:
 
 Current implementation direction: build a Sales Outreach / Lead Tracking rail first. It records the opportunity and lead state needed for owner review, but it does not send messages, call Chatwoot/n8n/WhatsApp, create quotes or orders, reserve stock, change stock, or post publicly.
 
+Status note 2026-06-15: this rail resumes after the Herdmaster purpose-review checkpoint is documented as local-ready and awaiting real-data testing. The sales rail remains a tracking/approval surface only: campaigns, outreach drafts, send-design requests, and leads may be recorded for owner review, but no customer message, public post, quote, order, deposit request, stock reservation, allocation write, or Chatwoot/WhatsApp/n8n call is allowed without a later reviewed phase.
+
+Implementation status 2026-06-15:
+
+- Sales campaign and lead tracking migrations have been applied.
+- Oom Sakkie Ledger Sales Workbench can read the campaign queue, outreach drafts, send-design requests, and sales leads.
+- The workbench now has an owner `Record Lead` form for simple inbound/manual lead capture.
+- Recorded leads are append-only tracking records only. They keep `sends_customer_message`, `calls_chatwoot`, `calls_n8n`, `creates_quote`, `creates_order`, `changes_stock`, `dispatch_enabled`, `customer_public_output_enabled`, and `writes_farm_data` false.
+- The rail still needs one real inbound/manual lead test before it is marked live-verified.
+
 ## Sales Modules
 
 ### Module A: Live Pig Sales

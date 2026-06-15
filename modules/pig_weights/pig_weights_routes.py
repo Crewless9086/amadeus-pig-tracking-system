@@ -5,6 +5,9 @@ from modules.pig_weights.pig_weights_controller import (
     get_dashboard_data,
     get_sales_dashboard_data,
     get_pig_allocation_readiness_data,
+    get_purpose_review_queue_data,
+    apply_purpose_review_queue_decisions,
+    get_purpose_review_recheck_packet,
     get_meat_planning_data,
     list_parent_options,
     list_active_pigs,
@@ -58,6 +61,25 @@ def sales_dashboard():
 @pig_weights_bp.route("/pig-allocation-readiness", methods=["GET"])
 def pig_allocation_readiness():
     return jsonify(get_pig_allocation_readiness_data())
+
+
+@pig_weights_bp.route("/purpose-review", methods=["GET"])
+def purpose_review_queue():
+    return jsonify(get_purpose_review_queue_data(litter_id=request.args.get("litter_id", "")))
+
+
+@pig_weights_bp.route("/purpose-review/apply", methods=["POST"])
+def purpose_review_apply():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = apply_purpose_review_queue_decisions(payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/purpose-review/recheck", methods=["POST"])
+def purpose_review_recheck():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = get_purpose_review_recheck_packet(payload)
+    return jsonify(result), status_code
 
 
 @pig_weights_bp.route("/meat-planning", methods=["GET"])

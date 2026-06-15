@@ -6,7 +6,7 @@ from modules.pig_weights import pig_weights_service
 
 
 class LitterAttentionSummaryTests(unittest.TestCase):
-    def test_litter_attention_includes_sheet_attention_and_weaned_litters(self):
+    def test_litter_attention_includes_sheet_attention_and_due_purpose_review(self):
         overview_rows = [
             {
                 "Litter_ID": "LIT-ATTN",
@@ -47,6 +47,7 @@ class LitterAttentionSummaryTests(unittest.TestCase):
                 "Status": "Active",
                 "On_Farm": "Yes",
                 "Purpose": "Unknown",
+                "Last_Weight_Date": "05 Jun 2026",
             },
             {
                 "Pig_ID": "PIG-2",
@@ -56,15 +57,88 @@ class LitterAttentionSummaryTests(unittest.TestCase):
                 "Purpose": "Sale",
             },
         ]
+        pig_master_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-WEANED",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Wean_Date": "19 May 2026",
+                "Wean_Weight_Kg": "6.2",
+            },
+        ]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, [], [], []]):
-            result = pig_weights_service.get_litter_attention_summary()
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, pig_master_rows, [], []]):
+            result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 5))
 
         self.assertEqual(result["count"], 2)
         self.assertEqual([item["litter_id"] for item in result["items"]], ["LIT-ATTN", "LIT-WEANED"])
         self.assertEqual(result["items"][0]["reason"], "Born alive count missing")
-        self.assertEqual(result["items"][1]["reason"], "Weaned - review purpose")
+        self.assertEqual(result["items"][1]["reason"], "Purpose review due")
+        self.assertEqual(result["items"][1]["action_type"], "review_purpose")
         self.assertEqual(result["items"][1]["wean_date"], "2026-05-19")
+
+    def test_weaned_litter_delays_purpose_attention_until_post_wean_window(self):
+        overview_rows = [{
+            "Litter_ID": "LIT-RECENT",
+            "Litter_Status": "Weaned",
+            "Needs_Attention": "No",
+            "Wean_Date": "10 Jun 2026",
+            "Active_Pig_Count": "6",
+        }]
+        pig_rows = [{
+            "Pig_ID": "PIG-1",
+            "Litter_ID": "LIT-RECENT",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Unknown",
+            "Last_Weight_Date": "10 Jun 2026",
+        }]
+        pig_master_rows = [{
+            "Pig_ID": "PIG-1",
+            "Litter_ID": "LIT-RECENT",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Wean_Date": "10 Jun 2026",
+            "Wean_Weight_Kg": "6.2",
+        }]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, pig_master_rows, [], []]):
+            result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 15))
+
+        self.assertEqual(result["count"], 0)
+
+    def test_weaned_litter_requests_post_wean_weight_before_purpose_review(self):
+        overview_rows = [{
+            "Litter_ID": "LIT-WEIGHT",
+            "Litter_Status": "Weaned",
+            "Needs_Attention": "No",
+            "Wean_Date": "01 Jun 2026",
+            "Active_Pig_Count": "6",
+        }]
+        pig_rows = [{
+            "Pig_ID": "PIG-1",
+            "Litter_ID": "LIT-WEIGHT",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Unknown",
+            "Last_Weight_Date": "01 Jun 2026",
+        }]
+        pig_master_rows = [{
+            "Pig_ID": "PIG-1",
+            "Litter_ID": "LIT-WEIGHT",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Wean_Date": "01 Jun 2026",
+            "Wean_Weight_Kg": "6.2",
+        }]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, pig_rows, pig_master_rows, [], []]):
+            result = pig_weights_service.get_litter_attention_summary(today=date(2026, 6, 16))
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["reason"], "Post-wean weight needed")
+        self.assertEqual(result["items"][0]["action_type"], "record_post_wean_weight")
 
     def test_litter_attention_reason_falls_back_to_litter_counts(self):
         overview_rows = [

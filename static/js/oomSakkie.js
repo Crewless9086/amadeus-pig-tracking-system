@@ -91,6 +91,14 @@
   const salesOutreachDraftsPanel = document.getElementById("oom_sales_outreach_drafts");
   const salesSendDesignsPanel = document.getElementById("oom_sales_send_designs");
   const salesLeadsPanel = document.getElementById("oom_sales_leads");
+  const salesLeadLabelInput = document.getElementById("oom_sales_lead_label");
+  const salesLeadSourceInput = document.getElementById("oom_sales_lead_source");
+  const salesLeadStatusInput = document.getElementById("oom_sales_lead_status");
+  const salesLeadWhatsappStateInput = document.getElementById("oom_sales_lead_whatsapp_state");
+  const salesLeadInterestInput = document.getElementById("oom_sales_lead_interest");
+  const salesLeadNextActionInput = document.getElementById("oom_sales_lead_next_action");
+  const salesLeadCaptureStatus = document.getElementById("oom_sales_lead_capture_status");
+  const recordSalesLeadButton = document.getElementById("oom_record_sales_lead");
   const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
   const requestPrismDryRunButton = document.getElementById("oom_request_prism_dry_run");
   const agentDryRunSpecialistSelect = document.getElementById("oom_agent_dry_run_specialist_select");
@@ -3659,6 +3667,63 @@
     }
   }
 
+  async function recordManualSalesLead(button) {
+    const label = salesLeadLabelInput ? salesLeadLabelInput.value.trim() : "";
+    if (!label) {
+      if (salesLeadCaptureStatus) salesLeadCaptureStatus.textContent = "Add a buyer or lead label before recording.";
+      return;
+    }
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Recording...";
+    }
+    if (salesLeadCaptureStatus) {
+      salesLeadCaptureStatus.textContent = "Recording tracking lead only. No customer message is being sent.";
+    }
+    try {
+      const interestText = salesLeadInterestInput ? salesLeadInterestInput.value.trim() : "";
+      const response = await fetch("/api/oom-sakkie/sales-leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_label: label,
+          contact_label: label,
+          campaign_source: salesLeadSourceInput ? salesLeadSourceInput.value : "manual_owner_note",
+          status: salesLeadStatusInput ? salesLeadStatusInput.value : "new",
+          whatsapp_window_state: salesLeadWhatsappStateInput ? salesLeadWhatsappStateInput.value : "unknown",
+          channel: "owner_review",
+          created_by: "owner",
+          interest: {
+            summary: interestText,
+            product: interestText,
+          },
+          next_owner_action: salesLeadNextActionInput ? salesLeadNextActionInput.value.trim() : "",
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.status || "sales_lead_record_failed");
+      }
+      if (salesLeadCaptureStatus) {
+        salesLeadCaptureStatus.textContent = "Lead recorded for owner review only. No customer send, order, or stock write happened.";
+      }
+      if (salesLeadLabelInput) salesLeadLabelInput.value = "";
+      if (salesLeadInterestInput) salesLeadInterestInput.value = "";
+      if (salesLeadNextActionInput) salesLeadNextActionInput.value = "";
+      await loadSalesWorkbench();
+    } catch (error) {
+      if (salesLeadCaptureStatus) {
+        salesLeadCaptureStatus.textContent = "Lead tracking record failed. No customer send, order, or stock write happened.";
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Record Lead";
+      }
+    }
+  }
+
   async function loadLearningInfluenceProposals() {
     if (!learningInfluenceProposals) return;
     try {
@@ -4446,6 +4511,10 @@
 
   if (approveFirstSalesCampaignButton) {
     approveFirstSalesCampaignButton.addEventListener("click", () => approveFirstSalesCampaign(approveFirstSalesCampaignButton));
+  }
+
+  if (recordSalesLeadButton) {
+    recordSalesLeadButton.addEventListener("click", () => recordManualSalesLead(recordSalesLeadButton));
   }
 
   if (voiceButton) {

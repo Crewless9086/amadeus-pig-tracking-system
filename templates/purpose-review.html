@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purpose Review Queue</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell allocation-shell purpose-review-shell">
+    <div class="page-card allocation-card purpose-review-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Purpose Review Queue</h1>
+          <p id="purpose_review_subtitle">Herdmaster suggestions for weaned piglets needing human purpose approval.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/pig-allocation">Pig Allocation</a>
+          <a href="/meat-planning">Meat Planning</a>
+          <a href="/matings">Breeding</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="purpose_review_message" class="message-box hidden"></div>
+
+      <section class="allocation-filters purpose-review-filters">
+        <div class="form-group">
+          <label for="purpose_review_status_filter">Review Status</label>
+          <select id="purpose_review_status_filter">
+            <option value="">All statuses</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="purpose_review_litter_filter">Litter</label>
+          <select id="purpose_review_litter_filter">
+            <option value="">All litters</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="purpose_review_suggestion_filter">Suggestion</label>
+          <select id="purpose_review_suggestion_filter">
+            <option value="">All suggestions</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="purpose_review_search">Search</label>
+          <input type="search" id="purpose_review_search" placeholder="Pig, tag, litter, reason" />
+        </div>
+        <div class="form-group slaughter-filter-actions">
+          <label>&nbsp;</label>
+          <button type="button" id="purpose_review_reset_filters" class="button-link button-link-secondary">Reset</button>
+        </div>
+      </section>
+
+      <section id="purpose_review_summary" class="summary-metric-grid allocation-summary"></section>
+
+      <section class="purpose-review-actions">
+        <div>
+          <strong id="purpose_review_selected_count">0 selected</strong>
+          <span>Only active/on-farm pigs with approved purpose decisions are written.</span>
+        </div>
+        <div class="inline-action-group">
+          <button type="button" id="purpose_review_select_visible" class="button-link button-link-secondary">Select Visible</button>
+          <button type="button" id="purpose_review_clear_selected" class="button-link button-link-secondary">Clear</button>
+          <button type="button" id="purpose_review_preview_selected" class="button-link button-link-secondary">Preview Selected</button>
+          <button type="button" id="purpose_review_apply_selected" class="button-link">Apply Selected</button>
+        </div>
+      </section>
+
+      <section class="allocation-table-section">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Herdmaster Review Table</h2>
+            <p id="purpose_review_count">Loading purpose review queue...</p>
+          </div>
+        </div>
+
+        <div class="simple-table-wrap allocation-table-wrap">
+          <table class="simple-table allocation-table purpose-review-table">
+            <thead>
+              <tr>
+                <th>Select</th>
+                <th>Pig</th>
+                <th>Status</th>
+                <th>Suggestion</th>
+                <th>Approve As</th>
+                <th>Reason</th>
+                <th>Weight / Growth</th>
+                <th>Weaning</th>
+                <th>Litter</th>
+                <th>Pen</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="purpose_review_body">
+              <tr><td colspan="11" class="table-empty">Loading purpose review queue...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="purpose_review_recheck_panel" class="purpose-review-recheck hidden" aria-live="polite"></section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/purposeReview.js') }}"></script>
+</body>
+</html>

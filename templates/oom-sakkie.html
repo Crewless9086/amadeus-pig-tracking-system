@@ -291,6 +291,42 @@
           <div id="oom_sales_workbench_status" class="oom-workbench-next-action">
             <p>Loading Ledger sales work...</p>
           </div>
+          <div class="oom-sales-lead-capture" aria-label="Record sales lead">
+            <div>
+              <p class="oom-label">Record Lead</p>
+              <p class="oom-empty">Append-only tracking record. This does not contact the customer.</p>
+            </div>
+            <input id="oom_sales_lead_label" type="text" autocomplete="off" placeholder="Buyer or lead label">
+            <select id="oom_sales_lead_source" aria-label="Campaign source">
+              <option value="inbound_chatwoot">Inbound Chatwoot</option>
+              <option value="ready_meat_preorder">Ready meat preorder</option>
+              <option value="social_post">Social post</option>
+              <option value="direct_known_buyer">Direct known buyer</option>
+              <option value="whatsapp_status">WhatsApp status</option>
+              <option value="manual_owner_note">Owner note</option>
+              <option value="other">Other</option>
+            </select>
+            <select id="oom_sales_lead_status" aria-label="Lead status">
+              <option value="new">New</option>
+              <option value="interested">Interested</option>
+              <option value="asked_price">Asked price</option>
+              <option value="needs_callback">Needs callback</option>
+              <option value="deposit_pending">Deposit pending</option>
+              <option value="order_ready_for_approval">Order ready for approval</option>
+              <option value="not_interested">Not interested</option>
+            </select>
+            <select id="oom_sales_lead_whatsapp_state" aria-label="WhatsApp window state">
+              <option value="unknown">WhatsApp unknown</option>
+              <option value="open">24h window open</option>
+              <option value="closed">24h window closed</option>
+              <option value="template_required">Template required</option>
+              <option value="manual_owner_only">Owner manual only</option>
+            </select>
+            <input id="oom_sales_lead_interest" type="text" autocomplete="off" placeholder="Interest, e.g. half carcass, price, delivery area">
+            <input id="oom_sales_lead_next_action" type="text" autocomplete="off" placeholder="Next owner action">
+            <button type="button" id="oom_record_sales_lead">Record Lead</button>
+            <p id="oom_sales_lead_capture_status" class="oom-advisor-guard">lead tracking only | no customer send | no order or stock write</p>
+          </div>
           <div class="oom-sales-workbench-grid">
             <div>
               <p class="oom-label">Campaigns</p>

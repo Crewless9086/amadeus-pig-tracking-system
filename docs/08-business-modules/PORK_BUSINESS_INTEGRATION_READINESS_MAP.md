@@ -176,6 +176,30 @@ Suggested-purpose signal decision 2026-06-05:
 - Each suggestion includes a reason and confidence level so the owner can review the model before any backend-owned classification action is added.
 - This does not update `PIG_MASTER`, `PIG_OVERVIEW`, Supabase, Google Sheets, Telegram, or Meta channels.
 
+Herdmaster purpose-review decision 2026-06-15:
+
+- The immediate operational focus shifts from Ledger sales lead tracking back to Herdmaster because weaned litters can already create real farm attention with no clean resolution path.
+- `Weaned - review purpose` is not an emergency alert and not a weaning bug. It means a litter is already weaned but one or more active/on-farm linked piglets still have blank or `Unknown` purpose.
+- Herdmaster owns the piglet purpose recommendation workflow after weaning. Breeding analytics feeds it with sow, boar, litter quality, survival, wean weight, and growth context. Butcher can later add meat/slaughter suitability, and Ledger can later add demand pressure.
+- Oom Sakkie/Gatekeeper remains the owner approval surface. Humans approve, override, defer, or request a recheck; the backend performs any approved write.
+- The first full review surface should be `/purpose-review`, with optional litter focus such as `/purpose-review?litter_id=LIT-2026-8A0F`.
+- The page should present a table of active/on-farm piglets needing purpose review, including pig/tag, litter, sow/boar, sex, pen, wean date/weight, latest weight, ADG, growth band, litter quality, stored purpose, suggested purpose, confidence, reason, and owner action.
+- Human actions should include approve selected, approve all visible/high-confidence rows, approve one row, override purpose, recheck one row, and leave `Needs Data` rows unresolved until missing data is fixed.
+- The approved backend action may update `PIG_MASTER.Purpose`, `PIG_MASTER.Updated_At`, and append an audit note to `PIG_MASTER.General_Notes`.
+- The purpose review action must not update status, on-farm state, sales availability, orders, slaughter transactions, meat orders, stock allocation, Telegram, Meta, Chatwoot, WhatsApp, or Supabase.
+- Supported stored purposes stay aligned to the existing pig master values for now: `Breeding`, `Grow_Out`, `Sale`, `Replacement`, `House_Use`, and `Unknown`.
+- Suggested-purpose mapping is deliberately conservative: `Grow Out` maps to `Grow_Out`, `Livestock Sale` maps to `Sale`, `Breeding Review` maps to `Breeding`, and meat/abattoir suggestions map to `Grow_Out` until the later allocation/order workflow can own actual meat or slaughter commitment.
+- Recheck/question-one is a no-write Herdmaster analysis packet built from the current allocation signals. It should explain why the recommendation exists and help the owner decide, not run a hidden classifier or mutate farm data.
+- Wean date and wean weight must come from `PIG_MASTER`, not only `PIG_OVERVIEW`, because `PIG_OVERVIEW` is a formula view and may not expose all lifecycle fields needed by Herdmaster.
+- The mark-weaned action should carry `Wean_Date`, `Litter_Size_Weaned`, and, when available, each piglet's latest weight into `PIG_MASTER.Wean_Weight_Kg` so the next purpose review has maximum useful data without manual sheet edits.
+- If latest weights are missing when the owner asks to use them as wean weights, the backend should stop the weaning action and ask for weights instead of saving a weak review state.
+- `Purpose = Unknown` should keep the row in owner approval, but it must not stop Herdmaster from suggesting a useful purpose. Unknown-purpose rows with enough data should still produce `Breeding Review`, `Livestock Sale`, `Meat`, `Abattoir Slaughter`, or `Grow Out` with a visible reason and confidence.
+- Purpose attention should not appear immediately after weaning. First rule: wait 14 days after weaning before surfacing final purpose review.
+- If the 14-day window has passed but no post-wean weight exists after the wean date, dashboard attention should say `Post-wean weight needed` and route to weight capture.
+- Once a post-wean weight exists after the 14-day window, dashboard attention should say `Purpose review due` and route directly to `/purpose-review?litter_id=...`.
+- Implementation status 2026-06-15: this Herdmaster phase is local-ready, not yet farm-proven. The local build includes `/purpose-review`, no-write recheck analysis, owner approval writes limited to `PIG_MASTER.Purpose`/`Updated_At`/`General_Notes`, mark-weaned latest-weight carryover into `Wean_Weight_Kg`, `PIG_MASTER` enrichment for wean fields, 14-day post-wean attention timing, weight-needed routing, and direct navigation to the correct work page. The next real farm test must verify those functions on a future weaning/post-wean-weight cycle before closing this phase as live-verified.
+- After this Herdmaster phase is visible and tested on one real litter, return to the Sales Outreach / Lead Tracking rail.
+
 Meat planning read-model decision 2026-06-05:
 
 - Added first read-only meat planning layer from the allocation readiness signals.
@@ -253,6 +277,14 @@ Implementation decision 2026-06-14:
 - Keep all authority flags false: no customer send, no Chatwoot/n8n call, no quote, no order, no stock change, no dispatch, no runtime/prompt change, no public output, and no farm-data write.
 - This rail is a tracking and approval queue only. Future Sam/Chatwoot consumers must be reviewed separately before they can create or update these records from live conversations.
 
+Resume status 2026-06-15:
+
+- Sales campaign and lead migrations were applied successfully.
+- Live/local route checks confirmed the queues read cleanly and all send/order/stock authority flags remain false.
+- The Oom Sakkie Ledger Sales Workbench now includes owner manual lead capture through `POST /api/oom-sakkie/sales-leads`.
+- The form is for inbound/manual tracking only and does not contact customers or create orders.
+- Next proof step: record one real owner-approved inbound/manual lead and confirm it appears in Oom Sakkie summaries before calling the rail live-verified.
+
 ## Backend-Owned Actions Later
 
 These actions should not be built as direct table edits in the UI.
@@ -260,7 +292,7 @@ These actions should not be built as direct table edits in the UI.
 | Future action | Owner | Notes |
 | --- | --- | --- |
 | Mark litter weaned | Existing backend action | Keep as source of weaning truth. |
-| Classify pig purpose/allocation | Future backend action | Should explain old/new purpose and actor. |
+| Classify pig purpose/allocation | Herdmaster purpose review action | Owner-approved only. Should explain old/new purpose, reason, confidence, and actor. |
 | Confirm slaughter pig exits | Existing backend action | Explicit operator confirmation, not automatic payment side effect yet. |
 | Create meat order/deposit | Future Phase 11 action | Must include customer, product, deposit, expected slaughter week. |
 | Assign pig to meat order | Future Phase 11 action | Should block double allocation. |

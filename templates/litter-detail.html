@@ -140,12 +140,18 @@
               <span class="status-pill">Attention</span>
               <h2 id="litter_attention_title">Review Litter</h2>
               <p id="litter_attention_text">This litter needs a follow-up action.</p>
+              <div id="litter_attention_links" class="inline-action-group"></div>
             </div>
             <form id="mark_weaned_form" class="attention-action-form hidden">
               <div class="form-group">
                 <label for="mark_weaned_date">Wean Date</label>
                 <input type="date" id="mark_weaned_date" required />
               </div>
+              <label class="checkbox-row">
+                <input type="checkbox" id="mark_weaned_use_latest_weights" checked />
+                <span>Use latest piglet weights as wean weights</span>
+              </label>
+              <p class="form-helper">If a piglet has no latest weight, the backend will stop and ask for weights before saving.</p>
               <button type="submit" id="mark_weaned_button">Mark as Weaned</button>
             </form>
             <form id="newborn_health_form" class="attention-action-form hidden">

@@ -243,12 +243,23 @@ function renderFarmSummary() {
   const litterItems = state.farm?.litter_attention?.items || [];
   byId("litter_attention_list").innerHTML = litterItems.length
     ? litterItems.slice(0, 4).map(item => `
-      <a class="ops-list-row ops-list-link" href="/litter/${encodeURIComponent(item.litter_id)}">
+      <a class="ops-list-row ops-list-link" href="${litterAttentionHref(item)}">
         <strong>${escapeHtml(item.litter_id)}</strong>
         <span>${escapeHtml(item.reason || "Review")} - Sow ${escapeHtml(item.sow_tag_number || "--")}</span>
       </a>
     `).join("")
     : `<div class="ops-empty-inline">No litter reminders.</div>`;
+}
+
+function litterAttentionHref(item) {
+  const litterId = encodeURIComponent(item.litter_id || "");
+  if (item.action_type === "review_purpose") {
+    return `/purpose-review?litter_id=${litterId}`;
+  }
+  if (item.action_type === "record_post_wean_weight") {
+    return `/bulk-weights?return_to=${encodeURIComponent(`/purpose-review?litter_id=${item.litter_id || ""}`)}&return_label=${encodeURIComponent("Back to Purpose Review")}`;
+  }
+  return `/litter/${litterId}`;
 }
 
 function renderOrders() {

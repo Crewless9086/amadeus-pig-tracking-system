@@ -4,6 +4,9 @@ from modules.pig_weights.pig_weights_service import (
     get_sales_stock_summary,
     get_sales_stock_totals,
     get_pig_allocation_readiness,
+    get_purpose_review_queue,
+    apply_purpose_review_decisions,
+    build_purpose_review_recheck,
     get_meat_planning_summary,
     get_parent_options,
     get_active_pigs,
@@ -74,6 +77,28 @@ def get_pig_allocation_readiness_data():
     return get_pig_allocation_readiness()
 
 
+def get_purpose_review_queue_data(litter_id: str = ""):
+    return get_purpose_review_queue(litter_id=litter_id)
+
+
+def apply_purpose_review_queue_decisions(payload: dict):
+    payload = payload or {}
+    return apply_purpose_review_decisions(
+        decisions=payload.get("decisions", []),
+        changed_by=payload.get("changed_by", "web_app"),
+        dry_run=payload.get("dry_run", True) is True,
+        allow_reclassify=payload.get("allow_reclassify", False) is True,
+    )
+
+
+def get_purpose_review_recheck_packet(payload: dict):
+    payload = payload or {}
+    return build_purpose_review_recheck(
+        pig_id=payload.get("pig_id", ""),
+        question=payload.get("question", ""),
+    )
+
+
 def get_meat_planning_data():
     return get_meat_planning_summary()
 
@@ -132,10 +157,13 @@ def get_litter_profile(litter_id: str):
 
 
 def mark_litter_profile_weaned(litter_id: str, payload: dict):
+    payload = payload or {}
     return mark_litter_weaned(
         litter_id=litter_id,
-        wean_date_value=(payload or {}).get("wean_date", ""),
-        changed_by=(payload or {}).get("changed_by", "web_app"),
+        wean_date_value=payload.get("wean_date", ""),
+        changed_by=payload.get("changed_by", "web_app"),
+        use_latest_weights_as_wean_weights=payload.get("use_latest_weights_as_wean_weights", False) is True,
+        wean_weights=payload.get("wean_weights", {}),
     )
 
 

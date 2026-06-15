@@ -138,7 +138,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertFalse(result["writes_to_supabase"])
         self.assertEqual(by_id["PIG-1"]["readiness_bucket"], "Needs Classification")
         self.assertIn("Purpose is still unknown", by_id["PIG-1"]["readiness_reason"])
-        self.assertEqual(by_id["PIG-1"]["suggested_purpose"], "Needs Review")
+        self.assertEqual(by_id["PIG-1"]["suggested_purpose"], "Breeding Review")
+        self.assertEqual(by_id["PIG-1"]["suggested_purpose_confidence"], "Low")
         self.assertEqual(by_id["PIG-1"]["growth_class"], "Exceptional")
         self.assertEqual(by_id["PIG-1"]["average_daily_gain_kg"], 0.5)
         self.assertEqual(result["thresholds"]["slaughter_target_min_kg"], 80)
@@ -327,6 +328,189 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(result["business_rules"]["meat_window_label"], "65-75 kg")
         self.assertFalse(result["writes_to_sheets"])
         self.assertFalse(result["writes_to_supabase"])
+
+    def test_allocation_readiness_uses_pig_master_wean_fields_when_overview_omits_them(self):
+        overview_rows = [{
+            "Pig_ID": "PIG-WEANED",
+            "Tag_Number": "40",
+            "Animal_Type": "Weaner",
+            "Sex": "Female",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Unknown",
+            "Current_Pen_ID": "PEN-1",
+            "Current_Weight_Kg": "12",
+            "Last_Weight_Date": "2026-06-15",
+            "Age_Days": "50",
+            "Litter_ID": "LIT-1",
+        }]
+        master_rows = [{
+            "Pig_ID": "PIG-WEANED",
+            "Wean_Date": "2026-06-05",
+            "Wean_Weight_Kg": "8.5",
+        }]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "PIG_MASTER":
+                return master_rows
+            if sheet_name == "WEIGHT_LOG":
+                return [{"Pig_ID": "PIG-WEANED", "Weight_Date": "2026-06-15", "Weight_Kg": "12"}]
+            if sheet_name == "PEN_REGISTER":
+                return [{"Pen_ID": "PEN-1", "Pen_Name": "Weaner Pen"}]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 15))
+
+        row = result["pigs"][0]
+        self.assertEqual(row["wean_date"], "2026-06-05")
+        self.assertEqual(row["wean_weight_kg"], 8.5)
+        self.assertEqual(row["days_since_wean"], 10)
+        self.assertEqual(row["post_wean_daily_gain_kg"], 0.35)
+
+    def test_purpose_review_queue_filters_unknown_purpose_and_keeps_litter_focus(self):
+        allocation_result = {
+            "success": True,
+            "generated_date": "2026-06-15",
+            "business_rules": {"source": "code_defaults"},
+            "pigs": [
+                {
+                    "pig_id": "PIG-UNKNOWN",
+                    "tag_number": "11",
+                    "litter_id": "LIT-1",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Unknown",
+                    "readiness_bucket": "Needs Classification",
+                    "readiness_reason": "Purpose is still unknown.",
+                    "suggested_purpose": "Grow Out",
+                    "suggested_purpose_reason": "Pig is active/on farm.",
+                    "suggested_purpose_confidence": "Medium",
+                },
+                {
+                    "pig_id": "PIG-CLASSIFIED",
+                    "tag_number": "12",
+                    "litter_id": "LIT-1",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Grow_Out",
+                    "readiness_bucket": "Growing",
+                    "suggested_purpose": "Grow Out",
+                    "suggested_purpose_reason": "Keep growing.",
+                    "suggested_purpose_confidence": "Medium",
+                },
+                {
+                    "pig_id": "PIG-OTHER",
+                    "tag_number": "13",
+                    "litter_id": "LIT-2",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "purpose": "Unknown",
+                    "readiness_bucket": "Needs Data",
+                    "readiness_reason": "Missing weight.",
+                    "suggested_purpose": "Needs Review",
+                    "suggested_purpose_reason": "Complete missing data.",
+                    "suggested_purpose_confidence": "Low",
+                },
+            ],
+        }
+
+        with patch.object(pig_weights_service, "get_pig_allocation_readiness", return_value=allocation_result):
+            default_result = pig_weights_service.get_purpose_review_queue()
+            litter_result = pig_weights_service.get_purpose_review_queue(litter_id="LIT-1")
+
+        self.assertEqual([row["pig_id"] for row in default_result["pigs"]], ["PIG-UNKNOWN", "PIG-OTHER"])
+        self.assertEqual(default_result["summary"]["needs_owner_decision"], 1)
+        self.assertEqual(default_result["summary"]["needs_data"], 1)
+        self.assertFalse(default_result["writes_to_sheets"])
+        self.assertEqual(default_result["owner_agent"], "Herdmaster")
+        by_id = {row["pig_id"]: row for row in litter_result["pigs"]}
+        self.assertEqual(set(by_id), {"PIG-UNKNOWN", "PIG-CLASSIFIED"})
+        self.assertEqual(by_id["PIG-UNKNOWN"]["proposed_purpose"], "Grow_Out")
+        self.assertEqual(by_id["PIG-CLASSIFIED"]["review_status"], "classified")
+
+    def test_apply_purpose_review_decisions_updates_only_purpose_notes_and_timestamp(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-UNKNOWN",
+                "Tag_Number": "11",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "General_Notes": "Existing note",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+                patch.object(pig_weights_service, "batch_update_rows_by_id", return_value=1) as mock_update:
+            result, status_code = pig_weights_service.apply_purpose_review_decisions(
+                [{"pig_id": "PIG-UNKNOWN", "purpose": "Grow_Out", "reason": "Herdmaster suggested grow out."}],
+                changed_by="Owner",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["rows_updated"], 1)
+        updates = mock_update.call_args.args[1]["PIG-UNKNOWN"]
+        self.assertEqual(updates["Purpose"], "Grow_Out")
+        self.assertIn("Updated_At", updates)
+        self.assertIn("purpose review", updates["General_Notes"])
+        self.assertIn("Unknown to Grow_Out", updates["General_Notes"])
+        self.assertEqual(set(updates), {"Purpose", "Updated_At", "General_Notes"})
+
+    def test_apply_purpose_review_decisions_blocks_reclassify_by_default(self):
+        pig_rows = [{
+            "Pig_ID": "PIG-DONE",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "Purpose": "Grow_Out",
+        }]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+                patch.object(pig_weights_service, "batch_update_rows_by_id") as mock_update:
+            result, status_code = pig_weights_service.apply_purpose_review_decisions(
+                [{"pig_id": "PIG-DONE", "purpose": "Sale"}],
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("already has purpose", result["errors"][0])
+        mock_update.assert_not_called()
+
+    def test_purpose_review_recheck_returns_no_write_packet(self):
+        allocation_result = {
+            "success": True,
+            "pigs": [{
+                "pig_id": "PIG-1",
+                "status": "Active",
+                "on_farm": "Yes",
+                "purpose": "Unknown",
+                "readiness_bucket": "Needs Classification",
+                "readiness_reason": "Purpose is still unknown.",
+                "suggested_purpose": "Grow Out",
+                "suggested_purpose_reason": "Pig is active/on farm.",
+                "suggested_purpose_confidence": "Medium",
+                "growth_reason": "Steady lifetime gain.",
+                "litter_quality_reason": "Good litter survival.",
+                "recommended_action": "Keep growing.",
+            }],
+        }
+
+        with patch.object(pig_weights_service, "get_pig_allocation_readiness", return_value=allocation_result):
+            result, status_code = pig_weights_service.build_purpose_review_recheck("PIG-1", "Why grow out?")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["owner_agent"], "Herdmaster")
+        self.assertFalse(result["writes_to_sheets"])
+        self.assertFalse(result["writes_to_supabase"])
+        self.assertIn("Pig is active/on farm.", result["analysis_points"])
 
 
 class MeatPlanningServiceTests(unittest.TestCase):
