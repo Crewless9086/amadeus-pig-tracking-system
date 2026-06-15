@@ -1,4 +1,7 @@
 (function () {
+  const page = document.querySelector
+    ? document.querySelector(".oom-sakkie-page")
+    : (document.getElementsByClassName ? document.getElementsByClassName("oom-sakkie-page")[0] : null);
   const form = document.getElementById("oom_form");
   const input = document.getElementById("oom_text");
   const statusBadge = document.getElementById("oom_status");
@@ -33,6 +36,7 @@
   const specialistLiveGrid = document.getElementById("oom_specialist_live_grid");
   const specialistPriorityList = document.getElementById("oom_specialist_priority_list");
   const specialistActions = document.getElementById("oom_specialist_actions");
+  const backHomeButton = document.getElementById("oom_back_home");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
   const warnings = document.getElementById("oom_warnings");
@@ -337,6 +341,7 @@
     const src = asset && (asset[imageKey] || asset.portrait_main || asset.portrait_panel || asset.portrait_dock);
     const img = createAgentImage(src, profile.name || asset?.display_name || "Agent portrait");
     if (img) {
+      if (imageKey === "portrait_main") img.loading = "eager";
       img.addEventListener("load", () => container.classList.add("has-image"), { once: true });
       img.addEventListener("error", () => container.classList.remove("has-image"), { once: true });
       container.appendChild(img);
@@ -971,6 +976,9 @@
     activeSpecialist = specialistProfiles[normalized] ? normalized : "home";
     if (specialistDashboard) {
       specialistDashboard.dataset.agent = activeSpecialist;
+    }
+    if (page) {
+      page.dataset.specialistMode = activeSpecialist === "home" ? "home" : "agent";
     }
     setAvatarImage(specialistAvatar, profile, asset, "portrait_panel");
     if (specialistName) specialistName.textContent = profile.name;
@@ -5179,6 +5187,10 @@
   agentDockButtons.forEach((button) => {
     button.addEventListener("click", () => openSpecialist(button.dataset.openAgent || "home"));
   });
+
+  if (backHomeButton) {
+    backHomeButton.addEventListener("click", () => openSpecialist("home"));
+  }
 
   if (refreshTraces) {
     refreshTraces.addEventListener("click", refreshReviewData);

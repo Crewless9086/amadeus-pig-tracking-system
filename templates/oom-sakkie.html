@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body class="oom-sakkie-body oom-farm-command-body">
-  <main class="oom-shell oom-sakkie-page">
+  <main class="oom-shell oom-sakkie-page" data-specialist-mode="home">
     <header class="oom-header oom-farm-header">
       <div class="oom-farm-brand">
         <span class="oom-farm-brand-mark" aria-hidden="true">A</span>
@@ -166,6 +166,13 @@
         <button type="button" data-quick-ask="Show me the safety gates."><span>Safety</span><strong>Gate status</strong></button>
       </section>
 
+      <form id="oom_form" class="oom-input-bar">
+        <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
+        <span aria-hidden="true">You can say or type a command</span>
+        <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
+        <button type="submit">Ask</button>
+      </form>
+
       <section class="oom-agent-dock-section" aria-label="Agent dock">
         <div class="oom-agent-dock" id="oom_agent_dock">
           <button type="button" data-open-agent="ledger"><span>LD</span><strong>Ledger</strong><small>Sales & Money</small></button>
@@ -180,6 +187,7 @@
       </section>
 
       <section class="oom-specialist-dashboard" id="oom_specialist_dashboard" data-agent="home" aria-label="Specialist dashboard">
+        <button type="button" class="oom-back-home" id="oom_back_home">Back to Oom Sakkie</button>
         <div class="oom-specialist-identity">
           <div class="oom-specialist-avatar" id="oom_specialist_avatar">OS</div>
           <div>
@@ -627,11 +635,6 @@
       </details>
     </section>
 
-    <form id="oom_form" class="oom-input-bar">
-      <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
-      <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
-      <button type="submit">Ask</button>
-    </form>
     <details class="oom-quick-drawer">
       <summary>
         <span>More</span>

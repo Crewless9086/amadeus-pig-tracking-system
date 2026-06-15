@@ -5956,3 +5956,572 @@ body.oom-farm-command-body {
     width: calc(100% - 24px);
   }
 }
+
+/* Target farm command kiosk pass. This layer intentionally overrides the
+   earlier reset so home and specialist modes match the approved concept. */
+body.oom-farm-command-body {
+  background:
+    radial-gradient(circle at 50% -20%, rgba(255, 249, 236, 0.95), transparent 44%),
+    linear-gradient(180deg, #f2e5cc 0%, #e1cba7 100%);
+}
+
+.oom-sakkie-page {
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 74px minmax(0, 1fr) 32px;
+  background: var(--farm-bg);
+}
+
+.oom-farm-header {
+  min-height: 0;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  padding: 9px 18px;
+  background: linear-gradient(180deg, #fff3dd, #ecd6b4);
+}
+
+.oom-farm-main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 310px;
+  grid-template-rows: minmax(0, 1fr) 58px 146px;
+  gap: 10px 14px;
+  padding: 14px 16px 8px;
+  overflow: hidden;
+}
+
+.oom-at-glance-panel,
+.oom-priority-panel {
+  grid-row: 1 / 3;
+  border-color: rgba(95, 74, 42, 0.18);
+  background: linear-gradient(180deg, rgba(255, 248, 236, 0.96), rgba(246, 230, 202, 0.92));
+  box-shadow: 0 16px 36px rgba(66, 47, 22, 0.14);
+}
+
+.oom-at-glance-panel {
+  grid-column: 1;
+}
+
+.oom-priority-panel {
+  grid-column: 3;
+}
+
+.oom-center-stage {
+  grid-column: 2;
+  grid-row: 1;
+  border-radius: 22px;
+  background:
+    linear-gradient(90deg, rgba(248, 232, 199, 0.78), rgba(255, 247, 229, 0.20), rgba(238, 218, 184, 0.68)),
+    radial-gradient(circle at 35% 22%, rgba(255, 207, 126, 0.74), transparent 18%),
+    linear-gradient(180deg, #d7e4d5 0%, #e9d2a5 47%, #6f864a 100%);
+  box-shadow: inset 0 0 90px rgba(78, 56, 26, 0.18), 0 20px 42px rgba(66, 47, 22, 0.18);
+}
+
+.oom-center-stage::before {
+  height: 48%;
+  background:
+    linear-gradient(8deg, rgba(82, 103, 55, 0.88) 0 34%, transparent 35%),
+    repeating-linear-gradient(92deg, rgba(99, 69, 39, 0.30) 0 2px, transparent 2px 74px);
+  opacity: 0.55;
+}
+
+.oom-center-stage .oom-presence-panel {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 0;
+}
+
+.oom-center-stage .oom-presence-orb {
+  position: absolute;
+  inset: 0 auto 0 34%;
+  transform: translateX(-50%);
+  width: min(440px, 40vw);
+  height: 100%;
+  z-index: 2;
+}
+
+.oom-center-stage .oom-presence-portrait,
+.oom-center-stage .oom-presence-portrait img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+.oom-center-stage .oom-presence-portrait {
+  position: static;
+  inset: auto;
+  display: grid;
+  place-items: stretch;
+  overflow: hidden;
+}
+
+.oom-center-stage .oom-presence-portrait img {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: center top;
+  filter: drop-shadow(0 24px 26px rgba(52, 35, 16, 0.28));
+}
+
+.oom-center-stage .oom-presence-copy {
+  top: 15%;
+  left: auto;
+  right: 4%;
+  width: min(310px, 33%);
+  z-index: 5;
+}
+
+.oom-center-stage .oom-presence-copy .oom-label {
+  font-size: clamp(34px, 4.4vw, 62px);
+}
+
+.oom-brief-bubble {
+  top: 34%;
+  right: 3.5%;
+  width: min(300px, 32%);
+  max-height: 128px;
+  overflow: hidden;
+  background: rgba(255, 248, 234, 0.86);
+}
+
+.oom-center-stage .oom-presence-actions {
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: 14px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 120px));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 6px;
+  border: 1px solid rgba(95, 74, 42, 0.20);
+  border-radius: 15px;
+  background: rgba(255, 247, 232, 0.82);
+}
+
+.oom-farm-main .oom-command-deck {
+  position: absolute;
+  left: 316px;
+  right: auto;
+  bottom: 222px;
+  transform: none;
+  width: min(640px, calc(100% - 700px));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  z-index: 7;
+}
+
+.oom-farm-main .oom-command-deck button {
+  min-height: 48px;
+  padding: 6px 8px;
+}
+
+.oom-sakkie-page .oom-input-bar {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: stretch;
+  justify-self: center;
+  display: grid;
+  grid-template-columns: minmax(120px, 190px) minmax(0, 1fr) 118px;
+  align-items: center;
+  gap: 10px;
+  width: min(760px, 100%);
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(95, 74, 42, 0.20);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 249, 238, 0.96), rgba(240, 222, 190, 0.94));
+  box-shadow: 0 13px 28px rgba(66, 47, 22, 0.14);
+}
+
+.oom-sakkie-page .oom-input-bar > span {
+  color: #4e432f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.oom-sakkie-page .oom-input-bar input {
+  min-width: 0;
+  min-height: 38px;
+}
+
+.oom-agent-dock-section {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  padding: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(95, 74, 42, 0.18);
+  background: linear-gradient(180deg, #ebd9b7, #dec49a);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.42);
+}
+
+.oom-agent-dock {
+  gap: 8px;
+  padding: 9px;
+  background: transparent;
+}
+
+.oom-agent-dock button {
+  grid-template-rows: minmax(58px, 1fr) auto auto auto;
+  padding: 8px 6px 7px;
+  border-color: rgba(95, 74, 42, 0.30);
+  background: linear-gradient(180deg, rgba(255, 247, 232, 0.92), rgba(232, 214, 184, 0.92));
+  box-shadow: 0 10px 20px rgba(66, 47, 22, 0.12);
+}
+
+.oom-agent-dock span {
+  display: grid;
+  place-items: center;
+  width: min(64px, 5.2vw);
+  height: min(64px, 5.2vw);
+  min-width: 50px;
+  min-height: 50px;
+  overflow: hidden;
+}
+
+.oom-agent-dock button::after {
+  font-size: 10px;
+}
+
+.oom-agent-dock button::before {
+  width: 20px;
+  height: 20px;
+}
+
+.oom-specialist-dashboard {
+  display: none;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-at-glance-panel,
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-priority-panel,
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-command-deck {
+  display: none;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-farm-main {
+  grid-template-columns: 260px minmax(0, 1fr) 290px;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-center-stage {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-center-stage .oom-presence-orb {
+  left: 50%;
+  transform: translateX(-50%);
+  width: 112%;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-center-stage .oom-presence-copy {
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  width: auto;
+  text-align: center;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-center-stage .oom-presence-copy .oom-label {
+  font-size: 32px;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-brief-bubble {
+  left: 16px;
+  right: 16px;
+  top: auto;
+  bottom: 76px;
+  width: auto;
+  max-width: none;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-center-stage .oom-presence-actions {
+  width: calc(100% - 24px);
+  bottom: 14px;
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-input-bar {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  width: min(820px, 100%);
+}
+
+.oom-sakkie-page[data-specialist-mode="agent"] .oom-specialist-dashboard {
+  position: relative;
+  z-index: 2;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  grid-column: 2 / 4;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr) 285px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  padding: 12px;
+  border-radius: 18px;
+  color: var(--farm-text);
+  background: linear-gradient(180deg, rgba(255, 249, 238, 0.99), rgba(243, 226, 196, 0.98));
+  box-shadow: 0 18px 38px rgba(66, 47, 22, 0.16);
+}
+
+.oom-specialist-dashboard,
+.oom-specialist-dashboard h2,
+.oom-specialist-dashboard strong,
+.oom-specialist-dashboard p,
+.oom-specialist-dashboard span,
+.oom-specialist-dashboard small {
+  color: var(--farm-text);
+}
+
+.oom-specialist-dashboard .oom-label,
+.oom-specialist-dashboard small,
+.oom-specialist-dashboard .oom-specialist-live-heading span {
+  color: var(--farm-muted);
+}
+
+.oom-back-home {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: var(--farm-green-dark);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.oom-back-home::before {
+  content: "< ";
+}
+
+.oom-specialist-identity {
+  grid-column: 1;
+  grid-row: 2 / 4;
+  align-content: start;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid rgba(95, 74, 42, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 247, 232, 0.72);
+}
+
+.oom-specialist-identity h2 {
+  margin: 4px 0 6px;
+  font-size: 24px;
+}
+
+.oom-specialist-identity p {
+  margin: 0;
+  color: var(--farm-text);
+  line-height: 1.35;
+}
+
+#oom_specialist_greeting {
+  color: var(--farm-text) !important;
+}
+
+.oom-specialist-avatar {
+  width: 118px;
+  height: 118px;
+  margin: 0 auto 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 3px solid rgba(95, 125, 58, 0.70);
+  background: linear-gradient(135deg, #ead5ad, #8fa266);
+}
+
+.oom-specialist-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.oom-specialist-grid {
+  grid-column: 2 / 4;
+  grid-row: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.oom-specialist-grid article,
+.oom-specialist-metric,
+.oom-specialist-priority {
+  border: 1px solid rgba(95, 74, 42, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 250, 241, 0.88);
+}
+
+.oom-specialist-grid article,
+.oom-specialist-metric {
+  padding: 10px;
+}
+
+.oom-specialist-grid article span,
+.oom-specialist-metric span,
+.oom-specialist-priority span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--farm-green-dark);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-specialist-metric strong {
+  display: block;
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.oom-specialist-metric small,
+.oom-specialist-priority small {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.25;
+}
+
+.oom-specialist-live {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.oom-specialist-live-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.oom-specialist-priorities {
+  grid-column: 3;
+  grid-row: 2 / 4;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.oom-specialist-priority-list {
+  max-height: 100%;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.oom-specialist-priority {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 10px;
+  text-decoration: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.oom-specialist-priority strong {
+  font-size: 14px;
+  line-height: 1.2;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.oom-specialist-priority p {
+  margin: 0;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.oom-specialist-priority-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.oom-specialist-priority-actions button {
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid rgba(95, 125, 58, 0.26);
+  border-radius: 999px;
+  background: #e7f0d7;
+  color: var(--farm-green-dark);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.oom-specialist-actions {
+  grid-column: 2;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.oom-specialist-actions button {
+  min-height: 38px;
+  border: 1px solid rgba(95, 74, 42, 0.22);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff8ec, #efd8b3);
+  color: var(--farm-text);
+  font-weight: 900;
+}
+
+.oom-voice-status-row {
+  grid-row: 3;
+  min-height: 0;
+  padding: 0 18px;
+  border-top: 1px solid rgba(95, 74, 42, 0.18);
+  background: linear-gradient(180deg, #f1dfbf, #e5cfaa);
+}
+
+.oom-quick-drawer {
+  right: 14px;
+  bottom: 36px;
+}
+
+@media (max-width: 1400px) {
+  .oom-farm-main {
+    grid-template-columns: 244px minmax(0, 1fr) 270px;
+    gap: 8px;
+  }
+
+  .oom-at-glance-panel,
+  .oom-priority-panel {
+    padding: 12px 10px;
+  }
+
+  .oom-glance-card {
+    min-height: 64px;
+  }
+
+  .oom-priority-card {
+    min-height: 48px;
+    height: 48px;
+  }
+
+  .oom-agent-dock button {
+    grid-template-rows: minmax(50px, 1fr) auto auto auto;
+  }
+
+  .oom-agent-dock strong {
+    font-size: 13px;
+  }
+
+  .oom-agent-dock small {
+    font-size: 10px;
+  }
+
+  .oom-farm-main .oom-command-deck {
+    left: 286px;
+    width: min(600px, calc(100% - 610px));
+  }
+}
