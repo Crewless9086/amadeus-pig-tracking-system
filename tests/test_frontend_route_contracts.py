@@ -263,10 +263,10 @@ class FrontendRouteContractTests(unittest.TestCase):
         js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
 
         self.assertIn("Ledger Sales Workbench", template)
-        self.assertIn("Campaigns, outreach drafts, Sam/Chatwoot send-design requests, and lead tracking.", template)
+        self.assertIn("Campaign ideas, draft wording, future Sam/WhatsApp design notes, and buyer leads.", template)
         self.assertIn("Customer sending is still locked.", template)
         self.assertIn("No customer sends happen from this panel.", template)
-        self.assertIn("Sales Leads", template)
+        self.assertIn("4. Buyer Leads To Follow Up", template)
         self.assertIn("oom_sales_leads", template)
         self.assertIn("Record Lead", template)
         self.assertIn("oom_sales_lead_label", template)
@@ -293,6 +293,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("no customer send", js)
         self.assertIn("no Chatwoot/n8n call", js)
         self.assertIn("No customer message is being sent.", js)
+        self.assertIn("Prepare Future Send Design", js)
+        self.assertIn("Send Design Already Recorded", js)
+        self.assertIn("Lead tracking record failed.", js)
 
         approval_items = js[js.index("function currentApprovalItems"):js.index("function renderApprovalConsole")]
         self.assertIn("Sales Campaign", approval_items)

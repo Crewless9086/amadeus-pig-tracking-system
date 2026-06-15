@@ -2244,7 +2244,9 @@
     title.textContent = "Ledger sales queue";
     summary.textContent = `${waitingCampaigns} campaign waiting, ${approvedCampaigns} approved, ${drafts.length} outreach draft waiting, ${designs.length} send-design request waiting, ${leads.length} lead tracked, ${depositPending} deposit pending, ${templateRequired} template required.`;
     guard.className = "oom-advisor-guard";
-    guard.textContent = "owner review only | no customer send | no Chatwoot/n8n call | no order or stock write";
+    guard.textContent = leads.length
+      ? "next: follow up buyer leads manually or through a later approved Sam flow | no send happened here"
+      : "next: record buyer leads when people reply or show interest | no customer send | no order or stock write";
     salesWorkbenchStatus.appendChild(title);
     salesWorkbenchStatus.appendChild(summary);
     salesWorkbenchStatus.appendChild(guard);
@@ -2288,13 +2290,13 @@
     row.className = salesCampaignStage(item) === "waiting" ? "oom-work-item oom-work-item-active" : "oom-work-item";
     badge.className = "oom-work-badge";
     badge.textContent = salesCampaignStage(item) === "waiting" ? "Needs owner approval" : "Approved";
-    title.textContent = item.campaign_title || item.campaign_id || "Sales campaign";
+    title.textContent = item.campaign_title || "Campaign idea";
     detail.textContent = ((item.opportunity || {}).basis_summary || (item.draft || {}).message || "No campaign detail supplied.").slice(0, 360);
     event.textContent = (item.latest_event || {}).event_type
       ? `Latest event: ${(item.latest_event || {}).event_type}`
       : "Latest event: none";
     guard.className = "oom-advisor-guard";
-    guard.textContent = "campaign record only | no customer send | no order or stock change";
+    guard.textContent = "campaign idea only | review demand before contacting anyone";
     row.appendChild(badge);
     row.appendChild(title);
     row.appendChild(detail);
@@ -2326,17 +2328,22 @@
     const guard = document.createElement("p");
     const actions = document.createElement("div");
     const designButton = document.createElement("button");
+    const designs = Array.isArray((latestSalesSendDesignsData || {}).send_design_requests) ? latestSalesSendDesignsData.send_design_requests : [];
+    const designExists = designs.some((design) => design.draft_id === item.draft_id);
     row.className = "oom-work-item oom-work-item-active";
-    title.textContent = item.draft_id || "Customer outreach draft";
+    title.textContent = "Draft message - not sent";
     audience.textContent = `Audience: ${item.audience_label || "known meat buyers"}`;
     draft.textContent = (item.draft_text || "No draft text supplied.").slice(0, 520);
     guard.className = "oom-advisor-guard";
-    guard.textContent = "draft only | not sent | no Chatwoot/n8n/order/stock action";
+    guard.textContent = "copy draft only | use manually after owner review | not sent by the system";
     actions.className = "oom-work-actions";
     designButton.type = "button";
     designButton.className = "oom-build-brief-button";
-    designButton.textContent = "Prepare Send Design";
-    designButton.addEventListener("click", () => recordSalesSendDesign(item.draft_id, designButton));
+    designButton.textContent = designExists ? "Send Design Already Recorded" : "Prepare Future Send Design";
+    designButton.disabled = designExists;
+    if (!designExists) {
+      designButton.addEventListener("click", () => recordSalesSendDesign(item.draft_id, designButton));
+    }
     actions.appendChild(designButton);
     row.appendChild(title);
     row.appendChild(audience);
@@ -2364,10 +2371,10 @@
       const detail = document.createElement("p");
       const guard = document.createElement("p");
       row.className = "oom-work-item";
-      title.textContent = item.send_design_id || "Send design";
-      detail.textContent = `${item.target_transport || "sam_chatwoot_whatsapp_review"} | ${(item.design_summary || "").slice(0, 360)}`;
+      title.textContent = "Future Sam/WhatsApp design note";
+      detail.textContent = (item.design_summary || "Design how a future approved Sam/WhatsApp handoff should work.").slice(0, 420);
       guard.className = "oom-advisor-guard";
-      guard.textContent = "design only | no customer send | no Chatwoot/n8n call | no quote/order/stock write";
+      guard.textContent = "not active | design note only | no customer send | no Chatwoot/n8n call";
       row.appendChild(title);
       row.appendChild(detail);
       row.appendChild(guard);
@@ -2397,7 +2404,7 @@
       row.className = item.status === "deposit_pending" || item.status === "asked_price" || item.status === "order_ready_for_approval"
         ? "oom-work-item oom-work-item-active"
         : "oom-work-item";
-      title.textContent = item.lead_label || item.lead_id || "Sales lead";
+      title.textContent = item.lead_label || "Buyer lead";
       detail.textContent = `${item.status || "new"} | ${item.campaign_source || "unknown source"} | WhatsApp: ${item.whatsapp_window_state || "unknown"} | ${item.channel || "channel unknown"}`;
       interest.textContent = product
         ? `${product} | ${item.next_owner_action || "No owner action recorded."}`
@@ -3714,7 +3721,8 @@
       await loadSalesWorkbench();
     } catch (error) {
       if (salesLeadCaptureStatus) {
-        salesLeadCaptureStatus.textContent = "Lead tracking record failed. No customer send, order, or stock write happened.";
+        const reason = error && error.message ? ` Reason: ${error.message}.` : "";
+        salesLeadCaptureStatus.textContent = `Lead tracking record failed.${reason} No customer send, order, or stock write happened.`;
       }
     } finally {
       if (button) {

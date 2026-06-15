@@ -537,8 +537,8 @@ async function flushPromises() {
   assert.strictEqual(intervalCalls.length, 0, "Sales campaign approval click must not start interval polling");
 
   fetchCalls.length = 0;
-  const sendDesignButton = findByText(element("oom_sales_outreach_drafts"), "Prepare Send Design");
-  assert(sendDesignButton, "Ledger workbench should expose an explicit Prepare Send Design action");
+  const sendDesignButton = findByText(element("oom_sales_outreach_drafts"), "Prepare Future Send Design");
+  assert(sendDesignButton, "Ledger workbench should expose an explicit future send-design action");
   await sendDesignButton.trigger("click");
   await flushPromises();
   assert(

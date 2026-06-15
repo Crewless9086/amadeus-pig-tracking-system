@@ -1361,6 +1361,9 @@ def _sales_send_design_params(draft, payload):
 
 def _sales_lead_params(payload):
     interest = payload.get("interest") if isinstance(payload.get("interest"), dict) else {}
+    campaign_id = _clean_text(payload.get("campaign_id"), 100) or None
+    draft_id = _clean_text(payload.get("draft_id"), 100) or None
+    send_design_id = _clean_text(payload.get("send_design_id"), 100) or None
     lead_label = _clean_text(
         payload.get("lead_label")
         or payload.get("contact_label")
@@ -1376,9 +1379,9 @@ def _sales_lead_params(payload):
     if whatsapp_state not in WHATSAPP_WINDOW_STATES:
         whatsapp_state = "unknown"
     seed = json.dumps({
-        "campaign_id": _clean_text(payload.get("campaign_id"), 100),
-        "draft_id": _clean_text(payload.get("draft_id"), 100),
-        "send_design_id": _clean_text(payload.get("send_design_id"), 100),
+        "campaign_id": campaign_id,
+        "draft_id": draft_id,
+        "send_design_id": send_design_id,
         "lead_label": lead_label,
         "contact_label": _clean_text(payload.get("contact_label"), 160),
         "channel": _clean_text(payload.get("channel") or "chatwoot_whatsapp", 80),
@@ -1387,9 +1390,9 @@ def _sales_lead_params(payload):
     }, sort_keys=True, default=str)
     return {
         "lead_id": _lead_id(seed),
-        "campaign_id": _clean_text(payload.get("campaign_id"), 100),
-        "draft_id": _clean_text(payload.get("draft_id"), 100),
-        "send_design_id": _clean_text(payload.get("send_design_id"), 100),
+        "campaign_id": campaign_id,
+        "draft_id": draft_id,
+        "send_design_id": send_design_id,
         "status": _status_or_default(payload.get("status"), default="new"),
         "mode": "sales_lead_tracking_only",
         "campaign_source": campaign_source,

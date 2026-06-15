@@ -5057,6 +5057,26 @@ def literal_false_is_allowed():
         self.assertFalse(params["dispatch_enabled"])
         self.assertFalse(params["writes_farm_data"])
 
+    def test_manual_sales_lead_params_keep_optional_links_null(self):
+        params = _sales_lead_params({
+            "campaign_source": "manual_owner_note",
+            "lead_label": "Owner noted buyer",
+            "status": "interested",
+            "channel": "owner_review",
+            "whatsapp_window_state": "unknown",
+        })
+
+        self.assertIsNone(params["campaign_id"])
+        self.assertIsNone(params["draft_id"])
+        self.assertIsNone(params["send_design_id"])
+        self.assertEqual(params["mode"], "sales_lead_tracking_only")
+        self.assertEqual(params["campaign_source"], "manual_owner_note")
+        self.assertFalse(params["sends_customer_message"])
+        self.assertFalse(params["calls_chatwoot"])
+        self.assertFalse(params["calls_n8n"])
+        self.assertFalse(params["creates_order"])
+        self.assertFalse(params["changes_stock"])
+
     def test_sales_lead_rejects_invalid_event_type_before_database(self):
         result, status_code = record_sales_lead_event("OSK-SALES-LEAD-1", {"event_type": "send_now"}, database_url="")
 
