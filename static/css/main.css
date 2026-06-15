@@ -3314,6 +3314,79 @@ button:disabled {
   line-height: 1.25;
 }
 
+.oom-specialist-priorities {
+  display: grid;
+  gap: 10px;
+}
+
+.oom-specialist-priority-list {
+  display: grid;
+  gap: 8px;
+}
+
+.oom-specialist-priority {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.4fr) minmax(0, 0.75fr) minmax(0, 1.1fr) minmax(160px, 0.7fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(45, 212, 168, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.032);
+  color: rgba(255, 255, 255, 0.84);
+  padding: 10px;
+  text-decoration: none;
+}
+
+.oom-specialist-priority:hover {
+  border-color: rgba(45, 212, 168, 0.34);
+  background: rgba(45, 212, 168, 0.08);
+}
+
+.oom-specialist-priority-urgent {
+  border-left-color: rgba(255, 196, 87, 0.82);
+}
+
+.oom-specialist-priority span {
+  color: rgba(158, 242, 219, 0.72);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-specialist-priority strong {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 13px;
+  line-height: 1.22;
+  overflow-wrap: anywhere;
+}
+
+.oom-specialist-priority p,
+.oom-specialist-priority small {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  line-height: 1.28;
+}
+
+.oom-specialist-priority-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.oom-specialist-priority-actions button {
+  min-height: 34px;
+  border: 1px solid rgba(45, 212, 168, 0.28);
+  border-radius: 999px;
+  background: rgba(45, 212, 168, 0.08);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
 .oom-specialist-actions button {
   min-height: 40px;
   border: 1px solid rgba(45, 212, 168, 0.32);
@@ -4802,6 +4875,10 @@ button:disabled {
 
   .oom-specialist-live-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .oom-specialist-priority {
+    grid-template-columns: 1fr;
   }
 
   .oom-trace-panel dl {

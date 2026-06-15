@@ -329,10 +329,14 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('data-open-agent="herdmaster"', template)
         self.assertIn('id="oom_specialist_dashboard"', template)
         self.assertIn('id="oom_specialist_live_grid"', template)
+        self.assertIn('id="oom_specialist_priority_list"', template)
         self.assertIn("Active Agent", template)
         self.assertIn("function openSpecialist", js)
         self.assertIn("function specialistFromText", js)
         self.assertIn("function specialistLiveCards", js)
+        self.assertIn("function specialistPriorityRows", js)
+        self.assertIn("function renderSpecialistPriorities", js)
+        self.assertIn("function litterAttentionHref", js)
         self.assertIn("function loadSpecialistLiveSummaries", js)
         self.assertIn('fetchSpecialistJson(url)', js)
         self.assertIn("/api/pig-weights/dashboard", js)
@@ -347,6 +351,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn(".oom-specialist-avatar", css)
         self.assertIn(".oom-specialist-live-grid", css)
         self.assertIn(".oom-specialist-metric", css)
+        self.assertIn(".oom-specialist-priority-list", css)
+        self.assertIn(".oom-specialist-priority", css)
 
     def test_oom_sakkie_browser_behavior_smoke_executes_real_kiosk_script(self):
         smoke = Path("tests/oom_sakkie_browser_behavior_smoke.js").read_text(encoding="utf-8")

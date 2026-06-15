@@ -30,6 +30,7 @@
   const specialistAuthority = document.getElementById("oom_specialist_authority");
   const specialistLiveStatus = document.getElementById("oom_specialist_live_status");
   const specialistLiveGrid = document.getElementById("oom_specialist_live_grid");
+  const specialistPriorityList = document.getElementById("oom_specialist_priority_list");
   const specialistActions = document.getElementById("oom_specialist_actions");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
@@ -370,11 +371,264 @@
     const cards = specialistLiveCards(activeSpecialist);
     specialistLiveGrid.innerHTML = "";
     cards.forEach((card) => specialistLiveGrid.appendChild(renderSpecialistMetricCard(card)));
+    renderSpecialistPriorities(activeSpecialist);
     if (specialistLiveStatus) {
       specialistLiveStatus.textContent = latestSpecialistSummaryLoadedAt
         ? `Updated ${latestSpecialistSummaryLoadedAt}`
         : "Loading trusted farm signals...";
     }
+  }
+
+  function renderSpecialistPriorities(slug) {
+    if (!specialistPriorityList) return;
+    const rows = specialistPriorityRows(slug);
+    specialistPriorityList.innerHTML = "";
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No priority items are waiting for this agent.";
+      specialistPriorityList.appendChild(empty);
+      return;
+    }
+    rows.slice(0, 5).forEach((row) => specialistPriorityList.appendChild(renderSpecialistPriorityRow(row)));
+  }
+
+  function renderSpecialistPriorityRow(row) {
+    const item = document.createElement(row.href ? "a" : "article");
+    const meta = document.createElement("span");
+    const title = document.createElement("strong");
+    const detail = document.createElement("p");
+    const guard = document.createElement("small");
+    item.className = row.urgent ? "oom-specialist-priority oom-specialist-priority-urgent" : "oom-specialist-priority";
+    if (row.href) item.href = row.href;
+    meta.textContent = row.meta || "Priority";
+    title.textContent = row.title || "Review item";
+    detail.textContent = row.detail || "";
+    guard.textContent = row.guard || "Review only.";
+    item.appendChild(meta);
+    item.appendChild(title);
+    item.appendChild(detail);
+    item.appendChild(guard);
+    if (Array.isArray(row.actions) && row.actions.length) {
+      const actions = document.createElement("div");
+      actions.className = "oom-specialist-priority-actions";
+      row.actions.forEach((action) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = action.label || "Action";
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          action.run(button);
+        });
+        actions.appendChild(button);
+      });
+      item.appendChild(actions);
+    }
+    return item;
+  }
+
+  function specialistPriorityRows(slug) {
+    if (slug === "ledger") return ledgerPriorityRows();
+    if (slug === "herdmaster") return herdmasterPriorityRows();
+    if (slug === "gatekeeper") return gatekeeperPriorityRows();
+    if (slug === "rootline") return rootlinePriorityRows();
+    if (slug === "butcher") return butcherPriorityRows();
+    if (slug === "beacon") return beaconPriorityRows();
+    if (slug === "sam") return samPriorityRows();
+    if (slug === "quartermaster") return quartermasterPriorityRows();
+    return commandCenterPriorityRows();
+  }
+
+  function ledgerPriorityRows() {
+    const rows = [];
+    salesLeadItems().forEach((item) => {
+      const product = ((item.interest || {}).product || (item.interest || {}).summary || "").slice(0, 90);
+      rows.push({
+        meta: `Lead | ${item.status || "new"} | WhatsApp ${item.whatsapp_window_state || "unknown"}`,
+        title: item.lead_label || item.contact_label || item.lead_id || "Buyer lead",
+        detail: product || item.next_owner_action || "Review buyer interest and next owner action.",
+        guard: "Lead tracking only. No customer send, quote, order, reservation, or stock change.",
+        urgent: item.status === "deposit_pending" || item.whatsapp_window_state === "template_required",
+        actions: item.lead_id ? [
+          { label: "Owner Follow-up", run: (button) => recordSalesLeadEvent(item.lead_id, "owner_followup_needed", button) },
+          { label: "Deposit Follow-up", run: (button) => recordSalesLeadEvent(item.lead_id, "deposit_followup_needed", button) },
+        ] : [],
+      });
+    });
+    salesCampaignItems()
+      .filter((item) => salesCampaignStage(item) === "waiting")
+      .forEach((item) => {
+        rows.push({
+          meta: "Campaign waiting",
+          title: item.campaign_title || item.campaign_id || "Ledger campaign",
+          detail: ((item.opportunity || {}).basis_summary || (item.draft || {}).message || "Review campaign idea.").slice(0, 150),
+          guard: "Owner review only. Approving creates an internal draft, not a customer send.",
+          urgent: true,
+        });
+      });
+    salesDraftItems().forEach((item) => {
+      rows.push({
+        meta: "Outreach draft",
+        title: item.audience_label || item.draft_id || "Draft copy",
+        detail: (item.draft_text || "Draft is waiting for owner review.").slice(0, 150),
+        guard: "Draft only. Nothing was sent.",
+      });
+    });
+    return rows;
+  }
+
+  function herdmasterPriorityRows() {
+    const attentionItems = readArray((latestFarmDashboardData || {}).litter_attention, "items");
+    const purposeItems = readArray(latestPurposeReviewData, "items");
+    const rows = attentionItems.map((item) => ({
+      meta: `${item.litter_status || "Litter"} | Sow ${item.sow_tag_number || "--"}`,
+      title: item.litter_id || "Litter attention",
+      detail: item.reason || item.recommended_action || "Review litter attention.",
+      guard: "Routes to the operational review page; no automatic lifecycle write.",
+      href: litterAttentionHref(item),
+      urgent: item.action_type === "record_post_wean_weight" || item.action_type === "review_purpose",
+    }));
+    purposeItems.slice(0, 5).forEach((item) => {
+      rows.push({
+        meta: `Purpose | ${item.confidence_label || item.confidence || "review"}`,
+        title: item.pig_label || item.pig_id || item.litter_id || "Purpose review",
+        detail: item.suggested_purpose_reason || item.reason || "Review purpose suggestion.",
+        guard: "Owner approval required before purpose write.",
+        href: item.litter_id ? `/purpose-review?litter_id=${encodeURIComponent(item.litter_id)}` : "/purpose-review",
+      });
+    });
+    return rows;
+  }
+
+  function gatekeeperPriorityRows() {
+    return currentApprovalItems().map((item) => ({
+      meta: item.kind || "Approval",
+      title: item.title || "Owner decision",
+      detail: item.detail || item.ownerPrompt || "Review this owner decision.",
+      guard: item.guard || "Owner approval only.",
+      urgent: true,
+      actions: item.action ? [{ label: item.actionLabel || "Open", run: item.action }] : [],
+    }));
+  }
+
+  function rootlinePriorityRows() {
+    const today = (latestIrrigationData || {}).today || {};
+    const plan = Array.isArray(today.plan) ? today.plan : [];
+    const rows = plan.slice(0, 5).map((item) => ({
+      meta: `${item.status || "planned"} | ${item.planned_minutes || 0} min`,
+      title: item.zone_name || item.zone_id || "Irrigation zone",
+      detail: item.reason || item.note || "Read-only irrigation plan row.",
+      guard: "Read-only. No pump, valve, or hardware command.",
+      urgent: String(item.status || "").toUpperCase() === "RUNNING",
+    }));
+    if (!rows.length) {
+      rows.push({
+        meta: "Weather/irrigation",
+        title: ((latestIrrigationData || {}).operator_summary || {}).headline || "No irrigation plan rows loaded",
+        detail: ((latestWeatherCurrentData || {}).summary || {}).headline || "Check weather and irrigation when needed.",
+        guard: "Read-only status only.",
+      });
+    }
+    return rows;
+  }
+
+  function butcherPriorityRows() {
+    const pigs = readArray(latestMeatPlanningData, "pigs");
+    return pigs
+      .filter((item) => ["ready_now", "next_14_days", "fallback_abattoir"].includes(item.planning_bucket))
+      .slice(0, 5)
+      .map((item) => ({
+        meta: `${item.planning_bucket || "meat"} | ${item.latest_weight_kg || "-"} kg`,
+        title: item.tag_number || item.pig_id || "Meat candidate",
+        detail: item.recommended_action || item.meat_window_status || item.suggested_purpose_reason || "Review meat pipeline.",
+        guard: "Planning only. No slaughter booking, stock allocation, or lifecycle write.",
+        href: "/meat-planning",
+        urgent: item.planning_bucket === "ready_now",
+      }));
+  }
+
+  function beaconPriorityRows() {
+    const rows = [];
+    salesCampaignItems()
+      .filter((item) => salesCampaignStage(item) === "waiting")
+      .forEach((item) => rows.push({
+        meta: "Demand signal",
+        title: item.campaign_title || "Campaign idea",
+        detail: ((item.opportunity || {}).basis_summary || "Ledger has a sales opportunity waiting for owner approval.").slice(0, 150),
+        guard: "Content planning only until owner approves wording and channel.",
+      }));
+    salesDraftItems().forEach((item) => rows.push({
+      meta: "Draft copy",
+      title: item.audience_label || "Audience",
+      detail: (item.draft_text || "Draft is waiting for review.").slice(0, 150),
+      guard: "No public post or customer send.",
+    }));
+    return rows;
+  }
+
+  function samPriorityRows() {
+    return salesLeadItems().map((item) => ({
+      meta: `${item.status || "lead"} | WhatsApp ${item.whatsapp_window_state || "unknown"}`,
+      title: item.lead_label || item.contact_label || "Buyer lead",
+      detail: item.next_owner_action || ((item.interest || {}).summary || "Review customer facts before follow-up."),
+      guard: "No Chatwoot, WhatsApp, n8n, quote, or order action from this panel.",
+      urgent: item.whatsapp_window_state === "template_required" || item.status === "asked_price",
+    }));
+  }
+
+  function quartermasterPriorityRows() {
+    const summary = (latestFarmDashboardData || {}).summary || {};
+    return [
+      {
+        meta: "Supply/expense rail",
+        title: "Source-of-truth design still needed",
+        detail: "Feed, supplies, expenses, and stock adjustments need approved tables before writes.",
+        guard: "Planning only. No expense or stock write.",
+      },
+      {
+        meta: "Current signal",
+        title: `${formatMetricValue(summary.reserved_pigs || 0)} reserved pig(s)`,
+        detail: "Reservation pressure can become a future supply/stock planning signal.",
+        guard: "Read-only farm dashboard signal.",
+      },
+    ];
+  }
+
+  function commandCenterPriorityRows() {
+    const rows = [];
+    currentApprovalItems().slice(0, 3).forEach((item) => rows.push({
+      meta: item.kind || "Approval",
+      title: item.title || "Owner decision",
+      detail: item.detail || item.ownerPrompt || "Review this owner decision.",
+      guard: item.guard || "Owner approval only.",
+      urgent: true,
+      actions: item.action ? [{ label: item.actionLabel || "Open", run: item.action }] : [],
+    }));
+    readArray((latestFarmDashboardData || {}).litter_attention, "items").slice(0, 2).forEach((item) => rows.push({
+      meta: "Animal attention",
+      title: item.litter_id || "Litter attention",
+      detail: item.reason || "Review litter attention.",
+      guard: "Routes to the right animal workflow.",
+      href: litterAttentionHref(item),
+    }));
+    salesLeadItems().slice(0, 2).forEach((item) => rows.push({
+      meta: "Sales lead",
+      title: item.lead_label || "Buyer lead",
+      detail: item.next_owner_action || "Review buyer state.",
+      guard: "Tracking only. No customer send.",
+    }));
+    return rows;
+  }
+
+  function litterAttentionHref(item) {
+    const litterId = encodeURIComponent((item || {}).litter_id || "");
+    if ((item || {}).action_type === "review_purpose") return `/purpose-review?litter_id=${litterId}`;
+    if ((item || {}).action_type === "record_post_wean_weight") {
+      const returnTo = encodeURIComponent(`/purpose-review?litter_id=${(item || {}).litter_id || ""}`);
+      return `/bulk-weights?return_to=${returnTo}&return_label=${encodeURIComponent("Back to Purpose Review")}`;
+    }
+    return litterId ? `/litter/${litterId}` : "/";
   }
 
   function specialistLiveCards(slug) {

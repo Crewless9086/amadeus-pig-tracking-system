@@ -37,6 +37,7 @@ Owner direction is now captured in `docs/00-start-here/PRODUCT_VISION.md`: `/oom
 Current UI slice:
 
 - Specialist dashboards now need compact live summary cards from trusted read-only endpoints.
+- Specialist dashboards should show the next few agent-specific priority items directly in the opened agent view.
 - Clicking an agent should show the useful owner view for that agent first.
 - Workflow cards should route to the correct operational page where possible, such as Purpose Review or Meat Planning.
 - The Ledger Sales Workbench stays available as an audit/detail rail, but should not be treated as the final daily-owner experience.

@@ -52,6 +52,7 @@ When an agent opens:
 - it shows what it has prepared but not executed
 - it clearly states what it cannot do yet
 - the panel shows compact live summary cards from trusted backend reads
+- the panel shows a compact priority queue for that specialist
 - any card that needs action should route to the right workflow page, not just the litter page or audit workbench
 
 ## Specialist Agents
@@ -237,6 +238,7 @@ Immediate UI direction:
 Current accepted owner-facing slice:
 
 - The specialist panel includes live summary cards.
+- The specialist panel includes a priority queue so the owner can see the actual next few items without scrolling through the full Workbench.
 - Ledger summarizes campaigns, drafts, send-design notes, leads, deposit follow-up, and WhatsApp/template state.
 - Herdmaster summarizes herd counts, litter attention, purpose review, and data-quality blockers.
 - Rootline summarizes weather and irrigation status from read-only telemetry.
