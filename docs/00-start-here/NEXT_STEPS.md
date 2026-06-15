@@ -34,6 +34,14 @@ Orders are the profit section. They must be reliable before the system grows.
 
 Owner direction is now captured in `docs/00-start-here/PRODUCT_VISION.md`: `/oom-sakkie` should become the owner command center, not a long technical workbench. The current workbench remains useful as audit/admin infrastructure, but the daily UI should move toward a one-screen live Oom Sakkie presence, agent dock, and focused specialist dashboards opened by voice or click. Build this UI shell before further polishing the Ledger workbench as a primary user surface.
 
+Current UI slice:
+
+- Specialist dashboards now need compact live summary cards from trusted read-only endpoints.
+- Clicking an agent should show the useful owner view for that agent first.
+- Workflow cards should route to the correct operational page where possible, such as Purpose Review or Meat Planning.
+- The Ledger Sales Workbench stays available as an audit/detail rail, but should not be treated as the final daily-owner experience.
+- No post, customer message, order, deposit, stock, irrigation control, expense, or agent-learning write becomes autonomous from this slice.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

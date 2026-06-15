@@ -3254,6 +3254,66 @@ button:disabled {
   gap: 8px;
 }
 
+.oom-specialist-live {
+  display: grid;
+  gap: 10px;
+}
+
+.oom-specialist-live-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.oom-specialist-live-heading span {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+}
+
+.oom-specialist-live-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.oom-specialist-metric {
+  display: grid;
+  gap: 6px;
+  min-height: 96px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.84);
+  padding: 10px;
+  text-decoration: none;
+}
+
+.oom-specialist-metric-link:hover {
+  border-color: rgba(45, 212, 168, 0.42);
+  background: rgba(45, 212, 168, 0.1);
+}
+
+.oom-specialist-metric span {
+  color: rgba(158, 242, 219, 0.72);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-specialist-metric strong {
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 20px;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.oom-specialist-metric small {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
 .oom-specialist-actions button {
   min-height: 40px;
   border: 1px solid rgba(45, 212, 168, 0.32);
@@ -4733,6 +4793,15 @@ button:disabled {
   .oom-specialist-identity,
   .oom-specialist-grid {
     grid-template-columns: 1fr;
+  }
+
+  .oom-specialist-live-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .oom-specialist-live-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .oom-trace-panel dl {

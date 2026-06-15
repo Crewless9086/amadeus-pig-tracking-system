@@ -28,6 +28,8 @@
   const specialistWatch = document.getElementById("oom_specialist_watch");
   const specialistNeeds = document.getElementById("oom_specialist_needs");
   const specialistAuthority = document.getElementById("oom_specialist_authority");
+  const specialistLiveStatus = document.getElementById("oom_specialist_live_status");
+  const specialistLiveGrid = document.getElementById("oom_specialist_live_grid");
   const specialistActions = document.getElementById("oom_specialist_actions");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
@@ -173,6 +175,13 @@
   let latestSalesOutreachDraftsData = null;
   let latestSalesSendDesignsData = null;
   let latestSalesLeadsData = null;
+  let latestFarmDashboardData = null;
+  let latestPurposeReviewData = null;
+  let latestMeatPlanningData = null;
+  let latestWeatherCurrentData = null;
+  let latestWeatherTodayData = null;
+  let latestIrrigationData = null;
+  let latestSpecialistSummaryLoadedAt = "";
   let activeSpecialist = "home";
   const specialistProfiles = {
     home: {
@@ -295,6 +304,215 @@
     };
     if (presenceOrb) presenceOrb.dataset.state = normalized;
     if (presenceLine) presenceLine.textContent = lines[normalized] || label || lines.idle;
+  }
+
+  function localIsoDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatMetricValue(value, fallback) {
+    if (value === null || value === undefined || value === "") return fallback || "0";
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    }
+    return String(value);
+  }
+
+  function readArray(data, key) {
+    return data && Array.isArray(data[key]) ? data[key] : [];
+  }
+
+  function salesLeadItems() {
+    return readArray(latestSalesLeadsData, "sales_leads");
+  }
+
+  function salesCampaignItems() {
+    return readArray(latestSalesCampaignsData, "sales_campaigns");
+  }
+
+  function salesDraftItems() {
+    return readArray(latestSalesOutreachDraftsData, "outreach_drafts");
+  }
+
+  function salesSendDesignItems() {
+    return readArray(latestSalesSendDesignsData, "send_design_requests");
+  }
+
+  function appendSpecialistMetric(cards, label, value, detail, href) {
+    cards.push({ label, value: formatMetricValue(value), detail, href });
+  }
+
+  function appendSpecialistLinkMetric(cards, label, value, detail, href) {
+    cards.push({ label, value: formatMetricValue(value), detail, href });
+  }
+
+  function renderSpecialistMetricCard(card) {
+    const element = card.href ? document.createElement("a") : document.createElement("article");
+    const label = document.createElement("span");
+    const value = document.createElement("strong");
+    const detail = document.createElement("small");
+    if (card.href) element.href = card.href;
+    element.className = card.href ? "oom-specialist-metric oom-specialist-metric-link" : "oom-specialist-metric";
+    label.textContent = card.label || "Metric";
+    value.textContent = card.value || "0";
+    detail.textContent = card.detail || "";
+    element.appendChild(label);
+    element.appendChild(value);
+    element.appendChild(detail);
+    return element;
+  }
+
+  function renderSpecialistDashboard() {
+    if (!specialistLiveGrid) return;
+    const cards = specialistLiveCards(activeSpecialist);
+    specialistLiveGrid.innerHTML = "";
+    cards.forEach((card) => specialistLiveGrid.appendChild(renderSpecialistMetricCard(card)));
+    if (specialistLiveStatus) {
+      specialistLiveStatus.textContent = latestSpecialistSummaryLoadedAt
+        ? `Updated ${latestSpecialistSummaryLoadedAt}`
+        : "Loading trusted farm signals...";
+    }
+  }
+
+  function specialistLiveCards(slug) {
+    const cards = [];
+    const approvals = currentApprovalItems();
+    const farmSummary = (latestFarmDashboardData || {}).summary || {};
+    const litterAttention = (latestFarmDashboardData || {}).litter_attention || {};
+    const purposeItems = readArray(latestPurposeReviewData, "items");
+    const meatSummary = (latestMeatPlanningData || {}).summary || {};
+    const weatherSummary = (latestWeatherCurrentData || {}).summary || {};
+    const weatherCurrent = (latestWeatherCurrentData || {}).current || {};
+    const weatherToday = latestWeatherTodayData || {};
+    const irrigationCurrent = (latestIrrigationData || {}).current || {};
+    const irrigationToday = (latestIrrigationData || {}).today || {};
+    const leads = salesLeadItems();
+    const campaigns = salesCampaignItems();
+    const drafts = salesDraftItems();
+    const sendDesigns = salesSendDesignItems();
+
+    if (slug === "ledger") {
+      appendSpecialistLinkMetric(cards, "Sales Leads", leads.length, "Tracked only; no customer sends.", "#oom_ledger_sales_workbench_section");
+      appendSpecialistLinkMetric(cards, "Deposit Pending", leads.filter((item) => item.status === "deposit_pending").length, "Owner follow-up before money/order rails.", "#oom_ledger_sales_workbench_section");
+      appendSpecialistMetric(cards, "Template Required", leads.filter((item) => item.whatsapp_window_state === "template_required").length, "WhatsApp window closed or needs approved template.");
+      appendSpecialistMetric(cards, "Campaign Review", campaigns.filter((item) => salesCampaignStage(item) === "waiting").length, "Ledger ideas waiting for owner approval.");
+      appendSpecialistMetric(cards, "Drafts", drafts.length, "Beacon/Sam copy drafts, not sent.");
+      appendSpecialistMetric(cards, "Send Designs", sendDesigns.length, "Future Chatwoot/WhatsApp design notes.");
+      return cards;
+    }
+
+    if (slug === "herdmaster") {
+      appendSpecialistLinkMetric(cards, "Litter Attention", litterAttention.count || 0, "Click through from attention items to the right review page.", "/");
+      appendSpecialistLinkMetric(cards, "Purpose Review", purposeItems.length, "Review/approve purpose once data is strong enough.", "/purpose-review");
+      appendSpecialistMetric(cards, "On Farm", farmSummary.on_farm_pigs || 0, "Current herd count from pig dashboard.");
+      appendSpecialistMetric(cards, "Weaners", farmSummary.weaners || 0, "Post-wean data drives purpose confidence.");
+      appendSpecialistMetric(cards, "Growers", farmSummary.growers || 0, "Growth data feeds allocation advice.");
+      appendSpecialistMetric(cards, "Withdrawal Holds", farmSummary.withdrawal_hold_pigs || 0, "Health/withdrawal guard before sales or meat.");
+      return cards;
+    }
+
+    if (slug === "gatekeeper") {
+      const counts = approvals.reduce((acc, item) => {
+        const key = item.kind || "Decision";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      appendSpecialistMetric(cards, "Waiting", approvals.length, "Owner decisions Oom Sakkie must not bypass.");
+      appendSpecialistMetric(cards, "Sales", (counts["Sales Campaign"] || 0) + (counts["Outreach Draft"] || 0) + (counts["Sales Lead"] || 0), "Customer/business approvals.");
+      appendSpecialistMetric(cards, "Agent Learning", (counts["Agent Result"] || 0) + (counts["Learning Proposal"] || 0), "Evidence only until approved.");
+      appendSpecialistMetric(cards, "Build/Deploy", (counts["Build Handoff"] || 0) + (counts["Patch Review"] || 0) + (counts["Deploy Decision"] || 0), "System-change gates.");
+      return cards;
+    }
+
+    if (slug === "rootline") {
+      appendSpecialistMetric(cards, "Irrigation", irrigationCurrent.status || "Unavailable", "Read-only status; no pump or valve control.");
+      appendSpecialistMetric(cards, "Plan Rows", irrigationToday.total_plan_rows || irrigationToday.planned_count || 0, "Today only.");
+      appendSpecialistMetric(cards, "Completed", irrigationToday.done_count || 0, "Completed plan rows.");
+      appendSpecialistMetric(cards, "Temperature", weatherCurrent.temperature_c !== undefined ? `${weatherCurrent.temperature_c} C` : "Unavailable", weatherSummary.headline || "Current weather.");
+      appendSpecialistMetric(cards, "Rain Today", weatherToday.rain && weatherToday.rain.total_mm !== undefined ? `${weatherToday.rain.total_mm} mm` : "Unavailable", "Weather summary for today.");
+      appendSpecialistMetric(cards, "Wind Max", weatherToday.wind && weatherToday.wind.max_speed_kmh !== undefined ? `${weatherToday.wind.max_speed_kmh} km/h` : "Unavailable", "Use for spray/irrigation caution.");
+      return cards;
+    }
+
+    if (slug === "butcher") {
+      appendSpecialistLinkMetric(cards, "Ready Now", meatSummary.ready_now || 0, "Can feed preorder/demand planning.", "/meat-planning");
+      appendSpecialistLinkMetric(cards, "Next 14 Days", meatSummary.next_14_days || 0, "Near-term meat pipeline.", "/meat-planning");
+      appendSpecialistLinkMetric(cards, "Next 30 Days", meatSummary.next_30_days || 0, "Demand window planning.", "/meat-planning");
+      appendSpecialistMetric(cards, "Fallback", meatSummary.fallback_abattoir || 0, "Abattoir fallback review.");
+      appendSpecialistMetric(cards, "Preorders Now", meatSummary.minimum_preorder_needed_now || 0, "Minimum interest before slaughter.");
+      appendSpecialistMetric(cards, "Preorders 30 Days", meatSummary.minimum_preorder_needed_30_days || 0, "Demand needed for the visible window.");
+      return cards;
+    }
+
+    if (slug === "beacon") {
+      appendSpecialistMetric(cards, "Campaign Ideas", campaigns.filter((item) => salesCampaignStage(item) === "waiting").length, "Ledger demand signals waiting for owner review.");
+      appendSpecialistMetric(cards, "Copy Drafts", drafts.length, "Draft-only; no public post.");
+      appendSpecialistMetric(cards, "Meat Signals", meatSummary.minimum_preorder_needed_30_days || 0, "Potential content source once approved.");
+      appendSpecialistMetric(cards, "Live Posting", "Off", "Manual approval still required.");
+      return cards;
+    }
+
+    if (slug === "sam") {
+      appendSpecialistMetric(cards, "Buyer Leads", leads.length, "Manual tracked leads until Chatwoot flow is approved.");
+      appendSpecialistMetric(cards, "24h Open", leads.filter((item) => item.whatsapp_window_state === "open").length, "Can reply only inside approved customer-service rules.");
+      appendSpecialistMetric(cards, "Template Needed", leads.filter((item) => item.whatsapp_window_state === "template_required").length, "Requires approved template or manual owner handling.");
+      appendSpecialistMetric(cards, "Customer Sending", "Off", "No Chatwoot/n8n send from this page.");
+      return cards;
+    }
+
+    if (slug === "quartermaster") {
+      appendSpecialistMetric(cards, "Supply Rail", "Design", "Expense/supply source tables still need build.");
+      appendSpecialistMetric(cards, "Sales Value", farmSummary.sales_transaction_value_this_month || 0, "Monthly transaction signal if configured.");
+      appendSpecialistMetric(cards, "Reserved Pigs", farmSummary.reserved_pigs || 0, "Future stock allocation input.");
+      appendSpecialistMetric(cards, "Writes", "Off", "No expense or stock write rail active here.");
+      return cards;
+    }
+
+    appendSpecialistMetric(cards, "Owner Decisions", approvals.length, "One clear approval stays in the cockpit.");
+    appendSpecialistMetric(cards, "Litter Attention", litterAttention.count || 0, "Animal items route to the right page.");
+    appendSpecialistMetric(cards, "Sales Leads", leads.length, "Lead tracking only; no customer send.");
+    appendSpecialistMetric(cards, "Meat Ready", meatSummary.ready_now || 0, "Preorder signal for Ledger and Beacon.");
+    appendSpecialistMetric(cards, "Irrigation", irrigationCurrent.status || "Unavailable", "Read-only Rootline status.");
+    appendSpecialistMetric(cards, "Weather", weatherSummary.status || "Unavailable", weatherSummary.headline || "Current weather signal.");
+    return cards;
+  }
+
+  async function fetchSpecialistJson(url) {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || data.status || `Request failed: ${url}`);
+    }
+    return data;
+  }
+
+  async function loadSpecialistLiveSummaries() {
+    if (!specialistLiveGrid) return;
+    const today = localIsoDate(new Date());
+    const requests = [
+      ["farm", "/api/pig-weights/dashboard"],
+      ["purpose", "/api/pig-weights/purpose-review"],
+      ["meat", "/api/pig-weights/meat-planning"],
+      ["weatherCurrent", "/api/telemetry/weather/current"],
+      ["weatherToday", `/api/telemetry/weather/today?date=${today}`],
+      ["irrigation", `/api/telemetry/irrigation/status?date=${today}`],
+    ];
+    const results = await Promise.allSettled(requests.map(([key, url]) => fetchSpecialistJson(url).then((data) => [key, data])));
+    results.forEach((result) => {
+      if (result.status !== "fulfilled") return;
+      const [key, data] = result.value;
+      if (key === "farm") latestFarmDashboardData = data;
+      if (key === "purpose") latestPurposeReviewData = data;
+      if (key === "meat") latestMeatPlanningData = data;
+      if (key === "weatherCurrent") latestWeatherCurrentData = data;
+      if (key === "weatherToday") latestWeatherTodayData = data;
+      if (key === "irrigation") latestIrrigationData = data;
+    });
+    latestSpecialistSummaryLoadedAt = new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    renderSpecialistDashboard();
   }
 
   function renderAgentActivity(data) {
@@ -463,6 +681,7 @@
     if (activeAgentTitle) activeAgentTitle.textContent = activeSpecialist === "home" ? "Command center" : `${profile.name} specialist view`;
     if (activeAgentDetail) activeAgentDetail.textContent = profile.watch;
     if (activeAgentGuard) activeAgentGuard.textContent = profile.authority;
+    renderSpecialistDashboard();
   }
 
   function specialistFromText(text) {
@@ -2949,6 +3168,7 @@
       empty.className = "oom-empty";
       empty.textContent = "No decisions are waiting. Ask for a daily command brief or open the audit trail if you want the full system log.";
       approvalConsole.appendChild(empty);
+      renderSpecialistDashboard();
       return;
     }
     const queueTitle = document.createElement("p");
@@ -2958,6 +3178,7 @@
     items.slice(1, 6).forEach((item, index) => {
       approvalConsole.appendChild(renderApprovalConsoleItem(item, index));
     });
+    renderSpecialistDashboard();
   }
 
   function renderOwnerCockpitStatus(items) {
@@ -3786,6 +4007,7 @@
       renderSalesWorkbench();
       renderWorkbenchNextAction();
       renderApprovalConsole();
+      renderSpecialistDashboard();
     } catch (error) {
       if (salesWorkbenchStatus) salesWorkbenchStatus.innerHTML = '<p class="oom-empty">Ledger sales workbench is unavailable.</p>';
     }
@@ -4873,6 +5095,7 @@
   loadAgentCrew();
   loadAgentRoadmap();
   loadAgentDryRunRequests();
+  loadSpecialistLiveSummaries();
   loadSalesWorkbench();
   refreshReviewData();
 })();

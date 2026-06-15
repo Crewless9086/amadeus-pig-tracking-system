@@ -51,6 +51,8 @@ When an agent opens:
 - it shows what needs owner approval
 - it shows what it has prepared but not executed
 - it clearly states what it cannot do yet
+- the panel shows compact live summary cards from trusted backend reads
+- any card that needs action should route to the right workflow page, not just the litter page or audit workbench
 
 ## Specialist Agents
 
@@ -140,3 +142,13 @@ Immediate UI direction:
 5. Convert each internal rail into a simple agent dashboard summary.
 6. Keep all dangerous actions blocked until each channel has a reviewed approval flow.
 
+Current accepted owner-facing slice:
+
+- The specialist panel includes live summary cards.
+- Ledger summarizes campaigns, drafts, send-design notes, leads, deposit follow-up, and WhatsApp/template state.
+- Herdmaster summarizes herd counts, litter attention, purpose review, and data-quality blockers.
+- Rootline summarizes weather and irrigation status from read-only telemetry.
+- Butcher summarizes meat planning, preorder pressure, and fallback counts.
+- Gatekeeper summarizes owner approvals across sales, learning, build, patch, and deploy gates.
+- Beacon, Sam, and Quartermaster may show limited readiness cards until their write/source-of-truth rails are approved.
+- The System Workbench remains available, but it is not the owner-facing daily control surface.
