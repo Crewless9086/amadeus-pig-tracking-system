@@ -970,7 +970,7 @@
     const asset = assetForSpecialist(specialistProfiles[normalized] ? normalized : "home");
     activeSpecialist = specialistProfiles[normalized] ? normalized : "home";
     if (specialistDashboard) {
-      specialistDashboard.dataset.agent = profile.color || "green";
+      specialistDashboard.dataset.agent = activeSpecialist;
     }
     setAvatarImage(specialistAvatar, profile, asset, "portrait_panel");
     if (specialistName) specialistName.textContent = profile.name;
