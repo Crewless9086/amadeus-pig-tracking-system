@@ -30,6 +30,10 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
 
+### Product Vision Repoint - 2026-06-15
+
+Owner direction is now captured in `docs/00-start-here/PRODUCT_VISION.md`: `/oom-sakkie` should become the owner command center, not a long technical workbench. The current workbench remains useful as audit/admin infrastructure, but the daily UI should move toward a one-screen live Oom Sakkie presence, agent dock, and focused specialist dashboards opened by voice or click. Build this UI shell before further polishing the Ledger workbench as a primary user surface.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

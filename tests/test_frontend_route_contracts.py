@@ -313,6 +313,30 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertNotIn("sendMessage", approval_items)
         self.assertNotIn("chatwoot.com", approval_items.lower())
 
+    def test_oom_sakkie_product_vision_and_agent_dock_exist(self):
+        vision = Path("docs/00-start-here/PRODUCT_VISION.md").read_text(encoding="utf-8")
+        template = Path("templates/oom-sakkie.html").read_text(encoding="utf-8")
+        js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
+
+        self.assertIn("Oom Sakkie is the home command center.", vision)
+        self.assertIn("agent dock", vision.lower())
+        self.assertIn("System Workbench is an audit/admin surface", vision)
+        self.assertIn("Two-Week Live Target", vision)
+        self.assertIn('id="oom_agent_dock"', template)
+        self.assertIn('data-open-agent="ledger"', template)
+        self.assertIn('data-open-agent="herdmaster"', template)
+        self.assertIn('id="oom_specialist_dashboard"', template)
+        self.assertIn("Active Agent", template)
+        self.assertIn("function openSpecialist", js)
+        self.assertIn("function specialistFromText", js)
+        self.assertIn('"ledger"', js)
+        self.assertIn('"herdmaster"', js)
+        self.assertIn('agentDockButtons.forEach', js)
+        self.assertIn(".oom-agent-dock", css)
+        self.assertIn(".oom-specialist-dashboard", css)
+        self.assertIn(".oom-specialist-avatar", css)
+
     def test_oom_sakkie_browser_behavior_smoke_executes_real_kiosk_script(self):
         smoke = Path("tests/oom_sakkie_browser_behavior_smoke.js").read_text(encoding="utf-8")
 

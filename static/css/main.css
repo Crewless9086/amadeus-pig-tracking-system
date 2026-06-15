@@ -3118,6 +3118,152 @@ button:disabled {
   line-height: 1.2;
 }
 
+.oom-agent-dock-section,
+.oom-specialist-dashboard {
+  grid-column: 1 / -1;
+}
+
+.oom-agent-dock {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(22, 23, 29, 0.72);
+}
+
+.oom-agent-dock button {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-height: 84px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+  padding: 8px 6px;
+}
+
+.oom-agent-dock button.is-active,
+.oom-agent-dock button:hover {
+  border-color: rgba(45, 212, 168, 0.42);
+  background: rgba(45, 212, 168, 0.1);
+}
+
+.oom-agent-dock span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  aspect-ratio: 1;
+  border: 1px solid rgba(45, 212, 168, 0.3);
+  border-radius: 50%;
+  color: #9ef2db;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.oom-agent-dock strong {
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.oom-agent-dock small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
+
+.oom-specialist-dashboard {
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgba(45, 212, 168, 0.18);
+  border-left: 4px solid rgba(45, 212, 168, 0.64);
+  border-radius: 10px;
+  background: rgba(22, 23, 29, 0.72);
+  padding: 16px;
+}
+
+.oom-specialist-identity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.oom-specialist-avatar {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  aspect-ratio: 1;
+  border: 1px solid rgba(45, 212, 168, 0.34);
+  border-radius: 50%;
+  background: rgba(45, 212, 168, 0.1);
+  color: #9ef2db;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.oom-specialist-identity h2 {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 26px;
+  line-height: 1.1;
+}
+
+.oom-specialist-identity p:last-child {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.oom-specialist-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.oom-specialist-grid article {
+  min-height: 82px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.oom-specialist-grid span {
+  display: block;
+  margin-bottom: 7px;
+  color: rgba(158, 242, 219, 0.7);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.oom-specialist-grid strong {
+  display: block;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.oom-specialist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oom-specialist-actions button {
+  min-height: 40px;
+  border: 1px solid rgba(45, 212, 168, 0.32);
+  border-radius: 999px;
+  background: rgba(45, 212, 168, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 800;
+  padding: 0 14px;
+}
+
 .oom-answer-controls {
   display: flex;
   flex-wrap: wrap;
@@ -4573,6 +4719,19 @@ button:disabled {
   }
 
   .oom-command-deck {
+    grid-template-columns: 1fr;
+  }
+
+  .oom-agent-dock {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .oom-agent-dock button {
+    min-height: 76px;
+  }
+
+  .oom-specialist-identity,
+  .oom-specialist-grid {
     grid-template-columns: 1fr;
   }
 

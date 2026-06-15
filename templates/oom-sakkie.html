@@ -131,6 +131,82 @@
         </button>
       </section>
 
+      <section class="oom-agent-dock-section" aria-label="Agent dock">
+        <div class="oom-agent-dock" id="oom_agent_dock">
+          <button type="button" data-open-agent="home" class="is-active">
+            <span>OS</span>
+            <strong>Oom Sakkie</strong>
+            <small>Command</small>
+          </button>
+          <button type="button" data-open-agent="ledger">
+            <span>LD</span>
+            <strong>Ledger</strong>
+            <small>Sales</small>
+          </button>
+          <button type="button" data-open-agent="herdmaster">
+            <span>HM</span>
+            <strong>Herdmaster</strong>
+            <small>Pigs</small>
+          </button>
+          <button type="button" data-open-agent="beacon">
+            <span>BC</span>
+            <strong>Beacon</strong>
+            <small>Posts</small>
+          </button>
+          <button type="button" data-open-agent="sam">
+            <span>SM</span>
+            <strong>Sam</strong>
+            <small>Customers</small>
+          </button>
+          <button type="button" data-open-agent="gatekeeper">
+            <span>GK</span>
+            <strong>Gatekeeper</strong>
+            <small>Approvals</small>
+          </button>
+          <button type="button" data-open-agent="rootline">
+            <span>RT</span>
+            <strong>Rootline</strong>
+            <small>Water</small>
+          </button>
+          <button type="button" data-open-agent="butcher">
+            <span>BT</span>
+            <strong>Butcher</strong>
+            <small>Meat</small>
+          </button>
+          <button type="button" data-open-agent="quartermaster">
+            <span>QM</span>
+            <strong>Quartermaster</strong>
+            <small>Supplies</small>
+          </button>
+        </div>
+      </section>
+
+      <section class="oom-specialist-dashboard" id="oom_specialist_dashboard" data-agent="home" aria-label="Specialist dashboard">
+        <div class="oom-specialist-identity">
+          <div class="oom-specialist-avatar" id="oom_specialist_avatar">OS</div>
+          <div>
+            <p class="oom-label">Active Agent</p>
+            <h2 id="oom_specialist_name">Oom Sakkie</h2>
+            <p id="oom_specialist_greeting">Command center standing by. Ask for the farm brief or open a specialist.</p>
+          </div>
+        </div>
+        <div class="oom-specialist-grid">
+          <article>
+            <span>Watching</span>
+            <strong id="oom_specialist_watch">Farm attention, approvals, voice state, and agent queues.</strong>
+          </article>
+          <article>
+            <span>Needs You</span>
+            <strong id="oom_specialist_needs">Ask for a daily brief or open an agent from the dock.</strong>
+          </article>
+          <article>
+            <span>Authority</span>
+            <strong id="oom_specialist_authority">Read-only by default. Actions stay behind owner approval.</strong>
+          </article>
+        </div>
+        <div class="oom-specialist-actions" id="oom_specialist_actions"></div>
+      </section>
+
       <details class="oom-trace-panel">
         <summary>Trace</summary>
         <dl>

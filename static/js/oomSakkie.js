@@ -19,6 +19,16 @@
   const ownerGateMission = document.getElementById("oom_owner_gate_mission");
   const ownerGateDetail = document.getElementById("oom_owner_gate_detail");
   const agentCrewSequence = document.getElementById("oom_agent_crew_sequence");
+  const agentDock = document.getElementById("oom_agent_dock");
+  const agentDockButtons = Array.from(document.querySelectorAll("[data-open-agent]"));
+  const specialistDashboard = document.getElementById("oom_specialist_dashboard");
+  const specialistAvatar = document.getElementById("oom_specialist_avatar");
+  const specialistName = document.getElementById("oom_specialist_name");
+  const specialistGreeting = document.getElementById("oom_specialist_greeting");
+  const specialistWatch = document.getElementById("oom_specialist_watch");
+  const specialistNeeds = document.getElementById("oom_specialist_needs");
+  const specialistAuthority = document.getElementById("oom_specialist_authority");
+  const specialistActions = document.getElementById("oom_specialist_actions");
   const userText = document.getElementById("oom_user_text");
   const answer = document.getElementById("oom_answer");
   const warnings = document.getElementById("oom_warnings");
@@ -163,6 +173,99 @@
   let latestSalesOutreachDraftsData = null;
   let latestSalesSendDesignsData = null;
   let latestSalesLeadsData = null;
+  let activeSpecialist = "home";
+  const specialistProfiles = {
+    home: {
+      initials: "OS",
+      name: "Oom Sakkie",
+      color: "green",
+      greeting: "Command center standing by. Ask for the farm brief or open a specialist.",
+      watch: "Farm attention, approvals, voice state, and agent queues.",
+      needs: "Ask for a daily brief or open an agent from the dock.",
+      authority: "Read-only by default. Actions stay behind owner approval.",
+      actions: [["Give me the daily command brief.", "Daily Brief"], ["What needs my approval?", "Approvals"]],
+    },
+    ledger: {
+      initials: "LD",
+      name: "Ledger",
+      color: "amber",
+      greeting: "Ledger is watching business opportunities, buyer leads, deposits, and sales follow-up.",
+      watch: "Campaign ideas, outreach drafts, buyer leads, deposit follow-up, and future money/expense signals.",
+      needs: "Review buyer leads and decide whether owner follow-up, deposit follow-up, or close-out is needed.",
+      authority: "Tracks and advises only. No customer send, quote, order, stock, or money write without a later approval rail.",
+      actions: [["Show sales leads", "Lead Queue"], ["What should we sell next?", "Sales Advice"], ["Show me the sales dashboard overview.", "Sales Dashboard"]],
+    },
+    herdmaster: {
+      initials: "HM",
+      name: "Herdmaster",
+      color: "teal",
+      greeting: "Herdmaster is watching litters, pig growth, weaning, health, and purpose review.",
+      watch: "Litter attention, purpose-review timing, post-wean weights, pig allocation, and growth signals.",
+      needs: "Use purpose review when a litter is ready; keep wean/post-wean data clean.",
+      authority: "Suggests and explains. Purpose writes require owner approval.",
+      actions: [["What needs attention today?", "Animal Attention"], ["Show me pig allocation", "Pig Allocation"], ["Open purpose review", "Purpose Review"]],
+    },
+    beacon: {
+      initials: "BC",
+      name: "Beacon",
+      color: "blue",
+      greeting: "Beacon will prepare public-facing wording after Ledger or Oom Sakkie identifies an opportunity.",
+      watch: "Future Facebook, Instagram, WhatsApp status, and campaign copy drafts.",
+      needs: "Owner must approve wording, compliance, timing, and audience before anything can be posted.",
+      authority: "Draft-only. No public post or customer message is active from this dashboard.",
+      actions: [["Prepare an internal offer brief.", "Draft Direction"]],
+    },
+    sam: {
+      initials: "SM",
+      name: "Sam",
+      color: "cyan",
+      greeting: "Sam owns customer conversation and order intake once the approved Chatwoot/WhatsApp flow is active.",
+      watch: "Future inbound buyer conversations, missing customer facts, order intent, and WhatsApp window state.",
+      needs: "For now, record leads manually and keep customer sends outside this rail.",
+      authority: "No direct customer send from Oom Sakkie until Sam/Chatwoot consumer flow is reviewed.",
+      actions: [["Show sales leads", "Lead Tracking"]],
+    },
+    gatekeeper: {
+      initials: "GK",
+      name: "Gatekeeper",
+      color: "red",
+      greeting: "Gatekeeper keeps risky actions behind explicit owner approval and audit records.",
+      watch: "Approvals, blocked actions, safety notes, and authority boundaries.",
+      needs: "Review the owner cockpit when approvals appear.",
+      authority: "Can show approval state. Does not bypass owner decisions.",
+      actions: [["What needs my approval?", "Approval Queue"], ["Show me the safety gates.", "Safety Gates"]],
+    },
+    rootline: {
+      initials: "RT",
+      name: "Rootline",
+      color: "olive",
+      greeting: "Rootline watches weather, irrigation plans, water risk, and future control readiness.",
+      watch: "Weather now, forecasts, irrigation status, daily plans, and water-risk signals.",
+      needs: "Review suggested irrigation plans before any future hardware-control gate is enabled.",
+      authority: "Read-only irrigation status today. No pump/valve control from this dashboard.",
+      actions: [["What is the irrigation status?", "Irrigation"], ["What happened with the weather today?", "Weather"]],
+    },
+    butcher: {
+      initials: "BT",
+      name: "Butcher",
+      color: "rose",
+      greeting: "Butcher watches the meat/slaughter pipeline and fallback outlet decisions.",
+      watch: "Meat candidates, abattoir fallback, carcass pipeline, and future order allocation.",
+      needs: "Use read-only meat planning until preorder/deposit records are approved.",
+      authority: "No meat order, slaughter booking, allocation, or stock write from this dashboard yet.",
+      actions: [["What pigs are ready for meat?", "Meat Planning"]],
+    },
+    quartermaster: {
+      initials: "QM",
+      name: "Quartermaster",
+      color: "violet",
+      greeting: "Quartermaster will track supplies, feed, operating tasks, and expense capture.",
+      watch: "Future feed, product stock, farm supplies, expenses, and operational tasks.",
+      needs: "Expense and supply source-of-truth tables still need design before writes.",
+      authority: "Planning only today. No expense or supply write rail is active yet.",
+      actions: [["Give me the daily command brief.", "Operating Brief"]],
+    },
+  };
   const feedbackOptions = [
     ["", "Mark review"],
     ["correct", "Correct"],
@@ -316,6 +419,69 @@
       card.appendChild(guard);
       agentCrewSequence.appendChild(card);
     });
+  }
+
+  function openSpecialist(slug) {
+    const normalized = (slug || "home").toLowerCase();
+    const profile = specialistProfiles[normalized] || specialistProfiles.home;
+    activeSpecialist = specialistProfiles[normalized] ? normalized : "home";
+    if (specialistDashboard) {
+      specialistDashboard.dataset.agent = profile.color || "green";
+    }
+    if (specialistAvatar) specialistAvatar.textContent = profile.initials;
+    if (specialistName) specialistName.textContent = profile.name;
+    if (specialistGreeting) specialistGreeting.textContent = profile.greeting;
+    if (specialistWatch) specialistWatch.textContent = profile.watch;
+    if (specialistNeeds) specialistNeeds.textContent = profile.needs;
+    if (specialistAuthority) specialistAuthority.textContent = profile.authority;
+    agentDockButtons.forEach((button) => {
+      button.classList.toggle("is-active", (button.dataset.openAgent || "home") === activeSpecialist);
+    });
+    if (specialistActions) {
+      specialistActions.innerHTML = "";
+      (profile.actions || []).forEach(([question, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", () => {
+          if (input) input.value = question;
+          ask(question).catch(() => {
+            answer.textContent = "Oom Sakkie could not check that right now.";
+            setStatus("Error", "error");
+          });
+        });
+        specialistActions.appendChild(button);
+      });
+    }
+    if (presenceLine) {
+      presenceLine.textContent = activeSpecialist === "home"
+        ? "Oom Sakkie command center is open."
+        : `${profile.name} dashboard is open. Ask a question or use the action buttons.`;
+    }
+    if (activeAgentWorkspace) activeAgentWorkspace.dataset.agent = profile.color || "green";
+    if (activeAgentName) activeAgentName.textContent = `${profile.name} | owner dashboard`;
+    if (activeAgentTitle) activeAgentTitle.textContent = activeSpecialist === "home" ? "Command center" : `${profile.name} specialist view`;
+    if (activeAgentDetail) activeAgentDetail.textContent = profile.watch;
+    if (activeAgentGuard) activeAgentGuard.textContent = profile.authority;
+  }
+
+  function specialistFromText(text) {
+    const normalized = String(text || "").trim().toLowerCase();
+    if (!normalized) return "";
+    if (/(go back|back to|open|show|switch to)\s+(oom sakkie|home|command)/.test(normalized)) return "home";
+    const aliases = {
+      ledger: ["ledger", "sales agent", "business agent"],
+      herdmaster: ["herdmaster", "herd master", "pig agent", "pigs agent", "breeding agent"],
+      beacon: ["beacon", "content agent", "post agent"],
+      sam: ["sam", "customer agent", "sales agent sam"],
+      gatekeeper: ["gatekeeper", "gate keeper", "approval agent"],
+      rootline: ["rootline", "root line", "irrigation agent", "weather agent"],
+      butcher: ["butcher", "meat agent", "slaughter agent"],
+      quartermaster: ["quartermaster", "quarter master", "expense agent", "supply agent"],
+    };
+    const isOpenIntent = /^(open|show|switch to|go to|bring up)\b/.test(normalized);
+    if (!isOpenIntent) return "";
+    return Object.keys(aliases).find((slug) => aliases[slug].some((alias) => normalized.includes(alias))) || "";
   }
 
   function prettySource(value) {
@@ -4443,6 +4609,16 @@
       event.preventDefault();
       const text = (input.value || "").trim();
       if (!text) return;
+      const specialistSlug = specialistFromText(text);
+      if (specialistSlug) {
+        openSpecialist(specialistSlug);
+        userText.textContent = text;
+        answer.textContent = specialistSlug === "home"
+          ? "Oom Sakkie command center is open."
+          : `${specialistProfiles[specialistSlug].name} is open.`;
+        setStatus("Answered", "answered");
+        return;
+      }
       ask(text).catch((error) => {
         answer.textContent = "Oom Sakkie could not check that right now.";
         traceId.textContent = "Request failed";
@@ -4451,6 +4627,10 @@
       });
     });
   }
+
+  agentDockButtons.forEach((button) => {
+    button.addEventListener("click", () => openSpecialist(button.dataset.openAgent || "home"));
+  });
 
   if (refreshTraces) {
     refreshTraces.addEventListener("click", refreshReviewData);
