@@ -3153,6 +3153,8 @@ button:disabled {
 }
 
 .oom-agent-dock span {
+  position: relative;
+  overflow: hidden;
   display: grid;
   place-items: center;
   width: 34px;
@@ -3162,6 +3164,15 @@ button:disabled {
   color: #9ef2db;
   font-size: 12px;
   font-weight: 900;
+}
+
+.oom-agent-dock span img,
+.oom-specialist-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .oom-agent-dock strong {
@@ -3192,6 +3203,8 @@ button:disabled {
 }
 
 .oom-specialist-avatar {
+  position: relative;
+  overflow: hidden;
   display: grid;
   place-items: center;
   width: 68px;
@@ -3202,6 +3215,11 @@ button:disabled {
   color: #9ef2db;
   font-size: 22px;
   font-weight: 900;
+}
+
+.oom-agent-dock span.has-image,
+.oom-specialist-avatar.has-image {
+  color: transparent;
 }
 
 .oom-specialist-identity h2 {

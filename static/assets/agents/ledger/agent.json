@@ -1,0 +1,12 @@
+{
+  "agent_id": "ledger",
+  "display_name": "Ledger",
+  "role_label": "Sales",
+  "portrait_panel": "/assets/agents/ledger/portraits/ledger_portrait_panel_neutral_v01.png",
+  "portrait_dock": "/assets/agents/ledger/portraits/ledger_portrait_dock_neutral_v01.png",
+  "voice_preview_en": "/assets/agents/ledger/voice/ledger_voice_preview_en_v01.mp3",
+  "voice_provider": "elevenlabs",
+  "voice_name": "TO_BE_SELECTED",
+  "voice_id": "TO_BE_SELECTED",
+  "voice_approved_for_production": false
+}

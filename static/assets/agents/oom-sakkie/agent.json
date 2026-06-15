@@ -1,0 +1,13 @@
+{
+  "agent_id": "oom-sakkie",
+  "display_name": "Oom Sakkie",
+  "role_label": "Command",
+  "portrait_panel": "/assets/agents/oom-sakkie/portraits/oom-sakkie_portrait_main_neutral_v01.png",
+  "portrait_dock": "/assets/agents/oom-sakkie/portraits/oom-sakkie_portrait_dock_neutral_v01.png",
+  "voice_preview_en": "/assets/agents/oom-sakkie/voice/oom-sakkie_voice_preview_en_v01.mp3",
+  "voice_preview_af": "/assets/agents/oom-sakkie/voice/oom-sakkie_voice_preview_af_v01.mp3",
+  "voice_provider": "elevenlabs",
+  "voice_name": "TO_BE_SELECTED",
+  "voice_id": "TO_BE_SELECTED",
+  "voice_approved_for_production": false
+}

@@ -183,6 +183,7 @@
   let latestWeatherTodayData = null;
   let latestIrrigationData = null;
   let latestSpecialistSummaryLoadedAt = "";
+  let agentAssetRegistry = {};
   let activeSpecialist = "home";
   const specialistProfiles = {
     home: {
@@ -305,6 +306,73 @@
     };
     if (presenceOrb) presenceOrb.dataset.state = normalized;
     if (presenceLine) presenceLine.textContent = lines[normalized] || label || lines.idle;
+  }
+
+  function registrySlug(slug) {
+    return slug === "home" ? "oom-sakkie" : slug;
+  }
+
+  function assetForSpecialist(slug) {
+    return agentAssetRegistry[registrySlug(slug)] || null;
+  }
+
+  function createAgentImage(src, alt) {
+    if (!src) return null;
+    const img = document.createElement("img");
+    img.src = src;
+    img.alt = alt || "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.addEventListener("error", () => {
+      img.remove();
+    });
+    return img;
+  }
+
+  function setAvatarImage(container, profile, asset, imageKey) {
+    if (!container || !profile) return;
+    container.innerHTML = "";
+    container.textContent = profile.initials || "";
+    const src = asset && (asset[imageKey] || asset.portrait_main || asset.portrait_panel || asset.portrait_dock);
+    const img = createAgentImage(src, profile.name || asset?.display_name || "Agent portrait");
+    if (img) {
+      img.addEventListener("load", () => container.classList.add("has-image"), { once: true });
+      img.addEventListener("error", () => container.classList.remove("has-image"), { once: true });
+      container.appendChild(img);
+    } else {
+      container.classList.remove("has-image");
+    }
+  }
+
+  function renderAgentDockAssets() {
+    agentDockButtons.forEach((button) => {
+      const slug = button.dataset.openAgent || "home";
+      const profile = specialistProfiles[slug] || specialistProfiles.home;
+      const asset = assetForSpecialist(slug);
+      const avatar = button.querySelector("span");
+      if (!avatar) return;
+      setAvatarImage(avatar, profile, asset, "portrait_dock");
+      const roleLabel = asset && asset.role_label ? asset.role_label : "";
+      const small = button.querySelector("small");
+      if (small && roleLabel) small.textContent = roleLabel;
+    });
+  }
+
+  async function loadAgentAssetRegistry() {
+    try {
+      const response = await fetch("/assets/agents/agent_registry.json");
+      const data = await response.json();
+      const agents = Array.isArray(data.agents) ? data.agents : [];
+      agentAssetRegistry = agents.reduce((acc, item) => {
+        if (item && item.agent_id) acc[item.agent_id] = item;
+        return acc;
+      }, {});
+      renderAgentDockAssets();
+      openSpecialist(activeSpecialist);
+    } catch (error) {
+      agentAssetRegistry = {};
+      renderAgentDockAssets();
+    }
   }
 
   function localIsoDate(date) {
@@ -896,11 +964,12 @@
   function openSpecialist(slug) {
     const normalized = (slug || "home").toLowerCase();
     const profile = specialistProfiles[normalized] || specialistProfiles.home;
+    const asset = assetForSpecialist(specialistProfiles[normalized] ? normalized : "home");
     activeSpecialist = specialistProfiles[normalized] ? normalized : "home";
     if (specialistDashboard) {
       specialistDashboard.dataset.agent = profile.color || "green";
     }
-    if (specialistAvatar) specialistAvatar.textContent = profile.initials;
+    setAvatarImage(specialistAvatar, profile, asset, "portrait_panel");
     if (specialistName) specialistName.textContent = profile.name;
     if (specialistGreeting) specialistGreeting.textContent = profile.greeting;
     if (specialistWatch) specialistWatch.textContent = profile.watch;
@@ -5344,6 +5413,7 @@
   setActiveReviewFilter("all");
   renderVoiceReadiness();
   renderVoiceEvents();
+  loadAgentAssetRegistry();
   loadToolCatalog();
   loadPolicyStatus();
   loadAgentCrew();

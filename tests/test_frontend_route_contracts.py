@@ -315,15 +315,20 @@ class FrontendRouteContractTests(unittest.TestCase):
 
     def test_oom_sakkie_product_vision_and_agent_dock_exist(self):
         vision = Path("docs/00-start-here/PRODUCT_VISION.md").read_text(encoding="utf-8")
+        asset_register = Path("docs/00-start-here/AGENT_ASSET_REGISTER.md").read_text(encoding="utf-8")
+        agent_registry = Path("static/assets/agents/agent_registry.json").read_text(encoding="utf-8")
         template = Path("templates/oom-sakkie.html").read_text(encoding="utf-8")
         js = Path("static/js/oomSakkie.js").read_text(encoding="utf-8")
         css = Path("static/css/main.css").read_text(encoding="utf-8")
 
-        self.assertIn("Oom Sakkie is the home command center.", vision)
+        self.assertIn("Oom Sakkie is the central farm command presence", vision)
         self.assertIn("agent dock", vision.lower())
-        self.assertIn("System Workbench is an audit/admin surface", vision)
-        self.assertIn("Two-Week Live Target", vision)
+        self.assertIn("The System Workbench remains useful for audit/admin/developer inspection", vision)
+        self.assertIn("Agent Identity Bible", vision)
         self.assertIn("live summary cards", vision)
+        self.assertIn("static/assets/agents/", asset_register)
+        self.assertIn('"agent_id": "oom-sakkie"', agent_registry)
+        self.assertIn('"agent_id": "quartermaster"', agent_registry)
         self.assertIn('id="oom_agent_dock"', template)
         self.assertIn('data-open-agent="ledger"', template)
         self.assertIn('data-open-agent="herdmaster"', template)
@@ -333,6 +338,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Active Agent", template)
         self.assertIn("function openSpecialist", js)
         self.assertIn("function specialistFromText", js)
+        self.assertIn("function loadAgentAssetRegistry", js)
+        self.assertIn('fetch("/assets/agents/agent_registry.json")', js)
+        self.assertIn("function setAvatarImage", js)
         self.assertIn("function specialistLiveCards", js)
         self.assertIn("function specialistPriorityRows", js)
         self.assertIn("function renderSpecialistPriorities", js)
@@ -353,6 +361,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn(".oom-specialist-metric", css)
         self.assertIn(".oom-specialist-priority-list", css)
         self.assertIn(".oom-specialist-priority", css)
+        self.assertIn(".oom-agent-dock span img", css)
+        self.assertIn(".oom-specialist-avatar.has-image", css)
 
     def test_oom_sakkie_browser_behavior_smoke_executes_real_kiosk_script(self):
         smoke = Path("tests/oom_sakkie_browser_behavior_smoke.js").read_text(encoding="utf-8")

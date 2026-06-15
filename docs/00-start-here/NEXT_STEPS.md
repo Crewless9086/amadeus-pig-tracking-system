@@ -42,6 +42,7 @@ Current UI slice:
 - Workflow cards should route to the correct operational page where possible, such as Purpose Review or Meat Planning.
 - The Ledger Sales Workbench stays available as an audit/detail rail, but should not be treated as the final daily-owner experience.
 - No post, customer message, order, deposit, stock, irrigation control, expense, or agent-learning write becomes autonomous from this slice.
+- Agent portraits and voice choices should use `static/assets/agents/` plus `docs/00-start-here/AGENT_ASSET_REGISTER.md`; the UI must fall back to initials until approved media files exist.
 
 ### Staying on track (Cursor + Claude Code)
 
