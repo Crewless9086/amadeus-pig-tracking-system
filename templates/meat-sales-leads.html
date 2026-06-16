@@ -107,6 +107,19 @@
 
           <section id="meat_lead_facts" class="meat-lead-facts" aria-label="Sam lead facts"></section>
 
+          <section class="meat-lead-guided-panel" aria-label="Guided meat sale flow">
+            <div class="page-header section-header-compact">
+              <div>
+                <h3>Next Step</h3>
+                <p id="meat_guided_status">Select a lead to see the next useful action.</p>
+              </div>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_guided_next" class="button-link">Run Next Step</button>
+            </div>
+            <div id="meat_guided_result" class="ops-list"></div>
+          </section>
+
           <section class="meat-lead-match-panel" aria-label="Butcher match recommendation">
             <div class="page-header section-header-compact">
               <div>
@@ -312,6 +325,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260616-meat-driver-journey"></script>
+  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260617-guided-meat-sale"></script>
 </body>
 </html>

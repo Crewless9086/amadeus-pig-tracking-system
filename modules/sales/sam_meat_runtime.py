@@ -247,12 +247,16 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
         reply = record_result["sam_next_question"]
     elif facts.get("product_type") == "unknown":
         reply = "Are you interested in a pork half carcass, full carcass, custom cuts, or assisted slaughter?"
+    elif facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
+        reply = "Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
     elif not facts.get("location"):
         reply = "Which town or area would you prefer for collection or delivery?"
     elif not facts.get("delivery_or_collection"):
         reply = "Would you prefer collection or delivery?"
     elif facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
         reply = "Please send the delivery street address or farm name, town, and any useful directions for the driver."
+    elif not facts.get("timing"):
+        reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
     elif not facts.get("payment_method"):
         reply = "Would EFT or cash work best once the farm confirms the approved details?"
     else:

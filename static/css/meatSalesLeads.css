@@ -110,6 +110,7 @@
 }
 
 .meat-lead-form,
+.meat-lead-guided-panel,
 .meat-lead-match-panel,
 .meat-lead-ops-panel,
 .meat-lead-fulfillment-panel,
@@ -119,6 +120,18 @@
   border-top: 1px solid #d7ded6;
   margin-top: 16px;
   padding-top: 16px;
+}
+
+.meat-lead-guided-panel {
+  border: 1px solid #b8cab8;
+  border-radius: 8px;
+  background: #f4f8f3;
+  margin-top: 16px;
+  padding: 14px;
+}
+
+.meat-lead-guided-panel .ops-list {
+  margin-top: 12px;
 }
 
 .meat-lead-form-grid {

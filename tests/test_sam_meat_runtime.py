@@ -141,6 +141,21 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertIn("delivery street address", decision["reply_text"])
 
+    def test_sam_asks_for_timing_before_review_handoff(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Half carcass Set A, Riversdale, delivery to 12 Long Street. EFT.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("When would you ideally like", decision["reply_text"])
+        self.assertNotIn("farm to review", decision["reply_text"])
+
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
     def test_handle_inbound_records_lead_without_autoreply_when_disabled(self, mock_record, mock_contract):

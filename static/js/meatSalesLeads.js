@@ -34,6 +34,9 @@
     detailTitle: byId("meat_lead_detail_title"),
     detailStatus: byId("meat_lead_detail_status"),
     facts: byId("meat_lead_facts"),
+    guidedStatus: byId("meat_guided_status"),
+    guidedNext: byId("meat_guided_next"),
+    guidedResult: byId("meat_guided_result"),
     matchStatus: byId("meat_lead_match_status"),
     matchPreference: byId("meat_match_preference"),
     matchTargetKg: byId("meat_match_target_kg"),
@@ -112,6 +115,34 @@
 
   const hasLoadedEvent = (type) => leadEvents().some((event) => event.event_type === type);
 
+  const guidedState = () => {
+    const contract = state.contract?.contract || {};
+    const missing = Array.isArray(contract.missing_fields) ? contract.missing_fields : [];
+    const sent = hasLoadedEvent("customer_followup_sent");
+    const customerYes = hasLoadedEvent("customer_booking_confirmed");
+    const draftOrder = latestDraftOrderEvent();
+    if (!state.selectedLeadId || !state.contract?.lead) {
+      return { label: "Select a lead", detail: "Choose a lead first.", disabled: true };
+    }
+    if (draftOrder.order_id) {
+      return { label: "Draft order created", detail: `Draft order ${draftOrder.order_id} exists.`, disabled: true };
+    }
+    if (customerYes) {
+      return { label: "Create Draft Order", detail: "Customer confirmation is recorded. Create the draft order next.", disabled: false };
+    }
+    if (sent) {
+      return { label: "Waiting For Customer Yes", detail: "The approved follow-up was sent. Sam/customer must confirm before an order is created.", disabled: true };
+    }
+    if (missing.length) {
+      return {
+        label: "Approve And Send Price",
+        detail: `Uses active pricing rules, records owner approval, then sends the approved follow-up. Missing now: ${missing.join(", ")}.`,
+        disabled: false,
+      };
+    }
+    return { label: "Send Approved Follow-Up", detail: "Owner money path is ready. Build, approve, and send the follow-up.", disabled: false };
+  };
+
   const latestDraftOrderEvent = () => {
     const events = leadEvents();
     for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -143,6 +174,7 @@
       elements.priceRefresh,
       elements.priceForm?.querySelector("button"),
       elements.usePricing,
+      elements.guidedNext,
       elements.buildMatch,
       elements.useMatch,
       elements.reserveMatch,
@@ -488,6 +520,9 @@
       elements.buildJourneyDraft.disabled = true;
       elements.approveJourney.disabled = true;
       elements.sendJourney.disabled = true;
+      elements.guidedNext.disabled = true;
+      elements.guidedStatus.textContent = "Select a lead to see the next useful action.";
+      elements.guidedResult.innerHTML = "";
       return;
     }
 
@@ -519,6 +554,16 @@
     elements.sendMessage.disabled = !hasLead || !elements.preview.value.trim() || !state.messageApproved;
     elements.recordCustomerYes.disabled = !hasLoadedContract || !elements.customerConfirmation.value.trim();
     elements.createDraftOrder.disabled = !hasLoadedContract || !hasLoadedEvent("customer_booking_confirmed");
+    const guide = guidedState();
+    elements.guidedNext.textContent = guide.label;
+    elements.guidedNext.disabled = guide.disabled;
+    elements.guidedStatus.textContent = guide.detail;
+    elements.guidedResult.innerHTML = `
+      <div class="ops-list-item">
+        <strong>${safe(guide.label)}</strong>
+        <small>${safe(guide.detail)}</small>
+      </div>
+    `;
 
     const draftOrder = latestDraftOrderEvent();
     if (draftOrder.order_id) {
@@ -1042,6 +1087,74 @@
     }
   };
 
+  const guidedNextStep = async () => {
+    if (!state.selectedLeadId) return;
+    const guide = guidedState();
+    if (guide.disabled) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      if (hasLoadedEvent("customer_booking_confirmed")) {
+        await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/draft-order`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ created_by: "Farm App guided flow" }),
+        });
+        await loadLeadDetail(state.selectedLeadId);
+        setMessage("Draft order created from confirmed customer booking.", "success");
+        return;
+      }
+
+      if (!state.pricingEstimate) {
+        await loadPricingEstimate(false);
+      }
+      applyPricingEstimate(state.pricingEstimate, true);
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/owner-money-path-approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...approvalPayload(),
+          recorded_by: "Farm App guided flow",
+        }),
+      });
+
+      const draftPayload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-draft`);
+      state.draft = draftPayload.customer_followup_draft || {};
+      const message = safe(state.draft.message || state.draft.text, "");
+      elements.preview.value = message;
+      if (!message) throw new Error("customer_followup_message_missing");
+
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-send-approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          approved_by: "Farm App guided flow",
+          owner_final_send_approval: "Approved by guided flow",
+        }),
+      });
+      state.messageApproved = true;
+
+      const sendPayload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      await loadLeadDetail(state.selectedLeadId);
+      const sentLabel = sendPayload.sent
+        ? `Sent via Chatwoot. Message ID: ${safe(sendPayload.chatwoot_message_id || sendPayload.message_id, "")}`
+        : safe(sendPayload.status, "Send handled.");
+      elements.sendStatus.textContent = sentLabel;
+      setMessage(sentLabel, sendPayload.sent ? "success" : "");
+    } catch (error) {
+      const missing = Array.isArray(error.payload?.missing_fields) ? ` Missing: ${error.payload.missing_fields.join(", ")}.` : "";
+      setMessage(`Guided step stopped: ${error.message}.${missing}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
   const buildPreview = async () => {
     if (!state.selectedLeadId) return;
     setBusy(true);
@@ -1163,6 +1276,7 @@
   elements.priceRefresh.addEventListener("click", loadPriceBook);
   elements.priceForm.addEventListener("submit", savePriceEntry);
   elements.form.addEventListener("submit", approveDetails);
+  elements.guidedNext.addEventListener("click", guidedNextStep);
   elements.usePricing.addEventListener("click", usePricingRules);
   elements.buildMatch.addEventListener("click", buildMeatMatch);
   elements.useMatch.addEventListener("click", useMeatMatch);
