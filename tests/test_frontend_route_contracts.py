@@ -1725,6 +1725,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("applyPricingEstimate", js)
         self.assertIn("guidedNextStep", js)
         self.assertIn("Farm App guided flow", js)
+        self.assertIn("isSmokeLead", js)
+        self.assertIn("codex-smoke-", js)
         self.assertIn("buildMeatMatch", js)
         self.assertIn("reserveMatchedCarcass", js)
         self.assertIn("buildInstructionDrafts", js)

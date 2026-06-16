@@ -96,6 +96,14 @@
 
   const interestOf = (lead) => (lead && typeof lead.interest === "object" && lead.interest ? lead.interest : {});
 
+  const isSmokeLead = (lead) => {
+    const label = `${lead?.contact_label || ""} ${lead?.lead_label || ""}`.toLowerCase();
+    const conversation = String(lead?.chatwoot_conversation_id || "").toLowerCase();
+    return label.includes("codex test customer")
+      || conversation.startsWith("codex-smoke-")
+      || conversation.startsWith("sam-contract-smoke-");
+  };
+
   const eventNotesOf = (event) => {
     if (!event || typeof event.notes !== "object" || !event.notes) return {};
     return event.notes;
@@ -577,8 +585,11 @@
     setMessage("");
     try {
       const payload = await fetchJson("/api/sales/meat-leads?limit=50&status=launch_test");
-      state.leads = Array.isArray(payload.sales_leads) ? payload.sales_leads : [];
-      if (!state.selectedLeadId && state.leads.length) state.selectedLeadId = state.leads[0].lead_id;
+      const leads = Array.isArray(payload.sales_leads) ? payload.sales_leads : [];
+      state.leads = leads.filter((lead) => !isSmokeLead(lead));
+      if (!state.leads.some((lead) => lead.lead_id === state.selectedLeadId)) {
+        state.selectedLeadId = state.leads.length ? state.leads[0].lead_id : "";
+      }
       renderSummary();
       renderLeadList();
       if (state.selectedLeadId) await loadLeadDetail(state.selectedLeadId);
