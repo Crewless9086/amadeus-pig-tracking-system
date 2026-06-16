@@ -333,6 +333,8 @@ Implementation status 2026-06-16:
 - Owner-approved instruction send now uses append-only instruction events: exact approval, send attempted, sent, send failed, exception required, and exception resolved.
 - Instruction sends are disabled unless `MEAT_INSTRUCTION_SEND_ENABLED=1` and `MEAT_INSTRUCTION_WEBHOOK_URL` is configured. Optional `MEAT_INSTRUCTION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Instruction-Key`.
 - Instruction sends inform the configured recipient channel only; they do not complete slaughter, change stock, create payment allocation, or replace final packed-weight reconciliation.
+- Meat fulfilment timeline events now track waiting half-carcass state, WhatsApp window/template need, abattoir slot, butcher slot, delivery address, delivery schedule, driver assignment, delivery progress, and exception review.
+- Customer journey updates are planned but not automatically sent from the fulfilment timeline. The system should tell the story in a controlled way: reserved, paired, slaughter timing, butchery timing, packed/final balance, delivery on the way, delivered, and thank-you.
 
 ## Weekly Operating Rhythm
 

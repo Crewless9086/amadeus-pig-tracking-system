@@ -25,6 +25,10 @@ from modules.sales.sales_transaction_lifecycle import (
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
+from modules.sales.meat_fulfillment import (
+    get_meat_fulfillment_timeline,
+    record_meat_fulfillment_event,
+)
 from modules.sales.meat_ops import (
     approve_meat_instruction_draft,
     build_meat_instruction_drafts,
@@ -222,6 +226,19 @@ def meat_sales_lead_deposit_event(lead_id):
 def meat_sales_lead_instruction_drafts(lead_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = build_meat_instruction_drafts(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/fulfillment", methods=["GET"])
+def meat_sales_lead_fulfillment_timeline(lead_id):
+    result, status_code = get_meat_fulfillment_timeline(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/fulfillment-events", methods=["POST"])
+def meat_sales_lead_fulfillment_event(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_meat_fulfillment_event(lead_id, payload)
     return jsonify(result), status_code
 
 

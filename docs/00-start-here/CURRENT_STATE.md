@@ -14,7 +14,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
 | Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, lifecycle guards, auto-reservation, outbound notifications, quote/invoice generation, and document delivery are implemented and have been live-verified through the documented phases. |
 | Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is live-verified on a real repeat-service case. |
-| Pork sales launch rail | Private test build | Sam records meat preorder facts into append-only sales leads. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, and exception review rails are append-only. |
+| Pork sales launch rail | Private test build | Sam records meat preorder facts into append-only sales leads. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, exception review, and meat fulfilment timeline rails are append-only. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
 ## Completed Documentation Work

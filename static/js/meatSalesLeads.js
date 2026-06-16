@@ -9,6 +9,7 @@
     pricingEstimate: null,
     meatMatch: null,
     meatOps: null,
+    meatFulfillment: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -47,6 +48,17 @@
     recordDeposit: byId("meat_ops_record_deposit"),
     buildInstructions: byId("meat_ops_build_instructions"),
     opsResult: byId("meat_ops_result"),
+    fulfillmentStatus: byId("meat_fulfillment_status"),
+    fulfillmentEventType: byId("meat_fulfillment_event_type"),
+    fulfillmentDate: byId("meat_fulfillment_date"),
+    fulfillmentWindow: byId("meat_fulfillment_window"),
+    fulfillmentLocation: byId("meat_fulfillment_location"),
+    deliveryAddress: byId("meat_delivery_address"),
+    deliveryTown: byId("meat_delivery_town"),
+    deliveryDriver: byId("meat_delivery_driver"),
+    fulfillmentNotes: byId("meat_fulfillment_notes"),
+    recordFulfillment: byId("meat_fulfillment_record"),
+    fulfillmentResult: byId("meat_fulfillment_result"),
     form: byId("meat_lead_approval_form"),
     pricePerKg: byId("meat_lead_price_per_kg"),
     availableWeek: byId("meat_lead_available_week"),
@@ -132,6 +144,7 @@
       elements.reserveMatch,
       elements.recordDeposit,
       elements.buildInstructions,
+      elements.recordFulfillment,
       elements.approveDetails,
       elements.buildPreview,
       elements.approveMessage,
@@ -398,6 +411,42 @@
     elements.buildInstructions.disabled = !hasLead || !readyForDrafts;
   };
 
+  const renderMeatFulfillment = () => {
+    if (!elements.fulfillmentResult) return;
+    const payload = state.meatFulfillment || {};
+    const fulfillment = payload.fulfillment || {};
+    const journey = payload.journey_plan || {};
+    const timeline = Array.isArray(payload.timeline) ? payload.timeline : [];
+    const hasLead = Boolean(state.selectedLeadId);
+    elements.fulfillmentResult.innerHTML = "";
+    elements.fulfillmentStatus.textContent = hasLead
+      ? `Status: ${safe(fulfillment.status, "not loaded")}. Next: ${safe(fulfillment.next_gate, "select a lead")}. Customer update: ${safe(journey.customer_message_state, "not planned")}.`
+      : "Track waiting halves, abattoir, butcher, delivery, driver, and customer journey gates.";
+    if (journey.summary) {
+      const item = document.createElement("div");
+      item.className = "ops-list-item";
+      item.innerHTML = `
+        <strong>${safe(journey.stage, "journey")}</strong>
+        <small>${safe(journey.summary)}</small>
+      `;
+      elements.fulfillmentResult.appendChild(item);
+    }
+    timeline.forEach((event) => {
+      const item = document.createElement("div");
+      item.className = "ops-list-item";
+      item.innerHTML = `
+        <strong>${safe(event.event_type)} ${event.requires_template ? "| template required" : ""}</strong>
+        <small>${safe(event.scheduled_date, "")} ${safe(event.scheduled_window, "")} ${safe(event.location_label, "")}</small>
+        <small>${safe(event.actor_label || event.assigned_to, "")} ${safe(event.notes?.reason || event.notes?.notes, "")}</small>
+      `;
+      elements.fulfillmentResult.appendChild(item);
+    });
+    if (!timeline.length && !journey.summary) {
+      elements.fulfillmentResult.innerHTML = '<div class="table-empty">No fulfilment events recorded yet.</div>';
+    }
+    elements.recordFulfillment.disabled = !hasLead;
+  };
+
   const renderDetail = () => {
     const lead = state.contract?.lead || state.leads.find((item) => item.lead_id === state.selectedLeadId) || {};
     const contract = state.contract?.contract || {};
@@ -428,6 +477,7 @@
       elements.reserveMatch.disabled = true;
       elements.recordDeposit.disabled = true;
       elements.buildInstructions.disabled = true;
+      elements.recordFulfillment.disabled = true;
       return;
     }
 
@@ -449,6 +499,7 @@
     elements.usePricing.disabled = !hasLead;
     elements.buildMatch.disabled = !hasLead;
     renderMeatOps();
+    renderMeatFulfillment();
     elements.approveDetails.disabled = !hasLead;
     elements.buildPreview.disabled = !hasLead;
     elements.approveMessage.disabled = !hasLead || !elements.preview.value.trim();
@@ -500,6 +551,7 @@
     state.pricingEstimate = null;
     state.meatMatch = null;
     state.meatOps = null;
+    state.meatFulfillment = null;
     elements.preview.value = "";
     elements.customerConfirmation.value = "";
     elements.sendStatus.textContent = "No order, quote, or stock change is made from this page.";
@@ -507,8 +559,10 @@
     renderDetail();
     renderMeatMatch();
     renderMeatOps();
+    renderMeatFulfillment();
     await loadPricingEstimate(true);
     await loadMeatOps();
+    await loadMeatFulfillment();
   }
 
   async function selectLead(leadId) {
@@ -628,6 +682,18 @@
       elements.opsStatus.textContent = `Could not load meat ops gate: ${error.message}`;
     } finally {
       renderMeatOps();
+    }
+  };
+
+  const loadMeatFulfillment = async () => {
+    if (!state.selectedLeadId) return;
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/fulfillment`);
+      state.meatFulfillment = payload || {};
+    } catch (error) {
+      elements.fulfillmentStatus.textContent = `Could not load fulfilment timeline: ${error.message}`;
+    } finally {
+      renderMeatFulfillment();
     }
   };
 
@@ -814,6 +880,38 @@
     if (action === "resolve_exception") markInstructionException(instructionId, "exception_review_resolved");
   };
 
+  const recordFulfillmentEvent = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/fulfillment-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: elements.fulfillmentEventType.value,
+          scheduled_date: elements.fulfillmentDate.value,
+          scheduled_window: elements.fulfillmentWindow.value,
+          location_label: elements.fulfillmentLocation.value,
+          address_line_1: elements.deliveryAddress.value,
+          town: elements.deliveryTown.value,
+          assigned_to: elements.deliveryDriver.value,
+          reason: elements.fulfillmentNotes.value,
+          notes: elements.fulfillmentNotes.value,
+          actor_label: "Farm App",
+        }),
+      });
+      elements.fulfillmentNotes.value = "";
+      await loadMeatFulfillment();
+      setMessage("Fulfilment event recorded. No customer message or external action was sent.", "success");
+    } catch (error) {
+      setMessage(`Could not record fulfilment event: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatFulfillment();
+    }
+  };
+
   const savePriceEntry = async (event) => {
     event.preventDefault();
     setBusy(true);
@@ -992,6 +1090,7 @@
   elements.recordDeposit.addEventListener("click", recordDeposit);
   elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
   elements.opsResult.addEventListener("click", handleInstructionAction);
+  elements.recordFulfillment.addEventListener("click", recordFulfillmentEvent);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);
@@ -1004,6 +1103,7 @@
   renderDetail();
   renderMeatMatch();
   renderMeatOps();
+  renderMeatFulfillment();
   loadPriceBook();
   loadLeads();
 })();

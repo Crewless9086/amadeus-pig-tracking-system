@@ -433,6 +433,48 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         build_drafts.assert_called_once_with("OSK-SALES-LEAD-1", {"butcher_label": "Local Butcher"})
 
+    def test_meat_fulfillment_timeline_route_reads_timeline(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "fulfillment": {"next_gate": "find_second_half_buyer"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_meat_fulfillment_timeline",
+            return_value=(service_result, 200),
+        ) as get_timeline:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/fulfillment")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_timeline.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_fulfillment_event_route_records_event(self):
+        service_result = {
+            "success": True,
+            "status": "delivery_scheduled",
+            "records_meat_fulfillment": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_meat_fulfillment_event",
+            return_value=(service_result, 201),
+        ) as record_event:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/fulfillment-events",
+                json={"event_type": "delivery_scheduled", "scheduled_date": "2026-06-20"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_event.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"event_type": "delivery_scheduled", "scheduled_date": "2026-06-20"},
+        )
+
     def test_meat_instruction_approval_route_records_exact_approval(self):
         service_result = {
             "success": True,
