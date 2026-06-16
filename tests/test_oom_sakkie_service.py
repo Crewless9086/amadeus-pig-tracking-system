@@ -165,6 +165,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     build_preorder_deposit_contract_from_lead,
     get_sales_lead_customer_followup_draft,
     get_sales_lead_customer_followup_send_design,
+    record_customer_followup_send_approval,
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
@@ -172,6 +173,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sam_meat_intake_lead,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
+    send_customer_followup_to_chatwoot,
 )
 from modules.oom_sakkie.service import IntentMatch, classify_intent, handle_message, is_unsupported_action_request
 from modules.oom_sakkie.specialists import list_specialist_manifests
@@ -5412,6 +5414,188 @@ def literal_false_is_allowed():
         self.assertFalse(result["sends_customer_message"])
         self.assertFalse(result["creates_order"])
 
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_send_design")
+    def test_customer_followup_send_approval_requires_exact_message(self, mock_design):
+        mock_design.return_value = ({
+            "success": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "send_handoff_design": {
+                "proposed_payload": {
+                    "message": "Approved exact message.",
+                    "transport": "sam_chatwoot_whatsapp_review",
+                },
+            },
+        }, 200)
+
+        result, status_code = record_customer_followup_send_approval(
+            "OSK-SALES-LEAD-TEST",
+            {"message": "Changed message."},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "approved_message_mismatch")
+        self.assertFalse(result["sends_customer_message"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.record_sales_lead_event")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_send_design")
+    def test_customer_followup_send_approval_records_append_only_event(self, mock_design, mock_event):
+        mock_design.return_value = ({
+            "success": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "send_handoff_design": {
+                "proposed_payload": {
+                    "message": "Approved exact message.",
+                    "transport": "sam_chatwoot_whatsapp_review",
+                },
+            },
+        }, 200)
+        mock_event.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-SALES-LEAD-EVENT-SEND-APPROVAL",
+            "event_type": "owner_customer_followup_send_approved",
+            "sends_customer_message": False,
+        }, 201)
+
+        result, status_code = record_customer_followup_send_approval(
+            "OSK-SALES-LEAD-TEST",
+            {"message": "Approved exact message.", "approved_by": "Charl"},
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "customer_followup_send_approval_event_only")
+        event_payload = mock_event.call_args.args[1]
+        self.assertEqual(event_payload["event_type"], "owner_customer_followup_send_approved")
+        notes = json.loads(event_payload["notes"])
+        self.assertEqual(notes["kind"], "customer_followup_send_approval")
+        self.assertEqual(notes["message"], "Approved exact message.")
+        self.assertEqual(notes["approved_by"], "Charl")
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_send_design")
+    def test_customer_followup_send_requires_prior_owner_send_approval(self, mock_design, mock_contract):
+        mock_design.return_value = ({
+            "success": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "send_handoff_design": {
+                "proposed_payload": {"message": "Approved exact message."},
+            },
+        }, 200)
+        mock_contract.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "chatwoot_conversation_id": "1808",
+                "whatsapp_window_state": "open",
+                "events": [],
+            },
+        }, 200)
+
+        result, status_code = send_customer_followup_to_chatwoot(
+            "OSK-SALES-LEAD-TEST",
+            {"message": "Approved exact message."},
+            database_url="postgresql://example",
+            chatwoot_sender=Mock(),
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "customer_followup_send_not_approved")
+        self.assertFalse(result["sent"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_send_design")
+    def test_customer_followup_send_blocks_duplicate_message_hash(self, mock_design, mock_contract):
+        message = "Approved exact message."
+        approval = {
+            "source": "ledger_owner_review",
+            "kind": "customer_followup_send_approval",
+            "message": message,
+            "message_hash": __import__("hashlib").sha256(message.encode("utf-8")).hexdigest()[:16].upper(),
+        }
+        sent = {"message_hash": approval["message_hash"]}
+        mock_design.return_value = ({
+            "success": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "send_handoff_design": {"proposed_payload": {"message": message}},
+        }, 200)
+        mock_contract.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "chatwoot_conversation_id": "1808",
+                "whatsapp_window_state": "open",
+                "events": [
+                    {"event_type": "owner_customer_followup_send_approved", "notes": json.dumps(approval)},
+                    {"event_type": "customer_followup_sent", "notes": json.dumps(sent)},
+                ],
+            },
+        }, 200)
+
+        result, status_code = send_customer_followup_to_chatwoot(
+            "OSK-SALES-LEAD-TEST",
+            {"message": message},
+            database_url="postgresql://example",
+            chatwoot_sender=Mock(),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "already_sent")
+        self.assertFalse(result["sent"])
+        self.assertTrue(result["skipped"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.record_sales_lead_event")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_send_design")
+    def test_customer_followup_send_posts_to_chatwoot_after_exact_approval(self, mock_design, mock_contract, mock_event):
+        message = "Approved exact message."
+        message_hash = __import__("hashlib").sha256(message.encode("utf-8")).hexdigest()[:16].upper()
+        approval = {
+            "source": "ledger_owner_review",
+            "kind": "customer_followup_send_approval",
+            "message": message,
+            "message_hash": message_hash,
+        }
+        mock_design.return_value = ({
+            "success": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "lead": {},
+            "send_handoff_design": {"proposed_payload": {"message": message}},
+        }, 200)
+        mock_contract.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "chatwoot_conversation_id": "1808",
+                "whatsapp_window_state": "open",
+                "events": [{"event_type": "owner_customer_followup_send_approved", "notes": json.dumps(approval)}],
+            },
+        }, 200)
+        mock_event.return_value = ({"success": True, "status": "ok"}, 201)
+        sender = Mock(return_value={"status_code": 200, "message_id": "cw-msg-1"})
+
+        result, status_code = send_customer_followup_to_chatwoot(
+            "OSK-SALES-LEAD-TEST",
+            {"message": message},
+            database_url="postgresql://example",
+            chatwoot_sender=sender,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["sent"])
+        self.assertTrue(result["sends_customer_message"])
+        self.assertTrue(result["calls_chatwoot"])
+        self.assertFalse(result["calls_n8n"])
+        self.assertFalse(result["creates_order"])
+        sender.assert_called_once_with(conversation_id="1808", message=message)
+        self.assertEqual(mock_event.call_count, 2)
+
     def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({
             "customer_name": "Jan",
@@ -5571,6 +5755,11 @@ def literal_false_is_allowed():
         self.assertIn("'deposit_followup_needed'", lead_migration)
         owner_approval_migration = Path("supabase/migrations/202606160001_allow_sales_lead_owner_money_path_approval.sql").read_text(encoding="utf-8")
         self.assertIn("'owner_money_path_approved'", owner_approval_migration)
+        followup_send_migration = Path("supabase/migrations/202606160002_allow_sales_lead_customer_followup_send_events.sql").read_text(encoding="utf-8")
+        self.assertIn("'owner_customer_followup_send_approved'", followup_send_migration)
+        self.assertIn("'customer_followup_send_attempted'", followup_send_migration)
+        self.assertIn("'customer_followup_sent'", followup_send_migration)
+        self.assertIn("'customer_followup_send_failed'", followup_send_migration)
         self.assertIn("sends_customer_message = false", lead_migration)
         self.assertIn("calls_chatwoot = false", lead_migration)
         self.assertIn("calls_n8n = false", lead_migration)

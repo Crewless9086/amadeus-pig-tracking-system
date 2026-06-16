@@ -2,6 +2,8 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
 
@@ -18,6 +20,10 @@ SALES_LEAD_EVENT_TYPES = {
     "status_observed",
     "owner_followup_needed",
     "owner_money_path_approved",
+    "owner_customer_followup_send_approved",
+    "customer_followup_send_attempted",
+    "customer_followup_sent",
+    "customer_followup_send_failed",
     "deposit_followup_needed",
     "linked_order_observed",
     "closed",
@@ -809,10 +815,181 @@ def get_sales_lead_customer_followup_send_design(lead_id, database_url=None):
         "status": "ok",
         "mode": "sam_chatwoot_send_handoff_design_review_only",
         "lead_id": result.get("lead_id") or _clean_text(lead_id, 100),
+        "lead": result.get("lead") or {},
         "customer_followup_draft": result.get("customer_followup_draft") or {},
         "send_handoff_design": design,
         "next_gate": "owner_explicit_send_unlock_before_any_chatwoot_or_n8n_customer_send",
         **_false_flags(),
+    }, 200
+
+
+def record_customer_followup_send_approval(lead_id, payload, database_url=None):
+    design_result, design_status = get_sales_lead_customer_followup_send_design(lead_id, database_url=database_url)
+    if design_status != 200:
+        return design_result, design_status
+
+    payload = payload if isinstance(payload, dict) else {}
+    approved_message = _clean_text(payload.get("message") or payload.get("approved_message"), 1600)
+    design = design_result.get("send_handoff_design") if isinstance(design_result.get("send_handoff_design"), dict) else {}
+    proposed = design.get("proposed_payload") if isinstance(design.get("proposed_payload"), dict) else {}
+    expected_message = _clean_text(proposed.get("message"), 1600)
+    if not approved_message:
+        return {"success": False, "status": "approved_message_required", **_false_flags()}, 400
+    if approved_message != expected_message:
+        return {
+            "success": False,
+            "status": "approved_message_mismatch",
+            "expected_hash": _message_hash(expected_message),
+            "provided_hash": _message_hash(approved_message),
+            **_false_flags(),
+        }, 409
+
+    approval = {
+        "source": "ledger_owner_review",
+        "kind": "customer_followup_send_approval",
+        "lead_id": _clean_text(lead_id, 100),
+        "message": approved_message,
+        "message_hash": _message_hash(approved_message),
+        "target_transport": _clean_text(proposed.get("transport") or "sam_chatwoot_whatsapp_review", 80),
+        "owner_final_send_approval": _clean_text(
+            payload.get("owner_final_send_approval") or payload.get("approval") or "approved", 120
+        ),
+        "approved_by": _clean_text(payload.get("approved_by") or payload.get("recorded_by") or "owner", 80),
+    }
+    event_payload = {
+        "event_type": "owner_customer_followup_send_approved",
+        "status_observed": "order_ready_for_approval",
+        "recorded_by": approval["approved_by"],
+        "notes": _json(approval),
+    }
+    result, status_code = record_sales_lead_event(lead_id, event_payload, database_url=database_url)
+    if status_code != 201:
+        return result, status_code
+    result.update({
+        "mode": "customer_followup_send_approval_event_only",
+        "approval": approval,
+        "records_customer_followup_send_approval": True,
+        "next_gate": "token_gated_send_consumer_verifies_exact_message_before_chatwoot_send",
+    })
+    return result, status_code
+
+
+def send_customer_followup_to_chatwoot(lead_id, payload, database_url=None, chatwoot_sender=None):
+    payload = payload if isinstance(payload, dict) else {}
+    message = _clean_text(payload.get("message"), 1600)
+    if not message:
+        return {"success": False, "status": "message_required", "sent": False}, 400
+
+    design_result, design_status = get_sales_lead_customer_followup_send_design(lead_id, database_url=database_url)
+    if design_status != 200:
+        return {**design_result, "sent": False}, design_status
+    lead = design_result.get("lead") if isinstance(design_result.get("lead"), dict) else {}
+    if not lead:
+        contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+        if contract_status != 200:
+            return {**contract_result, "sent": False}, contract_status
+        lead = contract_result.get("lead") if isinstance(contract_result.get("lead"), dict) else {}
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    design = design_result.get("send_handoff_design") if isinstance(design_result.get("send_handoff_design"), dict) else {}
+    proposed = design.get("proposed_payload") if isinstance(design.get("proposed_payload"), dict) else {}
+    expected_message = _clean_text(proposed.get("message"), 1600)
+    if message != expected_message:
+        return {
+            "success": False,
+            "status": "message_mismatch",
+            "sent": False,
+            "expected_hash": _message_hash(expected_message),
+            "provided_hash": _message_hash(message),
+        }, 409
+    approval = _latest_customer_followup_send_approval({"events": events})
+    if approval.get("message_hash") != _message_hash(message):
+        return {
+            "success": False,
+            "status": "customer_followup_send_not_approved",
+            "sent": False,
+            "message_hash": _message_hash(message),
+        }, 409
+    if _customer_followup_already_sent(events, message):
+        return {
+            "success": True,
+            "status": "already_sent",
+            "sent": False,
+            "skipped": True,
+            "lead_id": _clean_text(lead_id, 100),
+            "message_hash": _message_hash(message),
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            **{k: v for k, v in _false_flags().items() if k not in {"sends_customer_message", "calls_chatwoot"}},
+        }, 200
+    if lead.get("whatsapp_window_state") not in {"open"}:
+        return {
+            "success": False,
+            "status": "whatsapp_window_not_open",
+            "sent": False,
+            "whatsapp_window_state": lead.get("whatsapp_window_state", ""),
+            **_false_flags(),
+        }, 409
+    conversation_id = _clean_text(lead.get("chatwoot_conversation_id"), 100)
+    if not conversation_id:
+        return {"success": False, "status": "chatwoot_conversation_id_required", "sent": False, **_false_flags()}, 409
+
+    _record_customer_followup_send_audit(
+        lead_id,
+        "customer_followup_send_attempted",
+        message,
+        {"conversation_id": conversation_id},
+        database_url=database_url,
+    )
+    sender = chatwoot_sender or _send_chatwoot_message
+    try:
+        chatwoot_result = sender(conversation_id=conversation_id, message=message)
+    except Exception as exc:
+        _record_customer_followup_send_audit(
+            lead_id,
+            "customer_followup_send_failed",
+            message,
+            {"conversation_id": conversation_id, "error_type": exc.__class__.__name__},
+            database_url=database_url,
+        )
+        return {
+            "success": False,
+            "status": "chatwoot_send_failed",
+            "sent": False,
+            "error_type": exc.__class__.__name__,
+            "lead_id": _clean_text(lead_id, 100),
+            "conversation_id": conversation_id,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            **{k: v for k, v in _false_flags().items() if k not in {"sends_customer_message", "calls_chatwoot"}},
+        }, 502
+
+    _record_customer_followup_send_audit(
+        lead_id,
+        "customer_followup_sent",
+        message,
+        {"conversation_id": conversation_id, "chatwoot": chatwoot_result},
+        database_url=database_url,
+    )
+    return {
+        "success": True,
+        "status": "sent",
+        "sent": True,
+        "lead_id": _clean_text(lead_id, 100),
+        "conversation_id": conversation_id,
+        "message_hash": _message_hash(message),
+        "chatwoot": chatwoot_result,
+        "sends_customer_message": True,
+        "calls_chatwoot": True,
+        "calls_n8n": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "dispatch_enabled": False,
+        "changes_runtime_now": False,
+        "changes_prompt_now": False,
+        "physical_controls_enabled": False,
+        "customer_public_output_enabled": True,
+        "writes_farm_data": False,
     }, 200
 
 
@@ -1120,6 +1297,69 @@ def _latest_owner_money_path_approval(lead):
             if _clean_text(snapshot.get(key), 700)
         }
     return approval
+
+
+def _latest_customer_followup_send_approval(lead):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    approval = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "owner_customer_followup_send_approved":
+            continue
+        snapshot = _parse_json_object(event.get("notes", ""))
+        if snapshot.get("source") != "ledger_owner_review":
+            continue
+        if snapshot.get("kind") != "customer_followup_send_approval":
+            continue
+        approval = {
+            key: _clean_text(snapshot.get(key), 1800)
+            for key in (
+                "lead_id",
+                "message",
+                "message_hash",
+                "target_transport",
+                "owner_final_send_approval",
+                "approved_by",
+            )
+            if _clean_text(snapshot.get(key), 1800)
+        }
+    return approval
+
+
+def _customer_followup_already_sent(events, message):
+    message_hash = _message_hash(message)
+    for event in events if isinstance(events, list) else []:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "customer_followup_sent":
+            continue
+        snapshot = _parse_json_object(event.get("notes", ""))
+        if snapshot.get("message_hash") == message_hash:
+            return True
+    return False
+
+
+def _record_customer_followup_send_audit(lead_id, event_type, message, extra=None, database_url=None):
+    extra = extra if isinstance(extra, dict) else {}
+    notes = {
+        "source": "sam_chatwoot_send_consumer",
+        "kind": event_type,
+        "lead_id": _clean_text(lead_id, 100),
+        "message_hash": _message_hash(message),
+        "message": _clean_text(message, 1600),
+        **extra,
+    }
+    return record_sales_lead_event(
+        lead_id,
+        {
+            "event_type": event_type,
+            "recorded_by": "sam_chatwoot_send_consumer",
+            "status_observed": "order_ready_for_approval",
+            "notes": _json(notes),
+        },
+        database_url=database_url,
+    )
 
 
 def record_sales_lead_event(lead_id, payload, database_url=None):
@@ -2140,6 +2380,55 @@ def _sales_leads_unavailable(status, configured):
         "sales_leads": [],
         **_false_flags(),
     }
+
+
+def _send_chatwoot_message(conversation_id, message):
+    base_url = _clean_text(os.getenv("CHATWOOT_BASE_URL") or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean_text(os.getenv("CHATWOOT_ACCOUNT_ID") or "147387", 80)
+    token = _clean_text(os.getenv("CHATWOOT_API_ACCESS_TOKEN") or os.getenv("CHATWOOT_API_TOKEN"), 300)
+    conversation_id = _clean_text(conversation_id, 100)
+    message = _clean_text(message, 1600)
+    if not base_url:
+        raise RuntimeError("CHATWOOT_BASE_URL is required")
+    if not account_id:
+        raise RuntimeError("CHATWOOT_ACCOUNT_ID is required")
+    if not token:
+        raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
+    if not conversation_id:
+        raise RuntimeError("conversation_id is required")
+    if not message:
+        raise RuntimeError("message is required")
+
+    url = f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages"
+    data = _json({
+        "content": message,
+        "message_type": "outgoing",
+        "private": False,
+    }).encode("utf-8")
+    req = urllib_request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "api_access_token": token,
+        },
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=20) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            parsed = _parse_json_object(body)
+            return {
+                "status_code": getattr(response, "status", 200),
+                "message_id": _clean_text(parsed.get("id"), 100),
+                "conversation_id": conversation_id,
+            }
+    except urllib_error.HTTPError as exc:
+        raise RuntimeError(f"chatwoot_http_{exc.code}") from exc
+
+
+def _message_hash(message):
+    return hashlib.sha256(_clean_text(message, 2000).encode("utf-8")).hexdigest()[:16].upper()
 
 
 def _json(value):

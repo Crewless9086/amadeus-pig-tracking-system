@@ -96,9 +96,11 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sales_lead,
     record_sales_lead_event,
     record_owner_money_path_approval,
+    record_customer_followup_send_approval,
     record_sam_meat_intake_lead,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
+    send_customer_followup_to_chatwoot,
 )
 from modules.oom_sakkie.service import handle_message
 from modules.oom_sakkie.sentinel_single_shot_runner import run_sentinel_single_shot_dry_run
@@ -124,6 +126,9 @@ oom_sakkie_bp = Blueprint("oom_sakkie", __name__)
 SAM_MEAT_INTAKE_REMOTE_ENABLED_ENV = "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED"
 SAM_MEAT_INTAKE_REMOTE_TOKEN_ENV = "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_TOKEN"
 SAM_MEAT_INTAKE_REMOTE_MIN_TOKEN_CHARS = 32
+MEAT_FOLLOWUP_SEND_ENABLED_ENV = "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED"
+MEAT_FOLLOWUP_SEND_TOKEN_ENV = "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_TOKEN"
+MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS = 32
 
 
 def _require_review_access():
@@ -147,12 +152,30 @@ def _require_sam_meat_intake_remote_access():
     return None
 
 
+def _require_meat_followup_send_access():
+    if not _env_truthy(os.environ.get(MEAT_FOLLOWUP_SEND_ENABLED_ENV)):
+        return jsonify(_meat_followup_send_denied("meat_followup_send_disabled")), 503
+
+    expected = str(os.environ.get(MEAT_FOLLOWUP_SEND_TOKEN_ENV, "") or "").strip()
+    if not expected:
+        return jsonify(_meat_followup_send_denied("meat_followup_send_token_not_configured")), 503
+    if len(expected) < MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS:
+        return jsonify(_meat_followup_send_denied("meat_followup_send_token_too_short")), 503
+    if not _remote_token_matches(expected, "X-Amadeus-Meat-Followup-Send-Key"):
+        return jsonify(_meat_followup_send_denied("meat_followup_send_auth_denied")), 403
+    return None
+
+
 def _sam_meat_intake_remote_token_matches(expected):
+    return _remote_token_matches(expected, "X-Amadeus-Sam-Intake-Key")
+
+
+def _remote_token_matches(expected, header_name):
     authorization = str(request.headers.get("Authorization", "") or "").strip()
     bearer_prefix = "Bearer "
     if authorization.startswith(bearer_prefix):
         return hmac.compare_digest(authorization[len(bearer_prefix):].strip(), expected)
-    provided = str(request.headers.get("X-Amadeus-Sam-Intake-Key", "") or "").strip()
+    provided = str(request.headers.get(header_name, "") or "").strip()
     return hmac.compare_digest(provided, expected)
 
 
@@ -167,6 +190,27 @@ def _sam_meat_intake_remote_denied(status):
         "minimum_token_chars": SAM_MEAT_INTAKE_REMOTE_MIN_TOKEN_CHARS,
         "auth": "bearer_or_x_amadeus_sam_intake_key",
         "records_tracking_lead": False,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_n8n": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "financial_action": False,
+    }
+
+
+def _meat_followup_send_denied(status):
+    return {
+        "success": False,
+        "status": status,
+        "mode": "meat_followup_send_remote_consumer",
+        "route": "POST /api/oom-sakkie/channels/chatwoot/sales-leads/<lead_id>/customer-followup-send",
+        "enabled_env": MEAT_FOLLOWUP_SEND_ENABLED_ENV,
+        "token_env": MEAT_FOLLOWUP_SEND_TOKEN_ENV,
+        "minimum_token_chars": MEAT_FOLLOWUP_SEND_MIN_TOKEN_CHARS,
+        "auth": "bearer_or_x_amadeus_meat_followup_send_key",
+        "sent": False,
         "sends_customer_message": False,
         "calls_chatwoot": False,
         "calls_n8n": False,
@@ -403,6 +447,26 @@ def oom_sakkie_sales_lead_customer_followup_send_design(lead_id):
     if denied:
         return denied
     result, status_code = get_sales_lead_customer_followup_send_design(lead_id)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/customer-followup-send-approval", methods=["POST"])
+def oom_sakkie_sales_lead_customer_followup_send_approval(lead_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_customer_followup_send_approval(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/channels/chatwoot/sales-leads/<lead_id>/customer-followup-send", methods=["POST"])
+def oom_sakkie_chatwoot_sales_lead_customer_followup_send(lead_id):
+    denied = _require_meat_followup_send_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_customer_followup_to_chatwoot(lead_id, payload)
     return jsonify(result), status_code
 
 

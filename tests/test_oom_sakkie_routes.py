@@ -1125,6 +1125,119 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["changes_stock"])
         mock_design.assert_called_once_with("OSK-SALES-LEAD-TEST")
 
+    @patch("modules.oom_sakkie.routes.record_customer_followup_send_approval")
+    def test_sales_lead_customer_followup_send_approval_route_records_review_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "customer_followup_send_approval_event_only",
+            "event_type": "owner_customer_followup_send_approved",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+        payload = {"message": "Approved exact message.", "approved_by": "Charl"}
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-leads/OSK-SALES-LEAD-TEST/customer-followup-send-approval",
+            json=payload,
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "customer_followup_send_approval_event_only")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once_with("OSK-SALES-LEAD-TEST", payload)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("modules.oom_sakkie.routes.send_customer_followup_to_chatwoot")
+    def test_customer_followup_send_remote_route_is_default_off(self, mock_send):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sales-leads/OSK-SALES-LEAD-TEST/customer-followup-send",
+            json={"message": "Approved exact message."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["status"], "meat_followup_send_disabled")
+        self.assertFalse(data["sent"])
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        mock_send.assert_not_called()
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED": "1"}, clear=True)
+    @patch("modules.oom_sakkie.routes.send_customer_followup_to_chatwoot")
+    def test_customer_followup_send_remote_route_requires_token(self, mock_send):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sales-leads/OSK-SALES-LEAD-TEST/customer-followup-send",
+            json={"message": "Approved exact message."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["status"], "meat_followup_send_token_not_configured")
+        mock_send.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED": "1",
+        "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_TOKEN": "test-meat-followup-send-token-32-chars",
+    }, clear=True)
+    @patch("modules.oom_sakkie.routes.send_customer_followup_to_chatwoot")
+    def test_customer_followup_send_remote_route_requires_valid_token(self, mock_send):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sales-leads/OSK-SALES-LEAD-TEST/customer-followup-send",
+            headers={"Authorization": "Bearer wrong-token"},
+            json={"message": "Approved exact message."},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "meat_followup_send_auth_denied")
+        mock_send.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED": "1",
+        "OOM_SAKKIE_MEAT_FOLLOWUP_SEND_TOKEN": "test-meat-followup-send-token-32-chars",
+    }, clear=True)
+    @patch("modules.oom_sakkie.routes.send_customer_followup_to_chatwoot")
+    def test_customer_followup_send_remote_route_calls_sender_with_token(self, mock_send):
+        mock_send.return_value = ({
+            "success": True,
+            "status": "sent",
+            "sent": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "sends_customer_message": True,
+            "calls_chatwoot": True,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+        payload = {"message": "Approved exact message."}
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sales-leads/OSK-SALES-LEAD-TEST/customer-followup-send",
+            headers={"X-Amadeus-Meat-Followup-Send-Key": "test-meat-followup-send-token-32-chars"},
+            json=payload,
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertTrue(data["sent"])
+        self.assertTrue(data["sends_customer_message"])
+        self.assertTrue(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_send.assert_called_once_with("OSK-SALES-LEAD-TEST", payload)
+
     @patch("modules.oom_sakkie.routes.list_sales_leads")
     def test_sales_lead_routes_are_review_gated(self, mock_list):
         response = self.client.get(

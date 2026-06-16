@@ -128,6 +128,47 @@ It does not send the draft, call Chatwoot, call n8n, create a send request, crea
 
 The next unlock after this design must be a separate owner-approved send consumer with explicit authentication, exact-message verification, WhatsApp window/channel checks, and append-only audit events before and after any attempted customer send.
 
+## Token-Gated Customer Follow-Up Send
+
+Owner approval endpoint:
+
+```text
+POST /api/oom-sakkie/sales-leads/<lead_id>/customer-followup-send-approval
+```
+
+This records `owner_customer_followup_send_approved` for the exact message returned by the follow-up draft/design. If the message text differs, the backend rejects it.
+
+Remote send consumer:
+
+```text
+POST /api/oom-sakkie/channels/chatwoot/sales-leads/<lead_id>/customer-followup-send
+```
+
+Required env:
+
+- `OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED=1`
+- `OOM_SAKKIE_MEAT_FOLLOWUP_SEND_TOKEN=<long random token, 32+ chars>`
+- `CHATWOOT_BASE_URL=https://app.chatwoot.com`
+- `CHATWOOT_ACCOUNT_ID=147387`
+- `CHATWOOT_API_ACCESS_TOKEN=<Chatwoot token>`
+
+Accepted auth:
+
+- `Authorization: Bearer <token>`
+- or `X-Amadeus-Meat-Followup-Send-Key: <token>`
+
+The send consumer verifies all of these before calling Chatwoot:
+
+- remote send env is enabled
+- remote token matches
+- message text exactly matches the generated approved draft
+- latest owner send approval event has the same message hash
+- no previous `customer_followup_sent` event exists for that message hash
+- lead has an open WhatsApp window
+- lead has a Chatwoot conversation ID
+
+It records `customer_followup_send_attempted` and then `customer_followup_sent` or `customer_followup_send_failed` audit events. It still does not create a quote, order, preorder, deposit request, stock reservation, or allocation.
+
 ## Payload
 
 ```json
