@@ -116,6 +116,32 @@ class MeatFulfillmentTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertEqual(result["status"], "meat_journey_notification_send_disabled")
 
+    @patch("modules.sales.meat_fulfillment._send_chatwoot_message")
+    def test_journey_notification_chatwoot_sender_uses_lead_conversation(self, mock_send):
+        mock_send.return_value = {"message_id": "msg-1", "conversation_id": "1808"}
+
+        result = meat_fulfillment._send_journey_notification_chatwoot(
+            "LEAD-1",
+            "Approved journey update",
+            {"stage": "delivery_scheduled"},
+            {"chatwoot_conversation_id": "1808"},
+        )
+
+        mock_send.assert_called_once_with("1808", "Approved journey update")
+        self.assertEqual(result["transport"], "chatwoot")
+        self.assertEqual(result["message_id"], "msg-1")
+
+    def test_journey_notification_chatwoot_sender_requires_conversation_id(self):
+        with self.assertRaises(RuntimeError) as context:
+            meat_fulfillment._send_journey_notification_chatwoot(
+                "LEAD-1",
+                "Approved journey update",
+                {"stage": "delivery_scheduled"},
+                {},
+            )
+
+        self.assertEqual(str(context.exception), "lead_chatwoot_conversation_id_required")
+
 
 if __name__ == "__main__":
     unittest.main()

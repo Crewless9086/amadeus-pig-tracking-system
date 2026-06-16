@@ -11,6 +11,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sam_meat_intake_lead,
     _send_chatwoot_message,
 )
+from modules.sales.meat_fulfillment import record_meat_fulfillment_event
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -87,6 +88,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
+    fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
 
     send_result = {}
     sent = False
@@ -119,6 +121,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "lead_payload": lead_payload,
         "lead_result": record_result,
         "lead_status_code": record_status,
+        "fulfillment_capture": fulfillment_capture,
         "sam_decision": decision,
         "sent": sent,
         "send_status": send_status,
@@ -216,6 +219,10 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "location": facts.get("location") or "",
         "timing": facts.get("timing") or "",
         "delivery_or_collection": facts.get("delivery_or_collection") or "",
+        "delivery_address_line_1": facts.get("delivery_address_line_1") or "",
+        "delivery_town": facts.get("delivery_town") or facts.get("location") or "",
+        "delivery_area": facts.get("delivery_area") or "",
+        "delivery_notes": facts.get("delivery_notes") or "",
         "payment_method": facts.get("payment_method") or "",
         "notes": inbound.get("content") or "",
         "status": "interested" if product_type != "unknown" else "new",
@@ -238,6 +245,8 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
         reply = "Which town or area would you prefer for collection or delivery?"
     elif not facts.get("delivery_or_collection"):
         reply = "Would you prefer collection or delivery?"
+    elif facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
+        reply = "Please send the delivery street address or farm name, town, and any useful directions for the driver."
     elif not facts.get("payment_method"):
         reply = "Would EFT or cash work best once the farm confirms the approved details?"
     else:
@@ -302,7 +311,8 @@ def _call_sam_meat_llm(message, inbound, source):
 def _llm_payload(message, inbound, source):
     system = (
         "You are Sam Meat's backend extractor. Return JSON facts only. "
-        "Allowed keys: product_type, cut_set, location, timing, delivery_or_collection, payment_method. "
+        "Allowed keys: product_type, cut_set, location, timing, delivery_or_collection, "
+        "delivery_address_line_1, delivery_town, delivery_area, delivery_notes, payment_method. "
         "Allowed product_type: half_carcass, full_carcass, custom_cut, assisted_slaughter, unknown. "
         "Never include prices, deposit promises, order creation, stock reservation, or customer-send commands."
     )
@@ -382,12 +392,29 @@ def _deterministic_extract(message):
     elif re.search(r"\bcash\b", lower):
         payment_method = "Cash"
 
+    delivery_address_line_1 = ""
+    address_match = re.search(
+        r"\b(?:address|deliver(?:y)?\s+(?:to|at))\s*(?:is|:|-)?\s*([^.,\n]+(?:\s+(?:street|straat|road|rd|avenue|ave|lane|ln|farm|plot|smallholding)\b[^.,\n]*)?)",
+        text,
+        re.I,
+    )
+    if address_match:
+        delivery_address_line_1 = address_match.group(1).strip(" .,:;-")
+    elif delivery_or_collection == "delivery":
+        simple_address = re.search(r"\b(\d{1,5}\s+[A-Za-z][A-Za-z0-9 '\-]{2,80})", text)
+        if simple_address:
+            delivery_address_line_1 = simple_address.group(1).strip(" .,:;-")
+
     return {
         "product_type": product_type,
         "cut_set": cut_set,
         "location": location,
         "timing": timing,
         "delivery_or_collection": delivery_or_collection,
+        "delivery_address_line_1": _clean(delivery_address_line_1, 240),
+        "delivery_town": location,
+        "delivery_area": "",
+        "delivery_notes": "",
         "payment_method": payment_method,
     }
 
@@ -426,9 +453,42 @@ def _safe_llm_fact_patch(value):
         "location": _normal_location(value.get("location")),
         "timing": _clean(value.get("timing"), 120),
         "delivery_or_collection": _normal_delivery(value.get("delivery_or_collection")),
+        "delivery_address_line_1": _clean(value.get("delivery_address_line_1"), 240),
+        "delivery_town": _normal_location(value.get("delivery_town")),
+        "delivery_area": _clean(value.get("delivery_area"), 120),
+        "delivery_notes": _clean(value.get("delivery_notes"), 600),
         "payment_method": _normal_payment(value.get("payment_method")),
     }
     return {key: val for key, val in patch.items() if val}
+
+
+def _record_delivery_address_if_ready(lead_id, inbound, facts):
+    lead_id = _clean(lead_id, 100)
+    if not lead_id or facts.get("delivery_or_collection") != "delivery":
+        return {"recorded": False, "status": "not_delivery"}
+    address = _clean(facts.get("delivery_address_line_1"), 240)
+    town = _clean(facts.get("delivery_town") or facts.get("location"), 120)
+    if not address or not town:
+        return {"recorded": False, "status": "delivery_address_incomplete"}
+    payload = {
+        "event_type": "delivery_address_captured",
+        "address_line_1": address,
+        "town": town,
+        "area": facts.get("delivery_area") or "",
+        "delivery_notes": facts.get("delivery_notes") or "",
+        "contact_name": inbound.get("customer_name") or facts.get("customer_name") or "",
+        "contact_phone": inbound.get("customer_phone") or "",
+        "actor_role": "sam",
+        "actor_label": "Sam Meat",
+        "customer_channel": inbound.get("channel") or "chatwoot_whatsapp",
+        "whatsapp_window_state": inbound.get("whatsapp_window_state") or "open",
+    }
+    result, status_code = record_meat_fulfillment_event(lead_id, payload)
+    return {
+        "recorded": status_code in {200, 201},
+        "status_code": status_code,
+        "status": result.get("status") if isinstance(result, dict) else "",
+    }
 
 
 def _ignored(status, event, message_type, content, conversation_id, customer_name, channel):

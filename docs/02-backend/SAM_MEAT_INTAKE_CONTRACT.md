@@ -48,6 +48,8 @@ Runtime rules:
 - inbound webhook ignores outbound/system/non-message events
 - inbound webhook records only append-only lead/fact events
 - Sam Meat may ask clarifying intake questions when facts are missing
+- when delivery is chosen, Sam Meat asks for delivery address/directions before moving on if no address is known
+- when delivery address and town are known, the backend records a `delivery_address_captured` fulfilment event for the lead
 - Sam Meat must not quote price, promise slaughter timing, request deposit, create orders, reserve stock, or change stock from normal inbound chat
 - any outbound Chatwoot send requires the backend autoreply env gate and an open customer-service window
 - owner price/timing/deposit approval, exact follow-up approval, customer yes, and Draft order creation remain separate Farm App gates
@@ -213,6 +215,40 @@ The send consumer verifies all of these before calling Chatwoot:
 
 It records `customer_followup_send_attempted` and then `customer_followup_sent` or `customer_followup_send_failed` audit events. It still does not create a quote, order, preorder, deposit request, stock reservation, or allocation.
 
+## Meat Journey Notification Sends
+
+Farm App fulfilment journey messages use a separate exact-message approval rail:
+
+```text
+POST /api/sales/meat-leads/<lead_id>/journey-notification-draft
+POST /api/sales/meat-leads/<lead_id>/journey-notification-approval
+POST /api/sales/meat-leads/<lead_id>/journey-notification-send
+```
+
+Required env for any send:
+
+- `MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED=1`
+
+Direct Chatwoot transport uses:
+
+- `CHATWOOT_BASE_URL=https://app.chatwoot.com`
+- `CHATWOOT_ACCOUNT_ID=147387`
+- `CHATWOOT_API_ACCESS_TOKEN=<Chatwoot token>`
+
+Webhook transport remains available with:
+
+- `MEAT_JOURNEY_NOTIFICATION_TRANSPORT=webhook`
+- `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL=<provider/n8n webhook>`
+- `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN=<optional shared secret>`
+
+Send rules:
+
+- the message must exactly match the latest approved journey draft
+- duplicate sends of the same message hash are skipped
+- direct Chatwoot sends require the lead to have `chatwoot_conversation_id`
+- sends create append-only notification events: attempted, sent, or failed
+- journey sends do not change payment, stock, delivery completion, final weight, order state, or exception state
+
 ## Payload
 
 ```json
@@ -227,6 +263,10 @@ It records `customer_followup_send_attempted` and then `customer_followup_sent` 
   "location": "Riversdale",
   "timing": "next available week",
   "delivery_or_collection": "collection",
+  "delivery_address_line_1": "",
+  "delivery_town": "",
+  "delivery_area": "",
+  "delivery_notes": "",
   "price_per_kg": "",
   "deposit_rule": "",
   "payment_method": "EFT",
@@ -266,6 +306,15 @@ These are not required to record the lead, but they are required before any preo
 - `owner_final_approval`
 
 Sam may collect customer preferences, but owner approval is still required before the farm quotes or asks for deposit.
+
+Additional delivery fields are captured when the customer chooses delivery:
+
+- `delivery_address_line_1`
+- `delivery_town`
+- `delivery_area`
+- `delivery_notes`
+
+These fields are stored on the lead interest JSON and may also create an append-only fulfilment `delivery_address_captured` event when address and town are present.
 
 ## Cut Menu Boundary
 

@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price book, Butcher match, carcass ops, instruction approval/send, fulfilment timeline, driver route, and customer journey notification rails active | Next: owner-review on real meat leads; then add route grouping and WhatsApp template provider wiring. |
+| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price book, Butcher match, carcass ops, instruction approval/send, fulfilment timeline, driver route, customer journey notification rails, Sam delivery capture, and direct Chatwoot journey send active | Next: owner-review on real meat leads; then add route grouping and WhatsApp template provider wiring. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -167,7 +167,7 @@ Next after this build:
 - Build a focused driver route page/login or magic-link view for delivery-day updates.
 - Add owner-approved customer journey notification sends using the same exact-message/env-gated pattern as the instruction send rail.
 
-### Phase 11I Active Build - Driver Route And Customer Journey Notification Layer
+### Phase 11I Complete - Driver Route And Customer Journey Notification Layer
 
 Owner direction on 2026-06-16: delivery should be simple enough for a driver to use on a phone, while customer updates should feel human and story-led without becoming spam.
 
@@ -177,15 +177,37 @@ Required outcome:
 - Driver updates write append-only fulfilment events only: on way, arrived, delivered, or issue.
 - Customer journey notification drafts are generated from the fulfilment stage.
 - Owner must approve the exact journey message before any send.
-- Customer journey sends are disabled unless `MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED=1` and `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL` is configured.
-- Optional `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Journey-Key`.
-- Journey sends use the configured backend webhook and do not directly change stock, delivery completion, payment state, or order state.
+- Customer journey sends are disabled unless `MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED=1` is configured.
+- Journey sends can use direct Chatwoot transport from the lead's stored conversation ID, or the configured webhook transport when `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL` is set.
+- Optional `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Journey-Key` for webhook transport.
+- Journey sends do not directly change stock, delivery completion, payment state, or order state.
 
 Next after this build:
 
 - Test the driver route with a real scheduled delivery.
 - Decide the WhatsApp template provider path for closed 24-hour windows.
 - Add route grouping/zone planning after the first real delivery patterns are known.
+
+### Phase 11J Complete - Sam Delivery Capture And Direct Journey Send
+
+Owner direction on 2026-06-16: Sam must do more of the data capture so the owner is not manually typing delivery details later, and approved customer journey updates should use the existing backend Chatwoot transport when possible.
+
+Required outcome:
+
+- Sam Meat extraction supports delivery address, delivery town, delivery area, and delivery notes as bounded intake facts.
+- When a customer chooses delivery but has not given an address, Sam asks for address/directions before moving on.
+- When Sam has delivery address and town, the backend records a `delivery_address_captured` fulfilment event for the lead.
+- Stored meat lead interest JSON keeps delivery address fields for later order/fulfilment use.
+- Approved journey notification sends can go directly to Chatwoot using the lead's stored `chatwoot_conversation_id`.
+- Webhook transport remains available for future n8n or provider-specific delivery by setting `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL` or `MEAT_JOURNEY_NOTIFICATION_TRANSPORT=webhook`.
+- Direct Chatwoot journey sends require `MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED=1` plus the existing `CHATWOOT_BASE_URL`, `CHATWOOT_ACCOUNT_ID`, and `CHATWOOT_API_ACCESS_TOKEN`.
+- This build still does not create stock changes, delivery completion, payment allocation, final invoice, WhatsApp template sends, or autonomous exception resolution.
+
+Next after this build:
+
+- Smoke a real Chatwoot lead where Sam asks for delivery details, captures the address, and the Farm App builds/approves/sends one journey update.
+- Add zone/route grouping once there are enough delivery examples.
+- Add WhatsApp template provider handling for closed 24-hour windows.
 
 ### Staying on track (Cursor + Claude Code)
 

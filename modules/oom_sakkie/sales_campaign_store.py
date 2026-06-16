@@ -858,6 +858,10 @@ def build_sam_meat_intake_lead_payload(payload):
     location = _clean_text(payload.get("location") or payload.get("delivery_area"), 160)
     timing = _clean_text(payload.get("timing") or payload.get("available_week"), 160)
     delivery_or_collection = _clean_text(payload.get("delivery_or_collection"), 160)
+    delivery_address_line_1 = _clean_text(payload.get("delivery_address_line_1") or payload.get("address_line_1"), 240)
+    delivery_town = _clean_text(payload.get("delivery_town") or payload.get("town") or location, 120)
+    delivery_area = _clean_text(payload.get("delivery_area") or payload.get("area"), 120)
+    delivery_notes = _clean_text(payload.get("delivery_notes"), 600)
     price_per_kg = _clean_text(payload.get("price_per_kg"), 80)
     deposit_rule = _clean_text(payload.get("deposit_rule") or payload.get("deposit_amount"), 160)
     payment_method = _clean_text(payload.get("payment_method"), 80)
@@ -908,6 +912,10 @@ def build_sam_meat_intake_lead_payload(payload):
         "location": location,
         "timing": timing,
         "delivery_or_collection": delivery_or_collection,
+        "delivery_address_line_1": delivery_address_line_1,
+        "delivery_town": delivery_town,
+        "delivery_area": delivery_area,
+        "delivery_notes": delivery_notes,
         "price_per_kg": price_per_kg,
         "deposit_rule": deposit_rule,
         "payment_method": payment_method,

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
-from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract
+from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract, _send_chatwoot_message
 from modules.sales.meat_ops import get_meat_ops_status
 from services.database_service import DATABASE_URL_ENV
 
@@ -36,6 +36,7 @@ FULFILLMENT_EVENT_TYPES = {
 JOURNEY_NOTIFICATION_SEND_ENABLED_ENV = "MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED"
 JOURNEY_NOTIFICATION_WEBHOOK_URL_ENV = "MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL"
 JOURNEY_NOTIFICATION_WEBHOOK_TOKEN_ENV = "MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN"
+JOURNEY_NOTIFICATION_TRANSPORT_ENV = "MEAT_JOURNEY_NOTIFICATION_TRANSPORT"
 
 DRIVER_EVENT_TYPES = {
     "delivery_on_way",
@@ -308,7 +309,8 @@ def send_meat_journey_notification(lead_id, payload=None, database_url=None, sen
                 attempted = _notification_event_params(lead_id, approval.get("stage", ""), "send_attempted", message, approval, payload)
                 _insert_notification_event(cursor, attempted)
                 try:
-                    send_result = (sender or _send_journey_notification_webhook)(lead_id, message, approval, payload)
+                    lead = _notification_lead(lead_id, database_url)
+                    send_result = (sender or _send_journey_notification)(lead_id, message, approval, payload, lead)
                 except Exception as exc:
                     failed = _notification_event_params(
                         lead_id,
@@ -599,6 +601,38 @@ def _latest_notification(events, event_type):
         if event.get("event_type") == event_type:
             return event
     return {}
+
+
+def _notification_lead(lead_id, database_url):
+    result, status_code = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    if status_code != 200 or not isinstance(result, dict):
+        return {}
+    return result.get("lead") if isinstance(result.get("lead"), dict) else {}
+
+
+def _send_journey_notification(lead_id, message, approval, payload, lead=None):
+    transport = _clean(os.getenv(JOURNEY_NOTIFICATION_TRANSPORT_ENV) or "", 80).lower()
+    webhook_url = os.getenv(JOURNEY_NOTIFICATION_WEBHOOK_URL_ENV, "").strip()
+    if transport == "webhook" or (webhook_url and transport != "chatwoot"):
+        return _send_journey_notification_webhook(lead_id, message, approval, payload)
+    return _send_journey_notification_chatwoot(lead_id, message, approval, lead or {})
+
+
+def _send_journey_notification_chatwoot(lead_id, message, approval, lead):
+    conversation_id = _clean(
+        lead.get("chatwoot_conversation_id")
+        or (lead.get("interest") if isinstance(lead.get("interest"), dict) else {}).get("conversation_id"),
+        100,
+    )
+    if not conversation_id:
+        raise RuntimeError("lead_chatwoot_conversation_id_required")
+    result = _send_chatwoot_message(conversation_id, message)
+    return {
+        **(result if isinstance(result, dict) else {}),
+        "transport": "chatwoot",
+        "lead_id": lead_id,
+        "stage": approval.get("stage", ""),
+    }
 
 
 def _send_journey_notification_webhook(lead_id, message, approval, payload):
