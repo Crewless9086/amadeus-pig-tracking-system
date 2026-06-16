@@ -797,6 +797,71 @@ def get_sales_lead_customer_followup_draft(lead_id, database_url=None):
     }, 200
 
 
+def get_sales_lead_customer_followup_send_design(lead_id, database_url=None):
+    result, status_code = get_sales_lead_customer_followup_draft(lead_id, database_url=database_url)
+    if status_code != 200:
+        return result, status_code
+
+    design = build_customer_followup_send_design_from_draft(result)
+    return {
+        "success": True,
+        "configured": result.get("configured", True),
+        "status": "ok",
+        "mode": "sam_chatwoot_send_handoff_design_review_only",
+        "lead_id": result.get("lead_id") or _clean_text(lead_id, 100),
+        "customer_followup_draft": result.get("customer_followup_draft") or {},
+        "send_handoff_design": design,
+        "next_gate": "owner_explicit_send_unlock_before_any_chatwoot_or_n8n_customer_send",
+        **_false_flags(),
+    }, 200
+
+
+def build_customer_followup_send_design_from_draft(draft_packet):
+    draft_packet = draft_packet if isinstance(draft_packet, dict) else {}
+    draft = draft_packet.get("customer_followup_draft") if isinstance(draft_packet.get("customer_followup_draft"), dict) else {}
+    lead_id = _clean_text(draft_packet.get("lead_id"), 100)
+    message = _clean_text(draft.get("message"), 1600)
+    target_transport = _clean_text(draft.get("target_transport") or "sam_chatwoot_whatsapp_review", 80)
+    if target_transport not in {"sam_chatwoot_whatsapp_review", "manual_owner_send_review"}:
+        target_transport = "sam_chatwoot_whatsapp_review"
+    return {
+        "design_type": "lead_customer_followup_send_handoff",
+        "mode": "sam_chatwoot_send_handoff_design_review_only",
+        "target_transport": target_transport,
+        "proposed_payload": {
+            "lead_id": lead_id,
+            "message": message,
+            "transport": target_transport,
+            "source": "ledger_owner_review",
+            "requires_owner_send_unlock": True,
+        },
+        "required_runtime_gates": [
+            "Owner must explicitly approve customer send after reviewing this exact message.",
+            "A future send endpoint must require a separate private token or owner approval event.",
+            "The send consumer must verify lead_id, approved message text, WhatsApp window state, and Chatwoot conversation/contact before sending.",
+            "The send consumer must record an append-only audit event before and after any attempted send.",
+        ],
+        "blocked_actions": [
+            "No customer message is sent by this design endpoint.",
+            "No Chatwoot API call is made.",
+            "No n8n workflow is called.",
+            "No quote, order, preorder, deposit request, stock reservation, or allocation is created.",
+        ],
+        "owner_checks": [
+            "Confirm this exact text is acceptable for the buyer.",
+            "Confirm WhatsApp window and channel before any future send.",
+            "Confirm the next customer reply will route back to Sam/Ledger without creating an order automatically.",
+        ],
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_n8n": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "writes_farm_data": False,
+    }
+
+
 def build_customer_followup_draft_from_contract(contract):
     contract = contract if isinstance(contract, dict) else {}
     summary = contract.get("lead_summary") if isinstance(contract.get("lead_summary"), dict) else {}

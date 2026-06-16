@@ -161,8 +161,10 @@ from modules.oom_sakkie.sales_campaign_store import (
     approve_first_waiting_sales_campaign,
     build_owner_money_path_approval_event_payload,
     build_customer_followup_draft_from_contract,
+    build_customer_followup_send_design_from_draft,
     build_preorder_deposit_contract_from_lead,
     get_sales_lead_customer_followup_draft,
+    get_sales_lead_customer_followup_send_design,
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
@@ -5335,6 +5337,80 @@ def literal_false_is_allowed():
         self.assertFalse(result["creates_quote"])
         self.assertFalse(result["creates_order"])
         self.assertFalse(result["changes_stock"])
+
+    def test_customer_followup_send_design_from_draft_is_review_only(self):
+        design = build_customer_followup_send_design_from_draft({
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "customer_followup_draft": {
+                "target_transport": "sam_chatwoot_whatsapp_review",
+                "message": "Hi Charl, approved owner-review draft.",
+            },
+        })
+
+        self.assertEqual(design["mode"], "sam_chatwoot_send_handoff_design_review_only")
+        self.assertEqual(design["target_transport"], "sam_chatwoot_whatsapp_review")
+        self.assertTrue(design["proposed_payload"]["requires_owner_send_unlock"])
+        self.assertEqual(design["proposed_payload"]["lead_id"], "OSK-SALES-LEAD-TEST")
+        self.assertIn("Owner must explicitly approve customer send", design["required_runtime_gates"][0])
+        self.assertIn("No customer message is sent", design["blocked_actions"][0])
+        self.assertFalse(design["sends_customer_message"])
+        self.assertFalse(design["calls_chatwoot"])
+        self.assertFalse(design["calls_n8n"])
+        self.assertFalse(design["creates_quote"])
+        self.assertFalse(design["creates_order"])
+        self.assertFalse(design["changes_stock"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_draft")
+    def test_customer_followup_send_design_reuses_draft_gate_and_never_sends(self, mock_draft):
+        mock_draft.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "owner_review_customer_followup_draft_only",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "customer_followup_draft": {
+                "target_transport": "sam_chatwoot_whatsapp_review",
+                "message": "Hi Charl, approved owner-review draft.",
+            },
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        result, status_code = get_sales_lead_customer_followup_send_design("OSK-SALES-LEAD-TEST")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "sam_chatwoot_send_handoff_design_review_only")
+        self.assertIn("send_handoff_design", result)
+        self.assertEqual(result["send_handoff_design"]["proposed_payload"]["message"], "Hi Charl, approved owner-review draft.")
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["calls_n8n"])
+        self.assertFalse(result["creates_quote"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["changes_stock"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_draft")
+    def test_customer_followup_send_design_returns_draft_blocker(self, mock_draft):
+        mock_draft.return_value = ({
+            "success": False,
+            "status": "owner_money_path_not_ready",
+            "missing_fields": ["price_per_kg"],
+            "sends_customer_message": False,
+            "creates_order": False,
+        }, 409)
+
+        result, status_code = get_sales_lead_customer_followup_send_design("OSK-SALES-LEAD-TEST")
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_money_path_not_ready")
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
 
     def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({

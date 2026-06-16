@@ -114,6 +114,20 @@ It returns a deterministic owner-review customer draft for Sam/Chatwoot wording.
 
 The draft asks the buyer whether they want the approved details sent through for final booking review. Customer acceptance must still go through a separate owner-reviewed booking/order/deposit rail before any real order, deposit request, stock reservation, or formal quote workflow exists.
 
+## Sam/Chatwoot Send Handoff Design
+
+Review-gated endpoint:
+
+```text
+GET /api/oom-sakkie/sales-leads/<lead_id>/customer-followup-send-design
+```
+
+This endpoint turns the approved customer follow-up draft into a send handoff design packet only. It defines the future target transport, proposed payload, runtime gates, owner checks, and blocked actions.
+
+It does not send the draft, call Chatwoot, call n8n, create a send request, create a quote/order/preorder, reserve stock, update allocation, or perform a financial action.
+
+The next unlock after this design must be a separate owner-approved send consumer with explicit authentication, exact-message verification, WhatsApp window/channel checks, and append-only audit events before and after any attempted customer send.
+
 ## Payload
 
 ```json
