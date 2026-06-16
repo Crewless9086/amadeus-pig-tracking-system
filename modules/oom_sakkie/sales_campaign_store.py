@@ -763,6 +763,82 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
     }, 200
 
 
+def get_sales_lead_customer_followup_draft(lead_id, database_url=None):
+    result, status_code = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    if status_code != 200:
+        return result, status_code
+
+    contract = result.get("contract") if isinstance(result.get("contract"), dict) else {}
+    if contract.get("contract_status") != "owner_money_path_ready":
+        return {
+            "success": False,
+            "configured": result.get("configured", True),
+            "status": "owner_money_path_not_ready",
+            "lead_id": result.get("lead_id") or _clean_text(lead_id, 100),
+            "contract_status": contract.get("contract_status", ""),
+            "missing_fields": contract.get("missing_fields") or [],
+            "missing_core_context": contract.get("missing_core_context") or [],
+            "next_gate": "record_owner_money_path_approval_before_customer_followup_draft",
+            **_false_flags(),
+        }, 409
+
+    draft = build_customer_followup_draft_from_contract(contract)
+    return {
+        "success": True,
+        "configured": result.get("configured", True),
+        "status": "ok",
+        "mode": "owner_review_customer_followup_draft_only",
+        "lead_id": result.get("lead_id") or _clean_text(lead_id, 100),
+        "lead": result.get("lead") or {},
+        "contract": contract,
+        "customer_followup_draft": draft,
+        "next_gate": "owner_review_before_any_sam_chatwoot_customer_send_or_order_write",
+        **_false_flags(),
+    }, 200
+
+
+def build_customer_followup_draft_from_contract(contract):
+    contract = contract if isinstance(contract, dict) else {}
+    summary = contract.get("lead_summary") if isinstance(contract.get("lead_summary"), dict) else {}
+    required = contract.get("required_before_money_path") if isinstance(contract.get("required_before_money_path"), dict) else {}
+
+    buyer = summary.get("buyer_or_contact") or "there"
+    product = summary.get("product") or "pork preorder"
+    cut_set = summary.get("cut_set") or "selected cut set"
+    location = summary.get("location") or "your selected collection area"
+    price = required.get("price_per_kg") or "the approved price/kg"
+    week = required.get("available_week") or "the approved week"
+    size = required.get("estimated_weight_or_size") or "final weight to be confirmed"
+    deposit = required.get("deposit_amount_or_rule") or "the approved deposit rule"
+    payment = required.get("payment_method") or "your selected payment method"
+    delivery = required.get("delivery_or_collection") or "collection/delivery to be confirmed"
+
+    message = (
+        f"Hi {buyer}, I checked with the farm. For the {product} {cut_set} in {location}, "
+        f"the current approved price is {price}. The available timing is {week}, with {size}. "
+        f"The deposit rule is {deposit}. I have your preference as {delivery} and {payment}. "
+        "Would you like me to send this through for final booking review?"
+    )
+    return {
+        "draft_type": "sam_chatwoot_meat_preorder_followup",
+        "mode": "owner_review_customer_followup_draft_only",
+        "message": _clean_text(message, 1600),
+        "owner_checks": [
+            "Owner must review this draft before Sam or Chatwoot sends anything.",
+            "This draft must not be treated as a formal quote PDF, order, preorder, stock reservation, or deposit request.",
+            "If the customer accepts, the next build must still create a separate owner-reviewed booking/order/deposit rail.",
+        ],
+        "target_transport": "sam_chatwoot_whatsapp_review",
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_n8n": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "writes_farm_data": False,
+    }
+
+
 def build_preorder_deposit_contract_from_lead(lead):
     lead = lead if isinstance(lead, dict) else {}
     interest = _merged_sales_lead_interest(lead)

@@ -85,6 +85,7 @@ from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.sales_campaign_store import (
     get_sales_lead_preorder_contract,
+    get_sales_lead_customer_followup_draft,
     list_sales_campaigns,
     list_sales_leads,
     list_sales_outreach_drafts,
@@ -383,6 +384,15 @@ def oom_sakkie_sales_lead_preorder_contract(lead_id):
     if denied:
         return denied
     result, status_code = get_sales_lead_preorder_contract(lead_id)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/customer-followup-draft", methods=["GET"])
+def oom_sakkie_sales_lead_customer_followup_draft(lead_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = get_sales_lead_customer_followup_draft(lead_id)
     return jsonify(result), status_code
 
 

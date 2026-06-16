@@ -1059,6 +1059,39 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["changes_stock"])
         mock_contract.assert_called_once_with("OSK-SALES-LEAD-TEST")
 
+    @patch("modules.oom_sakkie.routes.get_sales_lead_customer_followup_draft")
+    def test_sales_lead_customer_followup_draft_route_is_review_only(self, mock_draft):
+        mock_draft.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "owner_review_customer_followup_draft_only",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "customer_followup_draft": {
+                "mode": "owner_review_customer_followup_draft_only",
+                "message": "Hi Charl, approved review draft.",
+            },
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-leads/OSK-SALES-LEAD-TEST/customer-followup-draft")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "owner_review_customer_followup_draft_only")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_quote"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_draft.assert_called_once_with("OSK-SALES-LEAD-TEST")
+
     @patch("modules.oom_sakkie.routes.list_sales_leads")
     def test_sales_lead_routes_are_review_gated(self, mock_list):
         response = self.client.get(

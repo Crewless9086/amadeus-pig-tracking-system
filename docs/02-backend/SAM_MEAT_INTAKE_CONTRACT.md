@@ -100,6 +100,20 @@ This records an `owner_money_path_approved` event only. It does not send a custo
 
 After this event exists, `GET /api/oom-sakkie/sales-leads/<lead_id>/preorder-contract` merges Sam facts plus the owner approval event and returns `contract_status = owner_money_path_ready` when no money-path fields are missing.
 
+## Customer Follow-Up Draft
+
+Review-gated endpoint:
+
+```text
+GET /api/oom-sakkie/sales-leads/<lead_id>/customer-followup-draft
+```
+
+This endpoint only works when the preorder contract is `owner_money_path_ready`.
+
+It returns a deterministic owner-review customer draft for Sam/Chatwoot wording. It does not store a send request, send a message, call Chatwoot/n8n, create a quote/order/preorder, reserve stock, update allocation, or perform a financial action.
+
+The draft asks the buyer whether they want the approved details sent through for final booking review. Customer acceptance must still go through a separate owner-reviewed booking/order/deposit rail before any real order, deposit request, stock reservation, or formal quote workflow exists.
+
 ## Payload
 
 ```json

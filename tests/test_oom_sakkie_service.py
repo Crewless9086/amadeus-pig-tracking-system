@@ -160,7 +160,9 @@ from modules.oom_sakkie.sales_campaign_store import (
     _sales_campaign_params,
     approve_first_waiting_sales_campaign,
     build_owner_money_path_approval_event_payload,
+    build_customer_followup_draft_from_contract,
     build_preorder_deposit_contract_from_lead,
+    get_sales_lead_customer_followup_draft,
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
@@ -5233,6 +5235,106 @@ def literal_false_is_allowed():
         self.assertFalse(contract["sends_customer_message"])
         self.assertFalse(contract["creates_order"])
         self.assertFalse(contract["changes_stock"])
+
+    def test_customer_followup_draft_from_ready_contract_is_owner_review_only(self):
+        draft = build_customer_followup_draft_from_contract({
+            "contract_status": "owner_money_path_ready",
+            "lead_summary": {
+                "buyer_or_contact": "Charl N - half carcass Set A",
+                "product": "Half carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+            },
+            "required_before_money_path": {
+                "price_per_kg": "R95/kg",
+                "available_week": "week of 2026-06-22",
+                "estimated_weight_or_size": "half carcass final weight to be confirmed",
+                "deposit_amount_or_rule": "50% deposit after customer accepts owner-approved quote",
+                "payment_method": "EFT",
+                "delivery_or_collection": "collection",
+                "owner_final_approval": "Charl approved for manual customer follow-up",
+            },
+        })
+
+        self.assertEqual(draft["mode"], "owner_review_customer_followup_draft_only")
+        self.assertIn("R95/kg", draft["message"])
+        self.assertIn("week of 2026-06-22", draft["message"])
+        self.assertIn("Would you like me to send this through for final booking review?", draft["message"])
+        self.assertFalse(draft["sends_customer_message"])
+        self.assertFalse(draft["calls_chatwoot"])
+        self.assertFalse(draft["calls_n8n"])
+        self.assertFalse(draft["creates_quote"])
+        self.assertFalse(draft["creates_order"])
+        self.assertFalse(draft["changes_stock"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    def test_customer_followup_draft_requires_owner_money_path_ready_contract(self, mock_contract):
+        mock_contract.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "contract": {
+                "contract_status": "needs_owner_confirmation",
+                "missing_fields": ["price_per_kg"],
+                "missing_core_context": [],
+            },
+            "sends_customer_message": False,
+            "creates_order": False,
+        }, 200)
+
+        result, status_code = get_sales_lead_customer_followup_draft("OSK-SALES-LEAD-TEST")
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_money_path_not_ready")
+        self.assertIn("price_per_kg", result["missing_fields"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    def test_customer_followup_draft_from_lead_returns_review_only_packet(self, mock_contract):
+        mock_contract.return_value = ({
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "lead": {"lead_id": "OSK-SALES-LEAD-TEST"},
+            "contract": {
+                "contract_status": "owner_money_path_ready",
+                "lead_summary": {
+                    "buyer_or_contact": "Charl N",
+                    "product": "Half carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                },
+                "required_before_money_path": {
+                    "price_per_kg": "R95/kg",
+                    "available_week": "week of 2026-06-22",
+                    "estimated_weight_or_size": "half carcass final weight to be confirmed",
+                    "deposit_amount_or_rule": "50% deposit after customer accepts owner-approved quote",
+                    "payment_method": "EFT",
+                    "delivery_or_collection": "collection",
+                    "owner_final_approval": "Charl approved for manual customer follow-up",
+                },
+            },
+            "sends_customer_message": False,
+            "creates_order": False,
+        }, 200)
+
+        result, status_code = get_sales_lead_customer_followup_draft("OSK-SALES-LEAD-TEST")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "owner_review_customer_followup_draft_only")
+        self.assertIn("customer_followup_draft", result)
+        self.assertIn("R95/kg", result["customer_followup_draft"]["message"])
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["calls_chatwoot"])
+        self.assertFalse(result["calls_n8n"])
+        self.assertFalse(result["creates_quote"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["changes_stock"])
 
     def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({
