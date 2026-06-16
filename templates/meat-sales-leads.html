@@ -114,6 +114,18 @@
             <p id="meat_lead_send_status" class="ops-footnote">No order, quote, or stock change is made from this page.</p>
           </section>
 
+          <section class="meat-lead-order-gate" aria-label="Draft order gate">
+            <div class="form-group">
+              <label for="meat_lead_customer_confirmation">Customer booking confirmation</label>
+              <textarea id="meat_lead_customer_confirmation" rows="3" placeholder="Customer said yes, please book it."></textarea>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_lead_record_customer_yes" class="button-link button-link-secondary">Record Customer Yes</button>
+              <button type="button" id="meat_lead_create_draft_order" class="button-link">Create Draft Order</button>
+            </div>
+            <p id="meat_lead_order_status" class="ops-footnote">Draft order only. No pig reservation or stock change.</p>
+          </section>
+
           <section class="meat-lead-events" aria-label="Lead history">
             <h3>History</h3>
             <div id="meat_lead_events" class="ops-list"></div>

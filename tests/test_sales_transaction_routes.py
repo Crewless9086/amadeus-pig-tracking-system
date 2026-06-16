@@ -366,6 +366,53 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         send_followup.assert_called_once_with("OSK-SALES-LEAD-1", {"message": "Approved text"})
 
+    def test_meat_sales_lead_customer_booking_confirmation_route_records_event(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "records_customer_booking_confirmation": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_customer_booking_confirmation",
+            return_value=(service_result, 201),
+        ) as record_confirmation:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-booking-confirmation",
+                json={"customer_confirmation": "Yes, please book it."},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_confirmation.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"customer_confirmation": "Yes, please book it."},
+        )
+
+    def test_meat_sales_lead_draft_order_route_creates_draft_order(self):
+        service_result = {
+            "success": True,
+            "status": "draft_order_created",
+            "order_id": "ORD-2026-TEST",
+            "creates_order": True,
+            "writes_farm_data": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "create_draft_order_from_sales_lead",
+            return_value=(service_result, 201),
+        ) as create_draft_order:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/draft-order",
+                json={"created_by": "Farm App"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        create_draft_order.assert_called_once_with("OSK-SALES-LEAD-1", {"created_by": "Farm App"})
+
 
 if __name__ == "__main__":
     unittest.main()

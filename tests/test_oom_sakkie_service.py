@@ -162,9 +162,12 @@ from modules.oom_sakkie.sales_campaign_store import (
     build_owner_money_path_approval_event_payload,
     build_customer_followup_draft_from_contract,
     build_customer_followup_send_design_from_draft,
+    build_draft_order_payload_from_sales_lead,
     build_preorder_deposit_contract_from_lead,
+    create_draft_order_from_sales_lead,
     get_sales_lead_customer_followup_draft,
     get_sales_lead_customer_followup_send_design,
+    record_customer_booking_confirmation,
     record_customer_followup_send_approval,
     record_sales_campaign_event,
     record_sales_lead,
@@ -5474,6 +5477,171 @@ def literal_false_is_allowed():
         self.assertEqual(notes["kind"], "customer_followup_send_approval")
         self.assertEqual(notes["message"], "Approved exact message.")
         self.assertEqual(notes["approved_by"], "Charl")
+
+    def test_draft_order_payload_from_sales_lead_maps_contract_to_order_header(self):
+        payload = build_draft_order_payload_from_sales_lead(
+            {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "contact_label": "Charl N",
+                "channel": "chatwoot_whatsapp",
+                "chatwoot_conversation_id": "1808",
+                "interest": {"location": "Riversdale"},
+            },
+            {
+                "lead_summary": {
+                    "product": "Half Carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                },
+                "required_before_money_path": {
+                    "price_per_kg": "R100.00",
+                    "available_week": "next available week",
+                    "estimated_weight_or_size": "25kg",
+                    "deposit_amount_or_rule": "50% pre-order, 50% preslaughter",
+                    "payment_method": "EFT",
+                },
+            },
+            {"customer_confirmation": "Yes, please book it."},
+            {"created_by": "Farm App"},
+        )
+
+        self.assertEqual(payload["customer_name"], "Charl N")
+        self.assertEqual(payload["customer_channel"], "WhatsApp")
+        self.assertEqual(payload["order_source"], "Sam Meat Preorder")
+        self.assertEqual(payload["requested_category"], "Slaughter")
+        self.assertEqual(payload["requested_weight_range"], "25kg")
+        self.assertEqual(payload["quoted_total"], 2500.0)
+        self.assertEqual(payload["collection_location"], "Riversdale")
+        self.assertEqual(payload["payment_method"], "EFT")
+        self.assertEqual(payload["conversation_id"], "1808")
+        self.assertIn("Deposit rule: 50% pre-order, 50% preslaughter", payload["notes"])
+        self.assertIn("Customer confirmation: Yes, please book it.", payload["notes"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.record_sales_lead_event")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    def test_customer_booking_confirmation_requires_ready_money_path_and_records_event(self, mock_contract, mock_event):
+        mock_contract.return_value = ({
+            "success": True,
+            "configured": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "contract": {
+                "contract_status": "owner_money_path_ready",
+                "lead_summary": {"product": "Half Carcass"},
+                "required_before_money_path": {"price_per_kg": "R100.00"},
+            },
+        }, 200)
+        mock_event.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-SALES-LEAD-EVENT-CUSTOMER-YES",
+        }, 201)
+
+        result, status_code = record_customer_booking_confirmation(
+            "OSK-SALES-LEAD-TEST",
+            {"customer_confirmation": "Yes, please book it.", "confirmed_by": "Sam"},
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["records_customer_booking_confirmation"])
+        event_payload = mock_event.call_args.args[1]
+        self.assertEqual(event_payload["event_type"], "customer_booking_confirmed")
+        notes = json.loads(event_payload["notes"])
+        self.assertEqual(notes["kind"], "customer_booking_confirmation")
+        self.assertEqual(notes["customer_confirmation"], "Yes, please book it.")
+
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    def test_draft_order_create_requires_customer_booking_confirmation(self, mock_contract):
+        mock_contract.return_value = ({
+            "success": True,
+            "configured": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "lead": {"lead_id": "OSK-SALES-LEAD-TEST", "events": []},
+            "contract": {
+                "contract_status": "owner_money_path_ready",
+                "lead_summary": {"product": "Half Carcass"},
+                "required_before_money_path": {"price_per_kg": "R100.00"},
+            },
+        }, 200)
+
+        result, status_code = create_draft_order_from_sales_lead(
+            "OSK-SALES-LEAD-TEST",
+            {"created_by": "Farm App"},
+            database_url="postgresql://example",
+            order_creator=Mock(),
+        )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "customer_booking_confirmation_required")
+        self.assertFalse(result["creates_order"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.record_sales_lead_event")
+    @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
+    def test_draft_order_create_writes_order_and_records_link_event(self, mock_contract, mock_event):
+        confirmation_notes = json.dumps({
+            "kind": "customer_booking_confirmation",
+            "customer_confirmation": "Yes, please book it.",
+        })
+        mock_contract.return_value = ({
+            "success": True,
+            "configured": True,
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "contact_label": "Charl N",
+                "channel": "chatwoot_whatsapp",
+                "chatwoot_conversation_id": "1808",
+                "interest": {"location": "Riversdale"},
+                "events": [{
+                    "event_type": "customer_booking_confirmed",
+                    "notes": confirmation_notes,
+                }],
+            },
+            "contract": {
+                "contract_status": "owner_money_path_ready",
+                "lead_summary": {
+                    "product": "Half Carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                },
+                "required_before_money_path": {
+                    "price_per_kg": "R100.00",
+                    "available_week": "next available week",
+                    "estimated_weight_or_size": "25kg",
+                    "deposit_amount_or_rule": "50% pre-order, 50% preslaughter",
+                    "payment_method": "EFT",
+                },
+            },
+        }, 200)
+        mock_event.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-SALES-LEAD-EVENT-DRAFT-ORDER",
+        }, 201)
+        order_creator = Mock(return_value={"success": True, "order_id": "ORD-2026-TEST"})
+
+        result, status_code = create_draft_order_from_sales_lead(
+            "OSK-SALES-LEAD-TEST",
+            {"created_by": "Farm App"},
+            database_url="postgresql://example",
+            order_creator=order_creator,
+        )
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "draft_order_created")
+        self.assertEqual(result["order_id"], "ORD-2026-TEST")
+        self.assertTrue(result["creates_order"])
+        self.assertTrue(result["writes_farm_data"])
+        order_payload = order_creator.call_args.args[0]
+        self.assertEqual(order_payload["quoted_total"], 2500.0)
+        event_payload = mock_event.call_args.args[1]
+        self.assertEqual(event_payload["event_type"], "draft_order_created")
+        event_notes = json.loads(event_payload["notes"])
+        self.assertEqual(event_notes["order_id"], "ORD-2026-TEST")
+        self.assertEqual(event_notes["deposit_status"], "Pending")
 
     @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_preorder_contract")
     @patch("modules.oom_sakkie.sales_campaign_store.get_sales_lead_customer_followup_send_design")

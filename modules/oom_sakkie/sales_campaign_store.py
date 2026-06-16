@@ -24,6 +24,8 @@ SALES_LEAD_EVENT_TYPES = {
     "customer_followup_send_attempted",
     "customer_followup_sent",
     "customer_followup_send_failed",
+    "customer_booking_confirmed",
+    "draft_order_created",
     "deposit_followup_needed",
     "linked_order_observed",
     "closed",
@@ -874,6 +876,190 @@ def record_customer_followup_send_approval(lead_id, payload, database_url=None):
     return result, status_code
 
 
+def record_customer_booking_confirmation(lead_id, payload, database_url=None):
+    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    if contract_status != 200:
+        return contract_result, contract_status
+
+    contract = contract_result.get("contract") if isinstance(contract_result.get("contract"), dict) else {}
+    if contract.get("contract_status") != "owner_money_path_ready":
+        return {
+            "success": False,
+            "configured": contract_result.get("configured", True),
+            "status": "owner_money_path_not_ready",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "contract_status": contract.get("contract_status", ""),
+            "missing_fields": contract.get("missing_fields") or [],
+            "next_gate": "owner_money_path_approval_before_customer_booking_confirmation",
+            **_false_flags(),
+        }, 409
+
+    payload = payload if isinstance(payload, dict) else {}
+    customer_confirmation = _clean_text(
+        payload.get("customer_confirmation") or payload.get("confirmation") or payload.get("message") or "",
+        800,
+    )
+    if not customer_confirmation:
+        return {"success": False, "status": "customer_confirmation_required", **_false_flags()}, 400
+
+    confirmation = {
+        "source": "sam_chatwoot_customer_confirmation",
+        "kind": "customer_booking_confirmation",
+        "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+        "customer_confirmation": customer_confirmation,
+        "confirmed_by": _clean_text(payload.get("confirmed_by") or payload.get("recorded_by") or "Sam", 80),
+        "confirmation_channel": _clean_text(payload.get("confirmation_channel") or "chatwoot", 80),
+        "contract_snapshot": {
+            "lead_summary": contract.get("lead_summary") or {},
+            "required_before_money_path": contract.get("required_before_money_path") or {},
+        },
+    }
+    event_payload = {
+        "event_type": "customer_booking_confirmed",
+        "status_observed": "order_ready_for_approval",
+        "recorded_by": confirmation["confirmed_by"],
+        "notes": _json(confirmation),
+    }
+    result, status_code = record_sales_lead_event(lead_id, event_payload, database_url=database_url)
+    if status_code != 201:
+        return result, status_code
+    result.update({
+        "mode": "customer_booking_confirmation_event_only",
+        "confirmation": confirmation,
+        "records_customer_booking_confirmation": True,
+        "next_gate": "create_draft_order_after_customer_booking_confirmation",
+    })
+    return result, status_code
+
+
+def create_draft_order_from_sales_lead(lead_id, payload=None, database_url=None, order_creator=None):
+    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    if contract_status != 200:
+        return contract_result, contract_status
+
+    lead = contract_result.get("lead") if isinstance(contract_result.get("lead"), dict) else {}
+    contract = contract_result.get("contract") if isinstance(contract_result.get("contract"), dict) else {}
+    if contract.get("contract_status") != "owner_money_path_ready":
+        return {
+            "success": False,
+            "configured": contract_result.get("configured", True),
+            "status": "owner_money_path_not_ready",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "contract_status": contract.get("contract_status", ""),
+            "missing_fields": contract.get("missing_fields") or [],
+            "creates_order": False,
+            **{k: v for k, v in _false_flags().items() if k != "creates_order"},
+        }, 409
+
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    existing_order = _latest_draft_order_created_event({"events": events})
+    if existing_order.get("order_id"):
+        return {
+            "success": True,
+            "configured": contract_result.get("configured", True),
+            "status": "draft_order_already_created",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "order_id": existing_order.get("order_id"),
+            "order_url": f"/orders/{existing_order.get('order_id')}",
+            "skipped": True,
+            "creates_order": False,
+            **{k: v for k, v in _false_flags().items() if k != "creates_order"},
+        }, 200
+
+    confirmation = _latest_customer_booking_confirmation({"events": events})
+    if not confirmation.get("customer_confirmation"):
+        return {
+            "success": False,
+            "configured": contract_result.get("configured", True),
+            "status": "customer_booking_confirmation_required",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "next_gate": "record_customer_booking_confirmation_before_draft_order",
+            "creates_order": False,
+            **{k: v for k, v in _false_flags().items() if k != "creates_order"},
+        }, 409
+
+    order_payload = build_draft_order_payload_from_sales_lead(lead, contract, confirmation, payload or {})
+    try:
+        if order_creator is None:
+            from modules.orders.order_service import create_order as order_creator
+        order_result = order_creator(order_payload)
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": contract_result.get("configured", True),
+            "status": "draft_order_create_failed",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "error_type": exc.__class__.__name__,
+            "error": str(exc),
+            "creates_order": False,
+            **{k: v for k, v in _false_flags().items() if k != "creates_order"},
+        }, 502
+
+    order_id = _clean_text(order_result.get("order_id") if isinstance(order_result, dict) else "", 100)
+    if not order_id:
+        return {
+            "success": False,
+            "configured": contract_result.get("configured", True),
+            "status": "draft_order_id_missing",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "order_result": order_result if isinstance(order_result, dict) else {},
+            "creates_order": False,
+            **{k: v for k, v in _false_flags().items() if k != "creates_order"},
+        }, 502
+
+    event_notes = {
+        "source": "farm_app_meat_leads",
+        "kind": "draft_order_created",
+        "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+        "order_id": order_id,
+        "order_url": f"/orders/{order_id}",
+        "deposit_status": "Pending",
+        "order_payload": order_payload,
+        "customer_confirmation": confirmation.get("customer_confirmation", ""),
+    }
+    event_result, event_status = record_sales_lead_event(
+        lead_id,
+        {
+            "event_type": "draft_order_created",
+            "status_observed": "order_ready_for_approval",
+            "recorded_by": _clean_text((payload or {}).get("created_by") or "Farm App", 80),
+            "notes": _json(event_notes),
+        },
+        database_url=database_url,
+    )
+    if event_status != 201:
+        return {
+            "success": True,
+            "configured": contract_result.get("configured", True),
+            "status": "draft_order_created_lead_link_failed",
+            "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+            "order_id": order_id,
+            "order_url": f"/orders/{order_id}",
+            "order_result": order_result,
+            "lead_event_error": event_result,
+            "creates_order": True,
+            "writes_farm_data": True,
+            **{k: v for k, v in _false_flags().items() if k not in {"creates_order", "writes_farm_data"}},
+        }, 207
+
+    return {
+        "success": True,
+        "configured": contract_result.get("configured", True),
+        "status": "draft_order_created",
+        "mode": "farm_app_meat_preorder_draft_order_created",
+        "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+        "order_id": order_id,
+        "order_url": f"/orders/{order_id}",
+        "order_result": order_result,
+        "lead_event": event_result,
+        "deposit_status": "Pending",
+        "next_gate": "operator_reviews_draft_order_and_deposit_before_reservation_or_completion",
+        "creates_order": True,
+        "writes_farm_data": True,
+        **{k: v for k, v in _false_flags().items() if k not in {"creates_order", "writes_farm_data"}},
+    }, 201
+
+
 def send_customer_followup_to_chatwoot(lead_id, payload, database_url=None, chatwoot_sender=None):
     payload = payload if isinstance(payload, dict) else {}
     message = _clean_text(payload.get("message"), 1600)
@@ -1325,6 +1511,163 @@ def _latest_customer_followup_send_approval(lead):
             if _clean_text(snapshot.get(key), 1800)
         }
     return approval
+
+
+def _latest_customer_booking_confirmation(lead):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    confirmation = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "customer_booking_confirmed":
+            continue
+        snapshot = _parse_json_object(event.get("notes", ""))
+        if snapshot.get("kind") != "customer_booking_confirmation":
+            continue
+        confirmation = {
+            key: _clean_text(snapshot.get(key), 1800)
+            for key in (
+                "lead_id",
+                "customer_confirmation",
+                "confirmed_by",
+                "confirmation_channel",
+            )
+            if _clean_text(snapshot.get(key), 1800)
+        }
+    return confirmation
+
+
+def _latest_draft_order_created_event(lead):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    order_event = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "draft_order_created":
+            continue
+        snapshot = _parse_json_object(event.get("notes", ""))
+        if snapshot.get("kind") != "draft_order_created":
+            continue
+        order_event = {
+            key: _clean_text(snapshot.get(key), 1800)
+            for key in (
+                "lead_id",
+                "order_id",
+                "order_url",
+                "deposit_status",
+            )
+            if _clean_text(snapshot.get(key), 1800)
+        }
+    return order_event
+
+
+def build_draft_order_payload_from_sales_lead(lead, contract, confirmation=None, overrides=None):
+    lead = lead if isinstance(lead, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+    confirmation = confirmation if isinstance(confirmation, dict) else {}
+    overrides = overrides if isinstance(overrides, dict) else {}
+    summary = contract.get("lead_summary") if isinstance(contract.get("lead_summary"), dict) else {}
+    required = contract.get("required_before_money_path") if isinstance(contract.get("required_before_money_path"), dict) else {}
+    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+
+    product = _clean_text(summary.get("product") or interest.get("product") or interest.get("product_type") or "Meat preorder", 120)
+    cut_set = _clean_text(summary.get("cut_set") or interest.get("cut_set"), 120)
+    quoted_total = _estimate_meat_preorder_total(
+        overrides.get("price_per_kg") or required.get("price_per_kg"),
+        overrides.get("estimated_weight_or_size") or required.get("estimated_weight_or_size"),
+    )
+    notes_parts = [
+        f"Sales lead: {_clean_text(lead.get('lead_id'), 100)}",
+        f"Product: {product}",
+        f"Cut set: {cut_set}",
+        f"Price/kg: {_clean_text(required.get('price_per_kg'), 80)}",
+        f"Estimated weight/size: {_clean_text(required.get('estimated_weight_or_size'), 120)}",
+        f"Available week: {_clean_text(required.get('available_week'), 120)}",
+        f"Deposit rule: {_clean_text(required.get('deposit_amount_or_rule'), 180)}",
+        f"Customer confirmation: {_clean_text(confirmation.get('customer_confirmation'), 240)}",
+    ]
+    return {
+        "order_date": datetime.now(timezone.utc).date().isoformat(),
+        "customer_name": _clean_text(
+            overrides.get("customer_name") or lead.get("contact_label") or summary.get("buyer_or_contact") or lead.get("lead_label"),
+            120,
+        ) or "Unknown meat preorder customer",
+        "customer_phone": _clean_text(overrides.get("customer_phone") or interest.get("customer_phone"), 80),
+        "customer_channel": _normal_order_channel(overrides.get("customer_channel") or lead.get("channel")),
+        "customer_language": _clean_text(overrides.get("customer_language") or "English", 40),
+        "order_source": _clean_text(overrides.get("order_source") or "Sam Meat Preorder", 80),
+        "requested_category": _clean_text(overrides.get("requested_category") or "Slaughter", 80),
+        "requested_weight_range": _clean_text(
+            overrides.get("requested_weight_range") or required.get("estimated_weight_or_size") or cut_set,
+            80,
+        ),
+        "requested_sex": _clean_text(overrides.get("requested_sex") or "Any", 40),
+        "requested_quantity": 1,
+        "quoted_total": quoted_total if quoted_total is not None else "",
+        "collection_location": _normal_order_collection_location(
+            overrides.get("collection_location") or summary.get("location") or interest.get("location")
+        ),
+        "payment_method": _normal_order_payment_method(overrides.get("payment_method") or required.get("payment_method")),
+        "notes": " | ".join(part for part in notes_parts if not part.endswith(": ")),
+        "created_by": _clean_text(overrides.get("created_by") or "Farm App", 80),
+        "conversation_id": _clean_text(overrides.get("conversation_id") or lead.get("chatwoot_conversation_id"), 100),
+    }
+
+
+def _normal_order_collection_location(value):
+    value = _clean_text(value, 80)
+    if value in {"Riversdale", "Albertinia", "Any"}:
+        return value
+    return "Any"
+
+
+def _normal_order_payment_method(value):
+    value = _clean_text(value, 80).upper()
+    if value == "EFT":
+        return "EFT"
+    if value == "CASH":
+        return "Cash"
+    return ""
+
+
+def _normal_order_channel(value):
+    value = _clean_text(value, 80).lower()
+    if "whatsapp" in value:
+        return "WhatsApp"
+    if "messenger" in value or "facebook" in value:
+        return "Facebook"
+    if "insta" in value:
+        return "Instagram"
+    if "email" in value:
+        return "Email"
+    return _clean_text(value, 80) or "Chatwoot"
+
+
+def _estimate_meat_preorder_total(price_per_kg, estimated_weight_or_size):
+    price = _first_number(price_per_kg)
+    weight = _first_number(estimated_weight_or_size)
+    if price is None or weight is None:
+        return None
+    return round(price * weight, 2)
+
+
+def _first_number(value):
+    text = _clean_text(value, 120).replace(",", ".")
+    digits = []
+    started = False
+    for char in text:
+        if char.isdigit() or (char == "." and started):
+            digits.append(char)
+            started = True
+            continue
+        if started:
+            break
+    if not digits:
+        return None
+    try:
+        return float("".join(digits).strip("."))
+    except ValueError:
+        return None
 
 
 def _customer_followup_already_sent(events, message):

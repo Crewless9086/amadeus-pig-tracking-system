@@ -35,6 +35,10 @@
     approveMessage: byId("meat_lead_approve_message"),
     sendMessage: byId("meat_lead_send_message"),
     sendStatus: byId("meat_lead_send_status"),
+    customerConfirmation: byId("meat_lead_customer_confirmation"),
+    recordCustomerYes: byId("meat_lead_record_customer_yes"),
+    createDraftOrder: byId("meat_lead_create_draft_order"),
+    orderStatus: byId("meat_lead_order_status"),
     events: byId("meat_lead_events"),
   };
 
@@ -57,6 +61,24 @@
 
   const latestEventType = (lead) => safe(lead?.latest_event?.event_type, "");
 
+  const leadEvents = () => {
+    const lead = state.contract?.lead || {};
+    return Array.isArray(lead.events) ? lead.events : [];
+  };
+
+  const hasLoadedEvent = (type) => leadEvents().some((event) => event.event_type === type);
+
+  const latestDraftOrderEvent = () => {
+    const events = leadEvents();
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event.event_type !== "draft_order_created") continue;
+      const notes = typeof event.notes === "object" && event.notes ? event.notes : {};
+      if (notes.order_id) return notes;
+    }
+    return {};
+  };
+
   const setMessage = (text, tone = "") => {
     elements.message.textContent = text || "";
     elements.message.classList.toggle("hidden", !text);
@@ -70,6 +92,8 @@
       elements.buildPreview,
       elements.approveMessage,
       elements.sendMessage,
+      elements.recordCustomerYes,
+      elements.createDraftOrder,
     ].forEach((button) => {
       if (button) button.disabled = busy;
     });
@@ -83,6 +107,7 @@
     elements.paymentMethod,
     elements.deliveryCollection,
     elements.ownerApproval,
+    elements.customerConfirmation,
   ];
 
   const setDetailEnabled = (enabled) => {
@@ -97,6 +122,7 @@
       if (input) input.value = "";
     });
     elements.preview.value = "";
+    elements.orderStatus.textContent = "Draft order only. No pig reservation or stock change.";
   };
 
   const fetchJson = async (url, options = {}) => {
@@ -221,6 +247,8 @@
       elements.buildPreview.disabled = true;
       elements.approveMessage.disabled = true;
       elements.sendMessage.disabled = true;
+      elements.recordCustomerYes.disabled = true;
+      elements.createDraftOrder.disabled = true;
       return;
     }
 
@@ -237,6 +265,14 @@
     elements.buildPreview.disabled = !hasLead;
     elements.approveMessage.disabled = !hasLead || !elements.preview.value.trim();
     elements.sendMessage.disabled = !hasLead || !elements.preview.value.trim() || !state.messageApproved;
+    elements.recordCustomerYes.disabled = !hasLoadedContract || !elements.customerConfirmation.value.trim();
+    elements.createDraftOrder.disabled = !hasLoadedContract || !hasLoadedEvent("customer_booking_confirmed");
+
+    const draftOrder = latestDraftOrderEvent();
+    if (draftOrder.order_id) {
+      elements.orderStatus.innerHTML = `Draft order created: <a href="/orders/${encodeURIComponent(draftOrder.order_id)}">${draftOrder.order_id}</a>`;
+      elements.createDraftOrder.disabled = true;
+    }
   };
 
   const loadLeads = async () => {
@@ -263,7 +299,9 @@
     state.draft = null;
     state.messageApproved = false;
     elements.preview.value = "";
+    elements.customerConfirmation.value = "";
     elements.sendStatus.textContent = "No order, quote, or stock change is made from this page.";
+    elements.orderStatus.textContent = "Draft order only. No pig reservation or stock change.";
     renderDetail();
   }
 
@@ -383,11 +421,63 @@
     }
   };
 
+  const recordCustomerYes = async () => {
+    const customerConfirmation = elements.customerConfirmation.value.trim();
+    if (!state.selectedLeadId || !customerConfirmation) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-booking-confirmation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_confirmation: customerConfirmation,
+          confirmed_by: "Farm App",
+          confirmation_channel: "chatwoot",
+        }),
+      });
+      await loadLeadDetail(state.selectedLeadId);
+      elements.orderStatus.textContent = "Customer yes recorded. Draft order can now be created.";
+      setMessage("Customer booking confirmation recorded.", "success");
+    } catch (error) {
+      setMessage(`Could not record customer yes: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
+  const createDraftOrder = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/draft-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ created_by: "Farm App" }),
+      });
+      elements.orderStatus.innerHTML = payload.order_id
+        ? `Draft order created: <a href="/orders/${encodeURIComponent(payload.order_id)}">${payload.order_id}</a>`
+        : safe(payload.status, "Draft order handled.");
+      await loadLeadDetail(state.selectedLeadId);
+      setMessage("Draft order created.", "success");
+    } catch (error) {
+      setMessage(`Could not create draft order: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
   elements.refresh.addEventListener("click", loadLeads);
   elements.form.addEventListener("submit", approveDetails);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);
+  elements.customerConfirmation.addEventListener("input", renderDetail);
+  elements.recordCustomerYes.addEventListener("click", recordCustomerYes);
+  elements.createDraftOrder.addEventListener("click", createDraftOrder);
 
   clearDetailFields();
   setDetailEnabled(false);

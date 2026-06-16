@@ -3,9 +3,11 @@ import os
 from flask import Blueprint, jsonify, request
 
 from modules.oom_sakkie.sales_campaign_store import (
+    create_draft_order_from_sales_lead,
     get_sales_lead_customer_followup_draft,
     get_sales_lead_preorder_contract,
     list_sales_leads,
+    record_customer_booking_confirmation,
     record_customer_followup_send_approval,
     record_owner_money_path_approval,
     send_customer_followup_to_chatwoot,
@@ -157,4 +159,18 @@ def meat_sales_lead_customer_followup_send(lead_id):
         }), 503
     payload = request.get_json(silent=True) or {}
     result, status_code = send_customer_followup_to_chatwoot(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/customer-booking-confirmation", methods=["POST"])
+def meat_sales_lead_customer_booking_confirmation(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_customer_booking_confirmation(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/draft-order", methods=["POST"])
+def meat_sales_lead_draft_order(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = create_draft_order_from_sales_lead(lead_id, payload)
     return jsonify(result), status_code
