@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meat Leads</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/meatSalesLeads.css') }}">
+</head>
+<body>
+  <div class="page-shell meat-leads-shell">
+    <div class="page-card meat-leads-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Meat Leads</h1>
+          <p id="meat_leads_subtitle">Sam-captured pork interest, owner approval, and Chatwoot follow-up.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/sales-dashboard">Sales Overview</a>
+          <a href="/meat-planning">Meat Planning</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="meat_leads_message" class="message-box hidden"></div>
+
+      <section class="summary-metric-grid meat-leads-summary" aria-label="Meat lead summary">
+        <article>
+          <span>Open Leads</span>
+          <strong id="meat_leads_open_count">--</strong>
+        </article>
+        <article>
+          <span>Need Owner</span>
+          <strong id="meat_leads_need_price_count">--</strong>
+        </article>
+        <article>
+          <span>Ready To Send</span>
+          <strong id="meat_leads_ready_count">--</strong>
+        </article>
+        <article>
+          <span>Already Sent</span>
+          <strong id="meat_leads_sent_count">--</strong>
+        </article>
+      </section>
+
+      <section class="meat-leads-workflow">
+        <div class="meat-leads-list-panel">
+          <div class="page-header section-header-compact">
+            <div>
+              <h2>Leads</h2>
+              <p id="meat_leads_count">Loading meat leads...</p>
+            </div>
+            <button type="button" id="meat_leads_refresh" class="button-link button-link-secondary">Refresh</button>
+          </div>
+          <div id="meat_leads_list" class="meat-leads-list" aria-label="Meat sales leads"></div>
+        </div>
+
+        <div class="meat-leads-detail-panel">
+          <div class="page-header section-header-compact">
+            <div>
+              <h2 id="meat_lead_detail_title">Select a lead</h2>
+              <p id="meat_lead_detail_status">Lead details will show here.</p>
+            </div>
+          </div>
+
+          <section id="meat_lead_facts" class="meat-lead-facts" aria-label="Sam lead facts"></section>
+
+          <form id="meat_lead_approval_form" class="meat-lead-form" autocomplete="off">
+            <div class="meat-lead-form-grid">
+              <div class="form-group">
+                <label for="meat_lead_price_per_kg">Price / kg</label>
+                <input type="text" id="meat_lead_price_per_kg" placeholder="R100.00" />
+              </div>
+              <div class="form-group">
+                <label for="meat_lead_available_week">Available week</label>
+                <input type="text" id="meat_lead_available_week" placeholder="next available week" />
+              </div>
+              <div class="form-group">
+                <label for="meat_lead_weight_size">Weight / size</label>
+                <input type="text" id="meat_lead_weight_size" placeholder="25kg" />
+              </div>
+              <div class="form-group">
+                <label for="meat_lead_deposit_rule">Deposit rule</label>
+                <input type="text" id="meat_lead_deposit_rule" placeholder="50% pre-order, 50% preslaughter" />
+              </div>
+              <div class="form-group">
+                <label for="meat_lead_payment_method">Payment</label>
+                <input type="text" id="meat_lead_payment_method" placeholder="EFT" />
+              </div>
+              <div class="form-group">
+                <label for="meat_lead_delivery_collection">Delivery / collection</label>
+                <input type="text" id="meat_lead_delivery_collection" placeholder="collection" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="meat_lead_owner_approval">Owner approval wording</label>
+              <input type="text" id="meat_lead_owner_approval" placeholder="Yes" />
+            </div>
+            <div class="meat-lead-actions">
+              <button type="submit" id="meat_lead_approve_details" class="button-link">Approve Details</button>
+              <button type="button" id="meat_lead_build_preview" class="button-link button-link-secondary">Build Preview</button>
+            </div>
+          </form>
+
+          <section class="meat-lead-preview" aria-label="Customer follow-up preview">
+            <div class="form-group">
+              <label for="meat_lead_message_preview">Sam message preview</label>
+              <textarea id="meat_lead_message_preview" rows="6" readonly></textarea>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_lead_approve_message" class="button-link button-link-secondary">Approve Message</button>
+              <button type="button" id="meat_lead_send_message" class="button-link">Send Via Chatwoot</button>
+            </div>
+            <p id="meat_lead_send_status" class="ops-footnote">No order, quote, or stock change is made from this page.</p>
+          </section>
+
+          <section class="meat-lead-events" aria-label="Lead history">
+            <h3>History</h3>
+            <div id="meat_lead_events" class="ops-list"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260616-farm-app-meat-leads"></script>
+</body>
+</html>

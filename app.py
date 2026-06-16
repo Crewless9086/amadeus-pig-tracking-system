@@ -53,6 +53,11 @@ def sales_dashboard_page():
     return render_template("sales-dashboard.html")
 
 
+@app.route("/sales/meat-leads")
+def meat_sales_leads_page():
+    return render_template("meat-sales-leads.html")
+
+
 @app.route("/pig-allocation")
 def pig_allocation_page():
     return render_template("pig-allocation.html")

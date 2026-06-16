@@ -1,5 +1,15 @@
+import os
+
 from flask import Blueprint, jsonify, request
 
+from modules.oom_sakkie.sales_campaign_store import (
+    get_sales_lead_customer_followup_draft,
+    get_sales_lead_preorder_contract,
+    list_sales_leads,
+    record_customer_followup_send_approval,
+    record_owner_money_path_approval,
+    send_customer_followup_to_chatwoot,
+)
 from modules.sales.sales_transaction_cancel import cancel_sales_transaction
 from modules.sales.sales_transaction_create import create_sales_transaction
 from modules.sales.sales_transaction_dry_run import dry_run_sales_transaction
@@ -12,6 +22,10 @@ from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 
 
 sales_bp = Blueprint("sales", __name__)
+
+
+def _env_truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @sales_bp.route("/sales-transactions", methods=["GET"])
@@ -90,4 +104,57 @@ def sales_transaction_reconcile_pig_exits(sale_id):
 def sales_transaction_dry_run():
     payload = request.get_json(silent=True) or {}
     result, status_code = dry_run_sales_transaction(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads", methods=["GET"])
+def meat_sales_leads_list():
+    result, status_code = list_sales_leads(
+        limit=request.args.get("limit", 50),
+        status_filter=request.args.get("status", "launch_test"),
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])
+def meat_sales_lead_contract(lead_id):
+    result, status_code = get_sales_lead_preorder_contract(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/owner-money-path-approval", methods=["POST"])
+def meat_sales_lead_owner_money_path_approval(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_owner_money_path_approval(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/customer-followup-draft", methods=["GET"])
+def meat_sales_lead_customer_followup_draft(lead_id):
+    result, status_code = get_sales_lead_customer_followup_draft(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/customer-followup-send-approval", methods=["POST"])
+def meat_sales_lead_customer_followup_send_approval(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_customer_followup_send_approval(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/customer-followup-send", methods=["POST"])
+def meat_sales_lead_customer_followup_send(lead_id):
+    if not _env_truthy(os.getenv("OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED")):
+        return jsonify({
+            "success": False,
+            "status": "meat_followup_send_disabled",
+            "sent": False,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }), 503
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_customer_followup_to_chatwoot(lead_id, payload)
     return jsonify(result), status_code

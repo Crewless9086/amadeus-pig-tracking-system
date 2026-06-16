@@ -225,6 +225,147 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         reconcile_exits.assert_called_once()
 
+    def test_meat_sales_leads_list_route_uses_sales_lead_store(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "sales_leads": [{"lead_id": "OSK-SALES-LEAD-1"}],
+            "source": {
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            },
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_sales_leads",
+            return_value=(service_result, 200),
+        ) as list_leads:
+            response = self.client.get("/api/sales/meat-leads?limit=12&status=launch_test")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        list_leads.assert_called_once_with(limit="12", status_filter="launch_test")
+
+    def test_meat_sales_lead_contract_route_uses_preorder_contract(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-1",
+            "contract": {"contract_status": "owner_money_path_ready"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_lead_preorder_contract",
+            return_value=(service_result, 200),
+        ) as get_contract:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/contract")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_contract.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_sales_lead_owner_approval_route_records_event(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "records_owner_money_path_approval": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_owner_money_path_approval",
+            return_value=(service_result, 201),
+        ) as record_approval:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/owner-money-path-approval",
+                json={"price_per_kg": "R100.00"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_approval.assert_called_once_with("OSK-SALES-LEAD-1", {"price_per_kg": "R100.00"})
+
+    def test_meat_sales_lead_followup_draft_route_reads_draft(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "customer_followup_draft": {"message": "Hi Charl"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_lead_customer_followup_draft",
+            return_value=(service_result, 200),
+        ) as get_draft:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-draft")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_draft.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_sales_lead_send_approval_route_records_exact_message_approval(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "records_customer_followup_send_approval": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_customer_followup_send_approval",
+            return_value=(service_result, 201),
+        ) as record_send_approval:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-send-approval",
+                json={"message": "Approved text"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_send_approval.assert_called_once_with("OSK-SALES-LEAD-1", {"message": "Approved text"})
+
+    def test_meat_sales_lead_send_route_requires_env_unlock(self):
+        with patch.dict("os.environ", {"OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED": "0"}):
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-send",
+                json={"message": "Approved text"},
+            )
+
+        payload = response.get_json()
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(payload["sent"])
+        self.assertEqual(payload["status"], "meat_followup_send_disabled")
+        self.assertFalse(payload["creates_order"])
+        self.assertFalse(payload["changes_stock"])
+
+    def test_meat_sales_lead_send_route_calls_chatwoot_sender_when_enabled(self):
+        service_result = {
+            "success": True,
+            "status": "sent",
+            "sent": True,
+            "sends_customer_message": True,
+            "calls_chatwoot": True,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }
+
+        with patch.dict("os.environ", {"OOM_SAKKIE_MEAT_FOLLOWUP_SEND_ENABLED": "1"}), patch.object(
+            sales_transaction_routes,
+            "send_customer_followup_to_chatwoot",
+            return_value=(service_result, 200),
+        ) as send_followup:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/customer-followup-send",
+                json={"message": "Approved text"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        send_followup.assert_called_once_with("OSK-SALES-LEAD-1", {"message": "Approved text"})
+
 
 if __name__ == "__main__":
     unittest.main()

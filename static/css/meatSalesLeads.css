@@ -1,0 +1,134 @@
+.meat-leads-shell {
+  max-width: 1440px;
+}
+
+.meat-leads-workflow {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.3fr);
+  align-items: start;
+}
+
+.meat-leads-summary {
+  margin: 18px 0;
+}
+
+.meat-leads-summary article {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #f8faf7;
+  padding: 14px;
+}
+
+.meat-leads-summary span {
+  display: block;
+  color: #607066;
+  font-size: 0.84rem;
+}
+
+.meat-leads-summary strong {
+  display: block;
+  color: #203528;
+  font-size: 1.6rem;
+  line-height: 1.2;
+  margin-top: 4px;
+}
+
+.meat-leads-list-panel,
+.meat-leads-detail-panel {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fff;
+}
+
+.meat-leads-list-panel .section-header-compact,
+.meat-leads-detail-panel .section-header-compact {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.meat-leads-list {
+  display: grid;
+  gap: 10px;
+}
+
+.meat-lead-row {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #f8faf7;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.meat-lead-row:hover,
+.meat-lead-row.is-selected {
+  border-color: #386641;
+  background: #eef5ef;
+}
+
+.meat-lead-row strong,
+.meat-lead-fact strong {
+  color: #203528;
+}
+
+.meat-lead-row span,
+.meat-lead-row small,
+.meat-lead-fact span,
+.meat-lead-events small {
+  color: #607066;
+}
+
+.meat-lead-facts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.meat-lead-fact {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8faf7;
+}
+
+.meat-lead-form,
+.meat-lead-preview,
+.meat-lead-events {
+  border-top: 1px solid #d7ded6;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.meat-lead-form-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.meat-lead-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.meat-lead-preview textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+@media (max-width: 980px) {
+  .meat-leads-workflow,
+  .meat-lead-facts,
+  .meat-lead-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
