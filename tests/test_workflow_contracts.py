@@ -323,9 +323,21 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("MEAT PREORDER RULES (CRITICAL)", sales_agent_system)
         self.assertIn("Do not ask for a live-pig weight range", sales_agent_system)
         self.assertIn("Do not quote price/kg", sales_agent_system)
-        self.assertIn("Do not list or describe the contents of Set A", sales_agent_system)
-        self.assertIn("approved cut menu source", sales_agent_system)
+        self.assertIn("Approved cut menu source: docs/08-business-modules/PORK_SALES_MODEL.md rows 246-303", sales_agent_system)
+        self.assertIn("Set A Family Freezer Pack", sales_agent_system)
+        self.assertIn("Set B Braai Pack", sales_agent_system)
+        self.assertIn("Set C Lean Pack", sales_agent_system)
+        self.assertIn("Set D Budget Bulk Pack", sales_agent_system)
+        self.assertIn("do not offer or prepare a formal quote until owner/Ledger has confirmed price/kg", sales_agent_system)
         self.assertIn("ask only the next safe missing question", sales_agent_system)
+
+        clean_node = node_by_name(workflow, "Code - Clean Final Reply")
+        self.assertIsNotNone(clean_node)
+        clean_code = clean_node["parameters"]["jsCode"]
+        self.assertIn("Meat preorder failsafe", clean_code)
+        self.assertIn("formal quote|prepare a quote|prepare.*quote|quote for you", clean_code)
+        self.assertIn("price_per_kg", clean_code)
+        self.assertIn("owner_final_approval", clean_code)
 
         self.assertIn("/api/oom-sakkie/channels/chatwoot/sam-meat-intake", http_text)
         self.assertIn("SAM_MEAT_INTAKE_BASE_URL", http_text)
