@@ -80,6 +80,31 @@ Phase 7.1G completion:
 - API readback confirmed `HTTP - Set Conversation Human Mode` matches the local standardized 7.1E custom-attribute expression.
 - No forced customer escalation smoke was run, to avoid unnecessary Chatwoot/Telegram side effects. Verify the next natural escalation/create/update/pending-action execution if it occurs.
 
+## Phase 11C Meat Intake Handoff
+
+Status: wired in repo export; default-off; do not activate live customer automation yet.
+
+Sam remains the customer-facing sales agent for Chatwoot channels. For meat preorder interest, Sam should collect structured facts from the conversation and hand them to the backend lead rail instead of Charl manually extracting everything from WhatsApp or social messages.
+
+The handoff plan is documented in `MEAT_INTAKE_HANDOFF_PLAN.md`.
+
+Current boundary:
+
+- `1.0` now has a default-off `meat_preorder` branch after the existing order-intake result.
+- New workflow nodes:
+  - `Code - Build Sam Meat Intake Payload`
+  - `IF - Sam Meat Intake Ready`
+  - `HTTP - Sam Meat Intake Lead`
+  - `Code - Attach Sam Meat Intake Result`
+- The branch only calls the backend when `SAM_MEAT_INTAKE_HANDOFF_ENABLED` is truthy and `SAM_MEAT_INTAKE_REMOTE_TOKEN` is configured.
+- The backend contract is `docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md`.
+- Current proof endpoint is review/local gated: `POST /api/oom-sakkie/sales-leads/sam-meat-intake`.
+- n8n cloud must not call that local review endpoint as a production route.
+- Remote private-test route is `POST /api/oom-sakkie/channels/chatwoot/sam-meat-intake`; it is default-off and requires `OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED=1` plus `OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_TOKEN`.
+- n8n must store the token in variables/credentials as `SAM_MEAT_INTAKE_REMOTE_TOKEN`, not workflow JSON, and use HTTPS for remote calls.
+- Meat preorder must not route into live-pig `create_order_with_lines`.
+- Sam must not quote price/kg, promise availability, request deposit, reserve stock, create preorder/order, or claim owner approval before Ledger/owner review.
+
 ## Phase 5.6 Intake Capture
 
 Status: complete and live-verified on 2026-05-12.

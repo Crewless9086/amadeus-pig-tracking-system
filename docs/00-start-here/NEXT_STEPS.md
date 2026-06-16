@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | 11A Local Ready | Deploy/browser-check read-only pig allocation readiness before any meat-sales writes. |
+| Phase 11: Pork Sales Business Module | Sales launch readiness active | Next build: prove one real manual/inbound sales lead through the owner-review lead rail, then design the first preorder/deposit or Sam handoff contract. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -36,13 +36,10 @@ Owner direction is now captured in `docs/00-start-here/PRODUCT_VISION.md`: `/oom
 
 Current UI slice:
 
-- Specialist dashboards now need compact live summary cards from trusted read-only endpoints.
-- Specialist dashboards should show the next few agent-specific priority items directly in the opened agent view.
-- Clicking an agent should show the useful owner view for that agent first.
-- Workflow cards should route to the correct operational page where possible, such as Purpose Review or Meat Planning.
-- The Ledger Sales Workbench stays available as an audit/detail rail, but should not be treated as the final daily-owner experience.
-- No post, customer message, order, deposit, stock, irrigation control, expense, or agent-learning write becomes autonomous from this slice.
-- Agent portraits and voice choices should use `static/assets/agents/` plus `docs/00-start-here/AGENT_ASSET_REGISTER.md`; the UI must fall back to initials until approved media files exist.
+- Oom Sakkie farm-command UI exact-match work is parked for now and is not accepted yet.
+- The existing Ledger Sales Workbench remains useful as an audit/detail rail while sales launch testing continues.
+- Do not spend the next slice on visual polish unless the owner explicitly resumes the UI pass.
+- No post, customer message, order, deposit, stock, irrigation control, expense, or agent-learning write becomes autonomous from this parked UI slice.
 
 ### Staying on track (Cursor + Claude Code)
 
@@ -7116,6 +7113,40 @@ Temporary demand scenario refinement 2026-06-05:
 - The page calculates surplus/shortfall against the read-only meat pipeline.
 - This is deliberately not saved and does not create demand, preorder, deposit, customer, allocation, Supabase, or Google Sheets records.
 - Use this during browser/live review to decide what the first real demand/preorder data contract should contain.
+
+### 11C Sales Launch Test Rail - Next Build
+
+Goal:
+
+- Make the sales system testable with a real buyer/lead without giving the system customer-send, order-write, stock-allocation, or payment authority.
+
+Build next:
+
+1. Record one real inbound/manual lead through the existing owner `Record Lead` path.
+2. Confirm the lead appears in the Oom Sakkie/Ledger sales summaries and daily brief context.
+3. Add a small review view or status filter only if the current workbench does not make the next action obvious.
+4. Document the first preorder/deposit data contract from the real lead fields before building any meat-order write path.
+5. Decide whether the next consumer is Sam/Chatwoot handoff design, owner manual follow-up, or a preorder/deposit draft. Keep it design/review-only until approved.
+
+Acceptance:
+
+- One real lead can be recorded and read back. First proof passed with `OSK-SALES-LEAD-733F06EE5501FB3B` for `Jan - half carcass interest`.
+- Authority flags remain false for customer send, Chatwoot/n8n/WhatsApp calls, quote/order creation, stock changes, public output, dispatch, runtime/prompt changes, physical control, and financial action.
+- The owner can see what the next sales action should be.
+- The docs clearly state what is still manual before launch testing starts.
+
+Next after first proof:
+
+- Design the first preorder/deposit or Sam handoff contract from the real lead fields. First read-only preorder/deposit review packet is now built locally and verified against `OSK-SALES-LEAD-733F06EE5501FB3B`.
+- Keep the first money-path step owner-approved and manual until the contract is reviewed.
+
+Next build after contract packet:
+
+- Add Sam's meat-intake lane contract and backend save mapper before the owner-filled confirmation layer, so customer-originated Chatwoot details can be saved by Sam rather than manually collected. Local contract endpoint is now `POST /api/oom-sakkie/sales-leads/sam-meat-intake`.
+- Next: plan the `1.0 Sam` n8n lane detection/extraction and Steward/backend call around `docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md`. Local smoke passed with closed test lead `OSK-SALES-LEAD-38BB181ADB706DD0`.
+- Sam n8n handoff plan is now recorded in `docs/04-n8n/workflows/1.0 - Sam-sales-agent-chatwoot/MEAT_INTAKE_HANDOFF_PLAN.md`. Default-off token-gated private-test route now exists at `POST /api/oom-sakkie/channels/chatwoot/sam-meat-intake`; `1.0 Sam` workflow JSON is now wired to that route behind `SAM_MEAT_INTAKE_HANDOFF_ENABLED` and `SAM_MEAT_INTAKE_REMOTE_TOKEN`. Next build: configure backend env + n8n variables, import the workflow, and run one controlled Chatwoot meat-lead smoke that saves tracking-only evidence. Do not route meat preorder into `create_order_with_lines`.
+- Live-smoke tooling is ready in `scripts/sam_meat_intake_remote_smoke.py` and `docs/06-operations/SAM_MEAT_INTAKE_LIVE_SMOKE_CHECKLIST.md`. Next required external setup: set backend env `OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED=1` and `OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_TOKEN`, set n8n variables `SAM_MEAT_INTAKE_HANDOFF_ENABLED=1` and `SAM_MEAT_INTAKE_REMOTE_TOKEN`, import the `1.0` workflow export, then run the route smoke with `SAM_MEAT_INTAKE_SMOKE_CREATE=1`.
+- Do not create a preorder/deposit/order, request payment, reserve stock, or contact the customer until the Sam intake contract and owner confirmation layer are reviewed and accepted.
 
 ## Current Choice Point
 

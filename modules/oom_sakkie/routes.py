@@ -1,3 +1,6 @@
+import hmac
+import os
+
 from flask import Blueprint, jsonify, request
 
 from modules.oom_sakkie.access import (
@@ -81,6 +84,7 @@ from modules.oom_sakkie.patch_proposal_store import (
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.review_advisor import get_review_advisor
 from modules.oom_sakkie.sales_campaign_store import (
+    get_sales_lead_preorder_contract,
     list_sales_campaigns,
     list_sales_leads,
     list_sales_outreach_drafts,
@@ -89,6 +93,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
+    record_sam_meat_intake_lead,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
 )
@@ -113,6 +118,9 @@ from modules.oom_sakkie.voice_stt import transcribe_oom_sakkie_voice_audio
 
 
 oom_sakkie_bp = Blueprint("oom_sakkie", __name__)
+SAM_MEAT_INTAKE_REMOTE_ENABLED_ENV = "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED"
+SAM_MEAT_INTAKE_REMOTE_TOKEN_ENV = "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_TOKEN"
+SAM_MEAT_INTAKE_REMOTE_MIN_TOKEN_CHARS = 32
 
 
 def _require_review_access():
@@ -120,6 +128,54 @@ def _require_review_access():
         return None
     body, status_code = review_access_denied_response(request.remote_addr)
     return jsonify(body), status_code
+
+
+def _require_sam_meat_intake_remote_access():
+    if not _env_truthy(os.environ.get(SAM_MEAT_INTAKE_REMOTE_ENABLED_ENV)):
+        return jsonify(_sam_meat_intake_remote_denied("sam_meat_intake_remote_disabled")), 503
+
+    expected = str(os.environ.get(SAM_MEAT_INTAKE_REMOTE_TOKEN_ENV, "") or "").strip()
+    if not expected:
+        return jsonify(_sam_meat_intake_remote_denied("sam_meat_intake_remote_token_not_configured")), 503
+    if len(expected) < SAM_MEAT_INTAKE_REMOTE_MIN_TOKEN_CHARS:
+        return jsonify(_sam_meat_intake_remote_denied("sam_meat_intake_remote_token_too_short")), 503
+    if not _sam_meat_intake_remote_token_matches(expected):
+        return jsonify(_sam_meat_intake_remote_denied("sam_meat_intake_remote_auth_denied")), 403
+    return None
+
+
+def _sam_meat_intake_remote_token_matches(expected):
+    authorization = str(request.headers.get("Authorization", "") or "").strip()
+    bearer_prefix = "Bearer "
+    if authorization.startswith(bearer_prefix):
+        return hmac.compare_digest(authorization[len(bearer_prefix):].strip(), expected)
+    provided = str(request.headers.get("X-Amadeus-Sam-Intake-Key", "") or "").strip()
+    return hmac.compare_digest(provided, expected)
+
+
+def _sam_meat_intake_remote_denied(status):
+    return {
+        "success": False,
+        "status": status,
+        "mode": "sam_meat_intake_remote_ingest",
+        "route": "POST /api/oom-sakkie/channels/chatwoot/sam-meat-intake",
+        "enabled_env": SAM_MEAT_INTAKE_REMOTE_ENABLED_ENV,
+        "token_env": SAM_MEAT_INTAKE_REMOTE_TOKEN_ENV,
+        "minimum_token_chars": SAM_MEAT_INTAKE_REMOTE_MIN_TOKEN_CHARS,
+        "auth": "bearer_or_x_amadeus_sam_intake_key",
+        "records_tracking_lead": False,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_n8n": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "financial_action": False,
+    }
+
+
+def _env_truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @oom_sakkie_bp.route("/oom-sakkie/message", methods=["POST"])
@@ -250,7 +306,10 @@ def oom_sakkie_sales_leads():
     denied = _require_review_access()
     if denied:
         return denied
-    result, status_code = list_sales_leads(limit=request.args.get("limit", 20))
+    result, status_code = list_sales_leads(
+        limit=request.args.get("limit", 20),
+        status_filter=request.args.get("status", ""),
+    )
     return jsonify(result), status_code
 
 
@@ -264,6 +323,39 @@ def oom_sakkie_sales_lead_create():
     return jsonify(result), status_code
 
 
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads/sam-meat-intake", methods=["POST"])
+def oom_sakkie_sam_meat_intake_create():
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sam_meat_intake_lead(payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/channels/chatwoot/sam-meat-intake", methods=["POST"])
+def oom_sakkie_chatwoot_sam_meat_intake_create():
+    denied = _require_sam_meat_intake_remote_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_sam_meat_intake_lead(payload)
+    result["remote_ingest"] = {
+        "enabled": True,
+        "mode": "sam_meat_intake_tracking_only",
+        "auth": "bearer_or_x_amadeus_sam_intake_key",
+        "records_tracking_lead": True,
+        "sends_customer_message": False,
+        "calls_chatwoot": False,
+        "calls_n8n": False,
+        "creates_quote": False,
+        "creates_order": False,
+        "changes_stock": False,
+        "financial_action": False,
+    }
+    return jsonify(result), status_code
+
+
 @oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/events", methods=["POST"])
 def oom_sakkie_sales_lead_events(lead_id):
     denied = _require_review_access()
@@ -271,6 +363,15 @@ def oom_sakkie_sales_lead_events(lead_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_sales_lead_event(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/preorder-contract", methods=["GET"])
+def oom_sakkie_sales_lead_preorder_contract(lead_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    result, status_code = get_sales_lead_preorder_contract(lead_id)
     return jsonify(result), status_code
 
 

@@ -77,6 +77,14 @@ REQUIRED_SAM_EXECUTE_NODES = {
 }
 
 
+REQUIRED_SAM_MEAT_INTAKE_NODES = {
+    "Code - Build Sam Meat Intake Payload",
+    "IF - Sam Meat Intake Ready",
+    "HTTP - Sam Meat Intake Lead",
+    "Code - Attach Sam Meat Intake Result",
+}
+
+
 REQUIRED_SAM_SLIM_CONTEXT_FIELDS = {
     "sam_order_state_slim",
     "sam_steward_result_compact",
@@ -257,6 +265,82 @@ class WorkflowContractTests(unittest.TestCase):
         for node_name in sorted(REQUIRED_SAM_EXECUTE_NODES):
             with self.subTest(node_name=node_name):
                 self.assertIn(node_name, names)
+
+    def test_sam_workflow_has_default_off_meat_intake_handoff(self):
+        workflow = load_workflow(SAM_WORKFLOW)
+        names = {node.get("name") for node in workflow.get("nodes", [])}
+        workflow_text = json.dumps(workflow)
+
+        for node_name in sorted(REQUIRED_SAM_MEAT_INTAKE_NODES):
+            with self.subTest(node_name=node_name):
+                self.assertIn(node_name, names)
+
+        build_node = node_by_name(workflow, "Code - Build Sam Meat Intake Payload")
+        if_node = node_by_name(workflow, "IF - Sam Meat Intake Ready")
+        http_node = node_by_name(workflow, "HTTP - Sam Meat Intake Lead")
+        attach_node = node_by_name(workflow, "Code - Attach Sam Meat Intake Result")
+
+        self.assertIsNotNone(build_node)
+        self.assertIsNotNone(if_node)
+        self.assertIsNotNone(http_node)
+        self.assertIsNotNone(attach_node)
+
+        build_code = build_node["parameters"]["jsCode"]
+        attach_code = attach_node["parameters"]["jsCode"]
+        http_text = json.dumps(http_node)
+
+        self.assertIn("SAM_MEAT_INTAKE_HANDOFF_ENABLED", build_code)
+        self.assertIn("SAM_MEAT_INTAKE_REMOTE_TOKEN", build_code)
+        self.assertIn("sam_meat_intake_handoff_disabled", build_code)
+        self.assertIn("sam_meat_intake_token_not_configured", build_code)
+        self.assertIn("mixed_live_pig_and_meat_intent", build_code)
+        self.assertIn("missing_core", build_code)
+        self.assertIn("half_carcass", build_code)
+        self.assertIn("full_carcass", build_code)
+        self.assertIn("custom_cut", build_code)
+        self.assertIn("assisted_slaughter", build_code)
+        self.assertIn("Do not quote price, promise timing, request deposit, reserve stock, or create an order.", build_code)
+        self.assertNotIn("create_order_with_lines", build_code)
+
+        self.assertIn("sam_meat_intake_tracking_only", attach_code)
+        self.assertIn("owner/Ledger review only", attach_code)
+        self.assertIn("sam_meat_intake_raw_response", attach_code)
+        self.assertNotIn("create_order_with_lines", attach_code)
+
+        self.assertIn("/api/oom-sakkie/channels/chatwoot/sam-meat-intake", http_text)
+        self.assertIn("SAM_MEAT_INTAKE_BASE_URL", http_text)
+        self.assertIn("SAM_MEAT_INTAKE_REMOTE_TOKEN", http_text)
+        self.assertIn("Authorization", http_text)
+        self.assertIn("sam_meat_intake_payload", http_text)
+
+        self.assertIn("Code - Attach Intake Result", workflow.get("connections", {}))
+        self.assertEqual(
+            workflow["connections"]["Code - Attach Intake Result"]["main"][0][0]["node"],
+            "Code - Build Sam Meat Intake Payload",
+        )
+        self.assertEqual(
+            workflow["connections"]["Code - Build Sam Meat Intake Payload"]["main"][0][0]["node"],
+            "IF - Sam Meat Intake Ready",
+        )
+        self.assertEqual(
+            workflow["connections"]["IF - Sam Meat Intake Ready"]["main"][0][0]["node"],
+            "HTTP - Sam Meat Intake Lead",
+        )
+        self.assertEqual(
+            workflow["connections"]["IF - Sam Meat Intake Ready"]["main"][1][0]["node"],
+            "Code - Attach Sam Meat Intake Result",
+        )
+        self.assertEqual(
+            workflow["connections"]["HTTP - Sam Meat Intake Lead"]["main"][0][0]["node"],
+            "Code - Attach Sam Meat Intake Result",
+        )
+        attach_targets = {
+            target["node"]
+            for target in workflow["connections"]["Code - Attach Sam Meat Intake Result"]["main"][0]
+        }
+        self.assertEqual(attach_targets, {"Ai Agent - Escalation Classifier", "Merge - Sales Agent Context A"})
+
+        self.assertIn("meat_preorder", workflow_text)
 
     def test_sam_slim_context_keeps_phase_7_1c_compact_fields(self):
         workflow = load_workflow(SAM_WORKFLOW)

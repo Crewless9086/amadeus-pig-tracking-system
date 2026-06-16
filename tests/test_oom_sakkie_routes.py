@@ -556,6 +556,33 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["changes_stock"])
         mock_list.assert_called_once_with(limit="5")
 
+    @patch("modules.oom_sakkie.routes.list_sales_leads")
+    def test_sales_lead_route_accepts_launch_test_filter(self, mock_list):
+        mock_list.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "sales_lead_tracking_queue",
+            "filter": "launch_test",
+            "sales_leads": [],
+            "counts": {"launch_test_open": 0},
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-leads?limit=5&status=launch_test")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["filter"], "launch_test")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["creates_order"])
+        mock_list.assert_called_once_with(limit="5", status_filter="launch_test")
+
     @patch("modules.oom_sakkie.routes.record_sales_campaign")
     def test_sales_campaigns_route_records_campaign_without_customer_send(self, mock_record):
         mock_record.return_value = ({
@@ -768,6 +795,138 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["changes_stock"])
         mock_record.assert_called_once()
 
+    @patch("modules.oom_sakkie.routes.record_sam_meat_intake_lead")
+    def test_sam_meat_intake_route_records_tracking_only(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "sam_meat_intake_tracking_only",
+            "lead_id": "OSK-SALES-LEAD-MEAT",
+            "contract": {
+                "lane": "meat_preorder",
+                "missing_before_money_path": ["price_per_kg"],
+            },
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+
+        payload = {
+            "customer_name": "Jan",
+            "conversation_id": "1234",
+            "product_type": "half_carcass",
+            "cut_set": "Set A",
+            "location": "Riversdale",
+        }
+        response = self.client.post("/api/oom-sakkie/sales-leads/sam-meat-intake", json=payload)
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "sam_meat_intake_tracking_only")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once_with(payload)
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("modules.oom_sakkie.routes.record_sam_meat_intake_lead")
+    def test_sam_meat_intake_remote_route_is_default_off(self, mock_record):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sam-meat-intake",
+            json={"customer_name": "Jan", "product_type": "half_carcass", "location": "Riversdale"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["status"], "sam_meat_intake_remote_disabled")
+        self.assertFalse(data["records_tracking_lead"])
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        mock_record.assert_not_called()
+
+    @patch.dict(os.environ, {"OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED": "1"}, clear=True)
+    @patch("modules.oom_sakkie.routes.record_sam_meat_intake_lead")
+    def test_sam_meat_intake_remote_route_requires_configured_token(self, mock_record):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sam-meat-intake",
+            json={"customer_name": "Jan", "product_type": "half_carcass", "location": "Riversdale"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(data["status"], "sam_meat_intake_remote_token_not_configured")
+        self.assertEqual(data["minimum_token_chars"], 32)
+        mock_record.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED": "1",
+        "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_TOKEN": "test-sam-meat-intake-token-32-chars",
+    }, clear=True)
+    @patch("modules.oom_sakkie.routes.record_sam_meat_intake_lead")
+    def test_sam_meat_intake_remote_route_denies_bad_token(self, mock_record):
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sam-meat-intake",
+            headers={"Authorization": "Bearer wrong-token"},
+            json={"customer_name": "Jan", "product_type": "half_carcass", "location": "Riversdale"},
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(data["status"], "sam_meat_intake_remote_auth_denied")
+        self.assertFalse(data["records_tracking_lead"])
+        mock_record.assert_not_called()
+
+    @patch.dict(os.environ, {
+        "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_ENABLED": "1",
+        "OOM_SAKKIE_SAM_MEAT_INTAKE_REMOTE_TOKEN": "test-sam-meat-intake-token-32-chars",
+    }, clear=True)
+    @patch("modules.oom_sakkie.routes.record_sam_meat_intake_lead")
+    def test_sam_meat_intake_remote_route_records_tracking_only_with_token(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "sam_meat_intake_tracking_only",
+            "lead_id": "OSK-SALES-LEAD-MEAT",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+        payload = {
+            "customer_name": "Jan",
+            "conversation_id": "1234",
+            "product_type": "half_carcass",
+            "cut_set": "Set A",
+            "location": "Riversdale",
+        }
+
+        response = self.client.post(
+            "/api/oom-sakkie/channels/chatwoot/sam-meat-intake",
+            headers={"X-Amadeus-Sam-Intake-Key": "test-sam-meat-intake-token-32-chars"},
+            json=payload,
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["lead_id"], "OSK-SALES-LEAD-MEAT")
+        self.assertTrue(data["remote_ingest"]["records_tracking_lead"])
+        self.assertFalse(data["remote_ingest"]["sends_customer_message"])
+        self.assertFalse(data["remote_ingest"]["calls_chatwoot"])
+        self.assertFalse(data["remote_ingest"]["calls_n8n"])
+        self.assertFalse(data["remote_ingest"]["creates_order"])
+        self.assertFalse(data["remote_ingest"]["changes_stock"])
+        self.assertFalse(data["remote_ingest"]["financial_action"])
+        mock_record.assert_called_once_with(payload)
+
     @patch("modules.oom_sakkie.routes.list_sales_leads")
     def test_sales_lead_route_lists_tracking_queue(self, mock_list):
         mock_list.return_value = ({
@@ -793,7 +952,7 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["calls_n8n"])
         self.assertFalse(data["creates_order"])
         self.assertFalse(data["changes_stock"])
-        mock_list.assert_called_once_with(limit="5")
+        mock_list.assert_called_once_with(limit="5", status_filter="")
 
     @patch("modules.oom_sakkie.routes.record_sales_lead_event")
     def test_sales_lead_event_route_records_append_only_event(self, mock_record):
@@ -825,6 +984,37 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["creates_order"])
         self.assertFalse(data["changes_stock"])
         mock_record.assert_called_once()
+
+    @patch("modules.oom_sakkie.routes.get_sales_lead_preorder_contract")
+    def test_sales_lead_preorder_contract_route_is_review_only(self, mock_contract):
+        mock_contract.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "preorder_deposit_contract_review_only",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "contract": {
+                "contract_status": "needs_owner_confirmation",
+                "missing_fields": ["price_per_kg"],
+            },
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 200)
+
+        response = self.client.get("/api/oom-sakkie/sales-leads/OSK-SALES-LEAD-TEST/preorder-contract")
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "preorder_deposit_contract_review_only")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_contract.assert_called_once_with("OSK-SALES-LEAD-TEST")
 
     @patch("modules.oom_sakkie.routes.list_sales_leads")
     def test_sales_lead_routes_are_review_gated(self, mock_list):

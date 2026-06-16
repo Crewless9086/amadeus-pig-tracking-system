@@ -33,6 +33,15 @@ Input data mode: Accept all data
 
 Fields it expects. Discriminator: **`action`**.
 
+Phase 11C meat-intake boundary:
+
+- Meat preorder intake is not a live-pig order action.
+- Do not send `meat_preorder`, half-carcass, full-carcass, cut-set, or assisted-slaughter requests into `create_order_with_lines`.
+- The current local proof contract is `POST /api/oom-sakkie/sales-leads/sam-meat-intake`, documented in `docs/02-backend/SAM_MEAT_INTAKE_CONTRACT.md`.
+- The remote private-test route is `POST /api/oom-sakkie/channels/chatwoot/sam-meat-intake`; it is default-off and token-gated.
+- If `1.2` becomes the action owner for Sam meat intake later, add a separate action such as `record_sam_meat_intake_lead` that calls the tracking-only backend route.
+- Price/kg, available week, deposit rule, allocation, preorder/order creation, and customer-send authority remain Ledger/owner gated.
+
 Phase 7.1A planning boundary:
 
 - `1.2` should receive one clean action request from `1.0`, not broad Sam conversation state.

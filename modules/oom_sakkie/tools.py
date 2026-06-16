@@ -660,6 +660,7 @@ def sales_lead_tracking_status_handler(_args):
     if status_code == 200:
         summary = (
             f"Sales lead tracking queue: {len(leads)} tracked lead(s), "
+            f"{int(counts.get('launch_test_open') or 0)} launch-test open lead(s), "
             f"{int(counts.get('deposit_pending') or 0)} deposit follow-up(s), "
             f"{int(counts.get('owner_followup_needed') or 0)} owner follow-up(s), "
             f"{int(counts.get('template_required') or 0)} template-required WhatsApp window(s). "

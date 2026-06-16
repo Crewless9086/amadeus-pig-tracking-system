@@ -152,11 +152,14 @@ from modules.oom_sakkie.patch_proposal_store import (
 from modules.oom_sakkie.llm_router import LlmRouteResult, parse_llm_route_response, route_with_llm
 from modules.oom_sakkie.review_advisor import build_review_advice
 from modules.oom_sakkie.sales_campaign_store import (
+    build_sam_meat_intake_lead_payload,
     _sales_lead_params,
+    _sales_lead_status_filter,
     _sales_outreach_draft_params,
     _sales_send_design_params,
     _sales_campaign_params,
     approve_first_waiting_sales_campaign,
+    build_preorder_deposit_contract_from_lead,
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
@@ -5076,6 +5079,80 @@ def literal_false_is_allowed():
         self.assertFalse(params["calls_n8n"])
         self.assertFalse(params["creates_order"])
         self.assertFalse(params["changes_stock"])
+
+    def test_sales_lead_status_filter_supports_launch_test_without_write_authority(self):
+        self.assertEqual(_sales_lead_status_filter("launch_test"), "launch_test")
+        self.assertEqual(_sales_lead_status_filter("deposit_pending"), "deposit_pending")
+        self.assertEqual(_sales_lead_status_filter("all"), "")
+        self.assertEqual(_sales_lead_status_filter("send_now"), "")
+
+    def test_preorder_deposit_contract_from_lead_is_review_only(self):
+        contract = build_preorder_deposit_contract_from_lead({
+            "lead_id": "OSK-SALES-LEAD-733F06EE5501FB3B",
+            "lead_label": "Jan - half carcass interest",
+            "status": "interested",
+            "campaign_source": "direct_known_buyer",
+            "whatsapp_window_state": "manual_owner_only",
+            "interest": {
+                "product": "Half carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "notes": "Wants price and timing",
+            },
+            "next_owner_action": "Charl to confirm price/kg and available week",
+        })
+
+        self.assertEqual(contract["contract_status"], "needs_owner_confirmation")
+        self.assertEqual(contract["lead_summary"]["product"], "Half carcass")
+        self.assertIn("price_per_kg", contract["missing_fields"])
+        self.assertIn("available_week", contract["missing_fields"])
+        self.assertFalse(contract["sends_customer_message"])
+        self.assertFalse(contract["calls_chatwoot"])
+        self.assertFalse(contract["calls_n8n"])
+        self.assertFalse(contract["creates_order"])
+        self.assertFalse(contract["changes_stock"])
+        self.assertFalse(contract["writes_farm_data"])
+
+    def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
+        lead_payload, contract = build_sam_meat_intake_lead_payload({
+            "customer_name": "Jan",
+            "conversation_id": "1234",
+            "contact_id": "5678",
+            "product_type": "half_carcass",
+            "cut_set": "Set A",
+            "location": "Riversdale",
+            "timing": "next available week",
+            "delivery_or_collection": "collection",
+            "payment_method": "EFT",
+            "notes": "Wants price and timing",
+        })
+
+        self.assertEqual(lead_payload["campaign_source"], "inbound_chatwoot")
+        self.assertEqual(lead_payload["created_by"], "sam_meat_intake")
+        self.assertEqual(lead_payload["interest"]["sam_intake_lane"], "meat_preorder")
+        self.assertEqual(lead_payload["interest"]["product_type"], "half_carcass")
+        self.assertEqual(contract["lane"], "meat_preorder")
+        self.assertEqual(contract["missing_core_fields"], [])
+        self.assertIn("price_per_kg", contract["missing_before_money_path"])
+        self.assertIn("deposit_rule", contract["missing_before_money_path"])
+        self.assertFalse(contract["authority"]["sends_customer_message"])
+        self.assertFalse(contract["authority"]["calls_chatwoot"])
+        self.assertFalse(contract["authority"]["calls_n8n"])
+        self.assertFalse(contract["authority"]["creates_order"])
+        self.assertFalse(contract["authority"]["changes_stock"])
+        self.assertFalse(contract["authority"]["writes_farm_data"])
+
+    def test_sam_meat_intake_requires_core_fields_before_recording(self):
+        lead_payload, contract = build_sam_meat_intake_lead_payload({
+            "customer_name": "Jan",
+            "product_type": "unknown",
+            "location": "",
+        })
+
+        self.assertEqual(lead_payload["created_by"], "sam_meat_intake")
+        self.assertIn("product_type", contract["missing_core_fields"])
+        self.assertIn("location", contract["missing_core_fields"])
+        self.assertIn("interested in a half carcass", contract["sam_next_question"])
 
     def test_sales_lead_rejects_invalid_event_type_before_database(self):
         result, status_code = record_sales_lead_event("OSK-SALES-LEAD-1", {"event_type": "send_now"}, database_url="")

@@ -51,6 +51,14 @@ WHATSAPP_WINDOW_STATES = {
     "manual_owner_only",
 }
 
+MEAT_INTAKE_PRODUCT_TYPES = {
+    "half_carcass",
+    "full_carcass",
+    "custom_cut",
+    "assisted_slaughter",
+    "unknown",
+}
+
 
 def record_sales_campaign(payload, database_url=None):
     payload = payload if isinstance(payload, dict) else {}
@@ -461,8 +469,135 @@ def record_sales_lead(payload, database_url=None):
     }, 201
 
 
-def list_sales_leads(limit=20, database_url=None):
+def record_sam_meat_intake_lead(payload, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_payload, contract = build_sam_meat_intake_lead_payload(payload)
+    if contract["missing_core_fields"]:
+        return {
+            "success": False,
+            "configured": bool((database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()),
+            "status": "sam_meat_intake_missing_core_fields",
+            "mode": "sam_meat_intake_tracking_only",
+            "contract": contract,
+            "sales_leads": [],
+            **_false_flags(),
+        }, 400
+
+    result, status_code = record_sales_lead(lead_payload, database_url=database_url)
+    if isinstance(result, dict):
+        result = {
+            **result,
+            "mode": "sam_meat_intake_tracking_only",
+            "contract": contract,
+            "next_gate": "owner_review_before_preorder_deposit_order_stock_or_customer_send",
+            **_false_flags(),
+        }
+    return result, status_code
+
+
+def build_sam_meat_intake_lead_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    customer_name = _clean_text(payload.get("customer_name") or payload.get("contact_label"), 160)
+    product_type = _clean_text(payload.get("product_type") or "unknown", 80)
+    if product_type not in MEAT_INTAKE_PRODUCT_TYPES:
+        product_type = "unknown"
+    cut_set = _clean_text(payload.get("cut_set"), 80)
+    location = _clean_text(payload.get("location") or payload.get("delivery_area"), 160)
+    timing = _clean_text(payload.get("timing") or payload.get("available_week"), 160)
+    delivery_or_collection = _clean_text(payload.get("delivery_or_collection"), 160)
+    price_per_kg = _clean_text(payload.get("price_per_kg"), 80)
+    deposit_rule = _clean_text(payload.get("deposit_rule") or payload.get("deposit_amount"), 160)
+    payment_method = _clean_text(payload.get("payment_method"), 80)
+    notes = _clean_text(payload.get("notes") or payload.get("customer_message"), 700)
+    conversation_id = _clean_text(payload.get("conversation_id") or payload.get("chatwoot_conversation_id"), 100)
+    contact_id = _clean_text(payload.get("contact_id"), 100)
+    whatsapp_state = _clean_text(payload.get("whatsapp_window_state") or "unknown", 80)
+    if whatsapp_state not in WHATSAPP_WINDOW_STATES:
+        whatsapp_state = "unknown"
+    status = _status_or_default(payload.get("status"), default="interested")
+
+    missing_core = [
+        key for key, value in {
+            "customer_name": customer_name,
+            "product_type": product_type if product_type != "unknown" else "",
+            "location": location,
+        }.items()
+        if not value
+    ]
+    missing_before_money_path = [
+        key for key, value in {
+            "cut_set": cut_set,
+            "timing": timing,
+            "delivery_or_collection": delivery_or_collection,
+            "price_per_kg": price_per_kg,
+            "deposit_rule": deposit_rule,
+            "payment_method": payment_method,
+            "owner_final_approval": "",
+        }.items()
+        if not value
+    ]
+    product_label = product_type.replace("_", " ").title() if product_type != "unknown" else "Meat preorder"
+    lead_label = _clean_text(
+        payload.get("lead_label") or f"{customer_name or 'Customer'} - {product_label} interest",
+        160,
+    )
+    next_owner_action = _clean_text(payload.get("next_owner_action"), 700)
+    if not next_owner_action:
+        next_owner_action = (
+            "Owner to confirm " + ", ".join(missing_before_money_path[:4])
+            if missing_before_money_path else
+            "Owner to review meat preorder intake before any deposit/order/customer-send step."
+        )
+    interest = {
+        "product": product_label,
+        "product_type": product_type,
+        "cut_set": cut_set,
+        "location": location,
+        "timing": timing,
+        "delivery_or_collection": delivery_or_collection,
+        "price_per_kg": price_per_kg,
+        "deposit_rule": deposit_rule,
+        "payment_method": payment_method,
+        "notes": notes,
+        "conversation_id": conversation_id,
+        "contact_id": contact_id,
+        "sam_intake_lane": "meat_preorder",
+    }
+    contract = {
+        "lane": "meat_preorder",
+        "customer_name": customer_name,
+        "conversation_id": conversation_id,
+        "contact_id": contact_id,
+        "product_type": product_type,
+        "missing_core_fields": missing_core,
+        "missing_before_money_path": missing_before_money_path,
+        "next_owner_action": next_owner_action,
+        "sam_next_question": _sam_meat_next_question(missing_core, missing_before_money_path),
+        "authority": {
+            "records_tracking_lead": True,
+            **_false_flags(),
+        },
+    }
+    lead_payload = {
+        "lead_label": lead_label,
+        "contact_label": customer_name,
+        "campaign_source": "inbound_chatwoot",
+        "status": status,
+        "channel": _clean_text(payload.get("channel") or "chatwoot_whatsapp", 80),
+        "chatwoot_conversation_id": conversation_id,
+        "whatsapp_window_state": whatsapp_state,
+        "last_inbound_at": _clean_text(payload.get("last_inbound_at"), 80),
+        "opt_in_state": _clean_text(payload.get("opt_in_state") or "unknown", 80),
+        "interest": interest,
+        "next_owner_action": next_owner_action,
+        "created_by": "sam_meat_intake",
+    }
+    return lead_payload, contract
+
+
+def list_sales_leads(limit=20, status_filter=None, database_url=None):
     parsed_limit = _bounded_limit(limit)
+    status_filter = _sales_lead_status_filter(status_filter)
     database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
     if not database_url:
         return _sales_leads_unavailable("not_configured", configured=False), 503
@@ -497,10 +632,15 @@ def list_sales_leads(limit=20, database_url=None):
                         order by created_at desc
                         limit 1
                     ) ev on true
+                    where (
+                        %(status_filter)s = ''
+                        or (%(status_filter)s = 'launch_test' and l.status in ('new', 'interested', 'asked_price', 'needs_callback', 'deposit_pending', 'order_ready_for_approval'))
+                        or l.status = %(status_filter)s
+                    )
                     order by l.created_at desc
                     limit %(limit)s
                     """,
-                    {"limit": parsed_limit},
+                    {"limit": parsed_limit, "status_filter": status_filter},
                 )
                 rows = cursor.fetchall()
     except Exception as exc:
@@ -522,8 +662,141 @@ def list_sales_leads(limit=20, database_url=None):
         "mode": "sales_lead_tracking_queue",
         "sales_leads": leads,
         "counts": _sales_lead_counts(leads),
+        "filter": status_filter or "all",
         **_false_flags(),
     }, 200
+
+
+def get_sales_lead_preorder_contract(lead_id, database_url=None):
+    lead_id = _clean_text(lead_id, 100)
+    if not lead_id:
+        return {"success": False, "status": "lead_id_required", **_false_flags()}, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {"success": False, "configured": False, "status": "not_configured", **_false_flags()}, 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return {"success": False, "configured": True, "status": "dependency_missing", **_false_flags()}, 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select l.lead_id, l.campaign_id, l.draft_id, l.send_design_id,
+                           l.status, l.mode, l.campaign_source, l.lead_label,
+                           l.contact_label, l.channel, l.chatwoot_conversation_id,
+                           l.whatsapp_window_state, l.last_inbound_at, l.opt_in_state,
+                           l.interest_json, l.next_owner_action, l.linked_order_id,
+                           l.linked_preorder_id, l.created_by,
+                           l.sends_customer_message, l.calls_chatwoot, l.calls_n8n,
+                           l.creates_quote, l.creates_order, l.changes_stock,
+                           l.dispatch_enabled, l.changes_runtime_now, l.changes_prompt_now,
+                           l.physical_controls_enabled, l.customer_public_output_enabled,
+                           l.writes_farm_data, l.created_at,
+                           ev.event_type, ev.notes, ev.recorded_by, ev.created_at
+                    from public.oom_sakkie_sales_leads l
+                    left join lateral (
+                        select event_type, notes, recorded_by, created_at
+                        from public.oom_sakkie_sales_lead_events e
+                        where e.lead_id = l.lead_id
+                        order by created_at desc
+                        limit 1
+                    ) ev on true
+                    where l.lead_id = %(lead_id)s
+                    """,
+                    {"lead_id": lead_id},
+                )
+                row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "sales_lead_contract_read_failed",
+            "error_type": exc.__class__.__name__,
+            **_false_flags(),
+        }, 503
+
+    if not row:
+        return {"success": False, "configured": True, "status": "sales_lead_not_found", **_false_flags()}, 404
+
+    lead = _sales_lead_row(row)
+    contract = build_preorder_deposit_contract_from_lead(lead)
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "preorder_deposit_contract_review_only",
+        "lead_id": lead_id,
+        "lead": lead,
+        "contract": contract,
+        "next_gate": "owner_confirms_missing_fields_before_any_preorder_deposit_order_or_customer_send",
+        **_false_flags(),
+    }, 200
+
+
+def build_preorder_deposit_contract_from_lead(lead):
+    lead = lead if isinstance(lead, dict) else {}
+    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+
+    present = {
+        "lead_id": lead.get("lead_id", ""),
+        "buyer_or_contact": lead.get("contact_label") or lead.get("lead_label") or "",
+        "source": lead.get("campaign_source", ""),
+        "lead_status": lead.get("status", ""),
+        "whatsapp_window_state": lead.get("whatsapp_window_state", ""),
+        "product": interest.get("product") or interest.get("summary") or "",
+        "cut_set": interest.get("cut_set") or "",
+        "location": interest.get("location") or "",
+        "customer_notes": interest.get("notes") or interest.get("summary") or "",
+        "next_owner_action": lead.get("next_owner_action", ""),
+    }
+    required_before_money_path = {
+        "price_per_kg": interest.get("price_per_kg") or "",
+        "available_week": interest.get("available_week") or interest.get("timing") or "",
+        "estimated_weight_or_size": interest.get("estimated_weight") or interest.get("size") or "",
+        "deposit_amount_or_rule": interest.get("deposit_amount") or interest.get("deposit_rule") or "",
+        "payment_method": interest.get("payment_method") or "",
+        "delivery_or_collection": interest.get("delivery_or_collection") or interest.get("collection") or "",
+        "owner_final_approval": "",
+    }
+    missing_fields = [
+        key for key, value in required_before_money_path.items()
+        if not _clean_text(value, 200)
+    ]
+    missing_core_context = [
+        key for key in ("buyer_or_contact", "product", "cut_set", "location")
+        if not _clean_text(present.get(key), 200)
+    ]
+    can_prepare_manual_followup = not missing_core_context
+    status = "ready_for_owner_followup" if can_prepare_manual_followup else "needs_core_lead_context"
+    if missing_fields:
+        status = "needs_owner_confirmation"
+    owner_questions = [
+        "What price/kg should Charl quote for this lead?",
+        "Which available week or slaughter window can Charl offer?",
+        "What estimated half-carcass size/range should be discussed?",
+        "What deposit rule should apply before any slaughter booking?",
+        "Will this be collection or delivery, and where?",
+    ]
+    return {
+        "contract_status": status,
+        "lead_summary": present,
+        "required_before_money_path": required_before_money_path,
+        "missing_fields": missing_fields,
+        "missing_core_context": missing_core_context,
+        "owner_questions": owner_questions,
+        "manual_followup_prompt": _manual_preorder_followup_prompt(present, missing_fields),
+        "safety_notes": [
+            "This is a review contract only.",
+            "It does not send a customer message, request a deposit, create a preorder, create an order, reserve stock, or update allocation.",
+            "Charl must confirm the missing fields before any Sam/Chatwoot handoff or deposit request is built.",
+        ],
+        **_false_flags(),
+    }
 
 
 def record_sales_lead_event(lead_id, payload, database_url=None):
@@ -1425,13 +1698,69 @@ def _sales_lead_counts(leads):
         "by_status": by_status,
         "whatsapp_window": whatsapp_window,
         "deposit_pending": by_status.get("deposit_pending", 0),
+        "launch_test_open": (
+            by_status.get("new", 0)
+            + by_status.get("interested", 0)
+            + by_status.get("asked_price", 0)
+            + by_status.get("needs_callback", 0)
+            + by_status.get("deposit_pending", 0)
+            + by_status.get("order_ready_for_approval", 0)
+        ),
+        "closed_or_not_interested": by_status.get("closed", 0) + by_status.get("not_interested", 0),
         "owner_followup_needed": (
-            by_status.get("asked_price", 0)
+            by_status.get("new", 0)
+            + by_status.get("interested", 0)
+            + by_status.get("asked_price", 0)
             + by_status.get("needs_callback", 0)
             + by_status.get("order_ready_for_approval", 0)
         ),
         "template_required": whatsapp_window.get("template_required", 0),
     }
+
+
+def _sales_lead_status_filter(value):
+    status = _clean_text(value, 80)
+    if not status or status == "all":
+        return ""
+    if status == "launch_test":
+        return status
+    return status if status in SALES_LEAD_STATUSES else ""
+
+
+def _manual_preorder_followup_prompt(present, missing_fields):
+    buyer = present.get("buyer_or_contact") or "the buyer"
+    product = present.get("product") or "the pork option"
+    cut_set = present.get("cut_set") or "the cut set"
+    location = present.get("location") or "their area"
+    if missing_fields:
+        missing = ", ".join(missing_fields)
+        return (
+            f"Before replying to {buyer}, confirm: {missing}. "
+            f"The recorded interest is {product}, {cut_set}, {location}."
+        )
+    return (
+        f"Charl can manually follow up with {buyer} about {product}, {cut_set}, {location}. "
+        "No system customer message has been sent."
+    )
+
+
+def _sam_meat_next_question(missing_core, missing_before_money_path):
+    question_map = {
+        "customer_name": "Who should I put this interest under?",
+        "product_type": "Are you interested in a half carcass, full carcass, custom cuts, or assisted slaughter?",
+        "location": "Where would this need to be delivered or collected?",
+        "cut_set": "Which cut set are you interested in: Set A, Set B, Set C, or Set D?",
+        "timing": "When would you ideally want this pork?",
+        "delivery_or_collection": "Would you prefer collection or delivery?",
+        "price_per_kg": "I need to confirm the current price with the farm before quoting.",
+        "deposit_rule": "I need to confirm the deposit rule with the farm before booking anything.",
+        "payment_method": "Would you prefer EFT or cash once the farm confirms availability?",
+        "owner_final_approval": "I need the farm owner to approve this before any deposit or booking step.",
+    }
+    for field in list(missing_core or []) + list(missing_before_money_path or []):
+        if field in question_map:
+            return question_map[field]
+    return "I have the intake details. I will ask the farm owner to review before any deposit, booking, or order step."
 
 
 def _status_or_default(value, default):
