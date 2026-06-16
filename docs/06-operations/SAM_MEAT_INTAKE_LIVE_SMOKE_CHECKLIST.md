@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 11C operational setup. The workflow branch exists, but live activation is not complete until this checklist passes.
+Phase 11C controlled private smoke in progress. Backend and n8n gates are enabled, the workflow branch is live, and the next pass must prove conversation fact carry-forward.
 
 ## Backend Env
 
@@ -79,6 +79,24 @@ Expected:
 - Sam does not ask for deposit.
 - Sam does not create a preorder/order.
 - Sam does not reserve or allocate stock.
+
+2026-06-16 observed:
+
+- First WhatsApp smoke saved tracking-only lead `OSK-SALES-LEAD-D583E2649366146A`, but Sam asked for live-pig weight range. Fixed by preserving `reply_instruction` through `Code - Decide Order Route` and adding explicit meat-preorder rules to the Sales Agent prompt.
+- Follow-up smoke stayed in the meat-preorder lane, but asked to reconfirm Riversdale because the meat-intake extractor used only the current WhatsApp message. Fixed by extracting payload facts from `ConversationHistory` plus the current message, and by ignoring negated phrases such as `not a live pig` for live-pig intent detection.
+
+Next retest message in the same WhatsApp conversation:
+
+```text
+Yes, Riversdale is correct.
+```
+
+Expected next retest result:
+
+- Sam should not ask live-pig weight range.
+- Sam should not ask again whether the customer means live pig or pork.
+- Sam should not quote price/kg, promise timing, ask for deposit, reserve stock, or create an order.
+- The handoff should have enough carried-forward facts to keep or record a complete owner/Ledger meat-preorder lead: Charl, half carcass, Set A, Riversdale, next available week, collection, EFT.
 
 ## Readback
 

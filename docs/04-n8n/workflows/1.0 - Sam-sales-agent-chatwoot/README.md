@@ -82,7 +82,7 @@ Phase 7.1G completion:
 
 ## Phase 11C Meat Intake Handoff
 
-Status: wired in repo export; default-off; do not activate live customer automation yet.
+Status: wired in repo export and live n8n workflow; backend and n8n handoff gates are enabled for controlled private smoke only.
 
 Sam remains the customer-facing sales agent for Chatwoot channels. For meat preorder interest, Sam should collect structured facts from the conversation and hand them to the backend lead rail instead of Charl manually extracting everything from WhatsApp or social messages.
 
@@ -110,7 +110,9 @@ Live smoke note 2026-06-16:
 - The first WhatsApp smoke saved tracking-only meat lead `OSK-SALES-LEAD-D583E2649366146A`.
 - The initial reply was wrong because downstream order routing cleared the meat preorder `reply_instruction`, causing Sam to ask for a live-pig weight range.
 - The repo export and live n8n workflow `V73HaIqVpzv44SFc` were patched so `Code - Decide Order Route` preserves existing `reply_instruction`, `MeatIntakeContext` is included in the Sales Agent prompt, and the Sales Agent system prompt includes explicit meat preorder rules.
-- Retest should confirm Sam asks only the next safe meat-intake question and does not use live-pig weight-range/order wording.
+- The follow-up smoke stayed in the meat-preorder lane and did not ask live-pig weight range, but exposed two extractor gaps: the current message phrase `not a live pig` was treated as mixed live-pig intent, and earlier facts like `Riversdale` were not carried into the Sam meat-intake payload.
+- The repo export and live n8n workflow were patched again so `Code - Build Sam Meat Intake Payload` extracts meat-intake facts from `ConversationHistory` plus the current customer message, while live-pig intent is checked only against the current message after removing negated phrases such as `not a live pig`.
+- Next retest should use `Yes, Riversdale is correct.` in the same WhatsApp conversation and confirm the backend handoff records/keeps a complete meat-preorder lead without asking for live-pig weight range, quoting price, promising timing, requesting deposit, or creating an order.
 
 ## Phase 5.6 Intake Capture
 

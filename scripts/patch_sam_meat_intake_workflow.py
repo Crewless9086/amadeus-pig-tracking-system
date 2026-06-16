@@ -103,6 +103,14 @@ function paymentFrom(text) {
   return "";
 }
 
+function withoutNegatedLivePigPhrases(text) {
+  return clean(text)
+    .replace(/\bnot\s+(?:a\s+)?live\s+pigs?\b/gi, "")
+    .replace(/\bno\s+live\s+pigs?\b/gi, "")
+    .replace(/\bnot\s+looking\s+for\s+(?:a\s+)?live\s+pigs?\b/gi, "")
+    .replace(/\bdon'?t\s+want\s+(?:a\s+)?live\s+pigs?\b/gi, "");
+}
+
 function nextQuestion(missing) {
   if (missing.includes("customer_name")) return "May I quickly confirm your name for the meat preorder note?";
   if (missing.includes("product_type")) return "Are you interested in a half carcass, full carcass, or a specific cut set?";
@@ -124,14 +132,17 @@ const customerMessage = firstNonEmpty([
   normalized.CustomerMessage
 ]);
 const lowerMessage = customerMessage.toLowerCase();
+const conversationHistory = clean(item.ConversationHistory || item.conversation_history);
+const extractionText = [conversationHistory, customerMessage].filter(Boolean).join("\n");
+const liveIntentText = withoutNegatedLivePigPhrases(customerMessage);
 const handoffEnabled = truthy(n8nVar("SAM_MEAT_INTAKE_HANDOFF_ENABLED"));
 const tokenConfigured = n8nVar("SAM_MEAT_INTAKE_REMOTE_TOKEN").length >= 32;
-const meatIntent = /\bhalf\s+(?:carcass|carcase)\b|\bfull\s+(?:carcass|carcase)\b|\bwhole\s+(?:carcass|carcase)\b|\bcarcass\b|\bcarcase\b|\bkarkas\b|\bpork\b|\bmeat\b|\bvleis\b|\bcut\s*set\b|\bset\s+[abc]\b|\bassisted\s+slaughter\b/i.test(lowerMessage);
-const livePigIntent = /\bpiglet\b|\bpiglets\b|\bweaner\b|\bweaners\b|\bgrower\b|\bgrowers\b|\bfinisher\b|\bfinishers\b|\blive\s+pig\b|\blive\s+pigs\b/i.test(lowerMessage);
+const meatIntent = /\bhalf\s+(?:carcass|carcase)\b|\bfull\s+(?:carcass|carcase)\b|\bwhole\s+(?:carcass|carcase)\b|\bcarcass\b|\bcarcase\b|\bkarkas\b|\bpork\b|\bmeat\b|\bvleis\b|\bcut\s*set\b|\bset\s+[abc]\b|\bassisted\s+slaughter\b/i.test(extractionText);
+const livePigIntent = /\bpiglet\b|\bpiglets\b|\bweaner\b|\bweaners\b|\bgrower\b|\bgrowers\b|\bfinisher\b|\bfinishers\b|\blive\s+pig\b|\blive\s+pigs\b/i.test(liveIntentText);
 
-const productType = productTypeFrom(customerMessage);
+const productType = productTypeFrom(extractionText);
 const customerName = firstNonEmpty([os.customer_name, item.CustomerName, item.customer_name, normalized.CustomerName]);
-const location = firstNonEmpty([locationFrom(customerMessage), os.collection_location]);
+const location = firstNonEmpty([locationFrom(extractionText), os.collection_location]);
 const missingCore = [];
 if (!customerName || customerName.toLowerCase() === "unknown") missingCore.push("customer_name");
 if (!productType || productType === "unknown") missingCore.push("product_type");
@@ -151,13 +162,13 @@ const payload = {
   channel: channelFrom(firstNonEmpty([os.customer_channel, item.Channel, item.customer_channel, normalized.Channel])),
   whatsapp_window_state: "open",
   product_type: productType || "unknown",
-  cut_set: cutSetFrom(customerMessage),
+  cut_set: cutSetFrom(extractionText),
   location,
-  timing: timingFrom(customerMessage),
-  delivery_or_collection: deliveryOrCollectionFrom(customerMessage),
+  timing: timingFrom(extractionText),
+  delivery_or_collection: deliveryOrCollectionFrom(extractionText),
   price_per_kg: "",
   deposit_rule: "",
-  payment_method: paymentFrom(customerMessage),
+  payment_method: paymentFrom(extractionText),
   notes: customerMessage,
   status: "interested"
 };
