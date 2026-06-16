@@ -346,6 +346,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("SAM_MEAT_BACKEND_WEBHOOK_TOKEN", backend_contract)
         self.assertIn("SAM_MEAT_BACKEND_AUTOREPLY_ENABLED", backend_contract)
         self.assertIn("X-Amadeus-Sam-Meat-Webhook-Key", backend_contract)
+        self.assertIn("?token=<token>", backend_contract)
         self.assertIn("Set A: Family Freezer Pack", backend_contract)
 
         self.assertIn("Phase 11C Meat Intake Handoff", sam_readme)
@@ -395,7 +396,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("record_sam_meat_intake_lead(payload)", route_body)
         self.assertIn('@sales_bp.route("/sales/channels/chatwoot/sam-meat/policy", methods=["GET"])', sales_route_source)
         self.assertIn('@sales_bp.route("/sales/channels/chatwoot/sam-meat/inbound", methods=["POST"])', sales_route_source)
-        self.assertIn("authorize_sam_meat_webhook(request.headers)", sales_route_source)
+        self.assertIn("authorize_sam_meat_webhook(request.headers, request.args)", sales_route_source)
         self.assertIn("handle_sam_meat_chatwoot_inbound(payload)", sales_route_source)
         self.assertIn("SAM_MEAT_BACKEND_WEBHOOK_ENABLED", runtime_source)
         self.assertIn("SAM_MEAT_BACKEND_WEBHOOK_TOKEN", runtime_source)

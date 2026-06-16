@@ -55,7 +55,7 @@ def sam_meat_webhook_policy(environ=None):
     }
 
 
-def authorize_sam_meat_webhook(headers, environ=None):
+def authorize_sam_meat_webhook(headers, query_args=None, environ=None):
     source = environ if environ is not None else os.environ
     if not _truthy(source.get(WEBHOOK_ENABLED_ENV)):
         return False, _denied("sam_meat_backend_webhook_disabled")
@@ -64,7 +64,7 @@ def authorize_sam_meat_webhook(headers, environ=None):
         return False, _denied("sam_meat_backend_webhook_token_not_configured")
     if len(expected) < MIN_TOKEN_CHARS:
         return False, _denied("sam_meat_backend_webhook_token_too_short")
-    if not _token_matches(headers or {}, expected):
+    if not _token_matches(headers or {}, query_args or {}, expected):
         return False, _denied("sam_meat_backend_webhook_auth_denied")
     return True, {}
 
@@ -494,11 +494,14 @@ def _normal_payment(value):
     return ""
 
 
-def _token_matches(headers, expected):
+def _token_matches(headers, query_args, expected):
     authorization = str(headers.get("Authorization", "") or "").strip()
     if authorization.startswith("Bearer "):
         return hmac.compare_digest(authorization[len("Bearer "):].strip(), expected)
     provided = str(headers.get("X-Amadeus-Sam-Meat-Webhook-Key", "") or "").strip()
+    if provided:
+        return hmac.compare_digest(provided, expected)
+    provided = str(query_args.get("token") or query_args.get("sam_meat_token") or "").strip()
     return hmac.compare_digest(provided, expected)
 
 

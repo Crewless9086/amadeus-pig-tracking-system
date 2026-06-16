@@ -47,6 +47,14 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertTrue(allowed)
 
+        allowed, _denied = sam_meat_runtime.authorize_sam_meat_webhook(
+            {},
+            query_args={"token": "test-sam-meat-webhook-token-32-chars"},
+            environ=env,
+        )
+
+        self.assertTrue(allowed)
+
     def test_parse_chatwoot_inbound_ignores_outbound_messages(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(message_type="outgoing"))
 

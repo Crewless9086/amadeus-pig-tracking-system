@@ -41,6 +41,7 @@ Accepted auth:
 
 - `Authorization: Bearer <token>`
 - or `X-Amadeus-Sam-Meat-Webhook-Key: <token>`
+- or URL token for webhook tools that cannot send custom headers: `?token=<token>`
 
 Runtime rules:
 

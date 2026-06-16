@@ -124,7 +124,7 @@ def sam_meat_chatwoot_policy():
 
 @sales_bp.route("/sales/channels/chatwoot/sam-meat/inbound", methods=["POST"])
 def sam_meat_chatwoot_inbound():
-    allowed, denied = authorize_sam_meat_webhook(request.headers)
+    allowed, denied = authorize_sam_meat_webhook(request.headers, request.args)
     if not allowed:
         status_code = 403 if denied.get("status") == "sam_meat_backend_webhook_auth_denied" else 503
         return jsonify(denied), status_code
