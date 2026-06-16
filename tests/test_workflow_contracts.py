@@ -279,14 +279,21 @@ class WorkflowContractTests(unittest.TestCase):
         if_node = node_by_name(workflow, "IF - Sam Meat Intake Ready")
         http_node = node_by_name(workflow, "HTTP - Sam Meat Intake Lead")
         attach_node = node_by_name(workflow, "Code - Attach Sam Meat Intake Result")
+        decide_node = node_by_name(workflow, "Code - Decide Order Route")
+        sales_agent_node = node_by_name(workflow, "Ai Agent -  Sales Agent")
 
         self.assertIsNotNone(build_node)
         self.assertIsNotNone(if_node)
         self.assertIsNotNone(http_node)
         self.assertIsNotNone(attach_node)
+        self.assertIsNotNone(decide_node)
+        self.assertIsNotNone(sales_agent_node)
 
         build_code = build_node["parameters"]["jsCode"]
         attach_code = attach_node["parameters"]["jsCode"]
+        decide_code = decide_node["parameters"]["jsCode"]
+        sales_agent_text = sales_agent_node["parameters"]["text"]
+        sales_agent_system = sales_agent_node["parameters"]["options"]["systemMessage"]
         http_text = json.dumps(http_node)
 
         self.assertIn("SAM_MEAT_INTAKE_HANDOFF_ENABLED", build_code)
@@ -306,6 +313,13 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("owner/Ledger review only", attach_code)
         self.assertIn("sam_meat_intake_raw_response", attach_code)
         self.assertNotIn("create_order_with_lines", attach_code)
+
+        self.assertIn('reply_instruction: replyInstruction || item.reply_instruction || ""', decide_code)
+        self.assertIn("MeatIntakeContext", sales_agent_text)
+        self.assertIn("MEAT PREORDER RULES (CRITICAL)", sales_agent_system)
+        self.assertIn("Do not ask for a live-pig weight range", sales_agent_system)
+        self.assertIn("Do not quote price/kg", sales_agent_system)
+        self.assertIn("ask only the next safe missing question", sales_agent_system)
 
         self.assertIn("/api/oom-sakkie/channels/chatwoot/sam-meat-intake", http_text)
         self.assertIn("SAM_MEAT_INTAKE_BASE_URL", http_text)

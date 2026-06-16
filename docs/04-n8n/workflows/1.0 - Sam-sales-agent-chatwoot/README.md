@@ -105,6 +105,13 @@ Current boundary:
 - Meat preorder must not route into live-pig `create_order_with_lines`.
 - Sam must not quote price/kg, promise availability, request deposit, reserve stock, create preorder/order, or claim owner approval before Ledger/owner review.
 
+Live smoke note 2026-06-16:
+
+- The first WhatsApp smoke saved tracking-only meat lead `OSK-SALES-LEAD-D583E2649366146A`.
+- The initial reply was wrong because downstream order routing cleared the meat preorder `reply_instruction`, causing Sam to ask for a live-pig weight range.
+- The repo export and live n8n workflow `V73HaIqVpzv44SFc` were patched so `Code - Decide Order Route` preserves existing `reply_instruction`, `MeatIntakeContext` is included in the Sales Agent prompt, and the Sales Agent system prompt includes explicit meat preorder rules.
+- Retest should confirm Sam asks only the next safe meat-intake question and does not use live-pig weight-range/order wording.
+
 ## Phase 5.6 Intake Capture
 
 Status: complete and live-verified on 2026-05-12.
