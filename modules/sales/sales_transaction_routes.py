@@ -26,8 +26,13 @@ from modules.sales.sales_transaction_read import get_sales_transaction, list_sal
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.meat_fulfillment import (
+    approve_meat_journey_notification,
+    build_meat_journey_notification_draft,
     get_meat_fulfillment_timeline,
+    list_meat_driver_route,
+    record_meat_driver_delivery_event,
     record_meat_fulfillment_event,
+    send_meat_journey_notification,
 )
 from modules.sales.meat_ops import (
     approve_meat_instruction_draft,
@@ -239,6 +244,43 @@ def meat_sales_lead_fulfillment_timeline(lead_id):
 def meat_sales_lead_fulfillment_event(lead_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_meat_fulfillment_event(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-deliveries/driver-route", methods=["GET"])
+def meat_sales_driver_route():
+    result, status_code = list_meat_driver_route(
+        driver_label=request.args.get("driver", ""),
+        scheduled_date=request.args.get("date", ""),
+    )
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/driver-events", methods=["POST"])
+def meat_sales_lead_driver_event(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_meat_driver_delivery_event(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/journey-notification-draft", methods=["POST"])
+def meat_sales_lead_journey_notification_draft(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = build_meat_journey_notification_draft(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/journey-notification-approval", methods=["POST"])
+def meat_sales_lead_journey_notification_approval(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = approve_meat_journey_notification(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/journey-notification-send", methods=["POST"])
+def meat_sales_lead_journey_notification_send(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_meat_journey_notification(lead_id, payload)
     return jsonify(result), status_code
 
 

@@ -475,6 +475,106 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             {"event_type": "delivery_scheduled", "scheduled_date": "2026-06-20"},
         )
 
+    def test_meat_driver_route_calls_route_reader(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "stops": [],
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_meat_driver_route",
+            return_value=(service_result, 200),
+        ) as list_route:
+            response = self.client.get("/api/sales/meat-deliveries/driver-route?driver=Dad&date=2026-06-20")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        list_route.assert_called_once_with(driver_label="Dad", scheduled_date="2026-06-20")
+
+    def test_meat_driver_event_route_records_driver_event(self):
+        service_result = {
+            "success": True,
+            "status": "delivery_on_way",
+            "records_meat_fulfillment": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_meat_driver_delivery_event",
+            return_value=(service_result, 201),
+        ) as record_driver:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/driver-events",
+                json={"event_type": "delivery_on_way", "assigned_to": "Dad"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_driver.assert_called_once_with("OSK-SALES-LEAD-1", {"event_type": "delivery_on_way", "assigned_to": "Dad"})
+
+    def test_meat_journey_notification_draft_route_builds_draft(self):
+        service_result = {
+            "success": True,
+            "status": "draft_created",
+            "notification_event": {"message": "Customer update"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "build_meat_journey_notification_draft",
+            return_value=(service_result, 201),
+        ) as build_draft:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/journey-notification-draft",
+                json={"recorded_by": "Farm App"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        build_draft.assert_called_once_with("OSK-SALES-LEAD-1", {"recorded_by": "Farm App"})
+
+    def test_meat_journey_notification_approval_route_records_exact_approval(self):
+        service_result = {
+            "success": True,
+            "status": "approved_to_send",
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "approve_meat_journey_notification",
+            return_value=(service_result, 201),
+        ) as approve:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/journey-notification-approval",
+                json={"approved_message": "Customer update"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        approve.assert_called_once_with("OSK-SALES-LEAD-1", {"approved_message": "Customer update"})
+
+    def test_meat_journey_notification_send_route_calls_sender(self):
+        service_result = {
+            "success": False,
+            "status": "meat_journey_notification_send_disabled",
+            "sent": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "send_meat_journey_notification",
+            return_value=(service_result, 503),
+        ) as send:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/journey-notification-send",
+                json={"message": "Customer update"},
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), service_result)
+        send.assert_called_once_with("OSK-SALES-LEAD-1", {"message": "Customer update"})
+
     def test_meat_instruction_approval_route_records_exact_approval(self):
         service_result = {
             "success": True,

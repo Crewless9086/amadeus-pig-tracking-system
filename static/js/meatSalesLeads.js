@@ -58,6 +58,10 @@
     deliveryDriver: byId("meat_delivery_driver"),
     fulfillmentNotes: byId("meat_fulfillment_notes"),
     recordFulfillment: byId("meat_fulfillment_record"),
+    buildJourneyDraft: byId("meat_journey_build_draft"),
+    approveJourney: byId("meat_journey_approve"),
+    sendJourney: byId("meat_journey_send"),
+    journeyMessage: byId("meat_journey_message"),
     fulfillmentResult: byId("meat_fulfillment_result"),
     form: byId("meat_lead_approval_form"),
     pricePerKg: byId("meat_lead_price_per_kg"),
@@ -145,6 +149,9 @@
       elements.recordDeposit,
       elements.buildInstructions,
       elements.recordFulfillment,
+      elements.buildJourneyDraft,
+      elements.approveJourney,
+      elements.sendJourney,
       elements.approveDetails,
       elements.buildPreview,
       elements.approveMessage,
@@ -478,6 +485,9 @@
       elements.recordDeposit.disabled = true;
       elements.buildInstructions.disabled = true;
       elements.recordFulfillment.disabled = true;
+      elements.buildJourneyDraft.disabled = true;
+      elements.approveJourney.disabled = true;
+      elements.sendJourney.disabled = true;
       return;
     }
 
@@ -500,6 +510,9 @@
     elements.buildMatch.disabled = !hasLead;
     renderMeatOps();
     renderMeatFulfillment();
+    elements.buildJourneyDraft.disabled = !hasLead;
+    elements.approveJourney.disabled = !hasLead || !elements.journeyMessage.value.trim();
+    elements.sendJourney.disabled = !hasLead || !elements.journeyMessage.value.trim();
     elements.approveDetails.disabled = !hasLead;
     elements.buildPreview.disabled = !hasLead;
     elements.approveMessage.disabled = !hasLead || !elements.preview.value.trim();
@@ -912,6 +925,73 @@
     }
   };
 
+  const buildJourneyDraft = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/journey-notification-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recorded_by: "Farm App" }),
+      });
+      const event = payload.notification_event || {};
+      elements.journeyMessage.value = safe(event.message, "");
+      setMessage("Customer journey draft built. Approve the exact text before sending.", "success");
+    } catch (error) {
+      setMessage(`Could not build journey draft: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
+  const approveJourneyDraft = async () => {
+    const message = elements.journeyMessage.value.trim();
+    if (!state.selectedLeadId || !message) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/journey-notification-approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approved_message: message,
+          approved_by: "Farm App",
+        }),
+      });
+      setMessage("Customer journey draft approved exactly. Send remains backend-gated.", "success");
+    } catch (error) {
+      setMessage(`Could not approve journey draft: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
+  const sendJourneyUpdate = async () => {
+    const message = elements.journeyMessage.value.trim();
+    if (!state.selectedLeadId || !message) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/journey-notification-send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          recorded_by: "Farm App",
+        }),
+      });
+      setMessage("Customer journey update sent through the configured backend channel.", "success");
+    } catch (error) {
+      setMessage(`Could not send journey update: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
   const savePriceEntry = async (event) => {
     event.preventDefault();
     setBusy(true);
@@ -1091,6 +1171,10 @@
   elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
   elements.opsResult.addEventListener("click", handleInstructionAction);
   elements.recordFulfillment.addEventListener("click", recordFulfillmentEvent);
+  elements.buildJourneyDraft.addEventListener("click", buildJourneyDraft);
+  elements.approveJourney.addEventListener("click", approveJourneyDraft);
+  elements.sendJourney.addEventListener("click", sendJourneyUpdate);
+  elements.journeyMessage.addEventListener("input", renderDetail);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);

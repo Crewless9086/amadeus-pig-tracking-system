@@ -2,6 +2,8 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract
 from modules.sales.meat_ops import get_meat_ops_status
@@ -29,6 +31,17 @@ FULFILLMENT_EVENT_TYPES = {
     "delivery_failed",
     "exception_review_required",
     "exception_review_resolved",
+}
+
+JOURNEY_NOTIFICATION_SEND_ENABLED_ENV = "MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED"
+JOURNEY_NOTIFICATION_WEBHOOK_URL_ENV = "MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL"
+JOURNEY_NOTIFICATION_WEBHOOK_TOKEN_ENV = "MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN"
+
+DRIVER_EVENT_TYPES = {
+    "delivery_on_way",
+    "delivery_arrived",
+    "delivery_completed",
+    "delivery_failed",
 }
 
 
@@ -117,6 +130,220 @@ def record_meat_fulfillment_event(lead_id, payload=None, database_url=None):
         "next_gate": status.get("next_gate", ""),
         **_authority(True),
     }, 201
+
+
+def list_meat_driver_route(driver_label="", scheduled_date="", database_url=None):
+    driver_label = _clean(driver_label, 120)
+    scheduled_date = _clean(scheduled_date, 80)
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                lead_ids = _driver_lead_ids(cursor, driver_label, scheduled_date)
+                stops = []
+                for lead_id in lead_ids:
+                    events = _fetch_fulfillment_events(cursor, lead_id=lead_id)
+                    stops.append(_driver_stop_from_events(lead_id, events))
+    except Exception as exc:
+        return _failed("meat_driver_route_read_failed", exc), 503
+    stops = [stop for stop in stops if stop]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "meat_driver_route_read_only",
+        "driver_label": driver_label,
+        "scheduled_date": scheduled_date,
+        "stops": stops,
+        "count": len(stops),
+        **_authority(False),
+    }, 200
+
+
+def record_meat_driver_delivery_event(lead_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    event_type = _clean(payload.get("event_type"), 100)
+    if event_type not in DRIVER_EVENT_TYPES:
+        return {"success": False, "status": "invalid_driver_event_type", **_authority(False)}, 400
+    payload = {
+        **payload,
+        "actor_role": "driver",
+        "actor_label": payload.get("actor_label") or payload.get("assigned_to") or "Driver",
+    }
+    return record_meat_fulfillment_event(lead_id, payload, database_url=database_url)
+
+
+def build_meat_journey_notification_draft(lead_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    timeline_result, status_code = get_meat_fulfillment_timeline(lead_id, database_url=database_url)
+    if status_code != 200:
+        return timeline_result, status_code
+    journey = timeline_result.get("journey_plan") if isinstance(timeline_result.get("journey_plan"), dict) else {}
+    fulfillment = timeline_result.get("fulfillment") if isinstance(timeline_result.get("fulfillment"), dict) else {}
+    message = _journey_message(journey, fulfillment, payload)
+    if not message:
+        return {"success": False, "status": "journey_message_not_available", **_authority(False)}, 409
+    event = _notification_event_params(
+        _clean(lead_id, 100),
+        journey.get("stage", ""),
+        "draft_created",
+        message,
+        journey,
+        payload,
+    )
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                _insert_notification_event(cursor, event)
+                notifications = _fetch_notification_events(cursor, lead_id=_clean(lead_id, 100))
+    except Exception as exc:
+        return _failed("meat_journey_notification_draft_failed", exc), 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": "draft_created",
+        "mode": "meat_journey_notification_draft_only",
+        "notification_event": event,
+        "notifications": notifications,
+        "next_gate": "owner_exact_message_approval_before_customer_send",
+        **_authority(True),
+    }, 201
+
+
+def approve_meat_journey_notification(lead_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_id = _clean(lead_id, 100)
+    message = _clean(payload.get("message") or payload.get("approved_message"), 1600)
+    if not message:
+        return {"success": False, "status": "approved_message_required", **_authority(False)}, 400
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                notifications = _fetch_notification_events(cursor, lead_id=lead_id)
+                draft = _latest_notification(notifications, "draft_created")
+                if not draft:
+                    return {"success": False, "status": "journey_notification_draft_required", **_authority(False)}, 409
+                if draft.get("message_hash") != _message_hash(message):
+                    return {
+                        "success": False,
+                        "status": "approved_message_mismatch",
+                        "expected_hash": draft.get("message_hash", ""),
+                        "provided_hash": _message_hash(message),
+                        **_authority(False),
+                    }, 409
+                event = _notification_event_params(
+                    lead_id,
+                    draft.get("stage", ""),
+                    "approved_to_send",
+                    message,
+                    {"requires_template": draft.get("requires_template")},
+                    payload,
+                )
+                _insert_notification_event(cursor, event)
+                notifications = _fetch_notification_events(cursor, lead_id=lead_id)
+    except Exception as exc:
+        return _failed("meat_journey_notification_approval_failed", exc), 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": "approved_to_send",
+        "mode": "meat_journey_notification_exact_approval",
+        "notification_event": event,
+        "notifications": notifications,
+        "next_gate": "env_gated_customer_journey_send",
+        **_authority(True),
+    }, 201
+
+
+def send_meat_journey_notification(lead_id, payload=None, database_url=None, sender=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_id = _clean(lead_id, 100)
+    message = _clean(payload.get("message"), 1600)
+    if not _env_truthy(os.getenv(JOURNEY_NOTIFICATION_SEND_ENABLED_ENV)):
+        return {"success": False, "status": "meat_journey_notification_send_disabled", "sent": False, **_authority(False)}, 503
+    if not message:
+        return {"success": False, "status": "message_required", "sent": False, **_authority(False)}, 400
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False) | {"sent": False}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True) | {"sent": False}, 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                notifications = _fetch_notification_events(cursor, lead_id=lead_id)
+                approval = _latest_notification(notifications, "approved_to_send")
+                if approval.get("message_hash") != _message_hash(message):
+                    return {
+                        "success": False,
+                        "status": "journey_notification_send_not_approved",
+                        "sent": False,
+                        "message_hash": _message_hash(message),
+                        **_authority(False),
+                    }, 409
+                if any(item.get("event_type") == "sent" and item.get("message_hash") == _message_hash(message) for item in notifications):
+                    return {"success": True, "status": "already_sent", "sent": False, "skipped": True, **_authority(False)}, 200
+                attempted = _notification_event_params(lead_id, approval.get("stage", ""), "send_attempted", message, approval, payload)
+                _insert_notification_event(cursor, attempted)
+                try:
+                    send_result = (sender or _send_journey_notification_webhook)(lead_id, message, approval, payload)
+                except Exception as exc:
+                    failed = _notification_event_params(
+                        lead_id,
+                        approval.get("stage", ""),
+                        "send_failed",
+                        message,
+                        approval,
+                        payload | {"error_type": exc.__class__.__name__},
+                    )
+                    _insert_notification_event(cursor, failed)
+                    return {"success": False, "status": "journey_notification_send_failed", "sent": False, "error_type": exc.__class__.__name__, **_authority(True)}, 502
+                sent = _notification_event_params(
+                    lead_id,
+                    approval.get("stage", ""),
+                    "sent",
+                    message,
+                    approval,
+                    payload | {"send_result": send_result},
+                )
+                _insert_notification_event(cursor, sent)
+                notifications = _fetch_notification_events(cursor, lead_id=lead_id)
+    except Exception as exc:
+        return _failed("meat_journey_notification_send_failed", exc) | {"sent": False}, 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": "sent",
+        "sent": True,
+        "mode": "meat_journey_notification_customer_send",
+        "notification_event": sent,
+        "notifications": notifications,
+        "send_result": send_result,
+        "sends_customer_message": True,
+        **{key: value for key, value in _authority(True).items() if key != "sends_customer_message"},
+    }, 200
 
 
 def _fulfillment_status(ops, events, lead=None):
@@ -219,6 +446,186 @@ def _journey(stage, summary, status):
         "next_gate": status.get("next_gate", ""),
         "sends_now": False,
     }
+
+
+def _journey_message(journey, fulfillment, payload):
+    stage = _clean((payload or {}).get("stage") or journey.get("stage"), 100)
+    custom_message = _clean((payload or {}).get("message"), 1600)
+    if custom_message:
+        return custom_message
+    templates = {
+        "half_reserved_waiting_pair": "Thanks, your half carcass is reserved. We are pairing the other half before we book slaughter timing.",
+        "carcass_committed": "Good news, the full carcass is now committed. We are confirming abattoir and butcher timing before we promise delivery.",
+        "abattoir_confirmed": "Your pork is moving forward: the abattoir timing is confirmed, and we are confirming the butcher slot next.",
+        "butcher_confirmed": "The butcher slot is confirmed. Final packed weight and balance are confirmed after processing, then we schedule delivery.",
+        "delivery_scheduled": "Your delivery is scheduled. We will keep the update practical and avoid unnecessary messages.",
+        "driver_assigned": "Your delivery is on the route. The driver will update only when useful, such as on the way or arrived.",
+        "delivered": "Delivered. Thank you for supporting the farm and being part of the Amadeus pork journey.",
+        "exception_review": "There is a timing issue we are checking before we give you the next firm update.",
+        "intake": "Thanks, we are checking the remaining details before confirming the next step.",
+    }
+    return templates.get(stage) or templates.get("intake")
+
+
+def _driver_lead_ids(cursor, driver_label, scheduled_date):
+    where = ["event_type in ('delivery_scheduled', 'delivery_driver_assigned', 'delivery_on_way', 'delivery_arrived')"]
+    params = {}
+    if driver_label:
+        where.append("(assigned_to = %(driver_label)s or actor_label = %(driver_label)s)")
+        params["driver_label"] = driver_label
+    if scheduled_date:
+        where.append("scheduled_date = %(scheduled_date)s")
+        params["scheduled_date"] = scheduled_date
+    cursor.execute(
+        f"""
+        select distinct lead_id
+        from public.oom_sakkie_meat_fulfillment_events
+        where {' and '.join(where)}
+        order by lead_id asc
+        limit 100
+        """,
+        params,
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def _driver_stop_from_events(lead_id, events):
+    latest = _latest_by_type(events)
+    if latest.get("delivery_completed"):
+        state = "delivered"
+    elif latest.get("delivery_arrived"):
+        state = "arrived"
+    elif latest.get("delivery_on_way"):
+        state = "on_way"
+    elif latest.get("delivery_driver_assigned"):
+        state = "assigned"
+    elif latest.get("delivery_scheduled"):
+        state = "scheduled"
+    else:
+        state = "planned"
+    delivery = latest.get("delivery_scheduled") or latest.get("delivery_driver_assigned") or latest.get("delivery_address_captured") or {}
+    address = (latest.get("delivery_address_captured") or delivery).get("address") or {}
+    return {
+        "lead_id": lead_id,
+        "state": state,
+        "scheduled_date": delivery.get("scheduled_date", ""),
+        "scheduled_window": delivery.get("scheduled_window", ""),
+        "location_label": delivery.get("location_label", ""),
+        "assigned_to": (latest.get("delivery_driver_assigned") or {}).get("assigned_to", "") or delivery.get("assigned_to", ""),
+        "address": address,
+        "notes": delivery.get("notes", {}),
+        "latest_event": events[-1] if events else {},
+    }
+
+
+def _notification_event_params(lead_id, stage, event_type, message, journey, payload):
+    payload = payload if isinstance(payload, dict) else {}
+    journey = journey if isinstance(journey, dict) else {}
+    message = _clean(message, 1600)
+    return {
+        "notification_event_id": _id("OSK-MEAT-JOURNEY", f"{lead_id}|{stage}|{event_type}|{datetime.now(timezone.utc).isoformat()}"),
+        "lead_id": lead_id,
+        "fulfillment_event_id": _clean(payload.get("fulfillment_event_id"), 120),
+        "stage": _clean(stage, 100),
+        "event_type": event_type,
+        "message_hash": _message_hash(message),
+        "message": message,
+        "target_channel": _clean(payload.get("target_channel") or "chatwoot_whatsapp", 80),
+        "requires_template": bool(journey.get("requires_template")) or bool(payload.get("requires_template")),
+        "transport_result_json": json.dumps(payload.get("send_result") if isinstance(payload.get("send_result"), dict) else {}, default=str, ensure_ascii=True, sort_keys=True),
+        "notes_json": json.dumps({
+            "summary": _clean(journey.get("summary"), 800),
+            "customer_message_state": _clean(journey.get("customer_message_state"), 120),
+            "error_type": _clean(payload.get("error_type"), 120),
+            "notes": _clean(payload.get("notes"), 800),
+        }, default=str, ensure_ascii=True, sort_keys=True),
+        "recorded_by": _clean(payload.get("recorded_by") or payload.get("approved_by") or "Farm App", 80),
+    }
+
+
+def _insert_notification_event(cursor, params):
+    cursor.execute(
+        """
+        insert into public.oom_sakkie_meat_journey_notification_events (
+            notification_event_id, lead_id, fulfillment_event_id, stage,
+            event_type, message_hash, message, target_channel, requires_template,
+            transport_result_json, notes_json, recorded_by, created_at
+        )
+        values (
+            %(notification_event_id)s, %(lead_id)s, %(fulfillment_event_id)s, %(stage)s,
+            %(event_type)s, %(message_hash)s, %(message)s, %(target_channel)s, %(requires_template)s,
+            %(transport_result_json)s::jsonb, %(notes_json)s::jsonb, %(recorded_by)s, now()
+        )
+        """,
+        params,
+    )
+
+
+def _fetch_notification_events(cursor, lead_id):
+    cursor.execute(
+        """
+        select notification_event_id, lead_id, fulfillment_event_id, stage,
+               event_type, message_hash, message, target_channel, requires_template,
+               transport_result_json, notes_json, recorded_by, created_at
+        from public.oom_sakkie_meat_journey_notification_events
+        where lead_id = %(lead_id)s
+        order by created_at asc
+        """,
+        {"lead_id": lead_id},
+    )
+    return [_notification_row(row) for row in cursor.fetchall()]
+
+
+def _notification_row(row):
+    return {
+        "notification_event_id": row[0],
+        "lead_id": row[1],
+        "fulfillment_event_id": row[2] or "",
+        "stage": row[3] or "",
+        "event_type": row[4],
+        "message_hash": row[5] or "",
+        "message": row[6] or "",
+        "target_channel": row[7] or "",
+        "requires_template": bool(row[8]),
+        "transport_result": row[9] if isinstance(row[9], dict) else {},
+        "notes": row[10] if isinstance(row[10], dict) else {},
+        "recorded_by": row[11] or "",
+        "created_at": _iso(row[12]),
+    }
+
+
+def _latest_notification(events, event_type):
+    for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
+        if event.get("event_type") == event_type:
+            return event
+    return {}
+
+
+def _send_journey_notification_webhook(lead_id, message, approval, payload):
+    url = os.getenv(JOURNEY_NOTIFICATION_WEBHOOK_URL_ENV, "").strip()
+    token = os.getenv(JOURNEY_NOTIFICATION_WEBHOOK_TOKEN_ENV, "").strip()
+    if not url:
+        raise RuntimeError("MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL is required")
+    body = json.dumps({
+        "source": "amadeus_farm_app",
+        "kind": "meat_customer_journey_notification",
+        "lead_id": lead_id,
+        "stage": approval.get("stage", ""),
+        "message": message,
+        "message_hash": _message_hash(message),
+        "target_channel": approval.get("target_channel") or "chatwoot_whatsapp",
+        "requires_template": bool(approval.get("requires_template")),
+    }, default=str, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Amadeus-Meat-Journey-Key"] = token
+    req = urllib_request.Request(url, data=body, method="POST", headers=headers)
+    try:
+        with urllib_request.urlopen(req, timeout=20) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return {"status_code": getattr(response, "status", 200), "body": raw[:500]}
+    except urllib_error.HTTPError as exc:
+        raise RuntimeError(f"journey_notification_http_{exc.code}") from exc
 
 
 def _event_params(lead_id, payload, ops, lead):
@@ -419,6 +826,14 @@ def _id(prefix, seed):
 
 def _clean(value, limit):
     return " ".join(str(value or "").split())[:limit]
+
+
+def _message_hash(message):
+    return hashlib.sha256(_clean(message, 2000).encode("utf-8")).hexdigest()[:16].upper()
+
+
+def _env_truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _iso(value):

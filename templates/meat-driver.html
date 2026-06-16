@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meat Delivery Route</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/meatDriver.css') }}" />
+</head>
+<body>
+  <div class="container meat-driver-shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">Amadeus Farm</p>
+        <h1>Delivery Route</h1>
+      </div>
+      <a class="button-link button-link-secondary" href="/sales/meat-leads">Farm App</a>
+    </header>
+
+    <section class="meat-driver-controls" aria-label="Driver route filters">
+      <div class="form-group">
+        <label for="driver_name">Driver</label>
+        <input type="text" id="driver_name" placeholder="Dad" />
+      </div>
+      <div class="form-group">
+        <label for="driver_date">Date</label>
+        <input type="date" id="driver_date" />
+      </div>
+      <button type="button" id="driver_load" class="button-link">Load Route</button>
+    </section>
+
+    <div id="driver_message" class="form-message hidden"></div>
+    <section id="driver_route" class="meat-driver-route" aria-label="Delivery stops"></section>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/meatDriver.js') }}?v=20260616-driver-route"></script>
+</body>
+</html>

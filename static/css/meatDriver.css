@@ -1,0 +1,53 @@
+.meat-driver-shell {
+  max-width: 860px;
+}
+
+.meat-driver-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(150px, 0.8fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 18px 0;
+}
+
+.meat-driver-route {
+  display: grid;
+  gap: 12px;
+}
+
+.driver-stop {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.driver-stop header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.driver-stop strong {
+  color: #203528;
+}
+
+.driver-stop small,
+.driver-stop p {
+  color: #607066;
+}
+
+.driver-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .meat-driver-controls,
+  .driver-actions {
+    grid-template-columns: 1fr;
+  }
+}

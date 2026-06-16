@@ -58,6 +58,11 @@ def meat_sales_leads_page():
     return render_template("meat-sales-leads.html")
 
 
+@app.route("/sales/meat-driver")
+def meat_driver_page():
+    return render_template("meat-driver.html")
+
+
 @app.route("/pig-allocation")
 def pig_allocation_page():
     return render_template("pig-allocation.html")

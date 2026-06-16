@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from modules.sales import meat_fulfillment
 
@@ -77,6 +78,43 @@ class MeatFulfillmentTests(unittest.TestCase):
         self.assertTrue(open_status["exception_open"])
         self.assertEqual(open_status["next_gate"], "resolve_exception_review")
         self.assertFalse(resolved_status["exception_open"])
+
+    def test_driver_event_type_is_restricted_before_database(self):
+        result, status_code = meat_fulfillment.record_meat_driver_delivery_event(
+            "LEAD-1",
+            {"event_type": "delivery_scheduled"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "invalid_driver_event_type")
+
+    def test_journey_message_uses_stage_template_or_custom_message(self):
+        default_message = meat_fulfillment._journey_message(
+            {"stage": "driver_assigned"},
+            {},
+            {},
+        )
+        custom_message = meat_fulfillment._journey_message(
+            {"stage": "driver_assigned"},
+            {},
+            {"message": "Custom update"},
+        )
+
+        self.assertIn("route", default_message)
+        self.assertEqual(custom_message, "Custom update")
+
+    @patch.dict("os.environ", {"MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED": "0"}, clear=False)
+    def test_journey_notification_send_is_disabled_before_database_or_network(self):
+        result, status_code = meat_fulfillment.send_meat_journey_notification(
+            "LEAD-1",
+            {"message": "Approved text"},
+            database_url="postgres://should-not-be-used",
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["status"], "meat_journey_notification_send_disabled")
 
 
 if __name__ == "__main__":
