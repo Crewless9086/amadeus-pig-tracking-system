@@ -68,6 +68,7 @@ jobs:
           python scripts/apply_supabase_migration.py supabase/migrations/202606160004_allow_sam_meat_autoreply_events.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606160005_create_meat_price_book.sql
           python scripts/apply_supabase_migration.py supabase/migrations/202606160006_create_meat_ops_rails.sql
+          python scripts/apply_supabase_migration.py supabase/migrations/202606160007_create_meat_instruction_events.sql
 
       - name: Run Oom Sakkie audit-rail suite with live checks enabled
         run: python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book tests.test_meat_match_engine tests.test_meat_ops

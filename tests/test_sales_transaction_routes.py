@@ -433,6 +433,70 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         build_drafts.assert_called_once_with("OSK-SALES-LEAD-1", {"butcher_label": "Local Butcher"})
 
+    def test_meat_instruction_approval_route_records_exact_approval(self):
+        service_result = {
+            "success": True,
+            "status": "approved_to_send",
+            "records_meat_ops": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "approve_meat_instruction_draft",
+            return_value=(service_result, 201),
+        ) as approve_draft:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts/DRAFT-1/approval",
+                json={"approved_message": "Exact draft"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        approve_draft.assert_called_once_with("OSK-SALES-LEAD-1", "DRAFT-1", {"approved_message": "Exact draft"})
+
+    def test_meat_instruction_send_route_calls_gated_sender(self):
+        service_result = {
+            "success": True,
+            "status": "sent",
+            "sent": True,
+            "informs_external_party": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "send_approved_meat_instruction",
+            return_value=(service_result, 200),
+        ) as send_instruction:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts/DRAFT-1/send",
+                json={"message": "Exact draft"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        send_instruction.assert_called_once_with("OSK-SALES-LEAD-1", "DRAFT-1", {"message": "Exact draft"})
+
+    def test_meat_instruction_exception_route_records_review_state(self):
+        service_result = {
+            "success": True,
+            "status": "exception_review_required",
+            "records_meat_ops": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_meat_instruction_exception",
+            return_value=(service_result, 201),
+        ) as record_exception:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts/DRAFT-1/exception",
+                json={"reason": "Need abattoir slot date"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_exception.assert_called_once_with("OSK-SALES-LEAD-1", "DRAFT-1", {"reason": "Need abattoir slot date"})
+
     def test_meat_sales_lead_owner_approval_route_records_event(self):
         service_result = {
             "success": True,

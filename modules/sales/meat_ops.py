@@ -2,6 +2,8 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
@@ -14,6 +16,10 @@ ACTIVE_RESERVATION_STATUSES = {
     "deposit_pending",
     "ready_for_slaughter_booking",
 }
+
+MEAT_INSTRUCTION_SEND_ENABLED_ENV = "MEAT_INSTRUCTION_SEND_ENABLED"
+MEAT_INSTRUCTION_WEBHOOK_URL_ENV = "MEAT_INSTRUCTION_WEBHOOK_URL"
+MEAT_INSTRUCTION_WEBHOOK_TOKEN_ENV = "MEAT_INSTRUCTION_WEBHOOK_TOKEN"
 
 
 def get_meat_ops_status(lead_id, database_url=None):
@@ -32,7 +38,7 @@ def get_meat_ops_status(lead_id, database_url=None):
             with connection.cursor() as cursor:
                 reservations = _fetch_reservations(cursor, lead_id=lead_id)
                 deposits = _fetch_deposits(cursor, lead_id=lead_id)
-                drafts = _fetch_instruction_drafts(cursor, lead_id=lead_id)
+                drafts = _decorate_instruction_drafts(cursor, _fetch_instruction_drafts(cursor, lead_id=lead_id))
     except Exception as exc:
         return _failed("meat_ops_status_read_failed", exc), 503
     return {
@@ -222,7 +228,7 @@ def build_meat_instruction_drafts(lead_id, payload=None, database_url=None):
                         """,
                         draft,
                     )
-                stored = _fetch_instruction_drafts(cursor, lead_id=lead_id)
+                stored = _decorate_instruction_drafts(cursor, _fetch_instruction_drafts(cursor, lead_id=lead_id))
     except Exception as exc:
         return _failed("instruction_draft_write_failed", exc), 503
     return {
@@ -232,6 +238,196 @@ def build_meat_instruction_drafts(lead_id, payload=None, database_url=None):
         "mode": "abattoir_butcher_instruction_drafts_only",
         "instruction_drafts": stored,
         "next_gate": "owner_approves_external_send_or_manual_booking",
+        **_authority(True),
+    }, 201
+
+
+def approve_meat_instruction_draft(lead_id, instruction_draft_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_id = _clean(lead_id, 100)
+    instruction_draft_id = _clean(instruction_draft_id, 120)
+    approved_message = _clean(payload.get("approved_message") or payload.get("message"), 1200)
+    if not lead_id:
+        return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
+    if not instruction_draft_id:
+        return {"success": False, "status": "instruction_draft_id_required", **_authority(False)}, 400
+    if not approved_message:
+        return {"success": False, "status": "approved_message_required", **_authority(False)}, 400
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                draft = _fetch_instruction_draft(cursor, lead_id, instruction_draft_id)
+                if not draft:
+                    return {"success": False, "status": "instruction_draft_not_found", **_authority(False)}, 404
+                expected_message = _clean(draft.get("draft_message"), 1200)
+                if approved_message != expected_message:
+                    return {
+                        "success": False,
+                        "status": "approved_message_mismatch",
+                        "expected_hash": _message_hash(expected_message),
+                        "provided_hash": _message_hash(approved_message),
+                        **_authority(False),
+                    }, 409
+                event = _instruction_event_params(
+                    lead_id,
+                    draft,
+                    "approved_to_send",
+                    approved_message,
+                    payload,
+                )
+                _insert_instruction_event(cursor, event)
+                drafts = _decorate_instruction_drafts(cursor, _fetch_instruction_drafts(cursor, lead_id=lead_id))
+    except Exception as exc:
+        return _failed("instruction_approval_write_failed", exc), 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": "approved_to_send",
+        "mode": "meat_instruction_exact_message_approval",
+        "instruction_event": event,
+        "instruction_drafts": drafts,
+        "next_gate": "env_gated_instruction_send",
+        **_authority(True),
+    }, 201
+
+
+def send_approved_meat_instruction(lead_id, instruction_draft_id, payload=None, database_url=None, sender=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_id = _clean(lead_id, 100)
+    instruction_draft_id = _clean(instruction_draft_id, 120)
+    message = _clean(payload.get("message") or payload.get("approved_message"), 1200)
+    if not _env_truthy(os.getenv(MEAT_INSTRUCTION_SEND_ENABLED_ENV)):
+        return {"success": False, "status": "meat_instruction_send_disabled", "sent": False, **_authority(False)}, 503
+    if not message:
+        return {"success": False, "status": "message_required", "sent": False, **_authority(False)}, 400
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False) | {"sent": False}, 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True) | {"sent": False}, 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                draft = _fetch_instruction_draft(cursor, lead_id, instruction_draft_id)
+                if not draft:
+                    return {"success": False, "status": "instruction_draft_not_found", "sent": False, **_authority(False)}, 404
+                expected_message = _clean(draft.get("draft_message"), 1200)
+                if message != expected_message:
+                    return {
+                        "success": False,
+                        "status": "message_mismatch",
+                        "sent": False,
+                        "expected_hash": _message_hash(expected_message),
+                        "provided_hash": _message_hash(message),
+                        **_authority(False),
+                    }, 409
+                events = _fetch_instruction_events(cursor, instruction_draft_id=instruction_draft_id)
+                if any(item.get("event_type") == "sent" and item.get("message_hash") == _message_hash(message) for item in events):
+                    return {
+                        "success": True,
+                        "status": "already_sent",
+                        "sent": False,
+                        "skipped": True,
+                        "instruction_draft_id": instruction_draft_id,
+                        **_authority(False),
+                    }, 200
+                approval = _latest_instruction_event(events, "approved_to_send")
+                if approval.get("message_hash") != _message_hash(message):
+                    return {
+                        "success": False,
+                        "status": "instruction_send_not_approved",
+                        "sent": False,
+                        "message_hash": _message_hash(message),
+                        **_authority(False),
+                    }, 409
+                attempted = _instruction_event_params(lead_id, draft, "send_attempted", message, payload)
+                _insert_instruction_event(cursor, attempted)
+                try:
+                    send_result = (sender or _send_instruction_webhook)(draft, message, payload)
+                except Exception as exc:
+                    failed = _instruction_event_params(
+                        lead_id,
+                        draft,
+                        "send_failed",
+                        message,
+                        payload | {"error_type": exc.__class__.__name__},
+                    )
+                    _insert_instruction_event(cursor, failed)
+                    return {
+                        "success": False,
+                        "status": "instruction_send_failed",
+                        "sent": False,
+                        "error_type": exc.__class__.__name__,
+                        "instruction_event": failed,
+                        **_authority(True),
+                    }, 502
+                sent_event = _instruction_event_params(
+                    lead_id,
+                    draft,
+                    "sent",
+                    message,
+                    payload | {"send_result": send_result},
+                )
+                _insert_instruction_event(cursor, sent_event)
+                drafts = _decorate_instruction_drafts(cursor, _fetch_instruction_drafts(cursor, lead_id=lead_id))
+    except Exception as exc:
+        return _failed("instruction_send_write_failed", exc) | {"sent": False}, 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": "sent",
+        "sent": True,
+        "mode": "owner_approved_meat_instruction_send",
+        "instruction_event": sent_event,
+        "send_result": send_result,
+        "instruction_drafts": drafts,
+        "informs_external_party": True,
+        **_authority(True),
+    }, 200
+
+
+def record_meat_instruction_exception(lead_id, instruction_draft_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_id = _clean(lead_id, 100)
+    instruction_draft_id = _clean(instruction_draft_id, 120)
+    event_type = _clean(payload.get("event_type") or "exception_review_required", 80)
+    if event_type not in {"exception_review_required", "exception_review_resolved"}:
+        return {"success": False, "status": "invalid_exception_event_type", **_authority(False)}, 400
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                draft = _fetch_instruction_draft(cursor, lead_id, instruction_draft_id)
+                if not draft:
+                    return {"success": False, "status": "instruction_draft_not_found", **_authority(False)}, 404
+                event = _instruction_event_params(lead_id, draft, event_type, draft.get("draft_message", ""), payload)
+                _insert_instruction_event(cursor, event)
+                drafts = _decorate_instruction_drafts(cursor, _fetch_instruction_drafts(cursor, lead_id=lead_id))
+    except Exception as exc:
+        return _failed("instruction_exception_write_failed", exc), 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": event_type,
+        "mode": "meat_instruction_exception_review_append_only",
+        "instruction_event": event,
+        "instruction_drafts": drafts,
+        "next_gate": "owner_resolves_exception_before_auto_send",
         **_authority(True),
     }, 201
 
@@ -344,6 +540,89 @@ def _instruction_param(lead_id, reservation, instruction_type, recipient, messag
     }
 
 
+def _instruction_event_params(lead_id, draft, event_type, message, payload):
+    payload = payload if isinstance(payload, dict) else {}
+    message = _clean(message, 1200)
+    return {
+        "instruction_event_id": _id("OSK-MEAT-INSTRUCTION-EVENT", f"{lead_id}|{draft.get('instruction_draft_id')}|{event_type}|{datetime.now(timezone.utc).isoformat()}"),
+        "lead_id": lead_id,
+        "instruction_draft_id": draft.get("instruction_draft_id", ""),
+        "reservation_id": draft.get("reservation_id", ""),
+        "event_type": event_type,
+        "message_hash": _message_hash(message),
+        "approved_message": message if event_type == "approved_to_send" else "",
+        "target_channel": _clean(payload.get("target_channel") or payload.get("channel") or "webhook", 80),
+        "recipient_label": _clean(payload.get("recipient_label") or draft.get("recipient_label"), 120),
+        "notes_json": json.dumps({
+            "instruction_type": draft.get("instruction_type", ""),
+            "reason": _clean(payload.get("reason"), 500),
+            "notes": _clean(payload.get("notes"), 800),
+            "send_result": payload.get("send_result") if isinstance(payload.get("send_result"), dict) else {},
+            "error_type": _clean(payload.get("error_type"), 120),
+        }, default=str, ensure_ascii=True, sort_keys=True),
+        "recorded_by": _clean(payload.get("recorded_by") or payload.get("approved_by") or "Farm App", 80),
+    }
+
+
+def _insert_instruction_event(cursor, event):
+    cursor.execute(
+        """
+        insert into public.oom_sakkie_meat_instruction_events (
+            instruction_event_id, lead_id, instruction_draft_id, reservation_id,
+            event_type, message_hash, approved_message, target_channel,
+            recipient_label, notes_json, recorded_by, created_at
+        )
+        values (
+            %(instruction_event_id)s, %(lead_id)s, %(instruction_draft_id)s, %(reservation_id)s,
+            %(event_type)s, %(message_hash)s, %(approved_message)s, %(target_channel)s,
+            %(recipient_label)s, %(notes_json)s::jsonb, %(recorded_by)s, now()
+        )
+        """,
+        event,
+    )
+
+
+def _decorate_instruction_drafts(cursor, drafts):
+    if not drafts:
+        return []
+    events = _fetch_instruction_events(cursor, lead_id=drafts[0].get("lead_id", ""))
+    by_draft = {}
+    for event in events:
+        by_draft.setdefault(event.get("instruction_draft_id"), []).append(event)
+    decorated = []
+    for draft in drafts:
+        draft_events = by_draft.get(draft.get("instruction_draft_id"), [])
+        item = dict(draft)
+        item["events"] = draft_events
+        item["effective_status"] = _instruction_effective_status(draft_events)
+        item["latest_exception"] = _latest_instruction_event(draft_events, "exception_review_required")
+        item["latest_approval"] = _latest_instruction_event(draft_events, "approved_to_send")
+        item["latest_send"] = _latest_instruction_event(draft_events, "sent")
+        decorated.append(item)
+    return decorated
+
+
+def _instruction_effective_status(events):
+    if _latest_instruction_event(events, "sent"):
+        return "sent"
+    if _latest_instruction_event(events, "send_failed"):
+        return "send_failed"
+    exception = _latest_instruction_event(events, "exception_review_required")
+    resolved = _latest_instruction_event(events, "exception_review_resolved")
+    if exception and not resolved:
+        return "exception_review_required"
+    if _latest_instruction_event(events, "approved_to_send"):
+        return "approved_to_send"
+    return "draft"
+
+
+def _latest_instruction_event(events, event_type):
+    for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
+        if event.get("event_type") == event_type:
+            return event
+    return {}
+
+
 def _product_type(contract, payload):
     if payload.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"}:
         return payload["product_type"]
@@ -424,6 +703,45 @@ def _fetch_instruction_drafts(cursor, lead_id=None, reservation_id=None):
     return [_instruction_row(row) for row in cursor.fetchall()]
 
 
+def _fetch_instruction_draft(cursor, lead_id, instruction_draft_id):
+    cursor.execute(
+        """
+        select instruction_draft_id, lead_id, reservation_id, order_id, instruction_type,
+               status, recipient_label, draft_message, instruction_payload_json,
+               created_by, created_at
+        from public.oom_sakkie_meat_instruction_drafts
+        where lead_id = %(lead_id)s
+          and instruction_draft_id = %(instruction_draft_id)s
+        """,
+        {"lead_id": lead_id, "instruction_draft_id": instruction_draft_id},
+    )
+    row = cursor.fetchone()
+    return _instruction_row(row) if row else {}
+
+
+def _fetch_instruction_events(cursor, lead_id=None, instruction_draft_id=None):
+    where = []
+    params = {}
+    if lead_id:
+        where.append("lead_id = %(lead_id)s")
+        params["lead_id"] = lead_id
+    if instruction_draft_id:
+        where.append("instruction_draft_id = %(instruction_draft_id)s")
+        params["instruction_draft_id"] = instruction_draft_id
+    cursor.execute(
+        f"""
+        select instruction_event_id, lead_id, instruction_draft_id, reservation_id,
+               event_type, message_hash, approved_message, target_channel,
+               recipient_label, notes_json, recorded_by, created_at
+        from public.oom_sakkie_meat_instruction_events
+        {'where ' + ' and '.join(where) if where else ''}
+        order by created_at asc
+        """,
+        params,
+    )
+    return [_instruction_event_row(row) for row in cursor.fetchall()]
+
+
 def _reservation_row(row):
     return {
         "reservation_id": row[0],
@@ -476,6 +794,55 @@ def _instruction_row(row):
     }
 
 
+def _instruction_event_row(row):
+    return {
+        "instruction_event_id": row[0],
+        "lead_id": row[1],
+        "instruction_draft_id": row[2],
+        "reservation_id": row[3] or "",
+        "event_type": row[4],
+        "message_hash": row[5] or "",
+        "approved_message": row[6] or "",
+        "target_channel": row[7] or "",
+        "recipient_label": row[8] or "",
+        "notes": row[9] if isinstance(row[9], dict) else {},
+        "recorded_by": row[10] or "",
+        "created_at": _iso(row[11]),
+    }
+
+
+def _send_instruction_webhook(draft, message, payload):
+    url = os.getenv(MEAT_INSTRUCTION_WEBHOOK_URL_ENV, "").strip()
+    token = os.getenv(MEAT_INSTRUCTION_WEBHOOK_TOKEN_ENV, "").strip()
+    if not url:
+        raise RuntimeError("MEAT_INSTRUCTION_WEBHOOK_URL is required")
+    body = json.dumps({
+        "source": "amadeus_farm_app",
+        "kind": "meat_instruction",
+        "instruction_draft_id": draft.get("instruction_draft_id", ""),
+        "lead_id": draft.get("lead_id", ""),
+        "reservation_id": draft.get("reservation_id", ""),
+        "instruction_type": draft.get("instruction_type", ""),
+        "recipient_label": draft.get("recipient_label", ""),
+        "message": message,
+        "message_hash": _message_hash(message),
+        "target_channel": _clean(payload.get("target_channel") or payload.get("channel") or "webhook", 80),
+    }, default=str, ensure_ascii=True, sort_keys=True).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["X-Amadeus-Meat-Instruction-Key"] = token
+    req = urllib_request.Request(url, data=body, method="POST", headers=headers)
+    try:
+        with urllib_request.urlopen(req, timeout=20) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            return {
+                "status_code": getattr(response, "status", 200),
+                "body": raw[:500],
+            }
+    except urllib_error.HTTPError as exc:
+        raise RuntimeError(f"instruction_webhook_http_{exc.code}") from exc
+
+
 def _db_url(database_url):
     return (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
 
@@ -522,6 +889,14 @@ def _number(value):
         return round(float(value), 2)
     except (TypeError, ValueError):
         return None
+
+
+def _message_hash(message):
+    return hashlib.sha256(_clean(message, 2000).encode("utf-8")).hexdigest()[:16].upper()
+
+
+def _env_truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _iso(value):

@@ -372,9 +372,19 @@
     drafts.forEach((item) => {
       const row = document.createElement("div");
       row.className = "ops-list-item";
+      const effectiveStatus = safe(item.effective_status || item.status, "draft");
+      const isApproved = effectiveStatus === "approved_to_send" || effectiveStatus === "send_failed";
+      const isSent = effectiveStatus === "sent";
+      const isException = effectiveStatus === "exception_review_required";
       row.innerHTML = `
-        <strong>${safe(item.instruction_type)} | ${safe(item.status)}</strong>
+        <strong>${safe(item.instruction_type)} | ${effectiveStatus}</strong>
         <small>${safe(item.recipient_label)}: ${safe(item.draft_message)}</small>
+        <div class="meat-lead-actions">
+          <button type="button" class="button-link button-link-secondary" data-instruction-action="approve" data-instruction-id="${safe(item.instruction_draft_id, "")}" ${isApproved || isSent || isException ? "disabled" : ""}>Approve Exact Draft</button>
+          <button type="button" class="button-link" data-instruction-action="send" data-instruction-id="${safe(item.instruction_draft_id, "")}" ${!isApproved || isSent || isException ? "disabled" : ""}>Send Approved</button>
+          <button type="button" class="button-link button-link-secondary" data-instruction-action="exception" data-instruction-id="${safe(item.instruction_draft_id, "")}" ${isSent || isException ? "disabled" : ""}>Flag Exception</button>
+          <button type="button" class="button-link button-link-secondary" data-instruction-action="resolve_exception" data-instruction-id="${safe(item.instruction_draft_id, "")}" ${!isException ? "disabled" : ""}>Resolve Exception</button>
+        </div>
       `;
       elements.opsResult.appendChild(row);
     });
@@ -713,6 +723,97 @@
     }
   };
 
+  const instructionDraftById = (instructionId) => {
+    const drafts = Array.isArray(state.meatOps?.instruction_drafts) ? state.meatOps.instruction_drafts : [];
+    return drafts.find((item) => item.instruction_draft_id === instructionId) || {};
+  };
+
+  const approveInstructionDraft = async (instructionId) => {
+    const draft = instructionDraftById(instructionId);
+    if (!state.selectedLeadId || !draft.instruction_draft_id) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/instruction-drafts/${encodeURIComponent(instructionId)}/approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          approved_message: draft.draft_message,
+          approved_by: "Farm App",
+          target_channel: "webhook",
+        }),
+      });
+      await loadMeatOps();
+      setMessage("Instruction draft approved exactly. Send is now gated by backend env and this exact text.", "success");
+    } catch (error) {
+      setMessage(`Could not approve instruction draft: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatOps();
+    }
+  };
+
+  const sendInstructionDraft = async (instructionId) => {
+    const draft = instructionDraftById(instructionId);
+    if (!state.selectedLeadId || !draft.instruction_draft_id) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/instruction-drafts/${encodeURIComponent(instructionId)}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: draft.draft_message,
+          target_channel: "webhook",
+          recorded_by: "Farm App",
+        }),
+      });
+      await loadMeatOps();
+      setMessage("Approved instruction sent through the configured backend channel.", "success");
+    } catch (error) {
+      setMessage(`Could not send instruction: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatOps();
+    }
+  };
+
+  const markInstructionException = async (instructionId, eventType = "exception_review_required") => {
+    const draft = instructionDraftById(instructionId);
+    if (!state.selectedLeadId || !draft.instruction_draft_id) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/instruction-drafts/${encodeURIComponent(instructionId)}/exception`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          reason: eventType === "exception_review_resolved" ? "Owner resolved exception in Farm App" : "Owner marked instruction for review",
+          recorded_by: "Farm App",
+        }),
+      });
+      await loadMeatOps();
+      setMessage(eventType === "exception_review_resolved" ? "Instruction exception resolved." : "Instruction flagged for exception review.", "success");
+    } catch (error) {
+      setMessage(`Could not update instruction exception: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatOps();
+    }
+  };
+
+  const handleInstructionAction = (event) => {
+    const button = event.target.closest("[data-instruction-action]");
+    if (!button) return;
+    const instructionId = button.dataset.instructionId || "";
+    const action = button.dataset.instructionAction || "";
+    if (action === "approve") approveInstructionDraft(instructionId);
+    if (action === "send") sendInstructionDraft(instructionId);
+    if (action === "exception") markInstructionException(instructionId, "exception_review_required");
+    if (action === "resolve_exception") markInstructionException(instructionId, "exception_review_resolved");
+  };
+
   const savePriceEntry = async (event) => {
     event.preventDefault();
     setBusy(true);
@@ -890,6 +991,7 @@
   elements.reserveMatch.addEventListener("click", reserveMatchedCarcass);
   elements.recordDeposit.addEventListener("click", recordDeposit);
   elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
+  elements.opsResult.addEventListener("click", handleInstructionAction);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);

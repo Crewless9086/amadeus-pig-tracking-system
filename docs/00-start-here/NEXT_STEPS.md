@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price book and Butcher match active; carcass ops rails in build | Next build after this: prove reservation/deposit/instruction drafts on real meat leads, then add owner-approved auto-send/inform workflows. |
+| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price book, Butcher match, carcass ops, and instruction approval/send rails active | Next: deploy/review the Farm App flow on real meat leads, then tighten exception rules toward owner-by-exception automation. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -110,7 +110,7 @@ Next after this build:
 
 - Add a separate owner-approved reservation/allocation gate once the recommendation quality has been tested on real candidates.
 
-### Phase 11F Active Build - Meat Carcass Reservation, Deposit Gate, And Instruction Drafts
+### Phase 11F Complete - Meat Carcass Reservation, Deposit Gate, And Instruction Drafts
 
 Owner direction on 2026-06-16: the system should sell and assemble meat orders with the least owner work possible, but it must not slaughter a pig from one half-order or send third-party instructions before the gate is proven.
 
@@ -128,6 +128,25 @@ Next after this build:
 
 - Add owner-approved auto-send/inform workflows for abattoir and butcher drafts after the draft content and gate behavior are owner-tested.
 - Add exception review so routine safe cases can move automatically and only blocked/uncertain cases come back to the owner.
+
+### Phase 11G Active Build - Instruction Approval, Send, And Exception Review
+
+Owner direction on 2026-06-16: once instruction drafts are proven, the system should let the owner review exact abattoir/butcher drafts, approve the exact wording, send through the configured backend channel, and keep risky cases in exception review.
+
+Required outcome:
+
+- Append-only instruction events record exact draft approval, send attempts, successful sends, failed sends, exception-required flags, and exception resolutions.
+- Approval must compare the owner-approved text to the stored draft text and reject mismatches.
+- Sending must be disabled unless `MEAT_INSTRUCTION_SEND_ENABLED=1` and the exact message has a matching approval event.
+- Sending uses a backend-owned webhook transport configured by `MEAT_INSTRUCTION_WEBHOOK_URL`; optional `MEAT_INSTRUCTION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Instruction-Key`.
+- Farm App `/sales/meat-leads` exposes approve, send, flag exception, and resolve exception actions per instruction draft.
+- Send failures are recorded as append-only events and do not mutate the original draft.
+- This build informs approved third-party instruction recipients only; it still does not create stock changes, slaughter completion, quote/invoice generation, payment allocation, or autonomous abattoir booking confirmation.
+
+Next after this build:
+
+- Owner-test real abattoir/butcher draft content and webhook recipient behavior.
+- Decide the first safe exception rules for partial automation, for example missing recipient, missing slaughter date, missing cut set, failed webhook, or no confirmed balance.
 
 ### Staying on track (Cursor + Claude Code)
 

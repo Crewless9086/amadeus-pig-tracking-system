@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from modules.sales import meat_ops
 
@@ -96,6 +97,51 @@ class MeatOpsTests(unittest.TestCase):
         self.assertEqual({draft["instruction_type"] for draft in drafts}, {"abattoir_booking", "butcher_cut_sheet"})
         self.assertIn("draft only", drafts[0]["draft_message"].lower())
         self.assertIn("Set A", drafts[1]["draft_message"])
+
+    def test_instruction_effective_status_prefers_sent_and_exception(self):
+        self.assertEqual(meat_ops._instruction_effective_status([]), "draft")
+        self.assertEqual(meat_ops._instruction_effective_status([
+            {"event_type": "approved_to_send", "created_at": "2026-06-16T01:00:00"},
+        ]), "approved_to_send")
+        self.assertEqual(meat_ops._instruction_effective_status([
+            {"event_type": "approved_to_send", "created_at": "2026-06-16T01:00:00"},
+            {"event_type": "exception_review_required", "created_at": "2026-06-16T02:00:00"},
+        ]), "exception_review_required")
+        self.assertEqual(meat_ops._instruction_effective_status([
+            {"event_type": "exception_review_required", "created_at": "2026-06-16T02:00:00"},
+            {"event_type": "exception_review_resolved", "created_at": "2026-06-16T03:00:00"},
+        ]), "draft")
+        self.assertEqual(meat_ops._instruction_effective_status([
+            {"event_type": "send_failed", "created_at": "2026-06-16T04:00:00"},
+        ]), "send_failed")
+        self.assertEqual(meat_ops._instruction_effective_status([
+            {"event_type": "send_failed", "created_at": "2026-06-16T04:00:00"},
+            {"event_type": "sent", "created_at": "2026-06-16T05:00:00"},
+        ]), "sent")
+
+    @patch.dict("os.environ", {"MEAT_INSTRUCTION_SEND_ENABLED": "0"}, clear=False)
+    def test_instruction_send_is_disabled_before_database_or_network(self):
+        result, status_code = meat_ops.send_approved_meat_instruction(
+            "LEAD-1",
+            "DRAFT-1",
+            {"message": "Approved text"},
+            database_url="postgres://should-not-be-used",
+        )
+
+        self.assertEqual(status_code, 503)
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["status"], "meat_instruction_send_disabled")
+
+    def test_invalid_exception_event_type_fails_before_database(self):
+        result, status_code = meat_ops.record_meat_instruction_exception(
+            "LEAD-1",
+            "DRAFT-1",
+            {"event_type": "send_anyway"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "invalid_exception_event_type")
 
 
 if __name__ == "__main__":

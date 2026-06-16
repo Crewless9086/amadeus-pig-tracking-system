@@ -330,6 +330,9 @@ Implementation status 2026-06-16:
 - Estimated totals use expected packed weight ranges first; final customer amount must be based on actual processed packed weight.
 - The carcass reservation build records half/full carcass commitments append-only and prevents slaughter instruction drafts until a full carcass is assembled and deposit is confirmed.
 - Abattoir and butcher messages are drafted internally first. External booking/inform sends require a later owner-approved workflow gate.
+- Owner-approved instruction send now uses append-only instruction events: exact approval, send attempted, sent, send failed, exception required, and exception resolved.
+- Instruction sends are disabled unless `MEAT_INSTRUCTION_SEND_ENABLED=1` and `MEAT_INSTRUCTION_WEBHOOK_URL` is configured. Optional `MEAT_INSTRUCTION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Instruction-Key`.
+- Instruction sends inform the configured recipient channel only; they do not complete slaughter, change stock, create payment allocation, or replace final packed-weight reconciliation.
 
 ## Weekly Operating Rhythm
 

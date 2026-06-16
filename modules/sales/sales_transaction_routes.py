@@ -26,10 +26,13 @@ from modules.sales.sales_transaction_read import get_sales_transaction, list_sal
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.meat_ops import (
+    approve_meat_instruction_draft,
     build_meat_instruction_drafts,
     create_carcass_reservation_from_lead,
     get_meat_ops_status,
     record_meat_deposit_event,
+    record_meat_instruction_exception,
+    send_approved_meat_instruction,
 )
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
@@ -219,6 +222,27 @@ def meat_sales_lead_deposit_event(lead_id):
 def meat_sales_lead_instruction_drafts(lead_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = build_meat_instruction_drafts(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts/<instruction_draft_id>/approval", methods=["POST"])
+def meat_sales_lead_instruction_draft_approval(lead_id, instruction_draft_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = approve_meat_instruction_draft(lead_id, instruction_draft_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts/<instruction_draft_id>/send", methods=["POST"])
+def meat_sales_lead_instruction_draft_send(lead_id, instruction_draft_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_approved_meat_instruction(lead_id, instruction_draft_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/instruction-drafts/<instruction_draft_id>/exception", methods=["POST"])
+def meat_sales_lead_instruction_draft_exception(lead_id, instruction_draft_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_meat_instruction_exception(lead_id, instruction_draft_id, payload)
     return jsonify(result), status_code
 
 
