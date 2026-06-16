@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 11C controlled private smoke passed for lane guard and conversation fact carry-forward. Backend follow-up fact events are implemented locally and need deploy/live readback.
+Phase 11C controlled private smoke passed for lane guard, conversation fact carry-forward, approved cut-menu context, and backend follow-up fact events.
 
 ## Backend Env
 
@@ -99,12 +99,13 @@ Observed retest result:
 - The workflow payload carried forward Charl, half carcass, Set A, Riversdale, next available week, collection, and EFT.
 - The backend handoff returned the same lead `OSK-SALES-LEAD-D583E2649366146A`.
 
-Next backend readback after deploy:
+Backend readback:
 
-- A follow-up Sam handoff should create an append-only `status_observed` fact event for the existing lead.
-- `GET /api/oom-sakkie/sales-leads/<lead_id>/preorder-contract` should merge Sam fact events so `delivery_or_collection = collection`, `payment_method = EFT`, and `available_week = next available week` are no longer missing.
+- Follow-up Sam handoff creates an append-only `status_observed` fact event for the existing lead.
+- `GET /api/oom-sakkie/sales-leads/<lead_id>/preorder-contract` merges Sam fact events so `delivery_or_collection = collection`, `payment_method = EFT`, and `available_week = next available week` are no longer missing.
+- Ledger owner approval is recorded as an append-only `owner_money_path_approved` event through `POST /api/oom-sakkie/sales-leads/<lead_id>/owner-money-path-approval`.
 
-Cut menu test is not ready until Charl supplies the approved Set A/Set B/etc. cut menu source. Until then, Sam must not invent cut contents.
+Cut menu source is now `docs/08-business-modules/PORK_SALES_MODEL.md` rows 246-303. Sam may describe approved Set A/Set B/Set C/Set D contents, but must not invent extras or treat cut-set selection as price, timing, deposit, booking, or owner approval.
 
 ## Readback
 
@@ -127,4 +128,5 @@ Stop immediately if any of these happen:
 - Sam asks for payment or deposit.
 - Any order/preorder is created.
 - Any stock is reserved or allocated.
+- Ledger owner approval event triggers any customer send, Chatwoot call, n8n call, quote/order creation, stock change, or financial action.
 - Chatwoot custom attributes lose existing `order_id`, `order_status`, `conversation_mode`, `pending_action`, or `payment_method`.
