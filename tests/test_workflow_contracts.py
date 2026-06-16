@@ -323,6 +323,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("MEAT PREORDER RULES (CRITICAL)", sales_agent_system)
         self.assertIn("Do not ask for a live-pig weight range", sales_agent_system)
         self.assertIn("Do not quote price/kg", sales_agent_system)
+        self.assertIn("Do not list or describe the contents of Set A", sales_agent_system)
+        self.assertIn("approved cut menu source", sales_agent_system)
         self.assertIn("ask only the next safe missing question", sales_agent_system)
 
         self.assertIn("/api/oom-sakkie/channels/chatwoot/sam-meat-intake", http_text)

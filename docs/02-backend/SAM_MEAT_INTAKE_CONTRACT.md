@@ -68,6 +68,14 @@ Accepted auth:
 
 This route is default-off. It records only the same tracking lead contract and returns `remote_ingest` authority flags showing no customer send, Chatwoot call, n8n call, quote/order creation, stock change, or financial action.
 
+## Append-Only Follow-Up Facts
+
+The lead row stays append-only. Every accepted Sam meat-intake handoff also records a bounded `status_observed` event in `oom_sakkie_sales_lead_events` with `recorded_by = sam_meat_intake`.
+
+The event notes contain a compact JSON fact snapshot for the same lead. This lets Sam record later conversation facts such as `collection`, `EFT`, or updated timing without mutating the original lead row.
+
+Ledger/preorder-contract readback merges the original lead `interest_json` with the newest non-empty Sam fact snapshots before calculating missing money-path fields.
+
 ## Payload
 
 ```json
@@ -121,6 +129,12 @@ These are not required to record the lead, but they are required before any preo
 - `owner_final_approval`
 
 Sam may collect customer preferences, but owner approval is still required before the farm quotes or asks for deposit.
+
+## Cut Menu Boundary
+
+Sam may recognize a customer-selected cut set such as `Set A`, but Sam must not invent or describe the contents of Set A/Set B/Set C until an owner-approved cut menu source exists.
+
+Until the cut menu source is added, if a customer asks what cuts are included, Sam should say the farm will confirm the exact cut set details before quoting.
 
 ## Response Shape
 

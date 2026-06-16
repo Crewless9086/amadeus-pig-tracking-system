@@ -113,6 +113,9 @@ Live smoke note 2026-06-16:
 - The follow-up smoke stayed in the meat-preorder lane and did not ask live-pig weight range, but exposed two extractor gaps: the current message phrase `not a live pig` was treated as mixed live-pig intent, and earlier facts like `Riversdale` were not carried into the Sam meat-intake payload.
 - The repo export and live n8n workflow were patched again so `Code - Build Sam Meat Intake Payload` extracts meat-intake facts from `ConversationHistory` plus the current customer message, while live-pig intent is checked only against the current message after removing negated phrases such as `not a live pig`.
 - Next retest should use `Yes, Riversdale is correct.` in the same WhatsApp conversation and confirm the backend handoff records/keeps a complete meat-preorder lead without asking for live-pig weight range, quoting price, promising timing, requesting deposit, or creating an order.
+- Retest passed: Sam carried forward Riversdale, EFT, and the half-carcass Set A context, and the backend handoff hit the same lead `OSK-SALES-LEAD-D583E2649366146A`.
+- Backend follow-up build now records each accepted Sam handoff as an append-only `status_observed` fact event, and Ledger preorder contract readback merges those Sam fact events with the original immutable lead row.
+- Cut-menu knowledge is still intentionally not live. Sam may recognize the selected cut set, but must not list or describe Set A/Set B/etc. contents until Charl supplies an owner-approved cut menu source.
 
 ## Phase 5.6 Intake Capture
 

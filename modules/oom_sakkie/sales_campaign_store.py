@@ -484,11 +484,21 @@ def record_sam_meat_intake_lead(payload, database_url=None):
         }, 400
 
     result, status_code = record_sales_lead(lead_payload, database_url=database_url)
+    event_result = {}
+    event_status_code = None
+    if status_code == 201 and isinstance(result, dict) and result.get("success"):
+        event_result, event_status_code = record_sales_lead_event(
+            result.get("lead_id", ""),
+            _sam_meat_intake_event_payload(lead_payload, contract),
+            database_url=database_url,
+        )
     if isinstance(result, dict):
         result = {
             **result,
             "mode": "sam_meat_intake_tracking_only",
             "contract": contract,
+            "fact_event": event_result if isinstance(event_result, dict) else {},
+            "fact_event_status_code": event_status_code,
             "next_gate": "owner_review_before_preorder_deposit_order_stock_or_customer_send",
             **_false_flags(),
         }
@@ -711,6 +721,19 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
                     {"lead_id": lead_id},
                 )
                 row = cursor.fetchone()
+                event_rows = []
+                if row:
+                    cursor.execute(
+                        """
+                        select event_type, notes, recorded_by, status_observed, created_at
+                        from public.oom_sakkie_sales_lead_events
+                        where lead_id = %(lead_id)s
+                        order by created_at asc
+                        limit 50
+                        """,
+                        {"lead_id": lead_id},
+                    )
+                    event_rows = cursor.fetchall()
     except Exception as exc:
         return {
             "success": False,
@@ -724,6 +747,7 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
         return {"success": False, "configured": True, "status": "sales_lead_not_found", **_false_flags()}, 404
 
     lead = _sales_lead_row(row)
+    lead["events"] = [_sales_lead_event_row(event_row) for event_row in event_rows]
     contract = build_preorder_deposit_contract_from_lead(lead)
     return {
         "success": True,
@@ -740,7 +764,7 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
 
 def build_preorder_deposit_contract_from_lead(lead):
     lead = lead if isinstance(lead, dict) else {}
-    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+    interest = _merged_sam_meat_intake_interest(lead)
 
     present = {
         "lead_id": lead.get("lead_id", ""),
@@ -797,6 +821,68 @@ def build_preorder_deposit_contract_from_lead(lead):
         ],
         **_false_flags(),
     }
+
+
+def _sam_meat_intake_event_payload(lead_payload, contract):
+    lead_payload = lead_payload if isinstance(lead_payload, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+    interest = lead_payload.get("interest") if isinstance(lead_payload.get("interest"), dict) else {}
+    fact_snapshot = {
+        "source": "sam_meat_intake",
+        "kind": "fact_snapshot",
+        "lane": "meat_preorder",
+        "interest": {
+            "product": interest.get("product", ""),
+            "product_type": interest.get("product_type", ""),
+            "cut_set": interest.get("cut_set", ""),
+            "location": interest.get("location", ""),
+            "timing": interest.get("timing", ""),
+            "delivery_or_collection": interest.get("delivery_or_collection", ""),
+            "price_per_kg": interest.get("price_per_kg", ""),
+            "deposit_rule": interest.get("deposit_rule", ""),
+            "payment_method": interest.get("payment_method", ""),
+            "notes": _clean_text(interest.get("notes", ""), 180),
+            "conversation_id": interest.get("conversation_id", ""),
+            "contact_id": interest.get("contact_id", ""),
+            "sam_intake_lane": interest.get("sam_intake_lane", ""),
+        },
+        "contract": {
+            "missing_core_fields": contract.get("missing_core_fields") or [],
+            "missing_before_money_path": contract.get("missing_before_money_path") or [],
+        },
+        "authority": {
+            "records_tracking_lead": True,
+            "sends_customer_message": False,
+            "creates_order": False,
+            "changes_stock": False,
+        },
+    }
+    return {
+        "event_type": "status_observed",
+        "status_observed": lead_payload.get("status") or "interested",
+        "recorded_by": "sam_meat_intake",
+        "notes": _json(fact_snapshot),
+    }
+
+
+def _merged_sam_meat_intake_interest(lead):
+    base = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+    merged = dict(base)
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("recorded_by") != "sam_meat_intake":
+            continue
+        snapshot = _parse_json_object(event.get("notes", ""))
+        if snapshot.get("source") != "sam_meat_intake":
+            continue
+        event_interest = snapshot.get("interest") if isinstance(snapshot.get("interest"), dict) else {}
+        for key, value in event_interest.items():
+            cleaned = _clean_text(value, 700)
+            if cleaned:
+                merged[key] = cleaned
+    return merged
 
 
 def record_sales_lead_event(lead_id, payload, database_url=None):
@@ -1469,6 +1555,16 @@ def _sales_lead_row(row):
     }
 
 
+def _sales_lead_event_row(row):
+    return {
+        "event_type": row[0] or "",
+        "notes": row[1] or "",
+        "recorded_by": row[2] or "",
+        "status_observed": row[3] or "",
+        "created_at": _iso(row[4]),
+    }
+
+
 def _fetch_campaign_row(cursor, campaign_id):
     cursor.execute(
         """
@@ -1811,6 +1907,14 @@ def _sales_leads_unavailable(status, configured):
 
 def _json(value):
     return json.dumps(value if value is not None else {}, default=str, ensure_ascii=True, sort_keys=True)
+
+
+def _parse_json_object(value):
+    try:
+        parsed = json.loads(str(value or ""))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _clean_text(value, limit):

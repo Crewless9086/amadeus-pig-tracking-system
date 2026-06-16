@@ -163,6 +163,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
+    record_sam_meat_intake_lead,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
 )
@@ -5113,6 +5114,47 @@ def literal_false_is_allowed():
         self.assertFalse(contract["changes_stock"])
         self.assertFalse(contract["writes_farm_data"])
 
+    def test_preorder_deposit_contract_merges_sam_fact_events(self):
+        event_snapshot = {
+            "source": "sam_meat_intake",
+            "kind": "fact_snapshot",
+            "lane": "meat_preorder",
+            "interest": {
+                "delivery_or_collection": "collection",
+                "payment_method": "EFT",
+                "timing": "next available week",
+            },
+        }
+        contract = build_preorder_deposit_contract_from_lead({
+            "lead_id": "OSK-SALES-LEAD-733F06EE5501FB3B",
+            "lead_label": "Jan - half carcass interest",
+            "status": "interested",
+            "campaign_source": "inbound_chatwoot",
+            "whatsapp_window_state": "open",
+            "interest": {
+                "product": "Half carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "notes": "First message did not include collection.",
+            },
+            "events": [
+                {"event_type": "review_note", "recorded_by": "owner", "notes": "Plain owner note."},
+                {"event_type": "status_observed", "recorded_by": "sam_meat_intake", "notes": json.dumps(event_snapshot)},
+            ],
+        })
+
+        required = contract["required_before_money_path"]
+
+        self.assertEqual(required["delivery_or_collection"], "collection")
+        self.assertEqual(required["payment_method"], "EFT")
+        self.assertEqual(required["available_week"], "next available week")
+        self.assertNotIn("delivery_or_collection", contract["missing_fields"])
+        self.assertNotIn("payment_method", contract["missing_fields"])
+        self.assertNotIn("available_week", contract["missing_fields"])
+        self.assertIn("price_per_kg", contract["missing_fields"])
+        self.assertFalse(contract["creates_order"])
+        self.assertFalse(contract["sends_customer_message"])
+
     def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({
             "customer_name": "Jan",
@@ -5141,6 +5183,52 @@ def literal_false_is_allowed():
         self.assertFalse(contract["authority"]["creates_order"])
         self.assertFalse(contract["authority"]["changes_stock"])
         self.assertFalse(contract["authority"]["writes_farm_data"])
+
+    @patch("modules.oom_sakkie.sales_campaign_store.record_sales_lead_event")
+    @patch("modules.oom_sakkie.sales_campaign_store.record_sales_lead")
+    def test_sam_meat_intake_records_followup_fact_event(self, mock_record_lead, mock_record_event):
+        mock_record_lead.return_value = ({
+            "success": True,
+            "status": "ok",
+            "created_count": 0,
+            "lead_id": "OSK-SALES-LEAD-D583E2649366146A",
+            "sales_leads": [],
+        }, 201)
+        mock_record_event.return_value = ({
+            "success": True,
+            "status": "ok",
+            "event_id": "OSK-SALES-LEAD-EVENT-TEST",
+            "lead_id": "OSK-SALES-LEAD-D583E2649366146A",
+        }, 201)
+
+        result, status_code = record_sam_meat_intake_lead({
+            "customer_name": "Charl N",
+            "conversation_id": "1808",
+            "contact_id": "699428938",
+            "product_type": "half_carcass",
+            "cut_set": "Set A",
+            "location": "Riversdale",
+            "timing": "next available week",
+            "delivery_or_collection": "collection",
+            "payment_method": "EFT",
+            "notes": "Yes, Riversdale is correct.",
+        }, database_url="postgresql://example")
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["fact_event_status_code"], 201)
+        mock_record_event.assert_called_once()
+        event_lead_id, event_payload = mock_record_event.call_args.args[:2]
+        event_notes = json.loads(event_payload["notes"])
+
+        self.assertEqual(event_lead_id, "OSK-SALES-LEAD-D583E2649366146A")
+        self.assertEqual(event_payload["event_type"], "status_observed")
+        self.assertEqual(event_payload["recorded_by"], "sam_meat_intake")
+        self.assertEqual(event_notes["source"], "sam_meat_intake")
+        self.assertEqual(event_notes["interest"]["delivery_or_collection"], "collection")
+        self.assertEqual(event_notes["interest"]["payment_method"], "EFT")
+        self.assertFalse(event_notes["authority"]["creates_order"])
+        self.assertFalse(event_notes["authority"]["sends_customer_message"])
 
     def test_sam_meat_intake_requires_core_fields_before_recording(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({

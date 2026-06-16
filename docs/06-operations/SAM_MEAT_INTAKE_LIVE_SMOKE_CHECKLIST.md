@@ -2,7 +2,7 @@
 
 ## Status
 
-Phase 11C controlled private smoke in progress. Backend and n8n gates are enabled, the workflow branch is live, and the next pass must prove conversation fact carry-forward.
+Phase 11C controlled private smoke passed for lane guard and conversation fact carry-forward. Backend follow-up fact events are implemented locally and need deploy/live readback.
 
 ## Backend Env
 
@@ -85,18 +85,26 @@ Expected:
 - First WhatsApp smoke saved tracking-only lead `OSK-SALES-LEAD-D583E2649366146A`, but Sam asked for live-pig weight range. Fixed by preserving `reply_instruction` through `Code - Decide Order Route` and adding explicit meat-preorder rules to the Sales Agent prompt.
 - Follow-up smoke stayed in the meat-preorder lane, but asked to reconfirm Riversdale because the meat-intake extractor used only the current WhatsApp message. Fixed by extracting payload facts from `ConversationHistory` plus the current message, and by ignoring negated phrases such as `not a live pig` for live-pig intent detection.
 
-Next retest message in the same WhatsApp conversation:
+Retest message in the same WhatsApp conversation:
 
 ```text
 Yes, Riversdale is correct.
 ```
 
-Expected next retest result:
+Observed retest result:
 
-- Sam should not ask live-pig weight range.
-- Sam should not ask again whether the customer means live pig or pork.
-- Sam should not quote price/kg, promise timing, ask for deposit, reserve stock, or create an order.
-- The handoff should have enough carried-forward facts to keep or record a complete owner/Ledger meat-preorder lead: Charl, half carcass, Set A, Riversdale, next available week, collection, EFT.
+- Sam did not ask live-pig weight range.
+- Sam did not ask again whether the customer means live pig or pork.
+- Sam did not quote price/kg, promise timing, ask for deposit, reserve stock, or create an order.
+- The workflow payload carried forward Charl, half carcass, Set A, Riversdale, next available week, collection, and EFT.
+- The backend handoff returned the same lead `OSK-SALES-LEAD-D583E2649366146A`.
+
+Next backend readback after deploy:
+
+- A follow-up Sam handoff should create an append-only `status_observed` fact event for the existing lead.
+- `GET /api/oom-sakkie/sales-leads/<lead_id>/preorder-contract` should merge Sam fact events so `delivery_or_collection = collection`, `payment_method = EFT`, and `available_week = next available week` are no longer missing.
+
+Cut menu test is not ready until Charl supplies the approved Set A/Set B/etc. cut menu source. Until then, Sam must not invent cut contents.
 
 ## Readback
 
