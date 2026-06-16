@@ -4,9 +4,12 @@ from flask import Blueprint, jsonify, request
 
 from modules.oom_sakkie.sales_campaign_store import (
     create_draft_order_from_sales_lead,
+    get_sales_lead_pricing_estimate,
     get_sales_lead_customer_followup_draft,
     get_sales_lead_preorder_contract,
+    list_meat_price_book_entries,
     list_sales_leads,
+    record_meat_price_book_entry,
     record_customer_booking_confirmation,
     record_customer_followup_send_approval,
     record_owner_money_path_approval,
@@ -142,9 +145,33 @@ def meat_sales_leads_list():
     return jsonify(result), status_code
 
 
+@sales_bp.route("/sales/meat-pricing", methods=["GET"])
+def meat_price_book_list():
+    result, status_code = list_meat_price_book_entries(limit=request.args.get("limit", 50))
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-pricing", methods=["POST"])
+def meat_price_book_create():
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_meat_price_book_entry(payload)
+    return jsonify(result), status_code
+
+
 @sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])
 def meat_sales_lead_contract(lead_id):
     result, status_code = get_sales_lead_preorder_contract(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/pricing-estimate", methods=["GET", "POST"])
+def meat_sales_lead_pricing_estimate(lead_id):
+    payload = request.get_json(silent=True) or {}
+    if request.method == "GET":
+        payload = {
+            "selected_pig_live_weight_kg": request.args.get("selected_pig_live_weight_kg", ""),
+        }
+    result, status_code = get_sales_lead_pricing_estimate(lead_id, payload)
     return jsonify(result), status_code
 
 

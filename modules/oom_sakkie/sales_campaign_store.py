@@ -71,6 +71,107 @@ MEAT_INTAKE_PRODUCT_TYPES = {
     "unknown",
 }
 
+MEAT_PRICE_PRODUCT_TYPES = {
+    "half_carcass",
+    "full_carcass",
+    "custom_cut",
+    "assisted_slaughter",
+    "live_pig",
+}
+
+MEAT_PRICE_UNITS = {
+    "per_kg",
+    "per_pig_fee",
+}
+
+DEFAULT_MEAT_PRICE_BOOK = [
+    {
+        "price_entry_id": "OSK-MEAT-PRICE-CODE-HALF-SET-A",
+        "product_type": "half_carcass",
+        "cut_set": "Set A",
+        "price_unit": "per_kg",
+        "price_amount": 130.00,
+        "currency": "ZAR",
+        "deposit_rule": "50% deposit to confirm",
+        "balance_rule": "Balance due before delivery or collection",
+        "yield_basis": "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight.",
+        "effective_from": "2026-06-16T00:00:00+02:00",
+        "active": True,
+        "notes": "Code fallback from Pork Sales Model pilot.",
+        "created_by": "code_defaults",
+        "created_at": "2026-06-16T00:00:00+02:00",
+        "source": "code_defaults",
+    },
+    {
+        "price_entry_id": "OSK-MEAT-PRICE-CODE-HALF",
+        "product_type": "half_carcass",
+        "cut_set": "",
+        "price_unit": "per_kg",
+        "price_amount": 130.00,
+        "currency": "ZAR",
+        "deposit_rule": "50% deposit to confirm",
+        "balance_rule": "Balance due before delivery or collection",
+        "yield_basis": "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight.",
+        "effective_from": "2026-06-16T00:00:00+02:00",
+        "active": True,
+        "notes": "Code fallback standard half-carcass rule.",
+        "created_by": "code_defaults",
+        "created_at": "2026-06-16T00:00:00+02:00",
+        "source": "code_defaults",
+    },
+    {
+        "price_entry_id": "OSK-MEAT-PRICE-CODE-FULL",
+        "product_type": "full_carcass",
+        "cut_set": "",
+        "price_unit": "per_kg",
+        "price_amount": 130.00,
+        "currency": "ZAR",
+        "deposit_rule": "50% deposit to confirm",
+        "balance_rule": "Balance due before delivery or collection",
+        "yield_basis": "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight.",
+        "effective_from": "2026-06-16T00:00:00+02:00",
+        "active": True,
+        "notes": "Code fallback standard full-carcass rule.",
+        "created_by": "code_defaults",
+        "created_at": "2026-06-16T00:00:00+02:00",
+        "source": "code_defaults",
+    },
+    {
+        "price_entry_id": "OSK-MEAT-PRICE-CODE-CUSTOM",
+        "product_type": "custom_cut",
+        "cut_set": "",
+        "price_unit": "per_kg",
+        "price_amount": 145.00,
+        "currency": "ZAR",
+        "deposit_rule": "70% deposit to confirm custom cut order",
+        "balance_rule": "Balance due before delivery or collection",
+        "yield_basis": "Custom cut yield is estimated before slaughter and finalized from actual packed weight.",
+        "effective_from": "2026-06-16T00:00:00+02:00",
+        "active": True,
+        "notes": "Code fallback custom cut planning rule.",
+        "created_by": "code_defaults",
+        "created_at": "2026-06-16T00:00:00+02:00",
+        "source": "code_defaults",
+    },
+    {
+        "price_entry_id": "OSK-MEAT-PRICE-CODE-ASSISTED",
+        "product_type": "assisted_slaughter",
+        "cut_set": "",
+        "price_unit": "per_pig_fee",
+        "price_amount": 250.00,
+        "currency": "ZAR",
+        "deposit_rule": "Coordination fee confirmed before booking",
+        "balance_rule": "Balance due before collection",
+        "yield_basis": "Assisted slaughter is a coordination fee, not a carcass price/kg.",
+        "effective_from": "2026-06-16T00:00:00+02:00",
+        "active": True,
+        "notes": "Code fallback assisted slaughter fee.",
+        "created_by": "code_defaults",
+        "created_at": "2026-06-16T00:00:00+02:00",
+        "source": "code_defaults",
+    },
+]
+
 
 def record_sales_campaign(payload, database_url=None):
     payload = payload if isinstance(payload, dict) else {}
@@ -515,6 +616,236 @@ def record_sam_meat_intake_lead(payload, database_url=None):
             **_false_flags(),
         }
     return result, status_code
+
+
+def list_meat_price_book_entries(limit=50, database_url=None):
+    parsed_limit = _bounded_limit(limit)
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return {
+            "success": True,
+            "configured": False,
+            "status": "code_defaults_only",
+            "mode": "meat_price_book_append_only",
+            "price_entries": DEFAULT_MEAT_PRICE_BOOK[:parsed_limit],
+            "active_recommendations": _active_meat_price_recommendations(DEFAULT_MEAT_PRICE_BOOK),
+            "source": "code_defaults",
+            **_false_flags(),
+        }, 200
+
+    try:
+        import psycopg
+    except ImportError:
+        return _price_book_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select price_entry_id, product_type, cut_set, price_unit,
+                           price_amount, currency, deposit_rule, balance_rule,
+                           yield_basis, effective_from, active, notes,
+                           created_by, created_at
+                    from public.oom_sakkie_meat_price_book_entries
+                    order by effective_from desc, created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": parsed_limit},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "meat_price_book_read_failed",
+            "error_type": exc.__class__.__name__,
+            "price_entries": [],
+            **_false_flags(),
+        }, 503
+
+    entries = [_meat_price_book_row(row) for row in rows]
+    source = "supabase" if entries else "code_defaults"
+    effective_entries = entries if entries else DEFAULT_MEAT_PRICE_BOOK
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "meat_price_book_append_only",
+        "price_entries": entries,
+        "active_recommendations": _active_meat_price_recommendations(effective_entries),
+        "source": source,
+        **_false_flags(),
+    }, 200
+
+
+def record_meat_price_book_entry(payload, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    params, error = _meat_price_book_params(payload)
+    if error:
+        return error, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _price_book_unavailable("not_configured", configured=False), 503
+
+    try:
+        import psycopg
+    except ImportError:
+        return _price_book_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_meat_price_book_entries (
+                        price_entry_id,
+                        product_type,
+                        cut_set,
+                        price_unit,
+                        price_amount,
+                        currency,
+                        deposit_rule,
+                        balance_rule,
+                        yield_basis,
+                        effective_from,
+                        active,
+                        notes,
+                        created_by,
+                        created_at
+                    )
+                    values (
+                        %(price_entry_id)s,
+                        %(product_type)s,
+                        %(cut_set)s,
+                        %(price_unit)s,
+                        %(price_amount)s,
+                        'ZAR',
+                        %(deposit_rule)s,
+                        %(balance_rule)s,
+                        %(yield_basis)s,
+                        %(effective_from)s::timestamptz,
+                        %(active)s,
+                        %(notes)s,
+                        %(created_by)s,
+                        now()
+                    )
+                    returning price_entry_id
+                    """,
+                    params,
+                )
+                cursor.fetchone()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "meat_price_book_write_failed",
+            "error_type": exc.__class__.__name__,
+            **_false_flags(),
+        }, 503
+
+    listed, list_status = list_meat_price_book_entries(limit=50, database_url=database_url)
+    if list_status != 200:
+        return listed, list_status
+    entry = next(
+        (item for item in listed.get("price_entries", []) if item.get("price_entry_id") == params["price_entry_id"]),
+        {},
+    )
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "meat_price_book_append_only",
+        "price_entry_id": params["price_entry_id"],
+        "price_entry": entry,
+        "records_price_book_entry": True,
+        "next_gate": "future_quotes_use_latest_effective_price_but_owner_send_approval_still_required",
+        **_false_flags(),
+    }, 201
+
+
+def get_sales_lead_pricing_estimate(lead_id, payload=None, database_url=None):
+    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    if contract_status != 200:
+        return contract_result, contract_status
+    price_result, price_status = list_meat_price_book_entries(limit=100, database_url=database_url)
+    if price_status != 200:
+        return price_result, price_status
+    estimate = build_meat_pricing_estimate_from_contract(
+        contract_result.get("lead") or {},
+        contract_result.get("contract") or {},
+        price_result.get("price_entries") or DEFAULT_MEAT_PRICE_BOOK,
+        payload or {},
+    )
+    return {
+        "success": True,
+        "configured": contract_result.get("configured", True),
+        "status": "ok",
+        "mode": "meat_price_rule_estimate_only",
+        "lead_id": contract_result.get("lead_id") or _clean_text(lead_id, 100),
+        "lead": contract_result.get("lead") or {},
+        "contract": contract_result.get("contract") or {},
+        "pricing_estimate": estimate,
+        "next_gate": "owner_reviews_estimate_before_customer_send_or_draft_order",
+        **_false_flags(),
+    }, 200
+
+
+def build_meat_pricing_estimate_from_contract(lead, contract, price_entries=None, overrides=None):
+    lead = lead if isinstance(lead, dict) else {}
+    contract = contract if isinstance(contract, dict) else {}
+    overrides = overrides if isinstance(overrides, dict) else {}
+    summary = contract.get("lead_summary") if isinstance(contract.get("lead_summary"), dict) else {}
+    required = contract.get("required_before_money_path") if isinstance(contract.get("required_before_money_path"), dict) else {}
+    interest = _merged_sales_lead_interest(lead)
+    product_type = _normal_meat_product_type(
+        overrides.get("product_type") or interest.get("product_type") or summary.get("product") or interest.get("product")
+    )
+    cut_set = _normal_cut_set(overrides.get("cut_set") or interest.get("cut_set") or summary.get("cut_set"))
+    entries = price_entries if isinstance(price_entries, list) and price_entries else DEFAULT_MEAT_PRICE_BOOK
+    rule = _resolve_meat_price_rule(entries, product_type, cut_set)
+    live_weight = _first_number(overrides.get("selected_pig_live_weight_kg") or interest.get("selected_pig_live_weight_kg"))
+    yield_estimate = _meat_yield_estimate(product_type, live_weight)
+    estimated_weight = _clean_text(overrides.get("estimated_weight_or_size") or required.get("estimated_weight_or_size"), 120)
+    if not estimated_weight:
+        estimated_weight = yield_estimate["display"]
+    price_label = _price_rule_label(rule)
+    estimate_amount = _estimate_amount_from_price_rule(rule, yield_estimate)
+    deposit_rule = _clean_text(required.get("deposit_amount_or_rule") or rule.get("deposit_rule"), 180)
+    balance_rule = _clean_text(rule.get("balance_rule"), 180)
+    if balance_rule and balance_rule.lower() not in deposit_rule.lower():
+        combined_deposit_rule = f"{deposit_rule}; {balance_rule}" if deposit_rule else balance_rule
+    else:
+        combined_deposit_rule = deposit_rule
+    approval_payload = {
+        "price_per_kg": price_label,
+        "available_week": _clean_text(required.get("available_week") or interest.get("timing") or "next available week", 120),
+        "estimated_weight_or_size": estimated_weight,
+        "deposit_rule": combined_deposit_rule,
+        "payment_method": _clean_text(required.get("payment_method") or interest.get("payment_method") or "EFT", 80),
+        "delivery_or_collection": _clean_text(
+            required.get("delivery_or_collection") or interest.get("delivery_or_collection") or "collection",
+            80,
+        ),
+        "owner_final_approval": "Yes",
+    }
+    return {
+        "product_type": product_type,
+        "cut_set": cut_set,
+        "price_rule": rule,
+        "price_label": price_label,
+        "yield_estimate": yield_estimate,
+        "estimated_total": estimate_amount,
+        "estimated_total_label": f"R{estimate_amount:,.2f}" if estimate_amount is not None else "",
+        "recommended_owner_approval": approval_payload,
+        "assumptions": [
+            "Estimate only; final customer amount uses actual processed packed weight.",
+            "No deposit may be requested until capacity and owner approval are confirmed.",
+            "No stock reservation or pig allocation is made by this estimate.",
+        ],
+        **_false_flags(),
+    }
 
 
 def build_sam_meat_intake_lead_payload(payload):
@@ -2388,6 +2719,26 @@ def _sales_lead_event_row(row):
     }
 
 
+def _meat_price_book_row(row):
+    return {
+        "price_entry_id": row[0],
+        "product_type": row[1],
+        "cut_set": row[2] or "",
+        "price_unit": row[3],
+        "price_amount": _as_float(row[4]),
+        "currency": row[5],
+        "deposit_rule": row[6] or "",
+        "balance_rule": row[7] or "",
+        "yield_basis": row[8] or "",
+        "effective_from": _iso(row[9]),
+        "active": bool(row[10]),
+        "notes": row[11] or "",
+        "created_by": row[12] or "",
+        "created_at": _iso(row[13]),
+        "source": "supabase",
+    }
+
+
 def _fetch_campaign_row(cursor, campaign_id):
     cursor.execute(
         """
@@ -2663,6 +3014,193 @@ def _manual_preorder_followup_prompt(present, missing_fields):
     )
 
 
+def _active_meat_price_recommendations(entries):
+    recommendations = {}
+    for product_type in ("half_carcass", "full_carcass", "custom_cut", "assisted_slaughter"):
+        rule = _resolve_meat_price_rule(entries, product_type, "Set A" if product_type == "half_carcass" else "")
+        recommendations[product_type] = {
+            "price_label": _price_rule_label(rule),
+            "deposit_rule": rule.get("deposit_rule", ""),
+            "balance_rule": rule.get("balance_rule", ""),
+            "yield_basis": rule.get("yield_basis", ""),
+            "source": rule.get("source", ""),
+        }
+    return recommendations
+
+
+def _resolve_meat_price_rule(entries, product_type, cut_set):
+    product_type = _normal_meat_product_type(product_type)
+    cut_set = _normal_cut_set(cut_set)
+    candidates = []
+    fallback = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("product_type") != product_type:
+            continue
+        if entry.get("active") is False:
+            continue
+        entry_cut = _normal_cut_set(entry.get("cut_set"))
+        if cut_set and entry_cut == cut_set:
+            candidates.append(entry)
+        elif not entry_cut:
+            fallback.append(entry)
+    selected = _latest_effective_entry(candidates) or _latest_effective_entry(fallback)
+    if selected:
+        return selected
+    return _latest_effective_entry(DEFAULT_MEAT_PRICE_BOOK) or DEFAULT_MEAT_PRICE_BOOK[0]
+
+
+def _latest_effective_entry(entries):
+    active = [entry for entry in entries if isinstance(entry, dict) and entry.get("active") is not False]
+    if not active:
+        return {}
+    return sorted(
+        active,
+        key=lambda item: (_clean_text(item.get("effective_from"), 80), _clean_text(item.get("created_at"), 80)),
+        reverse=True,
+    )[0]
+
+
+def _meat_yield_estimate(product_type, live_weight):
+    if live_weight is None:
+        full_min, full_max = 38.0, 42.0
+        source = "business_default_60kg_live_weight"
+    else:
+        full_min = round(live_weight * 0.63, 1)
+        full_max = round(live_weight * 0.70, 1)
+        source = "selected_pig_latest_live_weight"
+    if product_type == "half_carcass":
+        min_kg = round(full_min / 2, 1)
+        max_kg = round(full_max / 2, 1)
+        display = f"estimated {min_kg:g}-{max_kg:g}kg packed half carcass"
+    elif product_type == "full_carcass":
+        min_kg = full_min
+        max_kg = full_max
+        display = f"estimated {min_kg:g}-{max_kg:g}kg packed full carcass"
+    elif product_type == "custom_cut":
+        min_kg = full_min
+        max_kg = full_max
+        display = f"estimated {min_kg:g}-{max_kg:g}kg packed custom cut order"
+    else:
+        min_kg = None
+        max_kg = None
+        display = "coordination fee; no packed-weight estimate"
+    midpoint = round((min_kg + max_kg) / 2, 2) if min_kg is not None and max_kg is not None else None
+    return {
+        "source": source,
+        "selected_pig_live_weight_kg": live_weight,
+        "min_packed_kg": min_kg,
+        "max_packed_kg": max_kg,
+        "midpoint_packed_kg": midpoint,
+        "display": display,
+        "final_weight_rule": "Final customer amount uses actual processed packed weight.",
+    }
+
+
+def _estimate_amount_from_price_rule(rule, yield_estimate):
+    price = _as_float(rule.get("price_amount"))
+    if price is None:
+        return None
+    if rule.get("price_unit") == "per_pig_fee":
+        return round(price, 2)
+    midpoint = yield_estimate.get("midpoint_packed_kg") if isinstance(yield_estimate, dict) else None
+    if midpoint is None:
+        return None
+    return round(price * midpoint, 2)
+
+
+def _price_rule_label(rule):
+    price = _as_float(rule.get("price_amount"))
+    if price is None:
+        return ""
+    suffix = "/kg" if rule.get("price_unit") != "per_pig_fee" else " fee"
+    return f"R{price:,.2f}{suffix}"
+
+
+def _normal_meat_product_type(value):
+    text = _clean_text(value, 120).lower().replace(" ", "_")
+    if text in MEAT_PRICE_PRODUCT_TYPES:
+        return text
+    if "half" in text:
+        return "half_carcass"
+    if "full" in text or "whole" in text:
+        return "full_carcass"
+    if "custom" in text or "cut" in text:
+        return "custom_cut"
+    if "assisted" in text or "slaughter" in text:
+        return "assisted_slaughter"
+    return "half_carcass"
+
+
+def _normal_cut_set(value):
+    text = _clean_text(value, 80)
+    lower = text.lower()
+    for letter in ("a", "b", "c", "d"):
+        if lower in {f"set {letter}", f"set{letter}", letter}:
+            return f"Set {letter.upper()}"
+    return text
+
+
+def _meat_price_book_params(payload):
+    product_type = _normal_meat_product_type(payload.get("product_type"))
+    if product_type not in MEAT_PRICE_PRODUCT_TYPES:
+        return None, {"success": False, "status": "invalid_product_type", **_false_flags()}
+    price_unit = _clean_text(payload.get("price_unit") or "per_kg", 40)
+    if price_unit not in MEAT_PRICE_UNITS:
+        return None, {"success": False, "status": "invalid_price_unit", **_false_flags()}
+    price_amount = _as_float(payload.get("price_amount") or payload.get("price_per_kg"))
+    if price_amount is None or price_amount < 0:
+        return None, {"success": False, "status": "price_amount_required", **_false_flags()}
+    cut_set = _normal_cut_set(payload.get("cut_set"))
+    effective_from = _clean_text(payload.get("effective_from"), 80) or datetime.now(timezone.utc).isoformat()
+    seed = json.dumps({
+        "product_type": product_type,
+        "cut_set": cut_set,
+        "price_unit": price_unit,
+        "price_amount": round(price_amount, 2),
+        "effective_from": effective_from,
+        "created_by": _clean_text(payload.get("created_by") or "Farm App", 80),
+    }, sort_keys=True)
+    return {
+        "price_entry_id": _meat_price_entry_id(seed),
+        "product_type": product_type,
+        "cut_set": cut_set,
+        "price_unit": price_unit,
+        "price_amount": round(price_amount, 2),
+        "deposit_rule": _clean_text(payload.get("deposit_rule") or _default_deposit_rule(product_type), 180),
+        "balance_rule": _clean_text(
+            payload.get("balance_rule") or "Balance due before delivery or collection",
+            180,
+        ),
+        "yield_basis": _clean_text(payload.get("yield_basis") or _default_yield_basis(product_type), 260),
+        "effective_from": effective_from,
+        "active": payload.get("active") is not False,
+        "notes": _clean_text(payload.get("notes"), 500),
+        "created_by": _clean_text(payload.get("created_by") or "Farm App", 80),
+    }, None
+
+
+def _default_deposit_rule(product_type):
+    if product_type == "custom_cut":
+        return "70% deposit to confirm custom cut order"
+    if product_type == "live_pig":
+        return "30% deposit to reserve"
+    if product_type == "assisted_slaughter":
+        return "Coordination fee confirmed before booking"
+    return "50% deposit to confirm"
+
+
+def _default_yield_basis(product_type):
+    if product_type == "half_carcass":
+        return "Estimated packed half-carcass weight from 60kg live pig: 19-21kg; final amount uses actual packed weight."
+    if product_type == "full_carcass":
+        return "Estimated packed full-carcass weight from 60kg live pig: 38-42kg; final amount uses actual packed weight."
+    if product_type == "custom_cut":
+        return "Custom cut yield is estimated before slaughter and finalized from actual packed weight."
+    return "No packed-weight estimate."
+
+
 def _sam_meat_next_question(missing_core, missing_before_money_path):
     question_map = {
         "customer_name": "Who should I put this interest under?",
@@ -2706,6 +3244,11 @@ def _lead_event_id(lead_id, event_type):
     return f"OSK-SALES-LEAD-EVENT-{digest}"
 
 
+def _meat_price_entry_id(seed):
+    digest = hashlib.sha256(str(seed or "").encode("utf-8")).hexdigest()[:16].upper()
+    return f"OSK-MEAT-PRICE-{digest}"
+
+
 def _send_design_unavailable(status, configured):
     return {
         "success": False,
@@ -2713,6 +3256,17 @@ def _send_design_unavailable(status, configured):
         "status": status,
         "mode": "customer_send_design_request_queue",
         "send_design_requests": [],
+        **_false_flags(),
+    }
+
+
+def _price_book_unavailable(status, configured):
+    return {
+        "success": False,
+        "configured": configured,
+        "status": status,
+        "mode": "meat_price_book_append_only",
+        "price_entries": [],
         **_false_flags(),
     }
 
@@ -2799,6 +3353,15 @@ def _bounded_limit(limit):
         return max(1, min(100, int(limit)))
     except (TypeError, ValueError):
         return 20
+
+
+def _as_float(value):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return _first_number(value)
 
 
 def _iso(value):

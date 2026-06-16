@@ -5,6 +5,8 @@
     contract: null,
     draft: null,
     messageApproved: false,
+    priceEntries: [],
+    pricingEstimate: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -18,6 +20,14 @@
     needPriceCount: byId("meat_leads_need_price_count"),
     readyCount: byId("meat_leads_ready_count"),
     sentCount: byId("meat_leads_sent_count"),
+    priceRefresh: byId("meat_price_refresh"),
+    priceForm: byId("meat_price_form"),
+    priceStatus: byId("meat_price_book_status"),
+    priceProductType: byId("meat_price_product_type"),
+    priceCutSet: byId("meat_price_cut_set"),
+    priceAmount: byId("meat_price_amount"),
+    priceUnit: byId("meat_price_unit"),
+    priceList: byId("meat_price_book_list"),
     detailTitle: byId("meat_lead_detail_title"),
     detailStatus: byId("meat_lead_detail_status"),
     facts: byId("meat_lead_facts"),
@@ -29,6 +39,8 @@
     paymentMethod: byId("meat_lead_payment_method"),
     deliveryCollection: byId("meat_lead_delivery_collection"),
     ownerApproval: byId("meat_lead_owner_approval"),
+    usePricing: byId("meat_lead_use_pricing"),
+    estimateStatus: byId("meat_lead_estimate_status"),
     approveDetails: byId("meat_lead_approve_details"),
     buildPreview: byId("meat_lead_build_preview"),
     preview: byId("meat_lead_message_preview"),
@@ -88,6 +100,9 @@
   const setBusy = (busy) => {
     [
       elements.refresh,
+      elements.priceRefresh,
+      elements.priceForm?.querySelector("button"),
+      elements.usePricing,
       elements.approveDetails,
       elements.buildPreview,
       elements.approveMessage,
@@ -184,6 +199,27 @@
     });
   };
 
+  const renderPriceBook = () => {
+    if (!elements.priceList) return;
+    const entries = Array.isArray(state.priceEntries) ? state.priceEntries.slice(0, 8) : [];
+    elements.priceList.innerHTML = "";
+    elements.priceStatus.textContent = `${entries.length} latest price ${entries.length === 1 ? "entry" : "entries"} loaded. New entries become active from their effective time.`;
+    if (!entries.length) {
+      elements.priceList.innerHTML = '<div class="table-empty">No price entries loaded.</div>';
+      return;
+    }
+    entries.forEach((entry) => {
+      const item = document.createElement("div");
+      item.className = "ops-list-item";
+      const unit = entry.price_unit === "per_pig_fee" ? "fee" : "/kg";
+      item.innerHTML = `
+        <strong>${safe(entry.product_type).replaceAll("_", " ")} ${safe(entry.cut_set, "")}</strong>
+        <small>R${Number(entry.price_amount || 0).toFixed(2)}${unit} | ${safe(entry.deposit_rule)} | from ${safe(entry.effective_from, "now")}</small>
+      `;
+      elements.priceList.appendChild(item);
+    });
+  };
+
   const renderFacts = (lead, contract) => {
     const interest = interestOf(lead);
     const missing = Array.isArray(contract?.missing_fields) ? contract.missing_fields : [];
@@ -260,7 +296,14 @@
     elements.paymentMethod.value = safe(interest.payment_method, "");
     elements.deliveryCollection.value = safe(interest.delivery_or_collection, "");
     elements.ownerApproval.value = "Yes";
+    if (state.pricingEstimate) {
+      applyPricingEstimate(state.pricingEstimate, false);
+    }
+    elements.estimateStatus.textContent = state.pricingEstimate?.estimated_total_label
+      ? `Estimate: ${state.pricingEstimate.estimated_total_label} from active pricing rules. Final amount uses actual packed weight.`
+      : "Pricing rules can prefill price, weight estimate, and deposit terms.";
 
+    elements.usePricing.disabled = !hasLead;
     elements.approveDetails.disabled = !hasLead;
     elements.buildPreview.disabled = !hasLead;
     elements.approveMessage.disabled = !hasLead || !elements.preview.value.trim();
@@ -294,15 +337,28 @@
     }
   };
 
+  const loadPriceBook = async () => {
+    try {
+      const payload = await fetchJson("/api/sales/meat-pricing?limit=50");
+      state.priceEntries = Array.isArray(payload.price_entries) ? payload.price_entries : [];
+      renderPriceBook();
+    } catch (error) {
+      elements.priceStatus.textContent = `Could not load price book: ${error.message}`;
+      elements.priceList.innerHTML = '<div class="table-empty">Price book could not be loaded.</div>';
+    }
+  };
+
   async function loadLeadDetail(leadId) {
     state.contract = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(leadId)}/contract`);
     state.draft = null;
     state.messageApproved = false;
+    state.pricingEstimate = null;
     elements.preview.value = "";
     elements.customerConfirmation.value = "";
     elements.sendStatus.textContent = "No order, quote, or stock change is made from this page.";
     elements.orderStatus.textContent = "Draft order only. No pig reservation or stock change.";
     renderDetail();
+    await loadPricingEstimate(true);
   }
 
   async function selectLead(leadId) {
@@ -330,6 +386,81 @@
     owner_final_approval: elements.ownerApproval.value.trim(),
     recorded_by: "Farm App",
   });
+
+  const applyPricingEstimate = (estimate, overwrite = false) => {
+    const approval = estimate?.recommended_owner_approval || {};
+    const setValue = (input, value) => {
+      if (!input || !value) return;
+      if (overwrite || !input.value.trim()) input.value = value;
+    };
+    setValue(elements.pricePerKg, approval.price_per_kg);
+    setValue(elements.availableWeek, approval.available_week);
+    setValue(elements.weightSize, approval.estimated_weight_or_size);
+    setValue(elements.depositRule, approval.deposit_rule);
+    setValue(elements.paymentMethod, approval.payment_method);
+    setValue(elements.deliveryCollection, approval.delivery_or_collection);
+    setValue(elements.ownerApproval, approval.owner_final_approval);
+    elements.estimateStatus.textContent = estimate?.estimated_total_label
+      ? `Estimate: ${estimate.estimated_total_label}. ${safe(estimate.yield_estimate?.display, "")}. Final amount uses actual packed weight.`
+      : "Pricing rules applied where available.";
+  };
+
+  const loadPricingEstimate = async (prefill = false) => {
+    if (!state.selectedLeadId) return;
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/pricing-estimate`);
+      state.pricingEstimate = payload.pricing_estimate || {};
+      if (prefill) applyPricingEstimate(state.pricingEstimate, false);
+    } catch (error) {
+      elements.estimateStatus.textContent = `Could not load pricing estimate: ${error.message}`;
+    } finally {
+      renderDetail();
+    }
+  };
+
+  const usePricingRules = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await loadPricingEstimate(false);
+      applyPricingEstimate(state.pricingEstimate, true);
+      setMessage("Pricing rules applied to the approval fields.", "success");
+    } catch (error) {
+      setMessage(`Could not apply pricing rules: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
+
+  const savePriceEntry = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson("/api/sales/meat-pricing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          product_type: elements.priceProductType.value,
+          cut_set: elements.priceCutSet.value.trim(),
+          price_amount: elements.priceAmount.value,
+          price_unit: elements.priceUnit.value,
+          created_by: "Farm App",
+        }),
+      });
+      elements.priceAmount.value = "";
+      await loadPriceBook();
+      if (state.selectedLeadId) await loadPricingEstimate(true);
+      setMessage("Price entry added. Future estimates use the latest active effective entry.", "success");
+    } catch (error) {
+      setMessage(`Could not add price entry: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+    }
+  };
 
   const approveDetails = async (event) => {
     event.preventDefault();
@@ -471,7 +602,10 @@
   };
 
   elements.refresh.addEventListener("click", loadLeads);
+  elements.priceRefresh.addEventListener("click", loadPriceBook);
+  elements.priceForm.addEventListener("submit", savePriceEntry);
   elements.form.addEventListener("submit", approveDetails);
+  elements.usePricing.addEventListener("click", usePricingRules);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);
@@ -482,5 +616,6 @@
   clearDetailFields();
   setDetailEnabled(false);
   renderDetail();
+  loadPriceBook();
   loadLeads();
 })();

@@ -43,6 +43,48 @@
         </article>
       </section>
 
+      <section class="meat-price-book-panel" aria-label="Meat price book">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Price Book</h2>
+            <p id="meat_price_book_status">Active price and deposit rules used for Sam estimates.</p>
+          </div>
+          <button type="button" id="meat_price_refresh" class="button-link button-link-secondary">Refresh Prices</button>
+        </div>
+        <form id="meat_price_form" class="meat-lead-form" autocomplete="off">
+          <div class="meat-lead-form-grid">
+            <div class="form-group">
+              <label for="meat_price_product_type">Product</label>
+              <select id="meat_price_product_type">
+                <option value="half_carcass">Half carcass</option>
+                <option value="full_carcass">Full carcass</option>
+                <option value="custom_cut">Custom cut</option>
+                <option value="assisted_slaughter">Assisted slaughter</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="meat_price_cut_set">Cut set</label>
+              <input type="text" id="meat_price_cut_set" placeholder="Set A or blank for all" />
+            </div>
+            <div class="form-group">
+              <label for="meat_price_amount">Amount</label>
+              <input type="number" id="meat_price_amount" min="0" step="0.01" placeholder="130.00" />
+            </div>
+            <div class="form-group">
+              <label for="meat_price_unit">Unit</label>
+              <select id="meat_price_unit">
+                <option value="per_kg">per kg</option>
+                <option value="per_pig_fee">per pig fee</option>
+              </select>
+            </div>
+          </div>
+          <div class="meat-lead-actions">
+            <button type="submit" id="meat_price_save" class="button-link">Add Price Entry</button>
+          </div>
+        </form>
+        <div id="meat_price_book_list" class="ops-list"></div>
+      </section>
+
       <section class="meat-leads-workflow">
         <div class="meat-leads-list-panel">
           <div class="page-header section-header-compact">
@@ -97,9 +139,11 @@
               <input type="text" id="meat_lead_owner_approval" placeholder="Yes" />
             </div>
             <div class="meat-lead-actions">
+              <button type="button" id="meat_lead_use_pricing" class="button-link button-link-secondary">Use Pricing Rules</button>
               <button type="submit" id="meat_lead_approve_details" class="button-link">Approve Details</button>
               <button type="button" id="meat_lead_build_preview" class="button-link button-link-secondary">Build Preview</button>
             </div>
+            <p id="meat_lead_estimate_status" class="ops-footnote">Pricing rules can prefill price, weight estimate, and deposit terms.</p>
           </form>
 
           <section class="meat-lead-preview" aria-label="Customer follow-up preview">
@@ -135,6 +179,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260616-farm-app-meat-leads"></script>
+  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260616-meat-price-book"></script>
 </body>
 </html>

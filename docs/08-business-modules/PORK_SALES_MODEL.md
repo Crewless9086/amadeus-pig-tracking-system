@@ -86,7 +86,7 @@ The backend must track:
 
 Current implementation direction: build a Sales Outreach / Lead Tracking rail first. It records the opportunity and lead state needed for owner review, but it does not send messages, call Chatwoot/n8n/WhatsApp, create quotes or orders, reserve stock, change stock, or post publicly.
 
-Status note 2026-06-15: this rail resumes after the Herdmaster purpose-review checkpoint is documented as local-ready and awaiting real-data testing. The sales rail remains a tracking/approval surface only: campaigns, outreach drafts, send-design requests, and leads may be recorded for owner review, but no customer message, public post, quote, order, deposit request, stock reservation, allocation write, or Chatwoot/WhatsApp/n8n call is allowed without a later reviewed phase.
+Status note 2026-06-16: the Oom Sakkie UI pass is parked and the sales rail is the active launch-readiness focus again. The sales rail remains a tracking/approval surface only: campaigns, outreach drafts, send-design requests, and leads may be recorded for owner review, but no customer message, public post, quote, order, deposit request, stock reservation, allocation write, or Chatwoot/WhatsApp/n8n call is allowed without a later reviewed phase.
 
 Implementation status 2026-06-15:
 
@@ -95,6 +95,7 @@ Implementation status 2026-06-15:
 - The workbench now has an owner `Record Lead` form for simple inbound/manual lead capture.
 - Recorded leads are append-only tracking records only. They keep `sends_customer_message`, `calls_chatwoot`, `calls_n8n`, `creates_quote`, `creates_order`, `changes_stock`, `dispatch_enabled`, `customer_public_output_enabled`, and `writes_farm_data` false.
 - The rail still needs one real inbound/manual lead test before it is marked live-verified.
+- Next build: record one real owner-approved inbound/manual lead, confirm it appears in Oom Sakkie/Ledger summaries, then use that lead to design the first preorder/deposit or Sam handoff contract.
 
 ## Sales Modules
 
@@ -320,6 +321,13 @@ Live pig order:
 Final payment rule:
 
 - No full payment means no delivery.
+
+Implementation status 2026-06-16:
+
+- The first backend price-book build translates these rules into append-only `oom_sakkie_meat_price_book_entries`.
+- Seed defaults are standard half/full carcass `R130/kg`, custom cut `R145/kg`, assisted slaughter `R250` coordination fee, standard carcass `50% deposit`, custom cut `70% deposit`, and balance before delivery/collection.
+- Farm App meat leads use the active price book to prefill owner approval fields, but the estimate remains review-only until the owner approves customer wording.
+- Estimated totals use expected packed weight ranges first; final customer amount must be based on actual processed packed weight.
 
 ## Weekly Operating Rhythm
 

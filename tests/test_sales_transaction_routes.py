@@ -247,6 +247,45 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         list_leads.assert_called_once_with(limit="12", status_filter="launch_test")
 
+    def test_meat_price_book_list_route_uses_store(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "price_entries": [{"product_type": "half_carcass"}],
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_meat_price_book_entries",
+            return_value=(service_result, 200),
+        ) as list_prices:
+            response = self.client.get("/api/sales/meat-pricing?limit=12")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        list_prices.assert_called_once_with(limit="12")
+
+    def test_meat_price_book_create_route_records_entry(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "price_entry_id": "OSK-MEAT-PRICE-TEST",
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_meat_price_book_entry",
+            return_value=(service_result, 201),
+        ) as record_price:
+            response = self.client.post(
+                "/api/sales/meat-pricing",
+                json={"product_type": "half_carcass", "price_amount": 130},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_price.assert_called_once_with({"product_type": "half_carcass", "price_amount": 130})
+
     def test_meat_sales_lead_contract_route_uses_preorder_contract(self):
         service_result = {
             "success": True,
@@ -265,6 +304,29 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         get_contract.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_sales_lead_pricing_estimate_route_uses_estimator(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "pricing_estimate": {"price_label": "R130.00/kg"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_lead_pricing_estimate",
+            return_value=(service_result, 200),
+        ) as get_estimate:
+            response = self.client.get(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/pricing-estimate?selected_pig_live_weight_kg=62"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_estimate.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"selected_pig_live_weight_kg": "62"},
+        )
 
     def test_meat_sales_lead_owner_approval_route_records_event(self):
         service_result = {

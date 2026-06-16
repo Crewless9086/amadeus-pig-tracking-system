@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Backend-native Sam Meat cutover active | Next build: replace the n8n Sam Meat runtime with backend-owned Chatwoot inbound webhook, Sam Meat decision logic, audit events, and controlled Chatwoot replies while keeping n8n as fallback until smoke-tested. |
+| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price/rules automation active | Next build: add the meat price book, default deposit rules, and estimate engine so Farm App owner approval is prefilled from active rules instead of manually typed. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -75,6 +75,23 @@ Smoke sequence:
 6. Sam sends only the approved follow-up text.
 7. Customer says yes.
 8. Farm App records customer yes and creates a Draft order only after the gate is explicit.
+
+### Phase 11D Active Build - Meat Price Book And Estimate Engine
+
+Owner decision on 2026-06-16: the Sam Meat proof flow works, but the owner approval form is too manual. The next build must move repeatable price/deposit/yield assumptions into backend-owned data and prefill the Farm App from those rules.
+
+Required outcome:
+
+- Append-only meat price book entries with product type, cut set, price amount, price unit, effective time, active flag, deposit rule, balance rule, yield basis, notes, and created-by.
+- Seed first defaults from `docs/08-business-modules/PORK_SALES_MODEL.md`: standard carcass `R130/kg`, custom cut `R145/kg`, assisted slaughter `R250` coordination fee, standard carcass `50% deposit`, custom cut `70% deposit`, and balance before delivery/collection.
+- Farm App `/sales/meat-leads` lets the owner add a new price entry without editing env or code.
+- Meat lead detail can fetch a pricing estimate and prefill owner approval fields from the active price/rule table.
+- Estimate text must clearly say final customer amount uses actual processed packed weight.
+- No estimator call may create a quote, request deposit, create/order reserve stock, allocate a pig, or update farm stock.
+
+Next after this build:
+
+- Add selected-pig/batch allocation into the estimate so the system can use the chosen pig's latest live weight rather than only the business default range.
 
 ### Staying on track (Cursor + Claude Code)
 
