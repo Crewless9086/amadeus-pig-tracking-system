@@ -204,9 +204,10 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(event_types, ["sam_meat_autoreply_attempted", "sam_meat_autoreply_sent"])
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_handle_inbound_records_delivery_address_capture_when_ready(self, mock_record, mock_contract, mock_fulfillment):
+    def test_handle_inbound_records_delivery_address_capture_when_ready(self, mock_record, mock_contract, mock_list, mock_fulfillment):
         mock_record.return_value = ({
             "success": True,
             "status": "ok",
@@ -217,6 +218,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             "success": True,
             "contract": {"contract_status": "needs_owner_confirmation"},
         }, 200)
+        mock_list.return_value = ({"success": True, "sales_leads": []}, 200)
         mock_fulfillment.return_value = ({"success": True, "status": "delivery_address_captured"}, 201)
 
         result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
@@ -230,6 +232,52 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(mock_fulfillment.call_args.args[0], "OSK-SALES-LEAD-TEST")
         self.assertEqual(mock_fulfillment.call_args.args[1]["event_type"], "delivery_address_captured")
         self.assertEqual(mock_fulfillment.call_args.args[1]["address_line_1"], "12 Long Street")
+
+    @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_address_reply_inherits_existing_conversation_meat_context(self, mock_record, mock_contract, mock_list, mock_fulfillment):
+        mock_list.return_value = ({
+            "success": True,
+            "sales_leads": [{
+                "lead_id": "OSK-SALES-LEAD-CONTEXT",
+                "chatwoot_conversation_id": "1808",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                },
+            }],
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-CONTEXT",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        mock_fulfillment.return_value = ({"success": True, "status": "delivery_address_captured"}, 201)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="The delivery address is 12 Test Street, Riversdale. Blue gate. EFT is fine."),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["facts"]["product_type"], "half_carcass")
+        self.assertEqual(result["facts"]["cut_set"], "Set A")
+        self.assertEqual(result["facts"]["delivery_or_collection"], "delivery")
+        self.assertEqual(result["facts"]["payment_method"], "EFT")
+        self.assertNotIn("pork half carcass, full carcass", result["sam_decision"]["reply_text"])
+        self.assertTrue(result["fulfillment_capture"]["recorded"])
+        lead_payload = mock_record.call_args.args[0]
+        self.assertEqual(lead_payload["product_type"], "half_carcass")
+        self.assertEqual(lead_payload["delivery_address_line_1"], "12 Test Street")
 
 
 if __name__ == "__main__":

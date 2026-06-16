@@ -7,6 +7,7 @@ from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import (
     get_sales_lead_preorder_contract,
+    list_sales_leads,
     record_sales_lead_event,
     record_sam_meat_intake_lead,
     _send_chatwoot_message,
@@ -85,6 +86,8 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         }, 200
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
+    prior_context = _conversation_lead_context(inbound.get("conversation_id"))
+    facts = _merge_prior_context(facts, prior_context)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
@@ -118,6 +121,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "processed": True,
         "inbound": inbound,
         "facts": facts,
+        "prior_context": prior_context,
         "lead_payload": lead_payload,
         "lead_result": record_result,
         "lead_status_code": record_status,
@@ -460,6 +464,52 @@ def _safe_llm_fact_patch(value):
         "payment_method": _normal_payment(value.get("payment_method")),
     }
     return {key: val for key, val in patch.items() if val}
+
+
+def _conversation_lead_context(conversation_id):
+    conversation_id = _clean(conversation_id, 100)
+    if not conversation_id:
+        return {}
+    result, status_code = list_sales_leads(limit=50, status_filter="launch_test")
+    if status_code != 200 or not isinstance(result, dict):
+        return {}
+    for lead in result.get("sales_leads") or []:
+        if _clean(lead.get("chatwoot_conversation_id"), 100) != conversation_id:
+            continue
+        interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+        return {
+            "lead_id": _clean(lead.get("lead_id"), 100),
+            "interest": interest,
+        }
+    return {}
+
+
+def _merge_prior_context(facts, prior_context):
+    facts = dict(facts or {})
+    interest = prior_context.get("interest") if isinstance(prior_context, dict) else {}
+    if not isinstance(interest, dict) or not interest:
+        return facts
+    for key in (
+        "product_type",
+        "cut_set",
+        "location",
+        "timing",
+        "delivery_or_collection",
+        "delivery_address_line_1",
+        "delivery_town",
+        "delivery_area",
+        "delivery_notes",
+        "payment_method",
+    ):
+        current = _clean(facts.get(key), 600)
+        prior = _clean(interest.get(key), 600)
+        if key == "product_type" and current == "unknown" and prior:
+            facts[key] = prior
+        elif not current and prior:
+            facts[key] = prior
+    if not facts.get("delivery_town") and facts.get("location"):
+        facts["delivery_town"] = facts["location"]
+    return facts
 
 
 def _record_delivery_address_if_ready(lead_id, inbound, facts):
