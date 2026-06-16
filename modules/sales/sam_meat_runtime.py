@@ -89,6 +89,8 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     prior_context = _conversation_lead_context(inbound.get("conversation_id"))
     facts = _merge_prior_context(facts, prior_context)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
+    if prior_context.get("lead_id"):
+        lead_payload["lead_id"] = prior_context["lead_id"]
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
     fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)

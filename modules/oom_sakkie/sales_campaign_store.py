@@ -2940,7 +2940,7 @@ def _sales_lead_params(payload):
         "campaign_source": campaign_source,
     }, sort_keys=True, default=str)
     return {
-        "lead_id": _lead_id(seed),
+        "lead_id": _clean_text(payload.get("lead_id"), 100) or _lead_id(seed),
         "campaign_id": campaign_id,
         "draft_id": draft_id,
         "send_design_id": send_design_id,

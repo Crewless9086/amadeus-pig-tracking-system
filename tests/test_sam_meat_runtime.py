@@ -277,6 +277,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertTrue(result["fulfillment_capture"]["recorded"])
         lead_payload = mock_record.call_args.args[0]
         self.assertEqual(lead_payload["product_type"], "half_carcass")
+        self.assertEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-CONTEXT")
         self.assertEqual(lead_payload["delivery_address_line_1"], "12 Test Street")
 
 
