@@ -2,9 +2,9 @@
 
 ## Status
 
-Phase 11C contract build.
+Phase 11C backend-native Sam Meat cutover.
 
-This is the first customer-facing meat-sales intake contract for Sam. It is not a customer-send, preorder, deposit, stock-allocation, or order-creation workflow yet.
+This is the first backend-owned customer-facing meat-sales intake runtime for Sam. n8n remains fallback while the backend Chatwoot webhook is smoke-tested, but the target architecture is Chatwoot -> Flask backend -> Sam Meat runtime -> backend audit events / controlled Chatwoot reply.
 
 ## Role Split
 
@@ -12,12 +12,55 @@ This is the first customer-facing meat-sales intake contract for Sam. It is not 
 | --- | --- | --- |
 | Sam | Customer conversation in Chatwoot channels and structured meat-interest intake | Business strategy, pricing approval, deposit request authority, stock allocation |
 | Ledger | Sales opportunity, pricing/margin review, owner queue, next action | Customer conversation |
-| Backend | Lead/preorder state, validation, missing-field calculation, audit flags | Natural customer wording |
+| Backend | Chatwoot inbound webhook, Sam Meat runtime, lead/preorder state, validation, missing-field calculation, audit flags, controlled Chatwoot sends | Autonomous pricing, reservation, stock changes, public posting |
 | Oom Sakkie/Gatekeeper | Owner visibility and approval gates | Direct customer sales conversation |
 
 Sam stays one customer-facing agent. Internally, Sam routes into lanes such as `live_pig_sales`, `meat_preorder`, and later `assisted_slaughter`.
 
-## Current Endpoint
+## Current Backend-Native Target
+
+Inbound Chatwoot webhook:
+
+```text
+POST /api/sales/channels/chatwoot/sam-meat/inbound
+```
+
+Required env:
+
+- `SAM_MEAT_BACKEND_WEBHOOK_ENABLED=1`
+- `SAM_MEAT_BACKEND_WEBHOOK_TOKEN=<long random token, 32+ chars>`
+- `SAM_MEAT_BACKEND_AUTOREPLY_ENABLED=1` only when backend replies are allowed
+- `CHATWOOT_BASE_URL=https://app.chatwoot.com`
+- `CHATWOOT_ACCOUNT_ID=147387`
+- `CHATWOOT_API_ACCESS_TOKEN=<Chatwoot token>`
+- `SAM_MEAT_BACKEND_LLM_ENABLED=1` only if LLM extraction is allowed
+- `SAM_MEAT_BACKEND_LLM_MODEL=<model>` when LLM extraction is enabled
+- `OPENAI_API_KEY=<optional for LLM extraction; deterministic fallback remains required>`
+
+Accepted auth:
+
+- `Authorization: Bearer <token>`
+- or `X-Amadeus-Sam-Meat-Webhook-Key: <token>`
+
+Runtime rules:
+
+- inbound webhook ignores outbound/system/non-message events
+- inbound webhook records only append-only lead/fact events
+- Sam Meat may ask clarifying intake questions when facts are missing
+- Sam Meat must not quote price, promise slaughter timing, request deposit, create orders, reserve stock, or change stock from normal inbound chat
+- any outbound Chatwoot send requires the backend autoreply env gate and an open customer-service window
+- owner price/timing/deposit approval, exact follow-up approval, customer yes, and Draft order creation remain separate Farm App gates
+
+Safe pork cut-menu replies are allowed from the documented pork model only:
+
+- Set A: Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.
+- Set B: Braai Pack: chops, rashers or belly strips, ribs, shoulder steaks, sosatie or stew cubes, and mince or sausage meat option.
+- Set C: Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.
+- Set D: Budget Bulk Pack: larger roasting cuts, mince, stew meat, soup bones, shoulder, mixed chops, and less detailed trimming.
+
+These descriptions do not grant pricing, timing, deposit, booking, order, or stock authority.
+
+## Legacy/Compatibility Endpoint
 
 Review-gated local contract endpoint:
 

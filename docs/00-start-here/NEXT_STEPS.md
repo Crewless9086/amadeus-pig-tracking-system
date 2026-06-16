@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Sales launch readiness active | Next build: prove one real manual/inbound sales lead through the owner-review lead rail, then design the first preorder/deposit or Sam handoff contract. |
+| Phase 11: Pork Sales Business Module | Backend-native Sam Meat cutover active | Next build: replace the n8n Sam Meat runtime with backend-owned Chatwoot inbound webhook, Sam Meat decision logic, audit events, and controlled Chatwoot replies while keeping n8n as fallback until smoke-tested. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -40,6 +40,41 @@ Current UI slice:
 - The existing Ledger Sales Workbench remains useful as an audit/detail rail while sales launch testing continues.
 - Do not spend the next slice on visual polish unless the owner explicitly resumes the UI pass.
 - No post, customer message, order, deposit, stock, irrigation control, expense, or agent-learning write becomes autonomous from this parked UI slice.
+
+### Phase 11C Active Build - Backend-Native Sam Meat
+
+Owner decision on 2026-06-16: because no public sales traffic is active yet, use this window to move Sam Meat out of n8n and into the backend. Build one agent lane fully before repeating the pattern for Butcher, Live, Ledger, or marketing agents.
+
+Required outcome:
+
+- Chatwoot inbound webhook can call the Flask backend directly.
+- Backend validates a shared webhook token and ignores outbound/system/non-message events.
+- Backend-owned Sam Meat runtime parses the message, conversation/contact metadata, and existing lead context.
+- Sam Meat can collect missing meat-preorder facts, record append-only sales lead/fact events, and produce the next customer reply when allowed.
+- Backend calls the LLM only through an env-gated Sam Meat module with strict JSON output and deterministic fallback.
+- Backend sends customer replies through Chatwoot only when `SAM_MEAT_BACKEND_AUTOREPLY_ENABLED=1`, the WhatsApp/customer-service window is open, and the decision is an allowed intake/clarifying reply.
+- Sam Meat must not invent price, timing, deposit, stock, quote/order status, or cut details outside the approved model and stored lead/owner approval state.
+- Existing Farm App `/sales/meat-leads` remains the operator surface for price approval, exact-message send approval, customer yes, and draft order gates.
+- n8n Sam workflow remains enabled only as fallback until backend smoke tests pass; after smoke, point Chatwoot webhook to backend and disable the n8n Sam Meat path.
+
+Non-goals for this build:
+
+- No autonomous order creation from a normal inbound message.
+- No stock reservation or allocation write.
+- No public posting or marketing automation.
+- No Butcher/Live/Ledger backend agents yet.
+- No removal of n8n account until Sam Meat backend path is owner-tested.
+
+Smoke sequence:
+
+1. Vague inbound WhatsApp message enters Chatwoot and reaches backend webhook.
+2. Sam asks one clarifying meat-lane question or records known meat facts.
+3. Half carcass Set A Riversdale collection/EFT facts are merged into the lead rail.
+4. Sam does not quote price or promise timing until owner approval exists.
+5. Owner approves price/timing/deposit in Farm App.
+6. Sam sends only the approved follow-up text.
+7. Customer says yes.
+8. Farm App records customer yes and creates a Draft order only after the gate is explicit.
 
 ### Staying on track (Cursor + Claude Code)
 

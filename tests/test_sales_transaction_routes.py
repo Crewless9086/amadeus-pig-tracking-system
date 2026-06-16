@@ -413,6 +413,57 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         create_draft_order.assert_called_once_with("OSK-SALES-LEAD-1", {"created_by": "Farm App"})
 
+    def test_sam_meat_backend_policy_route_reports_configuration(self):
+        with patch.object(
+            sales_transaction_routes,
+            "sam_meat_webhook_policy",
+            return_value={"enabled": False, "mode": "backend_native_sam_meat_chatwoot"},
+        ):
+            response = self.client.get("/api/sales/channels/chatwoot/sam-meat/policy")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["policy"]["mode"], "backend_native_sam_meat_chatwoot")
+
+    def test_sam_meat_backend_inbound_route_requires_auth(self):
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_meat_webhook",
+            return_value=(False, {"success": False, "status": "sam_meat_backend_webhook_auth_denied"}),
+        ) as authorize:
+            response = self.client.post("/api/sales/channels/chatwoot/sam-meat/inbound", json={})
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "sam_meat_backend_webhook_auth_denied")
+        authorize.assert_called_once()
+
+    def test_sam_meat_backend_inbound_route_calls_runtime_after_auth(self):
+        service_result = {
+            "success": True,
+            "status": "processed",
+            "processed": True,
+            "sent": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_sam_meat_webhook",
+            return_value=(True, {}),
+        ), patch.object(
+            sales_transaction_routes,
+            "handle_sam_meat_chatwoot_inbound",
+            return_value=(service_result, 200),
+        ) as handle_inbound:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/sam-meat/inbound",
+                json={"event": "message_created"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        handle_inbound.assert_called_once_with({"event": "message_created"})
+
 
 if __name__ == "__main__":
     unittest.main()

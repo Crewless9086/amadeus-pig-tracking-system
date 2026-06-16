@@ -21,6 +21,11 @@ from modules.sales.sales_transaction_lifecycle import (
 )
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
+from modules.sales.sam_meat_runtime import (
+    authorize_sam_meat_webhook,
+    handle_sam_meat_chatwoot_inbound,
+    sam_meat_webhook_policy,
+)
 
 
 sales_bp = Blueprint("sales", __name__)
@@ -106,6 +111,25 @@ def sales_transaction_reconcile_pig_exits(sale_id):
 def sales_transaction_dry_run():
     payload = request.get_json(silent=True) or {}
     result, status_code = dry_run_sales_transaction(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-meat/policy", methods=["GET"])
+def sam_meat_chatwoot_policy():
+    return jsonify({
+        "success": True,
+        "policy": sam_meat_webhook_policy(),
+    }), 200
+
+
+@sales_bp.route("/sales/channels/chatwoot/sam-meat/inbound", methods=["POST"])
+def sam_meat_chatwoot_inbound():
+    allowed, denied = authorize_sam_meat_webhook(request.headers)
+    if not allowed:
+        status_code = 403 if denied.get("status") == "sam_meat_backend_webhook_auth_denied" else 503
+        return jsonify(denied), status_code
+    payload = request.get_json(silent=True) or {}
+    result, status_code = handle_sam_meat_chatwoot_inbound(payload)
     return jsonify(result), status_code
 
 
