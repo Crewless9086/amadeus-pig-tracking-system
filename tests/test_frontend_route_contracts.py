@@ -525,6 +525,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/sales-leads/sam-meat-intake", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/channels/chatwoot/sam-meat-intake", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/events", methods=["POST"])', route_source)
+        self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/owner-money-path-approval", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests", methods=["GET"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests", methods=["POST"])', route_source)
         self.assertIn('@oom_sakkie_bp.route("/oom-sakkie/dispatch-requests/<dispatch_request_id>/decisions", methods=["POST"])', route_source)

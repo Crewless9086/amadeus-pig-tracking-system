@@ -985,6 +985,49 @@ class OomSakkieRouteTests(unittest.TestCase):
         self.assertFalse(data["changes_stock"])
         mock_record.assert_called_once()
 
+    @patch("modules.oom_sakkie.routes.record_owner_money_path_approval")
+    def test_sales_lead_owner_money_path_approval_route_records_review_event(self, mock_record):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "mode": "owner_money_path_approval_event_only",
+            "event_id": "OSK-SALES-LEAD-EVENT-APPROVAL",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "event_type": "owner_money_path_approved",
+            "records_owner_money_path_approval": True,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }, 201)
+        payload = {
+            "price_per_kg": "R95/kg",
+            "available_week": "week of 2026-06-22",
+            "estimated_weight_or_size": "half carcass final weight to be confirmed",
+            "deposit_rule": "50% deposit after customer accepts owner-approved quote",
+            "payment_method": "EFT",
+            "delivery_or_collection": "collection",
+            "owner_final_approval": "Charl approved for manual customer follow-up",
+        }
+
+        response = self.client.post(
+            "/api/oom-sakkie/sales-leads/OSK-SALES-LEAD-TEST/owner-money-path-approval",
+            json=payload,
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["mode"], "owner_money_path_approval_event_only")
+        self.assertEqual(data["event_type"], "owner_money_path_approved")
+        self.assertFalse(data["sends_customer_message"])
+        self.assertFalse(data["calls_chatwoot"])
+        self.assertFalse(data["calls_n8n"])
+        self.assertFalse(data["creates_order"])
+        self.assertFalse(data["changes_stock"])
+        mock_record.assert_called_once_with("OSK-SALES-LEAD-TEST", payload)
+
     @patch("modules.oom_sakkie.routes.get_sales_lead_preorder_contract")
     def test_sales_lead_preorder_contract_route_is_review_only(self, mock_contract):
         mock_contract.return_value = ({

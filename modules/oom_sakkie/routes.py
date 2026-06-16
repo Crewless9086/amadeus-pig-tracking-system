@@ -93,6 +93,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
+    record_owner_money_path_approval,
     record_sam_meat_intake_lead,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
@@ -363,6 +364,16 @@ def oom_sakkie_sales_lead_events(lead_id):
         return denied
     payload = request.get_json(silent=True) or {}
     result, status_code = record_sales_lead_event(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@oom_sakkie_bp.route("/oom-sakkie/sales-leads/<lead_id>/owner-money-path-approval", methods=["POST"])
+def oom_sakkie_sales_lead_owner_money_path_approval(lead_id):
+    denied = _require_review_access()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_owner_money_path_approval(lead_id, payload)
     return jsonify(result), status_code
 
 

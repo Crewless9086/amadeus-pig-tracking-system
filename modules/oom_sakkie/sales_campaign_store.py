@@ -17,6 +17,7 @@ SALES_LEAD_EVENT_TYPES = {
     "review_note",
     "status_observed",
     "owner_followup_needed",
+    "owner_money_path_approved",
     "deposit_followup_needed",
     "linked_order_observed",
     "closed",
@@ -764,7 +765,8 @@ def get_sales_lead_preorder_contract(lead_id, database_url=None):
 
 def build_preorder_deposit_contract_from_lead(lead):
     lead = lead if isinstance(lead, dict) else {}
-    interest = _merged_sam_meat_intake_interest(lead)
+    interest = _merged_sales_lead_interest(lead)
+    owner_approval = _latest_owner_money_path_approval(lead)
 
     present = {
         "lead_id": lead.get("lead_id", ""),
@@ -779,13 +781,13 @@ def build_preorder_deposit_contract_from_lead(lead):
         "next_owner_action": lead.get("next_owner_action", ""),
     }
     required_before_money_path = {
-        "price_per_kg": interest.get("price_per_kg") or "",
-        "available_week": interest.get("available_week") or interest.get("timing") or "",
-        "estimated_weight_or_size": interest.get("estimated_weight") or interest.get("size") or "",
-        "deposit_amount_or_rule": interest.get("deposit_amount") or interest.get("deposit_rule") or "",
-        "payment_method": interest.get("payment_method") or "",
-        "delivery_or_collection": interest.get("delivery_or_collection") or interest.get("collection") or "",
-        "owner_final_approval": "",
+        "price_per_kg": owner_approval.get("price_per_kg") or interest.get("price_per_kg") or "",
+        "available_week": owner_approval.get("available_week") or interest.get("available_week") or interest.get("timing") or "",
+        "estimated_weight_or_size": owner_approval.get("estimated_weight_or_size") or interest.get("estimated_weight") or interest.get("size") or "",
+        "deposit_amount_or_rule": owner_approval.get("deposit_amount_or_rule") or interest.get("deposit_amount") or interest.get("deposit_rule") or "",
+        "payment_method": owner_approval.get("payment_method") or interest.get("payment_method") or "",
+        "delivery_or_collection": owner_approval.get("delivery_or_collection") or interest.get("delivery_or_collection") or interest.get("collection") or "",
+        "owner_final_approval": owner_approval.get("owner_final_approval") or "",
     }
     missing_fields = [
         key for key, value in required_before_money_path.items()
@@ -799,6 +801,8 @@ def build_preorder_deposit_contract_from_lead(lead):
     status = "ready_for_owner_followup" if can_prepare_manual_followup else "needs_core_lead_context"
     if missing_fields:
         status = "needs_owner_confirmation"
+    elif owner_approval:
+        status = "owner_money_path_ready"
     owner_questions = [
         "What price/kg should Charl quote for this lead?",
         "Which available week or slaughter window can Charl offer?",
@@ -810,6 +814,7 @@ def build_preorder_deposit_contract_from_lead(lead):
         "contract_status": status,
         "lead_summary": present,
         "required_before_money_path": required_before_money_path,
+        "owner_money_path_approval": owner_approval,
         "missing_fields": missing_fields,
         "missing_core_context": missing_core_context,
         "owner_questions": owner_questions,
@@ -821,6 +826,67 @@ def build_preorder_deposit_contract_from_lead(lead):
         ],
         **_false_flags(),
     }
+
+
+def build_owner_money_path_approval_event_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    approval = {
+        "source": "ledger_owner_review",
+        "kind": "owner_money_path_approval",
+        "price_per_kg": _clean_text(payload.get("price_per_kg"), 80),
+        "available_week": _clean_text(payload.get("available_week"), 120),
+        "estimated_weight_or_size": _clean_text(
+            payload.get("estimated_weight_or_size") or payload.get("estimated_weight"), 120
+        ),
+        "deposit_amount_or_rule": _clean_text(
+            payload.get("deposit_amount_or_rule") or payload.get("deposit_rule"), 160
+        ),
+        "payment_method": _clean_text(payload.get("payment_method"), 80),
+        "delivery_or_collection": _clean_text(payload.get("delivery_or_collection"), 80),
+        "owner_final_approval": _clean_text(payload.get("owner_final_approval") or payload.get("approval"), 120),
+        "owner_notes": _clean_text(payload.get("owner_notes") or payload.get("notes"), 500),
+    }
+    missing = [
+        key for key in (
+            "price_per_kg",
+            "available_week",
+            "estimated_weight_or_size",
+            "deposit_amount_or_rule",
+            "payment_method",
+            "delivery_or_collection",
+            "owner_final_approval",
+        )
+        if not approval.get(key)
+    ]
+    if missing:
+        return None, {
+            "success": False,
+            "status": "owner_money_path_approval_missing_fields",
+            "missing_fields": missing,
+            **_false_flags(),
+        }
+    return {
+        "event_type": "owner_money_path_approved",
+        "status_observed": "order_ready_for_approval",
+        "recorded_by": _clean_text(payload.get("recorded_by") or "owner", 80),
+        "notes": _json(approval),
+    }, None
+
+
+def record_owner_money_path_approval(lead_id, payload, database_url=None):
+    event_payload, error = build_owner_money_path_approval_event_payload(payload)
+    if error:
+        return error, 400
+    result, status_code = record_sales_lead_event(lead_id, event_payload, database_url=database_url)
+    if status_code != 201:
+        return result, status_code
+    result.update({
+        "mode": "owner_money_path_approval_event_only",
+        "approval": _parse_json_object(event_payload["notes"]),
+        "next_gate": "manual_owner_review_before_any_customer_send_quote_order_or_stock_write",
+        "records_owner_money_path_approval": True,
+    })
+    return result, status_code
 
 
 def _sam_meat_intake_event_payload(lead_payload, contract):
@@ -865,7 +931,7 @@ def _sam_meat_intake_event_payload(lead_payload, contract):
     }
 
 
-def _merged_sam_meat_intake_interest(lead):
+def _merged_sales_lead_interest(lead):
     base = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
     merged = dict(base)
     events = lead.get("events") if isinstance(lead.get("events"), list) else []
@@ -883,6 +949,36 @@ def _merged_sam_meat_intake_interest(lead):
             if cleaned:
                 merged[key] = cleaned
     return merged
+
+
+def _latest_owner_money_path_approval(lead):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    approval = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "owner_money_path_approved":
+            continue
+        snapshot = _parse_json_object(event.get("notes", ""))
+        if snapshot.get("source") != "ledger_owner_review":
+            continue
+        if snapshot.get("kind") != "owner_money_path_approval":
+            continue
+        approval = {
+            key: _clean_text(snapshot.get(key), 700)
+            for key in (
+                "price_per_kg",
+                "available_week",
+                "estimated_weight_or_size",
+                "deposit_amount_or_rule",
+                "payment_method",
+                "delivery_or_collection",
+                "owner_final_approval",
+                "owner_notes",
+            )
+            if _clean_text(snapshot.get(key), 700)
+        }
+    return approval
 
 
 def record_sales_lead_event(lead_id, payload, database_url=None):

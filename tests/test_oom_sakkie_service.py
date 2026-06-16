@@ -159,10 +159,12 @@ from modules.oom_sakkie.sales_campaign_store import (
     _sales_send_design_params,
     _sales_campaign_params,
     approve_first_waiting_sales_campaign,
+    build_owner_money_path_approval_event_payload,
     build_preorder_deposit_contract_from_lead,
     record_sales_campaign_event,
     record_sales_lead,
     record_sales_lead_event,
+    record_owner_money_path_approval,
     record_sam_meat_intake_lead,
     record_sales_outreach_draft_from_campaign,
     record_sales_send_design_request_from_draft,
@@ -5155,6 +5157,83 @@ def literal_false_is_allowed():
         self.assertFalse(contract["creates_order"])
         self.assertFalse(contract["sends_customer_message"])
 
+    def test_owner_money_path_approval_event_payload_requires_complete_owner_fields(self):
+        event_payload, error = build_owner_money_path_approval_event_payload({
+            "price_per_kg": "R95/kg",
+            "available_week": "week of 2026-06-22",
+        })
+
+        self.assertIsNone(event_payload)
+        self.assertEqual(error["status"], "owner_money_path_approval_missing_fields")
+        self.assertIn("deposit_amount_or_rule", error["missing_fields"])
+        self.assertIn("owner_final_approval", error["missing_fields"])
+        self.assertFalse(error["sends_customer_message"])
+        self.assertFalse(error["creates_order"])
+
+    def test_owner_money_path_approval_event_payload_is_append_only_review_event(self):
+        event_payload, error = build_owner_money_path_approval_event_payload({
+            "price_per_kg": "R95/kg",
+            "available_week": "week of 2026-06-22",
+            "estimated_weight_or_size": "half carcass final weight to be confirmed",
+            "deposit_rule": "50% deposit after customer accepts owner-approved quote",
+            "payment_method": "EFT",
+            "delivery_or_collection": "collection",
+            "owner_final_approval": "Charl approved for manual customer follow-up",
+            "owner_notes": "Use Set A Riversdale wording.",
+        })
+
+        self.assertIsNone(error)
+        self.assertEqual(event_payload["event_type"], "owner_money_path_approved")
+        self.assertEqual(event_payload["status_observed"], "order_ready_for_approval")
+        self.assertEqual(event_payload["recorded_by"], "owner")
+        notes = json.loads(event_payload["notes"])
+
+        self.assertEqual(notes["source"], "ledger_owner_review")
+        self.assertEqual(notes["kind"], "owner_money_path_approval")
+        self.assertEqual(notes["price_per_kg"], "R95/kg")
+        self.assertEqual(notes["deposit_amount_or_rule"], "50% deposit after customer accepts owner-approved quote")
+
+    def test_preorder_contract_merges_owner_money_path_approval(self):
+        approval_event, error = build_owner_money_path_approval_event_payload({
+            "price_per_kg": "R95/kg",
+            "available_week": "week of 2026-06-22",
+            "estimated_weight_or_size": "half carcass final weight to be confirmed",
+            "deposit_rule": "50% deposit after customer accepts owner-approved quote",
+            "payment_method": "EFT",
+            "delivery_or_collection": "collection",
+            "owner_final_approval": "Charl approved for manual customer follow-up",
+        })
+        self.assertIsNone(error)
+
+        contract = build_preorder_deposit_contract_from_lead({
+            "lead_id": "OSK-SALES-LEAD-D583E2649366146A",
+            "lead_label": "Charl N - half carcass Set A",
+            "status": "interested",
+            "campaign_source": "inbound_chatwoot",
+            "whatsapp_window_state": "open",
+            "interest": {
+                "product": "Half carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "notes": "No special requirements.",
+            },
+            "events": [{
+                "event_type": approval_event["event_type"],
+                "recorded_by": approval_event["recorded_by"],
+                "status_observed": approval_event["status_observed"],
+                "notes": approval_event["notes"],
+            }],
+        })
+
+        self.assertEqual(contract["contract_status"], "owner_money_path_ready")
+        self.assertEqual(contract["missing_fields"], [])
+        self.assertEqual(contract["required_before_money_path"]["price_per_kg"], "R95/kg")
+        self.assertEqual(contract["required_before_money_path"]["deposit_amount_or_rule"], "50% deposit after customer accepts owner-approved quote")
+        self.assertEqual(contract["owner_money_path_approval"]["owner_final_approval"], "Charl approved for manual customer follow-up")
+        self.assertFalse(contract["sends_customer_message"])
+        self.assertFalse(contract["creates_order"])
+        self.assertFalse(contract["changes_stock"])
+
     def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({
             "customer_name": "Jan",
@@ -5250,6 +5329,19 @@ def literal_false_is_allowed():
         self.assertEqual(result["status"], "invalid_event_type")
         self.assertFalse(result["sends_customer_message"])
 
+    def test_owner_money_path_approval_rejects_incomplete_payload_before_database(self):
+        result, status_code = record_owner_money_path_approval(
+            "OSK-SALES-LEAD-1",
+            {"price_per_kg": "R95/kg"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "owner_money_path_approval_missing_fields")
+        self.assertIn("owner_final_approval", result["missing_fields"])
+        self.assertFalse(result["sends_customer_message"])
+
     def test_sales_lead_requires_database_before_write(self):
         result, status_code = record_sales_lead({"lead_label": "Buyer A"}, database_url="")
 
@@ -5299,6 +5391,8 @@ def literal_false_is_allowed():
         self.assertIn("'template_required'", lead_migration)
         self.assertIn("event_type in (", lead_migration)
         self.assertIn("'deposit_followup_needed'", lead_migration)
+        owner_approval_migration = Path("supabase/migrations/202606160001_allow_sales_lead_owner_money_path_approval.sql").read_text(encoding="utf-8")
+        self.assertIn("'owner_money_path_approved'", owner_approval_migration)
         self.assertIn("sends_customer_message = false", lead_migration)
         self.assertIn("calls_chatwoot = false", lead_migration)
         self.assertIn("calls_n8n = false", lead_migration)

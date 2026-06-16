@@ -76,6 +76,30 @@ The event notes contain a compact JSON fact snapshot for the same lead. This let
 
 Ledger/preorder-contract readback merges the original lead `interest_json` with the newest non-empty Sam fact snapshots before calculating missing money-path fields.
 
+## Ledger Owner Money-Path Approval
+
+Ledger owner review is an append-only event, not a mutation of the original lead row.
+
+Review-gated endpoint:
+
+```text
+POST /api/oom-sakkie/sales-leads/<lead_id>/owner-money-path-approval
+```
+
+Required owner fields:
+
+- `price_per_kg`
+- `available_week`
+- `estimated_weight_or_size`
+- `deposit_rule` or `deposit_amount_or_rule`
+- `payment_method`
+- `delivery_or_collection`
+- `owner_final_approval`
+
+This records an `owner_money_path_approved` event only. It does not send a customer message, call Chatwoot/n8n, create a quote/order/preorder, reserve stock, update allocation, or perform any financial action.
+
+After this event exists, `GET /api/oom-sakkie/sales-leads/<lead_id>/preorder-contract` merges Sam facts plus the owner approval event and returns `contract_status = owner_money_path_ready` when no money-path fields are missing.
+
 ## Payload
 
 ```json
@@ -132,9 +156,9 @@ Sam may collect customer preferences, but owner approval is still required befor
 
 ## Cut Menu Boundary
 
-Sam may recognize a customer-selected cut set such as `Set A`, but Sam must not invent or describe the contents of Set A/Set B/Set C until an owner-approved cut menu source exists.
+Sam may recognize and describe the approved cut sets from `docs/08-business-modules/PORK_SALES_MODEL.md` rows 246-303.
 
-Until the cut menu source is added, if a customer asks what cuts are included, Sam should say the farm will confirm the exact cut set details before quoting.
+Sam must not invent extra cuts or treat cut-set selection as price, availability, deposit, or booking approval. Those remain owner/Ledger gated.
 
 ## Response Shape
 
