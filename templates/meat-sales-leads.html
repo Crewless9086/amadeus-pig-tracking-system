@@ -142,6 +142,33 @@
             <div id="meat_lead_match_result" class="ops-list"></div>
           </section>
 
+          <section class="meat-lead-ops-panel" aria-label="Meat operations gates">
+            <div class="page-header section-header-compact">
+              <div>
+                <h3>Carcass Assembly</h3>
+                <p id="meat_ops_status">Reserve halves, confirm deposit, then prepare abattoir and butcher drafts.</p>
+              </div>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_ops_reserve_match" class="button-link button-link-secondary">Reserve Matched Carcass</button>
+            </div>
+            <div class="meat-lead-form-grid">
+              <div class="form-group">
+                <label for="meat_deposit_amount">Deposit amount</label>
+                <input type="number" id="meat_deposit_amount" min="0" step="0.01" placeholder="1300.00" />
+              </div>
+              <div class="form-group">
+                <label for="meat_deposit_reference">Payment reference</label>
+                <input type="text" id="meat_deposit_reference" placeholder="EFT reference" />
+              </div>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_ops_record_deposit" class="button-link button-link-secondary">Record Deposit</button>
+              <button type="button" id="meat_ops_build_instructions" class="button-link">Build Instruction Drafts</button>
+            </div>
+            <div id="meat_ops_result" class="ops-list"></div>
+          </section>
+
           <form id="meat_lead_approval_form" class="meat-lead-form" autocomplete="off">
             <div class="meat-lead-form-grid">
               <div class="form-group">
@@ -214,6 +241,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260616-meat-price-book"></script>
+  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260616-meat-ops"></script>
 </body>
 </html>

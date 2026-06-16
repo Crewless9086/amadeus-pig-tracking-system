@@ -8,6 +8,7 @@
     priceEntries: [],
     pricingEstimate: null,
     meatMatch: null,
+    meatOps: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -39,6 +40,13 @@
     buildMatch: byId("meat_lead_build_match"),
     useMatch: byId("meat_lead_use_match"),
     matchResult: byId("meat_lead_match_result"),
+    opsStatus: byId("meat_ops_status"),
+    reserveMatch: byId("meat_ops_reserve_match"),
+    depositAmount: byId("meat_deposit_amount"),
+    depositReference: byId("meat_deposit_reference"),
+    recordDeposit: byId("meat_ops_record_deposit"),
+    buildInstructions: byId("meat_ops_build_instructions"),
+    opsResult: byId("meat_ops_result"),
     form: byId("meat_lead_approval_form"),
     pricePerKg: byId("meat_lead_price_per_kg"),
     availableWeek: byId("meat_lead_available_week"),
@@ -99,6 +107,14 @@
     return {};
   };
 
+  const latestReservation = () => {
+    const reservations = Array.isArray(state.meatOps?.reservations) ? state.meatOps.reservations : [];
+    for (let index = reservations.length - 1; index >= 0; index -= 1) {
+      if (reservations[index].reservation_id) return reservations[index];
+    }
+    return {};
+  };
+
   const setMessage = (text, tone = "") => {
     elements.message.textContent = text || "";
     elements.message.classList.toggle("hidden", !text);
@@ -113,6 +129,9 @@
       elements.usePricing,
       elements.buildMatch,
       elements.useMatch,
+      elements.reserveMatch,
+      elements.recordDeposit,
+      elements.buildInstructions,
       elements.approveDetails,
       elements.buildPreview,
       elements.approveMessage,
@@ -311,6 +330,64 @@
     elements.useMatch.disabled = false;
   };
 
+  const renderMeatOps = () => {
+    if (!elements.opsResult) return;
+    const ops = state.meatOps || {};
+    const assembly = ops.assembly || {};
+    const reservations = Array.isArray(ops.reservations) ? ops.reservations : [];
+    const deposits = Array.isArray(ops.deposits) ? ops.deposits : [];
+    const drafts = Array.isArray(ops.instruction_drafts) ? ops.instruction_drafts : [];
+    const reservation = latestReservation();
+    const hasLead = Boolean(state.selectedLeadId);
+    const hasRecommendation = Boolean(state.meatMatch?.recommendation?.pig_id || state.meatMatch?.recommendation?.tag_number);
+    const hasReservation = Boolean(reservation.reservation_id);
+    const depositConfirmed = Boolean(assembly.deposit_confirmed);
+    const readyForDrafts = Boolean(assembly.ready_for_instruction_drafts);
+
+    elements.opsResult.innerHTML = "";
+    elements.opsStatus.textContent = hasLead
+      ? `Gate: ${safe(assembly.status, "interest_only")}. Full carcass: ${assembly.full_carcass_committed ? "yes" : "no"}. Deposit: ${depositConfirmed ? "confirmed" : "pending"}.`
+      : "Reserve halves, confirm deposit, then prepare abattoir and butcher drafts.";
+
+    reservations.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "ops-list-item";
+      row.innerHTML = `
+        <strong>${safe(item.tag_number || item.pig_id)} | ${safe(item.carcass_side)} | ${safe(item.status)}</strong>
+        <small>${safe(item.cut_set, "cut set pending")} ${safe(item.estimated_packed_weight, "")}</small>
+      `;
+      elements.opsResult.appendChild(row);
+    });
+
+    deposits.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "ops-list-item";
+      row.innerHTML = `
+        <strong>${safe(item.event_type)} | ${item.amount ? `R${Number(item.amount).toFixed(2)}` : "amount not recorded"}</strong>
+        <small>${safe(item.payment_method, "EFT")} ${safe(item.payment_reference, "")}</small>
+      `;
+      elements.opsResult.appendChild(row);
+    });
+
+    drafts.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "ops-list-item";
+      row.innerHTML = `
+        <strong>${safe(item.instruction_type)} | ${safe(item.status)}</strong>
+        <small>${safe(item.recipient_label)}: ${safe(item.draft_message)}</small>
+      `;
+      elements.opsResult.appendChild(row);
+    });
+
+    if (!reservations.length && !deposits.length && !drafts.length) {
+      elements.opsResult.innerHTML = '<div class="table-empty">No carcass reservation, deposit, or instruction drafts yet.</div>';
+    }
+
+    elements.reserveMatch.disabled = !hasLead || !hasRecommendation;
+    elements.recordDeposit.disabled = !hasLead || !hasReservation || depositConfirmed;
+    elements.buildInstructions.disabled = !hasLead || !readyForDrafts;
+  };
+
   const renderDetail = () => {
     const lead = state.contract?.lead || state.leads.find((item) => item.lead_id === state.selectedLeadId) || {};
     const contract = state.contract?.contract || {};
@@ -338,6 +415,9 @@
       elements.createDraftOrder.disabled = true;
       elements.buildMatch.disabled = true;
       elements.useMatch.disabled = true;
+      elements.reserveMatch.disabled = true;
+      elements.recordDeposit.disabled = true;
+      elements.buildInstructions.disabled = true;
       return;
     }
 
@@ -358,6 +438,7 @@
 
     elements.usePricing.disabled = !hasLead;
     elements.buildMatch.disabled = !hasLead;
+    renderMeatOps();
     elements.approveDetails.disabled = !hasLead;
     elements.buildPreview.disabled = !hasLead;
     elements.approveMessage.disabled = !hasLead || !elements.preview.value.trim();
@@ -408,13 +489,16 @@
     state.messageApproved = false;
     state.pricingEstimate = null;
     state.meatMatch = null;
+    state.meatOps = null;
     elements.preview.value = "";
     elements.customerConfirmation.value = "";
     elements.sendStatus.textContent = "No order, quote, or stock change is made from this page.";
     elements.orderStatus.textContent = "Draft order only. No pig reservation or stock change.";
     renderDetail();
     renderMeatMatch();
+    renderMeatOps();
     await loadPricingEstimate(true);
+    await loadMeatOps();
   }
 
   async function selectLead(leadId) {
@@ -523,6 +607,110 @@
     applyPricingEstimate(estimate, true);
     setMessage("Butcher match estimate applied to approval fields. Owner approval is still required.", "success");
     renderDetail();
+  };
+
+  const loadMeatOps = async () => {
+    if (!state.selectedLeadId) return;
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/meat-ops`);
+      state.meatOps = payload || {};
+    } catch (error) {
+      elements.opsStatus.textContent = `Could not load meat ops gate: ${error.message}`;
+    } finally {
+      renderMeatOps();
+    }
+  };
+
+  const reserveMatchedCarcass = async () => {
+    if (!state.selectedLeadId) return;
+    const recommendation = state.meatMatch?.recommendation || {};
+    if (!recommendation.pig_id) {
+      setMessage("Build a Butcher match before reserving a carcass.", "error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/carcass-reservations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pig_id: recommendation.pig_id,
+          tag_number: recommendation.tag_number,
+          cut_set: state.meatMatch?.criteria?.cut_set || "",
+          created_by: "Farm App",
+        }),
+      });
+      await loadMeatOps();
+      setMessage("Matched carcass reserved. Slaughter stays blocked until the carcass is complete and deposit is confirmed.", "success");
+    } catch (error) {
+      setMessage(`Could not reserve carcass: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+      renderMeatOps();
+    }
+  };
+
+  const recordDeposit = async () => {
+    if (!state.selectedLeadId) return;
+    const reservation = latestReservation();
+    if (!reservation.reservation_id) return;
+    if (!elements.depositAmount.value || !elements.depositReference.value.trim()) {
+      setMessage("Deposit amount and payment reference are required before confirming the deposit gate.", "error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/deposit-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: reservation.reservation_id,
+          order_id: reservation.order_id || latestDraftOrderEvent().order_id || "",
+          event_type: "deposit_confirmed",
+          amount: elements.depositAmount.value,
+          payment_reference: elements.depositReference.value,
+          payment_method: elements.paymentMethod.value || "EFT",
+          recorded_by: "Farm App",
+        }),
+      });
+      elements.depositAmount.value = "";
+      elements.depositReference.value = "";
+      await loadMeatOps();
+      setMessage("Deposit confirmation recorded. Instruction drafts unlock only when a full carcass is committed.", "success");
+    } catch (error) {
+      setMessage(`Could not record deposit: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+      renderMeatOps();
+    }
+  };
+
+  const buildInstructionDrafts = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/instruction-drafts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          abattoir_label: "Abattoir",
+          butcher_label: "Butcher",
+        }),
+      });
+      await loadMeatOps();
+      setMessage("Abattoir and butcher instruction drafts created. Nothing external was sent.", "success");
+    } catch (error) {
+      setMessage(`Could not build instruction drafts: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+      renderMeatOps();
+    }
   };
 
   const savePriceEntry = async (event) => {
@@ -699,6 +887,9 @@
   elements.usePricing.addEventListener("click", usePricingRules);
   elements.buildMatch.addEventListener("click", buildMeatMatch);
   elements.useMatch.addEventListener("click", useMeatMatch);
+  elements.reserveMatch.addEventListener("click", reserveMatchedCarcass);
+  elements.recordDeposit.addEventListener("click", recordDeposit);
+  elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);
@@ -710,6 +901,7 @@
   setDetailEnabled(false);
   renderDetail();
   renderMeatMatch();
+  renderMeatOps();
   loadPriceBook();
   loadLeads();
 })();

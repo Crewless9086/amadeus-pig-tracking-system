@@ -351,6 +351,88 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             {"preference": "heaviest", "target_packed_kg": "25", "budget_amount": "3000"},
         )
 
+    def test_meat_sales_lead_ops_status_route_reads_gate(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "assembly": {"ready_for_instruction_drafts": False},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_meat_ops_status",
+            return_value=(service_result, 200),
+        ) as get_status:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/meat-ops")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_status.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_sales_lead_carcass_reservation_route_writes_reservation(self):
+        service_result = {
+            "success": True,
+            "status": "half_reserved_pending_pair",
+            "records_meat_ops": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "create_carcass_reservation_from_lead",
+            return_value=(service_result, 201),
+        ) as create_reservation:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/carcass-reservations",
+                json={"pig_id": "PIG-1"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        create_reservation.assert_called_once_with("OSK-SALES-LEAD-1", {"pig_id": "PIG-1"})
+
+    def test_meat_sales_lead_deposit_event_route_records_gate(self):
+        service_result = {
+            "success": True,
+            "status": "deposit_confirmed",
+            "records_meat_ops": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_meat_deposit_event",
+            return_value=(service_result, 201),
+        ) as record_deposit:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/deposit-events",
+                json={"reservation_id": "RES-1", "amount": "1250"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_deposit.assert_called_once_with("OSK-SALES-LEAD-1", {"reservation_id": "RES-1", "amount": "1250"})
+
+    def test_meat_sales_lead_instruction_drafts_route_builds_internal_drafts(self):
+        service_result = {
+            "success": True,
+            "status": "instruction_drafts_created",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "build_meat_instruction_drafts",
+            return_value=(service_result, 201),
+        ) as build_drafts:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/instruction-drafts",
+                json={"butcher_label": "Local Butcher"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        build_drafts.assert_called_once_with("OSK-SALES-LEAD-1", {"butcher_label": "Local Butcher"})
+
     def test_meat_sales_lead_owner_approval_route_records_event(self):
         service_result = {
             "success": True,

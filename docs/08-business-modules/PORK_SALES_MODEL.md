@@ -328,6 +328,8 @@ Implementation status 2026-06-16:
 - Seed defaults are standard half/full carcass `R130/kg`, custom cut `R145/kg`, assisted slaughter `R250` coordination fee, standard carcass `50% deposit`, custom cut `70% deposit`, and balance before delivery/collection.
 - Farm App meat leads use the active price book to prefill owner approval fields, but the estimate remains review-only until the owner approves customer wording.
 - Estimated totals use expected packed weight ranges first; final customer amount must be based on actual processed packed weight.
+- The carcass reservation build records half/full carcass commitments append-only and prevents slaughter instruction drafts until a full carcass is assembled and deposit is confirmed.
+- Abattoir and butcher messages are drafted internally first. External booking/inform sends require a later owner-approved workflow gate.
 
 ## Weekly Operating Rhythm
 

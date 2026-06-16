@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; Butcher match engine active | Next build: add read-only pig matching from meat-planning candidates so customer requests like heaviest, target kg, or budget can produce a safe recommendation before any reservation gate. |
+| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price book and Butcher match active; carcass ops rails in build | Next build after this: prove reservation/deposit/instruction drafts on real meat leads, then add owner-approved auto-send/inform workflows. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -109,6 +109,25 @@ Required outcome:
 Next after this build:
 
 - Add a separate owner-approved reservation/allocation gate once the recommendation quality has been tested on real candidates.
+
+### Phase 11F Active Build - Meat Carcass Reservation, Deposit Gate, And Instruction Drafts
+
+Owner direction on 2026-06-16: the system should sell and assemble meat orders with the least owner work possible, but it must not slaughter a pig from one half-order or send third-party instructions before the gate is proven.
+
+Required outcome:
+
+- Append-only carcass reservations record the selected pig, side, cut set, estimate, and source lead.
+- A first half carcass reserves `half_a` and waits for a second half; the second half commits the full carcass.
+- Full carcass/custom cut reservations are blocked if a half is already reserved on the pig.
+- Deposit events are append-only and unlock the payment gate only after `deposit_confirmed`.
+- Abattoir and butcher instruction drafts are created only when a full carcass is committed and deposit is confirmed.
+- Farm App `/sales/meat-leads` shows the gate state and exposes reserve, deposit, and draft buttons.
+- Instruction drafts are internal only in this build: no Chatwoot send, n8n call, abattoir booking, butcher notification, quote, order creation, stock change, or public customer output.
+
+Next after this build:
+
+- Add owner-approved auto-send/inform workflows for abattoir and butcher drafts after the draft content and gate behavior are owner-tested.
+- Add exception review so routine safe cases can move automatically and only blocked/uncertain cases come back to the owner.
 
 ### Staying on track (Cursor + Claude Code)
 
