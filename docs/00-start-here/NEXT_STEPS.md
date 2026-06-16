@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price/rules automation active | Next build: add the meat price book, default deposit rules, and estimate engine so Farm App owner approval is prefilled from active rules instead of manually typed. |
+| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; Butcher match engine active | Next build: add read-only pig matching from meat-planning candidates so customer requests like heaviest, target kg, or budget can produce a safe recommendation before any reservation gate. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -92,6 +92,23 @@ Required outcome:
 Next after this build:
 
 - Add selected-pig/batch allocation into the estimate so the system can use the chosen pig's latest live weight rather than only the business default range.
+
+### Phase 11E Active Build - Butcher Meat Match Engine
+
+Owner decision on 2026-06-16: Sam should be able to handle customer requests such as "the heaviest one", "around 25kg", or "budget R3000", but pig selection should be done by a backend specialist rather than Sam directly.
+
+Required outcome:
+
+- Butcher reads the active meat-planning candidate list and price book.
+- Butcher calculates packed-yield estimate and estimated total per candidate.
+- Butcher ranks candidates for heaviest, closest packed kg, budget fit, soonest, or best ready fit.
+- Farm App lead detail can build and display the recommended pig plus alternatives.
+- Sam/backend can later use the recommendation as customer-safe wording, but the first build does not auto-send it.
+- No recommendation may reserve a pig, allocate stock, create a slaughter booking, request deposit, create an order, or change farm data.
+
+Next after this build:
+
+- Add a separate owner-approved reservation/allocation gate once the recommendation quality has been tested on real candidates.
 
 ### Staying on track (Cursor + Claude Code)
 

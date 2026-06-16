@@ -328,6 +328,29 @@ class SalesTransactionRoutesTests(unittest.TestCase):
             {"selected_pig_live_weight_kg": "62"},
         )
 
+    def test_meat_sales_lead_match_route_uses_butcher_match_engine(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "meat_match": {"decision": "recommend"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_lead_meat_match",
+            return_value=(service_result, 200),
+        ) as get_match:
+            response = self.client.get(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/meat-match?preference=heaviest&target_packed_kg=25&budget_amount=3000"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_match.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"preference": "heaviest", "target_packed_kg": "25", "budget_amount": "3000"},
+        )
+
     def test_meat_sales_lead_owner_approval_route_records_event(self):
         service_result = {
             "success": True,

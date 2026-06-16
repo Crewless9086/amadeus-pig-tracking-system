@@ -24,6 +24,7 @@ from modules.sales.sales_transaction_lifecycle import (
 )
 from modules.sales.sales_transaction_read import get_sales_transaction, list_sales_transactions
 from modules.sales.sales_transaction_update import update_slaughter_sale_payment
+from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
     handle_sam_meat_chatwoot_inbound,
@@ -172,6 +173,19 @@ def meat_sales_lead_pricing_estimate(lead_id):
             "selected_pig_live_weight_kg": request.args.get("selected_pig_live_weight_kg", ""),
         }
     result, status_code = get_sales_lead_pricing_estimate(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/meat-match", methods=["GET", "POST"])
+def meat_sales_lead_meat_match(lead_id):
+    payload = request.get_json(silent=True) or {}
+    if request.method == "GET":
+        payload = {
+            "preference": request.args.get("preference", ""),
+            "target_packed_kg": request.args.get("target_packed_kg", ""),
+            "budget_amount": request.args.get("budget_amount", ""),
+        }
+    result, status_code = get_sales_lead_meat_match(lead_id, payload)
     return jsonify(result), status_code
 
 

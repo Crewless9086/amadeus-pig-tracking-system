@@ -107,6 +107,41 @@
 
           <section id="meat_lead_facts" class="meat-lead-facts" aria-label="Sam lead facts"></section>
 
+          <section class="meat-lead-match-panel" aria-label="Butcher match recommendation">
+            <div class="page-header section-header-compact">
+              <div>
+                <h3>Butcher Match</h3>
+                <p id="meat_lead_match_status">Read-only pig match recommendation. No reservation is made.</p>
+              </div>
+            </div>
+            <div class="meat-lead-form-grid">
+              <div class="form-group">
+                <label for="meat_match_preference">Preference</label>
+                <select id="meat_match_preference">
+                  <option value="">Auto from lead</option>
+                  <option value="best_ready_fit">Best ready fit</option>
+                  <option value="heaviest">Heaviest</option>
+                  <option value="closest_weight">Closest weight</option>
+                  <option value="budget_fit">Budget fit</option>
+                  <option value="soonest">Soonest</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="meat_match_target_kg">Target packed kg</label>
+                <input type="number" id="meat_match_target_kg" min="0" step="0.1" placeholder="25" />
+              </div>
+              <div class="form-group">
+                <label for="meat_match_budget">Budget</label>
+                <input type="number" id="meat_match_budget" min="0" step="1" placeholder="3000" />
+              </div>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_lead_build_match" class="button-link button-link-secondary">Build Match</button>
+              <button type="button" id="meat_lead_use_match" class="button-link button-link-secondary">Use Match Estimate</button>
+            </div>
+            <div id="meat_lead_match_result" class="ops-list"></div>
+          </section>
+
           <form id="meat_lead_approval_form" class="meat-lead-form" autocomplete="off">
             <div class="meat-lead-form-grid">
               <div class="form-group">

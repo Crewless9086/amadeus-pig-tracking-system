@@ -7,6 +7,7 @@
     messageApproved: false,
     priceEntries: [],
     pricingEstimate: null,
+    meatMatch: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -31,6 +32,13 @@
     detailTitle: byId("meat_lead_detail_title"),
     detailStatus: byId("meat_lead_detail_status"),
     facts: byId("meat_lead_facts"),
+    matchStatus: byId("meat_lead_match_status"),
+    matchPreference: byId("meat_match_preference"),
+    matchTargetKg: byId("meat_match_target_kg"),
+    matchBudget: byId("meat_match_budget"),
+    buildMatch: byId("meat_lead_build_match"),
+    useMatch: byId("meat_lead_use_match"),
+    matchResult: byId("meat_lead_match_result"),
     form: byId("meat_lead_approval_form"),
     pricePerKg: byId("meat_lead_price_per_kg"),
     availableWeek: byId("meat_lead_available_week"),
@@ -103,6 +111,8 @@
       elements.priceRefresh,
       elements.priceForm?.querySelector("button"),
       elements.usePricing,
+      elements.buildMatch,
+      elements.useMatch,
       elements.approveDetails,
       elements.buildPreview,
       elements.approveMessage,
@@ -260,6 +270,47 @@
     });
   };
 
+  const pigDisplay = (candidate) => {
+    if (!candidate) return "No match";
+    const tag = safe(candidate.tag_number || candidate.pig_id, "Unknown pig");
+    const kg = candidate.latest_weight_kg === null || candidate.latest_weight_kg === undefined
+      ? ""
+      : ` | ${Number(candidate.latest_weight_kg).toFixed(1)}kg live`;
+    return `${tag}${kg}`;
+  };
+
+  const renderMeatMatch = () => {
+    if (!elements.matchResult) return;
+    const match = state.meatMatch || {};
+    const recommendation = match.recommendation || {};
+    const alternatives = Array.isArray(match.alternatives) ? match.alternatives : [];
+    elements.matchResult.innerHTML = "";
+    if (!recommendation.pig_id && !recommendation.tag_number) {
+      elements.matchStatus.textContent = "No Butcher match loaded. Build a match after selecting a lead.";
+      elements.useMatch.disabled = true;
+      return;
+    }
+    elements.matchStatus.textContent = safe(match.customer_safe_summary, "Match built. Owner review still required.");
+    const primary = document.createElement("div");
+    primary.className = "ops-list-item";
+    primary.innerHTML = `
+      <strong>${pigDisplay(recommendation)} | ${safe(recommendation.estimated_total_label, "estimate pending")}</strong>
+      <small>${safe(recommendation.pricing_estimate?.yield_estimate?.display, "")}</small>
+      <small>${(recommendation.match_reasons || []).map(safe).join(" | ")}</small>
+    `;
+    elements.matchResult.appendChild(primary);
+    alternatives.forEach((candidate) => {
+      const item = document.createElement("div");
+      item.className = "ops-list-item";
+      item.innerHTML = `
+        <strong>Alternative: ${pigDisplay(candidate)} | ${safe(candidate.estimated_total_label, "estimate pending")}</strong>
+        <small>${safe(candidate.pricing_estimate?.yield_estimate?.display, "")}</small>
+      `;
+      elements.matchResult.appendChild(item);
+    });
+    elements.useMatch.disabled = false;
+  };
+
   const renderDetail = () => {
     const lead = state.contract?.lead || state.leads.find((item) => item.lead_id === state.selectedLeadId) || {};
     const contract = state.contract?.contract || {};
@@ -285,6 +336,8 @@
       elements.sendMessage.disabled = true;
       elements.recordCustomerYes.disabled = true;
       elements.createDraftOrder.disabled = true;
+      elements.buildMatch.disabled = true;
+      elements.useMatch.disabled = true;
       return;
     }
 
@@ -304,6 +357,7 @@
       : "Pricing rules can prefill price, weight estimate, and deposit terms.";
 
     elements.usePricing.disabled = !hasLead;
+    elements.buildMatch.disabled = !hasLead;
     elements.approveDetails.disabled = !hasLead;
     elements.buildPreview.disabled = !hasLead;
     elements.approveMessage.disabled = !hasLead || !elements.preview.value.trim();
@@ -353,11 +407,13 @@
     state.draft = null;
     state.messageApproved = false;
     state.pricingEstimate = null;
+    state.meatMatch = null;
     elements.preview.value = "";
     elements.customerConfirmation.value = "";
     elements.sendStatus.textContent = "No order, quote, or stock change is made from this page.";
     elements.orderStatus.textContent = "Draft order only. No pig reservation or stock change.";
     renderDetail();
+    renderMeatMatch();
     await loadPricingEstimate(true);
   }
 
@@ -432,6 +488,41 @@
       setBusy(false);
       renderDetail();
     }
+  };
+
+  const buildMeatMatch = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/meat-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          preference: elements.matchPreference.value,
+          target_packed_kg: elements.matchTargetKg.value,
+          budget_amount: elements.matchBudget.value,
+        }),
+      });
+      state.meatMatch = payload.meat_match || {};
+      renderMeatMatch();
+      setMessage("Butcher match built. No reservation was made.", "success");
+    } catch (error) {
+      setMessage(`Could not build meat match: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+      renderMeatMatch();
+    }
+  };
+
+  const useMeatMatch = () => {
+    const estimate = state.meatMatch?.recommendation?.pricing_estimate;
+    if (!estimate) return;
+    state.pricingEstimate = estimate;
+    applyPricingEstimate(estimate, true);
+    setMessage("Butcher match estimate applied to approval fields. Owner approval is still required.", "success");
+    renderDetail();
   };
 
   const savePriceEntry = async (event) => {
@@ -606,6 +697,8 @@
   elements.priceForm.addEventListener("submit", savePriceEntry);
   elements.form.addEventListener("submit", approveDetails);
   elements.usePricing.addEventListener("click", usePricingRules);
+  elements.buildMatch.addEventListener("click", buildMeatMatch);
+  elements.useMatch.addEventListener("click", useMeatMatch);
   elements.buildPreview.addEventListener("click", buildPreview);
   elements.approveMessage.addEventListener("click", approveMessage);
   elements.sendMessage.addEventListener("click", sendMessage);
@@ -616,6 +709,7 @@
   clearDetailFields();
   setDetailEnabled(false);
   renderDetail();
+  renderMeatMatch();
   loadPriceBook();
   loadLeads();
 })();
