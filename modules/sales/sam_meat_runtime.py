@@ -16,6 +16,10 @@ from modules.oom_sakkie.sales_campaign_store import (
 )
 from modules.sales.meat_ops import get_meat_ops_status, record_meat_deposit_event
 from modules.sales.meat_fulfillment import record_meat_fulfillment_event
+from modules.sales.chatwoot_hygiene import (
+    HYGIENE_ENABLED_ENV,
+    sync_sam_meat_chatwoot_hygiene,
+)
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -48,17 +52,20 @@ def sam_meat_webhook_policy(environ=None):
     token = str(source.get(WEBHOOK_TOKEN_ENV, "") or "").strip()
     autoreply_enabled = _truthy(source.get(AUTOREPLY_ENABLED_ENV))
     llm_enabled = _truthy(source.get(LLM_ENABLED_ENV))
+    hygiene_enabled = _truthy(source.get(HYGIENE_ENABLED_ENV))
     llm_configured = bool(str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
     return {
         "enabled": enabled,
         "token_configured": len(token) >= MIN_TOKEN_CHARS,
         "autoreply_enabled": autoreply_enabled,
+        "chatwoot_hygiene_enabled": hygiene_enabled,
         "llm_enabled": llm_enabled and llm_configured,
         "llm_explicitly_enabled": llm_enabled,
         "llm_configured": llm_configured,
         "enabled_env": WEBHOOK_ENABLED_ENV,
         "token_env": WEBHOOK_TOKEN_ENV,
         "autoreply_env": AUTOREPLY_ENABLED_ENV,
+        "chatwoot_hygiene_env": HYGIENE_ENABLED_ENV,
         "llm_enabled_env": LLM_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
@@ -137,6 +144,17 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         )
         decision["pop_capture"] = pop_capture
     fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
+    chatwoot_hygiene = sync_sam_meat_chatwoot_hygiene(
+        inbound.get("conversation_id"),
+        lead_payload=lead_payload,
+        facts=facts,
+        inbound=inbound,
+        decision=decision,
+        prior_context=prior_context,
+        booking_confirmation=booking_confirmation,
+        pop_capture=pop_capture,
+        environ=source,
+    )
 
     send_result = {}
     sent = False
@@ -173,6 +191,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "booking_confirmation": booking_confirmation,
         "pop_capture": pop_capture,
         "fulfillment_capture": fulfillment_capture,
+        "chatwoot_hygiene": chatwoot_hygiene,
         "sam_decision": decision,
         "sent": sent,
         "send_status": send_status,

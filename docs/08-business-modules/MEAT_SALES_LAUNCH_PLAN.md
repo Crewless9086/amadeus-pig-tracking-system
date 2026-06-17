@@ -14,9 +14,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Sam captures meat preorder facts, delivery details, payment preference, and customer context.
 - Farm App `/sales/meat-leads` is the operator surface.
 - Price book, estimate rules, Butcher pig matching, carcass reservation, deposit gate, instruction drafts, fulfilment timeline, driver route, journey drafts, packed-weight reconciliation, final balance, and delivery release gates exist.
+- Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. The next work must make the inbox, campaign launch, and learning loop practical before traffic is pushed into it.
+This is not yet a public money machine. The next work must stress-test buyer behavior, then prepare campaign launch and the learning loop before real traffic is pushed into it.
 
 ## Business Priority
 
@@ -56,13 +57,17 @@ Naming note: existing docs use `Beacon` for public/social content and `Prism` fo
 
 Goal: make the inbox easy to understand at a glance.
 
-Required outcome:
+Status: complete in Phase 11L.
+
+Implemented outcome:
 
 - Define meat-sales labels and custom attributes.
 - Backend Sam Meat applies safe labels/attributes when it creates or updates a meat lead.
 - Labels must append/preserve existing labels, not wipe them.
 - Attributes must preserve existing order conversation fields where relevant.
 - Farm App and Chatwoot should agree on visible state.
+- The backend fetches the current conversation first, merges attributes, and unions labels before writing to Chatwoot.
+- Enable with `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1` plus the existing Chatwoot API envs.
 
 Useful labels:
 

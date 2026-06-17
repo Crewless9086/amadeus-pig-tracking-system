@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, and delivery-release gate | Next: Chatwoot Sales Hygiene, then Sales Stress-Test Pack, then Prisma/Beacon Meat Launch Campaign. |
+| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, and Chatwoot sales hygiene | Next: Sales Stress-Test Pack, then Prisma/Beacon Meat Launch Campaign. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -229,7 +229,7 @@ Verified:
 - Browser behavior smoke passed.
 - GitHub Audit Rails and Browser Behavior passed for commits `c5c10ce` and `79f2184`.
 
-### Phase 11L Active Build - Chatwoot Sales Hygiene
+### Phase 11L Complete - Chatwoot Sales Hygiene
 
 Owner direction on 2026-06-17: before Prisma/Beacon creates traffic, the Chatwoot inbox must be visually clean and easy to follow. The system should use labels and attributes so meat leads, payment state, next gate, and follow-up needs are visible without opening every backend page.
 
@@ -238,7 +238,7 @@ Reference plan:
 - `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
 - `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`
 
-Required outcome:
+Implemented outcome:
 
 - Define the first meat-sales Chatwoot labels and custom attributes.
 - Backend Sam Meat applies safe labels/attributes when meat lead state changes.
@@ -246,6 +246,9 @@ Required outcome:
 - Attribute writes must preserve existing order context fields where the conversation also has normal order history.
 - Meat lead state should be findable in Chatwoot by lane, product/cut set, delivery/collection, payment state, next gate, follow-up need, and test-flow marker.
 - No new public posts, no auto-marketing, no quote/invoice automation, and no autonomous customer send beyond the existing gated Sam/Journey paths.
+- Backend module `modules/sales/chatwoot_hygiene.py` builds and syncs the label/attribute payload.
+- Sam Meat runs the hygiene sync after lead/fact processing and includes the sync result in the webhook response.
+- Runtime is gated by `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1` and uses existing Chatwoot API envs.
 
 Next after this build:
 
@@ -253,7 +256,12 @@ Next after this build:
 - Phase 11N Prisma/Beacon Meat Launch Campaign drafts.
 - Phase 11O Conversation Learning Loop.
 
-### Phase 11M Planned - Sales Stress-Test Pack
+Verified:
+
+- Local Oom Sakkie/Sales suite passed at 575 tests.
+- JS browser behavior smoke script parses with `node --check`.
+
+### Phase 11M Active Build - Sales Stress-Test Pack
 
 Required outcome:
 

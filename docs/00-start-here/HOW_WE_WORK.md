@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11L Chatwoot Sales Hygiene |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, and delivery-release gate. The Farm App remains the operational surface. Before Prisma/Beacon creates public demand, Chatwoot must be clean enough for the owner to manage leads visually. |
-| **Current focus** | Define and implement first meat-sales Chatwoot labels/custom attributes: sales lane, product/cut set, delivery mode/town, lead/order IDs, payment state, next gate, follow-up need, and test-flow marker. Preserve existing labels and order attributes. |
-| **Current last verified** | **2026-06-17** - Final balance reconciliation and journey gate pushed in commits `c5c10ce` and `79f2184`; local 571-test suite passed, browser behavior smoke passed, and GitHub Audit Rails/Browser Behavior passed. |
+| **Today's focus** | Phase 11M Sales Stress-Test Pack |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, and Chatwoot sales hygiene. The Farm App remains the operational surface. |
+| **Current focus** | Build 30-50 messy Sam Meat sales scenarios covering vague interest, budget, price objections, wrong product confusion, location pins, delivery questions, POP messages, slow replies, closed WhatsApp windows, customer frustration, and final booking confirmation. |
+| **Current last verified** | **2026-06-17** - Chatwoot sales hygiene passed the 575-test Oom Sakkie/Sales local suite and JS smoke parse; final balance reconciliation and journey gate pushed in commits `c5c10ce` and `79f2184`; GitHub Audit Rails/Browser Behavior passed. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

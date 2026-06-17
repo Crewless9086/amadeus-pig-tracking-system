@@ -32,6 +32,7 @@ Do not rename or repurpose these fields casually:
 | `TicketID` | Human escalation ticket key. |
 | `WebOrderId` / `WebOrderStatus` / `WebPendingAction` | Escalation sheet fields used by `1.1` to restore Chatwoot order context. |
 | `images_sent_offset_map` | Media tool repeat-send control. |
+| `sales_lane` / `meat_*` | Backend-native Sam Meat Chatwoot hygiene fields. Writes must preserve existing order context attributes and labels. |
 
 ## High-Risk Field: `output`
 
@@ -51,6 +52,7 @@ Do not change without review:
 - final reply cleaning/sending path
 - order route switch, including `CANCEL_PENDING`, `CANCEL_ORDER`, and `CLEAR_PENDING`
 - Chatwoot label and custom attribute calls documented in `CHATWOOT_ATTRIBUTES.md`
+- backend-native Sam Meat Chatwoot hygiene writes in `modules/sales/chatwoot_hygiene.py`
 - `1.2` execute workflow calls
 - escalation handoff creation
 

@@ -118,6 +118,20 @@ Before enabling `1.3`, update this node so media writes also preserve:
 
 ### Backend Sam Meat Writes
 
+Current status: implemented in backend Phase 11L.
+
+Runtime gate:
+
+- `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`
+
+Required Chatwoot envs:
+
+- `CHATWOOT_BASE_URL`
+- `CHATWOOT_ACCOUNT_ID`
+- `CHATWOOT_API_ACCESS_TOKEN`
+
+The backend first fetches the Chatwoot conversation, merges the meat fields into the existing `custom_attributes`, and writes the full merged snapshot back to Chatwoot. It also reads the existing labels and writes the union of current labels plus meat labels, so existing order/sales labels are preserved even if Chatwoot treats label writes as replacement writes.
+
 Backend Sam Meat must preserve existing conversation attributes where possible and add/update only its meat-sales fields.
 
 Required meat snapshot fields:
@@ -173,20 +187,20 @@ These labels exist or are planned in Chatwoot.
 | `reserved` | Not currently written by n8n. | Defined only |
 | `sold` | Not currently written by n8n. | Defined only |
 | `waiting_list` | Not currently written by n8n. | Defined only |
-| `meat_lead` | Planned backend Sam Meat write. | Meat preorder lane. |
-| `half_carcass` | Planned backend Sam Meat write. | Product marker. |
-| `full_carcass` | Planned backend Sam Meat write. | Product marker. |
-| `set_a` | Planned backend Sam Meat write. | Cut-set marker. |
-| `delivery` | Planned backend Sam Meat write. | Delivery marker. |
-| `collection` | Planned backend Sam Meat write. | Collection marker. |
-| `deposit_pending` | Planned backend Sam Meat/Farm App write. | Payment gate marker. |
-| `pop_received_unverified` | Planned backend Sam Meat/Farm App write. | POP evidence only; does not unlock operations. |
+| `meat_lead` | Backend Sam Meat write. | Meat preorder lane. |
+| `half_carcass` | Backend Sam Meat write. | Product marker. |
+| `full_carcass` | Backend Sam Meat write. | Product marker. |
+| `set_a` | Backend Sam Meat write. | Cut-set marker. |
+| `delivery` | Backend Sam Meat write. | Delivery marker. |
+| `collection` | Backend Sam Meat write. | Collection marker. |
+| `deposit_pending` | Backend Sam Meat/Farm App write. | Payment gate marker. |
+| `pop_received_unverified` | Backend Sam Meat/Farm App write. | POP evidence only; does not unlock operations. |
 | `deposit_confirmed` | Planned Farm App/backend write. | Bank-confirmed deposit marker. |
 | `balance_due` | Planned Farm App/backend write. | Final balance pending. |
 | `ready_for_delivery` | Planned Farm App/backend write. | Delivery release gate ready. |
-| `needs_followup` | Planned backend/Farm App write. | Human/system follow-up needed. |
+| `needs_followup` | Backend/Farm App write. | Human/system follow-up needed. |
 | `lost_lead` | Planned backend/Farm App write. | Buyer dropped or not moving forward. |
-| `test_flow` | Planned backend/Farm App write. | Test data marker for easy cleanup. |
+| `test_flow` | Backend/Farm App write. | Test data marker for easy cleanup. |
 
 ## Label Write Risk
 
@@ -202,6 +216,6 @@ Before adding more label behavior, live-test whether the Chatwoot labels endpoin
 - `1.1 Release Conversation to Auto` was live-verified on 2026-04-29 and now writes evaluated values back to Chatwoot.
 - Phase 1.3 payment-method preservation was live-verified on 2026-04-29 across normal update, next-turn readback, cancel pending, and escalation release.
 - Confirm the Chatwoot label endpoint behavior before expanding labels.
-- Phase 11L: implement backend-native Sam Meat label/attribute writes for meat-sales hygiene after confirming append-vs-replace behavior.
+- Phase 11L is implemented: backend-native Sam Meat label/attribute writes preserve existing labels and attributes by fetching the current conversation first.
 - Fix `1.3 Patch Conversation Attributes` before enabling media.
 - Decide whether contact attributes should become a real memory layer after order lifecycle stabilization.
