@@ -5766,6 +5766,7 @@ def literal_false_is_allowed():
 
     def test_sam_meat_intake_payload_maps_to_tracking_lead_only(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({
+            "lead_id": "OSK-SALES-LEAD-FRESH",
             "customer_name": "Jan",
             "conversation_id": "1234",
             "contact_id": "5678",
@@ -5779,6 +5780,7 @@ def literal_false_is_allowed():
         })
 
         self.assertEqual(lead_payload["campaign_source"], "inbound_chatwoot")
+        self.assertEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-FRESH")
         self.assertEqual(lead_payload["created_by"], "sam_meat_intake")
         self.assertEqual(lead_payload["interest"]["sam_intake_lane"], "meat_preorder")
         self.assertEqual(lead_payload["interest"]["product_type"], "half_carcass")
@@ -5811,6 +5813,7 @@ def literal_false_is_allowed():
         }, 201)
 
         result, status_code = record_sam_meat_intake_lead({
+            "lead_id": "OSK-SALES-LEAD-FRESH",
             "customer_name": "Charl N",
             "conversation_id": "1808",
             "contact_id": "699428938",
@@ -5826,6 +5829,7 @@ def literal_false_is_allowed():
         self.assertEqual(status_code, 201)
         self.assertTrue(result["success"])
         self.assertEqual(result["fact_event_status_code"], 201)
+        self.assertEqual(mock_record_lead.call_args.args[0]["lead_id"], "OSK-SALES-LEAD-FRESH")
         mock_record_event.assert_called_once()
         event_lead_id, event_payload = mock_record_event.call_args.args[:2]
         event_notes = json.loads(event_payload["notes"])

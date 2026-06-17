@@ -940,6 +940,7 @@ def build_sam_meat_intake_lead_payload(payload):
         },
     }
     lead_payload = {
+        "lead_id": _clean_text(payload.get("lead_id"), 100),
         "lead_label": lead_label,
         "contact_label": customer_name,
         "campaign_source": "inbound_chatwoot",

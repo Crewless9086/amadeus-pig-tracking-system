@@ -273,6 +273,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         lead_payload = mock_record.call_args.args[0]
         self.assertTrue(lead_payload["lead_id"].startswith("OSK-SALES-LEAD-"))
         self.assertNotEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-FRESH")
+        self.assertEqual(len(lead_payload["lead_id"]), len("OSK-SALES-LEAD-1234567890ABCDEF"))
         self.assertEqual(result["inbound"]["message_id"], "695457280")
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
