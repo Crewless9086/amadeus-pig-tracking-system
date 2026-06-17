@@ -104,6 +104,56 @@ class MeatFulfillmentTests(unittest.TestCase):
         self.assertIn("route", default_message)
         self.assertEqual(custom_message, "Custom update")
 
+    def test_dad_booking_packet_requires_full_carcass_and_bank_confirmed(self):
+        packet = meat_fulfillment._dad_booking_packet(
+            "LEAD-1",
+            {"contact_label": "Charl N", "interest": {"cut_set": "Set A", "timing": "next available farm run"}},
+            {"status": "half_reserved_pending_pair", "full_carcass_committed": False, "deposit_confirmed": False},
+            [{"reservation_id": "RES-1", "pig_id": "PIG-1", "tag_number": "402", "carcass_side": "half_a"}],
+            [],
+            {"next_gate": "find_second_half_buyer"},
+            {},
+        )
+
+        self.assertEqual(packet["readiness"], "not_ready_for_dad_booking")
+        self.assertIn("full_carcass_commitment", packet["missing_before_booking"])
+        self.assertIn("money_confirmed_in_bank", packet["missing_before_booking"])
+        self.assertIn("Do not book", packet["dad_message"])
+        self.assertFalse(packet["calls_abattoir"])
+        self.assertFalse(packet["calls_butcher"])
+
+    def test_dad_booking_packet_formats_manual_booking_message_when_ready(self):
+        packet = meat_fulfillment._dad_booking_packet(
+            "LEAD-1",
+            {
+                "contact_label": "Charl N",
+                "interest": {
+                    "product": "Half Carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "timing": "next available farm run",
+                },
+            },
+            {"status": "ready_for_slaughter_booking", "full_carcass_committed": True, "deposit_confirmed": True},
+            [{
+                "reservation_id": "RES-1",
+                "pig_id": "PIG-1",
+                "tag_number": "402",
+                "carcass_side": "half_b",
+                "estimated_packed_weight": "19-21kg",
+            }],
+            [{"event_type": "deposit_confirmed_in_bank", "payment_reference": "AMAD-MEAT-1234"}],
+            {"next_gate": "confirm_abattoir_slot"},
+            {},
+        )
+
+        self.assertEqual(packet["readiness"], "ready_for_dad_booking")
+        self.assertEqual(packet["missing_before_booking"], [])
+        self.assertIn("Pig/tag: 402", packet["dad_message"])
+        self.assertIn("confirm abattoir slaughter slot", packet["dad_message"])
+        self.assertEqual(packet["facts"]["deposit_state"], "confirmed in bank")
+
     @patch.dict("os.environ", {"MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED": "0"}, clear=False)
     def test_journey_notification_send_is_disabled_before_database_or_network(self):
         result, status_code = meat_fulfillment.send_meat_journey_notification(

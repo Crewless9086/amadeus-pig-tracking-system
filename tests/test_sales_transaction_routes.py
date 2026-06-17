@@ -478,6 +478,26 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         get_timeline.assert_called_once_with("OSK-SALES-LEAD-1")
 
+    def test_meat_dad_booking_packet_route_builds_draft_only_packet(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "dad_booking_packet": {"readiness": "ready_for_dad_booking"},
+            "calls_abattoir": False,
+            "calls_butcher": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "build_dad_booking_packet",
+            return_value=(service_result, 200),
+        ) as build_packet:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/dad-booking-packet")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        build_packet.assert_called_once_with("OSK-SALES-LEAD-1", {})
+
     def test_meat_fulfillment_event_route_records_event(self):
         service_result = {
             "success": True,

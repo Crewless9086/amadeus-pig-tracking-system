@@ -75,6 +75,7 @@ def get_meat_fulfillment_timeline(lead_id, database_url=None):
         "status": "ok",
         "mode": "meat_fulfillment_timeline_append_only",
         "lead_id": lead_id,
+        "lead": lead,
         "timeline": events,
         "fulfillment": status,
         "journey_plan": _journey_plan(status, lead),
@@ -83,6 +84,38 @@ def get_meat_fulfillment_timeline(lead_id, database_url=None):
             "reservations": ops_result.get("reservations") or [],
             "deposits": ops_result.get("deposits") or [],
         },
+        **_authority(False),
+    }, 200
+
+
+def build_dad_booking_packet(lead_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    timeline_result, status_code = get_meat_fulfillment_timeline(lead_id, database_url=database_url)
+    if status_code != 200:
+        return timeline_result, status_code
+    lead = timeline_result.get("lead") if isinstance(timeline_result.get("lead"), dict) else {}
+    ops = timeline_result.get("meat_ops") if isinstance(timeline_result.get("meat_ops"), dict) else {}
+    assembly = ops.get("assembly") if isinstance(ops.get("assembly"), dict) else {}
+    reservations = ops.get("reservations") if isinstance(ops.get("reservations"), list) else []
+    deposits = ops.get("deposits") if isinstance(ops.get("deposits"), list) else []
+    fulfillment = timeline_result.get("fulfillment") if isinstance(timeline_result.get("fulfillment"), dict) else {}
+    packet = _dad_booking_packet(
+        _clean(lead_id, 100),
+        lead,
+        assembly,
+        reservations,
+        deposits,
+        fulfillment,
+        payload,
+    )
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "dad_booking_packet_draft_only",
+        "lead_id": _clean(lead_id, 100),
+        "dad_booking_packet": packet,
+        "next_gate": "dad_books_abattoir_and_butcher_then_owner_logs_confirmed_slots",
         **_authority(False),
     }, 200
 
@@ -467,6 +500,100 @@ def _journey_message(journey, fulfillment, payload):
         "intake": "Thanks, we are checking the remaining details before confirming the next step.",
     }
     return templates.get(stage) or templates.get("intake")
+
+
+def _dad_booking_packet(lead_id, lead, assembly, reservations, deposits, fulfillment, payload):
+    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+    reservation = _latest_reservation(reservations)
+    deposit = _latest_deposit(deposits)
+    buyer = _clean(lead.get("contact_label") or lead.get("lead_label") or interest.get("customer_name"), 160)
+    product = _clean(interest.get("product") or interest.get("product_type") or reservation.get("product_type"), 120)
+    cut_set = _clean(interest.get("cut_set") or reservation.get("cut_set"), 80)
+    town = _clean(interest.get("delivery_town") or interest.get("location"), 120)
+    delivery_mode = _clean(interest.get("delivery_or_collection"), 80)
+    desired_timing = _clean(interest.get("timing") or payload.get("desired_timing"), 160)
+    tag = _clean(reservation.get("tag_number") or reservation.get("pig_id"), 120)
+    packed_weight = _clean(reservation.get("estimated_packed_weight"), 160)
+    deposit_state = "confirmed in bank" if assembly.get("deposit_confirmed") else (
+        "POP received, not bank-confirmed" if assembly.get("pop_received_unverified") else "not confirmed"
+    )
+    facts = {
+        "lead_id": lead_id,
+        "buyer": buyer,
+        "product": product,
+        "cut_set": cut_set,
+        "town": town,
+        "delivery_or_collection": delivery_mode,
+        "desired_timing": desired_timing,
+        "pig_or_tag": tag,
+        "reservation_id": reservation.get("reservation_id", ""),
+        "carcass_side": reservation.get("carcass_side", ""),
+        "carcass_status": assembly.get("status", ""),
+        "full_carcass_committed": bool(assembly.get("full_carcass_committed")),
+        "deposit_state": deposit_state,
+        "deposit_reference": deposit.get("payment_reference", ""),
+        "estimated_packed_weight": packed_weight,
+        "next_gate": fulfillment.get("next_gate", ""),
+    }
+    missing = [
+        label for label, value in {
+            "pig_or_tag": tag,
+            "cut_set": cut_set,
+            "desired_timing": desired_timing,
+        }.items()
+        if not value
+    ]
+    if not facts["full_carcass_committed"]:
+        missing.append("full_carcass_commitment")
+    if not assembly.get("deposit_confirmed"):
+        missing.append("money_confirmed_in_bank")
+    readiness = "ready_for_dad_booking" if not missing else "not_ready_for_dad_booking"
+    message = _dad_booking_message(facts, missing)
+    return {
+        "readiness": readiness,
+        "missing_before_booking": missing,
+        "facts": facts,
+        "dad_message": message,
+        "dad_action": (
+            "Dad can request/confirm abattoir and butcher slots, then Charl/Dad logs confirmed dates in Farm App."
+            if readiness == "ready_for_dad_booking"
+            else "Do not book yet; resolve missing gates first."
+        ),
+        "records_only": True,
+        "sends_now": False,
+        "calls_abattoir": False,
+        "calls_butcher": False,
+    }
+
+
+def _dad_booking_message(facts, missing):
+    if missing:
+        return _clean(
+            "Booking packet not ready yet. Missing: "
+            + ", ".join(missing)
+            + ". Do not book abattoir or butcher until these are resolved.",
+            1600,
+        )
+    return _clean(
+        "Please help confirm the pork booking slots. "
+        f"Pig/tag: {facts.get('pig_or_tag')}. "
+        f"Product: {facts.get('product')} {facts.get('cut_set')}. "
+        f"Customer/town: {facts.get('buyer') or 'customer'} / {facts.get('town') or 'town pending'}. "
+        f"Delivery/collection: {facts.get('delivery_or_collection') or 'pending'}. "
+        f"Timing wanted: {facts.get('desired_timing') or 'next available farm run'}. "
+        f"Estimated packed weight: {facts.get('estimated_packed_weight') or 'estimate pending'}. "
+        f"Deposit: {facts.get('deposit_state')} {facts.get('deposit_reference') or ''}. "
+        "Please confirm abattoir slaughter slot and butcher processing slot, then we will log the confirmed dates.",
+        1600,
+    )
+
+
+def _latest_deposit(deposits):
+    preferred = {"deposit_confirmed_in_bank", "deposit_confirmed", "pop_received_unverified"}
+    for event in sorted(deposits or [], key=lambda row: row.get("created_at", ""), reverse=True):
+        if event.get("event_type") in preferred:
+            return event
+    return {}
 
 
 def _driver_lead_ids(cursor, driver_label, scheduled_date):

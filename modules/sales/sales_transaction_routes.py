@@ -27,6 +27,7 @@ from modules.sales.sales_transaction_update import update_slaughter_sale_payment
 from modules.sales.meat_match_engine import get_sales_lead_meat_match
 from modules.sales.meat_fulfillment import (
     approve_meat_journey_notification,
+    build_dad_booking_packet,
     build_meat_journey_notification_draft,
     get_meat_fulfillment_timeline,
     list_meat_driver_route,
@@ -245,6 +246,13 @@ def meat_sales_lead_instruction_drafts(lead_id):
 @sales_bp.route("/sales/meat-leads/<lead_id>/fulfillment", methods=["GET"])
 def meat_sales_lead_fulfillment_timeline(lead_id):
     result, status_code = get_meat_fulfillment_timeline(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/dad-booking-packet", methods=["GET", "POST"])
+def meat_sales_lead_dad_booking_packet(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = build_dad_booking_packet(lead_id, payload)
     return jsonify(result), status_code
 
 

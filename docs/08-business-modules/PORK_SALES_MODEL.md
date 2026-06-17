@@ -341,6 +341,7 @@ Implementation status 2026-06-16:
 - Sam Meat payment instructions are environment-configured and may be sent after the customer accepts an owner-approved follow-up. The current envs are `MEAT_SALES_BANK_ACCOUNT_NAME`, `MEAT_SALES_BANK_NAME`, `MEAT_SALES_BANK_ACCOUNT_NUMBER`, `MEAT_SALES_BANK_BRANCH_CODE`, `MEAT_SALES_BANK_ACCOUNT_TYPE`, and `MEAT_SALES_PAYMENT_REFERENCE_PREFIX`. Customer POPs are logged as `pop_received_unverified`; only bank-confirmed money (`deposit_confirmed_in_bank`) unlocks slaughter, butcher, and delivery gates.
 - Butcher matching now reads active carcass reservations and prioritizes a pig with one open half for new half-carcass leads before starting a fresh pig. A fully committed carcass is not recommended again.
 - Sam Meat can capture shared location payloads from Chatwoot/WhatsApp-style messages when latitude/longitude, place name, or a maps URL is present. Location pins are saved as delivery context and driver notes; Sam should still ask for useful directions when needed.
+- Dad-assisted booking is the current operating model for abattoir and butcher slots. The Farm App can build a draft-only Dad booking packet with pig/tag, customer, cut set, deposit state, desired timing, and a message Dad can use; Dad/Charl then logs confirmed abattoir and butcher dates manually.
 
 ## Weekly Operating Rhythm
 

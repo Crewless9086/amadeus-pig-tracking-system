@@ -62,6 +62,7 @@
     deliveryDriver: byId("meat_delivery_driver"),
     fulfillmentNotes: byId("meat_fulfillment_notes"),
     recordFulfillment: byId("meat_fulfillment_record"),
+    buildDadPacket: byId("meat_dad_booking_packet"),
     buildJourneyDraft: byId("meat_journey_build_draft"),
     approveJourney: byId("meat_journey_approve"),
     sendJourney: byId("meat_journey_send"),
@@ -209,6 +210,7 @@
       elements.recordDeposit,
       elements.buildInstructions,
       elements.recordFulfillment,
+      elements.buildDadPacket,
       elements.buildJourneyDraft,
       elements.approveJourney,
       elements.sendJourney,
@@ -553,6 +555,7 @@
       elements.fulfillmentResult.innerHTML = '<div class="table-empty">No fulfilment events recorded yet.</div>';
     }
     elements.recordFulfillment.disabled = !hasLead;
+    elements.buildDadPacket.disabled = !hasLead;
   };
 
   const renderDetail = () => {
@@ -586,6 +589,7 @@
       elements.recordDeposit.disabled = true;
       elements.buildInstructions.disabled = true;
       elements.recordFulfillment.disabled = true;
+      elements.buildDadPacket.disabled = true;
       elements.buildJourneyDraft.disabled = true;
       elements.approveJourney.disabled = true;
       elements.sendJourney.disabled = true;
@@ -615,6 +619,7 @@
     renderMeatOps();
     renderMeatFulfillment();
     elements.buildJourneyDraft.disabled = !hasLead;
+    elements.buildDadPacket.disabled = !hasLead;
     elements.approveJourney.disabled = !hasLead || !elements.journeyMessage.value.trim();
     elements.sendJourney.disabled = !hasLead || !elements.journeyMessage.value.trim();
     elements.approveDetails.disabled = !hasLead;
@@ -764,7 +769,6 @@
       setMessage(`Could not apply pricing rules: ${error.message}`, "error");
     } finally {
       setBusy(false);
-      renderDetail();
     }
   };
 
@@ -1039,6 +1043,37 @@
     } finally {
       setBusy(false);
       renderMeatFulfillment();
+    }
+  };
+
+  const buildDadBookingPacket = async () => {
+    if (!state.selectedLeadId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/dad-booking-packet`);
+      const packet = payload.dad_booking_packet || {};
+      const facts = packet.facts || {};
+      elements.fulfillmentResult.innerHTML = `
+        <div class="ops-list-item">
+          <strong>Dad booking packet | ${safe(packet.readiness)}</strong>
+          <small>${safe(packet.dad_action)}</small>
+        </div>
+        <div class="ops-list-item">
+          <strong>${safe(facts.pig_or_tag, "Pig pending")} | ${safe(facts.product)} ${safe(facts.cut_set, "")}</strong>
+          <small>${safe(facts.town, "Town pending")} | ${safe(facts.deposit_state)} | ${safe(facts.desired_timing, "timing pending")}</small>
+        </div>
+        <div class="ops-list-item">
+          <strong>Draft message for Dad</strong>
+          <small>${safe(packet.dad_message)}</small>
+        </div>
+      `;
+      setMessage("Dad booking packet built. Nothing was sent or booked.", "success");
+    } catch (error) {
+      setMessage(`Could not build Dad booking packet: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
     }
   };
 
@@ -1357,6 +1392,7 @@
   elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
   elements.opsResult.addEventListener("click", handleInstructionAction);
   elements.recordFulfillment.addEventListener("click", recordFulfillmentEvent);
+  elements.buildDadPacket.addEventListener("click", buildDadBookingPacket);
   elements.buildJourneyDraft.addEventListener("click", buildJourneyDraft);
   elements.approveJourney.addEventListener("click", approveJourneyDraft);
   elements.sendJourney.addEventListener("click", sendJourneyUpdate);
