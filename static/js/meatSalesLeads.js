@@ -402,12 +402,13 @@
     const hasRecommendation = Boolean(state.meatMatch?.recommendation?.pig_id || state.meatMatch?.recommendation?.tag_number);
     const hasReservation = Boolean(reservation.reservation_id);
     const depositConfirmed = Boolean(assembly.deposit_confirmed);
+    const paymentStatus = safe(assembly.payment_review_status, depositConfirmed ? "confirmed_in_bank" : "not_received");
     const readyForDrafts = Boolean(assembly.ready_for_instruction_drafts);
 
     elements.opsResult.innerHTML = "";
     elements.opsStatus.textContent = hasLead
-      ? `Gate: ${safe(assembly.status, "interest_only")}. Full carcass: ${assembly.full_carcass_committed ? "yes" : "no"}. Deposit: ${depositConfirmed ? "confirmed" : "pending"}.`
-      : "Reserve halves, confirm deposit, then prepare abattoir and butcher drafts.";
+      ? `Gate: ${safe(assembly.status, "interest_only")}. Full carcass: ${assembly.full_carcass_committed ? "yes" : "no"}. Payment: ${paymentStatus}.`
+      : "Reserve halves, confirm money in bank, then prepare abattoir and butcher drafts.";
 
     reservations.forEach((item) => {
       const row = document.createElement("div");
@@ -787,7 +788,7 @@
         }),
       });
       await loadMeatOps();
-      setMessage("Matched carcass reserved. Slaughter stays blocked until the carcass is complete and deposit is confirmed.", "success");
+      setMessage("Matched carcass reserved. Slaughter stays blocked until the carcass is complete and money is confirmed in bank.", "success");
     } catch (error) {
       setMessage(`Could not reserve carcass: ${error.message}`, "error");
     } finally {
@@ -802,7 +803,7 @@
     const reservation = latestReservation();
     if (!reservation.reservation_id) return;
     if (!elements.depositAmount.value || !elements.depositReference.value.trim()) {
-      setMessage("Deposit amount and payment reference are required before confirming the deposit gate.", "error");
+      setMessage("Deposit amount and bank reference are required before confirming money in bank.", "error");
       return;
     }
     setBusy(true);
@@ -814,7 +815,7 @@
         body: JSON.stringify({
           reservation_id: reservation.reservation_id,
           order_id: reservation.order_id || latestDraftOrderEvent().order_id || "",
-          event_type: "deposit_confirmed",
+          event_type: "deposit_confirmed_in_bank",
           amount: elements.depositAmount.value,
           payment_reference: elements.depositReference.value,
           payment_method: elements.paymentMethod.value || "EFT",
@@ -824,7 +825,7 @@
       elements.depositAmount.value = "";
       elements.depositReference.value = "";
       await loadMeatOps();
-      setMessage("Deposit confirmation recorded. Instruction drafts unlock only when a full carcass is committed.", "success");
+      setMessage("Money-in-bank confirmation recorded. Instruction drafts unlock only when a full carcass is committed.", "success");
     } catch (error) {
       setMessage(`Could not record deposit: ${error.message}`, "error");
     } finally {

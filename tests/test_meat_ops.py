@@ -53,12 +53,55 @@ class MeatOpsTests(unittest.TestCase):
         ]
 
         pending = meat_ops._assembly_status(reservations, [])
-        ready = meat_ops._assembly_status(reservations, [{"event_type": "deposit_confirmed"}])
+        ready = meat_ops._assembly_status(reservations, [{
+            "reservation_id": "RES-2",
+            "event_type": "deposit_confirmed",
+        }])
 
         self.assertTrue(pending["full_carcass_committed"])
         self.assertFalse(pending["ready_for_instruction_drafts"])
         self.assertTrue(ready["deposit_confirmed"])
         self.assertTrue(ready["ready_for_slaughter_booking"])
+
+    def test_pop_received_does_not_unlock_slaughter_gate_until_bank_confirmed(self):
+        reservations = [
+            {
+                "reservation_id": "RES-1",
+                "pig_id": "PIG-1",
+                "carcass_side": "half_a",
+                "status": "half_reserved_pending_pair",
+                "created_at": "2026-06-16T01:00:00",
+            },
+            {
+                "reservation_id": "RES-2",
+                "pig_id": "PIG-1",
+                "carcass_side": "half_b",
+                "status": "full_carcass_committed",
+                "created_at": "2026-06-16T02:00:00",
+            },
+        ]
+
+        pop_only = meat_ops._assembly_status(reservations, [{
+            "reservation_id": "RES-2",
+            "event_type": "pop_received_unverified",
+            "payment_reference": "POP-123",
+            "created_at": "2026-06-16T03:00:00",
+        }])
+        bank_confirmed = meat_ops._assembly_status(reservations, [{
+            "reservation_id": "RES-2",
+            "event_type": "deposit_confirmed_in_bank",
+            "payment_reference": "BANK-123",
+            "created_at": "2026-06-16T04:00:00",
+        }])
+
+        self.assertTrue(pop_only["full_carcass_committed"])
+        self.assertTrue(pop_only["pop_received_unverified"])
+        self.assertFalse(pop_only["deposit_confirmed"])
+        self.assertEqual(pop_only["payment_review_status"], "pop_received_unverified")
+        self.assertFalse(pop_only["ready_for_instruction_drafts"])
+        self.assertTrue(bank_confirmed["deposit_confirmed"])
+        self.assertEqual(bank_confirmed["payment_review_status"], "confirmed_in_bank")
+        self.assertTrue(bank_confirmed["ready_for_instruction_drafts"])
 
     def test_cancelled_reservation_does_not_count_as_active(self):
         reservations = [{
@@ -79,6 +122,45 @@ class MeatOpsTests(unittest.TestCase):
         self.assertEqual(status, "half_reserved_pending_pair")
         self.assertEqual(block, "")
 
+    def test_deposit_on_cancelled_reservation_does_not_unlock_active_reservation(self):
+        reservations = [
+            {
+                "reservation_id": "RES-CANCELLED",
+                "pig_id": "PIG-1",
+                "carcass_side": "half_a",
+                "status": "half_reserved_pending_pair",
+                "effective_status": "cancelled",
+                "created_at": "2026-06-16T01:00:00",
+            },
+            {
+                "reservation_id": "RES-ACTIVE-A",
+                "pig_id": "PIG-2",
+                "carcass_side": "half_a",
+                "status": "half_reserved_pending_pair",
+                "created_at": "2026-06-16T02:00:00",
+            },
+            {
+                "reservation_id": "RES-ACTIVE-B",
+                "pig_id": "PIG-2",
+                "carcass_side": "half_b",
+                "status": "full_carcass_committed",
+                "created_at": "2026-06-16T03:00:00",
+            },
+        ]
+        deposits = [{
+            "reservation_id": "RES-CANCELLED",
+            "event_type": "deposit_confirmed_in_bank",
+            "payment_reference": "BANK-OLD",
+            "created_at": "2026-06-16T04:00:00",
+        }]
+
+        assembly = meat_ops._assembly_status(reservations, deposits)
+
+        self.assertTrue(assembly["full_carcass_committed"])
+        self.assertFalse(assembly["deposit_confirmed"])
+        self.assertFalse(assembly["ready_for_instruction_drafts"])
+        self.assertEqual(assembly["payment_review_status"], "not_received")
+
     def test_confirmed_deposit_requires_amount_and_reference(self):
         missing_amount, amount_code = meat_ops.record_meat_deposit_event(
             "LEAD-1",
@@ -95,6 +177,16 @@ class MeatOpsTests(unittest.TestCase):
         self.assertEqual(missing_amount["status"], "deposit_amount_required")
         self.assertEqual(reference_code, 400)
         self.assertEqual(missing_reference["status"], "deposit_reference_required")
+
+    def test_pop_received_requires_reference_but_not_amount(self):
+        result, status_code = meat_ops.record_meat_deposit_event(
+            "LEAD-1",
+            {"reservation_id": "RES-1", "event_type": "pop_received_unverified"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "pop_reference_required")
 
     def test_cancel_reservation_requires_reason(self):
         result, status_code = meat_ops.record_carcass_reservation_event(

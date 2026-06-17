@@ -130,15 +130,25 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
     reservation_id = _clean(payload.get("reservation_id"), 100)
     if not reservation_id:
         return {"success": False, "status": "reservation_id_required", **_authority(False)}, 400
-    event_type = _clean(payload.get("event_type") or "deposit_confirmed", 80)
-    if event_type not in {"deposit_requested_draft", "deposit_confirmed", "balance_confirmed", "payment_note"}:
+    event_type = _clean(payload.get("event_type") or "deposit_confirmed_in_bank", 80)
+    if event_type not in {
+        "deposit_requested_draft",
+        "pop_received_unverified",
+        "pop_rejected",
+        "deposit_confirmed_in_bank",
+        "deposit_confirmed",
+        "balance_confirmed",
+        "payment_note",
+    }:
         return {"success": False, "status": "invalid_deposit_event_type", **_authority(False)}, 400
     amount = _number(payload.get("amount"))
     payment_reference = _clean(payload.get("payment_reference"), 160)
-    if event_type == "deposit_confirmed" and (not amount or amount <= 0):
+    if event_type in {"deposit_confirmed", "deposit_confirmed_in_bank"} and (not amount or amount <= 0):
         return {"success": False, "status": "deposit_amount_required", **_authority(False)}, 400
-    if event_type == "deposit_confirmed" and not payment_reference:
+    if event_type in {"deposit_confirmed", "deposit_confirmed_in_bank"} and not payment_reference:
         return {"success": False, "status": "deposit_reference_required", **_authority(False)}, 400
+    if event_type == "pop_received_unverified" and not payment_reference:
+        return {"success": False, "status": "pop_reference_required", **_authority(False)}, 400
     database_url = _db_url(database_url)
     if not database_url:
         return _unavailable("not_configured", False), 503
@@ -508,6 +518,11 @@ def _next_carcass_slot(product_type, existing):
 
 def _assembly_status(reservations, deposits):
     active = _active_reservations(reservations)
+    active_reservation_ids = {item.get("reservation_id") for item in active if item.get("reservation_id")}
+    active_deposits = [
+        item for item in deposits or []
+        if item.get("reservation_id") in active_reservation_ids
+    ]
     by_pig = {}
     for item in active:
         by_pig.setdefault(item["pig_id"], []).append(item)
@@ -517,11 +532,24 @@ def _assembly_status(reservations, deposits):
         if "full" in sides or {"half_a", "half_b"}.issubset(sides):
             committed = sorted(items, key=lambda row: row.get("created_at", ""))[-1]
             break
-    deposit_confirmed = any(item.get("event_type") == "deposit_confirmed" for item in deposits)
+    latest_pop = _latest_deposit_event(active_deposits, "pop_received_unverified")
+    latest_rejection = _latest_deposit_event(active_deposits, "pop_rejected")
+    deposit_confirmed = any(
+        item.get("event_type") in {"deposit_confirmed", "deposit_confirmed_in_bank"}
+        for item in active_deposits
+    )
+    pop_received_unverified = bool(latest_pop) and (
+        not latest_rejection
+        or latest_rejection.get("created_at", "") < latest_pop.get("created_at", "")
+    )
     return {
         "active_reservation_count": len(active),
         "full_carcass_committed": bool(committed),
         "deposit_confirmed": deposit_confirmed,
+        "pop_received_unverified": pop_received_unverified,
+        "payment_review_status": "confirmed_in_bank" if deposit_confirmed else (
+            "pop_received_unverified" if pop_received_unverified else "not_received"
+        ),
         "ready_for_slaughter_booking": bool(committed and deposit_confirmed),
         "ready_for_instruction_drafts": bool(committed and deposit_confirmed),
         "committed_reservation": committed,
@@ -584,7 +612,11 @@ def _active_reservations(reservations):
 def _instruction_draft_params(lead_id, reservation, deposits, payload):
     cut_set = reservation.get("cut_set") or "approved cut set"
     tag = reservation.get("tag_number") or reservation.get("pig_id")
-    deposit_ref = next((item.get("payment_reference") for item in deposits if item.get("event_type") == "deposit_confirmed"), "")
+    deposit_ref = next((
+        item.get("payment_reference")
+        for item in deposits
+        if item.get("event_type") in {"deposit_confirmed", "deposit_confirmed_in_bank"}
+    ), "")
     base_payload = {
         "lead_id": lead_id,
         "reservation_id": reservation.get("reservation_id", ""),
@@ -702,6 +734,13 @@ def _instruction_effective_status(events):
 
 
 def _latest_instruction_event(events, event_type):
+    for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
+        if event.get("event_type") == event_type:
+            return event
+    return {}
+
+
+def _latest_deposit_event(events, event_type):
     for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
         if event.get("event_type") == event_type:
             return event

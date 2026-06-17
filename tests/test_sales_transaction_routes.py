@@ -417,7 +417,7 @@ class SalesTransactionRoutesTests(unittest.TestCase):
     def test_meat_sales_lead_deposit_event_route_records_gate(self):
         service_result = {
             "success": True,
-            "status": "deposit_confirmed",
+            "status": "deposit_confirmed_in_bank",
             "records_meat_ops": True,
         }
 
@@ -428,12 +428,15 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         ) as record_deposit:
             response = self.client.post(
                 "/api/sales/meat-leads/OSK-SALES-LEAD-1/deposit-events",
-                json={"reservation_id": "RES-1", "amount": "1250"},
+                json={"reservation_id": "RES-1", "event_type": "deposit_confirmed_in_bank", "amount": "1250"},
             )
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json(), service_result)
-        record_deposit.assert_called_once_with("OSK-SALES-LEAD-1", {"reservation_id": "RES-1", "amount": "1250"})
+        record_deposit.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"reservation_id": "RES-1", "event_type": "deposit_confirmed_in_bank", "amount": "1250"},
+        )
 
     def test_meat_sales_lead_instruction_drafts_route_builds_internal_drafts(self):
         service_result = {
