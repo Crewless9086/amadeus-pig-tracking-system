@@ -104,6 +104,62 @@ class MeatFulfillmentTests(unittest.TestCase):
         self.assertIn("route", default_message)
         self.assertEqual(custom_message, "Custom update")
 
+    def test_journey_message_includes_confirmed_abattoir_slot_context(self):
+        status = meat_fulfillment._fulfillment_status(
+            {"assembly": {"status": "ready_for_slaughter_booking", "full_carcass_committed": True, "deposit_confirmed": True}},
+            [{
+                "event_type": "abattoir_slot_confirmed",
+                "scheduled_date": "2026-06-20",
+                "scheduled_window": "08:00-10:00",
+                "location_label": "Riversdale Abattoir",
+                "created_at": "2026-06-17T01:00:00",
+            }],
+            {"whatsapp_window_state": "open"},
+        )
+        journey = meat_fulfillment._journey_plan(status, {}, [{
+            "event_type": "abattoir_slot_confirmed",
+            "scheduled_date": "2026-06-20",
+            "scheduled_window": "08:00-10:00",
+            "location_label": "Riversdale Abattoir",
+            "created_at": "2026-06-17T01:00:00",
+        }])
+        message = meat_fulfillment._journey_message(journey, status, {})
+
+        self.assertEqual(journey["stage"], "abattoir_confirmed")
+        self.assertIn("2026-06-20", message)
+        self.assertIn("08:00-10:00", message)
+        self.assertIn("Riversdale Abattoir", message)
+
+    def test_journey_message_includes_confirmed_butcher_slot_context(self):
+        events = [
+            {
+                "event_type": "abattoir_slot_confirmed",
+                "scheduled_date": "2026-06-20",
+                "scheduled_window": "08:00-10:00",
+                "location_label": "Riversdale Abattoir",
+                "created_at": "2026-06-17T01:00:00",
+            },
+            {
+                "event_type": "butcher_slot_confirmed",
+                "scheduled_date": "2026-06-21",
+                "scheduled_window": "09:00-12:00",
+                "location_label": "Butcher",
+                "created_at": "2026-06-17T02:00:00",
+            },
+        ]
+        status = meat_fulfillment._fulfillment_status(
+            {"assembly": {"status": "ready_for_slaughter_booking", "full_carcass_committed": True, "deposit_confirmed": True}},
+            events,
+            {"whatsapp_window_state": "open"},
+        )
+        journey = meat_fulfillment._journey_plan(status, {}, events)
+        message = meat_fulfillment._journey_message(journey, status, {})
+
+        self.assertEqual(journey["stage"], "butcher_confirmed")
+        self.assertIn("2026-06-21", message)
+        self.assertIn("09:00-12:00", message)
+        self.assertIn("Final packed weight", message)
+
     def test_dad_booking_packet_requires_full_carcass_and_bank_confirmed(self):
         packet = meat_fulfillment._dad_booking_packet(
             "LEAD-1",

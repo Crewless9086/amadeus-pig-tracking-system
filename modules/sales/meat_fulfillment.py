@@ -78,7 +78,7 @@ def get_meat_fulfillment_timeline(lead_id, database_url=None):
         "lead": lead,
         "timeline": events,
         "fulfillment": status,
-        "journey_plan": _journey_plan(status, lead),
+        "journey_plan": _journey_plan(status, lead, events),
         "meat_ops": {
             "assembly": ops_result.get("assembly") or {},
             "reservations": ops_result.get("reservations") or [],
@@ -160,7 +160,7 @@ def record_meat_fulfillment_event(lead_id, payload=None, database_url=None):
         "fulfillment_event": params,
         "timeline": events,
         "fulfillment": status,
-        "journey_plan": _journey_plan(status, lead),
+        "journey_plan": _journey_plan(status, lead, events),
         "next_gate": status.get("next_gate", ""),
         **_authority(True),
     }, 201
@@ -448,37 +448,42 @@ def _fulfillment_status(ops, events, lead=None):
     }
 
 
-def _journey_plan(status, lead=None):
+def _journey_plan(status, lead=None, events=None):
+    latest = _latest_by_type(events or [])
     if status.get("exception_open"):
-        return _journey("exception_review", "Hold customer updates until the owner resolves the exception.", status)
+        return _journey("exception_review", "Hold customer updates until the owner resolves the exception.", status, latest)
     if status.get("half_waiting_for_pair"):
         return _journey(
             "half_reserved_waiting_pair",
             "Tell the customer their half is reserved and the farm is pairing the other half before slaughter is booked.",
             status,
+            latest,
         )
     if status.get("full_carcass_committed") and not status.get("abattoir_slot_confirmed"):
-        return _journey("carcass_committed", "Tell the customer the full carcass is committed and timing is being confirmed.", status)
+        return _journey("carcass_committed", "Tell the customer the full carcass is committed and timing is being confirmed.", status, latest)
     if status.get("abattoir_slot_confirmed") and not status.get("butcher_slot_confirmed"):
-        return _journey("abattoir_confirmed", "Tell the customer slaughter timing is confirmed and butchery timing is next.", status)
+        return _journey("abattoir_confirmed", "Tell the customer slaughter timing is confirmed and butchery timing is next.", status, latest)
     if status.get("butcher_slot_confirmed") and not status.get("delivery_scheduled"):
-        return _journey("butcher_confirmed", "Ask for or confirm delivery details and explain final packed weight comes after processing.", status)
+        return _journey("butcher_confirmed", "Ask for or confirm delivery details and explain final packed weight comes after processing.", status, latest)
     if status.get("delivery_scheduled") and not status.get("driver_assigned"):
-        return _journey("delivery_scheduled", "Tell the customer the delivery window once final balance and route are ready.", status)
+        return _journey("delivery_scheduled", "Tell the customer the delivery window once final balance and route are ready.", status, latest)
     if status.get("driver_assigned") and not status.get("delivered"):
-        return _journey("driver_assigned", "Driver can update when on the way or arrived; avoid excessive messages.", status)
+        return _journey("driver_assigned", "Driver can update when on the way or arrived; avoid excessive messages.", status, latest)
     if status.get("delivered"):
-        return _journey("delivered", "Send a thank-you and story-led follow-up later, not immediately as spam.", status)
-    return _journey("intake", "Keep gathering missing fulfilment facts before making timing promises.", status)
+        return _journey("delivered", "Send a thank-you and story-led follow-up later, not immediately as spam.", status, latest)
+    return _journey("intake", "Keep gathering missing fulfilment facts before making timing promises.", status, latest)
 
 
-def _journey(stage, summary, status):
+def _journey(stage, summary, status, latest=None):
+    latest = latest if isinstance(latest, dict) else {}
+    slot_context = _journey_slot_context(latest)
     return {
         "stage": stage,
         "summary": summary,
         "customer_message_state": "template_required" if status.get("requires_template") else "service_window_reply_allowed",
         "requires_template": bool(status.get("requires_template")),
         "next_gate": status.get("next_gate", ""),
+        "slot_context": slot_context,
         "sends_now": False,
     }
 
@@ -488,18 +493,52 @@ def _journey_message(journey, fulfillment, payload):
     custom_message = _clean((payload or {}).get("message"), 1600)
     if custom_message:
         return custom_message
+    slot = journey.get("slot_context") if isinstance(journey.get("slot_context"), dict) else {}
+    abattoir = slot.get("abattoir") if isinstance(slot.get("abattoir"), dict) else {}
+    butcher = slot.get("butcher") if isinstance(slot.get("butcher"), dict) else {}
+    delivery = slot.get("delivery") if isinstance(slot.get("delivery"), dict) else {}
     templates = {
         "half_reserved_waiting_pair": "Thanks, your half carcass is reserved. We are pairing the other half before we book slaughter timing.",
         "carcass_committed": "Good news, the full carcass is now committed. We are confirming abattoir and butcher timing before we promise delivery.",
-        "abattoir_confirmed": "Your pork is moving forward: the abattoir timing is confirmed, and we are confirming the butcher slot next.",
-        "butcher_confirmed": "The butcher slot is confirmed. Final packed weight and balance are confirmed after processing, then we schedule delivery.",
-        "delivery_scheduled": "Your delivery is scheduled. We will keep the update practical and avoid unnecessary messages.",
+        "abattoir_confirmed": (
+            f"Your pork is moving forward: the abattoir slot is confirmed for {_slot_when(abattoir)}. "
+            "We are confirming the butcher slot next before we promise delivery timing."
+        ),
+        "butcher_confirmed": (
+            f"The butcher slot is confirmed for {_slot_when(butcher)}. "
+            "Final packed weight and balance are confirmed after processing, then we schedule delivery."
+        ),
+        "delivery_scheduled": f"Your delivery is scheduled for {_slot_when(delivery)}. We will keep updates practical and avoid unnecessary messages.",
         "driver_assigned": "Your delivery is on the route. The driver will update only when useful, such as on the way or arrived.",
         "delivered": "Delivered. Thank you for supporting the farm and being part of the Amadeus pork journey.",
         "exception_review": "There is a timing issue we are checking before we give you the next firm update.",
         "intake": "Thanks, we are checking the remaining details before confirming the next step.",
     }
     return templates.get(stage) or templates.get("intake")
+
+
+def _journey_slot_context(latest):
+    return {
+        "abattoir": _slot_event_context(latest.get("abattoir_slot_confirmed") or latest.get("abattoir_slot_requested")),
+        "butcher": _slot_event_context(latest.get("butcher_slot_confirmed") or latest.get("butcher_slot_requested")),
+        "delivery": _slot_event_context(latest.get("delivery_scheduled")),
+    }
+
+
+def _slot_event_context(event):
+    event = event if isinstance(event, dict) else {}
+    return {
+        "date": _clean(event.get("scheduled_date"), 80),
+        "window": _clean(event.get("scheduled_window"), 120),
+        "location": _clean(event.get("location_label"), 160),
+        "notes": event.get("notes") if isinstance(event.get("notes"), dict) else {},
+    }
+
+
+def _slot_when(slot):
+    slot = slot if isinstance(slot, dict) else {}
+    parts = [slot.get("date"), slot.get("window"), slot.get("location")]
+    return _clean(" ".join(str(item or "") for item in parts).strip() or "the confirmed slot", 240)
 
 
 def _dad_booking_packet(lead_id, lead, assembly, reservations, deposits, fulfillment, payload):

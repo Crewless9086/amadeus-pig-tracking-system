@@ -1131,6 +1131,16 @@
       });
       const event = payload.notification_event || {};
       elements.journeyMessage.value = safe(event.message, "");
+      elements.fulfillmentResult.innerHTML = `
+        <div class="ops-list-item">
+          <strong>Journey draft | ${safe(event.stage)}</strong>
+          <small>${event.requires_template ? "WhatsApp template required" : "Service-window reply allowed"}</small>
+        </div>
+        <div class="ops-list-item">
+          <strong>Draft customer message</strong>
+          <small>${safe(event.message)}</small>
+        </div>
+      `;
       setMessage("Customer journey draft built. Approve the exact text before sending.", "success");
     } catch (error) {
       setMessage(`Could not build journey draft: ${error.message}`, "error");

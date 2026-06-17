@@ -343,6 +343,7 @@ Implementation status 2026-06-16:
 - Sam Meat can capture shared location payloads from Chatwoot/WhatsApp-style messages when latitude/longitude, place name, or a maps URL is present. Location pins are saved as delivery context and driver notes; Sam should still ask for useful directions when needed.
 - Dad-assisted booking is the current operating model for abattoir and butcher slots. The Farm App can build a draft-only Dad booking packet with pig/tag, customer, cut set, deposit state, desired timing, and a message Dad can use; Dad/Charl then logs confirmed abattoir and butcher dates manually.
 - The Farm App now has quick slot logging for Dad-assisted booking: abattoir requested, abattoir confirmed, butcher requested, and butcher confirmed. Confirmed slots require a date; all actions remain append-only fulfilment events and send nothing externally.
+- Customer journey drafts now include confirmed abattoir, butcher, and delivery slot timing when those events are logged. Drafts still require exact approval before any customer send, and the UI shows whether the WhatsApp service window or a template is required.
 
 ## Weekly Operating Rhythm
 
