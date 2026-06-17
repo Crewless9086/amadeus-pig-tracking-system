@@ -342,6 +342,7 @@ Implementation status 2026-06-16:
 - Butcher matching now reads active carcass reservations and prioritizes a pig with one open half for new half-carcass leads before starting a fresh pig. A fully committed carcass is not recommended again.
 - Sam Meat can capture shared location payloads from Chatwoot/WhatsApp-style messages when latitude/longitude, place name, or a maps URL is present. Location pins are saved as delivery context and driver notes; Sam should still ask for useful directions when needed.
 - Dad-assisted booking is the current operating model for abattoir and butcher slots. The Farm App can build a draft-only Dad booking packet with pig/tag, customer, cut set, deposit state, desired timing, and a message Dad can use; Dad/Charl then logs confirmed abattoir and butcher dates manually.
+- The Farm App now has quick slot logging for Dad-assisted booking: abattoir requested, abattoir confirmed, butcher requested, and butcher confirmed. Confirmed slots require a date; all actions remain append-only fulfilment events and send nothing externally.
 
 ## Weekly Operating Rhythm
 

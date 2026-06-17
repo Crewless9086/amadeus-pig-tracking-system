@@ -61,6 +61,7 @@
     deliveryTown: byId("meat_delivery_town"),
     deliveryDriver: byId("meat_delivery_driver"),
     fulfillmentNotes: byId("meat_fulfillment_notes"),
+    slotQuickActions: byId("meat_slot_quick_actions"),
     recordFulfillment: byId("meat_fulfillment_record"),
     buildDadPacket: byId("meat_dad_booking_packet"),
     buildJourneyDraft: byId("meat_journey_build_draft"),
@@ -210,6 +211,7 @@
       elements.recordDeposit,
       elements.buildInstructions,
       elements.recordFulfillment,
+      ...Array.from(elements.slotQuickActions?.querySelectorAll("button") || []),
       elements.buildDadPacket,
       elements.buildJourneyDraft,
       elements.approveJourney,
@@ -1046,6 +1048,46 @@
     }
   };
 
+  const recordSlotQuickAction = async (eventType) => {
+    if (!state.selectedLeadId || !eventType) return;
+    if (eventType.endsWith("_confirmed") && !elements.fulfillmentDate.value) {
+      setMessage("Confirmed abattoir/butcher slots need a date before recording.", "error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/fulfillment-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type: eventType,
+          scheduled_date: elements.fulfillmentDate.value,
+          scheduled_window: elements.fulfillmentWindow.value,
+          location_label: elements.fulfillmentLocation.value,
+          reason: elements.fulfillmentNotes.value,
+          notes: elements.fulfillmentNotes.value || `Quick logged ${eventType.replaceAll("_", " ")}`,
+          actor_label: "Farm App",
+        }),
+      });
+      elements.fulfillmentEventType.value = eventType;
+      elements.fulfillmentNotes.value = "";
+      await loadMeatFulfillment();
+      setMessage(`${eventType.replaceAll("_", " ")} recorded. Nothing was sent externally.`, "success");
+    } catch (error) {
+      setMessage(`Could not record slot update: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatFulfillment();
+    }
+  };
+
+  const handleSlotQuickAction = (event) => {
+    const button = event.target.closest("[data-slot-action]");
+    if (!button) return;
+    recordSlotQuickAction(button.dataset.slotAction || "");
+  };
+
   const buildDadBookingPacket = async () => {
     if (!state.selectedLeadId) return;
     setBusy(true);
@@ -1391,6 +1433,7 @@
   elements.recordDeposit.addEventListener("click", recordDeposit);
   elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
   elements.opsResult.addEventListener("click", handleInstructionAction);
+  elements.slotQuickActions.addEventListener("click", handleSlotQuickAction);
   elements.recordFulfillment.addEventListener("click", recordFulfillmentEvent);
   elements.buildDadPacket.addEventListener("click", buildDadBookingPacket);
   elements.buildJourneyDraft.addEventListener("click", buildJourneyDraft);
