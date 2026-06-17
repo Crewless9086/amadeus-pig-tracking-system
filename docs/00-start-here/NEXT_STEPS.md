@@ -303,16 +303,25 @@ Verified:
 - Sam Meat stress runner passed 40/40.
 - Focused Sam Meat, Chatwoot hygiene, stress, and Oom Sakkie service tests passed.
 
-### Phase 11N Active Build - Prisma/Beacon Meat Launch Campaign
+### Phase 11N Complete - Prisma/Beacon Meat Launch Campaign
 
-Required outcome:
+Implemented outcome:
 
-- Owner-approved campaign angles for the first meat preorder push.
+- Owner-review-ready campaign angles for the first meat preorder push.
 - Draft social media captions, WhatsApp status/channel copy, Facebook/Instagram post text, and story-led farm updates.
 - All drafts must be truthful, limited-availability, preorder-focused, and must not promise stock, timing, or delivery beyond the approved sales model.
 - No public post or outbound campaign send until owner approval and channel rules are explicit.
+- Canonical packet builder: `modules/sales/beacon_campaign.py`.
+- Owner-review packet: `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`.
+- Guard tests: `tests/test_beacon_campaign.py`.
+- Beacon remains draft-only: no Chatwoot, Meta, n8n, quote, invoice, order, stock, carcass reservation, slaughter booking, butcher booking, payment confirmation, or public send authority.
 
-### Phase 11O Planned - Sales Conversation Learning Loop
+Verified:
+
+- Local Beacon campaign tests passed.
+- Focused Sam Meat, Chatwoot hygiene, stress, Beacon, and Oom Sakkie service tests passed.
+
+### Phase 11O Active Build - Sales Conversation Learning Loop
 
 Required outcome:
 

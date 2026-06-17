@@ -19,7 +19,7 @@ Meat Sales is backend-native enough for private pilot testing:
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. The next work should prepare campaign launch and the learning loop before real traffic is pushed into it.
+This is not yet a public money machine. Beacon now has a draft-only launch packet ready for owner review; the next work should add the conversation learning loop before real traffic is pushed into it.
 
 ## Business Priority
 
@@ -131,12 +131,24 @@ Remaining useful improvements:
 
 Goal: create demand without overpromising.
 
-Required outcome:
+Status: complete in Phase 11N.
 
-- Owner-approved campaign angles for the first pork freezer pilot.
+Implemented outcome:
+
+- Owner-review-ready campaign angles for the first pork freezer pilot.
 - Draft social captions, WhatsApp status/channel text, Facebook/Instagram post copy, and short story updates.
 - Every draft must state that availability is limited and orders are pre-booked.
 - No post/send automation until owner approval and channel rules are explicit.
+- `modules/sales/beacon_campaign.py` builds the canonical draft-only launch packet.
+- `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` contains the owner-review copy packet.
+- Tests prove Beacon has no authority to post publicly, send customer messages, call Chatwoot/Meta/n8n, create orders, create quotes/invoices, reserve carcasses, change stock, book slaughter/butchery, or confirm payment.
+
+Owner review before using the copy:
+
+- Choose first channel: WhatsApp status, WhatsApp channel, Facebook, Instagram, or direct known buyers.
+- Choose approved photo/video assets.
+- Confirm whether public copy should mention price/kg or keep price on request.
+- Confirm first pilot demand cap before Sam keeps collecting more buyer interest.
 
 ### 4. Conversation Learning Loop
 

@@ -257,12 +257,14 @@ First inputs:
 First output:
 
 - Draft-only content packets requiring owner approval.
+- Current meat launch packet: `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`.
 
 Risk:
 
 - Draft-only.
 - No public posting.
 - No customer messaging.
+- No Chatwoot, Meta, n8n, quote, invoice, order, stock, carcass reservation, slaughter booking, butcher booking, or payment-confirmation authority.
 
 ### Quartermaster - Operations And Inventory Planner
 

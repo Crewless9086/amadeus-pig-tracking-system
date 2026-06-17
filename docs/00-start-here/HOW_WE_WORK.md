@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11N Prisma/Beacon Meat Launch Campaign |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, and structured buyer-preference capture. The Farm App remains the operational surface. |
-| **Current focus** | Create owner-approved meat preorder campaign angles and channel drafts without public posting or automated outbound sending. |
-| **Current last verified** | **2026-06-17** - Sam Meat stress pack passed 40/40 launch-blocking scenarios with structured budget/target-weight/match-preference capture; focused Sam Meat, Chatwoot hygiene, stress, and Oom Sakkie service tests passed. |
+| **Today's focus** | Phase 11O Sales Conversation Learning Loop |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, and Beacon draft-only launch packet. The Farm App remains the operational surface. |
+| **Current focus** | Add append-only learning from meat sales conversations so Sam misses, objections, buyer intent, and conversion blockers become owner-reviewed improvement evidence. |
+| **Current last verified** | **2026-06-17** - Sam Meat stress pack passed 40/40 launch-blocking scenarios with structured budget/target-weight/match-preference capture; Beacon campaign packet tests and focused Sam Meat/Oom Sakkie tests passed. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
