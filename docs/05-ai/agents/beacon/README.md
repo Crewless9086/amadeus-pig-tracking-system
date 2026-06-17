@@ -31,5 +31,6 @@ This is not yet full Beacon automation. It is the first campaign-draft foundatio
 The long-term Beacon scope is captured in:
 
 - `docs/05-ai/agents/beacon/BEACON_SCOPE.md`
+- `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`
 
-That file is the source of truth for future Beacon builds.
+Those files are the source of truth for future Beacon builds.

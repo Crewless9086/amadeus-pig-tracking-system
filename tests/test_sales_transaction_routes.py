@@ -1,4 +1,5 @@
 import unittest
+from io import BytesIO
 from unittest.mock import patch
 
 from app import app
@@ -246,6 +247,80 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         list_leads.assert_called_once_with(limit="12", status_filter="launch_test")
+
+    def test_beacon_media_policy_route_returns_storage_policy(self):
+        with patch.object(
+            sales_transaction_routes,
+            "beacon_media_storage_policy",
+            return_value={"success": True, "farm_app_standard_upload_enabled": False},
+        ) as policy:
+            response = self.client.get("/api/beacon/media-policy")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["farm_app_standard_upload_enabled"])
+        policy.assert_called_once()
+
+    def test_beacon_media_assets_list_and_register_routes(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "assets": [{"asset_id": "BEACON-ASSET-1"}],
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_media_assets",
+            return_value=(service_result, 200),
+        ) as list_assets:
+            response = self.client.get("/api/beacon/media-assets?limit=12&approval_status=needs_review&media_type=image")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        list_assets.assert_called_once_with(limit="12", approval_status="needs_review", media_type="image")
+
+        with patch.object(
+            sales_transaction_routes,
+            "register_beacon_media_asset",
+            return_value=({"success": True, "asset_id": "BEACON-ASSET-2"}, 201),
+        ) as register_asset:
+            response = self.client.post("/api/beacon/media-assets", json={
+                "storage_path": "2026/06/18/test.jpg",
+                "media_type": "image",
+            })
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["asset_id"], "BEACON-ASSET-2")
+        register_asset.assert_called_once_with({"storage_path": "2026/06/18/test.jpg", "media_type": "image"})
+
+    def test_beacon_media_asset_upload_and_event_routes(self):
+        with patch.object(
+            sales_transaction_routes,
+            "upload_beacon_media_asset",
+            return_value=({"success": True, "asset_id": "BEACON-ASSET-UPLOAD"}, 201),
+        ) as upload_asset:
+            response = self.client.post(
+                "/api/beacon/media-assets/upload",
+                data={"file": (BytesIO(b"fake"), "test.jpg"), "uploader_label": "Charl"},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["asset_id"], "BEACON-ASSET-UPLOAD")
+        upload_asset.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_beacon_media_asset_event",
+            return_value=({"success": True, "event_id": "BEACON-ASSET-EVENT-1"}, 201),
+        ) as record_event:
+            response = self.client.post(
+                "/api/beacon/media-assets/BEACON-ASSET-1/events",
+                json={"event_type": "review_note", "notes": "Good photo."},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["event_id"], "BEACON-ASSET-EVENT-1")
+        record_event.assert_called_once_with("BEACON-ASSET-1", {"event_type": "review_note", "notes": "Good photo."})
 
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {

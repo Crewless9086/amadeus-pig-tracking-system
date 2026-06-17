@@ -59,6 +59,13 @@ from modules.sales.conversation_learning import (
     list_sales_conversation_learning_events,
     record_sales_conversation_learning_event,
 )
+from modules.beacon.media_library import (
+    beacon_media_storage_policy,
+    list_beacon_media_assets,
+    record_beacon_media_asset_event,
+    register_beacon_media_asset,
+    upload_beacon_media_asset,
+)
 
 
 sales_bp = Blueprint("sales", __name__)
@@ -163,6 +170,39 @@ def sam_meat_chatwoot_inbound():
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_sam_meat_chatwoot_inbound(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/media-policy", methods=["GET"])
+def beacon_media_policy():
+    return jsonify(beacon_media_storage_policy()), 200
+
+
+@sales_bp.route("/beacon/media-assets", methods=["GET", "POST"])
+def beacon_media_assets():
+    if request.method == "GET":
+        result, status_code = list_beacon_media_assets(
+            limit=request.args.get("limit", 50),
+            approval_status=request.args.get("approval_status", ""),
+            media_type=request.args.get("media_type", ""),
+        )
+        return jsonify(result), status_code
+    payload = request.get_json(silent=True) or {}
+    result, status_code = register_beacon_media_asset(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/media-assets/upload", methods=["POST"])
+def beacon_media_asset_upload():
+    upload = request.files.get("file")
+    result, status_code = upload_beacon_media_asset(upload, form=request.form.to_dict())
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/media-assets/<asset_id>/events", methods=["POST"])
+def beacon_media_asset_event(asset_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_beacon_media_asset_event(asset_id, payload)
     return jsonify(result), status_code
 
 

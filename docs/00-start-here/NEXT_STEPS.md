@@ -343,15 +343,31 @@ Verified:
 - Focused sales conversation learning tests passed.
 - Focused Sam Meat, route, Oom Sakkie, and frontend route contract tests passed.
 
-### Phase 11P Active Build - Beacon Media Library Foundation
+### Phase 11P Complete - Beacon Media Library Foundation
 
-Required outcome:
+Implemented outcome:
 
-- Create a safe asset-library model for Beacon.
-- Support manual/folder/Telegram-style asset intake planning.
-- Track asset source, tags, sale-stream relevance, quality, privacy/safety risks, owner approval state, and campaign usage history.
-- Beacon may suggest assets but must not use unapproved assets publicly.
-- No Meta, public posting, scheduling, paid spend, or automatic media use in this phase.
+- Safe Beacon media asset-library model for future approved photo/video use.
+- Private Supabase Storage decision logged: raw intake bucket `beacon-raw-intake`, approved-media bucket `beacon-approved-media`.
+- Append-only Postgres metadata and event history for asset source, tags, sale-stream relevance, quality, privacy/safety risks, owner approval state, and campaign usage history.
+- Backend media policy, list/register, small-file upload, and event routes are added under `/api/sales/beacon/*`.
+- Standard backend upload is limited to 6MB; larger videos require a later TUS/resumable upload build.
+- Beacon may suggest or catalog assets but cannot use unapproved assets publicly.
+- No Meta, public posting, scheduling, paid spend, customer messaging, quote, invoice, order, stock, reservation, dispatch, prompt/runtime, or automatic media use authority is added.
+- Supabase migration: `supabase/migrations/202606180002_create_beacon_media_library.sql`.
+- Media service: `modules/beacon/media_library.py`.
+- Storage decision: `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`.
+
+Verified:
+
+- Focused Beacon media-library tests passed.
+- Focused sales route and frontend route contract tests passed.
+
+Next gate:
+
+- Create the two private Supabase Storage buckets and confirm Render/local envs include `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+- Upload one small test image through the backend route.
+- Phase 11Q should add a simple Farm App Beacon Media Review UI before any public-use or campaign scheduling automation.
 
 ### Staying on track (Cursor + Claude Code)
 

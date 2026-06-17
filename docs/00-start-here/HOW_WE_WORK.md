@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11P Beacon Media Library Foundation |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, and sales conversation learning evidence. The Farm App remains the operational surface. |
-| **Current focus** | Create a safe Beacon media asset model for future approved photo/video use without posting, scheduling, paid spend, or automatic media use. |
-| **Current last verified** | **2026-06-18** - Phase 11O sales conversation learning loop passed focused tests; Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
+| **Today's focus** | Phase 11P Beacon Media Library Foundation deploy/provision smoke |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, sales conversation learning evidence, and Beacon media-library metadata/API foundation. The Farm App remains the operational surface. |
+| **Current focus** | Provision the private Beacon Storage buckets/envs and verify one small upload before building the Farm App media review UI. |
+| **Current last verified** | **2026-06-18** - Phase 11P Beacon Media Library Foundation passed focused local tests; Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

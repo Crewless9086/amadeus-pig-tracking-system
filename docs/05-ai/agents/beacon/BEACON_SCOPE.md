@@ -59,6 +59,14 @@ Beacon should eventually:
 
 Beacon needs an asset library before serious automation.
 
+Storage decision:
+
+- Binary files live in Supabase Storage.
+- Searchable asset metadata and approval/review history live in Postgres.
+- Full decision source: `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md`.
+- Phase 11P uses private buckets only: `beacon-raw-intake` and `beacon-approved-media`.
+- Public serving, signed URL delivery, campaign scheduling, paid spend, and automatic public use remain disabled.
+
 Asset input sources may include:
 
 - Telegram upload.

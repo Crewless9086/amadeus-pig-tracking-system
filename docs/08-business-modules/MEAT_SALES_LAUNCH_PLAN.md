@@ -2,7 +2,7 @@
 
 ## Status
 
-Active money-first plan as of 2026-06-17.
+Active money-first plan as of 2026-06-18.
 
 The goal is to get the meat-sales system into a controlled pilot where it can generate real demand, handle Chatwoot conversations cleanly, create usable leads, support owner review, and learn from every sales conversation.
 
@@ -17,9 +17,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
 - The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and passes launch-blocking assertions. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
+- Beacon now has private media-library metadata/API foundation for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. Beacon now has a draft-only launch packet ready for owner review; the next work should add the conversation learning loop before real traffic is pushed into it.
+This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, and a safe private media-library foundation. The next work should provision the storage buckets, smoke-test one small upload, then add the Farm App media review UI before real campaign traffic is pushed into it.
 
 ## Business Priority
 
@@ -53,7 +54,7 @@ Near-term money test:
 
 Naming note: existing docs use `Beacon` for public/social content and `Prism` for UI/design. The owner sometimes says `Prisma` for the marketing/social role. Until renamed deliberately, treat `Prisma/Beacon` as the marketing demand-generation role.
 
-Full Beacon scope note: Beacon's long-term role is larger than the Phase 11N launch packet. The future media library, sale-readiness scanning, campaign planning, scheduling, paid promotion, monitoring, and optimization scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Those automation phases are parked until the sales learning loop and approval rules are proven.
+Full Beacon scope note: Beacon's long-term role is larger than the Phase 11N launch packet. The future media library, sale-readiness scanning, campaign planning, scheduling, paid promotion, monitoring, and optimization scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Phase 11P created the private media-library foundation only; posting, scheduling, spend, and automatic public media use remain parked until approval rules are proven.
 
 ## Next Build Sequence
 
@@ -172,7 +173,28 @@ Implemented outcome:
 - Oom Sakkie has a read-only `sales_conversation_learning_status` tool for summary patterns.
 - Learning records explicitly set `applies_learning_now = false` and cannot change prompts, runtime, workflows, customer messages, public posts, quotes, orders, reservations, stock, dispatch, or physical actions.
 
-### 5. Other Sales Streams
+### 5. Beacon Media Library Foundation
+
+Goal: keep campaign media organized without giving Beacon premature public authority.
+
+Status: complete in Phase 11P.
+
+Implemented outcome:
+
+- Private Supabase Storage decision: raw intake bucket `beacon-raw-intake`, approved-media bucket `beacon-approved-media`.
+- Append-only media asset metadata and event history for source, tags, sale-stream relevance, quality, privacy/safety, owner approval, and campaign usage.
+- Backend APIs expose policy, list/register, small-file upload, and asset event recording under `/api/sales/beacon/*`.
+- Standard upload is capped at 6MB until a later resumable/TUS upload build exists.
+- `docs/05-ai/agents/beacon/MEDIA_STORAGE_DECISION.md` records the bucket, env, upload, and authority rules.
+- No Meta, public posting, scheduling, paid spend, customer messaging, quote, invoice, order, stock, reservation, dispatch, prompt/runtime, or automatic media-use authority is added.
+
+Next gate:
+
+- Create the private Supabase buckets and confirm `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY`.
+- Smoke-test one small image upload.
+- Build the Farm App Beacon Media Review UI before public-use or scheduling automation.
+
+### 6. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 
