@@ -365,9 +365,34 @@ Verified:
 
 Next gate:
 
-- Create the two private Supabase Storage buckets and confirm Render/local envs include `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
-- Upload one small test image through the backend route.
-- Phase 11Q should add a simple Farm App Beacon Media Review UI before any public-use or campaign scheduling automation.
+- Completed live: private Supabase Storage buckets exist, Render/local envs include `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`, and one small image upload/readback smoke passed against Render.
+- Phase 11Q adds the Farm App Beacon Media Review UI before any public-use or campaign scheduling automation.
+
+### Phase 11Q Complete - Farm App Beacon Media Review UI
+
+Implemented outcome:
+
+- Farm App route: `/sales/beacon-media`.
+- Review surface for Beacon media assets with filters for review status and media type.
+- Summary counts for needs review, approved, rejected, and total loaded.
+- Private storage policy panel showing upload readiness and locked public/posting/spend authority.
+- Small-file upload form writes to the existing Beacon backend upload route.
+- Owner review actions record append-only events: review note, approved public use, rejected public use, and archived.
+- Backend list output now derives effective approval status from the latest append-only review event so approved/rejected/archive filters reflect owner review history without mutating the original asset record.
+- Navigation links added from Sales Overview and Meat Leads.
+- CI audit rail updated to apply the June 18 sales learning and Beacon media migrations and to run the Beacon media tests and JS syntax check.
+- No Meta, public posting, scheduling, paid spend, customer messaging, quote, invoice, order, stock, reservation, dispatch, prompt/runtime, or automatic media-use authority is added.
+
+Verified:
+
+- Focused Beacon media, sales route, and frontend route contract tests passed.
+- `node --check static/js/beaconMedia.js` passed.
+- Playwright screenshots passed at 1440x900 and 390x844.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11R should connect approved Beacon media to campaign draft selection while keeping public posting manual/owner-approved.
 
 ### Staying on track (Cursor + Claude Code)
 

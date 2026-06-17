@@ -58,6 +58,11 @@ def meat_sales_leads_page():
     return render_template("meat-sales-leads.html")
 
 
+@app.route("/sales/beacon-media")
+def beacon_media_page():
+    return render_template("beacon-media.html")
+
+
 @app.route("/sales/meat-driver")
 def meat_driver_page():
     return render_template("meat-driver.html")

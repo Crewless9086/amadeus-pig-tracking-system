@@ -16,7 +16,7 @@ Buckets:
 - `beacon-approved-media`
   - Private approved-media bucket.
   - Later phase for assets approved by the owner for Beacon campaign suggestions.
-  - Public serving, signed URLs, CDN/public buckets, and copy/move workflows are not enabled in Phase 11P.
+  - Public serving, signed URLs, CDN/public buckets, and copy/move workflows are not enabled in Phase 11P/11Q.
 
 ## Metadata Layout
 
@@ -39,7 +39,7 @@ Postgres owns the searchable asset library:
 - campaign usage count,
 - review events.
 
-## Current Phase 11P Authority
+## Current Phase 11P/11Q Authority
 
 Allowed:
 
@@ -47,7 +47,8 @@ Allowed:
 - upload small files to `beacon-raw-intake` when Supabase Storage envs are configured,
 - list assets,
 - record owner review events,
-- mark approval evidence as an append-only event.
+- mark approval evidence as an append-only event,
+- use `/sales/beacon-media` as the Farm App owner review surface.
 
 Not allowed:
 
@@ -76,12 +77,13 @@ Do not add `SUPABASE_SERVICE_ROLE_KEY` to browser/client code. It is backend-onl
 
 ## Upload Limits
 
-Phase 11P supports standard backend uploads up to 6MB.
+Phase 11P/11Q supports standard backend uploads up to 6MB.
 
 Large videos need a later TUS/resumable upload phase. The metadata schema already supports videos, but the first upload path is intentionally limited so the backend does not become a fragile large-file pipe.
 
 ## Current API Surface
 
+- Farm App page: `/sales/beacon-media`
 - `GET /api/beacon/media-policy`
 - `GET /api/beacon/media-assets`
 - `POST /api/beacon/media-assets`
@@ -90,12 +92,15 @@ Large videos need a later TUS/resumable upload phase. The metadata schema alread
 
 ## Next Gates
 
-1. Apply `supabase/migrations/202606180002_create_beacon_media_library.sql`.
-2. Create private Supabase Storage buckets:
-   - `beacon-raw-intake`
-   - `beacon-approved-media`
-3. Add backend envs where uploads should be enabled:
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-4. Test one small image upload.
-5. Build owner-facing Farm App review UI after the API is proven.
+Completed:
+
+- `supabase/migrations/202606180002_create_beacon_media_library.sql` applied.
+- Private buckets `beacon-raw-intake` and `beacon-approved-media` created.
+- Render/local upload envs configured.
+- One small Render upload/readback smoke passed.
+- Farm App review UI built at `/sales/beacon-media`.
+
+Next:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Connect approved media to Beacon campaign draft selection without enabling public posting or scheduling.

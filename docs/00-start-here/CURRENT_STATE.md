@@ -14,7 +14,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
 | Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, lifecycle guards, auto-reservation, outbound notifications, quote/invoice generation, and document delivery are implemented and have been live-verified through the documented phases. |
 | Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is live-verified on a real repeat-service case. |
-| Pork sales launch rail | Private money-test build | Sam records meat preorder facts, delivery details, buyer budget, target packed kg, match preference, payment preference, and customer context into append-only sales/fulfilment rails. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, exception review, fulfilment timeline, driver route, exact customer journey approval, direct Chatwoot/webhook journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, the 40-scenario stress-test pack, Beacon's draft-only meat launch campaign packet, append-only sales conversation learning, and Beacon media-library metadata/API foundation are built. Next priority is private bucket provisioning plus a small upload smoke before the Farm App Beacon Media Review UI. |
+| Pork sales launch rail | Private money-test build | Sam records meat preorder facts, delivery details, buyer budget, target packed kg, match preference, payment preference, and customer context into append-only sales/fulfilment rails. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, exception review, fulfilment timeline, driver route, exact customer journey approval, direct Chatwoot/webhook journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, the 40-scenario stress-test pack, Beacon's draft-only meat launch campaign packet, append-only sales conversation learning, Beacon media-library metadata/API foundation, private Storage smoke, and Farm App Beacon Media Review UI are built. Next priority is connecting approved media to owner-reviewed Beacon campaign draft selection. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
 ## Completed Documentation Work
@@ -40,8 +40,8 @@ Reason:
 Current money-first plan:
 
 - Source: `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`.
-- Active phase: Phase 11P deploy/provision smoke, then Phase 11Q - Beacon Media Review UI.
-- Last completed phase: 11P Beacon Media Library Foundation.
+- Active phase: Phase 11R - Beacon approved-media campaign draft selection.
+- Last completed phase: 11Q Farm App Beacon Media Review UI.
 - Other sales streams remain planned: live pig sales continue as-is, slaughter/abattoir remains the fallback outlet, assisted slaughter/custom cuts come after standard meat preorder flow is stable.
 
 ## Known Critical Order Gaps

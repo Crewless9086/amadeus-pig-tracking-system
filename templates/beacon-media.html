@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beacon Media</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/beaconMedia.css') }}">
+</head>
+<body>
+  <div class="page-shell beacon-media-shell">
+    <div class="page-card beacon-media-card">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Beacon Media</h1>
+          <p id="beacon_media_subtitle">Private campaign media review for future owner-approved posts.</p>
+        </div>
+        <div class="ops-header-actions">
+          <a href="/sales/meat-leads">Meat Leads</a>
+          <a href="/sales-dashboard">Sales Overview</a>
+          <a href="/">Dashboard</a>
+        </div>
+      </div>
+
+      <div id="beacon_media_message" class="message-box hidden"></div>
+
+      <section class="summary-metric-grid beacon-media-summary" aria-label="Beacon media summary">
+        <article>
+          <span>Needs Review</span>
+          <strong id="beacon_media_needs_review_count">--</strong>
+        </article>
+        <article>
+          <span>Approved</span>
+          <strong id="beacon_media_approved_count">--</strong>
+        </article>
+        <article>
+          <span>Rejected</span>
+          <strong id="beacon_media_rejected_count">--</strong>
+        </article>
+        <article>
+          <span>Total Loaded</span>
+          <strong id="beacon_media_total_count">--</strong>
+        </article>
+      </section>
+
+      <section class="beacon-media-policy-panel" aria-label="Beacon media safety policy">
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Storage Policy</h2>
+            <p id="beacon_media_policy_status">Checking Beacon media storage...</p>
+          </div>
+          <button type="button" id="beacon_media_refresh" class="button-link button-link-secondary">Refresh</button>
+        </div>
+        <div id="beacon_media_policy_flags" class="beacon-media-flag-grid"></div>
+      </section>
+
+      <section class="beacon-media-workflow">
+        <div class="beacon-media-list-panel">
+          <div class="page-header section-header-compact">
+            <div>
+              <h2>Assets</h2>
+              <p id="beacon_media_asset_count">Loading assets...</p>
+            </div>
+          </div>
+
+          <div class="beacon-media-filters" aria-label="Beacon media filters">
+            <div class="form-group">
+              <label for="beacon_media_status_filter">Review Status</label>
+              <select id="beacon_media_status_filter">
+                <option value="needs_review">Needs review</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="archived">Archived</option>
+                <option value="">All</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="beacon_media_type_filter">Media Type</label>
+              <select id="beacon_media_type_filter">
+                <option value="">All</option>
+                <option value="image">Images</option>
+                <option value="video">Videos</option>
+                <option value="document">Documents</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          </div>
+
+          <form id="beacon_media_upload_form" class="beacon-media-upload-form" autocomplete="off">
+            <div class="form-group">
+              <label for="beacon_media_upload_file">Add Small File</label>
+              <input type="file" id="beacon_media_upload_file" accept="image/*,video/*,.pdf,.doc,.docx" />
+            </div>
+            <div class="beacon-media-upload-grid">
+              <div class="form-group">
+                <label for="beacon_media_upload_title">Title</label>
+                <input type="text" id="beacon_media_upload_title" placeholder="Freezer pork launch photo" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_media_upload_tags">Tags</label>
+                <input type="text" id="beacon_media_upload_tags" placeholder="pork, riversdale, test" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="beacon_media_upload_notes">Notes</label>
+              <textarea id="beacon_media_upload_notes" rows="3" placeholder="Where this came from and what Beacon may consider later."></textarea>
+            </div>
+            <div class="beacon-media-actions">
+              <button type="submit" id="beacon_media_upload_button" class="button-link">Upload To Review</button>
+            </div>
+          </form>
+
+          <div id="beacon_media_asset_list" class="beacon-media-asset-list" aria-label="Beacon media assets"></div>
+        </div>
+
+        <div class="beacon-media-detail-panel">
+          <div class="page-header section-header-compact">
+            <div>
+              <h2 id="beacon_media_detail_title">Select an asset</h2>
+              <p id="beacon_media_detail_status">Review details will show here.</p>
+            </div>
+          </div>
+
+          <section id="beacon_media_asset_facts" class="beacon-media-facts" aria-label="Beacon media asset facts"></section>
+
+          <section class="beacon-media-review-panel" aria-label="Beacon media owner review">
+            <div class="page-header section-header-compact">
+              <div>
+                <h3>Owner Review</h3>
+                <p>Record review evidence only. Public use remains locked until a later campaign gate.</p>
+              </div>
+            </div>
+            <div class="beacon-media-review-grid">
+              <div class="form-group">
+                <label for="beacon_media_review_tags">Tags</label>
+                <input type="text" id="beacon_media_review_tags" placeholder="pork, family pack, riversdale" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_media_review_relevance">Sale Relevance</label>
+                <input type="text" id="beacon_media_review_relevance" placeholder="meat, live, butcher" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_media_quality_score">Quality Score</label>
+                <input type="number" id="beacon_media_quality_score" min="0" max="100" step="1" placeholder="80" />
+              </div>
+              <div class="form-group">
+                <label for="beacon_media_privacy_risk">Privacy Risk</label>
+                <select id="beacon_media_privacy_risk">
+                  <option value="unknown">Unknown</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="beacon_media_review_notes">Review Notes</label>
+              <textarea id="beacon_media_review_notes" rows="5" placeholder="What this can be used for, what to avoid, and any privacy/safety notes."></textarea>
+            </div>
+            <div class="beacon-media-actions">
+              <button type="button" id="beacon_media_save_note" class="button-link button-link-secondary">Save Note</button>
+              <button type="button" id="beacon_media_approve" class="button-link">Approve Public Use</button>
+              <button type="button" id="beacon_media_reject" class="button-link button-link-secondary">Reject</button>
+              <button type="button" id="beacon_media_archive" class="button-link button-link-secondary">Archive</button>
+            </div>
+            <div id="beacon_media_review_result" class="ops-list"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/beaconMedia.js') }}"></script>
+</body>
+</html>

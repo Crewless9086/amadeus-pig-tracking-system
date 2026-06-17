@@ -7,6 +7,7 @@ from modules.beacon.media_library import (
     APPROVED_MEDIA_BUCKET,
     AUTHORITY_FLAGS,
     RAW_INTAKE_BUCKET,
+    _asset_counts,
     beacon_media_storage_policy,
     record_beacon_media_asset_event,
     register_beacon_media_asset,
@@ -64,6 +65,18 @@ class BeaconMediaLibraryTests(unittest.TestCase):
         self.assertEqual(result["status"], "not_configured")
         for flag, expected in AUTHORITY_FLAGS.items():
             self.assertEqual(result[flag], expected)
+
+    def test_counts_use_effective_approval_status_from_latest_event(self):
+        counts = _asset_counts([
+            {"approval_status": "needs_review", "effective_approval_status": "approved"},
+            {"approval_status": "needs_review", "effective_approval_status": "rejected"},
+            {"approval_status": "needs_review"},
+        ])
+
+        self.assertEqual(counts["total"], 3)
+        self.assertEqual(counts["approved"], 1)
+        self.assertEqual(counts["rejected"], 1)
+        self.assertEqual(counts["needs_review"], 1)
 
     def test_upload_rejects_missing_file_and_large_file_before_storage_call(self):
         result, status_code = upload_beacon_media_asset(None, form={})

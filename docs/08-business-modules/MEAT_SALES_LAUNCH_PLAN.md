@@ -17,10 +17,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
 - The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and passes launch-blocking assertions. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
-- Beacon now has private media-library metadata/API foundation for future approved photo/video use.
+- Beacon now has private media-library metadata/API foundation and a Farm App review UI for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, and a safe private media-library foundation. The next work should provision the storage buckets, smoke-test one small upload, then add the Farm App media review UI before real campaign traffic is pushed into it.
+This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, and a Farm App media review UI. The next work should connect approved media to campaign draft selection before real campaign traffic is pushed into it.
 
 ## Business Priority
 
@@ -190,11 +190,30 @@ Implemented outcome:
 
 Next gate:
 
-- Create the private Supabase buckets and confirm `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY`.
-- Smoke-test one small image upload.
+- Completed live: private Supabase buckets exist, envs are configured, and one small Render upload/readback smoke passed.
 - Build the Farm App Beacon Media Review UI before public-use or scheduling automation.
 
-### 6. Other Sales Streams
+### 6. Farm App Beacon Media Review UI
+
+Goal: let the owner review campaign assets without leaving the operational Farm App.
+
+Status: complete in Phase 11Q.
+
+Implemented outcome:
+
+- `/sales/beacon-media` lists Beacon media assets from the backend.
+- Filters support needs review, approved, rejected, archived, and media type.
+- Farm App can upload a small file into the private raw-intake bucket for review.
+- Owner actions record append-only review events: note, approve public use, reject, archive.
+- Effective review status is derived from latest append-only event so filters work without mutating original asset rows.
+- Public posting, scheduling, paid spend, customer messages, quotes, invoices, orders, stock, reservation, dispatch, and automatic public media use remain locked.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11R should connect approved media to Beacon campaign draft selection while public posting remains manual/owner-approved.
+
+### 7. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 

@@ -300,7 +300,7 @@ def list_beacon_media_assets(limit=50, approval_status="", media_type="", databa
     filters = []
     params = {"limit": limit}
     if approval_status:
-        filters.append("a.approval_status = %(approval_status)s")
+        filters.append("coalesce(nullif(e.approval_status, ''), a.approval_status) = %(approval_status)s")
         params["approval_status"] = approval_status
     if media_type:
         filters.append("a.media_type = %(media_type)s")
@@ -320,10 +320,12 @@ def list_beacon_media_assets(limit=50, approval_status="", media_type="", databa
                            a.notes, a.created_by, a.created_at,
                            coalesce(e.event_type, '') as latest_event_type,
                            coalesce(e.notes, '') as latest_event_notes,
-                           e.created_at as latest_event_at
+                           e.created_at as latest_event_at,
+                           coalesce(e.approval_status, '') as latest_approval_status,
+                           coalesce(e.public_use_approved, false) as latest_public_use_approved
                     from public.beacon_media_assets a
                     left join lateral (
-                        select event_type, notes, created_at
+                        select event_type, notes, approval_status, public_use_approved, created_at
                         from public.beacon_media_asset_events
                         where asset_id = a.asset_id
                         order by created_at desc
@@ -532,6 +534,8 @@ def _public_event(params):
 
 
 def _asset_row(row):
+    effective_approval_status = row[27] or row[19] or "needs_review"
+    effective_public_use_approved = bool(row[28]) if row[27] else bool(row[18])
     return {
         "asset_id": row[0],
         "storage_bucket": row[1],
@@ -553,6 +557,8 @@ def _asset_row(row):
         "safety_flags": row[17] or [],
         "public_use_approved": bool(row[18]),
         "approval_status": row[19],
+        "effective_approval_status": effective_approval_status,
+        "effective_public_use_approved": effective_public_use_approved,
         "campaign_usage_count": row[20],
         "notes": row[21],
         "created_by": row[22],
@@ -561,6 +567,8 @@ def _asset_row(row):
             "event_type": row[24] or "",
             "notes": row[25] or "",
             "created_at": row[26].isoformat() if hasattr(row[26], "isoformat") else str(row[26] or ""),
+            "approval_status": row[27] or "",
+            "public_use_approved": bool(row[28]),
         },
         **AUTHORITY_FLAGS,
     }
@@ -569,7 +577,7 @@ def _asset_row(row):
 def _asset_counts(assets):
     counts = {"total": len(assets), "needs_review": 0, "approved": 0, "rejected": 0, "archived": 0}
     for asset in assets:
-        status = asset.get("approval_status") or "needs_review"
+        status = asset.get("effective_approval_status") or asset.get("approval_status") or "needs_review"
         counts[status] = counts.get(status, 0) + 1
     return counts
 
