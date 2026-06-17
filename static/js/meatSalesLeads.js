@@ -46,6 +46,7 @@
     matchResult: byId("meat_lead_match_result"),
     opsStatus: byId("meat_ops_status"),
     reserveMatch: byId("meat_ops_reserve_match"),
+    paymentSummary: byId("meat_payment_state_summary"),
     depositAmount: byId("meat_deposit_amount"),
     depositReference: byId("meat_deposit_reference"),
     recordDeposit: byId("meat_ops_record_deposit"),
@@ -166,6 +167,25 @@
     const reservations = Array.isArray(state.meatOps?.reservations) ? state.meatOps.reservations : [];
     for (let index = reservations.length - 1; index >= 0; index -= 1) {
       if (reservations[index].reservation_id) return reservations[index];
+    }
+    return {};
+  };
+
+  const latestDepositEvent = (eventType) => {
+    const deposits = Array.isArray(state.meatOps?.deposits) ? state.meatOps.deposits : [];
+    for (let index = deposits.length - 1; index >= 0; index -= 1) {
+      if (deposits[index].event_type === eventType) return deposits[index];
+    }
+    return {};
+  };
+
+  const latestDepositInstructionEvent = () => {
+    const events = leadEvents();
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const event = events[index];
+      if (event.event_type !== "deposit_followup_needed") continue;
+      const notes = eventNotesOf(event);
+      if (notes.kind === "deposit_payment_instruction_prepared") return { ...notes, created_at: event.created_at };
     }
     return {};
   };
@@ -404,11 +424,51 @@
     const depositConfirmed = Boolean(assembly.deposit_confirmed);
     const paymentStatus = safe(assembly.payment_review_status, depositConfirmed ? "confirmed_in_bank" : "not_received");
     const readyForDrafts = Boolean(assembly.ready_for_instruction_drafts);
+    const instruction = latestDepositInstructionEvent();
+    const latestPop = latestDepositEvent("pop_received_unverified");
+    const latestBankInBank = latestDepositEvent("deposit_confirmed_in_bank");
+    const latestBank = latestBankInBank.payment_reference ? latestBankInBank : latestDepositEvent("deposit_confirmed");
 
     elements.opsResult.innerHTML = "";
     elements.opsStatus.textContent = hasLead
       ? `Gate: ${safe(assembly.status, "interest_only")}. Full carcass: ${assembly.full_carcass_committed ? "yes" : "no"}. Payment: ${paymentStatus}.`
       : "Reserve halves, confirm money in bank, then prepare abattoir and butcher drafts.";
+
+    if (elements.paymentSummary) {
+      const paymentCards = [
+        {
+          label: "Payment Instruction",
+          value: instruction.payment_reference ? "Prepared" : "Not prepared",
+          detail: instruction.payment_reference ? `Reference ${instruction.payment_reference}` : "Sam sends this after customer acceptance and bank envs are configured.",
+          state: instruction.payment_reference ? "ready" : "idle",
+        },
+        {
+          label: "POP",
+          value: latestPop.payment_reference ? "Received, unverified" : "Not received",
+          detail: latestPop.payment_reference ? latestPop.payment_reference : "POP is evidence only; it does not unlock operations.",
+          state: latestPop.payment_reference ? "warn" : "idle",
+        },
+        {
+          label: "Money In Bank",
+          value: depositConfirmed ? "Confirmed" : "Not confirmed",
+          detail: latestBank.payment_reference ? `${latestBank.payment_reference}${latestBank.amount ? ` | R${Number(latestBank.amount).toFixed(2)}` : ""}` : "Requires bank notification or account confirmation.",
+          state: depositConfirmed ? "ready" : "locked",
+        },
+        {
+          label: "Ops Gate",
+          value: readyForDrafts ? "Unlocked" : "Locked",
+          detail: readyForDrafts ? "Instruction drafts can be built." : "Needs full carcass plus money confirmed in bank.",
+          state: readyForDrafts ? "ready" : "locked",
+        },
+      ];
+      elements.paymentSummary.innerHTML = paymentCards.map((card) => `
+        <div class="meat-payment-state-item" data-state="${card.state}">
+          <span>${card.label}</span>
+          <strong>${card.value}</strong>
+          <small>${card.detail}</small>
+        </div>
+      `).join("");
+    }
 
     reservations.forEach((item) => {
       const row = document.createElement("div");
