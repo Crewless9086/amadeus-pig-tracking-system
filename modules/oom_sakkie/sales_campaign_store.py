@@ -995,7 +995,10 @@ def list_sales_leads(limit=20, status_filter=None, database_url=None):
                     ) ev on true
                     where (
                         %(status_filter)s = ''
-                        or (%(status_filter)s = 'launch_test' and l.status in ('new', 'interested', 'asked_price', 'needs_callback', 'deposit_pending', 'order_ready_for_approval'))
+                        or (%(status_filter)s = 'launch_test'
+                            and l.status in ('new', 'interested', 'asked_price', 'needs_callback', 'deposit_pending', 'order_ready_for_approval')
+                            and coalesce(ev.event_type, '') <> 'closed'
+                        )
                         or l.status = %(status_filter)s
                     )
                     order by l.created_at desc

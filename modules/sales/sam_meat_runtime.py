@@ -491,6 +491,8 @@ def _conversation_lead_context(conversation_id):
     for lead in result.get("sales_leads") or []:
         if _clean(lead.get("chatwoot_conversation_id"), 100) != conversation_id:
             continue
+        if _latest_event_type(lead) == "closed":
+            continue
         matches.append(lead)
     if not matches:
         return {}
@@ -500,12 +502,12 @@ def _conversation_lead_context(conversation_id):
     return {
         "lead_id": _clean(lead.get("lead_id"), 100),
         "interest": interest,
-        "latest_event": _clean(lead.get("latest_event"), 100),
+        "latest_event": _latest_event_type(lead),
     }
 
 
 def _lead_context_score(lead):
-    latest_event = _clean(lead.get("latest_event"), 100)
+    latest_event = _latest_event_type(lead)
     event_scores = {
         "customer_booking_confirmed": 100,
         "draft_order_created": 90,
@@ -521,6 +523,13 @@ def _lead_context_score(lead):
     if lead.get("created_at"):
         score += 1
     return score
+
+
+def _latest_event_type(lead):
+    latest_event = lead.get("latest_event") if isinstance(lead, dict) else ""
+    if isinstance(latest_event, dict):
+        return _clean(latest_event.get("event_type"), 100)
+    return _clean(latest_event, 100)
 
 
 def _record_booking_confirmation_if_ready(inbound, prior_context):

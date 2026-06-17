@@ -306,7 +306,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
                 {
                     "lead_id": "OSK-SALES-LEAD-OLDER",
                     "chatwoot_conversation_id": "1808",
-                    "latest_event": "sam_meat_autoreply_sent",
+                    "latest_event": {"event_type": "closed"},
                     "interest": {
                         "product_type": "half_carcass",
                         "cut_set": "Set A",
@@ -316,7 +316,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
                 {
                     "lead_id": "OSK-SALES-LEAD-PROGRESSED",
                     "chatwoot_conversation_id": "1808",
-                    "latest_event": "customer_followup_sent",
+                    "latest_event": {"event_type": "customer_followup_sent"},
                     "interest": {
                         "product_type": "half_carcass",
                         "cut_set": "Set A",
