@@ -431,6 +431,159 @@ class SamMeatRuntimeTests(unittest.TestCase):
             "Yes, please proceed with the final booking review.",
         )
 
+    @patch("modules.sales.sam_meat_runtime.record_sales_lead_event")
+    @patch("modules.sales.sam_meat_runtime.record_customer_booking_confirmation")
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_customer_yes_after_followup_sends_deposit_instruction_when_bank_details_configured(
+        self,
+        mock_record,
+        mock_contract,
+        mock_list,
+        mock_confirmation,
+        mock_event,
+    ):
+        mock_list.return_value = ({
+            "success": True,
+            "sales_leads": [{
+                "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+                "chatwoot_conversation_id": "1808",
+                "latest_event": "customer_followup_sent",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "collection",
+                    "timing": "next available week",
+                    "payment_method": "EFT",
+                },
+            }],
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {
+                "contract_status": "owner_money_path_ready",
+                "lead_summary": {
+                    "buyer_or_contact": "Charl N",
+                    "product": "Half Carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                },
+                "required_before_money_path": {
+                    "price_per_kg": "R130/kg",
+                    "available_week": "next available week",
+                    "estimated_weight_or_size": "19-21kg",
+                    "deposit_amount_or_rule": "50% deposit to confirm",
+                    "payment_method": "EFT",
+                    "delivery_or_collection": "collection",
+                    "owner_final_approval": "Yes",
+                },
+            },
+        }, 200)
+        mock_confirmation.return_value = ({
+            "success": True,
+            "status": "ok",
+            "records_customer_booking_confirmation": True,
+        }, 201)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Yes, please proceed with the final booking review."),
+            environ={
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+                "MEAT_SALES_BANK_ACCOUNT_NAME": "Amadeus Farm",
+                "MEAT_SALES_BANK_NAME": "Test Bank",
+                "MEAT_SALES_BANK_ACCOUNT_NUMBER": "123456789",
+                "MEAT_SALES_BANK_BRANCH_CODE": "123456",
+                "MEAT_SALES_BANK_ACCOUNT_TYPE": "Cheque",
+                "MEAT_SALES_PAYMENT_REFERENCE_PREFIX": "AMAD-MEAT",
+            },
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertIn("Account name: Amadeus Farm", result["sam_decision"]["reply_text"])
+        self.assertIn("Reference: AMAD-MEAT-", result["sam_decision"]["reply_text"])
+        self.assertIn("about R1,300.00", result["sam_decision"]["reply_text"])
+        self.assertEqual(
+            result["sam_decision"]["deposit_payment_instruction"]["status"],
+            "deposit_payment_instruction_ready",
+        )
+        event_types = [call.args[1]["event_type"] for call in mock_event.call_args_list]
+        self.assertIn("deposit_followup_needed", event_types)
+
+    @patch("modules.sales.sam_meat_runtime.record_meat_deposit_event")
+    @patch("modules.sales.sam_meat_runtime.get_meat_ops_status")
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_customer_pop_message_records_unverified_pop_without_bank_gate(
+        self,
+        mock_record,
+        mock_contract,
+        mock_list,
+        mock_ops,
+        mock_deposit,
+    ):
+        mock_list.return_value = ({
+            "success": True,
+            "sales_leads": [{
+                "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+                "chatwoot_conversation_id": "1808",
+                "latest_event": "deposit_followup_needed",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "collection",
+                    "timing": "next available week",
+                    "payment_method": "EFT",
+                },
+            }],
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "owner_money_path_ready"},
+        }, 200)
+        mock_ops.return_value = ({
+            "success": True,
+            "reservations": [{
+                "reservation_id": "OSK-MEAT-RES-1",
+                "status": "half_reserved_pending_pair",
+                "effective_status": "half_reserved_pending_pair",
+                "created_at": "2026-06-17T03:00:00Z",
+            }],
+        }, 200)
+        mock_deposit.return_value = ({
+            "success": True,
+            "status": "pop_received_unverified",
+        }, 201)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="I paid and sent POP ref POP-12345."),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["pop_capture"]["recorded"])
+        self.assertIn("only moves forward once the money reflects", result["sam_decision"]["reply_text"])
+        mock_deposit.assert_called_once()
+        self.assertEqual(mock_deposit.call_args.args[0], "OSK-SALES-LEAD-PROGRESSED")
+        self.assertEqual(mock_deposit.call_args.args[1]["reservation_id"], "OSK-MEAT-RES-1")
+        self.assertEqual(mock_deposit.call_args.args[1]["event_type"], "pop_received_unverified")
+        self.assertEqual(mock_deposit.call_args.args[1]["payment_reference"], "POP-12345")
+
 
 if __name__ == "__main__":
     unittest.main()

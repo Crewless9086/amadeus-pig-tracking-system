@@ -35,6 +35,17 @@ Required env:
 - `CHATWOOT_API_ACCESS_TOKEN=<Chatwoot token>`
 - `SAM_MEAT_BACKEND_LLM_ENABLED=1` only if LLM extraction is allowed
 - `SAM_MEAT_BACKEND_LLM_MODEL=<model>` when LLM extraction is enabled
+
+Optional Sam Meat payment instruction envs:
+
+- `MEAT_SALES_BANK_ACCOUNT_NAME=<public account name shown to customers>`
+- `MEAT_SALES_BANK_NAME=<bank name shown to customers>`
+- `MEAT_SALES_BANK_ACCOUNT_NUMBER=<account number shown to customers>`
+- `MEAT_SALES_BANK_BRANCH_CODE=<branch code shown to customers>`
+- `MEAT_SALES_BANK_ACCOUNT_TYPE=<account type shown to customers>`
+- `MEAT_SALES_PAYMENT_REFERENCE_PREFIX=<short prefix, for example AMAD-MEAT>`
+
+When these are configured, Sam may send payment instructions after the customer confirms an owner-approved meat follow-up. Sam generates the customer reference from the prefix plus the lead id suffix. Proof of payment remains `pop_received_unverified`; only `deposit_confirmed_in_bank` unlocks slaughter, butcher, and delivery operational gates.
 - `OPENAI_API_KEY=<optional for LLM extraction; deterministic fallback remains required>`
 
 Accepted auth:

@@ -338,6 +338,7 @@ Implementation status 2026-06-16:
 - Customer journey updates are drafted from the fulfilment timeline and require exact owner approval before sending. The system should tell the story in a controlled way: reserved, paired, slaughter timing, butchery timing, packed/final balance, delivery on the way, delivered, and thank-you.
 - The driver route page `/sales/meat-driver` is a focused delivery-day view. Driver actions write fulfilment events only and do not change payment, stock, or final order state.
 - Customer journey notification sends are disabled unless `MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED=1` is configured. Direct Chatwoot transport uses the lead's `chatwoot_conversation_id` plus `CHATWOOT_*` envs; webhook transport can be forced with `MEAT_JOURNEY_NOTIFICATION_TRANSPORT=webhook` and `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL`. Optional `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Journey-Key` for webhook transport.
+- Sam Meat payment instructions are environment-configured and may be sent after the customer accepts an owner-approved follow-up. The current envs are `MEAT_SALES_BANK_ACCOUNT_NAME`, `MEAT_SALES_BANK_NAME`, `MEAT_SALES_BANK_ACCOUNT_NUMBER`, `MEAT_SALES_BANK_BRANCH_CODE`, `MEAT_SALES_BANK_ACCOUNT_TYPE`, and `MEAT_SALES_PAYMENT_REFERENCE_PREFIX`. Customer POPs are logged as `pop_received_unverified`; only bank-confirmed money (`deposit_confirmed_in_bank`) unlocks slaughter, butcher, and delivery gates.
 
 ## Weekly Operating Rhythm
 

@@ -14,6 +14,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     record_sam_meat_intake_lead,
     _send_chatwoot_message,
 )
+from modules.sales.meat_ops import get_meat_ops_status, record_meat_deposit_event
 from modules.sales.meat_fulfillment import record_meat_fulfillment_event
 
 
@@ -26,6 +27,12 @@ LLM_URL_ENV = "SAM_MEAT_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
+BANK_ACCOUNT_NAME_ENV = "MEAT_SALES_BANK_ACCOUNT_NAME"
+BANK_NAME_ENV = "MEAT_SALES_BANK_NAME"
+BANK_ACCOUNT_NUMBER_ENV = "MEAT_SALES_BANK_ACCOUNT_NUMBER"
+BANK_BRANCH_CODE_ENV = "MEAT_SALES_BANK_BRANCH_CODE"
+BANK_ACCOUNT_TYPE_ENV = "MEAT_SALES_BANK_ACCOUNT_TYPE"
+PAYMENT_REFERENCE_PREFIX_ENV = "MEAT_SALES_PAYMENT_REFERENCE_PREFIX"
 MIN_TOKEN_CHARS = 32
 CUT_SET_MENU = {
     "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
@@ -55,6 +62,15 @@ def sam_meat_webhook_policy(environ=None):
         "llm_enabled_env": LLM_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
+        "bank_details_configured": _bank_details_configured(source),
+        "bank_detail_envs": [
+            BANK_ACCOUNT_NAME_ENV,
+            BANK_NAME_ENV,
+            BANK_ACCOUNT_NUMBER_ENV,
+            BANK_BRANCH_CODE_ENV,
+            BANK_ACCOUNT_TYPE_ENV,
+            PAYMENT_REFERENCE_PREFIX_ENV,
+        ],
         "mode": "backend_native_sam_meat_chatwoot",
     }
 
@@ -99,10 +115,27 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
     decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
     if booking_confirmation.get("recorded"):
+        deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
+        if deposit_instruction.get("ready"):
+            decision["reply_text"] = deposit_instruction["message"]
+            decision["deposit_payment_instruction"] = deposit_instruction
+            decision["blocked_actions"] = [
+                item for item in decision.get("blocked_actions", [])
+                if item != "no_deposit_request"
+            ]
+        else:
+            decision["reply_text"] = (
+                "Thanks, I have noted your confirmation for final booking review. "
+                "The farm will prepare the next booking step."
+            )
+            decision["deposit_payment_instruction"] = deposit_instruction
+    pop_capture = _record_pop_if_ready(inbound, prior_context, source)
+    if pop_capture.get("recorded") or pop_capture.get("detected"):
         decision["reply_text"] = (
-            "Thanks, I have noted your confirmation for final booking review. "
-            "The farm will prepare the next booking step."
+            "Thanks, I have received the payment proof. "
+            "The booking only moves forward once the money reflects in the farm account."
         )
+        decision["pop_capture"] = pop_capture
     fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
 
     send_result = {}
@@ -138,6 +171,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "lead_result": record_result,
         "lead_status_code": record_status,
         "booking_confirmation": booking_confirmation,
+        "pop_capture": pop_capture,
         "fulfillment_capture": fulfillment_capture,
         "sam_decision": decision,
         "sent": sent,
@@ -649,6 +683,204 @@ def _record_delivery_address_if_ready(lead_id, inbound, facts):
         "status_code": status_code,
         "status": result.get("status") if isinstance(result, dict) else "",
     }
+
+
+def _build_deposit_instruction_if_ready(lead_id, source):
+    lead_id = _clean(lead_id, 100)
+    if not lead_id:
+        return {"ready": False, "status": "lead_context_required"}
+    bank = _bank_details(source)
+    if not bank.get("configured"):
+        return {
+            "ready": False,
+            "status": "bank_details_not_configured",
+            "missing_envs": bank.get("missing_envs", []),
+        }
+    contract_result, status_code = get_sales_lead_preorder_contract(lead_id)
+    if status_code != 200:
+        return {"ready": False, "status": "contract_not_ready", "status_code": status_code}
+    contract = contract_result.get("contract") if isinstance(contract_result.get("contract"), dict) else {}
+    if contract.get("contract_status") != "owner_money_path_ready":
+        return {
+            "ready": False,
+            "status": "owner_money_path_not_ready",
+            "contract_status": contract.get("contract_status", ""),
+        }
+    summary = contract.get("lead_summary") if isinstance(contract.get("lead_summary"), dict) else {}
+    required = contract.get("required_before_money_path") if isinstance(contract.get("required_before_money_path"), dict) else {}
+    reference = _payment_reference(lead_id, source)
+    estimate = _deposit_estimate(required)
+    buyer = summary.get("buyer_or_contact") or "there"
+    amount_line = (
+        f"Deposit amount: {estimate['label']}"
+        if estimate.get("label")
+        else f"Deposit rule: {required.get('deposit_amount_or_rule') or 'approved farm deposit rule'}"
+    )
+    message = (
+        f"Thanks {buyer}, I can send the booking payment details.\n"
+        f"{amount_line}\n"
+        f"Reference: {reference}\n"
+        f"Account name: {bank['account_name']}\n"
+        f"Bank: {bank['bank_name']}\n"
+        f"Account number: {bank['account_number']}\n"
+        f"Branch code: {bank['branch_code']}\n"
+        f"Account type: {bank['account_type']}\n"
+        "Please send proof of payment here once done. "
+        "The booking only moves forward once the money reflects in the farm account."
+    )
+    _record_deposit_instruction_event(lead_id, message, reference, estimate)
+    return {
+        "ready": True,
+        "status": "deposit_payment_instruction_ready",
+        "lead_id": lead_id,
+        "payment_reference": reference,
+        "deposit_estimate": estimate,
+        "message": _clean(message, 1600),
+    }
+
+
+def _record_deposit_instruction_event(lead_id, message, reference, estimate):
+    notes = {
+        "source": "backend_native_sam_meat",
+        "kind": "deposit_payment_instruction_prepared",
+        "message": _clean(message, 1200),
+        "payment_reference": reference,
+        "deposit_estimate": estimate if isinstance(estimate, dict) else {},
+    }
+    record_sales_lead_event(
+        lead_id,
+        {
+            "event_type": "deposit_followup_needed",
+            "status_observed": "deposit_pending",
+            "recorded_by": "backend_sam_meat",
+            "notes": json.dumps(notes, ensure_ascii=True, sort_keys=True),
+        },
+    )
+
+
+def _record_pop_if_ready(inbound, prior_context, source):
+    if not _pop_or_payment_proof_intent(inbound.get("content")):
+        return {"recorded": False, "detected": False, "status": "not_payment_proof"}
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    lead_id = _clean(prior_context.get("lead_id"), 100)
+    if not lead_id:
+        return {"recorded": False, "detected": True, "status": "lead_context_required"}
+    ops, status_code = get_meat_ops_status(lead_id)
+    if status_code != 200:
+        return {"recorded": False, "detected": True, "status": "meat_ops_not_ready", "status_code": status_code}
+    reservation = _active_reservation_for_pop(ops.get("reservations") or [])
+    if not reservation:
+        return {"recorded": False, "detected": True, "status": "active_reservation_required"}
+    reference = _extract_payment_reference(inbound.get("content")) or _payment_reference(lead_id, source)
+    result, deposit_status = record_meat_deposit_event(
+        lead_id,
+        {
+            "reservation_id": reservation.get("reservation_id"),
+            "event_type": "pop_received_unverified",
+            "payment_reference": reference,
+            "payment_method": "EFT",
+            "notes": _clean(inbound.get("content"), 500),
+            "recorded_by": "Sam Meat",
+        },
+    )
+    return {
+        "recorded": deposit_status in {200, 201},
+        "detected": True,
+        "status_code": deposit_status,
+        "status": result.get("status") if isinstance(result, dict) else "",
+        "lead_id": lead_id,
+        "reservation_id": reservation.get("reservation_id"),
+        "payment_reference": reference,
+    }
+
+
+def _active_reservation_for_pop(reservations):
+    active_statuses = {"half_reserved_pending_pair", "full_carcass_committed", "deposit_pending", "ready_for_slaughter_booking"}
+    candidates = [
+        item for item in reservations or []
+        if item.get("reservation_id")
+        and item.get("effective_status", item.get("status")) in active_statuses
+    ]
+    if not candidates:
+        return {}
+    candidates.sort(key=lambda row: (
+        1 if row.get("status") == "full_carcass_committed" else 0,
+        row.get("created_at", ""),
+    ), reverse=True)
+    return candidates[0]
+
+
+def _pop_or_payment_proof_intent(message):
+    text = str(message or "").lower()
+    return bool(re.search(
+        r"\b(pop|proof of payment|payment proof|paid|i paid|eft done|sent proof|receipt|bank proof)\b",
+        text,
+    ))
+
+
+def _extract_payment_reference(message):
+    text = str(message or "")
+    match = re.search(r"\b(?:ref(?:erence)?|reference|pop)\s*(?:is|:|-)?\s*([A-Z0-9][A-Z0-9\-_/]{3,40})\b", text, re.I)
+    return _clean(match.group(1), 80).upper() if match else ""
+
+
+def _bank_details(source):
+    source = source if source is not None else os.environ
+    values = {
+        "account_name": _clean(source.get(BANK_ACCOUNT_NAME_ENV), 160),
+        "bank_name": _clean(source.get(BANK_NAME_ENV), 120),
+        "account_number": _clean(source.get(BANK_ACCOUNT_NUMBER_ENV), 80),
+        "branch_code": _clean(source.get(BANK_BRANCH_CODE_ENV), 80),
+        "account_type": _clean(source.get(BANK_ACCOUNT_TYPE_ENV) or "Business account", 80),
+    }
+    required = {
+        BANK_ACCOUNT_NAME_ENV: values["account_name"],
+        BANK_NAME_ENV: values["bank_name"],
+        BANK_ACCOUNT_NUMBER_ENV: values["account_number"],
+        BANK_BRANCH_CODE_ENV: values["branch_code"],
+    }
+    missing = [key for key, value in required.items() if not value]
+    return {**values, "configured": not missing, "missing_envs": missing}
+
+
+def _bank_details_configured(source):
+    return bool(_bank_details(source).get("configured"))
+
+
+def _payment_reference(lead_id, source):
+    prefix = _clean((source if source is not None else os.environ).get(PAYMENT_REFERENCE_PREFIX_ENV) or "AMADEUS-MEAT", 40)
+    suffix = re.sub(r"[^A-Z0-9]", "", str(lead_id or "").upper())[-8:] or "MEAT"
+    return f"{prefix}-{suffix}"[:80]
+
+
+def _deposit_estimate(required):
+    required = required if isinstance(required, dict) else {}
+    price = _first_number(required.get("price_per_kg"))
+    weight = _average_weight_kg(required.get("estimated_weight_or_size"))
+    percent = _first_number(required.get("deposit_amount_or_rule"))
+    if price and weight and percent:
+        total = price * weight
+        deposit = total * (percent / 100)
+        return {
+            "amount": round(deposit, 2),
+            "label": f"about R{deposit:,.2f} ({percent:g}% deposit estimate)",
+            "basis": "estimated_weight_x_price_x_deposit_percent",
+        }
+    return {"amount": None, "label": "", "basis": "rule_only"}
+
+
+def _average_weight_kg(value):
+    numbers = [float(item) for item in re.findall(r"\d+(?:\.\d+)?", str(value or ""))]
+    if not numbers:
+        return None
+    if len(numbers) >= 2:
+        return (numbers[0] + numbers[1]) / 2
+    return numbers[0]
+
+
+def _first_number(value):
+    match = re.search(r"\d+(?:\.\d+)?", str(value or ""))
+    return float(match.group(0)) if match else None
 
 
 def _ignored(status, event, message_type, content, conversation_id, customer_name, channel):
