@@ -187,6 +187,7 @@ def parse_chatwoot_inbound(payload):
     message_type = _clean(payload.get("message_type") or payload.get("message_type_string"), 60).lower()
     event = _clean(payload.get("event"), 80).lower()
     content = _clean(payload.get("content") or payload.get("message") or payload.get("text"), 1800)
+    shared_location = _extract_shared_location(payload)
     conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
     sender = payload.get("sender") if isinstance(payload.get("sender"), dict) else {}
     contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else {}
@@ -207,6 +208,8 @@ def parse_chatwoot_inbound(payload):
         return _ignored("ignored_non_incoming_message", event, message_type, content, conversation_id, customer_name, channel)
     if event and event not in {"message_created", "conversation_created"}:
         return _ignored("ignored_non_message_event", event, message_type, content, conversation_id, customer_name, channel)
+    if not content and shared_location.get("summary"):
+        content = shared_location["summary"]
     if not content:
         return _ignored("ignored_empty_message", event, message_type, content, conversation_id, customer_name, channel)
     return {
@@ -215,6 +218,7 @@ def parse_chatwoot_inbound(payload):
         "event": event or "message_created",
         "message_type": message_type or "incoming",
         "content": content,
+        "shared_location": shared_location,
         "conversation_id": conversation_id,
         "contact_id": _clean(payload.get("contact_id") or sender.get("id") or contact.get("id"), 100),
         "account_id": _clean(payload.get("account_id") or account.get("id"), 100),
@@ -235,6 +239,9 @@ def extract_meat_facts(message, inbound=None, *, environ=None, llm_extractor=Non
     facts["conversation_id"] = inbound.get("conversation_id") or ""
     facts["contact_id"] = inbound.get("contact_id") or ""
     facts["channel"] = inbound.get("channel") or "chatwoot_whatsapp"
+    shared_location = inbound.get("shared_location") if isinstance(inbound.get("shared_location"), dict) else {}
+    if shared_location:
+        facts.update(_shared_location_fact_patch(shared_location, facts))
     facts["llm_used"] = False
     facts["llm_status"] = "not_enabled"
 
@@ -275,6 +282,10 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "delivery_town": facts.get("delivery_town") or facts.get("location") or "",
         "delivery_area": facts.get("delivery_area") or "",
         "delivery_notes": facts.get("delivery_notes") or "",
+        "delivery_place_name": facts.get("delivery_place_name") or "",
+        "delivery_location_latitude": facts.get("delivery_location_latitude") or "",
+        "delivery_location_longitude": facts.get("delivery_location_longitude") or "",
+        "delivery_maps_url": facts.get("delivery_maps_url") or "",
         "payment_method": facts.get("payment_method") or "",
         "notes": inbound.get("content") or "",
         "status": "interested" if product_type != "unknown" else "new",
@@ -643,6 +654,10 @@ def _merge_prior_context(facts, prior_context):
         "delivery_town",
         "delivery_area",
         "delivery_notes",
+        "delivery_place_name",
+        "delivery_location_latitude",
+        "delivery_location_longitude",
+        "delivery_maps_url",
         "payment_method",
     ):
         current = _clean(facts.get(key), 600)
@@ -669,7 +684,7 @@ def _record_delivery_address_if_ready(lead_id, inbound, facts):
         "address_line_1": address,
         "town": town,
         "area": facts.get("delivery_area") or "",
-        "delivery_notes": facts.get("delivery_notes") or "",
+        "delivery_notes": _delivery_notes_with_location(facts),
         "contact_name": inbound.get("customer_name") or facts.get("customer_name") or "",
         "contact_phone": inbound.get("customer_phone") or "",
         "actor_role": "sam",
@@ -890,6 +905,7 @@ def _ignored(status, event, message_type, content, conversation_id, customer_nam
         "event": event,
         "message_type": message_type,
         "content": content,
+        "shared_location": {},
         "conversation_id": conversation_id,
         "customer_name": customer_name,
         "channel": channel,
@@ -944,6 +960,72 @@ def _normal_payment(value):
     if "cash" in text:
         return "Cash"
     return ""
+
+
+def _extract_shared_location(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    candidates = []
+    for key in ("location", "coordinates", "content_attributes", "additional_attributes"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+    for item in payload.get("attachments") or []:
+        if isinstance(item, dict):
+            candidates.append(item)
+            if isinstance(item.get("coordinates"), dict):
+                candidates.append(item["coordinates"])
+            if isinstance(item.get("location"), dict):
+                candidates.append(item["location"])
+
+    merged = {}
+    for item in candidates:
+        lat = item.get("latitude") or item.get("lat")
+        lng = item.get("longitude") or item.get("lng") or item.get("lon")
+        maps_url = item.get("maps_url") or item.get("map_url") or item.get("url") or item.get("data_url")
+        place = item.get("name") or item.get("place_name") or item.get("title") or item.get("address")
+        if lat not in (None, "") and lng not in (None, ""):
+            merged["latitude"] = _clean(lat, 40)
+            merged["longitude"] = _clean(lng, 40)
+        if maps_url:
+            merged["maps_url"] = _clean(maps_url, 500)
+        if place:
+            merged["place_name"] = _clean(place, 240)
+    if not merged:
+        return {}
+    if not merged.get("maps_url") and merged.get("latitude") and merged.get("longitude"):
+        merged["maps_url"] = f"https://maps.google.com/?q={merged['latitude']},{merged['longitude']}"
+    merged["summary"] = _clean(
+        merged.get("place_name")
+        or f"Shared location pin {merged.get('latitude', '')},{merged.get('longitude', '')}",
+        300,
+    )
+    return merged
+
+
+def _shared_location_fact_patch(shared_location, facts):
+    patch = {
+        "delivery_or_collection": facts.get("delivery_or_collection") or "delivery",
+        "delivery_place_name": shared_location.get("place_name") or "",
+        "delivery_location_latitude": shared_location.get("latitude") or "",
+        "delivery_location_longitude": shared_location.get("longitude") or "",
+        "delivery_maps_url": shared_location.get("maps_url") or "",
+    }
+    if not facts.get("delivery_address_line_1"):
+        patch["delivery_address_line_1"] = shared_location.get("place_name") or "Shared location pin"
+    return {key: value for key, value in patch.items() if value}
+
+
+def _delivery_notes_with_location(facts):
+    notes = _clean(facts.get("delivery_notes"), 600)
+    location_bits = []
+    if facts.get("delivery_place_name"):
+        location_bits.append(f"Place: {facts.get('delivery_place_name')}")
+    if facts.get("delivery_location_latitude") and facts.get("delivery_location_longitude"):
+        location_bits.append(f"Pin: {facts.get('delivery_location_latitude')},{facts.get('delivery_location_longitude')}")
+    if facts.get("delivery_maps_url"):
+        location_bits.append(f"Map: {facts.get('delivery_maps_url')}")
+    combined = "; ".join([item for item in [notes, *location_bits] if item])
+    return _clean(combined, 600)
 
 
 def _token_matches(headers, query_args, expected):

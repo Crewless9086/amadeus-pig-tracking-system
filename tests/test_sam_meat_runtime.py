@@ -110,6 +110,30 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["delivery_address_line_1"], "12 Long Street")
         self.assertEqual(facts["delivery_town"], "Riversdale")
 
+    def test_shared_location_payload_is_captured_as_delivery_context(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="",
+            attachments=[{
+                "file_type": "location",
+                "latitude": "-34.0921",
+                "longitude": "21.2576",
+                "name": "12 Test Street, Riversdale",
+            }],
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertTrue(inbound["processable"])
+        self.assertEqual(facts["delivery_or_collection"], "delivery")
+        self.assertEqual(facts["delivery_address_line_1"], "12 Test Street, Riversdale")
+        self.assertEqual(facts["delivery_place_name"], "12 Test Street, Riversdale")
+        self.assertEqual(facts["delivery_location_latitude"], "-34.0921")
+        self.assertEqual(facts["delivery_location_longitude"], "21.2576")
+        self.assertIn("maps.google.com", facts["delivery_maps_url"])
+        lead_payload = sam_meat_runtime.build_sam_meat_lead_payload_from_inbound(inbound, facts)
+        self.assertEqual(lead_payload["delivery_place_name"], "12 Test Street, Riversdale")
+        self.assertEqual(lead_payload["delivery_location_latitude"], "-34.0921")
+        self.assertEqual(lead_payload["delivery_location_longitude"], "21.2576")
+
     def test_cut_set_question_gets_bounded_pork_model_answer(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="What does Set A include for a half carcass in Riversdale?",

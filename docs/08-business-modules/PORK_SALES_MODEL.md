@@ -339,6 +339,8 @@ Implementation status 2026-06-16:
 - The driver route page `/sales/meat-driver` is a focused delivery-day view. Driver actions write fulfilment events only and do not change payment, stock, or final order state.
 - Customer journey notification sends are disabled unless `MEAT_JOURNEY_NOTIFICATION_SEND_ENABLED=1` is configured. Direct Chatwoot transport uses the lead's `chatwoot_conversation_id` plus `CHATWOOT_*` envs; webhook transport can be forced with `MEAT_JOURNEY_NOTIFICATION_TRANSPORT=webhook` and `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_URL`. Optional `MEAT_JOURNEY_NOTIFICATION_WEBHOOK_TOKEN` is sent as `X-Amadeus-Meat-Journey-Key` for webhook transport.
 - Sam Meat payment instructions are environment-configured and may be sent after the customer accepts an owner-approved follow-up. The current envs are `MEAT_SALES_BANK_ACCOUNT_NAME`, `MEAT_SALES_BANK_NAME`, `MEAT_SALES_BANK_ACCOUNT_NUMBER`, `MEAT_SALES_BANK_BRANCH_CODE`, `MEAT_SALES_BANK_ACCOUNT_TYPE`, and `MEAT_SALES_PAYMENT_REFERENCE_PREFIX`. Customer POPs are logged as `pop_received_unverified`; only bank-confirmed money (`deposit_confirmed_in_bank`) unlocks slaughter, butcher, and delivery gates.
+- Butcher matching now reads active carcass reservations and prioritizes a pig with one open half for new half-carcass leads before starting a fresh pig. A fully committed carcass is not recommended again.
+- Sam Meat can capture shared location payloads from Chatwoot/WhatsApp-style messages when latitude/longitude, place name, or a maps URL is present. Location pins are saved as delivery context and driver notes; Sam should still ask for useful directions when needed.
 
 ## Weekly Operating Rhythm
 

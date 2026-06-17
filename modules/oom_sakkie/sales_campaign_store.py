@@ -862,6 +862,10 @@ def build_sam_meat_intake_lead_payload(payload):
     delivery_town = _clean_text(payload.get("delivery_town") or payload.get("town") or location, 120)
     delivery_area = _clean_text(payload.get("delivery_area") or payload.get("area"), 120)
     delivery_notes = _clean_text(payload.get("delivery_notes"), 600)
+    delivery_place_name = _clean_text(payload.get("delivery_place_name"), 240)
+    delivery_location_latitude = _clean_text(payload.get("delivery_location_latitude"), 40)
+    delivery_location_longitude = _clean_text(payload.get("delivery_location_longitude"), 40)
+    delivery_maps_url = _clean_text(payload.get("delivery_maps_url"), 500)
     price_per_kg = _clean_text(payload.get("price_per_kg"), 80)
     deposit_rule = _clean_text(payload.get("deposit_rule") or payload.get("deposit_amount"), 160)
     payment_method = _clean_text(payload.get("payment_method"), 80)
@@ -916,6 +920,10 @@ def build_sam_meat_intake_lead_payload(payload):
         "delivery_town": delivery_town,
         "delivery_area": delivery_area,
         "delivery_notes": delivery_notes,
+        "delivery_place_name": delivery_place_name,
+        "delivery_location_latitude": delivery_location_latitude,
+        "delivery_location_longitude": delivery_location_longitude,
+        "delivery_maps_url": delivery_maps_url,
         "price_per_kg": price_per_kg,
         "deposit_rule": deposit_rule,
         "payment_method": payment_method,

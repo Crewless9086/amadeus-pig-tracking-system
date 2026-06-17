@@ -71,6 +71,75 @@ class MeatMatchEngineTests(unittest.TestCase):
         self.assertEqual(match["recommendation"]["pig_id"], "PIG-IN")
         self.assertIn("inside stated budget", match["recommendation"]["match_reasons"])
 
+    def test_half_carcass_match_prioritizes_existing_open_half(self):
+        lead = {"interest": {"product_type": "half_carcass", "cut_set": "Set A"}, "events": []}
+        contract = {"lead_summary": {"product": "Half Carcass", "cut_set": "Set A"}, "required_before_money_path": {}}
+        candidates = [
+            {"pig_id": "PIG-NEW", "tag_number": "401", "planning_bucket": "ready_now", "latest_weight_kg": 68},
+            {"pig_id": "PIG-OPEN-HALF", "tag_number": "402", "planning_bucket": "ready_now", "latest_weight_kg": 62},
+        ]
+        active_reservations = [{
+            "reservation_id": "RES-HALF-A",
+            "lead_id": "OSK-SALES-LEAD-OTHER",
+            "pig_id": "PIG-OPEN-HALF",
+            "carcass_side": "half_a",
+            "status": "half_reserved_pending_pair",
+            "created_at": "2026-06-17T01:00:00Z",
+        }]
+
+        match = build_butcher_meat_match(
+            lead,
+            contract,
+            candidates,
+            DEFAULT_MEAT_PRICE_BOOK,
+            {"active_reservations": active_reservations},
+        )
+
+        self.assertEqual(match["recommendation"]["pig_id"], "PIG-OPEN-HALF")
+        self.assertTrue(match["recommendation"]["carcass_reservation_state"]["open_half_available"])
+        self.assertEqual(match["recommendation"]["carcass_reservation_state"]["open_side"], "half_b")
+        self.assertIn(
+            "existing half reserved; matching open half is preferred",
+            match["recommendation"]["match_reasons"],
+        )
+
+    def test_committed_full_carcass_candidate_is_not_recommended_again(self):
+        lead = {"interest": {"product_type": "half_carcass", "cut_set": "Set A"}, "events": []}
+        contract = {"lead_summary": {"product": "Half Carcass", "cut_set": "Set A"}, "required_before_money_path": {}}
+        candidates = [
+            {"pig_id": "PIG-FULL", "tag_number": "501", "planning_bucket": "ready_now", "latest_weight_kg": 70},
+            {"pig_id": "PIG-AVAILABLE", "tag_number": "502", "planning_bucket": "next_14_days", "latest_weight_kg": 65},
+        ]
+        active_reservations = [
+            {
+                "reservation_id": "RES-HALF-A",
+                "lead_id": "OSK-SALES-LEAD-A",
+                "pig_id": "PIG-FULL",
+                "carcass_side": "half_a",
+                "status": "half_reserved_pending_pair",
+                "created_at": "2026-06-17T01:00:00Z",
+            },
+            {
+                "reservation_id": "RES-HALF-B",
+                "lead_id": "OSK-SALES-LEAD-B",
+                "pig_id": "PIG-FULL",
+                "carcass_side": "half_b",
+                "status": "full_carcass_committed",
+                "created_at": "2026-06-17T02:00:00Z",
+            },
+        ]
+
+        match = build_butcher_meat_match(
+            lead,
+            contract,
+            candidates,
+            DEFAULT_MEAT_PRICE_BOOK,
+            {"active_reservations": active_reservations},
+        )
+
+        self.assertEqual(match["recommendation"]["pig_id"], "PIG-AVAILABLE")
+        self.assertNotEqual(match["recommendation"]["pig_id"], "PIG-FULL")
+
 
 if __name__ == "__main__":
     unittest.main()
