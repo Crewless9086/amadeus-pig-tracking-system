@@ -344,6 +344,7 @@ Implementation status 2026-06-16:
 - Dad-assisted booking is the current operating model for abattoir and butcher slots. The Farm App can build a draft-only Dad booking packet with pig/tag, customer, cut set, deposit state, desired timing, and a message Dad can use; Dad/Charl then logs confirmed abattoir and butcher dates manually.
 - The Farm App now has quick slot logging for Dad-assisted booking: abattoir requested, abattoir confirmed, butcher requested, and butcher confirmed. Confirmed slots require a date; all actions remain append-only fulfilment events and send nothing externally.
 - Customer journey drafts now include confirmed abattoir, butcher, and delivery slot timing when those events are logged. Drafts still require exact approval before any customer send, and the UI shows whether the WhatsApp service window or a template is required.
+- Final balance reconciliation is now append-only through `oom_sakkie_meat_reconciliation_events`. The Farm App records actual packed weight, calculates final amount from actual kg x price/kg, subtracts bank-confirmed deposit only, drafts the customer balance wording, and only marks delivery release ready after the final balance is confirmed in the bank. POP alone never unlocks the delivery gate.
 
 ## Weekly Operating Rhythm
 

@@ -261,6 +261,34 @@
             <div id="meat_fulfillment_result" class="ops-list"></div>
           </section>
 
+          <section class="meat-lead-reconciliation-panel" aria-label="Final packed weight and balance">
+            <div class="page-header section-header-compact">
+              <div>
+                <h3>Final Balance</h3>
+                <p id="meat_reconciliation_status">Record actual packed weight, calculate final amount, then confirm balance in bank before delivery release.</p>
+              </div>
+            </div>
+            <div class="meat-lead-form-grid">
+              <div class="form-group">
+                <label for="meat_reconciliation_weight">Packed kg</label>
+                <input type="number" id="meat_reconciliation_weight" min="0" step="0.01" placeholder="24.80" />
+              </div>
+              <div class="form-group">
+                <label for="meat_reconciliation_price">Price / kg</label>
+                <input type="number" id="meat_reconciliation_price" min="0" step="0.01" placeholder="130.00" />
+              </div>
+              <div class="form-group">
+                <label for="meat_reconciliation_reference">Balance bank reference</label>
+                <input type="text" id="meat_reconciliation_reference" placeholder="Bank notification reference" />
+              </div>
+            </div>
+            <div class="meat-lead-actions">
+              <button type="button" id="meat_reconciliation_record_weight" class="button-link button-link-secondary">Record Packed Weight</button>
+              <button type="button" id="meat_reconciliation_confirm_balance" class="button-link">Confirm Balance In Bank</button>
+            </div>
+            <div id="meat_reconciliation_result" class="ops-list"></div>
+          </section>
+
           <form id="meat_lead_approval_form" class="meat-lead-form" autocomplete="off">
             <div class="meat-lead-form-grid">
               <div class="form-group">
@@ -333,6 +361,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260617-guided-meat-sale"></script>
+  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260617-final-balance"></script>
 </body>
 </html>

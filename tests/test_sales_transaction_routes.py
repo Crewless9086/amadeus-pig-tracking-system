@@ -478,6 +478,48 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         get_timeline.assert_called_once_with("OSK-SALES-LEAD-1")
 
+    def test_meat_reconciliation_status_route_reads_status(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "reconciliation": {"status": "awaiting_packed_weight"},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_meat_reconciliation_status",
+            return_value=(service_result, 200),
+        ) as get_status:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/reconciliation")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        get_status.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_reconciliation_event_route_records_event(self):
+        service_result = {
+            "success": True,
+            "status": "packed_weight_recorded",
+            "records_meat_reconciliation": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_meat_reconciliation_event",
+            return_value=(service_result, 201),
+        ) as record_event:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/reconciliation-events",
+                json={"reservation_id": "RES-1", "actual_packed_weight_kg": "24.8", "price_per_kg": "130"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_event.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"reservation_id": "RES-1", "actual_packed_weight_kg": "24.8", "price_per_kg": "130"},
+        )
+
     def test_meat_dad_booking_packet_route_builds_draft_only_packet(self):
         service_result = {
             "success": True,

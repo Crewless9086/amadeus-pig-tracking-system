@@ -45,6 +45,10 @@ from modules.sales.meat_ops import (
     record_meat_instruction_exception,
     send_approved_meat_instruction,
 )
+from modules.sales.meat_reconciliation import (
+    get_meat_reconciliation_status,
+    record_meat_reconciliation_event,
+)
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
     handle_sam_meat_chatwoot_inbound,
@@ -246,6 +250,19 @@ def meat_sales_lead_instruction_drafts(lead_id):
 @sales_bp.route("/sales/meat-leads/<lead_id>/fulfillment", methods=["GET"])
 def meat_sales_lead_fulfillment_timeline(lead_id):
     result, status_code = get_meat_fulfillment_timeline(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/reconciliation", methods=["GET"])
+def meat_sales_lead_reconciliation_status(lead_id):
+    result, status_code = get_meat_reconciliation_status(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/reconciliation-events", methods=["POST"])
+def meat_sales_lead_reconciliation_event(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_meat_reconciliation_event(lead_id, payload)
     return jsonify(result), status_code
 
 

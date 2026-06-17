@@ -10,6 +10,7 @@
     meatMatch: null,
     meatOps: null,
     meatFulfillment: null,
+    meatReconciliation: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -69,6 +70,13 @@
     sendJourney: byId("meat_journey_send"),
     journeyMessage: byId("meat_journey_message"),
     fulfillmentResult: byId("meat_fulfillment_result"),
+    reconciliationStatus: byId("meat_reconciliation_status"),
+    reconciliationWeight: byId("meat_reconciliation_weight"),
+    reconciliationPrice: byId("meat_reconciliation_price"),
+    reconciliationReference: byId("meat_reconciliation_reference"),
+    recordPackedWeight: byId("meat_reconciliation_record_weight"),
+    confirmBalance: byId("meat_reconciliation_confirm_balance"),
+    reconciliationResult: byId("meat_reconciliation_result"),
     form: byId("meat_lead_approval_form"),
     pricePerKg: byId("meat_lead_price_per_kg"),
     availableWeek: byId("meat_lead_available_week"),
@@ -211,6 +219,8 @@
       elements.recordDeposit,
       elements.buildInstructions,
       elements.recordFulfillment,
+      elements.recordPackedWeight,
+      elements.confirmBalance,
       ...Array.from(elements.slotQuickActions?.querySelectorAll("button") || []),
       elements.buildDadPacket,
       elements.buildJourneyDraft,
@@ -560,6 +570,78 @@
     elements.buildDadPacket.disabled = !hasLead;
   };
 
+  const latestReconciliationEvent = (eventType) => {
+    const events = Array.isArray(state.meatReconciliation?.reconciliation_events)
+      ? state.meatReconciliation.reconciliation_events
+      : [];
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      if (events[index].event_type === eventType) return events[index];
+    }
+    return {};
+  };
+
+  const renderMeatReconciliation = () => {
+    if (!elements.reconciliationResult) return;
+    const payload = state.meatReconciliation || {};
+    const reconciliation = payload.reconciliation || {};
+    const events = Array.isArray(payload.reconciliation_events) ? payload.reconciliation_events : [];
+    const hasLead = Boolean(state.selectedLeadId);
+    const reservation = latestReservation();
+    const hasReservation = Boolean(reservation.reservation_id);
+    const latestPacked = latestReconciliationEvent("packed_weight_recorded");
+    const ready = Boolean(reconciliation.ready_for_delivery_release);
+
+    elements.reconciliationResult.innerHTML = "";
+    elements.reconciliationStatus.textContent = hasLead
+      ? `Status: ${safe(reconciliation.status, "not loaded")}. Next: ${safe(reconciliation.next_gate, "record packed weight")}.`
+      : "Record actual packed weight, calculate final amount, then confirm balance in bank before delivery release.";
+
+    if (latestPacked.actual_packed_weight_kg && !elements.reconciliationWeight.value) {
+      elements.reconciliationWeight.value = latestPacked.actual_packed_weight_kg;
+    }
+    if (latestPacked.price_per_kg && !elements.reconciliationPrice.value) {
+      elements.reconciliationPrice.value = latestPacked.price_per_kg;
+    }
+
+    if (reconciliation.final_amount !== null && reconciliation.final_amount !== undefined) {
+      const summary = document.createElement("div");
+      summary.className = "ops-list-item";
+      summary.innerHTML = `
+        <strong>Final R${Number(reconciliation.final_amount || 0).toFixed(2)} | Balance R${Number(reconciliation.balance_due || 0).toFixed(2)}</strong>
+        <small>${Number(reconciliation.actual_packed_weight_kg || 0).toFixed(2)}kg at R${Number(reconciliation.price_per_kg || 0).toFixed(2)}/kg. Deposit in bank R${Number(reconciliation.deposit_confirmed_amount || 0).toFixed(2)}.</small>
+        <small>${ready ? "Delivery release allowed." : "Delivery release waits for final balance confirmed in bank."}</small>
+      `;
+      elements.reconciliationResult.appendChild(summary);
+    }
+
+    if (reconciliation.customer_balance_message) {
+      const message = document.createElement("div");
+      message.className = "ops-list-item";
+      message.innerHTML = `
+        <strong>Customer balance message draft</strong>
+        <small>${safe(reconciliation.customer_balance_message)}</small>
+      `;
+      elements.reconciliationResult.appendChild(message);
+    }
+
+    events.slice().reverse().forEach((event) => {
+      const item = document.createElement("div");
+      item.className = "ops-list-item";
+      item.innerHTML = `
+        <strong>${safe(event.event_type)} ${event.balance_confirmed_amount ? `| R${Number(event.balance_confirmed_amount).toFixed(2)}` : ""}</strong>
+        <small>${safe(event.payment_reference, "")} ${safe(event.created_at, "")}</small>
+      `;
+      elements.reconciliationResult.appendChild(item);
+    });
+
+    if (!events.length) {
+      elements.reconciliationResult.innerHTML = '<div class="table-empty">No final packed-weight reconciliation recorded yet.</div>';
+    }
+
+    elements.recordPackedWeight.disabled = !hasLead || !hasReservation;
+    elements.confirmBalance.disabled = !hasLead || !hasReservation || !latestPacked.actual_packed_weight_kg || ready;
+  };
+
   const renderDetail = () => {
     const lead = state.contract?.lead || state.leads.find((item) => item.lead_id === state.selectedLeadId) || {};
     const contract = state.contract?.contract || {};
@@ -591,6 +673,8 @@
       elements.recordDeposit.disabled = true;
       elements.buildInstructions.disabled = true;
       elements.recordFulfillment.disabled = true;
+      elements.recordPackedWeight.disabled = true;
+      elements.confirmBalance.disabled = true;
       elements.buildDadPacket.disabled = true;
       elements.buildJourneyDraft.disabled = true;
       elements.approveJourney.disabled = true;
@@ -620,6 +704,7 @@
     elements.buildMatch.disabled = !hasLead;
     renderMeatOps();
     renderMeatFulfillment();
+    renderMeatReconciliation();
     elements.buildJourneyDraft.disabled = !hasLead;
     elements.buildDadPacket.disabled = !hasLead;
     elements.approveJourney.disabled = !hasLead || !elements.journeyMessage.value.trim();
@@ -689,6 +774,7 @@
     state.meatMatch = null;
     state.meatOps = null;
     state.meatFulfillment = null;
+    state.meatReconciliation = null;
     elements.preview.value = "";
     elements.customerConfirmation.value = "";
     elements.sendStatus.textContent = "No order, quote, or stock change is made from this page.";
@@ -697,9 +783,11 @@
     renderMeatMatch();
     renderMeatOps();
     renderMeatFulfillment();
+    renderMeatReconciliation();
     await loadPricingEstimate(true);
     await loadMeatOps();
     await loadMeatFulfillment();
+    await loadMeatReconciliation();
   }
 
   async function selectLead(leadId) {
@@ -830,6 +918,18 @@
       elements.fulfillmentStatus.textContent = `Could not load fulfilment timeline: ${error.message}`;
     } finally {
       renderMeatFulfillment();
+    }
+  };
+
+  const loadMeatReconciliation = async () => {
+    if (!state.selectedLeadId) return;
+    try {
+      const payload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/reconciliation`);
+      state.meatReconciliation = payload || {};
+    } catch (error) {
+      elements.reconciliationStatus.textContent = `Could not load final balance gate: ${error.message}`;
+    } finally {
+      renderMeatReconciliation();
     }
   };
 
@@ -1079,6 +1179,92 @@
     } finally {
       setBusy(false);
       renderMeatFulfillment();
+    }
+  };
+
+  const activeReconciliationReservation = () => {
+    const reconciliationReservation = state.meatReconciliation?.reconciliation?.reservation_id || "";
+    if (reconciliationReservation) {
+      const reservations = Array.isArray(state.meatOps?.reservations) ? state.meatOps.reservations : [];
+      const found = reservations.find((item) => item.reservation_id === reconciliationReservation);
+      if (found) return found;
+    }
+    return latestReservation();
+  };
+
+  const recordPackedWeight = async () => {
+    if (!state.selectedLeadId) return;
+    const reservation = activeReconciliationReservation();
+    if (!reservation.reservation_id) {
+      setMessage("Reserve a carcass before recording packed weight.", "error");
+      return;
+    }
+    if (!elements.reconciliationWeight.value || !elements.reconciliationPrice.value) {
+      setMessage("Packed kg and price/kg are required for final reconciliation.", "error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/reconciliation-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: reservation.reservation_id,
+          order_id: reservation.order_id || latestDraftOrderEvent().order_id || "",
+          event_type: "packed_weight_recorded",
+          actual_packed_weight_kg: elements.reconciliationWeight.value,
+          price_per_kg: elements.reconciliationPrice.value,
+          payment_reference: elements.reconciliationReference.value,
+          recorded_by: "Farm App",
+        }),
+      });
+      await loadMeatReconciliation();
+      setMessage("Packed weight recorded and final balance calculated.", "success");
+    } catch (error) {
+      setMessage(`Could not record packed weight: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatReconciliation();
+    }
+  };
+
+  const confirmFinalBalance = async () => {
+    if (!state.selectedLeadId) return;
+    const reservation = activeReconciliationReservation();
+    const reconciliation = state.meatReconciliation?.reconciliation || {};
+    const balanceDue = Number(reconciliation.balance_due || 0);
+    if (!reservation.reservation_id) return;
+    if (!elements.reconciliationReference.value.trim()) {
+      setMessage("Bank reference is required before confirming final balance in bank.", "error");
+      return;
+    }
+    if (!reconciliation.actual_packed_weight_kg) {
+      setMessage("Record actual packed weight before confirming final balance.", "error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/reconciliation-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: reservation.reservation_id,
+          order_id: reservation.order_id || latestDraftOrderEvent().order_id || "",
+          event_type: "balance_confirmed_in_bank",
+          balance_confirmed_amount: balanceDue,
+          payment_reference: elements.reconciliationReference.value,
+          recorded_by: "Farm App",
+        }),
+      });
+      await loadMeatReconciliation();
+      setMessage("Final balance confirmed in bank. Delivery release gate is now unlocked when the amount covers the balance.", "success");
+    } catch (error) {
+      setMessage(`Could not confirm final balance: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderMeatReconciliation();
     }
   };
 
@@ -1445,6 +1631,8 @@
   elements.opsResult.addEventListener("click", handleInstructionAction);
   elements.slotQuickActions.addEventListener("click", handleSlotQuickAction);
   elements.recordFulfillment.addEventListener("click", recordFulfillmentEvent);
+  elements.recordPackedWeight.addEventListener("click", recordPackedWeight);
+  elements.confirmBalance.addEventListener("click", confirmFinalBalance);
   elements.buildDadPacket.addEventListener("click", buildDadBookingPacket);
   elements.buildJourneyDraft.addEventListener("click", buildJourneyDraft);
   elements.approveJourney.addEventListener("click", approveJourneyDraft);
@@ -1463,6 +1651,7 @@
   renderMeatMatch();
   renderMeatOps();
   renderMeatFulfillment();
+  renderMeatReconciliation();
   loadPriceBook();
   loadLeads();
 })();
