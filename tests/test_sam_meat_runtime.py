@@ -295,6 +295,114 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-CONTEXT")
         self.assertEqual(lead_payload["delivery_address_line_1"], "12 Test Street")
 
+    @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_conversation_context_prefers_progressed_duplicate_lead(self, mock_record, mock_contract, mock_list, mock_fulfillment):
+        mock_list.return_value = ({
+            "success": True,
+            "sales_leads": [
+                {
+                    "lead_id": "OSK-SALES-LEAD-OLDER",
+                    "chatwoot_conversation_id": "1808",
+                    "latest_event": "sam_meat_autoreply_sent",
+                    "interest": {
+                        "product_type": "half_carcass",
+                        "cut_set": "Set A",
+                        "location": "Riversdale",
+                    },
+                },
+                {
+                    "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+                    "chatwoot_conversation_id": "1808",
+                    "latest_event": "customer_followup_sent",
+                    "interest": {
+                        "product_type": "half_carcass",
+                        "cut_set": "Set A",
+                        "location": "Riversdale",
+                        "delivery_or_collection": "delivery",
+                        "timing": "next available week",
+                        "payment_method": "EFT",
+                    },
+                },
+            ],
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "owner_money_path_ready"},
+        }, 200)
+        mock_fulfillment.return_value = ({"success": True, "status": "delivery_address_captured"}, 201)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="The delivery address is 12 Test Street, Riversdale. Blue gate."),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["prior_context"]["lead_id"], "OSK-SALES-LEAD-PROGRESSED")
+        self.assertEqual(result["prior_context"]["latest_event"], "customer_followup_sent")
+        lead_payload = mock_record.call_args.args[0]
+        self.assertEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-PROGRESSED")
+
+    @patch("modules.sales.sam_meat_runtime.record_customer_booking_confirmation")
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_customer_yes_after_followup_sent_records_booking_confirmation(self, mock_record, mock_contract, mock_list, mock_confirmation):
+        mock_list.return_value = ({
+            "success": True,
+            "sales_leads": [{
+                "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+                "chatwoot_conversation_id": "1808",
+                "latest_event": "customer_followup_sent",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "collection",
+                    "timing": "next available week",
+                    "payment_method": "EFT",
+                },
+            }],
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "owner_money_path_ready"},
+        }, 200)
+        mock_confirmation.return_value = ({
+            "success": True,
+            "status": "ok",
+            "records_customer_booking_confirmation": True,
+        }, 201)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Yes, please proceed with the final booking review."),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["booking_confirmation"]["recorded"])
+        self.assertIn("noted your confirmation", result["sam_decision"]["reply_text"])
+        mock_confirmation.assert_called_once()
+        self.assertEqual(mock_confirmation.call_args.args[0], "OSK-SALES-LEAD-PROGRESSED")
+        self.assertEqual(
+            mock_confirmation.call_args.args[1]["customer_confirmation"],
+            "Yes, please proceed with the final booking review.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

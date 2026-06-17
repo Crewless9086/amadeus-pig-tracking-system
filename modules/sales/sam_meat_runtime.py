@@ -8,6 +8,7 @@ from urllib import request as urllib_request
 from modules.oom_sakkie.sales_campaign_store import (
     get_sales_lead_preorder_contract,
     list_sales_leads,
+    record_customer_booking_confirmation,
     record_sales_lead_event,
     record_sam_meat_intake_lead,
     _send_chatwoot_message,
@@ -92,7 +93,13 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     if prior_context.get("lead_id"):
         lead_payload["lead_id"] = prior_context["lead_id"]
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
+    booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
     decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
+    if booking_confirmation.get("recorded"):
+        decision["reply_text"] = (
+            "Thanks, I have noted your confirmation for final booking review. "
+            "The farm will prepare the next booking step."
+        )
     fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
 
     send_result = {}
@@ -127,6 +134,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "lead_payload": lead_payload,
         "lead_result": record_result,
         "lead_status_code": record_status,
+        "booking_confirmation": booking_confirmation,
         "fulfillment_capture": fulfillment_capture,
         "sam_decision": decision,
         "sent": sent,
@@ -479,15 +487,82 @@ def _conversation_lead_context(conversation_id):
     result, status_code = list_sales_leads(limit=50, status_filter="launch_test")
     if status_code != 200 or not isinstance(result, dict):
         return {}
+    matches = []
     for lead in result.get("sales_leads") or []:
         if _clean(lead.get("chatwoot_conversation_id"), 100) != conversation_id:
             continue
-        interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+        matches.append(lead)
+    if not matches:
+        return {}
+    matches.sort(key=_lead_context_score, reverse=True)
+    lead = matches[0]
+    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+    return {
+        "lead_id": _clean(lead.get("lead_id"), 100),
+        "interest": interest,
+        "latest_event": _clean(lead.get("latest_event"), 100),
+    }
+
+
+def _lead_context_score(lead):
+    latest_event = _clean(lead.get("latest_event"), 100)
+    event_scores = {
+        "customer_booking_confirmed": 100,
+        "draft_order_created": 90,
+        "customer_followup_sent": 80,
+        "customer_followup_send_attempted": 70,
+        "owner_customer_followup_send_approved": 60,
+        "owner_money_path_approved": 50,
+        "delivery_address_captured": 25,
+        "sam_meat_autoreply_sent": 10,
+        "sam_meat_autoreply_attempted": 8,
+    }
+    score = event_scores.get(latest_event, 0)
+    if lead.get("created_at"):
+        score += 1
+    return score
+
+
+def _record_booking_confirmation_if_ready(inbound, prior_context):
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    lead_id = _clean(prior_context.get("lead_id"), 100)
+    if not lead_id:
+        return {"recorded": False, "status": "lead_context_required"}
+    if not _customer_yes_intent(inbound.get("content")):
+        return {"recorded": False, "status": "not_customer_confirmation"}
+    if prior_context.get("latest_event") != "customer_followup_sent":
         return {
-            "lead_id": _clean(lead.get("lead_id"), 100),
-            "interest": interest,
+            "recorded": False,
+            "status": "customer_followup_not_sent",
+            "latest_event": prior_context.get("latest_event") or "",
         }
-    return {}
+    result, status_code = record_customer_booking_confirmation(
+        lead_id,
+        {
+            "customer_confirmation": inbound.get("content") or "",
+            "confirmed_by": "Sam Meat",
+            "confirmation_channel": inbound.get("channel") or "chatwoot",
+        },
+    )
+    return {
+        "recorded": status_code in {200, 201},
+        "status_code": status_code,
+        "status": result.get("status") if isinstance(result, dict) else "",
+        "lead_id": lead_id,
+    }
+
+
+def _customer_yes_intent(message):
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    if re.search(r"\b(no|not now|hold|cancel|stop|wait)\b", text):
+        return False
+    return bool(re.search(
+        r"\b(yes|ja|yep|yeah|correct|confirmed?|confirm|please proceed|go ahead|book it|"
+        r"send it|final booking|happy with that|that works)\b",
+        text,
+    ))
 
 
 def _merge_prior_context(facts, prior_context):
