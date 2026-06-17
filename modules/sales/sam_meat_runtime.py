@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import json
 import os
@@ -92,6 +93,8 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
     if prior_context.get("lead_id"):
         lead_payload["lead_id"] = prior_context["lead_id"]
+    else:
+        lead_payload["lead_id"] = _fresh_lead_id(inbound, facts)
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
     decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
@@ -185,6 +188,7 @@ def parse_chatwoot_inbound(payload):
         "customer_phone": _clean(sender.get("phone_number") or contact.get("phone_number"), 80),
         "channel": channel,
         "whatsapp_window_state": "open",
+        "message_id": _clean(payload.get("id") or payload.get("message_id"), 100),
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
     }
 
@@ -242,6 +246,22 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "status": "interested" if product_type != "unknown" else "new",
         "last_inbound_at": inbound.get("last_inbound_at") or "",
     }
+
+
+def _fresh_lead_id(inbound, facts):
+    seed = json.dumps(
+        {
+            "source": "sam_meat_backend_fresh_inbound",
+            "conversation_id": inbound.get("conversation_id") or facts.get("conversation_id") or "",
+            "contact_id": inbound.get("contact_id") or facts.get("contact_id") or "",
+            "message_id": inbound.get("message_id") or "",
+            "last_inbound_at": inbound.get("last_inbound_at") or "",
+            "content": inbound.get("content") or "",
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return "OSK-SALES-LEAD-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16].upper()
 
 
 def build_sam_meat_decision(inbound, facts, record_result, record_status):

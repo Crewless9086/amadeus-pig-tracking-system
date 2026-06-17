@@ -248,6 +248,33 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(mock_fulfillment.call_args.args[1]["event_type"], "delivery_address_captured")
         self.assertEqual(mock_fulfillment.call_args.args[1]["address_line_1"], "12 Long Street")
 
+    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_new_inbound_without_active_context_gets_fresh_lead_id(self, mock_record, mock_contract, mock_list):
+        mock_list.return_value = ({"success": True, "sales_leads": []}, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-FRESH",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(id=695457280, created_at="2026-06-17T00:32:40Z"),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        lead_payload = mock_record.call_args.args[0]
+        self.assertTrue(lead_payload["lead_id"].startswith("OSK-SALES-LEAD-"))
+        self.assertNotEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-FRESH")
+        self.assertEqual(result["inbound"]["message_id"], "695457280")
+
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.list_sales_leads")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
