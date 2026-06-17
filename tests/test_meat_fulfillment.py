@@ -46,6 +46,64 @@ class MeatFulfillmentTests(unittest.TestCase):
             {"event_type": "delivery_address_captured", "created_at": "2026-06-16T03:00:00"},
         ], {})["next_gate"], "schedule_delivery")
 
+    def test_final_balance_gate_blocks_delivery_schedule_when_reconciliation_exists(self):
+        ops = {"assembly": {"status": "ready_for_slaughter_booking", "full_carcass_committed": True, "deposit_confirmed": True}}
+        events = [
+            {"event_type": "abattoir_slot_confirmed", "created_at": "2026-06-16T01:00:00"},
+            {"event_type": "butcher_slot_confirmed", "created_at": "2026-06-16T02:00:00"},
+            {"event_type": "delivery_address_captured", "created_at": "2026-06-16T03:00:00"},
+        ]
+        status = meat_fulfillment._fulfillment_status(
+            ops,
+            events,
+            {},
+            {
+                "status": "awaiting_balance_confirmation",
+                "actual_packed_weight_kg": 24.8,
+                "ready_for_delivery_release": False,
+                "balance_due": 1624,
+                "customer_balance_message": "Your pork is packed. Balance due before delivery: R1624.00.",
+            },
+        )
+        journey = meat_fulfillment._journey_plan(status, {}, events, {
+            "status": "awaiting_balance_confirmation",
+            "actual_packed_weight_kg": 24.8,
+            "ready_for_delivery_release": False,
+            "customer_balance_message": "Your pork is packed. Balance due before delivery: R1624.00.",
+        })
+        message = meat_fulfillment._journey_message(journey, status, {})
+
+        self.assertEqual(status["next_gate"], "confirm_final_balance")
+        self.assertEqual(status["status"], "final_balance")
+        self.assertEqual(journey["stage"], "final_balance_due")
+        self.assertIn("R1624.00", message)
+
+    def test_final_balance_ready_unlocks_delivery_schedule(self):
+        ops = {"assembly": {"status": "ready_for_slaughter_booking", "full_carcass_committed": True, "deposit_confirmed": True}}
+        events = [
+            {"event_type": "abattoir_slot_confirmed", "created_at": "2026-06-16T01:00:00"},
+            {"event_type": "butcher_slot_confirmed", "created_at": "2026-06-16T02:00:00"},
+            {"event_type": "delivery_address_captured", "created_at": "2026-06-16T03:00:00"},
+        ]
+
+        status = meat_fulfillment._fulfillment_status(
+            ops,
+            events,
+            {},
+            {"status": "ready_for_delivery_release", "actual_packed_weight_kg": 24.8, "ready_for_delivery_release": True},
+        )
+        journey = meat_fulfillment._journey_plan(status, {}, events, {
+            "status": "ready_for_delivery_release",
+            "actual_packed_weight_kg": 24.8,
+            "ready_for_delivery_release": True,
+        })
+        message = meat_fulfillment._journey_message(journey, status, {})
+
+        self.assertEqual(status["next_gate"], "schedule_delivery")
+        self.assertEqual(status["status"], "delivery_planning")
+        self.assertEqual(journey["stage"], "final_balance_confirmed")
+        self.assertIn("scheduling the delivery window", message)
+
     def test_event_validation_blocks_missing_operational_facts(self):
         self.assertEqual(
             meat_fulfillment._validate_event_payload("abattoir_slot_confirmed", {}),

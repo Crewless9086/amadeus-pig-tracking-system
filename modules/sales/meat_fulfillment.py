@@ -7,6 +7,7 @@ from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import get_sales_lead_preorder_contract, _send_chatwoot_message
 from modules.sales.meat_ops import get_meat_ops_status
+from modules.sales.meat_reconciliation import get_meat_reconciliation_status
 from services.database_service import DATABASE_URL_ENV
 
 
@@ -68,7 +69,13 @@ def get_meat_fulfillment_timeline(lead_id, database_url=None):
                 events = _fetch_fulfillment_events(cursor, lead_id=lead_id)
     except Exception as exc:
         return _failed("meat_fulfillment_read_failed", exc), 503
-    status = _fulfillment_status(ops_result, events, lead)
+    reconciliation_result, reconciliation_status = get_meat_reconciliation_status(lead_id, database_url=database_url)
+    reconciliation = (
+        reconciliation_result.get("reconciliation")
+        if reconciliation_status == 200 and isinstance(reconciliation_result.get("reconciliation"), dict)
+        else {}
+    )
+    status = _fulfillment_status(ops_result, events, lead, reconciliation)
     return {
         "success": True,
         "configured": True,
@@ -78,7 +85,8 @@ def get_meat_fulfillment_timeline(lead_id, database_url=None):
         "lead": lead,
         "timeline": events,
         "fulfillment": status,
-        "journey_plan": _journey_plan(status, lead, events),
+        "journey_plan": _journey_plan(status, lead, events, reconciliation),
+        "reconciliation": reconciliation,
         "meat_ops": {
             "assembly": ops_result.get("assembly") or {},
             "reservations": ops_result.get("reservations") or [],
@@ -381,8 +389,9 @@ def send_meat_journey_notification(lead_id, payload=None, database_url=None, sen
     }, 200
 
 
-def _fulfillment_status(ops, events, lead=None):
+def _fulfillment_status(ops, events, lead=None, reconciliation=None):
     assembly = ops.get("assembly") if isinstance(ops.get("assembly"), dict) else {}
+    reconciliation = reconciliation if isinstance(reconciliation, dict) else {}
     latest = _latest_by_type(events)
     latest_exception = _latest_event(events, "exception_review_required")
     exception_resolved = _latest_event(events, "exception_review_resolved")
@@ -399,27 +408,38 @@ def _fulfillment_status(ops, events, lead=None):
     delivery_scheduled = latest.get("delivery_scheduled", {})
     driver_assigned = latest.get("delivery_driver_assigned", {})
     delivered = bool(latest.get("delivery_completed"))
+    enforce_final_balance = bool(reconciliation)
+    final_balance_ready = bool(reconciliation.get("ready_for_delivery_release")) if enforce_final_balance else True
+    packed_weight_recorded = bool(reconciliation.get("actual_packed_weight_kg")) if enforce_final_balance else False
     exception_open = bool(latest_exception and (
         not exception_resolved
         or exception_resolved.get("created_at", "") < latest_exception.get("created_at", "")
     ))
-    next_gate = "find_second_half_buyer" if half_waiting else (
-        "confirm_deposit" if full_committed and not deposit_confirmed else (
-            "confirm_abattoir_slot" if deposit_confirmed and not abattoir_confirmed else (
-                "confirm_butcher_slot" if abattoir_confirmed and not butcher_confirmed else (
-                    "capture_delivery_address" if butcher_confirmed and not delivery_address else (
-                        "schedule_delivery" if delivery_address and not delivery_scheduled else (
-                            "assign_driver" if delivery_scheduled and not driver_assigned else (
-                                "complete_delivery" if driver_assigned and not delivered else "complete"
-                            )
-                        )
-                    )
-                )
-            )
-        )
+    next_gate = _next_fulfillment_gate(
+        half_waiting=half_waiting,
+        full_committed=full_committed,
+        deposit_confirmed=deposit_confirmed,
+        abattoir_confirmed=bool(abattoir_confirmed),
+        butcher_confirmed=bool(butcher_confirmed),
+        delivery_address=bool(delivery_address),
+        final_balance_ready=final_balance_ready,
+        delivery_scheduled=bool(delivery_scheduled),
+        driver_assigned=bool(driver_assigned),
+        delivered=delivered,
     )
     if exception_open:
         next_gate = "resolve_exception_review"
+    status_label = _fulfillment_status_label(
+        assembly,
+        half_waiting,
+        deposit_confirmed,
+        bool(butcher_confirmed),
+        enforce_final_balance,
+        final_balance_ready,
+        bool(driver_assigned),
+        delivered,
+        exception_open,
+    )
     return {
         "half_waiting_for_pair": half_waiting,
         "full_carcass_committed": full_committed,
@@ -429,27 +449,84 @@ def _fulfillment_status(ops, events, lead=None):
         "abattoir_slot_confirmed": bool(abattoir_confirmed),
         "butcher_slot_confirmed": bool(butcher_confirmed),
         "delivery_address_captured": bool(delivery_address),
+        "packed_weight_recorded": packed_weight_recorded,
+        "final_balance_ready": final_balance_ready,
+        "final_balance_status": reconciliation.get("status", ""),
+        "balance_due": reconciliation.get("balance_due"),
+        "customer_balance_message": reconciliation.get("customer_balance_message", ""),
         "delivery_scheduled": bool(delivery_scheduled),
         "driver_assigned": bool(driver_assigned),
         "delivered": delivered,
         "exception_open": exception_open,
         "next_gate": next_gate,
-        "status": "exception_review" if exception_open else (
-            "delivered" if delivered else (
-                "delivery_in_progress" if driver_assigned else (
-                    "delivery_planning" if butcher_confirmed else (
-                        "capacity_booking" if deposit_confirmed else (
-                            "waiting_for_second_half" if half_waiting else assembly.get("status", "interest_only")
-                        )
-                    )
-                )
-            )
-        ),
+        "status": status_label,
     }
 
 
-def _journey_plan(status, lead=None, events=None):
+def _next_fulfillment_gate(
+    half_waiting=False,
+    full_committed=False,
+    deposit_confirmed=False,
+    abattoir_confirmed=False,
+    butcher_confirmed=False,
+    delivery_address=False,
+    final_balance_ready=True,
+    delivery_scheduled=False,
+    driver_assigned=False,
+    delivered=False,
+):
+    if half_waiting:
+        return "find_second_half_buyer"
+    if full_committed and not deposit_confirmed:
+        return "confirm_deposit"
+    if deposit_confirmed and not abattoir_confirmed:
+        return "confirm_abattoir_slot"
+    if abattoir_confirmed and not butcher_confirmed:
+        return "confirm_butcher_slot"
+    if butcher_confirmed and not delivery_address:
+        return "capture_delivery_address"
+    if delivery_address and not final_balance_ready:
+        return "confirm_final_balance"
+    if delivery_address and not delivery_scheduled:
+        return "schedule_delivery"
+    if delivery_scheduled and not driver_assigned:
+        return "assign_driver"
+    if driver_assigned and not delivered:
+        return "complete_delivery"
+    return "complete"
+
+
+def _fulfillment_status_label(
+    assembly,
+    half_waiting,
+    deposit_confirmed,
+    butcher_confirmed,
+    enforce_final_balance,
+    final_balance_ready,
+    driver_assigned,
+    delivered,
+    exception_open,
+):
+    if exception_open:
+        return "exception_review"
+    if delivered:
+        return "delivered"
+    if driver_assigned:
+        return "delivery_in_progress"
+    if butcher_confirmed and enforce_final_balance and not final_balance_ready:
+        return "final_balance"
+    if butcher_confirmed:
+        return "delivery_planning"
+    if deposit_confirmed:
+        return "capacity_booking"
+    if half_waiting:
+        return "waiting_for_second_half"
+    return assembly.get("status", "interest_only")
+
+
+def _journey_plan(status, lead=None, events=None, reconciliation=None):
     latest = _latest_by_type(events or [])
+    reconciliation = reconciliation if isinstance(reconciliation, dict) else {}
     if status.get("exception_open"):
         return _journey("exception_review", "Hold customer updates until the owner resolves the exception.", status, latest)
     if status.get("half_waiting_for_pair"):
@@ -464,6 +541,12 @@ def _journey_plan(status, lead=None, events=None):
     if status.get("abattoir_slot_confirmed") and not status.get("butcher_slot_confirmed"):
         return _journey("abattoir_confirmed", "Tell the customer slaughter timing is confirmed and butchery timing is next.", status, latest)
     if status.get("butcher_slot_confirmed") and not status.get("delivery_scheduled"):
+        if reconciliation and not status.get("final_balance_ready"):
+            if status.get("packed_weight_recorded"):
+                return _journey("final_balance_due", "Tell the customer the packed weight and balance due before delivery.", status, latest, reconciliation)
+            return _journey("packed_weight_pending", "Tell the customer processing is underway and final packed weight comes before delivery.", status, latest, reconciliation)
+        if reconciliation and status.get("final_balance_ready"):
+            return _journey("final_balance_confirmed", "Tell the customer final balance is confirmed and delivery scheduling is next.", status, latest, reconciliation)
         return _journey("butcher_confirmed", "Ask for or confirm delivery details and explain final packed weight comes after processing.", status, latest)
     if status.get("delivery_scheduled") and not status.get("driver_assigned"):
         return _journey("delivery_scheduled", "Tell the customer the delivery window once final balance and route are ready.", status, latest)
@@ -474,8 +557,9 @@ def _journey_plan(status, lead=None, events=None):
     return _journey("intake", "Keep gathering missing fulfilment facts before making timing promises.", status, latest)
 
 
-def _journey(stage, summary, status, latest=None):
+def _journey(stage, summary, status, latest=None, reconciliation=None):
     latest = latest if isinstance(latest, dict) else {}
+    reconciliation = reconciliation if isinstance(reconciliation, dict) else {}
     slot_context = _journey_slot_context(latest)
     return {
         "stage": stage,
@@ -484,6 +568,7 @@ def _journey(stage, summary, status, latest=None):
         "requires_template": bool(status.get("requires_template")),
         "next_gate": status.get("next_gate", ""),
         "slot_context": slot_context,
+        "reconciliation": reconciliation,
         "sends_now": False,
     }
 
@@ -497,6 +582,8 @@ def _journey_message(journey, fulfillment, payload):
     abattoir = slot.get("abattoir") if isinstance(slot.get("abattoir"), dict) else {}
     butcher = slot.get("butcher") if isinstance(slot.get("butcher"), dict) else {}
     delivery = slot.get("delivery") if isinstance(slot.get("delivery"), dict) else {}
+    reconciliation = journey.get("reconciliation") if isinstance(journey.get("reconciliation"), dict) else {}
+    balance_message = _clean(reconciliation.get("customer_balance_message"), 1600)
     templates = {
         "half_reserved_waiting_pair": "Thanks, your half carcass is reserved. We are pairing the other half before we book slaughter timing.",
         "carcass_committed": "Good news, the full carcass is now committed. We are confirming abattoir and butcher timing before we promise delivery.",
@@ -508,6 +595,12 @@ def _journey_message(journey, fulfillment, payload):
             f"The butcher slot is confirmed for {_slot_when(butcher)}. "
             "Final packed weight and balance are confirmed after processing, then we schedule delivery."
         ),
+        "packed_weight_pending": (
+            "Your pork is through the confirmed processing step. We are waiting for the final packed weight, "
+            "then we will confirm the exact balance before delivery."
+        ),
+        "final_balance_due": balance_message or "Your pork is packed. We are confirming the final balance before delivery.",
+        "final_balance_confirmed": "Final balance is confirmed. We are scheduling the delivery window and will keep the next update practical.",
         "delivery_scheduled": f"Your delivery is scheduled for {_slot_when(delivery)}. We will keep updates practical and avoid unnecessary messages.",
         "driver_assigned": "Your delivery is on the route. The driver will update only when useful, such as on the way or arrived.",
         "delivered": "Delivered. Thank you for supporting the farm and being part of the Amadeus pork journey.",

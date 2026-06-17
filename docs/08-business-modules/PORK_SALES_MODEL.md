@@ -345,6 +345,7 @@ Implementation status 2026-06-16:
 - The Farm App now has quick slot logging for Dad-assisted booking: abattoir requested, abattoir confirmed, butcher requested, and butcher confirmed. Confirmed slots require a date; all actions remain append-only fulfilment events and send nothing externally.
 - Customer journey drafts now include confirmed abattoir, butcher, and delivery slot timing when those events are logged. Drafts still require exact approval before any customer send, and the UI shows whether the WhatsApp service window or a template is required.
 - Final balance reconciliation is now append-only through `oom_sakkie_meat_reconciliation_events`. The Farm App records actual packed weight, calculates final amount from actual kg x price/kg, subtracts bank-confirmed deposit only, drafts the customer balance wording, and only marks delivery release ready after the final balance is confirmed in the bank. POP alone never unlocks the delivery gate.
+- Customer journey drafts now use final balance reconciliation when it exists. After butchery and delivery-address capture, delivery scheduling is blocked until actual packed weight is recorded and the final balance is confirmed in the bank. The journey draft can tell the customer either that packed weight is pending or the exact balance due.
 
 ## Weekly Operating Rhythm
 
