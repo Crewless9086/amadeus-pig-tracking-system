@@ -1659,6 +1659,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('@sales_bp.route("/sales/meat-pricing", methods=["GET"])', routes)
         self.assertIn('@sales_bp.route("/sales/meat-pricing", methods=["POST"])', routes)
         self.assertIn('@sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])', routes)
+        self.assertIn('@sales_bp.route("/sales/meat-learning", methods=["GET"])', routes)
+        self.assertIn('@sales_bp.route("/sales/meat-leads/<lead_id>/learning-events", methods=["GET", "POST"])', routes)
         self.assertIn('@sales_bp.route("/sales/meat-leads/<lead_id>/pricing-estimate", methods=["GET", "POST"])', routes)
         self.assertIn('@sales_bp.route("/sales/meat-leads/<lead_id>/meat-match", methods=["GET", "POST"])', routes)
         self.assertIn('@sales_bp.route("/sales/meat-leads/<lead_id>/meat-ops", methods=["GET"])', routes)

@@ -247,6 +247,25 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         list_leads.assert_called_once_with(limit="12", status_filter="launch_test")
 
+    def test_meat_sales_learning_list_route_uses_learning_store(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "learning_events": [{"learning_event_id": "MSCL-1"}],
+            "summary": {"total_events": 1},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_sales_conversation_learning_events",
+            return_value=(service_result, 200),
+        ) as list_learning:
+            response = self.client.get("/api/sales/meat-learning?limit=12&lead_id=OSK-SALES-LEAD-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        list_learning.assert_called_once_with(limit="12", lead_id="OSK-SALES-LEAD-1")
+
     def test_meat_price_book_list_route_uses_store(self):
         service_result = {
             "success": True,
@@ -304,6 +323,44 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), service_result)
         get_contract.assert_called_once_with("OSK-SALES-LEAD-1")
+
+    def test_meat_sales_lead_learning_events_get_and_post_routes(self):
+        service_result = {
+            "success": True,
+            "status": "ok",
+            "learning_events": [{"learning_event_id": "MSCL-1"}],
+            "summary": {"total_events": 1},
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_sales_conversation_learning_events",
+            return_value=(service_result, 200),
+        ) as list_learning:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/learning-events?limit=7")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), service_result)
+        list_learning.assert_called_once_with(limit="7", lead_id="OSK-SALES-LEAD-1")
+
+        with patch.object(
+            sales_transaction_routes,
+            "build_owner_review_learning_event",
+            return_value={"lead_id": "OSK-SALES-LEAD-1", "event_type": "owner_review_note"},
+        ) as build_event, patch.object(
+            sales_transaction_routes,
+            "record_sales_conversation_learning_event",
+            return_value=({"success": True, "learning_event_id": "MSCL-OWNER"}, 201),
+        ) as record_event:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/learning-events",
+                json={"notes": "Customer asked about price."},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["learning_event_id"], "MSCL-OWNER")
+        build_event.assert_called_once_with("OSK-SALES-LEAD-1", {"notes": "Customer asked about price."})
+        record_event.assert_called_once_with({"lead_id": "OSK-SALES-LEAD-1", "event_type": "owner_review_note"})
 
     def test_meat_sales_lead_pricing_estimate_route_uses_estimator(self):
         service_result = {

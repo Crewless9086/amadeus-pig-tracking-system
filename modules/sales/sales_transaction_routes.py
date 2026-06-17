@@ -54,6 +54,11 @@ from modules.sales.sam_meat_runtime import (
     handle_sam_meat_chatwoot_inbound,
     sam_meat_webhook_policy,
 )
+from modules.sales.conversation_learning import (
+    build_owner_review_learning_event,
+    list_sales_conversation_learning_events,
+    record_sales_conversation_learning_event,
+)
 
 
 sales_bp = Blueprint("sales", __name__)
@@ -170,6 +175,15 @@ def meat_sales_leads_list():
     return jsonify(result), status_code
 
 
+@sales_bp.route("/sales/meat-learning", methods=["GET"])
+def meat_sales_conversation_learning_list():
+    result, status_code = list_sales_conversation_learning_events(
+        limit=request.args.get("limit", 50),
+        lead_id=request.args.get("lead_id", ""),
+    )
+    return jsonify(result), status_code
+
+
 @sales_bp.route("/sales/meat-pricing", methods=["GET"])
 def meat_price_book_list():
     result, status_code = list_meat_price_book_entries(limit=request.args.get("limit", 50))
@@ -186,6 +200,20 @@ def meat_price_book_create():
 @sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])
 def meat_sales_lead_contract(lead_id):
     result, status_code = get_sales_lead_preorder_contract(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/learning-events", methods=["GET", "POST"])
+def meat_sales_lead_learning_events(lead_id):
+    if request.method == "GET":
+        result, status_code = list_sales_conversation_learning_events(
+            limit=request.args.get("limit", 50),
+            lead_id=lead_id,
+        )
+        return jsonify(result), status_code
+    payload = request.get_json(silent=True) or {}
+    event = build_owner_review_learning_event(lead_id, payload)
+    result, status_code = record_sales_conversation_learning_event(event)
     return jsonify(result), status_code
 
 

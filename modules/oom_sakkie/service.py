@@ -164,6 +164,10 @@ RULES = [
         IntentMatch("sales_lead_tracking_status", "sales_lead_tracking_status", 0.95, "rule:sales_lead_tracking_status"),
     ),
     (
+        re.compile(r"\b(sales conversation learning|conversation learning|sales learning|what.*learn.*sales|sam misses|buyer objections|customer objections|conversion blockers|lost reasons|lead quality)\b", re.I),
+        IntentMatch("sales_conversation_learning_status", "sales_conversation_learning_status", 0.95, "rule:sales_conversation_learning_status"),
+    ),
+    (
         re.compile(r"\b(ledger sales agent|ledger agent|ledger help|ledger.*sell|sales agent|help me sell|sell this meat|sell the meat|how should we sell|smart sales|make this offer better)\b", re.I),
         IntentMatch("ledger_sales_agent", "ledger_sales_agent", 0.95, "rule:ledger_sales_agent"),
     ),

@@ -20,6 +20,7 @@ from modules.sales.chatwoot_hygiene import (
     HYGIENE_ENABLED_ENV,
     sync_sam_meat_chatwoot_hygiene,
 )
+from modules.sales.conversation_learning import record_learning_event_from_sam_result
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -178,7 +179,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
                 _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_failed", decision["reply_text"], send_result)
 
     status_code = 200 if record_status in {200, 201, 400} else record_status
-    return {
+    result = {
         "success": record_status in {200, 201, 400},
         "status": "processed",
         "processed": True,
@@ -198,7 +199,19 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "chatwoot_send": send_result,
         "policy": sam_meat_webhook_policy(source),
         **_authority_flags(sent, sent),
-    }, status_code
+    }
+    learning_result, learning_status = record_learning_event_from_sam_result(result)
+    result["conversation_learning"] = {
+        "status_code": learning_status,
+        "status": learning_result.get("status"),
+        "success": learning_result.get("success") is True,
+        "learning_event_id": learning_result.get("learning_event_id", ""),
+        "next_gate": learning_result.get("next_gate", ""),
+        "applies_learning_now": False,
+        "changes_prompt_now": False,
+        "changes_runtime_now": False,
+    }
+    return result, status_code
 
 
 def parse_chatwoot_inbound(payload):

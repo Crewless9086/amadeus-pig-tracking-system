@@ -157,12 +157,20 @@ Owner review before using the copy:
 
 Goal: make every sales conversation improve the system.
 
-Required outcome:
+Status: complete in Phase 11O.
+
+Implemented outcome:
 
 - Append-only learning events from sales conversations.
 - Track customer wanted, missing facts, objections, confusion, Sam misses, conversion/loss reason, and improvement suggestion.
 - Analyst/Atlas summarizes patterns for Oom Sakkie.
 - Human approval remains required before prompt/rule/tool changes.
+- `supabase/migrations/202606180001_create_meat_sales_conversation_learning_events.sql` creates the append-only learning event rail.
+- `modules/sales/conversation_learning.py` builds deterministic learning evidence from Sam Meat inbound handling.
+- Sam Meat attempts to record learning evidence after processing inbound messages, without blocking the lead/reply path if learning storage is unavailable.
+- Farm App APIs expose `GET /api/sales/meat-learning` and `GET/POST /api/sales/meat-leads/<lead_id>/learning-events`.
+- Oom Sakkie has a read-only `sales_conversation_learning_status` tool for summary patterns.
+- Learning records explicitly set `applies_learning_now = false` and cannot change prompts, runtime, workflows, customer messages, public posts, quotes, orders, reservations, stock, dispatch, or physical actions.
 
 ### 5. Other Sales Streams
 

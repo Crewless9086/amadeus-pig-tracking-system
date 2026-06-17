@@ -38,6 +38,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     list_sales_send_design_requests,
     record_sales_campaign,
 )
+from modules.sales.conversation_learning import list_sales_conversation_learning_events
 from modules.reports.report_service import get_farm_attention_summary
 from modules.pig_weights.pig_weights_controller import (
     get_dashboard_data,
@@ -699,6 +700,56 @@ def sales_lead_tracking_status_handler(_args):
     }
 
 
+def sales_conversation_learning_status_handler(_args):
+    result, status_code = list_sales_conversation_learning_events(limit=50)
+    events = result.get("learning_events", []) if isinstance(result, dict) else []
+    learning_summary = result.get("summary", {}) if isinstance(result, dict) else {}
+    if status_code == 200:
+        summary = (
+            f"Sales conversation learning: {len(events)} append-only evidence event(s), "
+            f"{len(learning_summary.get('objections') or {})} objection type(s), "
+            f"{len(learning_summary.get('sam_misses') or {})} Sam miss type(s). "
+            "No prompt, rule, workflow, customer message, or public post was changed."
+        )
+    else:
+        summary = "Sales conversation learning is unavailable. No prompt, rule, workflow, customer message, or public post was changed."
+    return {
+        "success": status_code == 200,
+        "status": result.get("status", "unavailable") if isinstance(result, dict) else "unavailable",
+        "summary": summary,
+        "links": [{"label": "Sales Conversation Learning", "href": "/api/sales/meat-learning"}],
+        "stale_warnings": [] if status_code == 200 else [f"Sales conversation learning store unavailable (status {status_code})."],
+        "safety_notes": [
+            "Sales conversation learning is evidence-only. It does not change prompts, rules, runtime, workflows, customer messages, public posts, quotes, orders, reservations, stock, dispatch, or physical actions."
+        ],
+        "llm_context": {
+            "kind": "sales_conversation_learning_status",
+            "counts": {
+                "total_events": len(events),
+                "conversion_signals": learning_summary.get("conversion_signals") or {},
+                "missing_facts": learning_summary.get("missing_facts") or {},
+                "objections": learning_summary.get("objections") or {},
+                "confusion_signals": learning_summary.get("confusion_signals") or {},
+                "sam_misses": learning_summary.get("sam_misses") or {},
+            },
+            "top_improvement_suggestions": learning_summary.get("top_improvement_suggestions") or [],
+            "events": events[:8],
+            "applies_learning_now": False,
+            "changes_prompt_now": False,
+            "changes_runtime_now": False,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "calls_n8n": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+            "writes": False,
+            "dispatch_enabled": False,
+        },
+        "raw": result if isinstance(result, dict) else {},
+    }
+
+
 def jarvis_daily_command_brief_handler(_args):
     sections = {
         "farm": farm_operating_brief_handler({}),
@@ -707,6 +758,7 @@ def jarvis_daily_command_brief_handler(_args):
         "outreach_drafts": sales_outreach_draft_queue_handler({}),
         "send_design": sales_send_design_status_handler({}),
         "sales_leads": sales_lead_tracking_status_handler({}),
+        "sales_learning": sales_conversation_learning_status_handler({}),
         "command_center": agent_command_center_handler({}),
     }
     stale_warnings = []
@@ -836,13 +888,14 @@ def _daily_command_next_actions(sections, failed):
 
 
 def _daily_optional_section_unavailable(name, section):
-    return name in {"sales_campaigns", "outreach_drafts", "send_design", "sales_leads"} and section.get("status") in {
+    return name in {"sales_campaigns", "outreach_drafts", "send_design", "sales_leads", "sales_learning"} and section.get("status") in {
         "not_configured",
         "dependency_missing",
         "sales_campaign_read_failed",
         "sales_outreach_draft_read_failed",
         "sales_send_design_read_failed",
         "sales_lead_read_failed",
+        "sales_conversation_learning_read_failed",
     }
 
 
@@ -2976,6 +3029,15 @@ TOOL_REGISTRY = {
         requires_confirmation=False,
         handler=sales_lead_tracking_status_handler,
         description="Read-only sales outreach and lead tracking queue. Tracks inbound/customer state and WhatsApp window facts; never sends customers, creates orders, reserves stock, or changes stock.",
+    ),
+    "sales_conversation_learning_status": OomSakkieTool(
+        name="sales_conversation_learning_status",
+        input_schema=_empty_object_schema(),
+        output_schema=_tool_output_schema(),
+        risk_level=RiskLevel.READ_ONLY,
+        requires_confirmation=False,
+        handler=sales_conversation_learning_status_handler,
+        description="Read-only sales conversation learning evidence. Never changes prompts, sends customers, posts publicly, creates orders, reserves stock, or changes stock.",
     ),
     "farm_attention_summary": OomSakkieTool(
         name="farm_attention_summary",

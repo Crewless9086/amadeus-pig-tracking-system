@@ -322,17 +322,28 @@ Verified:
 - Local Beacon campaign tests passed.
 - Focused Sam Meat, Chatwoot hygiene, stress, Beacon, and Oom Sakkie service tests passed.
 
-### Phase 11O Active Build - Sales Conversation Learning Loop
+### Phase 11O Complete - Sales Conversation Learning Loop
 
-Required outcome:
+Implemented outcome:
 
 - Append-only learning events from sales conversations.
 - Track customer wants, objections, confusion, missed facts, Sam misses, conversion/loss reason, and improvement suggestion.
 - Analyst/Atlas summarizes patterns for Oom Sakkie.
 - Human approval remains required before any prompt, rule, tool, price, or workflow change.
 - This phase should feed later Beacon optimization by recording source/campaign clues, objections, conversion quality, and lost reasons.
+- Supabase migration: `supabase/migrations/202606180001_create_meat_sales_conversation_learning_events.sql`.
+- Learning builder/store: `modules/sales/conversation_learning.py`.
+- Sam Meat inbound handling now attempts an append-only learning event after normal processing.
+- Farm App APIs: `GET /api/sales/meat-learning` and `GET/POST /api/sales/meat-leads/<lead_id>/learning-events`.
+- Oom Sakkie read-only tool: `sales_conversation_learning_status`.
+- No prompt, rule, workflow, price, customer message, public post, quote, order, reservation, stock, dispatch, or physical action changes are allowed by this rail.
 
-### Phase 11P Planned - Beacon Media Library Foundation
+Verified:
+
+- Focused sales conversation learning tests passed.
+- Focused Sam Meat, route, Oom Sakkie, and frontend route contract tests passed.
+
+### Phase 11P Active Build - Beacon Media Library Foundation
 
 Required outcome:
 

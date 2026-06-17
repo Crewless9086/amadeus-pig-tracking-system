@@ -262,6 +262,7 @@ class OomSakkieServiceTests(unittest.TestCase):
                 "sales_outreach_draft_queue",
                 "sales_send_design_status",
                 "sales_lead_tracking_status",
+                "sales_conversation_learning_status",
                 "farm_attention_summary",
                 "power_current",
                 "power_recent",
