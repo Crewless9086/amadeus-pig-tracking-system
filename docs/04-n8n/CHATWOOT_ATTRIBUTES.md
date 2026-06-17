@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This file is the canonical register for Chatwoot labels and custom attributes used by the n8n workflow suite.
+This file is the canonical register for Chatwoot labels and custom attributes used by the n8n workflow suite and backend-native Chatwoot integrations.
 
 Chatwoot conversation custom attributes are high risk because the Chatwoot API replaces the full `custom_attributes` object on write. Any workflow node that writes conversation attributes must send the complete required snapshot, not only the field it is changing.
 
@@ -13,6 +13,7 @@ Chatwoot conversation custom attributes are high risk because the Chatwoot API r
 - Do not enable `1.3 - SAM - Sales Agent - Media Tool` until its media attribute write preserves order context.
 - Contact attributes are currently defined in Chatwoot for future memory use, but n8n does not yet read or write them.
 - Label writes must be tested carefully. If the Chatwoot label endpoint replaces labels instead of appending, every label write must preserve the existing label set.
+- Backend-native Sam Meat label/attribute writes must follow the same preservation rule as n8n writes.
 
 ## Conversation Attributes
 
@@ -30,6 +31,17 @@ Chatwoot conversation custom attributes are high risk because the Chatwoot API r
 | `last_images_sent_category` | text | `1.3` | Last media category sent. Disabled workflow. | Media writes only |
 | `last_images_sent_count` | number | `1.3` | Count of images sent. Disabled workflow. | Media writes only |
 | `images_sent_offset_map` | text | `1.3` | JSON map for repeat-send offsets. Disabled workflow. | Media writes only |
+| `sales_lane` | text | Backend Sam Meat | Sales lane marker, for example `meat_preorder`, `live_pig`, or `slaughter_abattoir`. | Meat writes only |
+| `meat_product_type` | text | Backend Sam Meat | Current meat product category such as `half_carcass`, `full_carcass`, `custom_cut`, or blank. | Meat writes only |
+| `meat_cut_set` | text | Backend Sam Meat | Cut set such as `Set A`, `Set B`, or blank. | Meat writes only |
+| `meat_delivery_mode` | text | Backend Sam Meat | `delivery`, `collection`, or blank. | Meat writes only |
+| `meat_delivery_town` | text | Backend Sam Meat | Delivery/collection town or area. | Meat writes only |
+| `meat_lead_id` | text | Backend Sam Meat | Backend sales lead ID linked to the conversation. | Meat writes only |
+| `meat_order_id` | text | Backend/Farm App later | Draft/final meat order ID when created. | Meat writes only |
+| `meat_payment_state` | text | Backend Sam Meat/Farm App later | `not_requested`, `deposit_pending`, `pop_received_unverified`, `deposit_confirmed`, `balance_due`, `paid`, or blank. | Meat writes only |
+| `meat_next_gate` | text | Backend Sam Meat/Farm App later | Current gate such as `collect_missing_facts`, `owner_price_review`, `await_customer_yes`, `confirm_deposit`, `find_second_half_buyer`, `confirm_final_balance`, or `schedule_delivery`. | Meat writes only |
+| `meat_followup_due_at` | date | Backend Sam Meat/Farm App later | Future follow-up target time/date. | Meat writes only |
+| `meat_last_customer_intent` | text | Backend Sam Meat | Short latest intent summary such as `asks_options`, `asks_price`, `confirms_booking`, or `sends_pop`. | Meat writes only |
 
 ## Required Conversation Attribute Snapshots
 
@@ -104,6 +116,33 @@ Before enabling `1.3`, update this node so media writes also preserve:
 - `pending_action`
 - escalation fields if present
 
+### Backend Sam Meat Writes
+
+Backend Sam Meat must preserve existing conversation attributes where possible and add/update only its meat-sales fields.
+
+Required meat snapshot fields:
+
+- `sales_lane`
+- `meat_product_type`
+- `meat_cut_set`
+- `meat_delivery_mode`
+- `meat_delivery_town`
+- `meat_lead_id`
+- `meat_order_id`
+- `meat_payment_state`
+- `meat_next_gate`
+- `meat_followup_due_at`
+- `meat_last_customer_intent`
+
+If the conversation also contains normal order fields, backend meat writes must preserve:
+
+- `order_id`
+- `order_status`
+- `conversation_mode`
+- `pending_action`
+- `payment_method`
+- escalation fields if present
+
 ## Contact Attributes
 
 These are defined in Chatwoot but are not currently read or written by n8n.
@@ -120,7 +159,7 @@ Do not rely on these fields until a deliberate contact-attribute read/write desi
 
 ## Labels
 
-These labels exist in Chatwoot.
+These labels exist or are planned in Chatwoot.
 
 | Label | Current n8n use | Notes |
 | --- | --- | --- |
@@ -134,6 +173,20 @@ These labels exist in Chatwoot.
 | `reserved` | Not currently written by n8n. | Defined only |
 | `sold` | Not currently written by n8n. | Defined only |
 | `waiting_list` | Not currently written by n8n. | Defined only |
+| `meat_lead` | Planned backend Sam Meat write. | Meat preorder lane. |
+| `half_carcass` | Planned backend Sam Meat write. | Product marker. |
+| `full_carcass` | Planned backend Sam Meat write. | Product marker. |
+| `set_a` | Planned backend Sam Meat write. | Cut-set marker. |
+| `delivery` | Planned backend Sam Meat write. | Delivery marker. |
+| `collection` | Planned backend Sam Meat write. | Collection marker. |
+| `deposit_pending` | Planned backend Sam Meat/Farm App write. | Payment gate marker. |
+| `pop_received_unverified` | Planned backend Sam Meat/Farm App write. | POP evidence only; does not unlock operations. |
+| `deposit_confirmed` | Planned Farm App/backend write. | Bank-confirmed deposit marker. |
+| `balance_due` | Planned Farm App/backend write. | Final balance pending. |
+| `ready_for_delivery` | Planned Farm App/backend write. | Delivery release gate ready. |
+| `needs_followup` | Planned backend/Farm App write. | Human/system follow-up needed. |
+| `lost_lead` | Planned backend/Farm App write. | Buyer dropped or not moving forward. |
+| `test_flow` | Planned backend/Farm App write. | Test data marker for easy cleanup. |
 
 ## Label Write Risk
 
@@ -149,5 +202,6 @@ Before adding more label behavior, live-test whether the Chatwoot labels endpoin
 - `1.1 Release Conversation to Auto` was live-verified on 2026-04-29 and now writes evaluated values back to Chatwoot.
 - Phase 1.3 payment-method preservation was live-verified on 2026-04-29 across normal update, next-turn readback, cancel pending, and escalation release.
 - Confirm the Chatwoot label endpoint behavior before expanding labels.
+- Phase 11L: implement backend-native Sam Meat label/attribute writes for meat-sales hygiene after confirming append-vs-replace behavior.
 - Fix `1.3 Patch Conversation Attributes` before enabling media.
 - Decide whether contact attributes should become a real memory layer after order lifecycle stabilization.

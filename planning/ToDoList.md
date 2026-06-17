@@ -58,3 +58,7 @@ Add new scratch bullets below, then move them into the correct canonical file.
 - Oom Sakkie analyst/review helper moved to `NEXT_STEPS.md` Phase 10.7B and `docs/01-architecture/OOM_SAKKIE_AGENT_ROSTER.md`: advisory review queue only for now; no automatic trace marking or autonomous loop.
 - Bulk-weight 20-vs-68 live-data note moved to `NEXT_STEPS.md` Phase 9.6C and `CURRENT_STATE.md`; local report visibility correction is ready for browser/live confirmation.
 - Litter `LIT-2026-EB92` male/female sex-count capture note moved to `NEXT_STEPS.md` Phase 9.7J and `CURRENT_STATE.md`; local preview/save action is ready for browser testing.
+- 2026-06-16 sales launch repoint moved to `HOW_WE_WORK.md`, `CURRENT_STATE.md`, `NEXT_STEPS.md` Phase 11C, and `PORK_BUSINESS_INTEGRATION_READINESS_MAP.md`: Oom Sakkie UI is parked/not passed; next build is one real manual/inbound lead through the owner-review sales lead rail.
+- Telegram Order Alert with buttons/suggested values remains covered by `NEXT_STEPS.md` Phase 1.9 follow-up/internal operations notification planning; do not build it while Phase 11L Chatwoot Sales Hygiene is the active money-test slice.
+
+No active scratch bullets. Move any new note into `NEXT_STEPS.md`, `CURRENT_STATE.md`, or a module doc before implementation.

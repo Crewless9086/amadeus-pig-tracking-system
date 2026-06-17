@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11 backend-native Sam Meat cutover |
-| **Status** | Oom Sakkie farm-command UI exact-match work is parked and not accepted yet. The Farm App is the operational surface for meat leads. The approved direction is to move Sam Meat from n8n into the backend now, because there is no real customer traffic yet. n8n remains fallback only until backend Chatwoot inbound, Sam Meat runtime, audit events, and controlled outbound reply smoke tests pass. |
-| **Current focus** | Build backend-native Sam Meat runtime and Chatwoot inbound webhook: parse Chatwoot inbound messages, run backend-owned Sam Meat decision logic, write lead/audit events, and send only allowed customer replies through Chatwoot with strict gates. |
-| **Current last verified** | **2026-06-16** - Farm App `/sales/meat-leads` is live-built with owner details approval, exact-message approval/send, customer yes event, and draft-order gate. Commit `557297f` passed local tests and GitHub Audit Rails/Browser Behavior. |
+| **Today's focus** | Phase 11L Chatwoot Sales Hygiene |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, and delivery-release gate. The Farm App remains the operational surface. Before Prisma/Beacon creates public demand, Chatwoot must be clean enough for the owner to manage leads visually. |
+| **Current focus** | Define and implement first meat-sales Chatwoot labels/custom attributes: sales lane, product/cut set, delivery mode/town, lead/order IDs, payment state, next gate, follow-up need, and test-flow marker. Preserve existing labels and order attributes. |
+| **Current last verified** | **2026-06-17** - Final balance reconciliation and journey gate pushed in commits `c5c10ce` and `79f2184`; local 571-test suite passed, browser behavior smoke passed, and GitHub Audit Rails/Browser Behavior passed. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

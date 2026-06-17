@@ -10,6 +10,8 @@ This file captures the target business model for Amadeus Farm pork sales so it c
 
 Use this file for owner edits, assumptions, pricing changes, operating notes, and business rules. Implementation tasks should stay out of this file until the module is deliberately moved into `docs/00-start-here/NEXT_STEPS.md`.
 
+For the short current launch plan, use `MEAT_SALES_LAUNCH_PLAN.md`. This file is the deep reference and should not become the daily task tracker.
+
 ## Strategic Direction
 
 Amadeus Farm is moving from only selling live pigs into a multi-stream pork sales model:

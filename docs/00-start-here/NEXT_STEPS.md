@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Backend-native Sam Meat live proof passed; price book, Butcher match, carcass ops, instruction approval/send, fulfilment timeline, driver route, customer journey notification rails, Sam delivery capture, and direct Chatwoot journey send active | Next: owner-review on real meat leads; then add route grouping and WhatsApp template provider wiring. |
+| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, and delivery-release gate | Next: Chatwoot Sales Hygiene, then Sales Stress-Test Pack, then Prisma/Beacon Meat Launch Campaign. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -208,6 +208,76 @@ Next after this build:
 - Smoke a real Chatwoot lead where Sam asks for delivery details, captures the address, and the Farm App builds/approves/sends one journey update.
 - Add zone/route grouping once there are enough delivery examples.
 - Add WhatsApp template provider handling for closed 24-hour windows.
+
+### Phase 11K Complete - Final Balance Reconciliation And Journey Gate
+
+Owner direction on 2026-06-17: meat orders need a real closing gate so the farm can calculate the final amount from actual packed weight, subtract only bank-confirmed money, and avoid releasing delivery before the final balance is confirmed.
+
+Required outcome:
+
+- Append-only `oom_sakkie_meat_reconciliation_events` records actual packed weight, price/kg, final amount, confirmed deposit amount, balance due, and balance confirmed in bank.
+- Farm App `/sales/meat-leads` exposes a simple Final Balance panel: record packed weight, confirm final balance in bank, and show the draft customer balance message.
+- POP remains evidence only and does not unlock delivery.
+- Fulfilment timeline reads final reconciliation state.
+- After butchery and delivery-address capture, delivery scheduling is blocked until final balance is confirmed in bank.
+- Customer journey drafts can now say packed weight is pending, final balance is due, or final balance is confirmed and delivery scheduling is next.
+
+Verified:
+
+- Local JS check passed.
+- Full local Oom Sakkie/Sales suite passed at 571 tests.
+- Browser behavior smoke passed.
+- GitHub Audit Rails and Browser Behavior passed for commits `c5c10ce` and `79f2184`.
+
+### Phase 11L Active Build - Chatwoot Sales Hygiene
+
+Owner direction on 2026-06-17: before Prisma/Beacon creates traffic, the Chatwoot inbox must be visually clean and easy to follow. The system should use labels and attributes so meat leads, payment state, next gate, and follow-up needs are visible without opening every backend page.
+
+Reference plan:
+
+- `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`
+- `docs/04-n8n/CHATWOOT_ATTRIBUTES.md`
+
+Required outcome:
+
+- Define the first meat-sales Chatwoot labels and custom attributes.
+- Backend Sam Meat applies safe labels/attributes when meat lead state changes.
+- Label writes must preserve existing labels if the Chatwoot API replaces label sets.
+- Attribute writes must preserve existing order context fields where the conversation also has normal order history.
+- Meat lead state should be findable in Chatwoot by lane, product/cut set, delivery/collection, payment state, next gate, follow-up need, and test-flow marker.
+- No new public posts, no auto-marketing, no quote/invoice automation, and no autonomous customer send beyond the existing gated Sam/Journey paths.
+
+Next after this build:
+
+- Phase 11M Sales Stress-Test Pack.
+- Phase 11N Prisma/Beacon Meat Launch Campaign drafts.
+- Phase 11O Conversation Learning Loop.
+
+### Phase 11M Planned - Sales Stress-Test Pack
+
+Required outcome:
+
+- 30-50 messy customer scenarios for Sam Meat.
+- Cover vague interest, budget constraints, price objections, wrong product confusion, live-pig vs pork confusion, location pins, delivery questions, POP messages, slow replies, closed WhatsApp windows, customer frustration, and final booking confirmation.
+- Each scenario defines expected captured facts, expected next question, expected Chatwoot labels/attributes, and forbidden behavior.
+
+### Phase 11N Planned - Prisma/Beacon Meat Launch Campaign
+
+Required outcome:
+
+- Owner-approved campaign angles for the first meat preorder push.
+- Draft social media captions, WhatsApp status/channel copy, Facebook/Instagram post text, and story-led farm updates.
+- All drafts must be truthful, limited-availability, preorder-focused, and must not promise stock, timing, or delivery beyond the approved sales model.
+- No public post or outbound campaign send until owner approval and channel rules are explicit.
+
+### Phase 11O Planned - Sales Conversation Learning Loop
+
+Required outcome:
+
+- Append-only learning events from sales conversations.
+- Track customer wants, objections, confusion, missed facts, Sam misses, conversion/loss reason, and improvement suggestion.
+- Analyst/Atlas summarizes patterns for Oom Sakkie.
+- Human approval remains required before any prompt, rule, tool, price, or workflow change.
 
 ### Staying on track (Cursor + Claude Code)
 
