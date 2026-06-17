@@ -53,6 +53,8 @@ Near-term money test:
 
 Naming note: existing docs use `Beacon` for public/social content and `Prism` for UI/design. The owner sometimes says `Prisma` for the marketing/social role. Until renamed deliberately, treat `Prisma/Beacon` as the marketing demand-generation role.
 
+Full Beacon scope note: Beacon's long-term role is larger than the Phase 11N launch packet. The future media library, sale-readiness scanning, campaign planning, scheduling, paid promotion, monitoring, and optimization scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Those automation phases are parked until the sales learning loop and approval rules are proven.
+
 ## Next Build Sequence
 
 ### 1. Chatwoot Sales Hygiene
@@ -141,6 +143,7 @@ Implemented outcome:
 - No post/send automation until owner approval and channel rules are explicit.
 - `modules/sales/beacon_campaign.py` builds the canonical draft-only launch packet.
 - `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` contains the owner-review copy packet.
+- `docs/05-ai/agents/beacon/BEACON_SCOPE.md` logs the full future Beacon vision so it can be built later in controlled phases.
 - Tests prove Beacon has no authority to post publicly, send customer messages, call Chatwoot/Meta/n8n, create orders, create quotes/invoices, reserve carcasses, change stock, book slaughter/butchery, or confirm payment.
 
 Owner review before using the copy:

@@ -247,6 +247,7 @@ Role: Media pages, public updates, and marketing draft specialist.
 Job:
 
 - Draft farm updates, product page ideas, Facebook/Meta copy, and customer education content.
+- Later, scan sale readiness, plan campaign timing/channels/spend, manage approved media assets, monitor results, and recommend stop/change/boost/reuse actions.
 
 First inputs:
 
@@ -258,6 +259,7 @@ First output:
 
 - Draft-only content packets requiring owner approval.
 - Current meat launch packet: `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`.
+- Full future scope: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
 
 Risk:
 

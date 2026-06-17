@@ -19,7 +19,7 @@ Specialists must not become uncontrolled separate brains. They start read-only o
 | Sam | Customer conversation and intake through Chatwoot/WhatsApp. Collects missing sales facts and writes append-only lead/fact events. | May reply only inside configured backend gates. Must not invent price, timing, stock, bank confirmation, or final booking. |
 | Butcher | Meat pipeline and pig/carcass matching. Prioritizes open half-carcass reservations and protects against overbooking. | Recommendation and gated reservation support only. No autonomous slaughter booking or stock mutation. |
 | Ledger | Business, pricing, margin, pipeline, and follow-up priority advisor. | Advisory only. No customer sends, quote/invoice creation, or price changes without owner/backend approval. |
-| Prisma/Beacon | Public/social demand-generation drafts for meat launch campaigns. Phase 11N has a draft-only packet for the first pork freezer preorder pilot. | Draft-only until owner approves public posting and channel rules. Existing system docs call this role `Beacon`; owner may refer to it as `Prisma`. |
+| Prisma/Beacon | Public/social demand-generation drafts for meat launch campaigns. Full future scope includes media library, opportunity scanning, scheduling, paid promotion, performance monitoring, and campaign optimization. Phase 11N has a draft-only packet for the first pork freezer preorder pilot. | Draft-only until owner approves public posting and channel rules. Existing system docs call this role `Beacon`; owner may refer to it as `Prisma`. |
 | Atlas / Analyst | Reviews sales conversations, objections, missing facts, conversion/loss reasons, and improvement opportunities. | Learning evidence and recommendations only. No automatic prompt/rule/tool changes. |
 | Oom Sakkie | Summarizes state, next gates, risks, and learning for the owner. | Internal command center. Does not replace Sam in customer conversations. |
 
@@ -52,6 +52,6 @@ Order:
 3. Prisma/Beacon Meat Launch Campaign.
 4. Sales Conversation Learning Loop.
 
-Phase 11N note: Beacon's meat launch packet lives in `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` and is backed by `modules/sales/beacon_campaign.py`. It cannot post, send customer messages, create quotes/invoices/orders, reserve stock, or confirm payment.
+Phase 11N note: Beacon's meat launch packet lives in `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` and is backed by `modules/sales/beacon_campaign.py`. Full Beacon scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Beacon cannot post, send customer messages, create quotes/invoices/orders, reserve stock, or confirm payment until later approved authority levels exist.
 
 Other sales options remain planned, but the first agent pattern is proven through Meat Sales before repeating it for live pig sales, slaughter/abattoir sales, assisted slaughter, or custom cuts.

@@ -313,6 +313,7 @@ Implemented outcome:
 - No public post or outbound campaign send until owner approval and channel rules are explicit.
 - Canonical packet builder: `modules/sales/beacon_campaign.py`.
 - Owner-review packet: `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md`.
+- Full future Beacon scope: `docs/05-ai/agents/beacon/BEACON_SCOPE.md`.
 - Guard tests: `tests/test_beacon_campaign.py`.
 - Beacon remains draft-only: no Chatwoot, Meta, n8n, quote, invoice, order, stock, carcass reservation, slaughter booking, butcher booking, payment confirmation, or public send authority.
 
@@ -329,6 +330,17 @@ Required outcome:
 - Track customer wants, objections, confusion, missed facts, Sam misses, conversion/loss reason, and improvement suggestion.
 - Analyst/Atlas summarizes patterns for Oom Sakkie.
 - Human approval remains required before any prompt, rule, tool, price, or workflow change.
+- This phase should feed later Beacon optimization by recording source/campaign clues, objections, conversion quality, and lost reasons.
+
+### Phase 11P Planned - Beacon Media Library Foundation
+
+Required outcome:
+
+- Create a safe asset-library model for Beacon.
+- Support manual/folder/Telegram-style asset intake planning.
+- Track asset source, tags, sale-stream relevance, quality, privacy/safety risks, owner approval state, and campaign usage history.
+- Beacon may suggest assets but must not use unapproved assets publicly.
+- No Meta, public posting, scheduling, paid spend, or automatic media use in this phase.
 
 ### Staying on track (Cursor + Claude Code)
 
