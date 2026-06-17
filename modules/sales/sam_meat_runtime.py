@@ -333,8 +333,11 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
+    price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
     if cut_menu_reply:
         reply = cut_menu_reply
+    elif price_or_document_reply:
+        reply = price_or_document_reply
     elif record_status == 400 and record_result.get("sam_next_question"):
         reply = record_result["sam_next_question"]
     elif facts.get("product_type") == "unknown":
@@ -475,7 +478,9 @@ def _deterministic_extract(message):
             break
 
     timing = ""
-    if "next available week" in lower:
+    if "next available farm run" in lower:
+        timing = "next available farm run"
+    elif "next available week" in lower:
         timing = "next available week"
     elif "next week" in lower:
         timing = "next week"
@@ -536,6 +541,27 @@ def _cut_menu_reply(message, facts):
     return (
         f"The current pork cut options are: {menu} "
         "I can note which one you prefer, but price, timing, and deposit still need farm approval before a quote or booking."
+    )
+
+
+def _price_or_document_guard_reply(message, facts):
+    text = str(message or "").lower()
+    asks_money_or_document = bool(re.search(r"\b(price|cost|quote|invoice|how much)\b", text))
+    if not asks_money_or_document or facts.get("product_type") == "unknown":
+        return ""
+    missing = []
+    if not facts.get("delivery_or_collection"):
+        missing.append("delivery or collection")
+    if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
+        missing.append("delivery address")
+    if not facts.get("timing"):
+        missing.append("timing")
+    if not facts.get("payment_method"):
+        missing.append("payment method")
+    missing_text = f" I still need {', '.join(missing)}." if missing else ""
+    return (
+        "I can note the request, but the farm must confirm price, timing, and any deposit rule "
+        f"before quoting, invoicing, or booking anything.{missing_text}"
     )
 
 

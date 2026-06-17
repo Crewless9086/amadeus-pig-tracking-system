@@ -224,7 +224,14 @@ def _labels(attrs, inbound, lead_payload, facts, decision, booking_confirmation,
     payment_state = attrs.get("meat_payment_state")
     if payment_state in {"deposit_pending", "pop_received_unverified", "deposit_confirmed", "balance_due"}:
         labels.add(payment_state)
-    if attrs.get("meat_next_gate") in {"collect_missing_facts", "owner_price_review", "await_customer_yes", "confirm_bank_receipt"}:
+    if attrs.get("meat_next_gate") in {
+        "collect_missing_facts",
+        "owner_price_review",
+        "await_customer_yes",
+        "send_deposit_instruction",
+        "await_pop",
+        "confirm_bank_receipt",
+    }:
         labels.add("needs_followup")
     joined = " ".join(
         _clean(source.get(key), 1000)

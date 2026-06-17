@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11M Sales Stress-Test Pack |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, and Chatwoot sales hygiene. The Farm App remains the operational surface. |
-| **Current focus** | Build 30-50 messy Sam Meat sales scenarios covering vague interest, budget, price objections, wrong product confusion, location pins, delivery questions, POP messages, slow replies, closed WhatsApp windows, customer frustration, and final booking confirmation. |
-| **Current last verified** | **2026-06-17** - Chatwoot sales hygiene passed the 575-test Oom Sakkie/Sales local suite and JS smoke parse; final balance reconciliation and journey gate pushed in commits `c5c10ce` and `79f2184`; GitHub Audit Rails/Browser Behavior passed. |
+| **Today's focus** | Phase 11M.1 Structured Buyer Preference Capture |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, and the first 40-scenario stress-test pack. The Farm App remains the operational surface. |
+| **Current focus** | Capture buyer budget, target packed kg, and match preference as structured Sam Meat facts so Butcher can later recommend the right pig/carcass without owner interpretation. |
+| **Current last verified** | **2026-06-17** - Sam Meat stress pack passed 40/40 launch-blocking scenarios; local Sam Meat/Chatwoot stress suite passed 25 tests; Chatwoot sales hygiene passed the 575-test Oom Sakkie/Sales local suite and JS smoke parse. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

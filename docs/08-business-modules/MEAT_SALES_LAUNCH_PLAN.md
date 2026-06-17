@@ -15,9 +15,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Farm App `/sales/meat-leads` is the operator surface.
 - Price book, estimate rules, Butcher pig matching, carcass reservation, deposit gate, instruction drafts, fulfilment timeline, driver route, journey drafts, packed-weight reconciliation, final balance, and delivery release gates exist.
 - Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
+- The first Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and passes launch-blocking assertions. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. The next work must stress-test buyer behavior, then prepare campaign launch and the learning loop before real traffic is pushed into it.
+This is not yet a public money machine. The next work should capture structured buyer preferences from the stress-test gaps, then prepare campaign launch and the learning loop before real traffic is pushed into it.
 
 ## Business Priority
 
@@ -104,11 +105,23 @@ Useful custom attributes:
 
 Goal: find failure points before public launch.
 
-Required outcome:
+Status: complete in Phase 11M.
+
+Implemented outcome:
 
 - 30-50 realistic test conversations.
 - Include vague buyers, budget buyers, price objections, delivery questions, location pins, POP messages, wrong product, live-pig confusion, cut-set questions, slow replies, closed WhatsApp windows, and angry/confused messages.
 - Each scenario should define expected facts, expected next question, expected labels/attributes, and what must not happen.
+- 40 scenarios are implemented in `modules/sales/sam_meat_stress.py`.
+- The local runner is `scripts/sam_meat_stress_test.py`.
+- The first run passed 40/40 launch-blocking assertions with 9 known improvement opportunities.
+
+Highest-value improvements before public demand:
+
+- Budget amount should become a structured Sam/Butcher matching fact.
+- Target packed kg should become a structured Sam/Butcher matching fact.
+- Match preference such as heaviest, soonest, cheapest, or best fit should become structured.
+- Plain-text Google Maps links, Afrikaans/typos, frustration wording, and non-pork redirects should improve after the preference capture slice.
 
 ### 3. Prisma/Beacon Meat Launch Campaign
 
