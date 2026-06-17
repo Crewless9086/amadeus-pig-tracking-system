@@ -390,6 +390,30 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), service_result)
         create_reservation.assert_called_once_with("OSK-SALES-LEAD-1", {"pig_id": "PIG-1"})
 
+    def test_meat_sales_lead_reservation_event_route_records_cancellation(self):
+        service_result = {
+            "success": True,
+            "status": "reservation_cancelled",
+            "records_meat_ops": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "record_carcass_reservation_event",
+            return_value=(service_result, 201),
+        ) as record_event:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/reservation-events",
+                json={"reservation_id": "RES-1", "event_type": "reservation_cancelled", "reason": "Test cleanup"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        record_event.assert_called_once_with(
+            "OSK-SALES-LEAD-1",
+            {"reservation_id": "RES-1", "event_type": "reservation_cancelled", "reason": "Test cleanup"},
+        )
+
     def test_meat_sales_lead_deposit_event_route_records_gate(self):
         service_result = {
             "success": True,

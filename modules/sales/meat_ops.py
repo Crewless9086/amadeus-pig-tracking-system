@@ -36,7 +36,7 @@ def get_meat_ops_status(lead_id, database_url=None):
     try:
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
-                reservations = _fetch_reservations(cursor, lead_id=lead_id)
+                reservations = _decorate_reservations(cursor, _fetch_reservations(cursor, lead_id=lead_id))
                 deposits = _fetch_deposits(cursor, lead_id=lead_id)
                 drafts = _decorate_instruction_drafts(cursor, _fetch_instruction_drafts(cursor, lead_id=lead_id))
     except Exception as exc:
@@ -83,6 +83,7 @@ def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=Non
         with psycopg.connect(database_url, connect_timeout=10) as connection:
             with connection.cursor() as cursor:
                 existing = _fetch_reservations(cursor, pig_id=pig_id)
+                existing = _decorate_reservations(cursor, existing)
                 side, status, block = _next_carcass_slot(product_type, existing)
                 if block:
                     return {"success": False, "status": block, "pig_id": pig_id, "existing_reservations": existing, **_authority(False)}, 409
@@ -104,7 +105,7 @@ def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=Non
                     """,
                     params,
                 )
-                reservations = _fetch_reservations(cursor, pig_id=pig_id)
+                reservations = _decorate_reservations(cursor, _fetch_reservations(cursor, pig_id=pig_id))
                 deposits = _fetch_deposits(cursor, reservation_id=params["reservation_id"])
     except Exception as exc:
         return _failed("carcass_reservation_write_failed", exc), 503
@@ -175,7 +176,7 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
                     """,
                     params,
                 )
-                reservations = _fetch_reservations(cursor, lead_id=lead_id)
+                reservations = _decorate_reservations(cursor, _fetch_reservations(cursor, lead_id=lead_id))
                 deposits = _fetch_deposits(cursor, lead_id=lead_id)
     except Exception as exc:
         return _failed("meat_deposit_event_write_failed", exc), 503
@@ -187,6 +188,63 @@ def record_meat_deposit_event(lead_id, payload=None, database_url=None):
         "deposit_event": params,
         "assembly": _assembly_status(reservations, deposits),
         "next_gate": "instruction_drafts_available_when_full_carcass_and_deposit_confirmed",
+        **_authority(True),
+    }, 201
+
+
+def record_carcass_reservation_event(lead_id, payload=None, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    lead_id = _clean(lead_id, 100)
+    reservation_id = _clean(payload.get("reservation_id"), 100)
+    if not lead_id:
+        return {"success": False, "status": "lead_id_required", **_authority(False)}, 400
+    if not reservation_id:
+        return {"success": False, "status": "reservation_id_required", **_authority(False)}, 400
+    event_type = _clean(payload.get("event_type") or "reservation_cancelled", 80)
+    if event_type not in {"reservation_cancelled", "reservation_reinstated", "reservation_note"}:
+        return {"success": False, "status": "invalid_reservation_event_type", **_authority(False)}, 400
+    if event_type == "reservation_cancelled" and not _clean(payload.get("reason"), 500):
+        return {"success": False, "status": "reservation_cancel_reason_required", **_authority(False)}, 400
+    database_url = _db_url(database_url)
+    if not database_url:
+        return _unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                reservation = _fetch_reservation(cursor, lead_id, reservation_id)
+                if not reservation:
+                    return {"success": False, "status": "reservation_not_found", **_authority(False)}, 404
+                event = _reservation_event_params(lead_id, reservation_id, event_type, payload)
+                cursor.execute(
+                    """
+                    insert into public.oom_sakkie_meat_reservation_events (
+                        reservation_event_id, lead_id, reservation_id,
+                        event_type, reason, notes_json, recorded_by, created_at
+                    )
+                    values (
+                        %(reservation_event_id)s, %(lead_id)s, %(reservation_id)s,
+                        %(event_type)s, %(reason)s, %(notes_json)s::jsonb, %(recorded_by)s, now()
+                    )
+                    """,
+                    event,
+                )
+                reservations = _decorate_reservations(cursor, _fetch_reservations(cursor, lead_id=lead_id))
+                deposits = _fetch_deposits(cursor, lead_id=lead_id)
+    except Exception as exc:
+        return _failed("reservation_event_write_failed", exc), 503
+    return {
+        "success": True,
+        "configured": True,
+        "status": event_type,
+        "mode": "meat_reservation_event_append_only",
+        "reservation_event": event,
+        "reservations": reservations,
+        "assembly": _assembly_status(reservations, deposits),
+        "next_gate": "reservation_reinstatement_or_new_match_if_cancelled",
         **_authority(True),
     }, 201
 
@@ -433,7 +491,7 @@ def record_meat_instruction_exception(lead_id, instruction_draft_id, payload=Non
 
 
 def _next_carcass_slot(product_type, existing):
-    active = [item for item in existing if item.get("status") in ACTIVE_RESERVATION_STATUSES]
+    active = _active_reservations(existing)
     if any(item.get("carcass_side") == "full" for item in active):
         return "", "", "pig_already_full_carcass_committed"
     half_sides = {item.get("carcass_side") for item in active if item.get("carcass_side") in {"half_a", "half_b"}}
@@ -449,7 +507,7 @@ def _next_carcass_slot(product_type, existing):
 
 
 def _assembly_status(reservations, deposits):
-    active = [item for item in reservations if item.get("status") in ACTIVE_RESERVATION_STATUSES]
+    active = _active_reservations(reservations)
     by_pig = {}
     for item in active:
         by_pig.setdefault(item["pig_id"], []).append(item)
@@ -494,6 +552,33 @@ def _reservation_params(lead_id, product_type, side, status, recommendation, mat
         "match_snapshot_json": json.dumps(match, default=str, ensure_ascii=True, sort_keys=True),
         "created_by": _clean(payload.get("created_by") or "Butcher", 80),
     }
+
+
+def _reservation_event_params(lead_id, reservation_id, event_type, payload):
+    payload = payload if isinstance(payload, dict) else {}
+    notes = payload.get("notes") if isinstance(payload.get("notes"), dict) else {
+        "notes": _clean(payload.get("notes"), 800),
+    }
+    return {
+        "reservation_event_id": _id(
+            "OSK-MEAT-RES-EVENT",
+            f"{lead_id}|{reservation_id}|{event_type}|{datetime.now(timezone.utc).isoformat()}",
+        ),
+        "lead_id": lead_id,
+        "reservation_id": reservation_id,
+        "event_type": event_type,
+        "reason": _clean(payload.get("reason"), 500),
+        "notes_json": json.dumps(notes, default=str, ensure_ascii=True, sort_keys=True),
+        "recorded_by": _clean(payload.get("recorded_by") or "Farm App", 80),
+    }
+
+
+def _active_reservations(reservations):
+    return [
+        item for item in reservations or []
+        if item.get("status") in ACTIVE_RESERVATION_STATUSES
+        and item.get("effective_status", item.get("status")) in ACTIVE_RESERVATION_STATUSES
+    ]
 
 
 def _instruction_draft_params(lead_id, reservation, deposits, payload):
@@ -658,6 +743,44 @@ def _fetch_reservations(cursor, lead_id=None, pig_id=None):
     return [_reservation_row(row) for row in cursor.fetchall()]
 
 
+def _fetch_reservation(cursor, lead_id, reservation_id):
+    cursor.execute(
+        """
+        select reservation_id, lead_id, order_id, pig_id, tag_number, product_type,
+               carcass_side, cut_set, status, estimated_packed_weight, estimated_total,
+               currency, match_snapshot_json, created_by, created_at
+        from public.oom_sakkie_meat_carcass_reservations
+        where lead_id = %(lead_id)s
+          and reservation_id = %(reservation_id)s
+        """,
+        {"lead_id": lead_id, "reservation_id": reservation_id},
+    )
+    row = cursor.fetchone()
+    return _reservation_row(row) if row else {}
+
+
+def _fetch_reservation_events(cursor, lead_id=None, reservation_id=None):
+    where = []
+    params = {}
+    if lead_id:
+        where.append("lead_id = %(lead_id)s")
+        params["lead_id"] = lead_id
+    if reservation_id:
+        where.append("reservation_id = %(reservation_id)s")
+        params["reservation_id"] = reservation_id
+    cursor.execute(
+        f"""
+        select reservation_event_id, lead_id, reservation_id, event_type,
+               reason, notes_json, recorded_by, created_at
+        from public.oom_sakkie_meat_reservation_events
+        {'where ' + ' and '.join(where) if where else ''}
+        order by created_at asc
+        """,
+        params,
+    )
+    return [_reservation_event_row(row) for row in cursor.fetchall()]
+
+
 def _fetch_deposits(cursor, lead_id=None, reservation_id=None):
     where = []
     params = {}
@@ -760,6 +883,56 @@ def _reservation_row(row):
         "created_by": row[13] or "",
         "created_at": _iso(row[14]),
     }
+
+
+def _reservation_event_row(row):
+    return {
+        "reservation_event_id": row[0],
+        "lead_id": row[1],
+        "reservation_id": row[2],
+        "event_type": row[3],
+        "reason": row[4] or "",
+        "notes": row[5] if isinstance(row[5], dict) else {},
+        "recorded_by": row[6] or "",
+        "created_at": _iso(row[7]),
+    }
+
+
+def _decorate_reservations(cursor, reservations):
+    if not reservations:
+        return []
+    events = _fetch_reservation_events(cursor)
+    by_reservation = {}
+    for event in events:
+        by_reservation.setdefault(event.get("reservation_id"), []).append(event)
+    decorated = []
+    for reservation in reservations:
+        item = dict(reservation)
+        item_events = by_reservation.get(item.get("reservation_id"), [])
+        item["events"] = item_events
+        item["latest_cancellation"] = _latest_reservation_event(item_events, "reservation_cancelled")
+        item["latest_reinstatement"] = _latest_reservation_event(item_events, "reservation_reinstated")
+        item["effective_status"] = _reservation_effective_status(item, item_events)
+        decorated.append(item)
+    return decorated
+
+
+def _reservation_effective_status(reservation, events):
+    cancellation = _latest_reservation_event(events, "reservation_cancelled")
+    reinstatement = _latest_reservation_event(events, "reservation_reinstated")
+    if cancellation and (
+        not reinstatement
+        or reinstatement.get("created_at", "") < cancellation.get("created_at", "")
+    ):
+        return "cancelled"
+    return reservation.get("status", "")
+
+
+def _latest_reservation_event(events, event_type):
+    for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
+        if event.get("event_type") == event_type:
+            return event
+    return {}
 
 
 def _deposit_row(row):

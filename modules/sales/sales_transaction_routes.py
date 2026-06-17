@@ -39,6 +39,7 @@ from modules.sales.meat_ops import (
     build_meat_instruction_drafts,
     create_carcass_reservation_from_lead,
     get_meat_ops_status,
+    record_carcass_reservation_event,
     record_meat_deposit_event,
     record_meat_instruction_exception,
     send_approved_meat_instruction,
@@ -217,6 +218,13 @@ def meat_sales_lead_ops_status(lead_id):
 def meat_sales_lead_carcass_reservation(lead_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = create_carcass_reservation_from_lead(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/reservation-events", methods=["POST"])
+def meat_sales_lead_reservation_event(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_carcass_reservation_event(lead_id, payload)
     return jsonify(result), status_code
 
 

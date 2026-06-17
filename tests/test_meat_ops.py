@@ -60,6 +60,25 @@ class MeatOpsTests(unittest.TestCase):
         self.assertTrue(ready["deposit_confirmed"])
         self.assertTrue(ready["ready_for_slaughter_booking"])
 
+    def test_cancelled_reservation_does_not_count_as_active(self):
+        reservations = [{
+            "reservation_id": "RES-1",
+            "pig_id": "PIG-1",
+            "carcass_side": "half_a",
+            "status": "half_reserved_pending_pair",
+            "effective_status": "cancelled",
+            "created_at": "2026-06-16T01:00:00",
+        }]
+
+        assembly = meat_ops._assembly_status(reservations, [])
+        side, status, block = meat_ops._next_carcass_slot("half_carcass", reservations)
+
+        self.assertEqual(assembly["status"], "interest_only")
+        self.assertEqual(assembly["active_reservation_count"], 0)
+        self.assertEqual(side, "half_a")
+        self.assertEqual(status, "half_reserved_pending_pair")
+        self.assertEqual(block, "")
+
     def test_confirmed_deposit_requires_amount_and_reference(self):
         missing_amount, amount_code = meat_ops.record_meat_deposit_event(
             "LEAD-1",
@@ -76,6 +95,16 @@ class MeatOpsTests(unittest.TestCase):
         self.assertEqual(missing_amount["status"], "deposit_amount_required")
         self.assertEqual(reference_code, 400)
         self.assertEqual(missing_reference["status"], "deposit_reference_required")
+
+    def test_cancel_reservation_requires_reason(self):
+        result, status_code = meat_ops.record_carcass_reservation_event(
+            "LEAD-1",
+            {"reservation_id": "RES-1", "event_type": "reservation_cancelled"},
+            database_url="",
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertEqual(result["status"], "reservation_cancel_reason_required")
 
     def test_instruction_drafts_are_internal_drafts_only(self):
         reservation = {
