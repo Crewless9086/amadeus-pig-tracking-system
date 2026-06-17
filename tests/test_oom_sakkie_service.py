@@ -5776,6 +5776,9 @@ def literal_false_is_allowed():
             "timing": "next available week",
             "delivery_or_collection": "collection",
             "payment_method": "EFT",
+            "budget_amount": "3000",
+            "target_packed_kg": "25",
+            "match_preference": "best_fit",
             "notes": "Wants price and timing",
         })
 
@@ -5784,6 +5787,9 @@ def literal_false_is_allowed():
         self.assertEqual(lead_payload["created_by"], "sam_meat_intake")
         self.assertEqual(lead_payload["interest"]["sam_intake_lane"], "meat_preorder")
         self.assertEqual(lead_payload["interest"]["product_type"], "half_carcass")
+        self.assertEqual(lead_payload["interest"]["budget_amount"], "3000")
+        self.assertEqual(lead_payload["interest"]["target_packed_kg"], "25")
+        self.assertEqual(lead_payload["interest"]["match_preference"], "best_fit")
         self.assertEqual(contract["lane"], "meat_preorder")
         self.assertEqual(contract["missing_core_fields"], [])
         self.assertIn("price_per_kg", contract["missing_before_money_path"])

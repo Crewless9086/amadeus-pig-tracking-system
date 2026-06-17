@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, and the first Sam Meat stress-test pack | Next: structured buyer-preference capture, then Prisma/Beacon Meat Launch Campaign. |
+| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, first Sam Meat stress-test pack, and structured buyer-preference capture | Next: Prisma/Beacon Meat Launch Campaign. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -279,28 +279,31 @@ Verified:
 - Local Sam Meat/Chatwoot stress suite passed 25 tests.
 - Runtime hardening added for `next available farm run`, guarded price/quote/invoice replies, and payment-gate `needs_followup` labels.
 
-Known improvement opportunities before volume:
+Known improvement opportunities after first preference slice:
 
-- Capture budget amount as a structured Sam/Butcher matching fact.
-- Capture target packed weight as a structured Sam/Butcher matching fact.
-- Capture preference intent such as heaviest, soonest, cheapest, or best fit.
 - Improve deterministic Afrikaans and heavy-typo extraction, or rely deliberately on LLM extraction for these cases.
 - Parse plain-text Google Maps links, not only Chatwoot location metadata.
 - Add softer frustration-specific acknowledgement.
 - Add explicit non-pork redirect wording for beef/non-pork requests.
 - Keep WhatsApp closed-window handling on the fulfilment/template rail.
 
-### Phase 11M.1 Active Build - Structured Buyer Preference Capture
+### Phase 11M.1 Complete - Structured Buyer Preference Capture
 
-Required outcome:
+Implemented outcome:
 
 - Sam Meat captures buyer budget amount, target packed kg, and match preference (`heaviest`, `soonest`, `cheapest`, `best_fit`, or blank) as safe structured facts.
 - Chatwoot hygiene exposes those preferences as meat custom attributes where useful.
 - Butcher match can consume the structured preferences later without Sam inventing stock, price, or booking status.
 - Stress scenarios for budget, target weight, and heaviest preference move from known gaps to launch-ready behavior.
 - No quote, order, reservation, pig allocation, stock change, public post, or autonomous customer send is added in this slice.
+- The stress report now passes 40/40 launch-blocking scenarios with 6 remaining non-blocking improvement opportunities.
 
-### Phase 11N Planned - Prisma/Beacon Meat Launch Campaign
+Verified:
+
+- Sam Meat stress runner passed 40/40.
+- Focused Sam Meat, Chatwoot hygiene, stress, and Oom Sakkie service tests passed.
+
+### Phase 11N Active Build - Prisma/Beacon Meat Launch Campaign
 
 Required outcome:
 

@@ -136,8 +136,11 @@ STRESS_SCENARIOS = [
         "expected_facts": {"product_type": "unknown"},
         "expected_reply_any": ["half carcass", "full carcass", "custom cuts", "assisted slaughter"],
         "expected_labels": ["meat_lead", "needs_followup"],
-        "expected_attrs": {"meat_next_gate": "collect_missing_facts"},
-        "known_gap": "Budget amount is not yet captured as a structured Sam fact for Butcher matching.",
+        "expected_attrs": {
+            "meat_next_gate": "collect_missing_facts",
+            "meat_budget_amount": "3000",
+            "meat_match_preference": "budget_fit",
+        },
     },
     {
         "id": "heaviest_one",
@@ -146,8 +149,7 @@ STRESS_SCENARIOS = [
         "expected_facts": {"product_type": "half_carcass", "cut_set": "Set A", "delivery_or_collection": "collection"},
         "expected_reply_any": ["EFT", "cash", "When would you ideally like"],
         "expected_labels": ["meat_lead", "half_carcass", "set_a", "collection", "needs_followup"],
-        "expected_attrs": {"meat_next_gate": "collect_missing_facts"},
-        "known_gap": "Preference for heaviest pig is not yet captured as a structured matching intent.",
+        "expected_attrs": {"meat_next_gate": "collect_missing_facts", "meat_match_preference": "heaviest"},
     },
     {
         "id": "around_25kg",
@@ -156,8 +158,11 @@ STRESS_SCENARIOS = [
         "expected_facts": {"cut_set": "Set A", "delivery_or_collection": "delivery"},
         "expected_reply_any": ["delivery street address", "farm name", "directions"],
         "expected_labels": ["meat_lead", "set_a", "delivery", "needs_followup"],
-        "expected_attrs": {"meat_next_gate": "collect_missing_facts"},
-        "known_gap": "Packed target weight is not yet captured as a structured matching fact.",
+        "expected_attrs": {
+            "meat_next_gate": "collect_missing_facts",
+            "meat_target_packed_kg": "25",
+            "meat_match_preference": "closest_weight",
+        },
     },
     {
         "id": "live_pig_confusion",

@@ -3,7 +3,7 @@
 - Scenarios: 40
 - Passed: 40
 - Failed: 0
-- Known improvement opportunities: 9
+- Known improvement opportunities: 6
 
 ## Category Coverage
 
@@ -35,9 +35,6 @@
 
 ## Recommendations
 
-- P1: Budget amount is not yet captured as a structured Sam fact for Butcher matching. Scenarios: budget_buyer_3000.
-- P1: Packed target weight is not yet captured as a structured matching fact. Scenarios: around_25kg.
-- P1: Preference for heaviest pig is not yet captured as a structured matching intent. Scenarios: heaviest_one.
 - P2: Deterministic parser does not yet understand Afrikaans meat terms without LLM help. Scenarios: afrikaans_short.
 - P2: Heavy typo recovery currently depends on LLM extraction. Scenarios: typo_heavy.
 - P2: Plain-text Google Maps links are not yet parsed into coordinates without Chatwoot location metadata. Scenarios: google_maps_url.

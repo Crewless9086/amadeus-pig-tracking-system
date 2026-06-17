@@ -23,6 +23,9 @@ MEAT_ATTRIBUTE_KEYS = {
     "meat_next_gate",
     "meat_followup_due_at",
     "meat_last_customer_intent",
+    "meat_budget_amount",
+    "meat_target_packed_kg",
+    "meat_match_preference",
 }
 
 
@@ -62,6 +65,9 @@ def build_sam_meat_chatwoot_hygiene_payload(
         100,
     )
     order_id = _clean(lead_payload.get("order_id") or facts.get("order_id"), 100)
+    budget_amount = _clean(facts.get("budget_amount") or lead_payload.get("budget_amount"), 80)
+    target_packed_kg = _clean(facts.get("target_packed_kg") or lead_payload.get("target_packed_kg"), 80)
+    match_preference = _clean(facts.get("match_preference") or lead_payload.get("match_preference"), 80)
     attrs = {
         "sales_lane": "meat_preorder",
         "meat_product_type": product_type if product_type != "unknown" else "",
@@ -74,6 +80,9 @@ def build_sam_meat_chatwoot_hygiene_payload(
         "meat_next_gate": _next_gate(facts, booking_confirmation, pop_capture, decision, prior_context),
         "meat_followup_due_at": "",
         "meat_last_customer_intent": _customer_intent(inbound, facts, booking_confirmation, pop_capture),
+        "meat_budget_amount": budget_amount,
+        "meat_target_packed_kg": target_packed_kg,
+        "meat_match_preference": match_preference,
     }
     labels = _labels(attrs, inbound, lead_payload, facts, decision, booking_confirmation, pop_capture)
     return {

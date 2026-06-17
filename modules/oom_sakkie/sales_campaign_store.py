@@ -869,6 +869,9 @@ def build_sam_meat_intake_lead_payload(payload):
     price_per_kg = _clean_text(payload.get("price_per_kg"), 80)
     deposit_rule = _clean_text(payload.get("deposit_rule") or payload.get("deposit_amount"), 160)
     payment_method = _clean_text(payload.get("payment_method"), 80)
+    budget_amount = _clean_text(payload.get("budget_amount"), 80)
+    target_packed_kg = _clean_text(payload.get("target_packed_kg"), 80)
+    match_preference = _clean_text(payload.get("match_preference") or payload.get("preference"), 80)
     notes = _clean_text(payload.get("notes") or payload.get("customer_message"), 700)
     conversation_id = _clean_text(payload.get("conversation_id") or payload.get("chatwoot_conversation_id"), 100)
     contact_id = _clean_text(payload.get("contact_id"), 100)
@@ -927,6 +930,9 @@ def build_sam_meat_intake_lead_payload(payload):
         "price_per_kg": price_per_kg,
         "deposit_rule": deposit_rule,
         "payment_method": payment_method,
+        "budget_amount": budget_amount,
+        "target_packed_kg": target_packed_kg,
+        "match_preference": match_preference,
         "notes": notes,
         "conversation_id": conversation_id,
         "contact_id": contact_id,

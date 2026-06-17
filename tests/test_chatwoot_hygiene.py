@@ -53,6 +53,9 @@ class ChatwootHygieneTests(unittest.TestCase):
                 "delivery_address_line_1": "12 Test Street",
                 "timing": "next available farm run",
                 "payment_method": "EFT",
+                "budget_amount": "3000",
+                "target_packed_kg": "25",
+                "match_preference": "best_fit",
             },
             inbound={"content": "TEST FLOW - delete after test. Half carcass Set A delivery."},
         )
@@ -60,6 +63,9 @@ class ChatwootHygieneTests(unittest.TestCase):
         self.assertEqual(payload["custom_attributes"]["sales_lane"], "meat_preorder")
         self.assertEqual(payload["custom_attributes"]["meat_product_type"], "half_carcass")
         self.assertEqual(payload["custom_attributes"]["meat_next_gate"], "owner_price_review")
+        self.assertEqual(payload["custom_attributes"]["meat_budget_amount"], "3000")
+        self.assertEqual(payload["custom_attributes"]["meat_target_packed_kg"], "25")
+        self.assertEqual(payload["custom_attributes"]["meat_match_preference"], "best_fit")
         self.assertIn("meat_lead", payload["labels"])
         self.assertIn("half_carcass", payload["labels"])
         self.assertIn("set_a", payload["labels"])

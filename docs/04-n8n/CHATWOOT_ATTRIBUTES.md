@@ -42,6 +42,9 @@ Chatwoot conversation custom attributes are high risk because the Chatwoot API r
 | `meat_next_gate` | text | Backend Sam Meat/Farm App later | Current gate such as `collect_missing_facts`, `owner_price_review`, `await_customer_yes`, `confirm_deposit`, `find_second_half_buyer`, `confirm_final_balance`, or `schedule_delivery`. | Meat writes only |
 | `meat_followup_due_at` | date | Backend Sam Meat/Farm App later | Future follow-up target time/date. | Meat writes only |
 | `meat_last_customer_intent` | text | Backend Sam Meat | Short latest intent summary such as `asks_options`, `asks_price`, `confirms_booking`, or `sends_pop`. | Meat writes only |
+| `meat_budget_amount` | text | Backend Sam Meat | Buyer-stated budget amount, numeric string only. Used for later Butcher matching context. | Meat writes only |
+| `meat_target_packed_kg` | text | Backend Sam Meat | Buyer-stated target packed pork kg, numeric string only. Estimate context only. | Meat writes only |
+| `meat_match_preference` | text | Backend Sam Meat | Buyer matching preference such as `heaviest`, `soonest`, `cheapest`, `best_fit`, `closest_weight`, or `budget_fit`. | Meat writes only |
 
 ## Required Conversation Attribute Snapshots
 
@@ -147,6 +150,9 @@ Required meat snapshot fields:
 - `meat_next_gate`
 - `meat_followup_due_at`
 - `meat_last_customer_intent`
+- `meat_budget_amount`
+- `meat_target_packed_kg`
+- `meat_match_preference`
 
 If the conversation also contains normal order fields, backend meat writes must preserve:
 

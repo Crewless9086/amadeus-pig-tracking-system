@@ -14,7 +14,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Backend order docs | Good baseline | Current API behavior, known gaps, and refactor direction are documented. |
 | Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, lifecycle guards, auto-reservation, outbound notifications, quote/invoice generation, and document delivery are implemented and have been live-verified through the documented phases. |
 | Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is live-verified on a real repeat-service case. |
-| Pork sales launch rail | Private money-test build | Sam records meat preorder facts and delivery details into append-only sales/fulfilment rails. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, exception review, fulfilment timeline, driver route, exact customer journey approval, direct Chatwoot/webhook journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, and the first 40-scenario stress-test pack are built. Next priority is structured buyer-preference capture before Prisma/Beacon demand generation. |
+| Pork sales launch rail | Private money-test build | Sam records meat preorder facts, delivery details, buyer budget, target packed kg, match preference, payment preference, and customer context into append-only sales/fulfilment rails. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, exception review, fulfilment timeline, driver route, exact customer journey approval, direct Chatwoot/webhook journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, and the 40-scenario stress-test pack are built. Next priority is Prisma/Beacon demand-generation drafts. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
 ## Completed Documentation Work
@@ -35,13 +35,13 @@ Reason:
 - pig and breeding operations are now becoming daily-use web app workflows
 - Oom Sakkie and farm telemetry workflows need careful integration without breaking live sales or Telegram routing
 - Google Sheets limits and future Supabase migration need to be handled deliberately, not through rushed rewrites
-- Meat Sales is now the active money-test path. Chatwoot hygiene is built behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`, and the first 40-scenario Sam Meat stress pack passes launch-blocking checks. Before pushing public demand, capture budget/target-weight/match-preference as structured facts so Butcher can help Sam route buyers better.
+- Meat Sales is now the active money-test path. Chatwoot hygiene is built behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`, buyer budget/target-weight/match-preference are structured, and the 40-scenario Sam Meat stress pack passes launch-blocking checks.
 
 Current money-first plan:
 
 - Source: `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`.
-- Active phase: `NEXT_STEPS.md` Phase 11M.1 - Structured Buyer Preference Capture.
-- Next phases: 11N Prisma/Beacon Meat Launch Campaign, 11O Sales Conversation Learning Loop.
+- Active phase: `NEXT_STEPS.md` Phase 11N - Prisma/Beacon Meat Launch Campaign.
+- Next phase: 11O Sales Conversation Learning Loop.
 - Other sales streams remain planned: live pig sales continue as-is, slaughter/abattoir remains the fallback outlet, assisted slaughter/custom cuts come after standard meat preorder flow is stable.
 
 ## Known Critical Order Gaps

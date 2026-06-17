@@ -110,6 +110,31 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["delivery_address_line_1"], "12 Long Street")
         self.assertEqual(facts["delivery_town"], "Riversdale")
 
+    def test_buyer_preference_facts_are_extracted_for_butcher_matching(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="I have about R3000 and want around 25kg packed pork. Please choose the best fit.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["budget_amount"], "3000")
+        self.assertEqual(facts["target_packed_kg"], "25")
+        self.assertEqual(facts["match_preference"], "best_fit")
+
+    def test_heaviest_preference_is_extracted_without_stock_authority(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="I want the heaviest half carcass Set A in Riversdale.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["match_preference"], "heaviest")
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+        self.assertIn("no_stock_reservation", decision["blocked_actions"])
+
     def test_shared_location_payload_is_captured_as_delivery_context(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="",

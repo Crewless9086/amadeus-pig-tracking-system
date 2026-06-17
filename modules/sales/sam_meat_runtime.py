@@ -306,6 +306,9 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "delivery_location_longitude": facts.get("delivery_location_longitude") or "",
         "delivery_maps_url": facts.get("delivery_maps_url") or "",
         "payment_method": facts.get("payment_method") or "",
+        "budget_amount": facts.get("budget_amount") or "",
+        "target_packed_kg": facts.get("target_packed_kg") or "",
+        "match_preference": facts.get("match_preference") or "",
         "notes": inbound.get("content") or "",
         "status": "interested" if product_type != "unknown" else "new",
         "last_inbound_at": inbound.get("last_inbound_at") or "",
@@ -417,8 +420,10 @@ def _llm_payload(message, inbound, source):
     system = (
         "You are Sam Meat's backend extractor. Return JSON facts only. "
         "Allowed keys: product_type, cut_set, location, timing, delivery_or_collection, "
-        "delivery_address_line_1, delivery_town, delivery_area, delivery_notes, payment_method. "
+        "delivery_address_line_1, delivery_town, delivery_area, delivery_notes, payment_method, "
+        "budget_amount, target_packed_kg, match_preference. "
         "Allowed product_type: half_carcass, full_carcass, custom_cut, assisted_slaughter, unknown. "
+        "Allowed match_preference: heaviest, soonest, cheapest, best_fit, closest_weight, budget_fit, or blank. "
         "Never include prices, deposit promises, order creation, stock reservation, or customer-send commands."
     )
     return {
@@ -499,6 +504,10 @@ def _deterministic_extract(message):
     elif re.search(r"\bcash\b", lower):
         payment_method = "Cash"
 
+    budget_amount = _budget_amount_from_text(text)
+    target_packed_kg = _target_packed_kg_from_text(text)
+    match_preference = _match_preference_from_text(text, budget_amount, target_packed_kg)
+
     delivery_address_line_1 = ""
     address_match = re.search(
         r"\b(?:address|deliver(?:y)?\s+(?:to|at))\s*(?:is|:|-)?\s*([^.,\n]+(?:\s+(?:street|straat|road|rd|avenue|ave|lane|ln|farm|plot|smallholding)\b[^.,\n]*)?)",
@@ -523,6 +532,9 @@ def _deterministic_extract(message):
         "delivery_area": "",
         "delivery_notes": "",
         "payment_method": payment_method,
+        "budget_amount": budget_amount,
+        "target_packed_kg": target_packed_kg,
+        "match_preference": match_preference,
     }
 
 
@@ -586,6 +598,9 @@ def _safe_llm_fact_patch(value):
         "delivery_area": _clean(value.get("delivery_area"), 120),
         "delivery_notes": _clean(value.get("delivery_notes"), 600),
         "payment_method": _normal_payment(value.get("payment_method")),
+        "budget_amount": _normal_money_amount(value.get("budget_amount")),
+        "target_packed_kg": _normal_kg_amount(value.get("target_packed_kg")),
+        "match_preference": _normal_match_preference(value.get("match_preference")),
     }
     return {key: val for key, val in patch.items() if val}
 
@@ -704,6 +719,9 @@ def _merge_prior_context(facts, prior_context):
         "delivery_location_longitude",
         "delivery_maps_url",
         "payment_method",
+        "budget_amount",
+        "target_packed_kg",
+        "match_preference",
     ):
         current = _clean(facts.get(key), 600)
         prior = _clean(interest.get(key), 600)
@@ -1005,6 +1023,98 @@ def _normal_payment(value):
     if "cash" in text:
         return "Cash"
     return ""
+
+
+def _budget_amount_from_text(value):
+    text = str(value or "")
+    match = re.search(
+        r"(?:\b(?:budget|spend|around|about|under|below|max(?:imum)?|up to)\b[^\d]{0,24})?"
+        r"(?:r|zar)\s*([0-9][0-9\s,.]{1,12})\b",
+        text,
+        re.I,
+    )
+    if not match:
+        match = re.search(r"\b(?:budget|spend|under|below|max(?:imum)?|up to)\b[^\d]{0,24}([0-9][0-9\s,.]{2,12})\b", text, re.I)
+    return _normal_money_amount(match.group(1)) if match else ""
+
+
+def _target_packed_kg_from_text(value):
+    text = str(value or "")
+    match = re.search(
+        r"\b(?:around|about|roughly|approx(?:imately)?|looking\s+for|want|need)?\s*"
+        r"([0-9]+(?:[.,][0-9]+)?)\s*kg\b(?:\s*(?:packed|processed|pork|meat))?",
+        text,
+        re.I,
+    )
+    if not match:
+        return ""
+    kg = _normal_kg_amount(match.group(1))
+    if not kg:
+        return ""
+    nearby = text[max(0, match.start() - 20):match.end() + 30].lower()
+    if "live" in nearby and "packed" not in nearby:
+        return ""
+    return kg
+
+
+def _match_preference_from_text(value, budget_amount="", target_packed_kg=""):
+    text = str(value or "").lower()
+    if re.search(r"\b(heaviest|biggest|largest|heavy one|largest one)\b", text):
+        return "heaviest"
+    if re.search(r"\b(soonest|quickest|as soon as possible|asap|next available|first available)\b", text):
+        return "soonest"
+    if re.search(r"\b(cheapest|lowest price|most affordable|budget option|cheap)\b", text):
+        return "cheapest"
+    if re.search(r"\b(best fit|best match|recommend|you choose|closest match)\b", text):
+        return "best_fit"
+    if target_packed_kg:
+        return "closest_weight"
+    if budget_amount:
+        return "budget_fit"
+    return ""
+
+
+def _normal_money_amount(value):
+    text = str(value or "").replace(" ", "").replace(",", ".")
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if not match:
+        return ""
+    amount = float(match.group(0))
+    if amount <= 0 or amount > 1000000:
+        return ""
+    return f"{amount:.2f}".rstrip("0").rstrip(".")
+
+
+def _normal_kg_amount(value):
+    text = str(value or "").replace(",", ".")
+    match = re.search(r"\d+(?:\.\d+)?", text)
+    if not match:
+        return ""
+    amount = float(match.group(0))
+    if amount <= 0 or amount > 500:
+        return ""
+    return f"{amount:.2f}".rstrip("0").rstrip(".")
+
+
+def _normal_match_preference(value):
+    text = str(value or "").strip().lower()
+    aliases = {
+        "heavy": "heaviest",
+        "biggest": "heaviest",
+        "largest": "heaviest",
+        "quickest": "soonest",
+        "asap": "soonest",
+        "budget": "budget_fit",
+        "budget_fit": "budget_fit",
+        "closest": "closest_weight",
+        "closest_weight": "closest_weight",
+        "affordable": "cheapest",
+        "cheap": "cheapest",
+        "best": "best_fit",
+        "best_fit": "best_fit",
+    }
+    normalized = aliases.get(text, text)
+    return normalized if normalized in {"heaviest", "soonest", "cheapest", "best_fit", "closest_weight", "budget_fit"} else ""
 
 
 def _extract_shared_location(payload):
