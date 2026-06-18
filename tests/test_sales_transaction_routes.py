@@ -322,6 +322,35 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json()["event_id"], "BEACON-ASSET-EVENT-1")
         record_event.assert_called_once_with("BEACON-ASSET-1", {"event_type": "review_note", "notes": "Good photo."})
 
+    def test_beacon_campaign_draft_selection_route_uses_only_approved_media(self):
+        assets_result = {
+            "success": True,
+            "assets": [{"asset_id": "BEACON-ASSET-APPROVED", "effective_approval_status": "approved"}],
+        }
+        selection_result = {
+            "success": True,
+            "mode": "beacon_meat_launch_campaign_media_selection_review_only",
+            "approved_media_count": 1,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_media_assets",
+            return_value=(assets_result, 200),
+        ) as list_assets, patch.object(
+            sales_transaction_routes,
+            "build_meat_launch_campaign_selection",
+            return_value=selection_result,
+        ) as build_selection:
+            response = self.client.get("/api/beacon/campaign-draft-selection?limit=9&media_type=image&area=Riversdale")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), selection_result)
+        list_assets.assert_called_once_with(limit="9", approval_status="approved", media_type="image")
+        build_selection.assert_called_once()
+        self.assertEqual(build_selection.call_args.kwargs["approved_assets"], assets_result["assets"])
+        self.assertEqual(build_selection.call_args.args[0]["area"], "Riversdale")
+
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {
             "success": True,

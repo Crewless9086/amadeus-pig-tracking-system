@@ -48,6 +48,35 @@ OWNER_REVIEW_CHECKLIST = [
 ]
 
 
+def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
+    """Return campaign draft/media pairing recommendations without doing any external action."""
+    packet = build_meat_launch_campaign_packet(payload)
+    approved_assets = approved_assets if isinstance(approved_assets, list) else []
+    ranked_assets = _rank_approved_assets(approved_assets)
+    channel_pairings = _channel_asset_pairings(packet.get("channel_drafts", []), ranked_assets)
+    story_pairings = _channel_asset_pairings(packet.get("story_updates", []), ranked_assets, fallback_channel="story")
+    return {
+        "success": True,
+        "mode": "beacon_meat_launch_campaign_media_selection_review_only",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "campaign": packet.get("campaign", {}),
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "approved_media_count": len(ranked_assets),
+        "ranked_media_assets": ranked_assets,
+        "channel_draft_pairings": channel_pairings,
+        "story_update_pairings": story_pairings,
+        "owner_review_checklist": [
+            "Choose the exact media asset for each draft before any public post is prepared.",
+            "Confirm the chosen channel and campaign cap before posting.",
+            "Confirm no private customer, address, invoice, or sensitive farm detail is visible in the selected media.",
+            "Public posting still happens only through a later owner-approved posting gate.",
+        ],
+        "next_gate": "owner_selects_media_and_campaign_draft_before_any_public_post",
+    }
+
+
 def build_meat_launch_campaign_packet(payload=None):
     """Return Beacon's first meat-launch campaign drafts without doing any external action."""
     payload = payload if isinstance(payload, dict) else {}
@@ -315,6 +344,119 @@ def _story_updates(farm_name, area):
             "text": "Want to join the limited preorder review list? Reply and Sam will capture your interest. No booking is final until the farm confirms price, timing, and deposit steps.",
         },
     ]
+
+
+def _rank_approved_assets(assets):
+    ranked = []
+    for asset in assets:
+        if _asset_status(asset) != "approved":
+            continue
+        tags = _asset_list(asset.get("subject_tags"))
+        relevance = _asset_list(asset.get("sale_stream_relevance"))
+        privacy_risk = _clean_text(asset.get("privacy_risk")).lower() or "unknown"
+        media_type = _clean_text(asset.get("media_type")).lower() or "unknown"
+        quality_score = _safe_int(asset.get("quality_score"), 0)
+        score = quality_score
+        if media_type == "image":
+            score += 20
+        if media_type == "video":
+            score += 15
+        if "meat" in relevance:
+            score += 25
+        if any(tag in tags for tag in ("pork", "freezer", "set a", "half carcass", "family pack")):
+            score += 15
+        if privacy_risk in ("high", "medium"):
+            score -= 40 if privacy_risk == "high" else 20
+        ranked.append({
+            "asset_id": asset.get("asset_id", ""),
+            "title": asset.get("title") or asset.get("original_filename") or asset.get("asset_id", ""),
+            "media_type": media_type,
+            "storage_bucket": asset.get("storage_bucket", ""),
+            "storage_path": asset.get("storage_path", ""),
+            "subject_tags": tags,
+            "sale_stream_relevance": relevance,
+            "quality_score": asset.get("quality_score"),
+            "privacy_risk": privacy_risk,
+            "selection_score": max(0, min(score, 160)),
+            "public_use_approved": bool(asset.get("effective_public_use_approved") or asset.get("public_use_approved")),
+            "why": _asset_why(tags, relevance, media_type, privacy_risk),
+        })
+    return sorted(ranked, key=lambda item: (-item["selection_score"], item["asset_id"]))[:12]
+
+
+def _channel_asset_pairings(drafts, ranked_assets, fallback_channel="campaign"):
+    pairings = []
+    for draft in drafts:
+        best = _best_asset_for_draft(draft, ranked_assets)
+        pairings.append({
+            "draft_id": draft.get("id", ""),
+            "draft_label": draft.get("label") or draft.get("id", ""),
+            "channel": draft.get("channel") or fallback_channel,
+            "intent": draft.get("intent", ""),
+            "recommended_asset_id": best.get("asset_id", "") if best else "",
+            "recommended_asset_title": best.get("title", "") if best else "",
+            "selection_reason": _selection_reason(draft, best),
+            "requires_owner_final_selection": True,
+        })
+    return pairings
+
+
+def _best_asset_for_draft(draft, ranked_assets):
+    if not ranked_assets:
+        return {}
+    text = f"{draft.get('channel', '')} {draft.get('intent', '')} {draft.get('text', '')}".lower()
+    best_asset = ranked_assets[0]
+    best_score = -1
+    for asset in ranked_assets:
+        score = asset.get("selection_score", 0)
+        tags = " ".join(asset.get("subject_tags", [])).lower()
+        if "story" in text and asset.get("media_type") in ("image", "video"):
+            score += 8
+        if "family" in text and "family" in tags:
+            score += 10
+        if "set a" in text and ("set a" in tags or "freezer" in tags):
+            score += 10
+        if "facebook" in text and asset.get("media_type") == "image":
+            score += 5
+        if score > best_score:
+            best_asset = asset
+            best_score = score
+    return best_asset
+
+
+def _selection_reason(draft, asset):
+    if not asset:
+        return "No owner-approved media asset is available yet. Draft can stay text-only until media is approved."
+    return f"Matches {draft.get('label') or draft.get('id')} because it is approved for public-use review, scored {asset.get('selection_score')}, and is tagged {', '.join(asset.get('subject_tags') or ['general'])}."
+
+
+def _asset_why(tags, relevance, media_type, privacy_risk):
+    parts = [f"{media_type or 'unknown'} media"]
+    if relevance:
+        parts.append(f"relevant to {', '.join(relevance)}")
+    if tags:
+        parts.append(f"tagged {', '.join(tags[:4])}")
+    parts.append(f"privacy risk {privacy_risk}")
+    return "; ".join(parts)
+
+
+def _asset_status(asset):
+    return _clean_text(asset.get("effective_approval_status") or asset.get("approval_status")).lower()
+
+
+def _asset_list(value):
+    if isinstance(value, list):
+        return [_clean_text(item).lower() for item in value if _clean_text(item)]
+    if isinstance(value, str):
+        return [_clean_text(item).lower() for item in value.split(",") if _clean_text(item)]
+    return []
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def _all_draft_texts(packet):

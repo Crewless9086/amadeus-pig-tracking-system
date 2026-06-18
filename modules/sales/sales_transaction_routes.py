@@ -59,6 +59,7 @@ from modules.sales.conversation_learning import (
     list_sales_conversation_learning_events,
     record_sales_conversation_learning_event,
 )
+from modules.sales.beacon_campaign import build_meat_launch_campaign_selection
 from modules.beacon.media_library import (
     beacon_media_storage_policy,
     list_beacon_media_assets,
@@ -204,6 +205,23 @@ def beacon_media_asset_event(asset_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_beacon_media_asset_event(asset_id, payload)
     return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/campaign-draft-selection", methods=["GET"])
+def beacon_campaign_draft_selection():
+    assets_result, assets_status = list_beacon_media_assets(
+        limit=request.args.get("limit", 25),
+        approval_status="approved",
+        media_type=request.args.get("media_type", ""),
+    )
+    if assets_status >= 400:
+        return jsonify(assets_result), assets_status
+    result = build_meat_launch_campaign_selection({
+        "pilot_name": request.args.get("pilot_name", ""),
+        "area": request.args.get("area", ""),
+        "product_focus": request.args.get("product_focus", ""),
+    }, approved_assets=assets_result.get("assets", []))
+    return jsonify(result), 200
 
 
 @sales_bp.route("/sales/meat-leads", methods=["GET"])

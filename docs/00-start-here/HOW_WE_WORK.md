@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11R Beacon approved-media campaign draft selection |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, sales conversation learning evidence, Beacon media-library metadata/API foundation, private Storage smoke, and Farm App Beacon Media Review UI. The Farm App remains the operational surface. |
-| **Current focus** | Connect approved Beacon media to campaign draft selection while keeping public posting manual/owner-approved. |
-| **Current last verified** | **2026-06-18** - Phase 11Q Beacon Media Review UI passed focused local tests and Playwright screenshots; Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
+| **Today's focus** | Phase 11S Beacon owner-approved campaign publish packet/approval rail |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, sales conversation learning evidence, Beacon media-library metadata/API foundation, private Storage smoke, Farm App Beacon Media Review UI, and approved-media campaign draft selection. The Farm App remains the operational surface. |
+| **Current focus** | Define an owner-approved campaign publish packet/approval rail while keeping posting manual or exact-owner-approved. |
+| **Current last verified** | **2026-06-18** - Phase 11R Beacon approved-media campaign draft selection passed focused local tests and Playwright screenshots; Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

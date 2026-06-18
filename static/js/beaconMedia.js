@@ -11,6 +11,9 @@
     refresh: byId("beacon_media_refresh"),
     policyStatus: byId("beacon_media_policy_status"),
     policyFlags: byId("beacon_media_policy_flags"),
+    campaignSelectionStatus: byId("beacon_campaign_selection_status"),
+    campaignSelectionRefresh: byId("beacon_campaign_selection_refresh"),
+    campaignSelectionList: byId("beacon_campaign_selection_list"),
     statusFilter: byId("beacon_media_status_filter"),
     typeFilter: byId("beacon_media_type_filter"),
     assetCount: byId("beacon_media_asset_count"),
@@ -94,12 +97,35 @@
     renderPolicy(policy);
     renderSummary(assetData.counts || {});
     renderAssetList();
+    await loadCampaignSelection();
     if (state.selectedAssetId && !state.assets.some((asset) => asset.asset_id === state.selectedAssetId)) {
       state.selectedAssetId = "";
       renderDetail(null);
     } else {
       renderDetail(selectedAsset());
     }
+  }
+
+  async function loadCampaignSelection() {
+    const selection = await fetchJson("/api/beacon/campaign-draft-selection?limit=25");
+    elements.campaignSelectionStatus.textContent = `${selection.approved_media_count || 0} approved media asset${selection.approved_media_count === 1 ? "" : "s"} available for draft pairing. Public posting remains locked.`;
+    renderCampaignSelection(selection);
+  }
+
+  function renderCampaignSelection(selection) {
+    const pairings = selection.channel_draft_pairings || [];
+    if (!pairings.length) {
+      elements.campaignSelectionList.innerHTML = `<div class="table-empty">No campaign draft pairings are available yet.</div>`;
+      return;
+    }
+    elements.campaignSelectionList.innerHTML = pairings.map((pairing) => `
+      <div class="beacon-campaign-selection-item">
+        <strong>${escapeHtml(safe(pairing.draft_label || pairing.draft_id))}</strong>
+        <span>${escapeHtml(safe(pairing.channel))} | ${escapeHtml(safe(pairing.intent))}</span>
+        <small>Asset: ${escapeHtml(safe(pairing.recommended_asset_title || pairing.recommended_asset_id, "No approved asset yet"))}</small>
+        <small>${escapeHtml(safe(pairing.selection_reason))}</small>
+      </div>
+    `).join("");
   }
 
   function renderPolicy(policy) {
@@ -283,6 +309,7 @@
 
   document.addEventListener("DOMContentLoaded", async () => {
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
+    elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.statusFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.typeFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.uploadForm.addEventListener("submit", (event) => uploadAsset(event).catch((error) => showMessage(error.message)));

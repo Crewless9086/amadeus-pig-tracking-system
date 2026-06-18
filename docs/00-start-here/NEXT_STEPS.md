@@ -394,6 +394,29 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11R should connect approved Beacon media to campaign draft selection while keeping public posting manual/owner-approved.
 
+### Phase 11R Complete - Beacon Approved-Media Campaign Draft Selection
+
+Implemented outcome:
+
+- Read-only backend route: `GET /api/beacon/campaign-draft-selection`.
+- Beacon campaign selection builder pairs approved media assets with existing draft campaign copy.
+- Selection uses only assets whose effective latest review status is `approved`.
+- Recommendations include draft/channel, recommended asset, selection reason, and owner-final-selection requirement.
+- Farm App `/sales/beacon-media` now shows Campaign Draft Selection above the asset review queue.
+- If no approved assets exist, drafts stay text-only and the UI says no owner-approved media is available.
+- No signed URLs, public buckets, Meta calls, posting, scheduling, paid spend, customer messaging, quote, invoice, order, stock, reservation, dispatch, prompt/runtime, or automatic public media use authority is added.
+
+Verified:
+
+- Focused Beacon campaign, Beacon media, sales route, and frontend contract tests passed.
+- `node --check static/js/beaconMedia.js` passed.
+- Playwright screenshots passed at 1440x900, 390x844, and mobile full-page.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11S should define an owner-approved campaign publish packet/approval rail. Posting should still stay manual or exact-owner-approved until the public-send rails are proven.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

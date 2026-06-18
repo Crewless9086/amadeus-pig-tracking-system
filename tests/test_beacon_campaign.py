@@ -3,6 +3,7 @@ import unittest
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
     build_meat_launch_campaign_packet,
+    build_meat_launch_campaign_selection,
     format_meat_launch_campaign_markdown,
     validate_meat_launch_campaign_packet,
 )
@@ -76,6 +77,39 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertIn("`creates_order`: `false`", markdown)
         self.assertIn("`changes_stock`: `false`", markdown)
         self.assertIn("owner_reviews_campaign_before_any_public_or_customer_send", markdown)
+
+    def test_campaign_selection_pairs_approved_media_without_posting_authority(self):
+        selection = build_meat_launch_campaign_selection(approved_assets=[
+            {
+                "asset_id": "BEACON-ASSET-APPROVED",
+                "title": "Set A freezer pack photo",
+                "media_type": "image",
+                "subject_tags": ["set a", "freezer", "pork"],
+                "sale_stream_relevance": ["meat"],
+                "quality_score": 85,
+                "privacy_risk": "low",
+                "effective_approval_status": "approved",
+                "effective_public_use_approved": True,
+                "storage_bucket": "beacon-raw-intake",
+                "storage_path": "2026/06/18/photo.jpg",
+            },
+            {
+                "asset_id": "BEACON-ASSET-PENDING",
+                "title": "Unreviewed photo",
+                "media_type": "image",
+                "effective_approval_status": "needs_review",
+            },
+        ])
+
+        self.assertTrue(selection["success"])
+        self.assertEqual(selection["mode"], "beacon_meat_launch_campaign_media_selection_review_only")
+        self.assertEqual(selection["approved_media_count"], 1)
+        self.assertEqual(selection["ranked_media_assets"][0]["asset_id"], "BEACON-ASSET-APPROVED")
+        self.assertGreaterEqual(len(selection["channel_draft_pairings"]), 6)
+        self.assertTrue(selection["channel_draft_pairings"][0]["requires_owner_final_selection"])
+        self.assertFalse(selection["authority"]["posts_publicly"])
+        self.assertFalse(selection["authority"]["calls_meta"])
+        self.assertEqual(selection["next_gate"], "owner_selects_media_and_campaign_draft_before_any_public_post")
 
 
 if __name__ == "__main__":

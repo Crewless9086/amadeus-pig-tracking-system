@@ -17,10 +17,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
 - The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and passes launch-blocking assertions. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
-- Beacon now has private media-library metadata/API foundation and a Farm App review UI for future approved photo/video use.
+- Beacon now has private media-library metadata/API foundation, a Farm App review UI, and approved-media campaign draft selection for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, and a Farm App media review UI. The next work should connect approved media to campaign draft selection before real campaign traffic is pushed into it.
+This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, a Farm App media review UI, and approved-media draft pairing. The next work should define an owner-approved campaign publish packet/approval rail before real campaign traffic is pushed into it.
 
 ## Business Priority
 
@@ -213,7 +213,26 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11R should connect approved media to Beacon campaign draft selection while public posting remains manual/owner-approved.
 
-### 7. Other Sales Streams
+### 7. Beacon Approved-Media Campaign Draft Selection
+
+Goal: let Beacon recommend which approved asset fits each draft without posting.
+
+Status: complete in Phase 11R.
+
+Implemented outcome:
+
+- `GET /api/beacon/campaign-draft-selection` builds a review-only draft/media pairing packet.
+- Only assets with effective approval status `approved` are eligible.
+- Farm App `/sales/beacon-media` shows draft/channel pairings, recommended asset, and reason.
+- If no approved assets exist, the draft remains text-only and the UI says no owner-approved media is available.
+- Public posting, scheduling, paid spend, customer messages, signed public URLs, quotes, invoices, orders, stock, reservation, dispatch, and automatic public media use remain locked.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11S should define the owner-approved campaign publish packet/approval rail. Keep posting manual or exact-owner-approved until public-send rails are proven.
+
+### 8. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 

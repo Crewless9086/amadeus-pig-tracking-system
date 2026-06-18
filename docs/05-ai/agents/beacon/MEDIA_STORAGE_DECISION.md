@@ -99,8 +99,9 @@ Completed:
 - Render/local upload envs configured.
 - One small Render upload/readback smoke passed.
 - Farm App review UI built at `/sales/beacon-media`.
+- Approved-media campaign draft selection built in `/sales/beacon-media` and `GET /api/beacon/campaign-draft-selection`.
 
 Next:
 
 - Deploy and owner-check `/sales/beacon-media`.
-- Connect approved media to Beacon campaign draft selection without enabling public posting or scheduling.
+- Define an owner-approved campaign publish packet/approval rail without enabling automatic public posting or scheduling.
