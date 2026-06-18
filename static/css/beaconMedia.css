@@ -113,7 +113,8 @@
 .beacon-media-upload-form,
 .beacon-media-review-panel,
 .beacon-publish-packet-panel,
-.beacon-manual-post-panel {
+.beacon-manual-post-panel,
+.beacon-performance-panel {
   border-top: 1px solid #d7ded6;
   margin-top: 16px;
   padding-top: 16px;
@@ -132,14 +133,18 @@
   margin-top: 12px;
 }
 
-.beacon-manual-post-list {
+.beacon-manual-post-list,
+.beacon-performance-list,
+.beacon-boost-packet-result {
   display: grid;
   gap: 10px;
   margin-top: 12px;
 }
 
 .beacon-publish-packet-card,
-.beacon-manual-post-item {
+.beacon-manual-post-item,
+.beacon-performance-item,
+.beacon-boost-packet-card {
   border: 1px solid #b8cab8;
   border-radius: 8px;
   background: #f4f8f3;
@@ -148,13 +153,24 @@
 
 .beacon-manual-post-item strong,
 .beacon-manual-post-item span,
-.beacon-manual-post-item small {
+.beacon-manual-post-item small,
+.beacon-performance-item strong,
+.beacon-performance-item span,
+.beacon-performance-item small,
+.beacon-boost-packet-card strong,
+.beacon-boost-packet-card span,
+.beacon-boost-packet-card small {
   display: block;
 }
 
 .beacon-manual-post-item span,
 .beacon-manual-post-item small,
-.beacon-manual-post-item p {
+.beacon-manual-post-item p,
+.beacon-performance-item span,
+.beacon-performance-item small,
+.beacon-boost-packet-card span,
+.beacon-boost-packet-card small,
+.beacon-boost-packet-card p {
   color: #607066;
   margin: 4px 0 0;
 }
@@ -233,7 +249,8 @@
   .beacon-media-filters,
   .beacon-media-upload-grid,
   .beacon-media-review-grid,
-  .beacon-manual-metrics-grid {
+  .beacon-manual-metrics-grid,
+  .beacon-performance-metrics-grid {
     grid-template-columns: 1fr;
   }
 }

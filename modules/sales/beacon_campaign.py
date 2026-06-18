@@ -40,6 +40,14 @@ MANUAL_POST_AUTHORITY_FLAGS = {
     "physical_controls_enabled": False,
 }
 
+PERFORMANCE_AUTHORITY_FLAGS = {
+    **MANUAL_POST_AUTHORITY_FLAGS,
+    "recommends_boost": False,
+    "boost_requires_owner_approval": True,
+}
+
+BOOST_RECOMMENDATION_SPEND_CAP = 500
+
 FORBIDDEN_ACTIONS = [
     "no_public_post",
     "no_customer_dm",
@@ -323,6 +331,171 @@ def list_beacon_manual_post_evidence(limit=25, publish_packet_id="", database_ur
         "policy": manual_post_evidence_policy(),
         "next_gate": "beacon_performance_tracking_before_boost_recommendation_or_meta_ads_access",
         **MANUAL_POST_AUTHORITY_FLAGS,
+    }, 200
+
+
+def record_beacon_campaign_performance_event(payload, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    params = _performance_params(payload)
+    if not params["manual_post_event_id"] and not params["publish_packet_id"]:
+        return {
+            "success": False,
+            "status": "manual_post_event_id_or_publish_packet_id_required",
+            "performance_event": _public_performance_event(params),
+            **PERFORMANCE_AUTHORITY_FLAGS,
+        }, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _performance_unavailable("not_configured", configured=False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _performance_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.beacon_campaign_performance_events (
+                        performance_event_id, mode, manual_post_event_id, publish_packet_id,
+                        channel, measurement_window, spend_amount, spend_currency,
+                        reach, impressions, reactions, comments, shares, messages_to_sam,
+                        qualified_buyer_leads, booking_review_requests, notes,
+                        recommended_action, recommendation_reason, recommended_spend_amount,
+                        recommended_duration_days, max_spend_cap_amount, cost_per_message,
+                        cost_per_qualified_lead, records_evidence, recommends_boost,
+                        boost_requires_owner_approval, sends_customer_message, posts_publicly,
+                        calls_chatwoot, calls_meta, calls_n8n, boosts_post, spends_money,
+                        creates_quote, creates_invoice, creates_order, changes_stock,
+                        reserves_stock, dispatch_enabled, changes_runtime_now,
+                        changes_prompt_now, physical_controls_enabled,
+                        customer_public_output_enabled, writes_farm_data, recorded_by
+                    )
+                    values (
+                        %(performance_event_id)s, %(mode)s, %(manual_post_event_id)s,
+                        %(publish_packet_id)s, %(channel)s, %(measurement_window)s,
+                        %(spend_amount)s, %(spend_currency)s, %(reach)s, %(impressions)s,
+                        %(reactions)s, %(comments)s, %(shares)s, %(messages_to_sam)s,
+                        %(qualified_buyer_leads)s, %(booking_review_requests)s, %(notes)s,
+                        %(recommended_action)s, %(recommendation_reason)s,
+                        %(recommended_spend_amount)s, %(recommended_duration_days)s,
+                        %(max_spend_cap_amount)s, %(cost_per_message)s,
+                        %(cost_per_qualified_lead)s, %(records_evidence)s,
+                        %(recommends_boost)s, %(boost_requires_owner_approval)s,
+                        %(sends_customer_message)s, %(posts_publicly)s,
+                        %(calls_chatwoot)s, %(calls_meta)s, %(calls_n8n)s,
+                        %(boosts_post)s, %(spends_money)s, %(creates_quote)s,
+                        %(creates_invoice)s, %(creates_order)s, %(changes_stock)s,
+                        %(reserves_stock)s, %(dispatch_enabled)s,
+                        %(changes_runtime_now)s, %(changes_prompt_now)s,
+                        %(physical_controls_enabled)s, %(customer_public_output_enabled)s,
+                        %(writes_farm_data)s, %(recorded_by)s
+                    )
+                    on conflict (performance_event_id) do nothing
+                    """,
+                    params,
+                )
+                created_count = cursor.rowcount
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "beacon_campaign_performance_write_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "performance_event": _public_performance_event(params),
+            **PERFORMANCE_AUTHORITY_FLAGS,
+        }, 500
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "beacon_campaign_performance_event_recorded" if created_count else "beacon_campaign_performance_event_already_recorded",
+        "created_count": created_count,
+        "performance_event_id": params["performance_event_id"],
+        "performance_event": _public_performance_event(params),
+        "boost_packet": _boost_packet(params),
+        "next_gate": "owner_reviews_boost_recommendation_before_any_meta_or_paid_spend_authority",
+        **PERFORMANCE_AUTHORITY_FLAGS,
+    }, 201 if created_count else 200
+
+
+def build_beacon_boost_recommendation_packet(payload=None):
+    payload = payload if isinstance(payload, dict) else {}
+    params = _performance_params(payload)
+    return _boost_packet(params)
+
+
+def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manual_post_event_id="", database_url=None):
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        limit = 25
+    publish_packet_id = _clean_text(publish_packet_id)[:120]
+    manual_post_event_id = _clean_text(manual_post_event_id)[:120]
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _performance_unavailable("not_configured", configured=False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _performance_unavailable("dependency_missing", configured=True), 500
+
+    where = ""
+    if manual_post_event_id:
+        where = "where manual_post_event_id = %(manual_post_event_id)s"
+    elif publish_packet_id:
+        where = "where publish_packet_id = %(publish_packet_id)s"
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select performance_event_id, manual_post_event_id, publish_packet_id,
+                           channel, measurement_window, spend_amount, spend_currency,
+                           reach, impressions, reactions, comments, shares,
+                           messages_to_sam, qualified_buyer_leads,
+                           booking_review_requests, notes, recommended_action,
+                           recommendation_reason, recommended_spend_amount,
+                           recommended_duration_days, max_spend_cap_amount,
+                           cost_per_message, cost_per_qualified_lead,
+                           recommends_boost, recorded_by, created_at
+                    from public.beacon_campaign_performance_events
+                    {where}
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {
+                        "limit": limit,
+                        "publish_packet_id": publish_packet_id,
+                        "manual_post_event_id": manual_post_event_id,
+                    },
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "beacon_campaign_performance_read_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "performance_events": [],
+            **PERFORMANCE_AUTHORITY_FLAGS,
+        }, 500
+
+    events = [_performance_row_to_event(row) for row in rows]
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "beacon_campaign_performance_evidence_only",
+        "performance_events": events,
+        "latest_boost_packet": _boost_packet(_event_to_performance_params(events[0])) if events else {},
+        "next_gate": "owner_reviews_boost_recommendation_before_any_meta_or_paid_spend_authority",
+        **PERFORMANCE_AUTHORITY_FLAGS,
     }, 200
 
 
@@ -818,6 +991,241 @@ def _manual_post_unavailable(status, configured):
         "policy": manual_post_evidence_policy(),
         **MANUAL_POST_AUTHORITY_FLAGS,
     }
+
+
+def _performance_params(payload):
+    spend_amount = _safe_money(payload.get("spend_amount") or payload.get("spend"))
+    messages = _safe_int(payload.get("messages_to_sam") or payload.get("messages"), 0)
+    qualified = _safe_int(payload.get("qualified_buyer_leads") or payload.get("qualified_leads"), 0)
+    recommendation = _recommend_boost(payload, spend_amount, messages, qualified)
+    cost_per_message = _cost(spend_amount, messages)
+    cost_per_qualified_lead = _cost(spend_amount, qualified)
+    params = {
+        "performance_event_id": _clean_text(payload.get("performance_event_id"))[:120],
+        "mode": "beacon_campaign_performance_evidence_only",
+        "manual_post_event_id": _clean_text(payload.get("manual_post_event_id"))[:120],
+        "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
+        "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
+        "measurement_window": _clean_text(payload.get("measurement_window") or "manual_snapshot")[:120],
+        "spend_amount": spend_amount,
+        "spend_currency": _clean_text(payload.get("spend_currency") or "ZAR")[:12],
+        "reach": _safe_int(payload.get("reach"), 0),
+        "impressions": _safe_int(payload.get("impressions"), 0),
+        "reactions": _safe_int(payload.get("reactions"), 0),
+        "comments": _safe_int(payload.get("comments"), 0),
+        "shares": _safe_int(payload.get("shares"), 0),
+        "messages_to_sam": messages,
+        "qualified_buyer_leads": qualified,
+        "booking_review_requests": _safe_int(payload.get("booking_review_requests"), 0),
+        "notes": _clean_text(payload.get("notes") or payload.get("performance_notes"))[:1200],
+        "recommended_action": recommendation["recommended_action"],
+        "recommendation_reason": recommendation["recommendation_reason"],
+        "recommended_spend_amount": recommendation["recommended_spend_amount"],
+        "recommended_duration_days": recommendation["recommended_duration_days"],
+        "max_spend_cap_amount": BOOST_RECOMMENDATION_SPEND_CAP,
+        "cost_per_message": cost_per_message,
+        "cost_per_qualified_lead": cost_per_qualified_lead,
+        "recorded_by": _clean_text(payload.get("recorded_by") or "beacon_performance_tracking")[:120],
+        **PERFORMANCE_AUTHORITY_FLAGS,
+    }
+    params["recommends_boost"] = params["recommended_action"] == "light_boost_owner_review"
+    if not params["performance_event_id"]:
+        params["performance_event_id"] = _performance_event_id(params)
+    return params
+
+
+def _recommend_boost(payload, spend_amount, messages, qualified):
+    fulfillment_risk = _clean_text(payload.get("fulfillment_risk")).lower()
+    safety_risk = _clean_text(payload.get("safety_risk")).lower()
+    owner_blocked = str(payload.get("owner_blocked") or "").strip().lower() in {"1", "true", "yes", "on"}
+    requested_spend = _safe_money(payload.get("recommended_spend_amount"))
+    if owner_blocked or fulfillment_risk in {"high", "blocked"} or safety_risk in {"high", "blocked"}:
+        return {
+            "recommended_action": "do_not_boost",
+            "recommendation_reason": "Do not boost because fulfilment, owner, or safety risk is marked high.",
+            "recommended_spend_amount": 0,
+            "recommended_duration_days": 0,
+        }
+    if requested_spend > BOOST_RECOMMENDATION_SPEND_CAP:
+        return {
+            "recommended_action": "owner_review_required",
+            "recommendation_reason": f"Requested spend exceeds the R{BOOST_RECOMMENDATION_SPEND_CAP} cap and needs owner review before any later paid action.",
+            "recommended_spend_amount": BOOST_RECOMMENDATION_SPEND_CAP,
+            "recommended_duration_days": _safe_int(payload.get("recommended_duration_days"), 3) or 3,
+        }
+    if qualified >= 1 or messages >= 2:
+        spend = requested_spend or 150
+        return {
+            "recommended_action": "light_boost_owner_review",
+            "recommendation_reason": "Recommend a light owner-reviewed boost because the post has early buyer-message evidence.",
+            "recommended_spend_amount": min(spend, BOOST_RECOMMENDATION_SPEND_CAP),
+            "recommended_duration_days": _safe_int(payload.get("recommended_duration_days"), 3) or 3,
+        }
+    if messages == 0 and qualified == 0 and spend_amount > 0:
+        return {
+            "recommended_action": "do_not_boost",
+            "recommendation_reason": "Do not boost further because spend has not produced Sam messages or qualified buyer leads.",
+            "recommended_spend_amount": 0,
+            "recommended_duration_days": 0,
+        }
+    return {
+        "recommended_action": "wait_for_more_data",
+        "recommendation_reason": "Wait for more evidence before recommending paid boost.",
+        "recommended_spend_amount": 0,
+        "recommended_duration_days": 0,
+    }
+
+
+def _boost_packet(params):
+    if not params:
+        return {}
+    return {
+        "success": True,
+        "mode": "beacon_boost_recommendation_owner_review_only",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "performance_event_id": params.get("performance_event_id", ""),
+        "manual_post_event_id": params.get("manual_post_event_id", ""),
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "channel": params.get("channel", ""),
+        "recommended_action": params.get("recommended_action", "wait_for_more_data"),
+        "recommendation_reason": params.get("recommendation_reason", ""),
+        "recommended_spend_amount": params.get("recommended_spend_amount", 0),
+        "recommended_duration_days": params.get("recommended_duration_days", 0),
+        "max_spend_cap_amount": params.get("max_spend_cap_amount", BOOST_RECOMMENDATION_SPEND_CAP),
+        "currency": params.get("spend_currency", "ZAR"),
+        "primary_metrics": {
+            "messages_to_sam": params.get("messages_to_sam", 0),
+            "qualified_buyer_leads": params.get("qualified_buyer_leads", 0),
+            "cost_per_message": params.get("cost_per_message"),
+            "cost_per_qualified_lead": params.get("cost_per_qualified_lead"),
+        },
+        "approval_status": "owner_review_required" if params.get("recommended_action") in {"light_boost_owner_review", "owner_review_required"} else "no_paid_action_requested",
+        "approval_executes_boost": False,
+        "calls_meta_now": False,
+        "spends_money_now": False,
+        "owner_review_checklist": [
+            "Check that Sam can handle more messages from this post.",
+            "Check that meat stock, carcass reservations, delivery, and fulfilment capacity can absorb the extra demand.",
+            "Confirm the spend amount stays within the R500 test cap.",
+            "Use this as recommendation evidence only; no Facebook/Meta boost is executed here.",
+        ],
+        "next_gate": "owner_approves_boost_packet_before_any_future_meta_ads_execution",
+        **PERFORMANCE_AUTHORITY_FLAGS,
+        "recommends_boost": params.get("recommended_action") == "light_boost_owner_review",
+    }
+
+
+def _public_performance_event(params):
+    return {
+        "performance_event_id": params.get("performance_event_id", ""),
+        "mode": params.get("mode", "beacon_campaign_performance_evidence_only"),
+        "manual_post_event_id": params.get("manual_post_event_id", ""),
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "channel": params.get("channel", ""),
+        "measurement_window": params.get("measurement_window", ""),
+        "spend_amount": params.get("spend_amount", 0),
+        "spend_currency": params.get("spend_currency", "ZAR"),
+        "reach": params.get("reach", 0),
+        "impressions": params.get("impressions", 0),
+        "reactions": params.get("reactions", 0),
+        "comments": params.get("comments", 0),
+        "shares": params.get("shares", 0),
+        "messages_to_sam": params.get("messages_to_sam", 0),
+        "qualified_buyer_leads": params.get("qualified_buyer_leads", 0),
+        "booking_review_requests": params.get("booking_review_requests", 0),
+        "notes": params.get("notes", ""),
+        "recommended_action": params.get("recommended_action", ""),
+        "recommendation_reason": params.get("recommendation_reason", ""),
+        "recommended_spend_amount": params.get("recommended_spend_amount", 0),
+        "recommended_duration_days": params.get("recommended_duration_days", 0),
+        "max_spend_cap_amount": params.get("max_spend_cap_amount", BOOST_RECOMMENDATION_SPEND_CAP),
+        "cost_per_message": params.get("cost_per_message"),
+        "cost_per_qualified_lead": params.get("cost_per_qualified_lead"),
+        "recorded_by": params.get("recorded_by", ""),
+        **PERFORMANCE_AUTHORITY_FLAGS,
+        "recommends_boost": params.get("recommended_action") == "light_boost_owner_review",
+    }
+
+
+def _performance_row_to_event(row):
+    return {
+        "performance_event_id": row[0],
+        "mode": "beacon_campaign_performance_evidence_only",
+        "manual_post_event_id": row[1],
+        "publish_packet_id": row[2],
+        "channel": row[3],
+        "measurement_window": row[4],
+        "spend_amount": float(row[5] or 0),
+        "spend_currency": row[6],
+        "reach": row[7],
+        "impressions": row[8],
+        "reactions": row[9],
+        "comments": row[10],
+        "shares": row[11],
+        "messages_to_sam": row[12],
+        "qualified_buyer_leads": row[13],
+        "booking_review_requests": row[14],
+        "notes": row[15],
+        "recommended_action": row[16],
+        "recommendation_reason": row[17],
+        "recommended_spend_amount": float(row[18] or 0),
+        "recommended_duration_days": row[19],
+        "max_spend_cap_amount": float(row[20] or BOOST_RECOMMENDATION_SPEND_CAP),
+        "cost_per_message": float(row[21]) if row[21] is not None else None,
+        "cost_per_qualified_lead": float(row[22]) if row[22] is not None else None,
+        "recommends_boost": bool(row[23]),
+        "recorded_by": row[24],
+        "created_at": row[25].isoformat() if hasattr(row[25], "isoformat") else str(row[25] or ""),
+        **PERFORMANCE_AUTHORITY_FLAGS,
+    }
+
+
+def _event_to_performance_params(event):
+    event = event if isinstance(event, dict) else {}
+    params = dict(event)
+    params.setdefault("max_spend_cap_amount", BOOST_RECOMMENDATION_SPEND_CAP)
+    params.setdefault("spend_currency", "ZAR")
+    params.setdefault("recommended_action", "wait_for_more_data")
+    params.setdefault("recommendation_reason", "")
+    params.setdefault("recommended_spend_amount", 0)
+    params.setdefault("recommended_duration_days", 0)
+    return params
+
+
+def _performance_event_id(params):
+    seed = {
+        "manual_post_event_id": params.get("manual_post_event_id", ""),
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "measurement_window": params.get("measurement_window", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
+    return f"BEACON-PERF-{digest}"
+
+
+def _performance_unavailable(status, configured):
+    return {
+        "success": False,
+        "configured": configured,
+        "status": status,
+        "mode": "beacon_campaign_performance_evidence_only",
+        "performance_events": [],
+        **PERFORMANCE_AUTHORITY_FLAGS,
+    }
+
+
+def _safe_money(value, default=0):
+    try:
+        return round(max(0, float(value)), 2)
+    except (TypeError, ValueError):
+        return default
+
+
+def _cost(spend, count):
+    if not count:
+        return None
+    return round(float(spend or 0) / int(count), 2)
 
 
 def _loads(value, fallback):

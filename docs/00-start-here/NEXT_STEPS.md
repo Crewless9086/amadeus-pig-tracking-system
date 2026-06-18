@@ -467,6 +467,40 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11U should add Beacon performance tracking and boost recommendations. Beacon may recommend whether a Facebook post is worth boosting, but direct paid promotion still needs owner-approved spend caps and Meta Ads credentials in a later reviewed build.
 
+### Phase 11U Complete - Beacon Performance Tracking And Boost Recommendation Packet
+
+Planning prompt pass:
+
+- Prompt 1 confidence inputs: Facebook is the first paid-test channel, recommendation/owner packet is wanted, max recommended spend is R500/post, useful outcomes are messages to Sam and cost per real buyer lead, Beacon may later pull Meta data, Beacon must be able to say do not boost, and the early business rule is to evaluate every approved launch post for a light boost.
+- Prompt 2 product risks: uncontrolled spend, boosting the wrong post, creating demand beyond fulfilment capacity, optimizing vanity metrics, weak attribution, and Meta API complexity.
+- Prompt 3 engineering corrections: "boost every approved post" now means "evaluate every approved post"; attribution starts manual; performance evidence is append-only; R500 cap is enforced; Meta API work is deferred; UI stays inside `/sales/beacon-media`.
+
+Implemented outcome:
+
+- New append-only migration: `supabase/migrations/202606180004_create_beacon_campaign_performance_events.sql`.
+- New backend evidence/recommendation rail:
+  - `GET /api/beacon/campaign-performance`
+  - `POST /api/beacon/campaign-performance`
+- Farm App `/sales/beacon-media` now has a Performance + Boost Recommendation panel.
+- Performance records link to manual post evidence and publish packets.
+- Manual inputs include spend so far, reach, messages to Sam, qualified buyer leads, recommended spend, duration, fulfilment risk, safety risk, and notes.
+- Beacon builds an owner-review boost packet with:
+  - `light_boost_owner_review`
+  - `do_not_boost`
+  - `wait_for_more_data`
+  - `owner_review_required`
+- Recommended spend is capped at R500.
+
+Authority boundary:
+
+- This rail records evidence and recommends only.
+- It does not call Meta/Facebook/Instagram, boost posts, spend money, schedule posts, send customer messages, create quotes/invoices/orders, change stock, reserve carcasses, dispatch agents, or change prompts/runtime.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11V should add read-only Meta/Facebook performance import design before any real Meta credential is used. Actual paid boost execution remains a later owner-approved build.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

@@ -35,6 +35,23 @@
     manualPostNotes: byId("beacon_manual_post_notes"),
     manualPostRecord: byId("beacon_manual_post_record"),
     manualPostList: byId("beacon_manual_post_evidence_list"),
+    performanceRefresh: byId("beacon_performance_refresh"),
+    performanceManualPostId: byId("beacon_performance_manual_post_id"),
+    performancePublishPacketId: byId("beacon_performance_publish_packet_id"),
+    performanceChannel: byId("beacon_performance_channel"),
+    performanceWindow: byId("beacon_performance_window"),
+    performanceSpend: byId("beacon_performance_spend"),
+    performanceReach: byId("beacon_performance_reach"),
+    performanceMessages: byId("beacon_performance_messages"),
+    performanceQualified: byId("beacon_performance_qualified"),
+    performanceRecommendedSpend: byId("beacon_performance_recommended_spend"),
+    performanceDuration: byId("beacon_performance_duration"),
+    performanceFulfillmentRisk: byId("beacon_performance_fulfillment_risk"),
+    performanceSafetyRisk: byId("beacon_performance_safety_risk"),
+    performanceNotes: byId("beacon_performance_notes"),
+    performanceRecord: byId("beacon_performance_record"),
+    boostPacketResult: byId("beacon_boost_packet_result"),
+    performanceList: byId("beacon_performance_event_list"),
     statusFilter: byId("beacon_media_status_filter"),
     typeFilter: byId("beacon_media_type_filter"),
     assetCount: byId("beacon_media_asset_count"),
@@ -120,6 +137,7 @@
     renderAssetList();
     await loadCampaignSelection();
     await loadManualPostEvidence();
+    await loadCampaignPerformance();
     if (state.selectedAssetId && !state.assets.some((asset) => asset.asset_id === state.selectedAssetId)) {
       state.selectedAssetId = "";
       renderDetail(null);
@@ -202,6 +220,8 @@
   function primeManualPostEvidence(packet) {
     elements.manualPostPacketId.value = packet.publish_packet_id || "";
     elements.manualPostChannel.value = packet.selected_draft?.channel || elements.publishChannel.value || "";
+    elements.performancePublishPacketId.value = packet.publish_packet_id || "";
+    elements.performanceChannel.value = packet.selected_draft?.channel || elements.publishChannel.value || "Facebook";
     if (!elements.manualPostCampaignLabel.value) {
       elements.manualPostCampaignLabel.value = packet.campaign?.name || "";
     }
@@ -233,6 +253,9 @@
       body: JSON.stringify(payload),
     });
     showMessage(`Manual post evidence recorded: ${result.manual_post_event_id}`, "success");
+    elements.performanceManualPostId.value = result.manual_post_event_id || "";
+    elements.performancePublishPacketId.value = result.manual_post_event?.publish_packet_id || elements.manualPostPacketId.value;
+    elements.performanceChannel.value = result.manual_post_event?.channel || elements.manualPostChannel.value || "Facebook";
     await loadManualPostEvidence();
   }
 
@@ -257,9 +280,85 @@
           <small>${escapeHtml(safe(event.post_url || "No public URL recorded"))}</small>
           <small>${escapeHtml(metricText || "No initial metrics recorded")}</small>
           <p>${escapeHtml(safe(event.evidence_notes, ""))}</p>
+          <button type="button" class="button-link button-link-secondary beacon-use-performance-source" data-manual-post-id="${escapeHtml(event.manual_post_event_id)}" data-publish-packet-id="${escapeHtml(event.publish_packet_id)}" data-channel="${escapeHtml(event.channel)}">Use For Performance</button>
         </div>
       `;
     }).join("");
+    elements.manualPostList.querySelectorAll(".beacon-use-performance-source").forEach((button) => {
+      button.addEventListener("click", () => {
+        elements.performanceManualPostId.value = button.dataset.manualPostId || "";
+        elements.performancePublishPacketId.value = button.dataset.publishPacketId || "";
+        elements.performanceChannel.value = button.dataset.channel || "Facebook";
+      });
+    });
+  }
+
+  async function loadCampaignPerformance() {
+    const data = await fetchJson("/api/beacon/campaign-performance?limit=12");
+    renderCampaignPerformance(data.performance_events || []);
+    if (data.latest_boost_packet?.recommended_action) {
+      renderBoostPacket(data.latest_boost_packet);
+    }
+  }
+
+  async function recordCampaignPerformance() {
+    clearMessage();
+    const payload = {
+      manual_post_event_id: elements.performanceManualPostId.value,
+      publish_packet_id: elements.performancePublishPacketId.value,
+      channel: elements.performanceChannel.value,
+      measurement_window: elements.performanceWindow.value,
+      spend_amount: elements.performanceSpend.value,
+      reach: elements.performanceReach.value,
+      messages_to_sam: elements.performanceMessages.value,
+      qualified_buyer_leads: elements.performanceQualified.value,
+      recommended_spend_amount: elements.performanceRecommendedSpend.value,
+      recommended_duration_days: elements.performanceDuration.value,
+      fulfillment_risk: elements.performanceFulfillmentRisk.value,
+      safety_risk: elements.performanceSafetyRisk.value,
+      notes: elements.performanceNotes.value,
+      recorded_by: "farm_app_beacon_performance",
+    };
+    const result = await fetchJson("/api/beacon/campaign-performance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderBoostPacket(result.boost_packet || {});
+    showMessage(`Performance evidence recorded: ${result.performance_event_id}`, "success");
+    await loadCampaignPerformance();
+  }
+
+  function renderBoostPacket(packet) {
+    if (!packet.recommended_action) {
+      elements.boostPacketResult.innerHTML = "";
+      return;
+    }
+    const metrics = packet.primary_metrics || {};
+    elements.boostPacketResult.innerHTML = `
+      <div class="beacon-boost-packet-card">
+        <strong>${escapeHtml(packet.recommended_action)}</strong>
+        <span>${escapeHtml(safe(packet.channel))} | owner review only | no Meta call | no spend</span>
+        <p>${escapeHtml(safe(packet.recommendation_reason))}</p>
+        <small>Spend: ${escapeHtml(safe(packet.currency, "ZAR"))} ${escapeHtml(String(packet.recommended_spend_amount ?? 0))} / cap ${escapeHtml(String(packet.max_spend_cap_amount ?? 500))} | ${escapeHtml(String(packet.recommended_duration_days ?? 0))} days</small>
+        <small>Messages: ${escapeHtml(String(metrics.messages_to_sam ?? 0))} | Qualified leads: ${escapeHtml(String(metrics.qualified_buyer_leads ?? 0))} | Cost/lead: ${escapeHtml(String(metrics.cost_per_qualified_lead ?? "--"))}</small>
+      </div>
+    `;
+  }
+
+  function renderCampaignPerformance(events) {
+    if (!events.length) {
+      elements.performanceList.innerHTML = `<div class="table-empty">No campaign performance evidence recorded yet.</div>`;
+      return;
+    }
+    elements.performanceList.innerHTML = events.map((event) => `
+      <div class="beacon-performance-item">
+        <strong>${escapeHtml(event.recommended_action || event.performance_event_id)}</strong>
+        <span>${escapeHtml(safe(event.channel))} | ${escapeHtml(safe(event.measurement_window))} | ${escapeHtml(safe(event.created_at))}</span>
+        <small>Messages ${escapeHtml(String(event.messages_to_sam ?? 0))} | qualified leads ${escapeHtml(String(event.qualified_buyer_leads ?? 0))} | spend ${escapeHtml(safe(event.spend_currency, "ZAR"))} ${escapeHtml(String(event.spend_amount ?? 0))}</small>
+        <small>${escapeHtml(safe(event.recommendation_reason))}</small>
+      </div>
+    `).join("");
   }
 
   function renderPolicy(policy) {
@@ -447,6 +546,8 @@
     elements.publishPrepare.addEventListener("click", () => preparePublishPacket().catch((error) => showMessage(error.message)));
     elements.manualPostRefresh.addEventListener("click", () => loadManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
+    elements.performanceRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => showMessage(error.message)));
+    elements.performanceRecord.addEventListener("click", () => recordCampaignPerformance().catch((error) => showMessage(error.message)));
     elements.statusFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.typeFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.uploadForm.addEventListener("submit", (event) => uploadAsset(event).catch((error) => showMessage(error.message)));

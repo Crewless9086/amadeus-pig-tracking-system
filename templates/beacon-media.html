@@ -158,6 +158,84 @@
           </div>
           <div id="beacon_manual_post_evidence_list" class="beacon-manual-post-list"></div>
         </div>
+        <div class="beacon-performance-panel" aria-label="Beacon campaign performance and boost recommendation">
+          <div class="page-header section-header-compact">
+            <div>
+              <h3>Performance + Boost Recommendation</h3>
+              <p>Record campaign results and prepare a recommendation. This does not call Meta or spend.</p>
+            </div>
+            <button type="button" id="beacon_performance_refresh" class="button-link button-link-secondary">Refresh Performance</button>
+          </div>
+          <div class="beacon-media-review-grid">
+            <div class="form-group">
+              <label for="beacon_performance_manual_post_id">Manual Post Event ID</label>
+              <input type="text" id="beacon_performance_manual_post_id" placeholder="BEACON-MANUAL-POST-..." />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_publish_packet_id">Publish Packet ID</label>
+              <input type="text" id="beacon_performance_publish_packet_id" placeholder="BEACON-PUBLISH-PACKET-..." />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_channel">Channel</label>
+              <input type="text" id="beacon_performance_channel" placeholder="Facebook" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_window">Measurement Window</label>
+              <input type="text" id="beacon_performance_window" placeholder="first 24 hours" />
+            </div>
+          </div>
+          <div class="beacon-media-review-grid beacon-performance-metrics-grid">
+            <div class="form-group">
+              <label for="beacon_performance_spend">Spend So Far</label>
+              <input type="number" id="beacon_performance_spend" min="0" step="0.01" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_reach">Reach</label>
+              <input type="number" id="beacon_performance_reach" min="0" step="1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_messages">Messages To Sam</label>
+              <input type="number" id="beacon_performance_messages" min="0" step="1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_qualified">Qualified Buyer Leads</label>
+              <input type="number" id="beacon_performance_qualified" min="0" step="1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_recommended_spend">Recommended Spend</label>
+              <input type="number" id="beacon_performance_recommended_spend" min="0" max="500" step="0.01" placeholder="150" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_duration">Duration Days</label>
+              <input type="number" id="beacon_performance_duration" min="0" step="1" placeholder="3" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_fulfillment_risk">Fulfilment Risk</label>
+              <select id="beacon_performance_fulfillment_risk">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="beacon_performance_safety_risk">Safety Risk</label>
+              <select id="beacon_performance_safety_risk">
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="beacon_performance_notes">Performance Notes</label>
+            <textarea id="beacon_performance_notes" rows="3" placeholder="What happened, what kind of messages came in, and whether Sam can handle more."></textarea>
+          </div>
+          <div class="beacon-media-actions">
+            <button type="button" id="beacon_performance_record" class="button-link">Record Performance + Build Recommendation</button>
+          </div>
+          <div id="beacon_boost_packet_result" class="beacon-boost-packet-result"></div>
+          <div id="beacon_performance_event_list" class="beacon-performance-list"></div>
+        </div>
       </section>
 
       <section class="beacon-media-workflow">

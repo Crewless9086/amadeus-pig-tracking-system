@@ -272,7 +272,29 @@ Next gate:
 - Phase 11U should add performance tracking and boost recommendations.
 - Beacon can recommend whether a Facebook post should be boosted only after manual evidence exists. Direct Meta Ads automation remains a later reviewed build with explicit owner spend caps and credentials.
 
-### 10. Other Sales Streams
+### 10. Beacon Performance Tracking And Boost Recommendation Packet
+
+Goal: track campaign performance and prepare owner-review boost recommendations without spending money.
+
+Status: complete in Phase 11U.
+
+Implemented outcome:
+
+- `supabase/migrations/202606180004_create_beacon_campaign_performance_events.sql` creates append-only performance evidence.
+- `GET /api/beacon/campaign-performance` lists performance events.
+- `POST /api/beacon/campaign-performance` records a performance event and returns a boost recommendation packet.
+- Farm App `/sales/beacon-media` has a Performance + Boost Recommendation panel.
+- Recommendations can be `light_boost_owner_review`, `do_not_boost`, `wait_for_more_data`, or `owner_review_required`.
+- Recommended spend is capped at R500.
+- The primary optimization signals are messages to Sam and qualified buyer leads, not likes.
+- This does not call Meta, boost, spend, schedule, send customer messages, create quotes/invoices/orders, change stock, reserve carcasses, dispatch, or change prompts/runtime.
+
+Next gate:
+
+- Phase 11V should design read-only Facebook/Meta performance import.
+- Actual paid boost execution remains a later reviewed build with owner-approved spend caps and Meta credentials.
+
+### 11. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 

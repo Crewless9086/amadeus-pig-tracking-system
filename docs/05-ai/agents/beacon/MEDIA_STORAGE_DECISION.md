@@ -102,8 +102,9 @@ Completed:
 - Approved-media campaign draft selection built in `/sales/beacon-media` and `GET /api/beacon/campaign-draft-selection`.
 - Owner-review publish packet preparation built in `/sales/beacon-media` and `POST /api/beacon/campaign-publish-packet`.
 - Manual public post evidence capture built in `/sales/beacon-media` and `GET/POST /api/beacon/manual-post-evidence`.
+- Campaign performance and boost recommendation packets built in `/sales/beacon-media` and `GET/POST /api/beacon/campaign-performance`.
 
 Next:
 
 - Deploy and owner-check `/sales/beacon-media`.
-- Add Beacon performance tracking and boost recommendations without enabling automatic public posting, Meta calls, or paid spend.
+- Design read-only Meta/Facebook performance import without enabling automatic public posting, Meta writes, boost execution, or paid spend.

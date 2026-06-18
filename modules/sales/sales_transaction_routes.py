@@ -62,7 +62,9 @@ from modules.sales.conversation_learning import (
 from modules.sales.beacon_campaign import (
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
+    list_beacon_campaign_performance_events,
     list_beacon_manual_post_evidence,
+    record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
 )
 from modules.beacon.media_library import (
@@ -253,6 +255,20 @@ def beacon_manual_post_evidence():
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = record_beacon_manual_post_evidence(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/campaign-performance", methods=["GET", "POST"])
+def beacon_campaign_performance():
+    if request.method == "GET":
+        result, status_code = list_beacon_campaign_performance_events(
+            limit=request.args.get("limit", 25),
+            publish_packet_id=request.args.get("publish_packet_id", ""),
+            manual_post_event_id=request.args.get("manual_post_event_id", ""),
+        )
+        return jsonify(result), status_code
+    payload = request.get_json(silent=True) or {}
+    result, status_code = record_beacon_campaign_performance_event(payload)
     return jsonify(result), status_code
 
 

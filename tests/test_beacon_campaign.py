@@ -2,11 +2,13 @@ import unittest
 
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
+    build_beacon_boost_recommendation_packet,
     build_meat_launch_campaign_packet,
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
     format_meat_launch_campaign_markdown,
     manual_post_evidence_policy,
+    record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
     validate_meat_launch_campaign_packet,
 )
@@ -199,6 +201,72 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["posts_publicly"])
         self.assertFalse(result["boosts_post"])
         self.assertFalse(result["spends_money"])
+
+    def test_campaign_performance_recommends_light_boost_without_spend_authority(self):
+        packet = build_beacon_boost_recommendation_packet({
+            "manual_post_event_id": "BEACON-MANUAL-POST-1",
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "messages_to_sam": 3,
+            "qualified_buyer_leads": 1,
+            "recommended_spend_amount": 150,
+            "recommended_duration_days": 3,
+        })
+
+        self.assertEqual(packet["mode"], "beacon_boost_recommendation_owner_review_only")
+        self.assertEqual(packet["recommended_action"], "light_boost_owner_review")
+        self.assertEqual(packet["recommended_spend_amount"], 150)
+        self.assertEqual(packet["max_spend_cap_amount"], 500)
+        self.assertTrue(packet["recommends_boost"])
+        self.assertFalse(packet["calls_meta"])
+        self.assertFalse(packet["boosts_post"])
+        self.assertFalse(packet["spends_money"])
+
+        preview, preview_status = record_beacon_campaign_performance_event({
+            "manual_post_event_id": "",
+            "publish_packet_id": "",
+        }, database_url="")
+        self.assertEqual(preview_status, 400)
+        self.assertEqual(preview["status"], "manual_post_event_id_or_publish_packet_id_required")
+        self.assertFalse(preview["calls_meta"])
+        self.assertFalse(preview["spends_money"])
+
+    def test_campaign_performance_builds_boost_packet_rules_before_db_when_missing_config(self):
+        result, status = record_beacon_campaign_performance_event({
+            "manual_post_event_id": "BEACON-MANUAL-POST-1",
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "messages_to_sam": 3,
+            "qualified_buyer_leads": 1,
+            "recommended_spend_amount": 150,
+            "recommended_duration_days": 3,
+        }, database_url="")
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "not_configured")
+        self.assertTrue(result["records_evidence"])
+        self.assertFalse(result["posts_publicly"])
+        self.assertFalse(result["calls_meta"])
+        self.assertFalse(result["boosts_post"])
+        self.assertFalse(result["spends_money"])
+
+    def test_campaign_performance_caps_requested_boost_and_blocks_high_risk(self):
+        high_risk = build_beacon_boost_recommendation_packet({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "fulfillment_risk": "high",
+        })
+        self.assertEqual(high_risk["recommended_action"], "do_not_boost")
+        self.assertEqual(high_risk["recommended_spend_amount"], 0)
+        self.assertFalse(high_risk["spends_money"])
+
+        over_cap = build_beacon_boost_recommendation_packet({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "messages_to_sam": 5,
+            "recommended_spend_amount": 900,
+        })
+        self.assertEqual(over_cap["recommended_action"], "owner_review_required")
+        self.assertEqual(over_cap["recommended_spend_amount"], 500)
+        self.assertFalse(over_cap["calls_meta"])
 
 
 if __name__ == "__main__":

@@ -425,6 +425,57 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), record_result)
         record_evidence.assert_called_once_with(payload)
 
+    def test_beacon_campaign_performance_routes_are_recommendation_only(self):
+        list_result = {
+            "success": True,
+            "mode": "beacon_campaign_performance_evidence_only",
+            "performance_events": [{"performance_event_id": "BEACON-PERF-1"}],
+        }
+        record_result = {
+            "success": True,
+            "mode": "beacon_campaign_performance_evidence_only",
+            "performance_event_id": "BEACON-PERF-2",
+            "boost_packet": {
+                "recommended_action": "light_boost_owner_review",
+                "calls_meta_now": False,
+                "spends_money_now": False,
+            },
+            "calls_meta": False,
+            "boosts_post": False,
+            "spends_money": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_campaign_performance_events",
+            return_value=(list_result, 200),
+        ) as list_events:
+            response = self.client.get("/api/beacon/campaign-performance?limit=6&publish_packet_id=BEACON-PUBLISH-PACKET-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), list_result)
+        list_events.assert_called_once_with(
+            limit="6",
+            publish_packet_id="BEACON-PUBLISH-PACKET-1",
+            manual_post_event_id="",
+        )
+
+        payload = {
+            "manual_post_event_id": "BEACON-MANUAL-POST-1",
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "messages_to_sam": 3,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "record_beacon_campaign_performance_event",
+            return_value=(record_result, 201),
+        ) as record_event:
+            response = self.client.post("/api/beacon/campaign-performance", json=payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), record_result)
+        record_event.assert_called_once_with(payload)
+
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {
             "success": True,
