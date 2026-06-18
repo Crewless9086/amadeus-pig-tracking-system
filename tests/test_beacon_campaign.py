@@ -321,6 +321,79 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(result["boosts_post"])
         self.assertFalse(result["spends_money"])
 
+    def test_facebook_image_post_execution_requires_approved_image_asset(self):
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "exact_text": "Limited preorder image test post.",
+            "asset_id": "BEACON-ASSET-1",
+            "selected_asset": {
+                "asset_id": "BEACON-ASSET-1",
+                "media_type": "video",
+                "effective_public_use_approved": True,
+                "storage_bucket": "beacon-raw-intake",
+                "storage_path": "2026/06/18/video.mp4",
+            },
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, database_url="", environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "123",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        })
+
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "selected_asset_must_be_image")
+        self.assertFalse(result["posts_publicly"])
+        self.assertFalse(result["calls_meta"])
+
+    def test_facebook_image_post_execution_can_call_mock_poster_when_enabled(self):
+        def fake_poster(params, policy):
+            self.assertEqual(params["post_kind"], "photo")
+            self.assertEqual(params["asset_id"], "BEACON-ASSET-APPROVED")
+            self.assertTrue(policy["posts_media_now"])
+            return {
+                "success": True,
+                "id": "123_photo_456",
+                "post_kind": "photo",
+                "selected_media": {
+                    "asset_id": params["asset_id"],
+                    "media_type": "image",
+                },
+            }, 200
+
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "exact_text": "Limited preorder image test post.",
+            "asset_id": "BEACON-ASSET-APPROVED",
+            "selected_asset": {
+                "asset_id": "BEACON-ASSET-APPROVED",
+                "title": "Approved farm image",
+                "media_type": "image",
+                "mime_type": "image/jpeg",
+                "effective_public_use_approved": True,
+                "storage_bucket": "beacon-raw-intake",
+                "storage_path": "2026/06/18/photo.jpg",
+            },
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, database_url="", poster=fake_poster, environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "123",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "facebook_page_post_sent")
+        self.assertEqual(result["execution_event"]["post_kind"], "photo")
+        self.assertEqual(result["execution_event"]["selected_media"]["asset_id"], "BEACON-ASSET-APPROVED")
+        self.assertTrue(result["posts_publicly"])
+        self.assertTrue(result["calls_meta"])
+        self.assertFalse(result["spends_money"])
+
 
 if __name__ == "__main__":
     unittest.main()

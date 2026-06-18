@@ -58,6 +58,7 @@ Order:
 9. Beacon Manual Public Post Evidence.
 10. Beacon Performance Tracking And Boost Recommendation Packet.
 11. Beacon Owner-Approved Facebook Page Post Gate.
+12. Beacon Approved-Image Facebook Page Post Gate.
 
 Phase 11N note: Beacon's meat launch packet lives in `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` and is backed by `modules/sales/beacon_campaign.py`. Full Beacon scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Beacon cannot post, send customer messages, create quotes/invoices/orders, reserve stock, or confirm payment until later approved authority levels exist.
 
@@ -74,5 +75,7 @@ Phase 11T note: Beacon can record owner-performed manual public post evidence th
 Phase 11U note: Beacon can record append-only campaign performance evidence and prepare owner-review boost recommendation packets through `GET/POST /api/beacon/campaign-performance` and the `/sales/beacon-media` Performance + Boost Recommendation panel. Recommendations are capped at R500 and optimize for Sam messages and qualified buyer leads. Beacon still cannot call Meta, boost, spend, schedule, send customer messages, or change orders/stock.
 
 Phase 11V note: Beacon can post exact owner-confirmed text to a configured Facebook Page through `GET /api/beacon/facebook-posting-policy` and `GET/POST /api/beacon/facebook-post-executions`. This is env-gated, requires exact owner confirmation, records append-only execution evidence, and is text-only. Beacon still cannot boost, spend, schedule, DM customers, create orders, change stock, or auto-use private media.
+
+Phase 11W note: Beacon can post an owner-confirmed approved image to the configured Facebook Page through the same `GET/POST /api/beacon/facebook-post-executions` gate when the publish packet carries a Beacon media `asset_id`. The backend resolves the asset from approved image media, creates a short-lived Supabase signed URL, posts to the Facebook Page photos endpoint, and records selected media evidence. Beacon still cannot boost, spend, schedule, DM customers, create orders, change stock, post videos/documents, or use unapproved/private media.
 
 Other sales options remain planned, but the first agent pattern is proven through Meat Sales before repeating it for live pig sales, slaughter/abattoir sales, assisted slaughter, or custom cuts.

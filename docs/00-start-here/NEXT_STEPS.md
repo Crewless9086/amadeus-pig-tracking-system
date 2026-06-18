@@ -542,6 +542,41 @@ Next gate:
 - Open `/sales/beacon-media`, prepare the Facebook publish packet, type the exact confirmation, and run one live post smoke.
 - Phase 11W should add read-only Meta/Facebook performance import after the posting gate is live-smoked.
 
+### Phase 11W Complete - Beacon Approved Image Facebook Page Post Gate
+
+Implemented outcome:
+
+- New migration: `supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql`.
+- The existing `POST /api/beacon/facebook-post-executions` endpoint now accepts `asset_id`.
+- When `asset_id` is provided, the route resolves it from the approved Beacon media library before execution.
+- Only approved image assets can be posted publicly; videos/documents/unapproved assets are rejected before Meta is called.
+- The backend creates a short-lived Supabase signed URL for the approved image and posts it to the Facebook Page `/photos` endpoint with the exact owner-approved caption.
+- Text-only posting still works through the existing `/feed` path.
+- The Farm App `/sales/beacon-media` Facebook post panel now carries the selected approved image from the publish packet into the execution gate.
+- Execution evidence records `post_kind` and selected media metadata inside `facebook_response_json`.
+
+Required envs for image-backed Facebook posting:
+
+- `BEACON_FACEBOOK_POSTING_ENABLED=1`
+- `BEACON_FACEBOOK_PAGE_ID=<facebook_page_id>`
+- `BEACON_FACEBOOK_PAGE_ACCESS_TOKEN=<page_access_token>`
+- `SUPABASE_URL=<supabase_project_url>`
+- `SUPABASE_SERVICE_ROLE_KEY=<service_role_key>`
+- Optional: `BEACON_FACEBOOK_GRAPH_VERSION=v23.0`
+
+Authority boundary:
+
+- This can publish approved text-only or approved image Facebook Page posts only after exact owner confirmation.
+- It does not post videos, boost posts, spend money, schedule posts, send customer DMs, call Chatwoot/n8n, create quotes/invoices/orders, change stock, reserve carcasses, dispatch agents, or change prompts/runtime.
+- Beacon still needs owner approval of media and exact copy before every post.
+
+Next gate:
+
+- Apply migration `202606180006`.
+- Deploy latest commit.
+- Use `/sales/beacon-media` to upload/review/approve an image, prepare a Facebook publish packet with that approved image, type `POST EXACT BEACON PACKET`, and run one live image post smoke.
+- After image posting is proven, build read-only post performance import and then owner-approved boost recommendations.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

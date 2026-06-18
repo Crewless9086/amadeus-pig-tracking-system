@@ -289,6 +289,29 @@ def beacon_facebook_post_executions():
         )
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
+    asset_id = str(payload.get("asset_id") or "").strip()
+    if asset_id:
+        assets_result, assets_status = list_beacon_media_assets(
+            limit=100,
+            approval_status="approved",
+            media_type="image",
+        )
+        if assets_status >= 400:
+            return jsonify(assets_result), assets_status
+        approved_asset = next(
+            (asset for asset in assets_result.get("assets", []) if asset.get("asset_id") == asset_id),
+            None,
+        )
+        if not approved_asset:
+            return jsonify({
+                "success": False,
+                "status": "selected_image_asset_not_approved_or_not_found",
+                "asset_id": asset_id,
+                "posts_publicly": False,
+                "calls_meta": False,
+                "spends_money": False,
+            }), 400
+        payload = {**payload, "selected_asset": approved_asset}
     result, status_code = execute_beacon_facebook_page_post(payload)
     return jsonify(result), status_code
 

@@ -534,6 +534,45 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), execute_result)
         execute_post.assert_called_once_with(payload)
 
+    def test_beacon_facebook_post_execution_resolves_approved_image_asset(self):
+        execute_result = {
+            "success": True,
+            "status": "facebook_page_post_sent",
+            "posts_publicly": True,
+            "calls_meta": True,
+            "spends_money": False,
+        }
+        payload = {
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "exact_text": "Limited preorder image post.",
+            "asset_id": "BEACON-ASSET-APPROVED",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        approved_asset = {
+            "asset_id": "BEACON-ASSET-APPROVED",
+            "media_type": "image",
+            "effective_public_use_approved": True,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_media_assets",
+            return_value=({"success": True, "assets": [approved_asset]}, 200),
+        ) as list_assets, patch.object(
+            sales_transaction_routes,
+            "execute_beacon_facebook_page_post",
+            return_value=(execute_result, 200),
+        ) as execute_post:
+            response = self.client.post("/api/beacon/facebook-post-executions", json=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), execute_result)
+        list_assets.assert_called_once_with(limit=100, approval_status="approved", media_type="image")
+        execute_post.assert_called_once()
+        sent_payload = execute_post.call_args.args[0]
+        self.assertEqual(sent_payload["selected_asset"], approved_asset)
+
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {
             "success": True,

@@ -104,9 +104,11 @@ Completed:
 - Manual public post evidence capture built in `/sales/beacon-media` and `GET/POST /api/beacon/manual-post-evidence`.
 - Campaign performance and boost recommendation packets built in `/sales/beacon-media` and `GET/POST /api/beacon/campaign-performance`.
 - Owner-approved Facebook Page text-post execution gate built in `/sales/beacon-media` and `GET/POST /api/beacon/facebook-post-executions`.
+- Owner-approved Facebook Page image-post execution built on the same gate: selected `asset_id` must resolve to an approved image in the Beacon media library, the backend creates a short-lived Supabase signed URL, and Meta receives the approved image plus exact caption through the Page photos endpoint.
 
 Next:
 
 - Deploy and owner-check `/sales/beacon-media`.
-- Add Facebook Page posting envs and live-smoke one text post.
+- Apply migration `202606180006_extend_beacon_facebook_post_execution_statuses.sql`.
+- Live-smoke one approved-image Facebook post.
 - Design read-only Meta/Facebook performance import without enabling Meta writes, boost execution, or paid spend.

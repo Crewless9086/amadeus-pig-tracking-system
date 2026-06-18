@@ -27,6 +27,7 @@
     facebookPostPolicyStatus: byId("beacon_facebook_post_policy_status"),
     facebookPostPacketId: byId("beacon_facebook_post_packet_id"),
     facebookPostConfirmation: byId("beacon_facebook_post_confirmation"),
+    facebookPostAssetId: byId("beacon_facebook_post_asset_id"),
     facebookPostExactText: byId("beacon_facebook_post_exact_text"),
     facebookPostExecute: byId("beacon_facebook_post_execute"),
     facebookPostResult: byId("beacon_facebook_post_result"),
@@ -243,6 +244,7 @@
 
   function primeFacebookPostExecution(packet) {
     elements.facebookPostPacketId.value = packet.publish_packet_id || "";
+    elements.facebookPostAssetId.value = packet.selected_asset?.asset_id || "";
     elements.facebookPostExactText.value = packet.selected_draft?.exact_text || "";
   }
 
@@ -268,6 +270,7 @@
       publish_packet_id: elements.facebookPostPacketId.value,
       channel: "Facebook",
       exact_text: elements.facebookPostExactText.value,
+      asset_id: elements.facebookPostAssetId.value,
       owner_confirmation: elements.facebookPostConfirmation.value,
       recorded_by: "farm_app_beacon_facebook_post_gate",
     };
@@ -287,6 +290,7 @@
       <div class="beacon-facebook-post-card">
         <strong>${escapeHtml(result.status || event.execution_status || "not_attempted")}</strong>
         <span>Post ID: ${escapeHtml(safe(result.facebook_post_id || event.facebook_post_id, "Not posted"))}</span>
+        <small>${escapeHtml(safe(event.post_kind || result.facebook_result?.post_kind || "feed"))} | media ${escapeHtml(safe(event.selected_media?.asset_id || result.facebook_result?.selected_media?.asset_id, "text only"))}</small>
         <small>Public post ${result.posts_publicly ? "executed" : "locked"} | Meta call ${result.calls_meta ? "executed" : "locked"} | paid boost locked</small>
       </div>
     `;
@@ -301,6 +305,7 @@
       <div class="beacon-facebook-post-item">
         <strong>${escapeHtml(event.execution_status || event.execution_event_id)}</strong>
         <span>${escapeHtml(safe(event.publish_packet_id))} | ${escapeHtml(safe(event.facebook_post_id, "No post id"))}</span>
+        <small>${escapeHtml(safe(event.post_kind || "feed"))} | ${escapeHtml(safe(event.selected_media?.title || event.selected_media?.asset_id, "text only"))}</small>
         <small>${escapeHtml(safe(event.created_at))}</small>
       </div>
     `).join("");

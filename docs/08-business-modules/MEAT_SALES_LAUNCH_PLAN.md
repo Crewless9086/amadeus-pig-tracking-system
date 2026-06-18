@@ -296,9 +296,9 @@ Next gate:
 
 ### 11. Beacon Owner-Approved Facebook Page Post Gate
 
-Goal: let Beacon publish an exact owner-reviewed Facebook Page text post for the live pilot.
+Goal: let Beacon publish an exact owner-reviewed Facebook Page text or approved-image post for the live pilot.
 
-Status: complete in Phase 11V, pending deploy/env/live smoke.
+Status: text posting live-smoked in Phase 11V; approved image posting implemented in Phase 11W, pending migration/deploy/live smoke.
 
 Implemented outcome:
 
@@ -306,6 +306,8 @@ Implemented outcome:
 - `GET /api/beacon/facebook-posting-policy` reports whether live Facebook posting is armed.
 - `GET /api/beacon/facebook-post-executions` lists post execution evidence.
 - `POST /api/beacon/facebook-post-executions` posts exact text to the configured Facebook Page only when all gates pass.
+- `POST /api/beacon/facebook-post-executions` can also post a selected approved image when `asset_id` resolves to an approved Beacon image asset.
+- `supabase/migrations/202606180006_extend_beacon_facebook_post_execution_statuses.sql` extends the append-only status rail for image-post validation failures.
 - Farm App `/sales/beacon-media` has a Facebook Page Post panel.
 - Owner must type `POST EXACT BEACON PACKET` before execution.
 - Disabled, misconfigured, failed, and successful attempts are recorded.
@@ -315,17 +317,18 @@ Required envs:
 - `BEACON_FACEBOOK_POSTING_ENABLED=1`
 - `BEACON_FACEBOOK_PAGE_ID`
 - `BEACON_FACEBOOK_PAGE_ACCESS_TOKEN`
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` for approved-image posting
 - Optional: `BEACON_FACEBOOK_GRAPH_VERSION`
 
 Boundary:
 
-- This posts text-only to the Facebook Page feed.
+- This posts text-only to the Facebook Page feed or approved images to the Facebook Page photos endpoint.
+- It will not post arbitrary URLs, videos, documents, or unapproved/private media.
 - It does not boost, spend, schedule, DM customers, create orders/quotes/invoices, change stock, reserve carcasses, or change runtime/prompts.
-- Automatic media posting remains later because private Beacon media needs a safe public upload/URL strategy.
 
 Next gate:
 
-- Deploy and live-smoke one post.
+- Apply migration `202606180006`, deploy, and live-smoke one approved-image post.
 - Then build read-only Meta/Facebook performance import.
 
 ### 12. Other Sales Streams

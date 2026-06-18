@@ -55,6 +55,8 @@ FACEBOOK_PAGE_ID_ENV = "BEACON_FACEBOOK_PAGE_ID"
 FACEBOOK_PAGE_ACCESS_TOKEN_ENV = "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN"
 FACEBOOK_GRAPH_VERSION_ENV = "BEACON_FACEBOOK_GRAPH_VERSION"
 FACEBOOK_POST_CONFIRMATION_PHRASE = "POST EXACT BEACON PACKET"
+SUPABASE_URL_ENV = "SUPABASE_URL"
+SUPABASE_SERVICE_ROLE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 
 FORBIDDEN_ACTIONS = [
     "no_public_post",
@@ -512,6 +514,8 @@ def facebook_posting_policy(environ=None):
     enabled = _truthy(source.get(FACEBOOK_POSTING_ENABLED_ENV))
     page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
     token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    supabase_url = _clean_text(source.get(SUPABASE_URL_ENV))
+    supabase_key = _clean_text(source.get(SUPABASE_SERVICE_ROLE_KEY_ENV))
     return {
         "success": True,
         "mode": "beacon_facebook_page_post_execution_gate",
@@ -526,7 +530,9 @@ def facebook_posting_policy(environ=None):
         "graph_version_env": FACEBOOK_GRAPH_VERSION_ENV,
         "required_owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
         "posts_text_only_now": True,
-        "posts_media_now": False,
+        "posts_media_now": bool(supabase_url and supabase_key),
+        "posts_image_now": bool(supabase_url and supabase_key),
+        "media_source": "approved_beacon_supabase_image_signed_url",
         "boosts_or_spends_now": False,
         "required_envs": [
             FACEBOOK_POSTING_ENABLED_ENV,
@@ -553,7 +559,7 @@ def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, e
             **_facebook_execution_authority(False),
         }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
 
-    post_fn = poster or _post_to_facebook_page_feed
+    post_fn = poster or _post_to_facebook_page
     post_result, post_status = post_fn(params, policy)
     execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
     params.update({
@@ -1357,12 +1363,17 @@ def _facebook_execution_authority(executed):
 
 
 def _facebook_post_params(payload, policy):
+    selected_asset = payload.get("selected_asset") if isinstance(payload.get("selected_asset"), dict) else {}
     params = {
         "execution_event_id": _clean_text(payload.get("execution_event_id"))[:120],
         "mode": "beacon_facebook_page_post_execution_gate",
         "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
         "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
         "exact_text": _clean_text(payload.get("exact_text") or payload.get("message"))[:5000],
+        "asset_id": _clean_text(payload.get("asset_id") or selected_asset.get("asset_id"))[:120],
+        "selected_asset": selected_asset,
+        "selected_media_json": "{}",
+        "post_kind": "photo" if _clean_text(payload.get("asset_id") or selected_asset.get("asset_id")) else "feed",
         "owner_confirmation": _clean_text(payload.get("owner_confirmation"))[:120],
         "execution_status": "not_attempted",
         "facebook_post_id": "",
@@ -1372,6 +1383,8 @@ def _facebook_post_params(payload, policy):
         "page_id_configured": bool(policy.get("page_id_configured")),
         "page_access_token_configured": bool(policy.get("page_access_token_configured")),
     }
+    if params["asset_id"]:
+        params["selected_media_json"] = json.dumps(_facebook_selected_media(params), sort_keys=True, default=str)
     if not params["execution_event_id"]:
         params["execution_event_id"] = _facebook_post_execution_id(params)
     return params
@@ -1382,6 +1395,18 @@ def _facebook_post_validation_error(params, policy):
         return "publish_packet_id_required"
     if not params.get("exact_text"):
         return "exact_text_required"
+    if params.get("asset_id"):
+        asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+        if not asset:
+            return "selected_image_asset_required"
+        if asset.get("media_type") != "image":
+            return "selected_asset_must_be_image"
+        if not (asset.get("effective_public_use_approved") or asset.get("public_use_approved")):
+            return "selected_image_asset_not_public_use_approved"
+        if not asset.get("storage_bucket") or not asset.get("storage_path"):
+            return "selected_image_asset_storage_missing"
+        if not policy.get("posts_media_now"):
+            return "facebook_image_posting_storage_not_configured"
     if params.get("owner_confirmation") != FACEBOOK_POST_CONFIRMATION_PHRASE:
         return "owner_confirmation_required"
     if "facebook" not in params.get("channel", "").lower():
@@ -1391,6 +1416,12 @@ def _facebook_post_validation_error(params, policy):
     if not policy.get("page_id_configured") or not policy.get("page_access_token_configured"):
         return "facebook_page_credentials_missing"
     return ""
+
+
+def _post_to_facebook_page(params, policy, environ=None):
+    if params.get("asset_id"):
+        return _post_to_facebook_page_photos(params, policy, environ=environ)
+    return _post_to_facebook_page_feed(params, policy, environ=environ)
 
 
 def _post_to_facebook_page_feed(params, policy, environ=None):
@@ -1426,6 +1457,107 @@ def _post_to_facebook_page_feed(params, policy, environ=None):
             "error_type": exc.__class__.__name__,
             "error": str(exc)[:240],
         }, 502
+
+
+def _post_to_facebook_page_photos(params, policy, environ=None):
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    if not page_id or not token:
+        return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    signed_url_result, signed_url_status = _signed_supabase_media_url(params, environ=source)
+    if signed_url_status >= 400:
+        return signed_url_result, signed_url_status
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/photos"
+    body = urllib_parse.urlencode({
+        "caption": params.get("exact_text", ""),
+        "url": signed_url_result.get("signed_url", ""),
+        "access_token": token,
+    }).encode("utf-8")
+    req = urllib_request.Request(endpoint, data=body, method="POST")
+    try:
+        with urllib_request.urlopen(req, timeout=35) as response:
+            raw = response.read().decode("utf-8")
+            payload = json.loads(raw or "{}")
+            return {
+                "success": True,
+                "post_kind": "photo",
+                "selected_media": _facebook_selected_media(params),
+                **payload,
+            }, response.status
+    except urllib_error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        return {
+            "success": False,
+            "status": "facebook_http_error",
+            "http_status": exc.code,
+            "post_kind": "photo",
+            "selected_media": _facebook_selected_media(params),
+            "error": raw[:500],
+        }, exc.code
+    except (urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "status": "facebook_photo_post_request_failed",
+            "post_kind": "photo",
+            "selected_media": _facebook_selected_media(params),
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+        }, 502
+
+
+def _signed_supabase_media_url(params, environ=None):
+    source = environ if environ is not None else os.environ
+    url = _clean_text(source.get(SUPABASE_URL_ENV)).rstrip("/")
+    key = _clean_text(source.get(SUPABASE_SERVICE_ROLE_KEY_ENV))
+    asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+    bucket = _clean_text(asset.get("storage_bucket"))
+    storage_path = str(asset.get("storage_path") or "").strip().replace("\\", "/")
+    if not url or not key:
+        return {"success": False, "status": "supabase_storage_not_configured_for_facebook_image"}, 503
+    if not bucket or not storage_path:
+        return {"success": False, "status": "selected_image_asset_storage_missing"}, 400
+    endpoint = f"{url}/storage/v1/object/sign/{urllib_parse.quote(bucket, safe='')}/{urllib_parse.quote(storage_path, safe='/')}"
+    body = json.dumps({"expiresIn": 3600}).encode("utf-8")
+    req = urllib_request.Request(
+        endpoint,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "apikey": key,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=20) as response:
+            raw = response.read().decode("utf-8")
+            payload = json.loads(raw or "{}")
+    except urllib_error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        return {
+            "success": False,
+            "status": "supabase_signed_url_failed",
+            "http_status": exc.code,
+            "error": raw[:500],
+        }, exc.code
+    except (urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "status": "supabase_signed_url_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+        }, 503
+    signed = payload.get("signedURL") or payload.get("signedUrl") or payload.get("signed_url") or ""
+    if signed and signed.startswith("/"):
+        signed = f"{url}{signed}"
+    return {
+        "success": bool(signed),
+        "status": "supabase_signed_url_created" if signed else "supabase_signed_url_missing",
+        "signed_url": signed,
+        "selected_media": _facebook_selected_media(params),
+    }, 200 if signed else 502
 
 
 def _record_facebook_post_execution_event(params, database_url=None):
@@ -1498,6 +1630,8 @@ def _public_facebook_post_event(params):
         "execution_status": params.get("execution_status", ""),
         "facebook_post_id": params.get("facebook_post_id", ""),
         "facebook_response": _loads(params.get("facebook_response_json"), {}),
+        "post_kind": params.get("post_kind", "feed"),
+        "selected_media": _loads(params.get("selected_media_json"), {}),
         **_facebook_execution_authority(params.get("execution_status") == "facebook_page_post_sent"),
     }
 
@@ -1513,6 +1647,8 @@ def _facebook_post_row_to_event(row):
         "execution_status": row[5],
         "facebook_post_id": row[6],
         "facebook_response": row[7] or {},
+        "post_kind": (row[7] or {}).get("post_kind", "feed") if isinstance(row[7], dict) else "feed",
+        "selected_media": (row[7] or {}).get("selected_media", {}) if isinstance(row[7], dict) else {},
         "created_at": row[8].isoformat() if hasattr(row[8], "isoformat") else str(row[8] or ""),
         **_facebook_execution_authority(row[5] == "facebook_page_post_sent"),
     }
@@ -1522,6 +1658,7 @@ def _facebook_post_execution_id(params):
     seed = {
         "publish_packet_id": params.get("publish_packet_id", ""),
         "exact_text": params.get("exact_text", ""),
+        "asset_id": params.get("asset_id", ""),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
@@ -1536,6 +1673,23 @@ def _facebook_post_unavailable(status, configured):
         "mode": "beacon_facebook_page_post_execution_gate",
         "execution_events": [],
         **_facebook_execution_authority(False),
+    }
+
+
+def _facebook_selected_media(params):
+    asset = params.get("selected_asset") if isinstance(params.get("selected_asset"), dict) else {}
+    if not asset and not params.get("asset_id"):
+        return {}
+    return {
+        "asset_id": params.get("asset_id") or asset.get("asset_id", ""),
+        "title": asset.get("title", ""),
+        "media_type": asset.get("media_type", ""),
+        "mime_type": asset.get("mime_type", ""),
+        "storage_bucket": asset.get("storage_bucket", ""),
+        "storage_path": asset.get("storage_path", ""),
+        "privacy_risk": asset.get("privacy_risk", ""),
+        "quality_score": asset.get("quality_score"),
+        "public_use_approved": bool(asset.get("effective_public_use_approved") or asset.get("public_use_approved")),
     }
 
 
