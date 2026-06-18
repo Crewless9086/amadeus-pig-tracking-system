@@ -132,6 +132,15 @@ Not ready enough:
 6. For first pilot delivery, do we deliver only Riversdale/nearby, or do we allow collection as the default?
 7. What is the minimum acceptable margin per carcass after slaughter, butchery, packaging, and delivery costs?
 
+## Owner Pilot Answers - 2026-06-18
+
+- Available supply: there are pigs very close to 60kg over the next few weeks.
+- First campaign channel: Facebook only.
+- Quote/invoice timing: owner is open to recommendation because meat final amount depends on actual packed weight. Recommended model: estimated quote before deposit, deposit request against estimate, final tax/commercial invoice after actual packed weight and final amount are known.
+- Finance/Admin source direction: eventually all relevant sources. Start with email access/filtering, then route bank notifications, POP attachments, invoices, quotes, and human-review exceptions into the correct agent rail.
+- First delivery zone: Riversdale and nearby towns first: Mossel Bay, Riversdale, Albertinia, Still Bay. George can be added later.
+- Minimum margin: not set yet. First pilot should capture all costs so Ledger can calculate real margin per carcass.
+
 ## Immediate Recommendation
 
 Do not build a new large agent yet. The next money-first sequence should be:
