@@ -6,6 +6,8 @@ from modules.sales.beacon_campaign import (
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
     format_meat_launch_campaign_markdown,
+    manual_post_evidence_policy,
+    record_beacon_manual_post_evidence,
     validate_meat_launch_campaign_packet,
 )
 
@@ -153,6 +155,50 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(packet["success"])
         self.assertIn("selected_asset_not_approved_or_not_found", packet["errors"])
         self.assertFalse(packet["authority"]["calls_meta"])
+
+    def test_manual_post_evidence_policy_allows_evidence_not_boost_or_spend(self):
+        policy = manual_post_evidence_policy()
+
+        self.assertTrue(policy["success"])
+        self.assertEqual(policy["mode"], "beacon_manual_public_post_evidence_only")
+        self.assertTrue(policy["records_evidence"])
+        self.assertFalse(policy["posts_publicly"])
+        self.assertFalse(policy["calls_meta"])
+        self.assertFalse(policy["boosts_post"])
+        self.assertFalse(policy["spends_money"])
+        self.assertEqual(policy["next_gate"], "beacon_performance_tracking_before_boost_recommendation_or_meta_ads_access")
+
+    def test_manual_post_evidence_requires_packet_and_channel_before_db(self):
+        missing_packet, missing_packet_status = record_beacon_manual_post_evidence({
+            "channel": "Facebook",
+        }, database_url="")
+        self.assertEqual(missing_packet_status, 400)
+        self.assertEqual(missing_packet["status"], "publish_packet_id_required")
+        self.assertFalse(missing_packet["calls_meta"])
+        self.assertFalse(missing_packet["spends_money"])
+
+        missing_channel, missing_channel_status = record_beacon_manual_post_evidence({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+        }, database_url="")
+        self.assertEqual(missing_channel_status, 400)
+        self.assertEqual(missing_channel["status"], "channel_required")
+
+    def test_manual_post_evidence_missing_database_is_safe_unavailable(self):
+        result, status = record_beacon_manual_post_evidence({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "post_url": "https://example.test/post",
+            "reactions": "4",
+            "messages": "2",
+        }, database_url="")
+
+        self.assertEqual(status, 503)
+        self.assertEqual(result["status"], "not_configured")
+        self.assertEqual(result["mode"], "beacon_manual_public_post_evidence_only")
+        self.assertTrue(result["records_evidence"])
+        self.assertFalse(result["posts_publicly"])
+        self.assertFalse(result["boosts_post"])
+        self.assertFalse(result["spends_money"])
 
 
 if __name__ == "__main__":

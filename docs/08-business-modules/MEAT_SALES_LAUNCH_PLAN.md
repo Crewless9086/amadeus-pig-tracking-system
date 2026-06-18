@@ -252,7 +252,27 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11T should define manual public posting execution checklist and evidence capture before direct platform automation.
 
-### 9. Other Sales Streams
+### 9. Beacon Manual Public Post Evidence
+
+Goal: capture evidence after the owner manually posts a Beacon packet publicly.
+
+Status: complete in Phase 11T.
+
+Implemented outcome:
+
+- `supabase/migrations/202606180003_create_beacon_manual_post_events.sql` creates append-only manual post evidence.
+- `GET /api/beacon/manual-post-evidence` lists recent evidence.
+- `POST /api/beacon/manual-post-evidence` records a manual post evidence event.
+- Farm App `/sales/beacon-media` has a Manual Post Evidence panel below Publish Packet.
+- Evidence can include publish packet ID, channel, post URL/evidence, posted time, posted by, campaign label, notes, and initial manual metrics.
+- This does not post, schedule, boost, spend, call Meta, call Chatwoot/n8n, send customer messages, create quotes/invoices/orders, change stock, reserve carcasses, dispatch, or change prompts/runtime.
+
+Next gate:
+
+- Phase 11U should add performance tracking and boost recommendations.
+- Beacon can recommend whether a Facebook post should be boosted only after manual evidence exists. Direct Meta Ads automation remains a later reviewed build with explicit owner spend caps and credentials.
+
+### 10. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 

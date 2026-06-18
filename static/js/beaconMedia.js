@@ -21,6 +21,20 @@
     publishNotes: byId("beacon_publish_notes"),
     publishPrepare: byId("beacon_publish_prepare"),
     publishResult: byId("beacon_publish_packet_result"),
+    manualPostRefresh: byId("beacon_manual_post_refresh"),
+    manualPostPacketId: byId("beacon_manual_post_packet_id"),
+    manualPostChannel: byId("beacon_manual_post_channel"),
+    manualPostUrl: byId("beacon_manual_post_url"),
+    manualPostPostedAt: byId("beacon_manual_post_posted_at"),
+    manualPostPostedBy: byId("beacon_manual_post_posted_by"),
+    manualPostCampaignLabel: byId("beacon_manual_post_campaign_label"),
+    manualPostReactions: byId("beacon_manual_post_reactions"),
+    manualPostComments: byId("beacon_manual_post_comments"),
+    manualPostShares: byId("beacon_manual_post_shares"),
+    manualPostMessages: byId("beacon_manual_post_messages"),
+    manualPostNotes: byId("beacon_manual_post_notes"),
+    manualPostRecord: byId("beacon_manual_post_record"),
+    manualPostList: byId("beacon_manual_post_evidence_list"),
     statusFilter: byId("beacon_media_status_filter"),
     typeFilter: byId("beacon_media_type_filter"),
     assetCount: byId("beacon_media_asset_count"),
@@ -105,6 +119,7 @@
     renderSummary(assetData.counts || {});
     renderAssetList();
     await loadCampaignSelection();
+    await loadManualPostEvidence();
     if (state.selectedAssetId && !state.assets.some((asset) => asset.asset_id === state.selectedAssetId)) {
       state.selectedAssetId = "";
       renderDetail(null);
@@ -166,6 +181,7 @@
       body: JSON.stringify(payload),
     });
     renderPublishPacket(packet);
+    primeManualPostEvidence(packet);
     showMessage(`Publish packet prepared for owner review: ${packet.publish_packet_id}`, "success");
   }
 
@@ -181,6 +197,69 @@
         <small>Checks: preorder ${checks.draft_is_limited_preorder ? "yes" : "no"} | forbidden promises ${checks.draft_has_no_forbidden_promise ? "clear" : "review"} | posting ${checks.no_public_send_or_post ? "locked" : "enabled"}</small>
       </div>
     `;
+  }
+
+  function primeManualPostEvidence(packet) {
+    elements.manualPostPacketId.value = packet.publish_packet_id || "";
+    elements.manualPostChannel.value = packet.selected_draft?.channel || elements.publishChannel.value || "";
+    if (!elements.manualPostCampaignLabel.value) {
+      elements.manualPostCampaignLabel.value = packet.campaign?.name || "";
+    }
+  }
+
+  async function loadManualPostEvidence() {
+    const data = await fetchJson("/api/beacon/manual-post-evidence?limit=12");
+    renderManualPostEvidence(data.manual_post_events || []);
+  }
+
+  async function recordManualPostEvidence() {
+    clearMessage();
+    const payload = {
+      publish_packet_id: elements.manualPostPacketId.value,
+      channel: elements.manualPostChannel.value,
+      post_url: elements.manualPostUrl.value,
+      posted_at: elements.manualPostPostedAt.value,
+      posted_by: elements.manualPostPostedBy.value,
+      campaign_label: elements.manualPostCampaignLabel.value,
+      evidence_notes: elements.manualPostNotes.value,
+      reactions: elements.manualPostReactions.value,
+      comments: elements.manualPostComments.value,
+      shares: elements.manualPostShares.value,
+      messages: elements.manualPostMessages.value,
+    };
+    const result = await fetchJson("/api/beacon/manual-post-evidence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    showMessage(`Manual post evidence recorded: ${result.manual_post_event_id}`, "success");
+    await loadManualPostEvidence();
+  }
+
+  function renderManualPostEvidence(events) {
+    if (!events.length) {
+      elements.manualPostList.innerHTML = `<div class="table-empty">No manual post evidence recorded yet.</div>`;
+      return;
+    }
+    elements.manualPostList.innerHTML = events.map((event) => {
+      const metrics = event.initial_metrics || {};
+      const metricText = [
+        ["reactions", metrics.reactions],
+        ["comments", metrics.comments],
+        ["shares", metrics.shares],
+        ["messages", metrics.messages],
+        ["leads", metrics.leads],
+      ].filter(([, value]) => value).map(([label, value]) => `${label}: ${value}`).join(" | ");
+      return `
+        <div class="beacon-manual-post-item">
+          <strong>${escapeHtml(event.publish_packet_id || event.manual_post_event_id)}</strong>
+          <span>${escapeHtml(safe(event.channel))} | ${escapeHtml(safe(event.posted_at || event.created_at))}</span>
+          <small>${escapeHtml(safe(event.post_url || "No public URL recorded"))}</small>
+          <small>${escapeHtml(metricText || "No initial metrics recorded")}</small>
+          <p>${escapeHtml(safe(event.evidence_notes, ""))}</p>
+        </div>
+      `;
+    }).join("");
   }
 
   function renderPolicy(policy) {
@@ -366,6 +445,8 @@
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.publishPrepare.addEventListener("click", () => preparePublishPacket().catch((error) => showMessage(error.message)));
+    elements.manualPostRefresh.addEventListener("click", () => loadManualPostEvidence().catch((error) => showMessage(error.message)));
+    elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.statusFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.typeFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.uploadForm.addEventListener("submit", (event) => uploadAsset(event).catch((error) => showMessage(error.message)));

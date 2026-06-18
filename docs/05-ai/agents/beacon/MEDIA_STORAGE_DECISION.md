@@ -101,8 +101,9 @@ Completed:
 - Farm App review UI built at `/sales/beacon-media`.
 - Approved-media campaign draft selection built in `/sales/beacon-media` and `GET /api/beacon/campaign-draft-selection`.
 - Owner-review publish packet preparation built in `/sales/beacon-media` and `POST /api/beacon/campaign-publish-packet`.
+- Manual public post evidence capture built in `/sales/beacon-media` and `GET/POST /api/beacon/manual-post-evidence`.
 
 Next:
 
 - Deploy and owner-check `/sales/beacon-media`.
-- Define manual public posting execution checklist and evidence capture without enabling automatic public posting or scheduling.
+- Add Beacon performance tracking and boost recommendations without enabling automatic public posting, Meta calls, or paid spend.

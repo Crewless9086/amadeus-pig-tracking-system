@@ -441,6 +441,32 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11T should define the manual public posting execution checklist and evidence capture, still without direct Meta/Facebook/Instagram automation.
 
+### Phase 11T Complete - Beacon Manual Public Post Evidence
+
+Goal:
+
+- Let Beacon remember what the owner manually posted publicly and what early response it received, before Beacon gets any platform-posting or paid-spend authority.
+
+Implemented outcome:
+
+- New append-only migration: `supabase/migrations/202606180003_create_beacon_manual_post_events.sql`.
+- New backend evidence rail:
+  - `POST /api/beacon/manual-post-evidence`
+  - `GET /api/beacon/manual-post-evidence`
+- Farm App `/sales/beacon-media` now has a Manual Post Evidence panel under the Publish Packet panel.
+- After a publish packet is prepared, the evidence form is prefilled with the packet ID and channel.
+- Owner can record channel, post URL/evidence, posted time, posted by, campaign label, notes, and early manual metrics.
+
+Authority boundary:
+
+- This rail records evidence only.
+- It does not post publicly, schedule, boost, spend money, call Meta/Facebook/Instagram, call Chatwoot/n8n, send customer messages, create quotes/invoices/orders, change stock, reserve carcasses, dispatch agents, or change prompts/runtime.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11U should add Beacon performance tracking and boost recommendations. Beacon may recommend whether a Facebook post is worth boosting, but direct paid promotion still needs owner-approved spend caps and Meta Ads credentials in a later reviewed build.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

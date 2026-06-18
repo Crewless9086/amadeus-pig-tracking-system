@@ -112,7 +112,8 @@
 
 .beacon-media-upload-form,
 .beacon-media-review-panel,
-.beacon-publish-packet-panel {
+.beacon-publish-packet-panel,
+.beacon-manual-post-panel {
   border-top: 1px solid #d7ded6;
   margin-top: 16px;
   padding-top: 16px;
@@ -131,11 +132,31 @@
   margin-top: 12px;
 }
 
-.beacon-publish-packet-card {
+.beacon-manual-post-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.beacon-publish-packet-card,
+.beacon-manual-post-item {
   border: 1px solid #b8cab8;
   border-radius: 8px;
   background: #f4f8f3;
   padding: 12px;
+}
+
+.beacon-manual-post-item strong,
+.beacon-manual-post-item span,
+.beacon-manual-post-item small {
+  display: block;
+}
+
+.beacon-manual-post-item span,
+.beacon-manual-post-item small,
+.beacon-manual-post-item p {
+  color: #607066;
+  margin: 4px 0 0;
 }
 
 .beacon-publish-packet-card pre {
@@ -211,7 +232,8 @@
   .beacon-campaign-selection-list,
   .beacon-media-filters,
   .beacon-media-upload-grid,
-  .beacon-media-review-grid {
+  .beacon-media-review-grid,
+  .beacon-manual-metrics-grid {
     grid-template-columns: 1fr;
   }
 }

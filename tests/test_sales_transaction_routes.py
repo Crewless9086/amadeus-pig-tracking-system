@@ -383,6 +383,48 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         build_packet.assert_called_once()
         self.assertEqual(build_packet.call_args.kwargs["approved_assets"], assets_result["assets"])
 
+    def test_beacon_manual_post_evidence_routes_record_owner_post_history_only(self):
+        list_result = {
+            "success": True,
+            "mode": "beacon_manual_public_post_evidence_only",
+            "manual_post_events": [{"manual_post_event_id": "BEACON-MANUAL-POST-1"}],
+        }
+        record_result = {
+            "success": True,
+            "mode": "beacon_manual_public_post_evidence_only",
+            "manual_post_event_id": "BEACON-MANUAL-POST-2",
+            "posts_publicly": False,
+            "boosts_post": False,
+            "spends_money": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_manual_post_evidence",
+            return_value=(list_result, 200),
+        ) as list_evidence:
+            response = self.client.get("/api/beacon/manual-post-evidence?limit=6&publish_packet_id=BEACON-PUBLISH-PACKET-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), list_result)
+        list_evidence.assert_called_once_with(limit="6", publish_packet_id="BEACON-PUBLISH-PACKET-1")
+
+        payload = {
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "post_url": "https://example.test/post",
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "record_beacon_manual_post_evidence",
+            return_value=(record_result, 201),
+        ) as record_evidence:
+            response = self.client.post("/api/beacon/manual-post-evidence", json=payload)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), record_result)
+        record_evidence.assert_called_once_with(payload)
+
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {
             "success": True,

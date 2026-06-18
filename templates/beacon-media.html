@@ -97,6 +97,67 @@
           </div>
           <div id="beacon_publish_packet_result" class="beacon-publish-packet-result"></div>
         </div>
+        <div class="beacon-manual-post-panel" aria-label="Beacon manual post evidence">
+          <div class="page-header section-header-compact">
+            <div>
+              <h3>Manual Post Evidence</h3>
+              <p>After you post manually, record the public evidence and early response. This does not boost or spend.</p>
+            </div>
+            <button type="button" id="beacon_manual_post_refresh" class="button-link button-link-secondary">Refresh Evidence</button>
+          </div>
+          <div class="beacon-media-review-grid">
+            <div class="form-group">
+              <label for="beacon_manual_post_packet_id">Publish Packet ID</label>
+              <input type="text" id="beacon_manual_post_packet_id" placeholder="BEACON-PUBLISH-PACKET-..." />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_channel">Channel</label>
+              <input type="text" id="beacon_manual_post_channel" placeholder="Facebook" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_url">Post URL Or Evidence</label>
+              <input type="text" id="beacon_manual_post_url" placeholder="https://... or WhatsApp status manually posted" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_posted_at">Posted At</label>
+              <input type="datetime-local" id="beacon_manual_post_posted_at" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_posted_by">Posted By</label>
+              <input type="text" id="beacon_manual_post_posted_by" placeholder="Charl" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_campaign_label">Campaign Label</label>
+              <input type="text" id="beacon_manual_post_campaign_label" placeholder="First pork freezer pilot" />
+            </div>
+          </div>
+          <div class="beacon-media-review-grid beacon-manual-metrics-grid">
+            <div class="form-group">
+              <label for="beacon_manual_post_reactions">Reactions</label>
+              <input type="number" id="beacon_manual_post_reactions" min="0" step="1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_comments">Comments</label>
+              <input type="number" id="beacon_manual_post_comments" min="0" step="1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_shares">Shares</label>
+              <input type="number" id="beacon_manual_post_shares" min="0" step="1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_manual_post_messages">Messages</label>
+              <input type="number" id="beacon_manual_post_messages" min="0" step="1" placeholder="0" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="beacon_manual_post_notes">Evidence Notes</label>
+            <textarea id="beacon_manual_post_notes" rows="3" placeholder="What was posted, where it was posted, and any early response quality notes."></textarea>
+          </div>
+          <div class="beacon-media-actions">
+            <button type="button" id="beacon_manual_post_record" class="button-link">Record Manual Post Evidence</button>
+          </div>
+          <div id="beacon_manual_post_evidence_list" class="beacon-manual-post-list"></div>
+        </div>
       </section>
 
       <section class="beacon-media-workflow">

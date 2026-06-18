@@ -1,4 +1,10 @@
 from copy import deepcopy
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+
+from services.database_service import DATABASE_URL_ENV
 
 
 BEACON_CAMPAIGN_MODE = "beacon_meat_launch_campaign_draft_only"
@@ -20,6 +26,18 @@ AUTHORITY_FLAGS = {
     "books_butcher": False,
     "confirms_payment": False,
     "writes_farm_data": False,
+}
+
+MANUAL_POST_AUTHORITY_FLAGS = {
+    **AUTHORITY_FLAGS,
+    "records_evidence": True,
+    "boosts_post": False,
+    "spends_money": False,
+    "reserves_stock": False,
+    "dispatch_enabled": False,
+    "changes_runtime_now": False,
+    "changes_prompt_now": False,
+    "physical_controls_enabled": False,
 }
 
 FORBIDDEN_ACTIONS = [
@@ -140,6 +158,172 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
         ],
         "next_gate": "owner_approves_exact_publish_packet_before_manual_or_gated_public_post",
     }
+
+
+def manual_post_evidence_policy():
+    return {
+        "success": True,
+        "mode": "beacon_manual_public_post_evidence_only",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "purpose": "Record owner-posted campaign evidence after a manual public post.",
+        "allowed_inputs": [
+            "publish_packet_id",
+            "channel",
+            "post_url",
+            "posted_at",
+            "posted_by",
+            "campaign_label",
+            "evidence_notes",
+            "initial manual metrics",
+        ],
+        "owner_checklist": [
+            "Prepare a publish packet and review exact text/media.",
+            "Post manually in the chosen public channel.",
+            "Paste the post URL or channel evidence back into Beacon.",
+            "Record early metrics so Beacon can learn what worked.",
+            "Do not boost or spend from this step.",
+        ],
+        "next_gate": "beacon_performance_tracking_before_boost_recommendation_or_meta_ads_access",
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }
+
+
+def record_beacon_manual_post_evidence(payload, database_url=None):
+    payload = payload if isinstance(payload, dict) else {}
+    params = _manual_post_params(payload)
+    if not params["publish_packet_id"]:
+        return {
+            "success": False,
+            "status": "publish_packet_id_required",
+            "manual_post_event": _public_manual_post_event(params),
+            **MANUAL_POST_AUTHORITY_FLAGS,
+        }, 400
+    if not params["channel"]:
+        return {
+            "success": False,
+            "status": "channel_required",
+            "manual_post_event": _public_manual_post_event(params),
+            **MANUAL_POST_AUTHORITY_FLAGS,
+        }, 400
+
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _manual_post_unavailable("not_configured", configured=False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _manual_post_unavailable("dependency_missing", configured=True), 500
+
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.beacon_manual_post_events (
+                        manual_post_event_id, mode, publish_packet_id, channel, post_url,
+                        posted_at, posted_by, campaign_label, evidence_notes,
+                        initial_metrics_json, records_evidence, sends_customer_message,
+                        posts_publicly, calls_chatwoot, calls_meta, calls_n8n,
+                        boosts_post, spends_money, creates_quote, creates_invoice,
+                        creates_order, changes_stock, reserves_stock, dispatch_enabled,
+                        changes_runtime_now, changes_prompt_now, physical_controls_enabled,
+                        customer_public_output_enabled, writes_farm_data
+                    )
+                    values (
+                        %(manual_post_event_id)s, %(mode)s, %(publish_packet_id)s,
+                        %(channel)s, %(post_url)s, %(posted_at)s, %(posted_by)s,
+                        %(campaign_label)s, %(evidence_notes)s,
+                        %(initial_metrics_json)s::jsonb, %(records_evidence)s,
+                        %(sends_customer_message)s, %(posts_publicly)s,
+                        %(calls_chatwoot)s, %(calls_meta)s, %(calls_n8n)s,
+                        %(boosts_post)s, %(spends_money)s, %(creates_quote)s,
+                        %(creates_invoice)s, %(creates_order)s, %(changes_stock)s,
+                        %(reserves_stock)s, %(dispatch_enabled)s,
+                        %(changes_runtime_now)s, %(changes_prompt_now)s,
+                        %(physical_controls_enabled)s, %(customer_public_output_enabled)s,
+                        %(writes_farm_data)s
+                    )
+                    on conflict (manual_post_event_id) do nothing
+                    """,
+                    params,
+                )
+                created_count = cursor.rowcount
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "beacon_manual_post_evidence_write_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "manual_post_event": _public_manual_post_event(params),
+            **MANUAL_POST_AUTHORITY_FLAGS,
+        }, 500
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "beacon_manual_post_evidence_recorded" if created_count else "beacon_manual_post_evidence_already_recorded",
+        "created_count": created_count,
+        "manual_post_event_id": params["manual_post_event_id"],
+        "manual_post_event": _public_manual_post_event(params),
+        "next_gate": "beacon_performance_tracking_before_boost_recommendation_or_meta_ads_access",
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }, 201 if created_count else 200
+
+
+def list_beacon_manual_post_evidence(limit=25, publish_packet_id="", database_url=None):
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        limit = 25
+    publish_packet_id = _clean_text(publish_packet_id)[:120]
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _manual_post_unavailable("not_configured", configured=False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _manual_post_unavailable("dependency_missing", configured=True), 500
+
+    where = "where publish_packet_id = %(publish_packet_id)s" if publish_packet_id else ""
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select manual_post_event_id, publish_packet_id, channel, post_url,
+                           posted_at, posted_by, campaign_label, evidence_notes,
+                           initial_metrics_json, created_at
+                    from public.beacon_manual_post_events
+                    {where}
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": limit, "publish_packet_id": publish_packet_id},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "beacon_manual_post_evidence_read_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "manual_post_events": [],
+            **MANUAL_POST_AUTHORITY_FLAGS,
+        }, 500
+
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "beacon_manual_public_post_evidence_only",
+        "manual_post_events": [_manual_post_row_to_event(row) for row in rows],
+        "policy": manual_post_evidence_policy(),
+        "next_gate": "beacon_performance_tracking_before_boost_recommendation_or_meta_ads_access",
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }, 200
 
 
 def build_meat_launch_campaign_packet(payload=None):
@@ -547,6 +731,102 @@ def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
     for char in seed:
         total = (total * 33 + ord(char)) % 0xFFFFFFFF
     return f"BEACON-PUBLISH-PACKET-{total:08X}"
+
+
+def _manual_post_params(payload):
+    metrics = _metrics(payload)
+    posted_at = _clean_text(payload.get("posted_at"))[:80]
+    params = {
+        "manual_post_event_id": _clean_text(payload.get("manual_post_event_id"))[:120],
+        "mode": "beacon_manual_public_post_evidence_only",
+        "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
+        "channel": _clean_text(payload.get("channel"))[:80],
+        "post_url": _clean_text(payload.get("post_url"))[:700],
+        "posted_at": posted_at or None,
+        "posted_by": _clean_text(payload.get("posted_by") or "owner_manual_post")[:120],
+        "campaign_label": _clean_text(payload.get("campaign_label"))[:160],
+        "evidence_notes": _clean_text(payload.get("evidence_notes") or payload.get("notes"))[:1200],
+        "initial_metrics_json": json.dumps(metrics, sort_keys=True, default=str),
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }
+    if not params["manual_post_event_id"]:
+        params["manual_post_event_id"] = _manual_post_event_id(params)
+    return params
+
+
+def _metrics(payload):
+    metrics = {}
+    for key in ("reactions", "comments", "shares", "messages", "leads"):
+        value = _safe_int(payload.get(key), 0)
+        if value:
+            metrics[key] = max(0, value)
+    return metrics
+
+
+def _public_manual_post_event(params):
+    return {
+        "manual_post_event_id": params.get("manual_post_event_id", ""),
+        "mode": params.get("mode", "beacon_manual_public_post_evidence_only"),
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "channel": params.get("channel", ""),
+        "post_url": params.get("post_url", ""),
+        "posted_at": params.get("posted_at") or "",
+        "posted_by": params.get("posted_by", ""),
+        "campaign_label": params.get("campaign_label", ""),
+        "evidence_notes": params.get("evidence_notes", ""),
+        "initial_metrics": _loads(params.get("initial_metrics_json"), {}),
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }
+
+
+def _manual_post_row_to_event(row):
+    return {
+        "manual_post_event_id": row[0],
+        "mode": "beacon_manual_public_post_evidence_only",
+        "publish_packet_id": row[1],
+        "channel": row[2],
+        "post_url": row[3],
+        "posted_at": row[4].isoformat() if hasattr(row[4], "isoformat") else str(row[4] or ""),
+        "posted_by": row[5],
+        "campaign_label": row[6],
+        "evidence_notes": row[7],
+        "initial_metrics": row[8] or {},
+        "created_at": row[9].isoformat() if hasattr(row[9], "isoformat") else str(row[9] or ""),
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }
+
+
+def _manual_post_event_id(params):
+    seed = {
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "channel": params.get("channel", ""),
+        "post_url": params.get("post_url", ""),
+        "posted_at": params.get("posted_at", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
+    return f"BEACON-MANUAL-POST-{digest}"
+
+
+def _manual_post_unavailable(status, configured):
+    return {
+        "success": False,
+        "configured": configured,
+        "status": status,
+        "mode": "beacon_manual_public_post_evidence_only",
+        "manual_post_events": [],
+        "policy": manual_post_evidence_policy(),
+        **MANUAL_POST_AUTHORITY_FLAGS,
+    }
+
+
+def _loads(value, fallback):
+    if isinstance(value, (dict, list)):
+        return value
+    try:
+        return json.loads(value or "")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return fallback
 
 
 def _all_draft_texts(packet):

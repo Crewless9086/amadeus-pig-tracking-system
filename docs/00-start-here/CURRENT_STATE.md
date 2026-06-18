@@ -40,7 +40,7 @@ Reason:
 Current money-first plan:
 
 - Source: `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md`.
-- Active phase: Phase 11T - Beacon manual public posting execution checklist and evidence capture.
+- Active phase: Phase 11U - Beacon campaign performance tracking and boost recommendation planning.
 - Last completed phase: 11S Beacon campaign publish packet review.
 - Other sales streams remain planned: live pig sales continue as-is, slaughter/abattoir remains the fallback outlet, assisted slaughter/custom cuts come after standard meat preorder flow is stable.
 
