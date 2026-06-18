@@ -72,6 +72,56 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["payment_method"], "EFT")
         self.assertFalse(facts["llm_used"])
 
+    def test_extract_meat_facts_handles_afrikaans_meat_terms_without_llm(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Ek soek n halwe karkas Set A Riversdale afhaal EFT volgende week.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["product_type"], "half_carcass")
+        self.assertEqual(facts["cut_set"], "Set A")
+        self.assertEqual(facts["location"], "Riversdale")
+        self.assertEqual(facts["delivery_or_collection"], "collection")
+        self.assertEqual(facts["timing"], "next week")
+        self.assertEqual(facts["payment_method"], "EFT")
+        self.assertFalse(facts["llm_used"])
+
+    def test_extract_meat_facts_handles_common_typos_without_llm(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Hlaf carcas set a rivrsdale colect eft nxt week",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["product_type"], "half_carcass")
+        self.assertEqual(facts["cut_set"], "Set A")
+        self.assertEqual(facts["location"], "Riversdale")
+        self.assertEqual(facts["delivery_or_collection"], "collection")
+        self.assertEqual(facts["timing"], "next week")
+        self.assertEqual(facts["payment_method"], "EFT")
+        self.assertFalse(facts["llm_used"])
+
+    def test_google_maps_link_is_captured_as_delivery_context_without_llm(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Please deliver here https://maps.google.com/?q=-34.0921,21.2576",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["delivery_or_collection"], "delivery")
+        self.assertEqual(facts["delivery_address_line_1"], "Shared Google Maps location")
+        self.assertEqual(facts["delivery_place_name"], "Shared Google Maps location")
+        self.assertEqual(facts["delivery_location_latitude"], "-34.0921")
+        self.assertEqual(facts["delivery_location_longitude"], "21.2576")
+        self.assertIn("maps.google.com", facts["delivery_maps_url"])
+        self.assertFalse(facts["llm_used"])
+
+    def test_parse_chatwoot_inbound_uses_explicit_closed_whatsapp_window(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            service_window_state="outside_24h",
+        ))
+
+        self.assertTrue(inbound["processable"])
+        self.assertEqual(inbound["whatsapp_window_state"], "closed")
+
     def test_extract_meat_facts_can_merge_safe_llm_patch(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="Hello"))
         facts = sam_meat_runtime.extract_meat_facts(
@@ -176,6 +226,38 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertIn("before quoting or booking", decision["reply_text"])
         self.assertNotIn("R100", decision["reply_text"])
 
+    def test_non_pork_request_is_redirected_without_pretending_to_sell_it(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Can I order beef mince from you?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertEqual(facts["product_type"], "unknown")
+        self.assertIn("pork orders only", decision["reply_text"])
+        self.assertIn("half carcass", decision["reply_text"])
+
+    def test_frustrated_price_request_gets_soft_acknowledgement_without_price(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Why can nobody just tell me the price? This is annoying.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("do not want to waste your time", decision["reply_text"])
+        self.assertIn("half carcass", decision["reply_text"])
+        self.assertNotIn("R100", decision["reply_text"])
+
     def test_delivery_customer_is_asked_for_address_before_payment(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="I want a half carcass Set A in Riversdale. Delivery please.",
@@ -268,10 +350,10 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(event_types, ["sam_meat_autoreply_attempted", "sam_meat_autoreply_sent"])
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_handle_inbound_records_delivery_address_capture_when_ready(self, mock_record, mock_contract, mock_list, mock_fulfillment):
+    def test_handle_inbound_records_delivery_address_capture_when_ready(self, mock_record, mock_contract, mock_active, mock_fulfillment):
         mock_record.return_value = ({
             "success": True,
             "status": "ok",
@@ -282,7 +364,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             "success": True,
             "contract": {"contract_status": "needs_owner_confirmation"},
         }, 200)
-        mock_list.return_value = ({"success": True, "sales_leads": []}, 200)
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
         mock_fulfillment.return_value = ({"success": True, "status": "delivery_address_captured"}, 201)
 
         result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
@@ -297,11 +379,11 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(mock_fulfillment.call_args.args[1]["event_type"], "delivery_address_captured")
         self.assertEqual(mock_fulfillment.call_args.args[1]["address_line_1"], "12 Long Street")
 
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_new_inbound_without_active_context_gets_fresh_lead_id(self, mock_record, mock_contract, mock_list):
-        mock_list.return_value = ({"success": True, "sales_leads": []}, 200)
+    def test_new_inbound_without_active_context_gets_fresh_lead_id(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
         mock_record.return_value = ({
             "success": True,
             "status": "ok",
@@ -326,13 +408,13 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(result["inbound"]["message_id"], "695457280")
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_address_reply_inherits_existing_conversation_meat_context(self, mock_record, mock_contract, mock_list, mock_fulfillment):
-        mock_list.return_value = ({
+    def test_address_reply_inherits_existing_conversation_meat_context(self, mock_record, mock_contract, mock_active, mock_fulfillment):
+        mock_active.return_value = ({
             "success": True,
-            "sales_leads": [{
+            "lead": {
                 "lead_id": "OSK-SALES-LEAD-CONTEXT",
                 "chatwoot_conversation_id": "1808",
                 "interest": {
@@ -341,7 +423,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
                     "location": "Riversdale",
                     "delivery_or_collection": "delivery",
                 },
-            }],
+            },
         }, 200)
         mock_record.return_value = ({
             "success": True,
@@ -373,37 +455,25 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(lead_payload["delivery_address_line_1"], "12 Test Street")
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_conversation_context_prefers_progressed_duplicate_lead(self, mock_record, mock_contract, mock_list, mock_fulfillment):
-        mock_list.return_value = ({
+    def test_conversation_context_uses_active_progressed_lead_lookup(self, mock_record, mock_contract, mock_active, mock_fulfillment):
+        mock_active.return_value = ({
             "success": True,
-            "sales_leads": [
-                {
-                    "lead_id": "OSK-SALES-LEAD-OLDER",
-                    "chatwoot_conversation_id": "1808",
-                    "latest_event": {"event_type": "closed"},
-                    "interest": {
-                        "product_type": "half_carcass",
-                        "cut_set": "Set A",
-                        "location": "Riversdale",
-                    },
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-PROGRESSED",
+                "chatwoot_conversation_id": "1808",
+                "latest_event": {"event_type": "customer_followup_sent"},
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "timing": "next available week",
+                    "payment_method": "EFT",
                 },
-                {
-                    "lead_id": "OSK-SALES-LEAD-PROGRESSED",
-                    "chatwoot_conversation_id": "1808",
-                    "latest_event": {"event_type": "customer_followup_sent"},
-                    "interest": {
-                        "product_type": "half_carcass",
-                        "cut_set": "Set A",
-                        "location": "Riversdale",
-                        "delivery_or_collection": "delivery",
-                        "timing": "next available week",
-                        "payment_method": "EFT",
-                    },
-                },
-            ],
+            },
         }, 200)
         mock_record.return_value = ({
             "success": True,
@@ -429,13 +499,13 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-PROGRESSED")
 
     @patch("modules.sales.sam_meat_runtime.record_customer_booking_confirmation")
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_customer_yes_after_followup_sent_records_booking_confirmation(self, mock_record, mock_contract, mock_list, mock_confirmation):
-        mock_list.return_value = ({
+    def test_customer_yes_after_followup_sent_records_booking_confirmation(self, mock_record, mock_contract, mock_active, mock_confirmation):
+        mock_active.return_value = ({
             "success": True,
-            "sales_leads": [{
+            "lead": {
                 "lead_id": "OSK-SALES-LEAD-PROGRESSED",
                 "chatwoot_conversation_id": "1808",
                 "latest_event": "customer_followup_sent",
@@ -447,7 +517,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
                     "timing": "next available week",
                     "payment_method": "EFT",
                 },
-            }],
+            },
         }, 200)
         mock_record.return_value = ({
             "success": True,
@@ -482,20 +552,20 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
     @patch("modules.sales.sam_meat_runtime.record_sales_lead_event")
     @patch("modules.sales.sam_meat_runtime.record_customer_booking_confirmation")
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
     def test_customer_yes_after_followup_sends_deposit_instruction_when_bank_details_configured(
         self,
         mock_record,
         mock_contract,
-        mock_list,
+        mock_active,
         mock_confirmation,
         mock_event,
     ):
-        mock_list.return_value = ({
+        mock_active.return_value = ({
             "success": True,
-            "sales_leads": [{
+            "lead": {
                 "lead_id": "OSK-SALES-LEAD-PROGRESSED",
                 "chatwoot_conversation_id": "1808",
                 "latest_event": "customer_followup_sent",
@@ -507,7 +577,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
                     "timing": "next available week",
                     "payment_method": "EFT",
                 },
-            }],
+            },
         }, 200)
         mock_record.return_value = ({
             "success": True,
@@ -568,20 +638,20 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
     @patch("modules.sales.sam_meat_runtime.record_meat_deposit_event")
     @patch("modules.sales.sam_meat_runtime.get_meat_ops_status")
-    @patch("modules.sales.sam_meat_runtime.list_sales_leads")
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
     def test_customer_pop_message_records_unverified_pop_without_bank_gate(
         self,
         mock_record,
         mock_contract,
-        mock_list,
+        mock_active,
         mock_ops,
         mock_deposit,
     ):
-        mock_list.return_value = ({
+        mock_active.return_value = ({
             "success": True,
-            "sales_leads": [{
+            "lead": {
                 "lead_id": "OSK-SALES-LEAD-PROGRESSED",
                 "chatwoot_conversation_id": "1808",
                 "latest_event": "deposit_followup_needed",
@@ -593,7 +663,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
                     "timing": "next available week",
                     "payment_method": "EFT",
                 },
-            }],
+            },
         }, 200)
         mock_record.return_value = ({
             "success": True,

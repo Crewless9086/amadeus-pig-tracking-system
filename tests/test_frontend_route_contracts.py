@@ -96,6 +96,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("202606180004_create_beacon_campaign_performance_events.sql", workflow)
         self.assertIn("202606180005_create_beacon_facebook_post_execution_events.sql", workflow)
         self.assertIn("202606180006_extend_beacon_facebook_post_execution_statuses.sql", workflow)
+        self.assertIn("202606180007_add_sales_lead_conversation_lookup_index.sql", workflow)
         self.assertIn("python -m unittest tests.test_oom_sakkie_service tests.test_oom_sakkie_routes tests.test_frontend_route_contracts", workflow)
         self.assertIn("tests.test_sales_transaction_routes tests.test_sam_meat_runtime tests.test_meat_price_book", workflow)
         self.assertIn("tests.test_meat_fulfillment tests.test_meat_reconciliation", workflow)

@@ -42,9 +42,11 @@ class SamMeatStressTests(unittest.TestCase):
         self.assertTrue(summary["success"], summary)
         self.assertEqual(summary["scenario_count"], len(STRESS_SCENARIOS))
         self.assertEqual(summary["failed_count"], 0)
-        self.assertGreaterEqual(summary["known_gap_count"], 1)
+        self.assertEqual(summary["known_gap_count"], 0)
         recommendations = {item["gap"] for item in summary["recommendations"]}
-        self.assertTrue(any("Afrikaans" in item for item in recommendations))
+        self.assertEqual(recommendations, set())
+        self.assertFalse(any("Afrikaans" in item for item in recommendations))
+        self.assertFalse(any("Google Maps" in item for item in recommendations))
         self.assertFalse(any("Budget amount" in item for item in recommendations))
 
     def test_stress_summary_is_operator_readable(self):
@@ -54,7 +56,7 @@ class SamMeatStressTests(unittest.TestCase):
         self.assertIn("Sam Meat Sales Stress-Test Run", text)
         self.assertIn("Scenarios: 40", text)
         self.assertIn("No launch-blocking stress assertions failed", text)
-        self.assertIn("Plain-text Google Maps", text)
+        self.assertIn("No known gaps recorded", text)
 
 
 if __name__ == "__main__":

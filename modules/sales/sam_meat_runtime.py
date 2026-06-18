@@ -7,8 +7,8 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from modules.oom_sakkie.sales_campaign_store import (
+    get_active_sales_lead_by_conversation,
     get_sales_lead_preorder_contract,
-    list_sales_leads,
     record_customer_booking_confirmation,
     record_sales_lead_event,
     record_sam_meat_intake_lead,
@@ -240,6 +240,13 @@ def parse_chatwoot_inbound(payload):
         return _ignored("ignored_non_incoming_message", event, message_type, content, conversation_id, customer_name, channel)
     if event and event not in {"message_created", "conversation_created"}:
         return _ignored("ignored_non_message_event", event, message_type, content, conversation_id, customer_name, channel)
+    custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    explicit_window_state = _normal_whatsapp_window_state(
+        payload.get("whatsapp_window_state")
+        or payload.get("service_window_state")
+        or payload.get("conversation_window_state")
+        or custom_attributes.get("whatsapp_window_state")
+    )
     if not content and shared_location.get("summary"):
         content = shared_location["summary"]
     if not content:
@@ -257,7 +264,7 @@ def parse_chatwoot_inbound(payload):
         "customer_name": customer_name or "Chatwoot customer",
         "customer_phone": _clean(sender.get("phone_number") or contact.get("phone_number"), 80),
         "channel": channel,
-        "whatsapp_window_state": "open",
+        "whatsapp_window_state": explicit_window_state or "open",
         "message_id": _clean(payload.get("id") or payload.get("message_id"), 100),
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
     }
@@ -348,9 +355,15 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
     reply = ""
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
+    non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
+    frustration_reply = _frustration_guard_reply(inbound.get("content"), facts)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
-    if cut_menu_reply:
+    if non_pork_reply:
+        reply = non_pork_reply
+    elif frustration_reply:
+        reply = frustration_reply
+    elif cut_menu_reply:
         reply = cut_menu_reply
     elif price_or_document_reply:
         reply = price_or_document_reply
@@ -474,47 +487,48 @@ def _record_autoreply_event(lead_id, event_type, message, extra=None):
 def _deterministic_extract(message):
     text = str(message or "")
     lower = text.lower()
+    normalized = _normalized_customer_text(text)
     product_type = "unknown"
-    if re.search(r"\bhalf\s+(?:pig\s+)?carcass|half\s+carcase|half\s+pork\b", lower):
+    if re.search(r"\bhalf\s+(?:pig\s+)?carcass|half\s+carcase|half\s+pork\b", normalized):
         product_type = "half_carcass"
-    elif re.search(r"\bfull\s+(?:pig\s+)?carcass|whole\s+(?:pig|carcass)\b", lower):
+    elif re.search(r"\bfull\s+(?:pig\s+)?carcass|whole\s+(?:pig|carcass)\b", normalized):
         product_type = "full_carcass"
-    elif re.search(r"\bcut|cuts|set\s+[abcd]\b", lower):
+    elif re.search(r"\bcut|cuts|set\s+[abcd]\b", normalized):
         product_type = "custom_cut"
-    elif "assisted slaughter" in lower:
+    elif "assisted slaughter" in normalized:
         product_type = "assisted_slaughter"
 
     cut_set = ""
-    match = re.search(r"\bset\s*([abcd])\b", lower)
+    match = re.search(r"\bset\s*([abcd])\b", normalized)
     if match:
         cut_set = f"Set {match.group(1).upper()}"
 
     location = ""
     for place in ("Riversdale", "Albertinia"):
-        if place.lower() in lower:
+        if place.lower() in normalized:
             location = place
             break
 
     timing = ""
-    if "next available farm run" in lower:
+    if "next available farm run" in normalized:
         timing = "next available farm run"
-    elif "next available week" in lower:
+    elif "next available week" in normalized:
         timing = "next available week"
-    elif "next week" in lower:
+    elif "next week" in normalized:
         timing = "next week"
-    elif "this week" in lower:
+    elif "this week" in normalized:
         timing = "this week"
 
     delivery_or_collection = ""
-    if re.search(r"\bcollect|collection|pickup|pick up\b", lower):
+    if re.search(r"\bcollect|collection|pickup|pick up\b", normalized):
         delivery_or_collection = "collection"
-    elif re.search(r"\bdeliver|delivery\b", lower):
+    elif re.search(r"\bdeliver|delivery\b", normalized):
         delivery_or_collection = "delivery"
 
     payment_method = ""
-    if re.search(r"\beft\b", lower):
+    if re.search(r"\beft\b", normalized):
         payment_method = "EFT"
-    elif re.search(r"\bcash\b", lower):
+    elif re.search(r"\bcash\b", normalized):
         payment_method = "Cash"
 
     budget_amount = _budget_amount_from_text(text)
@@ -533,6 +547,9 @@ def _deterministic_extract(message):
         simple_address = re.search(r"\b(\d{1,5}\s+[A-Za-z][A-Za-z0-9 '\-]{2,80})", text)
         if simple_address:
             delivery_address_line_1 = simple_address.group(1).strip(" .,:;-")
+    maps_location = _maps_location_from_text(text)
+    if delivery_or_collection == "delivery" and not delivery_address_line_1 and maps_location:
+        delivery_address_line_1 = maps_location.get("place_name") or "Shared Google Maps location"
 
     return {
         "product_type": product_type,
@@ -541,9 +558,13 @@ def _deterministic_extract(message):
         "timing": timing,
         "delivery_or_collection": delivery_or_collection,
         "delivery_address_line_1": _clean(delivery_address_line_1, 240),
-        "delivery_town": location,
+        "delivery_town": location or _town_from_text(maps_location.get("place_name", "")),
         "delivery_area": "",
         "delivery_notes": "",
+        "delivery_place_name": maps_location.get("place_name", ""),
+        "delivery_location_latitude": maps_location.get("latitude", ""),
+        "delivery_location_longitude": maps_location.get("longitude", ""),
+        "delivery_maps_url": maps_location.get("maps_url", ""),
         "payment_method": payment_method,
         "budget_amount": budget_amount,
         "target_packed_kg": target_packed_kg,
@@ -566,6 +587,36 @@ def _cut_menu_reply(message, facts):
     return (
         f"The current pork cut options are: {menu} "
         "I can note which one you prefer, but price, timing, and deposit still need farm approval before a quote or booking."
+    )
+
+
+def _non_pork_guard_reply(message):
+    text = str(message or "").lower()
+    if not re.search(r"\b(beef|mutton|lamb|chicken|goat)\b", text):
+        return ""
+    if re.search(r"\b(pork|pig|carcass|carcase|half|full)\b", text):
+        return ""
+    return (
+        "At the moment I can help with pork orders only. "
+        "For pork, are you interested in a half carcass, full carcass, custom cuts, or assisted slaughter?"
+    )
+
+
+def _frustration_guard_reply(message, facts):
+    text = str(message or "").lower()
+    if not re.search(r"\b(annoying|frustrated|frustrating|upset|irritated|nobody)\b", text):
+        return ""
+    if not re.search(r"\b(price|cost|quote|invoice|how much)\b", text):
+        return ""
+    if facts.get("product_type") == "unknown":
+        return (
+            "I understand, and I do not want to waste your time. "
+            "I need the pork option first so the farm does not give you the wrong price: "
+            "half carcass, full carcass, custom cuts, or assisted slaughter?"
+        )
+    return (
+        "I understand, and I do not want to waste your time. "
+        "The farm still has to approve price, timing, and any deposit rule before I quote or book anything."
     )
 
 
@@ -622,45 +673,18 @@ def _conversation_lead_context(conversation_id):
     conversation_id = _clean(conversation_id, 100)
     if not conversation_id:
         return {}
-    result, status_code = list_sales_leads(limit=50, status_filter="launch_test")
+    result, status_code = get_active_sales_lead_by_conversation(conversation_id)
     if status_code != 200 or not isinstance(result, dict):
         return {}
-    matches = []
-    for lead in result.get("sales_leads") or []:
-        if _clean(lead.get("chatwoot_conversation_id"), 100) != conversation_id:
-            continue
-        if _latest_event_type(lead) == "closed":
-            continue
-        matches.append(lead)
-    if not matches:
+    lead = result.get("lead") if isinstance(result.get("lead"), dict) else {}
+    if not lead:
         return {}
-    matches.sort(key=_lead_context_score, reverse=True)
-    lead = matches[0]
     interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
     return {
         "lead_id": _clean(lead.get("lead_id"), 100),
         "interest": interest,
         "latest_event": _latest_event_type(lead),
     }
-
-
-def _lead_context_score(lead):
-    latest_event = _latest_event_type(lead)
-    event_scores = {
-        "customer_booking_confirmed": 100,
-        "draft_order_created": 90,
-        "customer_followup_sent": 80,
-        "customer_followup_send_attempted": 70,
-        "owner_customer_followup_send_approved": 60,
-        "owner_money_path_approved": 50,
-        "delivery_address_captured": 25,
-        "sam_meat_autoreply_sent": 10,
-        "sam_meat_autoreply_attempted": 8,
-    }
-    score = event_scores.get(latest_event, 0)
-    if lead.get("created_at"):
-        score += 1
-    return score
 
 
 def _latest_event_type(lead):
@@ -1004,6 +1028,75 @@ def _normal_channel(payload, conversation):
     if "email" in raw:
         return "chatwoot_email"
     return "chatwoot"
+
+
+def _normal_whatsapp_window_state(value):
+    text = str(value or "").strip().lower()
+    if text in {"open", "active", "service_window_open", "within_24h", "within_24_hours"}:
+        return "open"
+    if text in {"closed", "expired", "service_window_closed", "outside_24h", "outside_24_hours"}:
+        return "closed"
+    if text in {"template_required", "requires_template", "template"}:
+        return "template_required"
+    if text in {"manual_owner_only", "owner_manual_only", "manual"}:
+        return "manual_owner_only"
+    if text == "unknown":
+        return "unknown"
+    return ""
+
+
+def _normalized_customer_text(value):
+    text = str(value or "").lower()
+    replacements = {
+        "hlaf": "half",
+        "carcas": "carcass",
+        "carcasse": "carcass",
+        "carcase": "carcass",
+        "rivrsdale": "riversdale",
+        "colect": "collect",
+        "collet": "collect",
+        "nxt": "next",
+        "afhaal": "collection",
+        "haal": "collect",
+        "volgende week": "next week",
+        "halwe": "half",
+        "karkas": "carcass",
+        "karkasse": "carcass",
+        "vark": "pork",
+        "varkvleis": "pork",
+        "kontant": "cash",
+        "oorplasing": "eft",
+        "eft": "eft",
+    }
+    for source, target in replacements.items():
+        text = re.sub(rf"\b{re.escape(source)}\b", target, text)
+    return text
+
+
+def _maps_location_from_text(value):
+    text = str(value or "")
+    url_match = re.search(r"https?://(?:www\.)?(?:maps\.google\.[^\s]+|goo\.gl/maps/[^\s]+|maps\.app\.goo\.gl/[^\s]+)", text, re.I)
+    coord_match = re.search(r"(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)", text)
+    if not url_match and not coord_match:
+        return {}
+    maps_url = url_match.group(0).rstrip(".,);") if url_match else ""
+    latitude = coord_match.group(1) if coord_match else ""
+    longitude = coord_match.group(2) if coord_match else ""
+    return {
+        "maps_url": maps_url or f"https://maps.google.com/?q={latitude},{longitude}",
+        "latitude": latitude,
+        "longitude": longitude,
+        "place_name": "Shared Google Maps location",
+    }
+
+
+def _town_from_text(value):
+    text = str(value or "").lower()
+    if "riversdale" in text:
+        return "Riversdale"
+    if "albertinia" in text:
+        return "Albertinia"
+    return ""
 
 
 def _normal_cut_set(value):

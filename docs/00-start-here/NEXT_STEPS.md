@@ -28,7 +28,7 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 9: Pig, Weight, And Reporting Improvements | 9.1A Live-Verified; 9.1B Browser-Verified; 9.1C Deployed And Browser-Verified; 9.2A/9.2B Owner-Verified; 9.3/9.3B Owner-Verified; 9.4 Current Slice Complete; 9.5 Visible; 9.5B Planned; 9.6A Browser-Verified; 9.6C Bulk Partial-Upload Local Ready; 9.7F Newborn Health Live-Verified; 9.7G Deployed And Owner-Verified; 9.7H Browser-Accepted; 9.7I Return Navigation Deployed/Working; 9.7J Sex Count Browser-Checked; Sales Dashboard Accepted For Now | Next: keep 9.6C open for next real-batch pen-move confirmation; continue Oom Sakkie/Jarvis runtime foundation after the next bundled Claude review. |
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
-| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, first Sam Meat stress-test pack, and structured buyer-preference capture | Next: Prisma/Beacon Meat Launch Campaign. |
+| Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, Sam Meat pressure hardening, and structured buyer-preference capture | Next: Beacon approved-image live smoke, then Beacon review/pressure pass. |
 
 ### Product Vision Repoint - 2026-06-15
 
@@ -279,7 +279,7 @@ Verified:
 - Local Sam Meat/Chatwoot stress suite passed 25 tests.
 - Runtime hardening added for `next available farm run`, guarded price/quote/invoice replies, and payment-gate `needs_followup` labels.
 
-Known improvement opportunities after first preference slice:
+Historical improvement opportunities after first preference slice, resolved in Phase 11M.2:
 
 - Improve deterministic Afrikaans and heavy-typo extraction, or rely deliberately on LLM extraction for these cases.
 - Parse plain-text Google Maps links, not only Chatwoot location metadata.
@@ -296,12 +296,33 @@ Implemented outcome:
 - Butcher match can consume the structured preferences later without Sam inventing stock, price, or booking status.
 - Stress scenarios for budget, target weight, and heaviest preference move from known gaps to launch-ready behavior.
 - No quote, order, reservation, pig allocation, stock change, public post, or autonomous customer send is added in this slice.
-- The stress report now passes 40/40 launch-blocking scenarios with 6 remaining non-blocking improvement opportunities.
+- The stress report now passes 40/40 launch-blocking scenarios with 6 remaining non-blocking improvement opportunities before the review-hardening slice below.
 
 Verified:
 
 - Sam Meat stress runner passed 40/40.
 - Focused Sam Meat, Chatwoot hygiene, stress, and Oom Sakkie service tests passed.
+
+### Phase 11M.2 Complete - Sam Meat Senior Review Hardening
+
+Implemented outcome:
+
+- Replaced shallow active-lead context scanning with a direct `chatwoot_conversation_id` lookup for the latest active/progressed lead.
+- Added append-only fact snapshots for delivery address/map pin, budget, target kg, and match preference so later Sam replies do not lose facts when lead rows are append-only.
+- Added deterministic handling for common Afrikaans meat terms, heavy spelling mistakes, and plain Google Maps links.
+- Added explicit WhatsApp service-window state parsing from Chatwoot payload/custom attributes.
+- Added softer frustration-specific price acknowledgement and explicit non-pork redirect wording while still blocking unapproved prices, quotes, orders, stock reservation, and payment promises.
+- Added the Farm App Meat Leads operator strip so the selected lead shows Sam facts, customer state, money gate, carcass state, and the single next click before the deeper panels.
+- Supabase migration: `supabase/migrations/202606180007_add_sales_lead_conversation_lookup_index.sql`.
+
+Verified:
+
+- Applied migration `202606180007_add_sales_lead_conversation_lookup_index.sql`.
+- Sam Meat stress runner passed 40/40 with 0 known improvement opportunities.
+- Focused Sam/sales suite passed 158 tests.
+- Service/frontend contract suite passed 358 tests.
+- Meat Leads JS syntax check passed.
+- Playwright screenshots captured for `/sales/meat-leads` at 1440x900 and 390x844.
 
 ### Phase 11N Complete - Prisma/Beacon Meat Launch Campaign
 

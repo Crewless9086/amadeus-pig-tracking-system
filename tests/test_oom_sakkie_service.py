@@ -165,6 +165,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     build_draft_order_payload_from_sales_lead,
     build_preorder_deposit_contract_from_lead,
     create_draft_order_from_sales_lead,
+    get_active_sales_lead_by_conversation,
     get_sales_lead_customer_followup_draft,
     get_sales_lead_customer_followup_send_design,
     record_customer_booking_confirmation,
@@ -5870,6 +5871,91 @@ def literal_false_is_allowed():
         self.assertEqual(result["status"], "invalid_event_type")
         self.assertFalse(result["sends_customer_message"])
 
+    @patch.dict("sys.modules", {"psycopg": Mock()})
+    def test_active_sales_lead_lookup_merges_latest_sam_intake_facts(self):
+        import sys
+
+        lead_row = [
+            "OSK-SALES-LEAD-ACTIVE",
+            "",
+            "",
+            "",
+            "interested",
+            "sales_lead_tracking_only",
+            "inbound_chatwoot",
+            "Charl - meat interest",
+            "Charl N",
+            "chatwoot_whatsapp",
+            "1808",
+            "open",
+            "2026-06-17T03:00:00Z",
+            "unknown",
+            {
+                "product_type": "half_carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+            },
+            "Owner to review.",
+            "",
+            "",
+            "sam_meat_intake",
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            False,
+            "2026-06-17T03:00:00Z",
+            "status_observed",
+            "",
+            "sam_meat_intake",
+            "2026-06-17T03:05:00Z",
+        ]
+        event_notes = json.dumps({
+            "source": "sam_meat_intake",
+            "interest": {
+                "delivery_or_collection": "delivery",
+                "delivery_address_line_1": "Shared Google Maps location",
+                "payment_method": "EFT",
+            },
+        })
+        cursor = Mock()
+        cursor.fetchone.return_value = tuple(lead_row)
+        cursor.fetchall.return_value = [(
+            "status_observed",
+            event_notes,
+            "sam_meat_intake",
+            "interested",
+            "2026-06-17T03:05:00Z",
+        )]
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=False)
+        connection = Mock()
+        connection.cursor.return_value = cursor
+        connection.__enter__ = Mock(return_value=connection)
+        connection.__exit__ = Mock(return_value=False)
+        sys.modules["psycopg"].connect.return_value = connection
+
+        result, status_code = get_active_sales_lead_by_conversation("1808", database_url="postgresql://example")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mode"], "active_sales_lead_by_conversation")
+        self.assertEqual(result["lead_id"], "OSK-SALES-LEAD-ACTIVE")
+        self.assertEqual(result["lead"]["interest"]["delivery_or_collection"], "delivery")
+        self.assertEqual(result["lead"]["interest"]["delivery_address_line_1"], "Shared Google Maps location")
+        self.assertEqual(result["lead"]["interest"]["payment_method"], "EFT")
+        executed_sql = "\n".join(call.args[0].lower() for call in cursor.execute.call_args_list)
+        self.assertIn("l.chatwoot_conversation_id = %(conversation_id)s", executed_sql)
+        self.assertIn("coalesce(ev.event_type, '') <> 'closed'", executed_sql)
+        self.assertIn("customer_followup_sent", executed_sql)
+
     def test_owner_money_path_approval_rejects_incomplete_payload_before_database(self):
         result, status_code = record_owner_money_path_approval(
             "OSK-SALES-LEAD-1",
@@ -5939,6 +6025,9 @@ def literal_false_is_allowed():
         self.assertIn("'customer_followup_send_attempted'", followup_send_migration)
         self.assertIn("'customer_followup_sent'", followup_send_migration)
         self.assertIn("'customer_followup_send_failed'", followup_send_migration)
+        conversation_lookup_migration = Path("supabase/migrations/202606180007_add_sales_lead_conversation_lookup_index.sql").read_text(encoding="utf-8")
+        self.assertIn("idx_oom_sakkie_sales_leads_conversation_created", conversation_lookup_migration)
+        self.assertIn("chatwoot_conversation_id", conversation_lookup_migration)
         self.assertIn("sends_customer_message = false", lead_migration)
         self.assertIn("calls_chatwoot = false", lead_migration)
         self.assertIn("calls_n8n = false", lead_migration)

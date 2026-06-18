@@ -34,6 +34,7 @@
     priceList: byId("meat_price_book_list"),
     detailTitle: byId("meat_lead_detail_title"),
     detailStatus: byId("meat_lead_detail_status"),
+    operatorStrip: byId("meat_operator_strip"),
     facts: byId("meat_lead_facts"),
     guidedStatus: byId("meat_guided_status"),
     guidedNext: byId("meat_guided_next"),
@@ -364,6 +365,73 @@
     `).join("");
   };
 
+  const renderOperatorStrip = (lead, contract) => {
+    if (!elements.operatorStrip) return;
+    if (!lead) {
+      elements.operatorStrip.innerHTML = `
+        <div class="meat-operator-empty">
+          <strong>Select a lead</strong>
+          <span>Sam's facts, money gate, and next click will appear here.</span>
+        </div>
+      `;
+      return;
+    }
+    const interest = interestOf(lead);
+    const missing = Array.isArray(contract?.missing_fields) ? contract.missing_fields : [];
+    const guide = guidedState();
+    const customerSent = hasLoadedEvent("customer_followup_sent");
+    const customerYes = hasLoadedEvent("customer_booking_confirmed");
+    const reservation = latestReservation();
+    const assembly = state.meatOps?.assembly || {};
+    const depositConfirmed = Boolean(assembly.deposit_confirmed);
+    const factsReady = !missing.length;
+    const opsReady = Boolean(assembly.ready_for_instruction_drafts);
+    const cards = [
+      {
+        label: "Sam facts",
+        state: factsReady ? "ready" : "warn",
+        detail: factsReady ? "Complete enough for review" : `Missing ${missing.slice(0, 3).join(", ")}`,
+      },
+      {
+        label: "Customer",
+        state: customerYes ? "ready" : customerSent ? "wait" : "idle",
+        detail: customerYes ? "Confirmed booking review" : customerSent ? "Waiting for yes" : "Follow-up not sent",
+      },
+      {
+        label: "Money",
+        state: depositConfirmed ? "ready" : "locked",
+        detail: depositConfirmed ? "Money confirmed in bank" : "Do not proceed on POP alone",
+      },
+      {
+        label: "Carcass",
+        state: reservation.reservation_id ? (opsReady ? "ready" : "wait") : "idle",
+        detail: reservation.reservation_id ? safe(reservation.status, "reserved") : "No reservation yet",
+      },
+      {
+        label: "Next click",
+        state: guide.disabled ? "locked" : "action",
+        detail: guide.label,
+      },
+    ];
+    elements.operatorStrip.innerHTML = `
+      <div class="meat-operator-head">
+        <div>
+          <span>Current lead</span>
+          <strong>${safe(lead.contact_label || lead.lead_label, "Customer")}</strong>
+        </div>
+        <small>${safe(interest.product || interest.product_type, "Product pending")} | ${safe(interest.cut_set, "cut pending")} | ${safe(interest.location, "area pending")}</small>
+      </div>
+      <div class="meat-operator-rail">
+        ${cards.map((card) => `
+          <div class="meat-operator-card" data-state="${card.state}">
+            <span>${card.label}</span>
+            <strong>${card.detail}</strong>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  };
+
   const renderEvents = (lead) => {
     const events = Array.isArray(lead?.events) ? lead.events.slice().reverse() : [];
     elements.events.innerHTML = "";
@@ -655,6 +723,7 @@
     elements.detailStatus.textContent = hasLead
       ? `${safe(lead.status)} / ${safe(contract.contract_status, "contract pending")}`
       : "Lead details will show here.";
+    renderOperatorStrip(hasLead ? lead : null, contract);
     renderFacts(lead, contract);
     renderEvents(lead);
 

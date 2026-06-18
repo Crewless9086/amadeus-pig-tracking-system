@@ -102,6 +102,85 @@
   margin-bottom: 16px;
 }
 
+.meat-operator-strip {
+  border: 1px solid #c9d5c8;
+  border-radius: 8px;
+  background: #fbfcfa;
+  margin: 0 0 14px;
+  padding: 12px;
+}
+
+.meat-operator-empty {
+  display: grid;
+  gap: 4px;
+  color: #607066;
+}
+
+.meat-operator-empty strong {
+  color: #203528;
+}
+
+.meat-operator-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e1e6de;
+  padding-bottom: 10px;
+}
+
+.meat-operator-head span,
+.meat-operator-head small,
+.meat-operator-card span {
+  color: #607066;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.meat-operator-head strong,
+.meat-operator-card strong {
+  display: block;
+  color: #203528;
+  line-height: 1.25;
+}
+
+.meat-operator-rail {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 10px;
+}
+
+.meat-operator-card {
+  border: 1px solid #d7ded6;
+  border-left-width: 4px;
+  border-radius: 8px;
+  min-height: 72px;
+  padding: 9px;
+  background: #fff;
+}
+
+.meat-operator-card[data-state="ready"] {
+  border-left-color: #4f7d5a;
+  background: #f1f7ef;
+}
+
+.meat-operator-card[data-state="warn"],
+.meat-operator-card[data-state="wait"] {
+  border-left-color: #b78b35;
+  background: #fff9ea;
+}
+
+.meat-operator-card[data-state="locked"] {
+  border-left-color: #8e9490;
+  background: #f4f5f3;
+}
+
+.meat-operator-card[data-state="action"] {
+  border-left-color: #315d8c;
+  background: #eef5fb;
+}
+
 .meat-lead-fact {
   border: 1px solid #d7ded6;
   border-radius: 8px;
@@ -200,7 +279,12 @@
   .meat-leads-workflow,
   .meat-lead-facts,
   .meat-lead-form-grid,
-  .meat-payment-state {
+  .meat-payment-state,
+  .meat-operator-rail {
     grid-template-columns: 1fr;
+  }
+
+  .meat-operator-head {
+    display: grid;
   }
 }

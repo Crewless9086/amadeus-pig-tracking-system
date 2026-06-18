@@ -15,8 +15,9 @@ Meat Sales is backend-native enough for private pilot testing:
 - Farm App `/sales/meat-leads` is the operator surface.
 - Price book, estimate rules, Butcher pig matching, carcass reservation, deposit gate, instruction drafts, fulfilment timeline, driver route, journey drafts, packed-weight reconciliation, final balance, and delivery release gates exist.
 - Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
-- The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and passes launch-blocking assertions. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
+- The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and now passes launch-blocking assertions with 0 known improvement opportunities. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
+- Sam Meat now finds active conversation context through a direct backend lookup, merges append-only Sam fact events, handles common Afrikaans/typo/map-link inputs, and respects explicit WhatsApp service-window state.
 - Beacon now has private media-library metadata/API foundation, a Farm App review UI, approved-media campaign draft selection, and owner-review publish packet preparation for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
@@ -118,7 +119,7 @@ Implemented outcome:
 - Each scenario should define expected facts, expected next question, expected labels/attributes, and what must not happen.
 - 40 scenarios are implemented in `modules/sales/sam_meat_stress.py`.
 - The local runner is `scripts/sam_meat_stress_test.py`.
-- The latest run passed 40/40 launch-blocking assertions with 6 known improvement opportunities.
+- The latest run passed 40/40 launch-blocking assertions with 0 known improvement opportunities.
 
 Structured preference capture completed after first stress run:
 
@@ -126,9 +127,13 @@ Structured preference capture completed after first stress run:
 - Target packed kg is now a structured Sam/Butcher matching fact.
 - Match preference such as heaviest, soonest, cheapest, or best fit is now structured.
 
-Remaining useful improvements:
+Senior review hardening completed after first stress run:
 
-- Plain-text Google Maps links, Afrikaans/typos, frustration wording, and non-pork redirects should improve after the preference capture slice.
+- Direct active-lead lookup by `chatwoot_conversation_id` replaces shallow queue scanning for resumed customer conversations.
+- Append-only Sam fact snapshots preserve delivery address/map pin, budget, target kg, and match preference even when the base lead row is unchanged.
+- Plain-text Google Maps links, common Afrikaans wording, heavy typos, frustration wording, and non-pork redirects are now covered by the stress pack.
+- Supabase migration `202606180007_add_sales_lead_conversation_lookup_index.sql` supports the active conversation lookup.
+- Farm App `/sales/meat-leads` now has a compact operator strip showing Sam facts, customer state, money gate, carcass state, and the single next click.
 
 ### 3. Prisma/Beacon Meat Launch Campaign
 
@@ -298,7 +303,7 @@ Next gate:
 
 Goal: let Beacon publish an exact owner-reviewed Facebook Page text or approved-image post for the live pilot.
 
-Status: text posting live-smoked in Phase 11V; approved image posting implemented in Phase 11W, pending migration/deploy/live smoke.
+Status: text posting live-smoked in Phase 11V; approved image posting implemented in Phase 11W, pending owner-approved image asset/live smoke.
 
 Implemented outcome:
 
@@ -328,7 +333,7 @@ Boundary:
 
 Next gate:
 
-- Apply migration `202606180006`, deploy, and live-smoke one approved-image post.
+- Upload/review/approve one real Beacon image asset, build a Facebook publish packet with that approved image, type `POST EXACT BEACON PACKET`, and live-smoke one approved-image post.
 - Then build read-only Meta/Facebook performance import.
 
 ### 12. Other Sales Streams
