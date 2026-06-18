@@ -616,18 +616,17 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="Yes, please proceed with the final booking review."),
             environ={
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
-                "MEAT_SALES_BANK_ACCOUNT_NAME": "Amadeus Farm",
-                "MEAT_SALES_BANK_NAME": "Test Bank",
-                "MEAT_SALES_BANK_ACCOUNT_NUMBER": "123456789",
-                "MEAT_SALES_BANK_BRANCH_CODE": "123456",
-                "MEAT_SALES_BANK_ACCOUNT_TYPE": "Cheque",
-                "MEAT_SALES_PAYMENT_REFERENCE_PREFIX": "AMAD-MEAT",
+                "BANK_ACCOUNT_NAME": "Amadeus Farm",
+                "BANK_NAME": "Test Bank",
+                "BANK_ACCOUNT_NUMBER": "123456789",
+                "BANK_BRANCH_CODE": "123456",
+                "BANK_ACCOUNT_TYPE": "Cheque",
             },
         )
 
         self.assertEqual(status_code, 200)
         self.assertIn("Account name: Amadeus Farm", result["sam_decision"]["reply_text"])
-        self.assertIn("Reference: AMAD-MEAT-", result["sam_decision"]["reply_text"])
+        self.assertIn("Reference: RESSED", result["sam_decision"]["reply_text"])
         self.assertIn("about R1,300.00", result["sam_decision"]["reply_text"])
         self.assertEqual(
             result["sam_decision"]["deposit_payment_instruction"]["status"],

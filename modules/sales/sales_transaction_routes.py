@@ -49,6 +49,13 @@ from modules.sales.meat_reconciliation import (
     get_meat_reconciliation_status,
     record_meat_reconciliation_event,
 )
+from modules.sales.meat_documents import (
+    build_meat_estimated_quote_packet,
+    generate_meat_deposit_pro_forma_pdf,
+    generate_meat_estimated_quote_pdf,
+    generate_meat_final_invoice_pdf,
+    meat_document_policy,
+)
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
     handle_sam_meat_chatwoot_inbound,
@@ -171,6 +178,11 @@ def sam_meat_chatwoot_policy():
         "success": True,
         "policy": sam_meat_webhook_policy(),
     }), 200
+
+
+@sales_bp.route("/sales/meat-documents/policy", methods=["GET"])
+def meat_documents_policy_route():
+    return jsonify(meat_document_policy()), 200
 
 
 @sales_bp.route("/sales/channels/chatwoot/sam-meat/inbound", methods=["POST"])
@@ -375,6 +387,39 @@ def meat_sales_lead_pricing_estimate(lead_id):
             "selected_pig_live_weight_kg": request.args.get("selected_pig_live_weight_kg", ""),
         }
     result, status_code = get_sales_lead_pricing_estimate(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/estimated-quote", methods=["GET", "POST"])
+def meat_sales_lead_estimated_quote(lead_id):
+    payload = request.get_json(silent=True) or {}
+    if request.method == "GET":
+        payload = {
+            "selected_pig_live_weight_kg": request.args.get("selected_pig_live_weight_kg", ""),
+            "estimated_weight_kg": request.args.get("estimated_weight_kg", ""),
+        }
+    result, status_code = build_meat_estimated_quote_packet(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/estimated-quote/pdf", methods=["POST"])
+def meat_sales_lead_estimated_quote_pdf(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = generate_meat_estimated_quote_pdf(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/deposit-pro-forma/pdf", methods=["POST"])
+def meat_sales_lead_deposit_pro_forma_pdf(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = generate_meat_deposit_pro_forma_pdf(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/final-invoice/pdf", methods=["POST"])
+def meat_sales_lead_final_invoice_pdf(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = generate_meat_final_invoice_pdf(lead_id, payload)
     return jsonify(result), status_code
 
 

@@ -38,14 +38,17 @@ Required env:
 
 Optional Sam Meat payment instruction envs:
 
-- `MEAT_SALES_BANK_ACCOUNT_NAME=<public account name shown to customers>`
-- `MEAT_SALES_BANK_NAME=<bank name shown to customers>`
-- `MEAT_SALES_BANK_ACCOUNT_NUMBER=<account number shown to customers>`
-- `MEAT_SALES_BANK_BRANCH_CODE=<branch code shown to customers>`
-- `MEAT_SALES_BANK_ACCOUNT_TYPE=<account type shown to customers>`
-- `MEAT_SALES_PAYMENT_REFERENCE_PREFIX=<short prefix, for example AMAD-MEAT>`
+- `BANK_ACCOUNT_NAME=<public account name shown to customers>`
+- `BANK_NAME=<bank name shown to customers>`
+- `BANK_ACCOUNT_NUMBER=<account number shown to customers>`
+- `BANK_BRANCH_CODE=<branch code shown to customers>`
+- `BANK_ACCOUNT_TYPE=<account type shown to customers>`
 
-When these are configured, Sam may send payment instructions after the customer confirms an owner-approved meat follow-up. Sam generates the customer reference from the prefix plus the lead id suffix. Proof of payment remains `pop_received_unverified`; only `deposit_confirmed_in_bank` unlocks slaughter, butcher, and delivery operational gates.
+Reference rule: customer-facing EFT references stay short and stable across the whole sale. Use the final order/sale suffix, capped at six alphanumeric characters. Example: `ORD-2026-A99273` uses bank reference `A99273`; meat documents can be `MQ-2026-A99273`, `MP-2026-A99273`, and `MI-2026-A99273`, but the payment reference remains `A99273`.
+
+Compatibility note: older `MEAT_SALES_BANK_*` envs are still read as fallback only. New deployments should use the shared `BANK_*` envs because the same bank details apply across live, meat, slaughter, and assisted-slaughter sales.
+
+When these are configured, Sam may send payment instructions after the customer confirms an owner-approved meat follow-up. Sam uses the same short sale/payment reference across the quote, deposit pro forma, final invoice, and payment instructions. Proof of payment remains `pop_received_unverified`; only `deposit_confirmed_in_bank` unlocks slaughter, butcher, and delivery operational gates.
 - `OPENAI_API_KEY=<optional for LLM extraction; deterministic fallback remains required>`
 
 Accepted auth:

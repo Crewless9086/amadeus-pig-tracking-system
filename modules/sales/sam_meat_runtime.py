@@ -15,6 +15,22 @@ from modules.oom_sakkie.sales_campaign_store import (
     _send_chatwoot_message,
 )
 from modules.sales.meat_ops import get_meat_ops_status, record_meat_deposit_event
+from modules.sales.meat_documents import (
+    BANK_ACCOUNT_NAME_ENV,
+    BANK_ACCOUNT_NUMBER_ENV,
+    BANK_ACCOUNT_TYPE_ENV,
+    BANK_BRANCH_CODE_ENV,
+    BANK_NAME_ENV,
+    DOCUMENT_AUTOSEND_ENABLED_ENV,
+    LEGACY_BANK_ACCOUNT_NAME_ENV,
+    LEGACY_BANK_ACCOUNT_NUMBER_ENV,
+    LEGACY_BANK_ACCOUNT_TYPE_ENV,
+    LEGACY_BANK_BRANCH_CODE_ENV,
+    LEGACY_BANK_NAME_ENV,
+    bank_details as _shared_bank_details,
+    build_meat_estimated_quote_packet,
+    payment_reference as _shared_payment_reference,
+)
 from modules.sales.meat_fulfillment import record_meat_fulfillment_event
 from modules.sales.chatwoot_hygiene import (
     HYGIENE_ENABLED_ENV,
@@ -32,12 +48,6 @@ LLM_URL_ENV = "SAM_MEAT_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 DEFAULT_LLM_URL = "https://api.openai.com/v1/chat/completions"
-BANK_ACCOUNT_NAME_ENV = "MEAT_SALES_BANK_ACCOUNT_NAME"
-BANK_NAME_ENV = "MEAT_SALES_BANK_NAME"
-BANK_ACCOUNT_NUMBER_ENV = "MEAT_SALES_BANK_ACCOUNT_NUMBER"
-BANK_BRANCH_CODE_ENV = "MEAT_SALES_BANK_BRANCH_CODE"
-BANK_ACCOUNT_TYPE_ENV = "MEAT_SALES_BANK_ACCOUNT_TYPE"
-PAYMENT_REFERENCE_PREFIX_ENV = "MEAT_SALES_PAYMENT_REFERENCE_PREFIX"
 MIN_TOKEN_CHARS = 32
 CUT_SET_MENU = {
     "Set A": "Family Freezer Pack: pork chops, leg portions or roasts, shoulder roasts, belly strips, ribs, mince or stew meat, and bones for soup or stock.",
@@ -77,7 +87,11 @@ def sam_meat_webhook_policy(environ=None):
             BANK_ACCOUNT_NUMBER_ENV,
             BANK_BRANCH_CODE_ENV,
             BANK_ACCOUNT_TYPE_ENV,
-            PAYMENT_REFERENCE_PREFIX_ENV,
+            LEGACY_BANK_ACCOUNT_NAME_ENV,
+            LEGACY_BANK_NAME_ENV,
+            LEGACY_BANK_ACCOUNT_NUMBER_ENV,
+            LEGACY_BANK_BRANCH_CODE_ENV,
+            LEGACY_BANK_ACCOUNT_TYPE_ENV,
         ],
         "mode": "backend_native_sam_meat_chatwoot",
     }
@@ -382,7 +396,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
     elif not facts.get("timing"):
         reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
     elif not facts.get("payment_method"):
-        reply = "Would EFT or cash work best once the farm confirms the approved details?"
+        reply = "For the meat pilot we use EFT only. Is EFT fine for the deposit and final balance?"
     else:
         reply = (
             "Thanks, I have noted your pork interest for the farm to review. "
@@ -394,10 +408,25 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
         if status_code == 200:
             contract_body = contract.get("contract") if isinstance(contract.get("contract"), dict) else {}
             if contract_body.get("contract_status") == "owner_money_path_ready":
-                reply = (
-                    "I have your meat preorder details on the farm review list. "
-                    "The farm will only send approved price and booking details through the approved follow-up step."
-                )
+                quote_packet, quote_status = build_meat_estimated_quote_packet(lead_id)
+                if (
+                    quote_status == 200
+                    and quote_packet.get("quote_safe")
+                    and _truthy(os.getenv(DOCUMENT_AUTOSEND_ENABLED_ENV))
+                ):
+                    reply = quote_packet.get("sam_preparing_message") or (
+                        "I am preparing your estimated quote now and will send it through shortly."
+                    )
+                elif quote_status == 200 and quote_packet.get("quote_safe"):
+                    reply = (
+                        "I have the details needed for your estimated quote. "
+                        "The farm document send step is not enabled yet, so the team will send it once that is switched on."
+                    )
+                else:
+                    reply = (
+                        "I have your meat preorder details. I still need the farm document setup to be completed "
+                        "before I can send the estimated quote."
+                    )
 
     return {
         "agent": "sam_meat_backend",
@@ -940,22 +969,7 @@ def _extract_payment_reference(message):
 
 
 def _bank_details(source):
-    source = source if source is not None else os.environ
-    values = {
-        "account_name": _clean(source.get(BANK_ACCOUNT_NAME_ENV), 160),
-        "bank_name": _clean(source.get(BANK_NAME_ENV), 120),
-        "account_number": _clean(source.get(BANK_ACCOUNT_NUMBER_ENV), 80),
-        "branch_code": _clean(source.get(BANK_BRANCH_CODE_ENV), 80),
-        "account_type": _clean(source.get(BANK_ACCOUNT_TYPE_ENV) or "Business account", 80),
-    }
-    required = {
-        BANK_ACCOUNT_NAME_ENV: values["account_name"],
-        BANK_NAME_ENV: values["bank_name"],
-        BANK_ACCOUNT_NUMBER_ENV: values["account_number"],
-        BANK_BRANCH_CODE_ENV: values["branch_code"],
-    }
-    missing = [key for key, value in required.items() if not value]
-    return {**values, "configured": not missing, "missing_envs": missing}
+    return _shared_bank_details(source if source is not None else os.environ)
 
 
 def _bank_details_configured(source):
@@ -963,9 +977,7 @@ def _bank_details_configured(source):
 
 
 def _payment_reference(lead_id, source):
-    prefix = _clean((source if source is not None else os.environ).get(PAYMENT_REFERENCE_PREFIX_ENV) or "AMADEUS-MEAT", 40)
-    suffix = re.sub(r"[^A-Z0-9]", "", str(lead_id or "").upper())[-8:] or "MEAT"
-    return f"{prefix}-{suffix}"[:80]
+    return _shared_payment_reference(lead_id)
 
 
 def _deposit_estimate(required):

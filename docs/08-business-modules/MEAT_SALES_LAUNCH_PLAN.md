@@ -20,6 +20,7 @@ Meat Sales is backend-native enough for private pilot testing:
 - Sam Meat now finds active conversation context through a direct backend lookup, merges append-only Sam fact events, handles common Afrikaans/typo/map-link inputs, and respects explicit WhatsApp service-window state.
 - Beacon now has private media-library metadata/API foundation, a Farm App review UI, approved-media campaign draft selection, and owner-review publish packet preparation for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
+- Meat sales document rules are now fixed for the pilot: Amadeus is VAT registered, VAT number `4510286224`, meat prices are entered and shown as VAT-inclusive, the pilot is EFT-only, deposits are 50% of the estimated VAT-inclusive total for standard carcass orders, and final invoices use actual packed weight. Cash is not part of the Sam Meat pilot path.
 
 This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, a Farm App media review UI, approved-media draft pairing, and publish packet preparation. The next work should define a manual public posting execution checklist and evidence capture before real campaign traffic is pushed into it.
 
@@ -41,6 +42,33 @@ Near-term money test:
 3. Use Prisma/Beacon to create owner-approved public demand drafts.
 4. Route inbound interest into Sam and the Farm App.
 5. Review what people ask, where they get stuck, and what converts.
+
+## Meat Document Rules
+
+The pilot document flow is deliberately separate from the existing live-pig quote/invoice flow:
+
+1. `Estimated Quote` - sent only when Sam has quote-safe facts and active approved pricing. It shows estimated packed weight, VAT-inclusive price/kg, VAT split, 50% deposit, delivery line as `To be confirmed`, and clear wording that final billing uses actual packed weight.
+2. `Deposit Pro Forma` - used for the deposit request after the customer accepts the estimate. POP is evidence only; the booking does not move forward until money reflects in the farm account.
+3. `Final Invoice` - generated after actual packed weight is recorded. It subtracts only bank-confirmed deposit money and keeps delivery release blocked until the balance reflects in the farm account.
+
+Pilot payment rule:
+
+- EFT only for meat sales.
+- Price table values are VAT-inclusive for customer clarity.
+- Internal records must split VAT from the VAT-inclusive total using the configured VAT rate, default `15%`.
+- Sam may say he is preparing an estimated quote only after all quote-safe facts are present; if bank details or pricing are placeholders, the system must block sending and return an operator action.
+- Customer bank reference must stay short and stable across the whole sale. Use the last six alphanumeric characters of the order/sale reference, for example `ORD-2026-A99273` uses bank reference `A99273`. Documents may use prefixes such as `MQ-2026-A99273`, `MP-2026-A99273`, and `MI-2026-A99273`, but the customer payment reference remains `A99273`.
+- Bank details are shared business settings, not meat-only settings. Use `BANK_ACCOUNT_NAME`, `BANK_NAME`, `BANK_ACCOUNT_NUMBER`, `BANK_BRANCH_CODE`, and `BANK_ACCOUNT_TYPE`. Existing `MEAT_SALES_BANK_*` envs remain supported only as backwards-compatible fallback.
+
+Implementation status:
+
+- `GET /api/sales/meat-documents/policy` reports the EFT-only, VAT-inclusive document policy and whether bank details are real or still placeholders.
+- `GET|POST /api/sales/meat-leads/<lead_id>/estimated-quote` builds the quote-safe packet without sending anything.
+- `POST /api/sales/meat-leads/<lead_id>/estimated-quote/pdf` renders the estimated quote PDF and records an append-only lead event when the quote-safe gate passes.
+- `POST /api/sales/meat-leads/<lead_id>/deposit-pro-forma/pdf` renders the deposit pro forma from the same quote-safe packet.
+- `POST /api/sales/meat-leads/<lead_id>/final-invoice/pdf` renders the final invoice from packed-weight reconciliation.
+- The build is intentionally separate from the existing live-pig `Quote` and `Invoice` services so the old order document path is not changed.
+- Sam only uses the “I am preparing your estimated quote now and will send it through shortly” wording when `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`; until then he reports that the document send step is not enabled yet.
 
 ## Roles
 
