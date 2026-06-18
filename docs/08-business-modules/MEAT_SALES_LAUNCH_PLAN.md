@@ -294,7 +294,41 @@ Next gate:
 - Phase 11V should design read-only Facebook/Meta performance import.
 - Actual paid boost execution remains a later reviewed build with owner-approved spend caps and Meta credentials.
 
-### 11. Other Sales Streams
+### 11. Beacon Owner-Approved Facebook Page Post Gate
+
+Goal: let Beacon publish an exact owner-reviewed Facebook Page text post for the live pilot.
+
+Status: complete in Phase 11V, pending deploy/env/live smoke.
+
+Implemented outcome:
+
+- `supabase/migrations/202606180005_create_beacon_facebook_post_execution_events.sql` creates append-only Facebook post execution evidence.
+- `GET /api/beacon/facebook-posting-policy` reports whether live Facebook posting is armed.
+- `GET /api/beacon/facebook-post-executions` lists post execution evidence.
+- `POST /api/beacon/facebook-post-executions` posts exact text to the configured Facebook Page only when all gates pass.
+- Farm App `/sales/beacon-media` has a Facebook Page Post panel.
+- Owner must type `POST EXACT BEACON PACKET` before execution.
+- Disabled, misconfigured, failed, and successful attempts are recorded.
+
+Required envs:
+
+- `BEACON_FACEBOOK_POSTING_ENABLED=1`
+- `BEACON_FACEBOOK_PAGE_ID`
+- `BEACON_FACEBOOK_PAGE_ACCESS_TOKEN`
+- Optional: `BEACON_FACEBOOK_GRAPH_VERSION`
+
+Boundary:
+
+- This posts text-only to the Facebook Page feed.
+- It does not boost, spend, schedule, DM customers, create orders/quotes/invoices, change stock, reserve carcasses, or change runtime/prompts.
+- Automatic media posting remains later because private Beacon media needs a safe public upload/URL strategy.
+
+Next gate:
+
+- Deploy and live-smoke one post.
+- Then build read-only Meta/Facebook performance import.
+
+### 12. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 

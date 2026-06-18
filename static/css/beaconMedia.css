@@ -113,6 +113,7 @@
 .beacon-media-upload-form,
 .beacon-media-review-panel,
 .beacon-publish-packet-panel,
+.beacon-facebook-post-panel,
 .beacon-manual-post-panel,
 .beacon-performance-panel {
   border-top: 1px solid #d7ded6;
@@ -135,13 +136,17 @@
 
 .beacon-manual-post-list,
 .beacon-performance-list,
-.beacon-boost-packet-result {
+.beacon-boost-packet-result,
+.beacon-facebook-post-list,
+.beacon-facebook-post-result {
   display: grid;
   gap: 10px;
   margin-top: 12px;
 }
 
 .beacon-publish-packet-card,
+.beacon-facebook-post-card,
+.beacon-facebook-post-item,
 .beacon-manual-post-item,
 .beacon-performance-item,
 .beacon-boost-packet-card {
@@ -154,6 +159,12 @@
 .beacon-manual-post-item strong,
 .beacon-manual-post-item span,
 .beacon-manual-post-item small,
+.beacon-facebook-post-card strong,
+.beacon-facebook-post-card span,
+.beacon-facebook-post-card small,
+.beacon-facebook-post-item strong,
+.beacon-facebook-post-item span,
+.beacon-facebook-post-item small,
 .beacon-performance-item strong,
 .beacon-performance-item span,
 .beacon-performance-item small,
@@ -166,6 +177,10 @@
 .beacon-manual-post-item span,
 .beacon-manual-post-item small,
 .beacon-manual-post-item p,
+.beacon-facebook-post-card span,
+.beacon-facebook-post-card small,
+.beacon-facebook-post-item span,
+.beacon-facebook-post-item small,
 .beacon-performance-item span,
 .beacon-performance-item small,
 .beacon-boost-packet-card span,

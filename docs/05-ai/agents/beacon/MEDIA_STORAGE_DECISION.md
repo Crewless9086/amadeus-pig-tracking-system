@@ -103,8 +103,10 @@ Completed:
 - Owner-review publish packet preparation built in `/sales/beacon-media` and `POST /api/beacon/campaign-publish-packet`.
 - Manual public post evidence capture built in `/sales/beacon-media` and `GET/POST /api/beacon/manual-post-evidence`.
 - Campaign performance and boost recommendation packets built in `/sales/beacon-media` and `GET/POST /api/beacon/campaign-performance`.
+- Owner-approved Facebook Page text-post execution gate built in `/sales/beacon-media` and `GET/POST /api/beacon/facebook-post-executions`.
 
 Next:
 
 - Deploy and owner-check `/sales/beacon-media`.
-- Design read-only Meta/Facebook performance import without enabling automatic public posting, Meta writes, boost execution, or paid spend.
+- Add Facebook Page posting envs and live-smoke one text post.
+- Design read-only Meta/Facebook performance import without enabling Meta writes, boost execution, or paid spend.

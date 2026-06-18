@@ -3,6 +3,8 @@
     policy: null,
     assets: [],
     selectedAssetId: "",
+    latestPublishPacket: null,
+    facebookPostingPolicy: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -21,6 +23,14 @@
     publishNotes: byId("beacon_publish_notes"),
     publishPrepare: byId("beacon_publish_prepare"),
     publishResult: byId("beacon_publish_packet_result"),
+    facebookPostRefresh: byId("beacon_facebook_post_refresh"),
+    facebookPostPolicyStatus: byId("beacon_facebook_post_policy_status"),
+    facebookPostPacketId: byId("beacon_facebook_post_packet_id"),
+    facebookPostConfirmation: byId("beacon_facebook_post_confirmation"),
+    facebookPostExactText: byId("beacon_facebook_post_exact_text"),
+    facebookPostExecute: byId("beacon_facebook_post_execute"),
+    facebookPostResult: byId("beacon_facebook_post_result"),
+    facebookPostList: byId("beacon_facebook_post_execution_list"),
     manualPostRefresh: byId("beacon_manual_post_refresh"),
     manualPostPacketId: byId("beacon_manual_post_packet_id"),
     manualPostChannel: byId("beacon_manual_post_channel"),
@@ -136,6 +146,8 @@
     renderSummary(assetData.counts || {});
     renderAssetList();
     await loadCampaignSelection();
+    await loadFacebookPostingPolicy();
+    await loadFacebookPostExecutions();
     await loadManualPostEvidence();
     await loadCampaignPerformance();
     if (state.selectedAssetId && !state.assets.some((asset) => asset.asset_id === state.selectedAssetId)) {
@@ -198,8 +210,10 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    state.latestPublishPacket = packet;
     renderPublishPacket(packet);
     primeManualPostEvidence(packet);
+    primeFacebookPostExecution(packet);
     showMessage(`Publish packet prepared for owner review: ${packet.publish_packet_id}`, "success");
   }
 
@@ -225,6 +239,71 @@
     if (!elements.manualPostCampaignLabel.value) {
       elements.manualPostCampaignLabel.value = packet.campaign?.name || "";
     }
+  }
+
+  function primeFacebookPostExecution(packet) {
+    elements.facebookPostPacketId.value = packet.publish_packet_id || "";
+    elements.facebookPostExactText.value = packet.selected_draft?.exact_text || "";
+  }
+
+  async function loadFacebookPostingPolicy() {
+    const policy = await fetchJson("/api/beacon/facebook-posting-policy");
+    state.facebookPostingPolicy = policy;
+    const ready = Boolean(policy.enabled && policy.page_id_configured && policy.page_access_token_configured);
+    elements.facebookPostPolicyStatus.textContent = ready
+      ? "Facebook posting gate is armed. Exact owner confirmation is still required."
+      : "Facebook posting is locked until Render envs and owner confirmation are present.";
+    elements.facebookPostExecute.disabled = !ready;
+    return policy;
+  }
+
+  async function loadFacebookPostExecutions() {
+    const data = await fetchJson("/api/beacon/facebook-post-executions?limit=8");
+    renderFacebookPostExecutions(data.execution_events || []);
+  }
+
+  async function executeFacebookPost() {
+    clearMessage();
+    const payload = {
+      publish_packet_id: elements.facebookPostPacketId.value,
+      channel: "Facebook",
+      exact_text: elements.facebookPostExactText.value,
+      owner_confirmation: elements.facebookPostConfirmation.value,
+      recorded_by: "farm_app_beacon_facebook_post_gate",
+    };
+    const result = await fetchJson("/api/beacon/facebook-post-executions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderFacebookPostResult(result);
+    showMessage(`Facebook post gate result: ${result.status}`, result.success ? "success" : "error");
+    await loadFacebookPostExecutions();
+  }
+
+  function renderFacebookPostResult(result) {
+    const event = result.execution_event || {};
+    elements.facebookPostResult.innerHTML = `
+      <div class="beacon-facebook-post-card">
+        <strong>${escapeHtml(result.status || event.execution_status || "not_attempted")}</strong>
+        <span>Post ID: ${escapeHtml(safe(result.facebook_post_id || event.facebook_post_id, "Not posted"))}</span>
+        <small>Public post ${result.posts_publicly ? "executed" : "locked"} | Meta call ${result.calls_meta ? "executed" : "locked"} | paid boost locked</small>
+      </div>
+    `;
+  }
+
+  function renderFacebookPostExecutions(events) {
+    if (!events.length) {
+      elements.facebookPostList.innerHTML = `<div class="table-empty">No Facebook post execution evidence recorded yet.</div>`;
+      return;
+    }
+    elements.facebookPostList.innerHTML = events.map((event) => `
+      <div class="beacon-facebook-post-item">
+        <strong>${escapeHtml(event.execution_status || event.execution_event_id)}</strong>
+        <span>${escapeHtml(safe(event.publish_packet_id))} | ${escapeHtml(safe(event.facebook_post_id, "No post id"))}</span>
+        <small>${escapeHtml(safe(event.created_at))}</small>
+      </div>
+    `).join("");
   }
 
   async function loadManualPostEvidence() {
@@ -544,6 +623,8 @@
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
     elements.publishPrepare.addEventListener("click", () => preparePublishPacket().catch((error) => showMessage(error.message)));
+    elements.facebookPostRefresh.addEventListener("click", () => Promise.all([loadFacebookPostingPolicy(), loadFacebookPostExecutions()]).catch((error) => showMessage(error.message)));
+    elements.facebookPostExecute.addEventListener("click", () => executeFacebookPost().catch((error) => showMessage(error.message)));
     elements.manualPostRefresh.addEventListener("click", () => loadManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.manualPostRecord.addEventListener("click", () => recordManualPostEvidence().catch((error) => showMessage(error.message)));
     elements.performanceRefresh.addEventListener("click", () => loadCampaignPerformance().catch((error) => showMessage(error.message)));

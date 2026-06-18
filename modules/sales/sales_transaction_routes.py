@@ -62,7 +62,10 @@ from modules.sales.conversation_learning import (
 from modules.sales.beacon_campaign import (
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
+    execute_beacon_facebook_page_post,
+    facebook_posting_policy,
     list_beacon_campaign_performance_events,
+    list_beacon_facebook_post_execution_events,
     list_beacon_manual_post_evidence,
     record_beacon_campaign_performance_event,
     record_beacon_manual_post_evidence,
@@ -269,6 +272,24 @@ def beacon_campaign_performance():
         return jsonify(result), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = record_beacon_campaign_performance_event(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/beacon/facebook-posting-policy", methods=["GET"])
+def beacon_facebook_posting_policy():
+    return jsonify(facebook_posting_policy()), 200
+
+
+@sales_bp.route("/beacon/facebook-post-executions", methods=["GET", "POST"])
+def beacon_facebook_post_executions():
+    if request.method == "GET":
+        result, status_code = list_beacon_facebook_post_execution_events(
+            limit=request.args.get("limit", 25),
+            publish_packet_id=request.args.get("publish_packet_id", ""),
+        )
+        return jsonify(result), status_code
+    payload = request.get_json(silent=True) or {}
+    result, status_code = execute_beacon_facebook_page_post(payload)
     return jsonify(result), status_code
 
 

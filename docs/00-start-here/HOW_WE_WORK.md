@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Phase 11V Beacon read-only Meta/Facebook performance import design |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, sales conversation learning evidence, Beacon media-library metadata/API foundation, private Storage smoke, Farm App Beacon Media Review UI, approved-media campaign draft selection, owner-review campaign publish packet preparation, manual public post evidence capture, and performance/boost recommendation packets. The Farm App remains the operational surface. |
-| **Current focus** | Design read-only Facebook/Meta performance import. Paid boost execution remains locked. |
-| **Current last verified** | **2026-06-18** - Phase 11U Beacon performance and boost recommendation packet is built locally; verification pending. Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
+| **Today's focus** | Deploy/env/live smoke for Phase 11V Beacon Facebook Page post gate |
+| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, sales conversation learning evidence, Beacon media-library metadata/API foundation, private Storage smoke, Farm App Beacon Media Review UI, approved-media campaign draft selection, owner-review campaign publish packet preparation, manual public post evidence capture, performance/boost recommendation packets, and owner-approved Facebook Page text-post gate. The Farm App remains the operational surface. |
+| **Current focus** | Add Facebook Page envs and run one live post smoke. Paid boost execution remains locked. |
+| **Current last verified** | **2026-06-18** - Phase 11V Beacon Facebook Page text-post gate disabled-path smoke passed locally. Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.

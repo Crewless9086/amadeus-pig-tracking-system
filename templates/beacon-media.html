@@ -97,6 +97,34 @@
           </div>
           <div id="beacon_publish_packet_result" class="beacon-publish-packet-result"></div>
         </div>
+        <div class="beacon-facebook-post-panel" aria-label="Beacon Facebook Page post execution">
+          <div class="page-header section-header-compact">
+            <div>
+              <h3>Facebook Page Post</h3>
+              <p id="beacon_facebook_post_policy_status">Checking Facebook posting gate...</p>
+            </div>
+            <button type="button" id="beacon_facebook_post_refresh" class="button-link button-link-secondary">Refresh Gate</button>
+          </div>
+          <div class="beacon-media-review-grid">
+            <div class="form-group">
+              <label for="beacon_facebook_post_packet_id">Publish Packet ID</label>
+              <input type="text" id="beacon_facebook_post_packet_id" placeholder="Prepare a publish packet first" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_facebook_post_confirmation">Owner Confirmation</label>
+              <input type="text" id="beacon_facebook_post_confirmation" placeholder="POST EXACT BEACON PACKET" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="beacon_facebook_post_exact_text">Exact Facebook Text</label>
+            <textarea id="beacon_facebook_post_exact_text" rows="5" placeholder="Prepared packet text will fill here."></textarea>
+          </div>
+          <div class="beacon-media-actions">
+            <button type="button" id="beacon_facebook_post_execute" class="button-link">Post To Facebook Page</button>
+          </div>
+          <div id="beacon_facebook_post_result" class="beacon-facebook-post-result"></div>
+          <div id="beacon_facebook_post_execution_list" class="beacon-facebook-post-list"></div>
+        </div>
         <div class="beacon-manual-post-panel" aria-label="Beacon manual post evidence">
           <div class="page-header section-header-compact">
             <div>

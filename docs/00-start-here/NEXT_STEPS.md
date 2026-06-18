@@ -501,6 +501,47 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11V should add read-only Meta/Facebook performance import design before any real Meta credential is used. Actual paid boost execution remains a later owner-approved build.
 
+### Phase 11V Complete - Beacon Owner-Approved Facebook Page Post Gate
+
+Planning prompt pass:
+
+- Prompt 1 confidence boundary: the owner wants Beacon to post live soon, with Facebook as first channel. Full automatic posting is still too risky without page credentials and a live smoke, so the build is an exact-packet, owner-confirmed execution gate.
+- Prompt 2 product risks: wrong public copy, duplicate public posts, missing/invalid Meta credentials, unapproved media assumptions, fulfilment overload, and accidental paid spend.
+- Prompt 3 engineering corrections: the execution route must receive the exact packet text instead of reconstructing it from an ID, every failed/successful attempt must be append-only, the UI must show whether posting is armed, and paid boost execution must remain impossible.
+
+Implemented outcome:
+
+- New append-only migration: `supabase/migrations/202606180005_create_beacon_facebook_post_execution_events.sql`.
+- New backend policy/execution rail:
+  - `GET /api/beacon/facebook-posting-policy`
+  - `GET /api/beacon/facebook-post-executions`
+  - `POST /api/beacon/facebook-post-executions`
+- Farm App `/sales/beacon-media` now has a Facebook Page Post panel.
+- Preparing a publish packet fills the exact Facebook text and packet ID into the post gate.
+- Owner must type exact confirmation: `POST EXACT BEACON PACKET`.
+- The backend posts text-only to the configured Facebook Page feed when all env gates are enabled.
+- Disabled/misconfigured/failed attempts are recorded as append-only execution evidence.
+
+Required Render envs before live posting:
+
+- `BEACON_FACEBOOK_POSTING_ENABLED=1`
+- `BEACON_FACEBOOK_PAGE_ID=<facebook_page_id>`
+- `BEACON_FACEBOOK_PAGE_ACCESS_TOKEN=<page_access_token>`
+- Optional: `BEACON_FACEBOOK_GRAPH_VERSION=v23.0`
+
+Authority boundary:
+
+- This is public Facebook Page posting only after exact owner confirmation.
+- It does not boost posts, spend money, schedule posts, send customer DMs, call Chatwoot/n8n, create quotes/invoices/orders, change stock, reserve carcasses, dispatch agents, or change prompts/runtime.
+- Media posting is not yet automatic. Current execution is text-only; approved media can still be used manually until a later media-post build safely handles public media upload/URL rules.
+
+Next gate:
+
+- Deploy latest commit.
+- Add Render envs.
+- Open `/sales/beacon-media`, prepare the Facebook publish packet, type the exact confirmation, and run one live post smoke.
+- Phase 11W should add read-only Meta/Facebook performance import after the posting gate is live-smoked.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

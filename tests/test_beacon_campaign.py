@@ -6,6 +6,8 @@ from modules.sales.beacon_campaign import (
     build_meat_launch_campaign_packet,
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
+    execute_beacon_facebook_page_post,
+    facebook_posting_policy,
     format_meat_launch_campaign_markdown,
     manual_post_evidence_policy,
     record_beacon_campaign_performance_event,
@@ -267,6 +269,57 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertEqual(over_cap["recommended_action"], "owner_review_required")
         self.assertEqual(over_cap["recommended_spend_amount"], 500)
         self.assertFalse(over_cap["calls_meta"])
+
+    def test_facebook_posting_policy_is_default_locked(self):
+        policy = facebook_posting_policy(environ={})
+
+        self.assertFalse(policy["enabled"])
+        self.assertFalse(policy["page_id_configured"])
+        self.assertFalse(policy["page_access_token_configured"])
+        self.assertEqual(policy["required_owner_confirmation"], "POST EXACT BEACON PACKET")
+        self.assertFalse(policy["boosts_post"])
+        self.assertFalse(policy["spends_money"])
+
+    def test_facebook_post_execution_requires_exact_owner_confirmation(self):
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "exact_text": "Limited preorder test post.",
+            "owner_confirmation": "post it",
+        }, database_url="", environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "123",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+        })
+
+        self.assertEqual(status, 400)
+        self.assertEqual(result["status"], "owner_confirmation_required")
+        self.assertFalse(result["posts_publicly"])
+        self.assertFalse(result["calls_meta"])
+        self.assertFalse(result["spends_money"])
+
+    def test_facebook_post_execution_can_call_mock_poster_when_enabled(self):
+        def fake_poster(params, policy):
+            return {"success": True, "facebook_post_id": "123_456", "id": "123_456"}, 200
+
+        result, status = execute_beacon_facebook_page_post({
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "exact_text": "Limited preorder test post.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }, database_url="", poster=fake_poster, environ={
+            "BEACON_FACEBOOK_POSTING_ENABLED": "1",
+            "BEACON_FACEBOOK_PAGE_ID": "123",
+            "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN": "token",
+        })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "facebook_page_post_sent")
+        self.assertEqual(result["facebook_post_id"], "123_456")
+        self.assertTrue(result["posts_publicly"])
+        self.assertTrue(result["calls_meta"])
+        self.assertFalse(result["boosts_post"])
+        self.assertFalse(result["spends_money"])
 
 
 if __name__ == "__main__":

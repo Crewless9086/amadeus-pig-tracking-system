@@ -476,6 +476,64 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json(), record_result)
         record_event.assert_called_once_with(payload)
 
+    def test_beacon_facebook_post_execution_routes_are_gated(self):
+        policy_result = {
+            "success": True,
+            "mode": "beacon_facebook_page_post_execution_gate",
+            "enabled": False,
+        }
+        list_result = {
+            "success": True,
+            "mode": "beacon_facebook_page_post_execution_gate",
+            "execution_events": [],
+        }
+        execute_result = {
+            "success": False,
+            "status": "facebook_posting_disabled",
+            "posts_publicly": False,
+            "calls_meta": False,
+            "spends_money": False,
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "facebook_posting_policy",
+            return_value=policy_result,
+        ) as policy:
+            response = self.client.get("/api/beacon/facebook-posting-policy")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), policy_result)
+        policy.assert_called_once()
+
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_facebook_post_execution_events",
+            return_value=(list_result, 200),
+        ) as list_events:
+            response = self.client.get("/api/beacon/facebook-post-executions?limit=3&publish_packet_id=BEACON-PUBLISH-PACKET-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), list_result)
+        list_events.assert_called_once_with(limit="3", publish_packet_id="BEACON-PUBLISH-PACKET-1")
+
+        payload = {
+            "publish_packet_id": "BEACON-PUBLISH-PACKET-1",
+            "channel": "Facebook",
+            "exact_text": "Limited preorder test post.",
+            "owner_confirmation": "POST EXACT BEACON PACKET",
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "execute_beacon_facebook_page_post",
+            return_value=(execute_result, 503),
+        ) as execute_post:
+            response = self.client.post("/api/beacon/facebook-post-executions", json=payload)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), execute_result)
+        execute_post.assert_called_once_with(payload)
+
     def test_meat_sales_learning_list_route_uses_learning_store(self):
         service_result = {
             "success": True,

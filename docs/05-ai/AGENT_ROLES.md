@@ -57,6 +57,7 @@ Order:
 8. Beacon Campaign Publish Packet Review.
 9. Beacon Manual Public Post Evidence.
 10. Beacon Performance Tracking And Boost Recommendation Packet.
+11. Beacon Owner-Approved Facebook Page Post Gate.
 
 Phase 11N note: Beacon's meat launch packet lives in `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` and is backed by `modules/sales/beacon_campaign.py`. Full Beacon scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Beacon cannot post, send customer messages, create quotes/invoices/orders, reserve stock, or confirm payment until later approved authority levels exist.
 
@@ -71,5 +72,7 @@ Phase 11S note: Beacon can prepare an exact owner-review publish packet through 
 Phase 11T note: Beacon can record owner-performed manual public post evidence through `GET/POST /api/beacon/manual-post-evidence` and the `/sales/beacon-media` Manual Post Evidence panel. This lets Beacon learn from manually posted campaigns, but it still cannot post, schedule, boost, spend, call Meta, send customer messages, or change orders/stock.
 
 Phase 11U note: Beacon can record append-only campaign performance evidence and prepare owner-review boost recommendation packets through `GET/POST /api/beacon/campaign-performance` and the `/sales/beacon-media` Performance + Boost Recommendation panel. Recommendations are capped at R500 and optimize for Sam messages and qualified buyer leads. Beacon still cannot call Meta, boost, spend, schedule, send customer messages, or change orders/stock.
+
+Phase 11V note: Beacon can post exact owner-confirmed text to a configured Facebook Page through `GET /api/beacon/facebook-posting-policy` and `GET/POST /api/beacon/facebook-post-executions`. This is env-gated, requires exact owner confirmation, records append-only execution evidence, and is text-only. Beacon still cannot boost, spend, schedule, DM customers, create orders, change stock, or auto-use private media.
 
 Other sales options remain planned, but the first agent pattern is proven through Meat Sales before repeating it for live pig sales, slaughter/abattoir sales, assisted slaughter, or custom cuts.

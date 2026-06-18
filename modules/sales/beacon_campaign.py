@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
 
 from services.database_service import DATABASE_URL_ENV
 
@@ -47,6 +50,11 @@ PERFORMANCE_AUTHORITY_FLAGS = {
 }
 
 BOOST_RECOMMENDATION_SPEND_CAP = 500
+FACEBOOK_POSTING_ENABLED_ENV = "BEACON_FACEBOOK_POSTING_ENABLED"
+FACEBOOK_PAGE_ID_ENV = "BEACON_FACEBOOK_PAGE_ID"
+FACEBOOK_PAGE_ACCESS_TOKEN_ENV = "BEACON_FACEBOOK_PAGE_ACCESS_TOKEN"
+FACEBOOK_GRAPH_VERSION_ENV = "BEACON_FACEBOOK_GRAPH_VERSION"
+FACEBOOK_POST_CONFIRMATION_PHRASE = "POST EXACT BEACON PACKET"
 
 FORBIDDEN_ACTIONS = [
     "no_public_post",
@@ -496,6 +504,126 @@ def list_beacon_campaign_performance_events(limit=25, publish_packet_id="", manu
         "latest_boost_packet": _boost_packet(_event_to_performance_params(events[0])) if events else {},
         "next_gate": "owner_reviews_boost_recommendation_before_any_meta_or_paid_spend_authority",
         **PERFORMANCE_AUTHORITY_FLAGS,
+    }, 200
+
+
+def facebook_posting_policy(environ=None):
+    source = environ if environ is not None else os.environ
+    enabled = _truthy(source.get(FACEBOOK_POSTING_ENABLED_ENV))
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    return {
+        "success": True,
+        "mode": "beacon_facebook_page_post_execution_gate",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "enabled": enabled,
+        "enabled_env": FACEBOOK_POSTING_ENABLED_ENV,
+        "page_id_configured": bool(page_id),
+        "page_id_env": FACEBOOK_PAGE_ID_ENV,
+        "page_access_token_configured": bool(token),
+        "page_access_token_env": FACEBOOK_PAGE_ACCESS_TOKEN_ENV,
+        "graph_version_env": FACEBOOK_GRAPH_VERSION_ENV,
+        "required_owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "posts_text_only_now": True,
+        "posts_media_now": False,
+        "boosts_or_spends_now": False,
+        "required_envs": [
+            FACEBOOK_POSTING_ENABLED_ENV,
+            FACEBOOK_PAGE_ID_ENV,
+            FACEBOOK_PAGE_ACCESS_TOKEN_ENV,
+        ],
+        **_facebook_execution_authority(False),
+    }
+
+
+def execute_beacon_facebook_page_post(payload, database_url=None, poster=None, environ=None):
+    payload = payload if isinstance(payload, dict) else {}
+    policy = facebook_posting_policy(environ=environ)
+    params = _facebook_post_params(payload, policy)
+    validation_error = _facebook_post_validation_error(params, policy)
+    if validation_error:
+        params["execution_status"] = validation_error
+        _record_facebook_post_execution_event(params, database_url=database_url)
+        return {
+            "success": False,
+            "status": validation_error,
+            "policy": policy,
+            "execution_event": _public_facebook_post_event(params),
+            **_facebook_execution_authority(False),
+        }, 400 if validation_error not in {"facebook_posting_disabled", "facebook_page_credentials_missing"} else 503
+
+    post_fn = poster or _post_to_facebook_page_feed
+    post_result, post_status = post_fn(params, policy)
+    execution_status = "facebook_page_post_sent" if post_status < 400 and post_result.get("success") else "facebook_page_post_failed"
+    params.update({
+        "execution_status": execution_status,
+        "facebook_post_id": _clean_text(post_result.get("facebook_post_id") or post_result.get("id"))[:160],
+        "facebook_response_json": json.dumps(post_result, sort_keys=True, default=str),
+    })
+    record_result, record_status = _record_facebook_post_execution_event(params, database_url=database_url)
+    return {
+        "success": execution_status == "facebook_page_post_sent",
+        "status": execution_status,
+        "post_status_code": post_status,
+        "facebook_post_id": params["facebook_post_id"],
+        "facebook_result": post_result,
+        "record_status_code": record_status,
+        "record_result": record_result,
+        "execution_event": _public_facebook_post_event(params),
+        "policy": policy,
+        **_facebook_execution_authority(execution_status == "facebook_page_post_sent"),
+    }, 200 if execution_status == "facebook_page_post_sent" else 502
+
+
+def list_beacon_facebook_post_execution_events(limit=25, publish_packet_id="", database_url=None):
+    try:
+        limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        limit = 25
+    publish_packet_id = _clean_text(publish_packet_id)[:120]
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _facebook_post_unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _facebook_post_unavailable("dependency_missing", True), 500
+    where = "where publish_packet_id = %(publish_packet_id)s" if publish_packet_id else ""
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    select execution_event_id, publish_packet_id, channel, exact_text,
+                           owner_confirmation, execution_status, facebook_post_id,
+                           facebook_response_json, created_at
+                    from public.beacon_facebook_post_execution_events
+                    {where}
+                    order by created_at desc
+                    limit %(limit)s
+                    """,
+                    {"limit": limit, "publish_packet_id": publish_packet_id},
+                )
+                rows = cursor.fetchall()
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "beacon_facebook_post_execution_read_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "execution_events": [],
+            **_facebook_execution_authority(False),
+        }, 500
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "beacon_facebook_page_post_execution_gate",
+        "execution_events": [_facebook_post_row_to_event(row) for row in rows],
+        "policy": facebook_posting_policy(),
+        **_facebook_execution_authority(False),
     }, 200
 
 
@@ -1213,6 +1341,206 @@ def _performance_unavailable(status, configured):
         "performance_events": [],
         **PERFORMANCE_AUTHORITY_FLAGS,
     }
+
+
+def _facebook_execution_authority(executed):
+    return {
+        **PERFORMANCE_AUTHORITY_FLAGS,
+        "draft_only": False,
+        "posts_publicly": bool(executed),
+        "calls_meta": bool(executed),
+        "customer_public_output_enabled": bool(executed),
+        "boosts_post": False,
+        "spends_money": False,
+        "sends_customer_message": False,
+    }
+
+
+def _facebook_post_params(payload, policy):
+    params = {
+        "execution_event_id": _clean_text(payload.get("execution_event_id"))[:120],
+        "mode": "beacon_facebook_page_post_execution_gate",
+        "publish_packet_id": _clean_text(payload.get("publish_packet_id"))[:120],
+        "channel": _clean_text(payload.get("channel") or "Facebook")[:80],
+        "exact_text": _clean_text(payload.get("exact_text") or payload.get("message"))[:5000],
+        "owner_confirmation": _clean_text(payload.get("owner_confirmation"))[:120],
+        "execution_status": "not_attempted",
+        "facebook_post_id": "",
+        "facebook_response_json": "{}",
+        "recorded_by": _clean_text(payload.get("recorded_by") or "beacon_facebook_post_execution_gate")[:120],
+        "policy_enabled": bool(policy.get("enabled")),
+        "page_id_configured": bool(policy.get("page_id_configured")),
+        "page_access_token_configured": bool(policy.get("page_access_token_configured")),
+    }
+    if not params["execution_event_id"]:
+        params["execution_event_id"] = _facebook_post_execution_id(params)
+    return params
+
+
+def _facebook_post_validation_error(params, policy):
+    if not params.get("publish_packet_id"):
+        return "publish_packet_id_required"
+    if not params.get("exact_text"):
+        return "exact_text_required"
+    if params.get("owner_confirmation") != FACEBOOK_POST_CONFIRMATION_PHRASE:
+        return "owner_confirmation_required"
+    if "facebook" not in params.get("channel", "").lower():
+        return "channel_not_facebook"
+    if not policy.get("enabled"):
+        return "facebook_posting_disabled"
+    if not policy.get("page_id_configured") or not policy.get("page_access_token_configured"):
+        return "facebook_page_credentials_missing"
+    return ""
+
+
+def _post_to_facebook_page_feed(params, policy, environ=None):
+    source = environ if environ is not None else os.environ
+    page_id = _clean_text(source.get(FACEBOOK_PAGE_ID_ENV))
+    token = _clean_text(source.get(FACEBOOK_PAGE_ACCESS_TOKEN_ENV))
+    version = _clean_text(source.get(FACEBOOK_GRAPH_VERSION_ENV)) or "v23.0"
+    if not page_id or not token:
+        return {"success": False, "status": "facebook_page_credentials_missing"}, 503
+    endpoint = f"https://graph.facebook.com/{urllib_parse.quote(version, safe='')}/{urllib_parse.quote(page_id, safe='')}/feed"
+    body = urllib_parse.urlencode({
+        "message": params.get("exact_text", ""),
+        "access_token": token,
+    }).encode("utf-8")
+    req = urllib_request.Request(endpoint, data=body, method="POST")
+    try:
+        with urllib_request.urlopen(req, timeout=25) as response:
+            raw = response.read().decode("utf-8")
+            payload = json.loads(raw or "{}")
+            return {"success": True, **payload}, response.status
+    except urllib_error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        return {
+            "success": False,
+            "status": "facebook_http_error",
+            "http_status": exc.code,
+            "error": raw[:500],
+        }, exc.code
+    except (urllib_error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "success": False,
+            "status": "facebook_post_request_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+        }, 502
+
+
+def _record_facebook_post_execution_event(params, database_url=None):
+    database_url = (database_url if database_url is not None else os.getenv(DATABASE_URL_ENV, "")).strip()
+    if not database_url:
+        return _facebook_post_unavailable("not_configured", False), 503
+    try:
+        import psycopg
+    except ImportError:
+        return _facebook_post_unavailable("dependency_missing", True), 500
+    try:
+        with psycopg.connect(database_url, connect_timeout=10) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    insert into public.beacon_facebook_post_execution_events (
+                        execution_event_id, mode, publish_packet_id, channel, exact_text,
+                        owner_confirmation, execution_status, facebook_post_id,
+                        facebook_response_json, records_evidence,
+                        owner_exact_confirmation_required, sends_customer_message,
+                        posts_publicly, calls_chatwoot, calls_meta, calls_n8n,
+                        boosts_post, spends_money, creates_quote, creates_invoice,
+                        creates_order, changes_stock, reserves_stock, dispatch_enabled,
+                        changes_runtime_now, changes_prompt_now, physical_controls_enabled,
+                        customer_public_output_enabled, writes_farm_data, recorded_by
+                    )
+                    values (
+                        %(execution_event_id)s, %(mode)s, %(publish_packet_id)s,
+                        %(channel)s, %(exact_text)s, %(owner_confirmation)s,
+                        %(execution_status)s, %(facebook_post_id)s,
+                        %(facebook_response_json)s::jsonb, true, true, false,
+                        true, false, true, false, false, false, false, false,
+                        false, false, false, false, false, false, false,
+                        true, false, %(recorded_by)s
+                    )
+                    on conflict (execution_event_id) do nothing
+                    """,
+                    params,
+                )
+                created_count = cursor.rowcount
+    except Exception as exc:
+        return {
+            "success": False,
+            "configured": True,
+            "status": "beacon_facebook_post_execution_write_failed",
+            "error_type": exc.__class__.__name__,
+            "error": str(exc)[:240],
+            "execution_event": _public_facebook_post_event(params),
+            **_facebook_execution_authority(False),
+        }, 500
+    return {
+        "success": True,
+        "configured": True,
+        "status": "beacon_facebook_post_execution_recorded" if created_count else "beacon_facebook_post_execution_already_recorded",
+        "created_count": created_count,
+        "execution_event_id": params["execution_event_id"],
+        "execution_event": _public_facebook_post_event(params),
+        **_facebook_execution_authority(False),
+    }, 201 if created_count else 200
+
+
+def _public_facebook_post_event(params):
+    return {
+        "execution_event_id": params.get("execution_event_id", ""),
+        "mode": params.get("mode", "beacon_facebook_page_post_execution_gate"),
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "channel": params.get("channel", ""),
+        "exact_text": params.get("exact_text", ""),
+        "owner_confirmation": params.get("owner_confirmation", ""),
+        "execution_status": params.get("execution_status", ""),
+        "facebook_post_id": params.get("facebook_post_id", ""),
+        "facebook_response": _loads(params.get("facebook_response_json"), {}),
+        **_facebook_execution_authority(params.get("execution_status") == "facebook_page_post_sent"),
+    }
+
+
+def _facebook_post_row_to_event(row):
+    return {
+        "execution_event_id": row[0],
+        "mode": "beacon_facebook_page_post_execution_gate",
+        "publish_packet_id": row[1],
+        "channel": row[2],
+        "exact_text": row[3],
+        "owner_confirmation": row[4],
+        "execution_status": row[5],
+        "facebook_post_id": row[6],
+        "facebook_response": row[7] or {},
+        "created_at": row[8].isoformat() if hasattr(row[8], "isoformat") else str(row[8] or ""),
+        **_facebook_execution_authority(row[5] == "facebook_page_post_sent"),
+    }
+
+
+def _facebook_post_execution_id(params):
+    seed = {
+        "publish_packet_id": params.get("publish_packet_id", ""),
+        "exact_text": params.get("exact_text", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    digest = hashlib.sha256(json.dumps(seed, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:18].upper()
+    return f"BEACON-FB-POST-{digest}"
+
+
+def _facebook_post_unavailable(status, configured):
+    return {
+        "success": False,
+        "configured": configured,
+        "status": status,
+        "mode": "beacon_facebook_page_post_execution_gate",
+        "execution_events": [],
+        **_facebook_execution_authority(False),
+    }
+
+
+def _truthy(value):
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _safe_money(value, default=0):
