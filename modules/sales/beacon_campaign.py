@@ -77,6 +77,71 @@ def build_meat_launch_campaign_selection(payload=None, approved_assets=None):
     }
 
 
+def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None):
+    """Build the exact owner-review publish packet without posting, scheduling, or persisting approval."""
+    payload = payload if isinstance(payload, dict) else {}
+    campaign_packet = build_meat_launch_campaign_packet(payload)
+    approved_assets = approved_assets if isinstance(approved_assets, list) else []
+    ranked_assets = _rank_approved_assets(approved_assets)
+    draft_id = _clean_text(payload.get("draft_id"))
+    selected_asset_id = _clean_text(payload.get("asset_id"))
+    selected_channel = _clean_text(payload.get("channel"))
+    pilot_cap = _clean_text(payload.get("pilot_cap"))
+    owner_notes = _clean_text(payload.get("owner_notes"))
+    draft = _find_draft(campaign_packet, draft_id)
+    asset = _find_asset(ranked_assets, selected_asset_id)
+    errors = []
+    if not draft:
+        errors.append("selected_draft_not_found")
+    if selected_asset_id and not asset:
+        errors.append("selected_asset_not_approved_or_not_found")
+    channel = selected_channel or (draft.get("channel") if draft else "")
+    packet_id = _publish_packet_id(draft_id, selected_asset_id, channel, pilot_cap)
+    exact_text = draft.get("text", "") if draft else ""
+    return {
+        "success": not errors,
+        "mode": "beacon_campaign_publish_packet_owner_review_only",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "publish_packet_id": packet_id,
+        "campaign": campaign_packet.get("campaign", {}),
+        "selected_draft": {
+            "draft_id": draft.get("id", "") if draft else draft_id,
+            "label": draft.get("label", "") if draft else "",
+            "channel": channel,
+            "intent": draft.get("intent", "") if draft else "",
+            "exact_text": exact_text,
+        },
+        "selected_asset": asset,
+        "pilot_cap": pilot_cap,
+        "owner_notes": owner_notes,
+        "approval_status": "owner_review_required",
+        "approval_records_publish": False,
+        "approval_sends_or_posts": False,
+        "requires_owner_exact_text_confirmation": True,
+        "requires_owner_exact_media_confirmation": bool(asset),
+        "authority": deepcopy(AUTHORITY_FLAGS),
+        "forbidden_actions": list(FORBIDDEN_ACTIONS),
+        "safety_checks": {
+            "draft_is_limited_preorder": _has_preorder_signal(exact_text.lower()) and "limited" in exact_text.lower(),
+            "draft_has_no_forbidden_promise": not _has_forbidden_promise(exact_text.lower()),
+            "asset_is_owner_approved": bool(asset.get("public_use_approved")) if asset else not selected_asset_id,
+            "no_public_send_or_post": True,
+            "no_meta_call": True,
+            "no_signed_url_created": True,
+        },
+        "errors": errors,
+        "owner_review_checklist": [
+            "Read the exact text as the customer/public will see it.",
+            "Confirm the selected media is approved and safe for public use.",
+            "Confirm the pilot cap before posting anywhere.",
+            "Confirm the chosen channel before any later public-post action.",
+            "Use this packet as review evidence only; no post is sent from this step.",
+        ],
+        "next_gate": "owner_approves_exact_publish_packet_before_manual_or_gated_public_post",
+    }
+
+
 def build_meat_launch_campaign_packet(payload=None):
     """Return Beacon's first meat-launch campaign drafts without doing any external action."""
     payload = payload if isinstance(payload, dict) else {}
@@ -457,6 +522,31 @@ def _safe_int(value, default=0):
         return int(float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _find_draft(packet, draft_id):
+    for group in ("channel_drafts", "story_updates"):
+        for draft in packet.get(group, []):
+            if draft.get("id") == draft_id:
+                return draft
+    return {}
+
+
+def _find_asset(assets, asset_id):
+    if not asset_id:
+        return {}
+    for asset in assets:
+        if asset.get("asset_id") == asset_id:
+            return asset
+    return {}
+
+
+def _publish_packet_id(draft_id, asset_id, channel, pilot_cap):
+    seed = "|".join([draft_id or "draft", asset_id or "text-only", channel or "channel", pilot_cap or "cap"])
+    total = 0
+    for char in seed:
+        total = (total * 33 + ord(char)) % 0xFFFFFFFF
+    return f"BEACON-PUBLISH-PACKET-{total:08X}"
 
 
 def _all_draft_texts(packet):

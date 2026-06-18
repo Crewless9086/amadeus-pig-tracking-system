@@ -17,10 +17,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Chatwoot sales hygiene is implemented behind `SAM_MEAT_CHATWOOT_HYGIENE_ENABLED=1`: Sam Meat writes meat labels and custom attributes while preserving existing Chatwoot labels and order attributes.
 - The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and passes launch-blocking assertions. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
-- Beacon now has private media-library metadata/API foundation, a Farm App review UI, and approved-media campaign draft selection for future approved photo/video use.
+- Beacon now has private media-library metadata/API foundation, a Farm App review UI, approved-media campaign draft selection, and owner-review publish packet preparation for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 
-This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, a Farm App media review UI, and approved-media draft pairing. The next work should define an owner-approved campaign publish packet/approval rail before real campaign traffic is pushed into it.
+This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, a Farm App media review UI, approved-media draft pairing, and publish packet preparation. The next work should define a manual public posting execution checklist and evidence capture before real campaign traffic is pushed into it.
 
 ## Business Priority
 
@@ -232,7 +232,27 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11S should define the owner-approved campaign publish packet/approval rail. Keep posting manual or exact-owner-approved until public-send rails are proven.
 
-### 8. Other Sales Streams
+### 8. Beacon Campaign Publish Packet Review
+
+Goal: prepare exact public-post review packets without posting.
+
+Status: complete in Phase 11S.
+
+Implemented outcome:
+
+- `POST /api/beacon/campaign-publish-packet` builds an owner-review-only packet.
+- Packet binds exact draft copy, selected channel, optional approved media asset, pilot cap, and owner notes.
+- Selected media is validated against approved Beacon media only.
+- Farm App `/sales/beacon-media` has a Publish Packet panel.
+- Safety checks confirm limited preorder wording, no forbidden promise, approved media, no public send/post, no Meta call, and no signed URL creation.
+- The packet does not persist approval, post publicly, schedule, spend, send customer messages, call Meta, create signed URLs, create quotes/invoices/orders, change stock, reserve carcasses, dispatch, or change prompts/runtime.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11T should define manual public posting execution checklist and evidence capture before direct platform automation.
+
+### 9. Other Sales Streams
 
 Goal: keep the larger sales system honest.
 

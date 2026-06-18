@@ -19,7 +19,7 @@ Specialists must not become uncontrolled separate brains. They start read-only o
 | Sam | Customer conversation and intake through Chatwoot/WhatsApp. Collects missing sales facts and writes append-only lead/fact events. | May reply only inside configured backend gates. Must not invent price, timing, stock, bank confirmation, or final booking. |
 | Butcher | Meat pipeline and pig/carcass matching. Prioritizes open half-carcass reservations and protects against overbooking. | Recommendation and gated reservation support only. No autonomous slaughter booking or stock mutation. |
 | Ledger | Business, pricing, margin, pipeline, and follow-up priority advisor. | Advisory only. No customer sends, quote/invoice creation, or price changes without owner/backend approval. |
-| Prisma/Beacon | Public/social demand-generation drafts for meat launch campaigns. Full future scope includes media library, opportunity scanning, scheduling, paid promotion, performance monitoring, and campaign optimization. Phase 11N has a draft-only packet for the first pork freezer preorder pilot. Phase 11P adds private media-library metadata/API foundation. Phase 11Q adds the Farm App media review UI. Phase 11R pairs approved media with draft copy. | Draft/catalog/selection-only until owner approves public posting and channel rules. Existing system docs call this role `Beacon`; owner may refer to it as `Prisma`. |
+| Prisma/Beacon | Public/social demand-generation drafts for meat launch campaigns. Full future scope includes media library, opportunity scanning, scheduling, paid promotion, performance monitoring, and campaign optimization. Phase 11N has a draft-only packet for the first pork freezer preorder pilot. Phase 11P adds private media-library metadata/API foundation. Phase 11Q adds the Farm App media review UI. Phase 11R pairs approved media with draft copy. Phase 11S prepares exact owner-review publish packets. | Draft/catalog/selection/packet-only until owner approves public posting and channel rules. Existing system docs call this role `Beacon`; owner may refer to it as `Prisma`. |
 | Atlas / Analyst | Reviews sales conversations, objections, missing facts, conversion/loss reasons, and improvement opportunities. Phase 11O records append-only sales conversation learning evidence for later summary. | Learning evidence and recommendations only. No automatic prompt/rule/tool changes. |
 | Oom Sakkie | Summarizes state, next gates, risks, and learning for the owner. | Internal command center. Does not replace Sam in customer conversations. |
 
@@ -54,6 +54,7 @@ Order:
 5. Beacon Media Library Foundation.
 6. Beacon Media Review UI.
 7. Beacon Approved-Media Campaign Draft Selection.
+8. Beacon Campaign Publish Packet Review.
 
 Phase 11N note: Beacon's meat launch packet lives in `docs/08-business-modules/MEAT_LAUNCH_CAMPAIGN_PACKET.md` and is backed by `modules/sales/beacon_campaign.py`. Full Beacon scope is logged in `docs/05-ai/agents/beacon/BEACON_SCOPE.md`. Beacon cannot post, send customer messages, create quotes/invoices/orders, reserve stock, or confirm payment until later approved authority levels exist.
 
@@ -62,5 +63,7 @@ Phase 11P note: Beacon's private media-library foundation lives in `modules/beac
 Phase 11Q note: Farm App page `/sales/beacon-media` lets the owner upload small review assets, filter review status, and record append-only note/approve/reject/archive events. It still cannot publicly post, schedule, spend, send customer messages, or automatically use media.
 
 Phase 11R note: Beacon can recommend approved media assets for draft campaign copy through `GET /api/beacon/campaign-draft-selection` and the `/sales/beacon-media` Campaign Draft Selection panel. This is selection evidence only; it still cannot publicly post, schedule, spend, send customer messages, create signed public URLs, or automatically use media.
+
+Phase 11S note: Beacon can prepare an exact owner-review publish packet through `POST /api/beacon/campaign-publish-packet` and the `/sales/beacon-media` Publish Packet panel. The packet does not post, schedule, spend, call Meta, create signed URLs, send customer messages, or persist public approval.
 
 Other sales options remain planned, but the first agent pattern is proven through Meat Sales before repeating it for live pig sales, slaughter/abattoir sales, assisted slaughter, or custom cuts.

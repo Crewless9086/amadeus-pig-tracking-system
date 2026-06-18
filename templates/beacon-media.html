@@ -63,6 +63,40 @@
           <button type="button" id="beacon_campaign_selection_refresh" class="button-link button-link-secondary">Refresh Selection</button>
         </div>
         <div id="beacon_campaign_selection_list" class="beacon-campaign-selection-list"></div>
+        <div class="beacon-publish-packet-panel" aria-label="Beacon campaign publish packet">
+          <div class="page-header section-header-compact">
+            <div>
+              <h3>Publish Packet</h3>
+              <p>Prepare exact text and selected media for owner review. This does not post.</p>
+            </div>
+          </div>
+          <div class="beacon-media-review-grid">
+            <div class="form-group">
+              <label for="beacon_publish_draft_id">Draft</label>
+              <select id="beacon_publish_draft_id"></select>
+            </div>
+            <div class="form-group">
+              <label for="beacon_publish_asset_id">Approved Media</label>
+              <select id="beacon_publish_asset_id"></select>
+            </div>
+            <div class="form-group">
+              <label for="beacon_publish_channel">Channel</label>
+              <input type="text" id="beacon_publish_channel" placeholder="Facebook, WhatsApp status, Instagram" />
+            </div>
+            <div class="form-group">
+              <label for="beacon_publish_cap">Pilot Cap</label>
+              <input type="text" id="beacon_publish_cap" placeholder="2 halves before pausing demand" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="beacon_publish_notes">Owner Notes</label>
+            <textarea id="beacon_publish_notes" rows="3" placeholder="Any channel, timing, or wording instructions for the exact packet."></textarea>
+          </div>
+          <div class="beacon-media-actions">
+            <button type="button" id="beacon_publish_prepare" class="button-link">Prepare Publish Packet</button>
+          </div>
+          <div id="beacon_publish_packet_result" class="beacon-publish-packet-result"></div>
+        </div>
       </section>
 
       <section class="beacon-media-workflow">

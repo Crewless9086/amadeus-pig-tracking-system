@@ -3,6 +3,7 @@ import unittest
 from modules.sales.beacon_campaign import (
     BEACON_CAMPAIGN_MODE,
     build_meat_launch_campaign_packet,
+    build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
     format_meat_launch_campaign_markdown,
     validate_meat_launch_campaign_packet,
@@ -110,6 +111,48 @@ class BeaconCampaignTests(unittest.TestCase):
         self.assertFalse(selection["authority"]["posts_publicly"])
         self.assertFalse(selection["authority"]["calls_meta"])
         self.assertEqual(selection["next_gate"], "owner_selects_media_and_campaign_draft_before_any_public_post")
+
+    def test_publish_packet_binds_exact_draft_and_approved_asset_without_posting(self):
+        packet = build_meat_launch_campaign_publish_packet({
+            "draft_id": "facebook_post",
+            "asset_id": "BEACON-ASSET-APPROVED",
+            "channel": "Facebook",
+            "pilot_cap": "2 halves",
+            "owner_notes": "Owner will post manually.",
+        }, approved_assets=[
+            {
+                "asset_id": "BEACON-ASSET-APPROVED",
+                "title": "Approved freezer pork image",
+                "media_type": "image",
+                "subject_tags": ["pork", "freezer"],
+                "sale_stream_relevance": ["meat"],
+                "quality_score": 90,
+                "privacy_risk": "low",
+                "effective_approval_status": "approved",
+                "effective_public_use_approved": True,
+            },
+        ])
+
+        self.assertTrue(packet["success"], packet)
+        self.assertEqual(packet["mode"], "beacon_campaign_publish_packet_owner_review_only")
+        self.assertEqual(packet["selected_draft"]["draft_id"], "facebook_post")
+        self.assertIn("limited", packet["selected_draft"]["exact_text"].lower())
+        self.assertEqual(packet["selected_asset"]["asset_id"], "BEACON-ASSET-APPROVED")
+        self.assertEqual(packet["approval_status"], "owner_review_required")
+        self.assertFalse(packet["approval_sends_or_posts"])
+        self.assertFalse(packet["authority"]["posts_publicly"])
+        self.assertTrue(packet["safety_checks"]["no_public_send_or_post"])
+        self.assertEqual(packet["next_gate"], "owner_approves_exact_publish_packet_before_manual_or_gated_public_post")
+
+    def test_publish_packet_rejects_unapproved_asset_selection(self):
+        packet = build_meat_launch_campaign_publish_packet({
+            "draft_id": "facebook_post",
+            "asset_id": "BEACON-ASSET-PENDING",
+        }, approved_assets=[])
+
+        self.assertFalse(packet["success"])
+        self.assertIn("selected_asset_not_approved_or_not_found", packet["errors"])
+        self.assertFalse(packet["authority"]["calls_meta"])
 
 
 if __name__ == "__main__":

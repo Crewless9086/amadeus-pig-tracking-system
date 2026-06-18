@@ -100,8 +100,9 @@ Completed:
 - One small Render upload/readback smoke passed.
 - Farm App review UI built at `/sales/beacon-media`.
 - Approved-media campaign draft selection built in `/sales/beacon-media` and `GET /api/beacon/campaign-draft-selection`.
+- Owner-review publish packet preparation built in `/sales/beacon-media` and `POST /api/beacon/campaign-publish-packet`.
 
 Next:
 
 - Deploy and owner-check `/sales/beacon-media`.
-- Define an owner-approved campaign publish packet/approval rail without enabling automatic public posting or scheduling.
+- Define manual public posting execution checklist and evidence capture without enabling automatic public posting or scheduling.

@@ -417,6 +417,30 @@ Next gate:
 - Deploy and owner-check `/sales/beacon-media`.
 - Phase 11S should define an owner-approved campaign publish packet/approval rail. Posting should still stay manual or exact-owner-approved until the public-send rails are proven.
 
+### Phase 11S Complete - Beacon Campaign Publish Packet Review
+
+Implemented outcome:
+
+- Owner-review-only publish packet builder: `build_meat_launch_campaign_publish_packet`.
+- Backend route: `POST /api/beacon/campaign-publish-packet`.
+- Publish packet binds exact draft copy, selected channel, optional approved media asset, pilot cap, and owner notes.
+- Asset selection validates against approved Beacon media only.
+- Safety checks include limited preorder signal, forbidden-promise check, approved media check, no public send/post, no Meta call, and no signed URL creation.
+- Farm App `/sales/beacon-media` now has a Publish Packet panel under Campaign Draft Selection.
+- Packet preparation produces exact review evidence and does not persist approval, send, post, schedule, call Meta, create signed URLs, or trigger public output.
+- No customer messaging, quote, invoice, order, stock, reservation, dispatch, prompt/runtime, or automatic public media use authority is added.
+
+Verified:
+
+- Focused Beacon campaign, Beacon media, sales route, and frontend contract tests passed.
+- `node --check static/js/beaconMedia.js` passed.
+- Playwright screenshots passed at 1440x900 and mobile full-page.
+
+Next gate:
+
+- Deploy and owner-check `/sales/beacon-media`.
+- Phase 11T should define the manual public posting execution checklist and evidence capture, still without direct Meta/Facebook/Instagram automation.
+
 ### Staying on track (Cursor + Claude Code)
 
 - **Single roadmap:** This file (`NEXT_STEPS.md`) is authoritative for **what comes next**. Open it at the start of every session; pick **one subsection** as scope unless you consciously expand it. **Do not jump to a later phase** because a new bug showed up — park it under the correct phase here (see **`HOW_WE_WORK.md`**).

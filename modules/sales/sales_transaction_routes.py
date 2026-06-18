@@ -59,7 +59,10 @@ from modules.sales.conversation_learning import (
     list_sales_conversation_learning_events,
     record_sales_conversation_learning_event,
 )
-from modules.sales.beacon_campaign import build_meat_launch_campaign_selection
+from modules.sales.beacon_campaign import (
+    build_meat_launch_campaign_publish_packet,
+    build_meat_launch_campaign_selection,
+)
 from modules.beacon.media_library import (
     beacon_media_storage_policy,
     list_beacon_media_assets,
@@ -222,6 +225,20 @@ def beacon_campaign_draft_selection():
         "product_focus": request.args.get("product_focus", ""),
     }, approved_assets=assets_result.get("assets", []))
     return jsonify(result), 200
+
+
+@sales_bp.route("/beacon/campaign-publish-packet", methods=["POST"])
+def beacon_campaign_publish_packet():
+    payload = request.get_json(silent=True) or {}
+    assets_result, assets_status = list_beacon_media_assets(
+        limit=25,
+        approval_status="approved",
+        media_type=payload.get("media_type", ""),
+    )
+    if assets_status >= 400:
+        return jsonify(assets_result), assets_status
+    result = build_meat_launch_campaign_publish_packet(payload, approved_assets=assets_result.get("assets", []))
+    return jsonify(result), 200 if result.get("success") else 400
 
 
 @sales_bp.route("/sales/meat-leads", methods=["GET"])

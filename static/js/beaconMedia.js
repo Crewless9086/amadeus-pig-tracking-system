@@ -14,6 +14,13 @@
     campaignSelectionStatus: byId("beacon_campaign_selection_status"),
     campaignSelectionRefresh: byId("beacon_campaign_selection_refresh"),
     campaignSelectionList: byId("beacon_campaign_selection_list"),
+    publishDraftId: byId("beacon_publish_draft_id"),
+    publishAssetId: byId("beacon_publish_asset_id"),
+    publishChannel: byId("beacon_publish_channel"),
+    publishCap: byId("beacon_publish_cap"),
+    publishNotes: byId("beacon_publish_notes"),
+    publishPrepare: byId("beacon_publish_prepare"),
+    publishResult: byId("beacon_publish_packet_result"),
     statusFilter: byId("beacon_media_status_filter"),
     typeFilter: byId("beacon_media_type_filter"),
     assetCount: byId("beacon_media_asset_count"),
@@ -110,6 +117,7 @@
     const selection = await fetchJson("/api/beacon/campaign-draft-selection?limit=25");
     elements.campaignSelectionStatus.textContent = `${selection.approved_media_count || 0} approved media asset${selection.approved_media_count === 1 ? "" : "s"} available for draft pairing. Public posting remains locked.`;
     renderCampaignSelection(selection);
+    renderPublishPacketOptions(selection);
   }
 
   function renderCampaignSelection(selection) {
@@ -126,6 +134,53 @@
         <small>${escapeHtml(safe(pairing.selection_reason))}</small>
       </div>
     `).join("");
+  }
+
+  function renderPublishPacketOptions(selection) {
+    const pairings = selection.channel_draft_pairings || [];
+    const assets = selection.ranked_media_assets || [];
+    elements.publishDraftId.innerHTML = pairings.map((pairing) => `
+      <option value="${escapeHtml(pairing.draft_id)}">${escapeHtml(safe(pairing.draft_label || pairing.draft_id))}</option>
+    `).join("");
+    elements.publishAssetId.innerHTML = [
+      `<option value="">Text only for now</option>`,
+      ...assets.map((asset) => `<option value="${escapeHtml(asset.asset_id)}">${escapeHtml(safe(asset.title || asset.asset_id))}</option>`),
+    ].join("");
+    if (pairings[0] && !elements.publishChannel.value) {
+      elements.publishChannel.value = pairings[0].channel || "";
+    }
+  }
+
+  async function preparePublishPacket() {
+    clearMessage();
+    const payload = {
+      draft_id: elements.publishDraftId.value,
+      asset_id: elements.publishAssetId.value,
+      channel: elements.publishChannel.value,
+      pilot_cap: elements.publishCap.value,
+      owner_notes: elements.publishNotes.value,
+    };
+    const packet = await fetchJson("/api/beacon/campaign-publish-packet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderPublishPacket(packet);
+    showMessage(`Publish packet prepared for owner review: ${packet.publish_packet_id}`, "success");
+  }
+
+  function renderPublishPacket(packet) {
+    const checks = packet.safety_checks || {};
+    const asset = packet.selected_asset || {};
+    elements.publishResult.innerHTML = `
+      <div class="beacon-publish-packet-card">
+        <strong>${escapeHtml(packet.publish_packet_id)}</strong>
+        <span>${escapeHtml(packet.selected_draft?.channel || "")} | ${escapeHtml(packet.approval_status || "")}</span>
+        <p>Asset: ${escapeHtml(safe(asset.title || asset.asset_id, "Text only"))}</p>
+        <pre>${escapeHtml(packet.selected_draft?.exact_text || "")}</pre>
+        <small>Checks: preorder ${checks.draft_is_limited_preorder ? "yes" : "no"} | forbidden promises ${checks.draft_has_no_forbidden_promise ? "clear" : "review"} | posting ${checks.no_public_send_or_post ? "locked" : "enabled"}</small>
+      </div>
+    `;
   }
 
   function renderPolicy(policy) {
@@ -310,6 +365,7 @@
   document.addEventListener("DOMContentLoaded", async () => {
     elements.refresh.addEventListener("click", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.campaignSelectionRefresh.addEventListener("click", () => loadCampaignSelection().catch((error) => showMessage(error.message)));
+    elements.publishPrepare.addEventListener("click", () => preparePublishPacket().catch((error) => showMessage(error.message)));
     elements.statusFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.typeFilter.addEventListener("change", () => loadBeaconMedia().catch((error) => showMessage(error.message)));
     elements.uploadForm.addEventListener("submit", (event) => uploadAsset(event).catch((error) => showMessage(error.message)));
