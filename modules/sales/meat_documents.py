@@ -295,7 +295,7 @@ def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, d
         return {**quote_packet, "sent": False, **_authority(False, False)}, quote_status
     document = quote_packet.get("document") if isinstance(quote_packet.get("document"), dict) else {}
     document_ref = _clean(document.get("document_ref"), 120)
-    window = quote_send_window_state(lead, source)
+    window = quote_send_window_state(_lead_with_effective_inbound_window(lead), source)
     if window.get("requires_template"):
         template_packet = build_quote_ready_template_packet(lead, quote_packet, window, source)
         _record_document_send_event(
@@ -976,6 +976,34 @@ def quote_send_window_state(lead, environ=None, now=None):
         "requires_template": not open_state,
         "reason": "service_window_open" if open_state else ("last_inbound_too_old" if last_inbound else "last_inbound_unknown"),
     }
+
+
+def _lead_with_effective_inbound_window(lead):
+    lead = dict(lead) if isinstance(lead, dict) else {}
+    latest_event_inbound = _latest_sam_meat_inbound_event_at(lead)
+    row_inbound = _parse_datetime(lead.get("last_inbound_at"))
+    if latest_event_inbound and (not row_inbound or latest_event_inbound > row_inbound):
+        lead["last_inbound_at"] = latest_event_inbound.isoformat()
+        if _clean(lead.get("whatsapp_window_state"), 80) in {"", "unknown", "template_required", "closed"}:
+            lead["whatsapp_window_state"] = "open"
+    return lead
+
+
+def _latest_sam_meat_inbound_event_at(lead):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    latest = None
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "status_observed" or event.get("recorded_by") != "sam_meat_intake":
+            continue
+        notes = _parse_json_object(event.get("notes", ""))
+        if notes.get("source") != "sam_meat_intake":
+            continue
+        created_at = _parse_datetime(event.get("created_at"))
+        if created_at and (latest is None or created_at > latest):
+            latest = created_at
+    return latest
 
 
 def build_quote_ready_template_packet(lead, quote_packet, window, environ=None):

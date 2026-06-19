@@ -6004,12 +6004,12 @@ def literal_false_is_allowed():
         self.assertFalse(result["calls_chatwoot"])
         self.assertFalse(result["creates_order"])
 
-    def test_sales_lead_upsert_uses_safe_postgres_xmax_cast(self):
+    def test_sales_lead_insert_remains_append_only_on_conflict(self):
         source = Path("modules/oom_sakkie/sales_campaign_store.py").read_text(encoding="utf-8")
 
-        self.assertIn("on conflict (lead_id) do update set", source)
-        self.assertIn("returning lead_id, (xmax::text = '0') as inserted", source)
-        self.assertNotIn("returning lead_id, (xmax = 0) as inserted", source)
+        self.assertIn("on conflict (lead_id) do nothing", source)
+        self.assertNotIn("on conflict (lead_id) do update set", source)
+        self.assertNotIn("xmax", source)
 
     def test_approve_first_waiting_sales_campaign_returns_unavailable_without_database(self):
         result, status_code = approve_first_waiting_sales_campaign(database_url="")

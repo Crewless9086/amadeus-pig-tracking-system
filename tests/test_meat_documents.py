@@ -354,6 +354,37 @@ class MeatDocumentTests(unittest.TestCase):
         event_types = [call.args[1]["event_type"] for call in record_event.call_args_list]
         self.assertIn("estimated_quote_template_required", event_types)
 
+    def test_send_estimated_quote_uses_recent_sam_fact_event_for_whatsapp_window(self):
+        env = dict(self.env)
+        env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
+        fixture = self._contract_fixture()
+        fixture["lead"]["last_inbound_at"] = "2020-01-01T01:07:06+00:00"
+        fixture["lead"]["events"] = [{
+            "event_type": "status_observed",
+            "recorded_by": "sam_meat_intake",
+            "created_at": "2099-06-19T01:00:00+00:00",
+            "notes": '{"source":"sam_meat_intake","kind":"fact_snapshot"}',
+        }]
+        with tempfile.TemporaryDirectory() as tmp_dir, \
+             patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
+            contract.return_value = (fixture, 200)
+            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+            sender = Mock(return_value={"status_code": 200, "message_id": "M1", "conversation_id": "1808"})
+
+            result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+                "OSK-SALES-LEAD-TEST",
+                environ=env,
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "estimated_quote_chatwoot_accepted_unverified")
+        sender.assert_called_once()
+
     def test_send_estimated_quote_blocks_duplicate_without_force_resend(self):
         env = dict(self.env)
         env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
