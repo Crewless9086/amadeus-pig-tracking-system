@@ -409,6 +409,60 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(mock_document_send.call_args.args[1]["conversation_id"], "1808")
         self.assertEqual(mock_document_send.call_args.kwargs["chatwoot_sender"], document_sender)
 
+    @patch("modules.sales.sam_meat_runtime.send_meat_estimated_quote_to_chatwoot")
+    @patch("modules.sales.sam_meat_runtime.build_meat_estimated_quote_packet")
+    @patch("modules.sales.sam_meat_runtime.record_sales_lead_event")
+    @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_quote_request_uses_quote_gate_even_when_contract_status_is_stale(
+        self,
+        mock_record,
+        mock_contract,
+        mock_fulfillment,
+        mock_event,
+        mock_quote,
+        mock_document_send,
+    ):
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-STale",
+            "contract": {},
+        }, 200)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        mock_quote.return_value = ({
+            "success": True,
+            "quote_safe": True,
+            "sam_preparing_message": "I am preparing your estimated quote now and will send it through shortly.",
+        }, 200)
+        mock_document_send.return_value = ({
+            "success": True,
+            "status": "estimated_quote_chatwoot_accepted_unverified",
+            "sent": False,
+            "chatwoot_accepted": True,
+        }, 200)
+        sender = Mock(return_value={"message_id": "123", "conversation_id": "1808"})
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Please send the estimated quote now."),
+            environ={
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1",
+                "MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED": "1",
+            },
+            chatwoot_sender=sender,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["send_status"], "sent")
+        self.assertTrue(result["sam_decision"]["document_send_requested"])
+        self.assertIn("preparing your estimated quote", result["sam_decision"]["reply_text"])
+        self.assertNotIn("farm must confirm", result["sam_decision"]["reply_text"])
+        mock_document_send.assert_called_once()
+
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")

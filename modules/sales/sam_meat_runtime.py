@@ -393,6 +393,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
     document_send_requested = False
+    quote_or_document_requested = _asks_money_or_document(inbound.get("content"))
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
@@ -431,7 +432,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         contract, status_code = get_sales_lead_preorder_contract(lead_id)
         if status_code == 200:
             contract_body = contract.get("contract") if isinstance(contract.get("contract"), dict) else {}
-            if contract_body.get("contract_status") == "owner_money_path_ready":
+            if contract_body.get("contract_status") == "owner_money_path_ready" or quote_or_document_requested:
                 quote_packet, quote_status = build_meat_estimated_quote_packet(lead_id)
                 if (
                     quote_status == 200
@@ -446,6 +447,12 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
                     reply = (
                         "I have the details needed for your estimated quote. "
                         "The farm document send step is not enabled yet, so the team will send it once that is switched on."
+                    )
+                elif quote_or_document_requested:
+                    blockers = quote_packet.get("blockers") if isinstance(quote_packet, dict) else []
+                    blocker_text = _quote_blocker_reply(blockers)
+                    reply = blocker_text or (
+                        "I am not able to prepare the estimated quote yet because the farm document gate is incomplete."
                     )
                 else:
                     reply = (
@@ -677,7 +684,7 @@ def _frustration_guard_reply(message, facts):
 
 def _price_or_document_guard_reply(message, facts):
     text = str(message or "").lower()
-    asks_money_or_document = bool(re.search(r"\b(price|cost|quote|invoice|how much)\b", text))
+    asks_money_or_document = _asks_money_or_document(text)
     if not asks_money_or_document or facts.get("product_type") == "unknown":
         return ""
     missing = []
@@ -693,6 +700,29 @@ def _price_or_document_guard_reply(message, facts):
     return (
         "I can note the request, but the farm must confirm price, timing, and any deposit rule "
         f"before quoting, invoicing, or booking anything.{missing_text}"
+    )
+
+
+def _asks_money_or_document(message):
+    return bool(re.search(r"\b(price|cost|quote|invoice|how much|estimate|estimated)\b", str(message or "").lower()))
+
+
+def _quote_blocker_reply(blockers):
+    blockers = blockers if isinstance(blockers, list) else []
+    labels = {
+        "price_per_kg_required": "price per kg",
+        "estimated_weight_kg_required": "estimated weight",
+        "deposit_percent_required": "deposit rule",
+        "bank_details_required": "bank details",
+        "customer_name_required": "customer name",
+        "payment_reference_required": "payment reference",
+    }
+    missing = [labels.get(str(item), str(item).replace("_", " ")) for item in blockers if str(item).strip()]
+    if not missing:
+        return ""
+    return (
+        "I am not able to prepare the estimated quote yet because the farm document gate is missing "
+        f"{', '.join(missing)}."
     )
 
 
