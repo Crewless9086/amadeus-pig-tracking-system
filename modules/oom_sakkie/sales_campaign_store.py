@@ -557,12 +557,25 @@ def record_sales_lead(payload, database_url=None):
                         %(writes_farm_data)s,
                         now()
                     )
-                    on conflict (lead_id) do nothing
-                    returning lead_id
+                    on conflict (lead_id) do update set
+                        status = excluded.status,
+                        lead_label = excluded.lead_label,
+                        contact_label = excluded.contact_label,
+                        channel = excluded.channel,
+                        chatwoot_conversation_id = excluded.chatwoot_conversation_id,
+                        whatsapp_window_state = excluded.whatsapp_window_state,
+                        last_inbound_at = coalesce(excluded.last_inbound_at, public.oom_sakkie_sales_leads.last_inbound_at),
+                        opt_in_state = excluded.opt_in_state,
+                        interest_json = excluded.interest_json,
+                        next_owner_action = excluded.next_owner_action,
+                        linked_order_id = coalesce(nullif(excluded.linked_order_id, ''), public.oom_sakkie_sales_leads.linked_order_id),
+                        linked_preorder_id = coalesce(nullif(excluded.linked_preorder_id, ''), public.oom_sakkie_sales_leads.linked_preorder_id)
+                    returning lead_id, (xmax = 0) as inserted
                     """,
                     params,
                 )
-                created_count = 1 if cursor.fetchone() else 0
+                row = cursor.fetchone()
+                created_count = 1 if row and len(row) > 1 and row[1] else 0
     except Exception as exc:
         return {
             "success": False,
