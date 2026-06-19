@@ -288,6 +288,9 @@ class MeatDocumentTests(unittest.TestCase):
         self.assertEqual(sender.call_args.args[2], Path(result["file_path"]))
         self.assertTrue(result["sends_customer_message"])
         self.assertTrue(result["calls_chatwoot"])
+        event_types = [call.args[1]["event_type"] for call in record_event.call_args_list]
+        self.assertIn("estimated_quote_send_attempted", event_types)
+        self.assertIn("estimated_quote_sent", event_types)
 
     def test_send_estimated_quote_blocks_duplicate_without_force_resend(self):
         env = dict(self.env)

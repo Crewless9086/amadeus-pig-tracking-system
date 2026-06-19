@@ -5,7 +5,7 @@ import tempfile
 from urllib import error as urllib_error
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from modules.oom_sakkie.policy import get_runtime_policy
 from modules.oom_sakkie.voice_stt import (
@@ -5870,6 +5870,30 @@ def literal_false_is_allowed():
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "invalid_event_type")
         self.assertFalse(result["sends_customer_message"])
+
+    @patch.dict("sys.modules", {"psycopg": MagicMock()})
+    def test_sales_lead_allows_estimated_quote_document_events(self):
+        import sys
+
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value.__enter__.return_value = cur
+        sys.modules["psycopg"].connect.return_value.__enter__.return_value = conn
+
+        result, status_code = record_sales_lead_event(
+            "OSK-SALES-LEAD-1",
+            {
+                "event_type": "estimated_quote_sent",
+                "status_observed": "estimated_quote_sent",
+                "recorded_by": "backend_meat_documents",
+            },
+            database_url="postgresql://example",
+        )
+
+        self.assertEqual(status_code, 201)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["event_type"], "estimated_quote_sent")
+        cur.execute.assert_called_once()
 
     @patch.dict("sys.modules", {"psycopg": Mock()})
     def test_active_sales_lead_lookup_merges_latest_sam_intake_facts(self):
