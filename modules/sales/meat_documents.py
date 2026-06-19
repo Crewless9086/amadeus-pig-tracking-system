@@ -1057,15 +1057,29 @@ def _document_send_message(packet):
 
 def _document_send_already_attempted(lead, document_ref):
     events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    latest_state = ""
     for event in events:
         if not isinstance(event, dict):
             continue
-        if event.get("event_type") not in {"estimated_quote_chatwoot_accepted", "estimated_quote_sent"}:
+        if event.get("event_type") not in {
+            "estimated_quote_chatwoot_accepted",
+            "estimated_quote_sent",
+            "estimated_quote_template_required",
+            "estimated_quote_send_failed",
+            "estimated_quote_delivery_delivered",
+            "estimated_quote_delivery_read",
+            "estimated_quote_delivery_failed",
+        }:
             continue
         notes = _parse_json_object(event.get("notes", ""))
         if _clean(notes.get("document_ref"), 120) == document_ref:
-            return True
-    return False
+            latest_state = event.get("event_type")
+    return latest_state in {
+        "estimated_quote_chatwoot_accepted",
+        "estimated_quote_sent",
+        "estimated_quote_delivery_delivered",
+        "estimated_quote_delivery_read",
+    }
 
 
 def _record_document_send_event(lead_id, event_type, conversation_id, document_ref, extra=None, database_url=None):

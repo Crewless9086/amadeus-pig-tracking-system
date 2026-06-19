@@ -408,6 +408,41 @@ class MeatDocumentTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertEqual(result["status"], "estimated_quote_send_already_recorded")
 
+    def test_send_estimated_quote_allows_retry_when_latest_document_event_requires_template(self):
+        env = dict(self.env)
+        env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
+        sent_ref = meat_documents._document_ref("MQ", "TEST")
+        fixture = self._contract_fixture()
+        fixture["lead"]["events"] = [
+            {
+                "event_type": "estimated_quote_sent",
+                "notes": '{"document_ref":"' + sent_ref + '"}',
+            },
+            {
+                "event_type": "estimated_quote_template_required",
+                "notes": '{"document_ref":"' + sent_ref + '"}',
+            },
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir, \
+             patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
+            contract.return_value = (fixture, 200)
+            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+            sender = Mock(return_value={"status_code": 200, "message_id": "M1", "conversation_id": "1808"})
+
+            result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+                "OSK-SALES-LEAD-TEST",
+                environ=env,
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertNotEqual(result["status"], "estimated_quote_send_already_recorded")
+        sender.assert_called_once()
+
     def test_delivery_webhook_authorization_requires_enabled_long_token(self):
         allowed, denied = meat_documents.authorize_meat_document_delivery_webhook(
             {"Authorization": "Bearer abc"},
