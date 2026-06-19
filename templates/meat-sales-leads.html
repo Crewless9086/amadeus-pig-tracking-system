@@ -25,6 +25,16 @@
 
       <div id="meat_leads_message" class="message-box hidden"></div>
 
+      <section class="meat-control-room" aria-label="Pilot meat sales control room">
+        <div class="meat-control-primary">
+          <span class="meat-control-kicker">Pilot Control Room</span>
+          <strong id="meat_pilot_percent">--%</strong>
+          <p id="meat_pilot_next_gate">Loading pilot readiness...</p>
+        </div>
+        <div class="meat-control-metrics" id="meat_pilot_metrics"></div>
+        <div class="meat-control-checklist" id="meat_pilot_checklist"></div>
+      </section>
+
       <section class="summary-metric-grid meat-leads-summary" aria-label="Meat lead summary">
         <article>
           <span>Open Leads</span>
@@ -44,11 +54,15 @@
         </article>
       </section>
 
-      <section class="meat-price-book-panel" aria-label="Meat price book">
+      <details class="meat-price-book-panel" aria-label="Meat price book">
+        <summary>
+          <span>Price Book</span>
+          <small id="meat_price_book_status">Active price and deposit rules used for Sam estimates.</small>
+        </summary>
         <div class="page-header section-header-compact">
           <div>
             <h2>Price Book</h2>
-            <p id="meat_price_book_status">Active price and deposit rules used for Sam estimates.</p>
+            <p>Latest active pricing entries. Add a new entry only when the farm price changes.</p>
           </div>
           <button type="button" id="meat_price_refresh" class="button-link button-link-secondary">Refresh Prices</button>
         </div>
@@ -84,7 +98,7 @@
           </div>
         </form>
         <div id="meat_price_book_list" class="ops-list"></div>
-      </section>
+      </details>
 
       <section class="meat-leads-workflow">
         <div class="meat-leads-list-panel">
@@ -98,12 +112,13 @@
           <div id="meat_leads_list" class="meat-leads-list" aria-label="Meat sales leads"></div>
         </div>
 
-        <div class="meat-leads-detail-panel">
+        <div class="meat-leads-detail-panel" id="meat_leads_detail_panel">
           <div class="page-header section-header-compact">
             <div>
               <h2 id="meat_lead_detail_title">Select a lead</h2>
               <p id="meat_lead_detail_status">Lead details will show here.</p>
             </div>
+            <button type="button" id="meat_toggle_tools" class="button-link button-link-secondary">Show Tools</button>
           </div>
 
           <section id="meat_operator_strip" class="meat-operator-strip" aria-label="Current lead operating state"></section>
@@ -180,6 +195,7 @@
               </div>
             </div>
             <div class="meat-lead-actions">
+              <button type="button" id="meat_ops_record_pop" class="button-link button-link-secondary">Record POP Only</button>
               <button type="button" id="meat_ops_record_deposit" class="button-link button-link-secondary">Confirm Money In Bank</button>
               <button type="button" id="meat_ops_build_instructions" class="button-link">Build Instruction Drafts</button>
             </div>

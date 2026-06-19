@@ -11,6 +11,8 @@
     meatOps: null,
     meatFulfillment: null,
     meatReconciliation: null,
+    pilotReadiness: null,
+    showAllTools: false,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -32,6 +34,12 @@
     priceAmount: byId("meat_price_amount"),
     priceUnit: byId("meat_price_unit"),
     priceList: byId("meat_price_book_list"),
+    pilotPercent: byId("meat_pilot_percent"),
+    pilotNextGate: byId("meat_pilot_next_gate"),
+    pilotMetrics: byId("meat_pilot_metrics"),
+    pilotChecklist: byId("meat_pilot_checklist"),
+    detailPanel: byId("meat_leads_detail_panel"),
+    toggleTools: byId("meat_toggle_tools"),
     detailTitle: byId("meat_lead_detail_title"),
     detailStatus: byId("meat_lead_detail_status"),
     operatorStrip: byId("meat_operator_strip"),
@@ -51,6 +59,7 @@
     paymentSummary: byId("meat_payment_state_summary"),
     depositAmount: byId("meat_deposit_amount"),
     depositReference: byId("meat_deposit_reference"),
+    recordPop: byId("meat_ops_record_pop"),
     recordDeposit: byId("meat_ops_record_deposit"),
     buildInstructions: byId("meat_ops_build_instructions"),
     opsResult: byId("meat_ops_result"),
@@ -174,6 +183,25 @@
     return {};
   };
 
+  const selectedLead = () => state.contract?.lead || state.leads.find((item) => item.lead_id === state.selectedLeadId) || {};
+
+  const selectedStage = () => {
+    const readinessRows = Array.isArray(state.pilotReadiness?.lead_stages) ? state.pilotReadiness.lead_stages : [];
+    const row = readinessRows.find((item) => item.lead_id === state.selectedLeadId);
+    if (row?.stage) return row.stage;
+    const lead = selectedLead();
+    const latest = latestEventType(lead);
+    const assembly = state.meatOps?.assembly || {};
+    const paymentGate = state.meatOps?.payment_gate || {};
+    if (assembly.ready_for_slaughter_booking) return "slaughter_ready";
+    if (paymentGate.state === "deposit_confirmed_in_bank" || assembly.deposit_confirmed) return "deposit_confirmed";
+    if (paymentGate.state === "pop_received_unverified" || assembly.pop_received_unverified) return "pop_review";
+    if (latest === "customer_followup_sent") return "quote_delivered";
+    if (latest === "owner_customer_followup_send_approved") return "quote_ready";
+    if (latest === "owner_money_path_approved") return "document_gate";
+    return state.selectedLeadId ? "intake" : "";
+  };
+
   const latestReservation = () => {
     const reservations = Array.isArray(state.meatOps?.reservations) ? state.meatOps.reservations : [];
     for (let index = reservations.length - 1; index >= 0; index -= 1) {
@@ -217,6 +245,7 @@
       elements.buildMatch,
       elements.useMatch,
       elements.reserveMatch,
+      elements.recordPop,
       elements.recordDeposit,
       elements.buildInstructions,
       elements.recordFulfillment,
@@ -236,6 +265,45 @@
     ].forEach((button) => {
       if (button) button.disabled = busy;
     });
+  };
+
+  const formatGate = (value) => safe(value, "review").replaceAll("_", " ");
+
+  const renderPilotReadiness = () => {
+    const readiness = state.pilotReadiness || {};
+    const summary = readiness.summary || {};
+    const checklist = Array.isArray(readiness.checklist) ? readiness.checklist : [];
+    elements.pilotPercent.textContent = `${Number(readiness.pilot_percent || 0)}%`;
+    elements.pilotNextGate.textContent = formatGate(readiness.next_gate || summary.next_gate || "Loading pilot readiness");
+    elements.pilotMetrics.innerHTML = [
+      ["Active", summary.active_lead_count],
+      ["Quote ready", summary.quote_ready_count],
+      ["POP review", summary.pop_review_count],
+      ["Money confirmed", summary.deposit_confirmed_count],
+    ].map(([label, value]) => `
+      <div>
+        <span>${label}</span>
+        <strong>${value ?? "--"}</strong>
+      </div>
+    `).join("");
+    elements.pilotChecklist.innerHTML = checklist.slice(0, 4).map((item) => `
+      <div class="meat-check-item" data-complete="${item.complete ? "true" : "false"}">
+        <strong>${item.complete ? "Done" : "Open"}</strong>
+        <span>${safe(item.label)}</span>
+      </div>
+    `).join("");
+  };
+
+  const loadPilotReadiness = async () => {
+    try {
+      state.pilotReadiness = await fetchJson("/api/sales/meat-pilot-readiness?limit=50&status=launch_test");
+      renderPilotReadiness();
+      renderToolVisibility();
+    } catch (error) {
+      elements.pilotNextGate.textContent = `Pilot readiness unavailable: ${error.message}`;
+      elements.pilotMetrics.innerHTML = "";
+      elements.pilotChecklist.innerHTML = "";
+    }
   };
 
   const approvalInputs = () => [
@@ -510,6 +578,7 @@
     const latestPop = latestDepositEvent("pop_received_unverified");
     const latestBankInBank = latestDepositEvent("deposit_confirmed_in_bank");
     const latestBank = latestBankInBank.payment_reference ? latestBankInBank : latestDepositEvent("deposit_confirmed");
+    const popReceived = Boolean(latestPop.payment_reference);
 
     elements.opsResult.innerHTML = "";
     elements.opsStatus.textContent = hasLead
@@ -597,8 +666,35 @@
     }
 
     elements.reserveMatch.disabled = !hasLead || !hasRecommendation;
+    elements.recordPop.disabled = !hasLead || !hasReservation || depositConfirmed || popReceived;
     elements.recordDeposit.disabled = !hasLead || !hasReservation || depositConfirmed;
     elements.buildInstructions.disabled = !hasLead || !readyForDrafts;
+  };
+
+  const setPanelCurrent = (selector, isCurrent) => {
+    const panel = document.querySelector(selector);
+    if (panel) panel.classList.toggle("is-current", Boolean(isCurrent));
+  };
+
+  const renderToolVisibility = () => {
+    const stage = selectedStage();
+    const hasLead = Boolean(state.selectedLeadId);
+    if (elements.detailPanel) {
+      elements.detailPanel.classList.toggle("show-all", state.showAllTools);
+      elements.detailPanel.dataset.stage = stage || "none";
+    }
+    if (elements.toggleTools) {
+      elements.toggleTools.textContent = state.showAllTools ? "Hide Tools" : "Show Tools";
+      elements.toggleTools.disabled = !hasLead;
+    }
+    setPanelCurrent(".meat-lead-match-panel", hasLead && ["intake", "document_gate", "quote_ready"].includes(stage));
+    setPanelCurrent(".meat-lead-ops-panel", hasLead);
+    setPanelCurrent(".meat-lead-fulfillment-panel", hasLead && ["deposit_confirmed", "slaughter_ready"].includes(stage));
+    setPanelCurrent(".meat-lead-reconciliation-panel", hasLead && ["slaughter_ready"].includes(stage));
+    setPanelCurrent("#meat_lead_approval_form", hasLead && ["intake", "document_gate", "quote_ready"].includes(stage));
+    setPanelCurrent(".meat-lead-preview", hasLead && ["document_gate", "quote_ready"].includes(stage));
+    setPanelCurrent(".meat-lead-order-gate", hasLead && ["quote_delivered", "pop_review"].includes(stage));
+    setPanelCurrent(".meat-lead-events", false);
   };
 
   const renderMeatFulfillment = () => {
@@ -751,6 +847,7 @@
       elements.guidedNext.disabled = true;
       elements.guidedStatus.textContent = "Select a lead to see the next useful action.";
       elements.guidedResult.innerHTML = "";
+      renderToolVisibility();
       return;
     }
 
@@ -800,6 +897,7 @@
       elements.orderStatus.innerHTML = `Draft order created: <a href="/orders/${encodeURIComponent(draftOrder.order_id)}">${draftOrder.order_id}</a>`;
       elements.createDraftOrder.disabled = true;
     }
+    renderToolVisibility();
   };
 
   const loadLeads = async () => {
@@ -815,6 +913,7 @@
       renderSummary();
       renderLeadList();
       if (state.selectedLeadId) await loadLeadDetail(state.selectedLeadId);
+      await loadPilotReadiness();
     } catch (error) {
       setMessage(`Could not load meat leads: ${error.message}`, "error");
       elements.list.innerHTML = '<div class="table-empty">Meat leads could not be loaded.</div>';
@@ -1060,9 +1159,48 @@
       elements.depositAmount.value = "";
       elements.depositReference.value = "";
       await loadMeatOps();
+      await loadPilotReadiness();
       setMessage("Money-in-bank confirmation recorded. Instruction drafts unlock only when a full carcass is committed.", "success");
     } catch (error) {
       setMessage(`Could not record deposit: ${error.message}`, "error");
+    } finally {
+      setBusy(false);
+      renderDetail();
+      renderMeatOps();
+    }
+  };
+
+  const recordPop = async () => {
+    if (!state.selectedLeadId) return;
+    const reservation = latestReservation();
+    if (!reservation.reservation_id) return;
+    if (!elements.depositReference.value.trim()) {
+      setMessage("Bank reference is required before logging POP received.", "error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/deposit-events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: reservation.reservation_id,
+          order_id: reservation.order_id || latestDraftOrderEvent().order_id || "",
+          event_type: "pop_received_unverified",
+          amount: elements.depositAmount.value || "",
+          payment_reference: elements.depositReference.value,
+          payment_method: elements.paymentMethod.value || "EFT",
+          recorded_by: "Farm App",
+        }),
+      });
+      elements.depositAmount.value = "";
+      elements.depositReference.value = "";
+      await loadMeatOps();
+      await loadPilotReadiness();
+      setMessage("POP received was logged. Operations remain blocked until money is confirmed in bank.", "success");
+    } catch (error) {
+      setMessage(`Could not record POP: ${error.message}`, "error");
     } finally {
       setBusy(false);
       renderDetail();
@@ -1687,6 +1825,10 @@
   };
 
   elements.refresh.addEventListener("click", loadLeads);
+  elements.toggleTools.addEventListener("click", () => {
+    state.showAllTools = !state.showAllTools;
+    renderToolVisibility();
+  });
   elements.priceRefresh.addEventListener("click", loadPriceBook);
   elements.priceForm.addEventListener("submit", savePriceEntry);
   elements.form.addEventListener("submit", approveDetails);
@@ -1695,6 +1837,7 @@
   elements.buildMatch.addEventListener("click", buildMeatMatch);
   elements.useMatch.addEventListener("click", useMeatMatch);
   elements.reserveMatch.addEventListener("click", reserveMatchedCarcass);
+  elements.recordPop.addEventListener("click", recordPop);
   elements.recordDeposit.addEventListener("click", recordDeposit);
   elements.buildInstructions.addEventListener("click", buildInstructionDrafts);
   elements.opsResult.addEventListener("click", handleInstructionAction);
@@ -1722,5 +1865,6 @@
   renderMeatFulfillment();
   renderMeatReconciliation();
   loadPriceBook();
+  loadPilotReadiness();
   loadLeads();
 })();

@@ -2,10 +2,91 @@
   max-width: 1440px;
 }
 
+.meat-leads-card {
+  padding-bottom: 18px;
+}
+
+.meat-control-room {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1fr) minmax(300px, 1.1fr);
+  gap: 12px;
+  align-items: stretch;
+  border: 1px solid #c9d5c8;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.meat-control-primary,
+.meat-control-metrics,
+.meat-control-checklist {
+  min-width: 0;
+}
+
+.meat-control-primary {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  border-left: 4px solid #386641;
+  background: #f3f8f1;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.meat-control-kicker,
+.meat-control-primary p,
+.meat-control-metrics span,
+.meat-check-item span {
+  color: #607066;
+}
+
+.meat-control-primary strong {
+  color: #203528;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.meat-control-primary p {
+  margin: 0;
+}
+
+.meat-control-metrics,
+.meat-control-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.meat-control-metrics div,
+.meat-check-item {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.meat-control-metrics span,
+.meat-check-item span,
+.meat-check-item strong {
+  display: block;
+  font-size: 0.82rem;
+}
+
+.meat-control-metrics strong,
+.meat-check-item strong {
+  color: #203528;
+}
+
+.meat-check-item[data-complete="true"] {
+  background: #eef7ec;
+  border-color: #b8cab8;
+}
+
 .meat-leads-workflow {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.3fr);
+  grid-template-columns: minmax(300px, 0.82fr) minmax(520px, 1.38fr);
   align-items: start;
 }
 
@@ -47,6 +128,22 @@
   margin: 18px 0;
 }
 
+.meat-price-book-panel summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  cursor: pointer;
+  color: #203528;
+  font-weight: 700;
+}
+
+.meat-price-book-panel summary small {
+  color: #607066;
+  font-weight: 400;
+  text-align: right;
+}
+
 .meat-price-book-panel .ops-list {
   margin-top: 12px;
 }
@@ -63,6 +160,16 @@
 .meat-leads-list {
   display: grid;
   gap: 10px;
+  max-height: calc(100dvh - 330px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.meat-leads-detail-panel {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100dvh - 28px);
+  overflow: auto;
 }
 
 .meat-lead-row {
@@ -214,6 +321,28 @@
   margin-top: 12px;
 }
 
+.meat-leads-detail-panel:not(.show-all) .meat-lead-match-panel:not(.is-current),
+.meat-leads-detail-panel:not(.show-all) .meat-lead-fulfillment-panel:not(.is-current),
+.meat-leads-detail-panel:not(.show-all) .meat-lead-reconciliation-panel:not(.is-current),
+.meat-leads-detail-panel:not(.show-all) #meat_lead_approval_form:not(.is-current),
+.meat-leads-detail-panel:not(.show-all) .meat-lead-preview:not(.is-current),
+.meat-leads-detail-panel:not(.show-all) .meat-lead-order-gate:not(.is-current),
+.meat-leads-detail-panel:not(.show-all) .meat-lead-events {
+  display: none;
+}
+
+.meat-leads-detail-panel:not(.show-all) .meat-lead-ops-panel {
+  margin-top: 12px;
+}
+
+.meat-leads-detail-panel.show-all {
+  border-color: #b8cab8;
+}
+
+.meat-leads-detail-panel.show-all #meat_toggle_tools {
+  background: #eef5ef;
+}
+
 .meat-lead-form-grid {
   display: grid;
   gap: 12px;
@@ -276,6 +405,7 @@
 }
 
 @media (max-width: 980px) {
+  .meat-control-room,
   .meat-leads-workflow,
   .meat-lead-facts,
   .meat-lead-form-grid,
@@ -284,7 +414,37 @@
     grid-template-columns: 1fr;
   }
 
+  .meat-control-metrics,
+  .meat-control-checklist {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .meat-leads-list {
+    max-height: none;
+  }
+
+  .meat-leads-detail-panel {
+    position: static;
+    max-height: none;
+  }
+
   .meat-operator-head {
     display: grid;
+  }
+}
+
+@media (max-width: 560px) {
+  .meat-control-metrics,
+  .meat-control-checklist,
+  .meat-leads-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .meat-price-book-panel summary {
+    display: grid;
+  }
+
+  .meat-price-book-panel summary small {
+    text-align: left;
   }
 }

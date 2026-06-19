@@ -9,6 +9,7 @@ from modules.oom_sakkie.sales_campaign_store import (
     get_sales_lead_preorder_contract,
     list_meat_price_book_entries,
     list_sales_leads,
+    record_sales_lead_event,
     record_meat_price_book_entry,
     record_customer_booking_confirmation,
     record_customer_followup_send_approval,
@@ -99,6 +100,30 @@ sales_bp = Blueprint("sales", __name__)
 
 def _env_truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _text_contains_test_marker(*values):
+    joined = " ".join(str(value or "") for value in values).lower()
+    return "test flow" in joined or "delete after test" in joined or "codex-smoke" in joined
+
+
+def _lead_is_test_flow(lead):
+    lead = lead if isinstance(lead, dict) else {}
+    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    event_text = " ".join(
+        f"{event.get('event_type', '')} {event.get('notes', '')}"
+        for event in events
+        if isinstance(event, dict)
+    )
+    return _text_contains_test_marker(
+        lead.get("lead_label"),
+        lead.get("contact_label"),
+        lead.get("chatwoot_conversation_id"),
+        interest.get("notes"),
+        interest.get("message"),
+        event_text,
+    )
 
 
 @sales_bp.route("/sales-transactions", methods=["GET"])
@@ -422,6 +447,53 @@ def meat_price_book_create():
 @sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])
 def meat_sales_lead_contract(lead_id):
     result, status_code = get_sales_lead_preorder_contract(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/test-cleanup", methods=["POST"])
+def meat_sales_lead_test_cleanup(lead_id):
+    payload = request.get_json(silent=True) or {}
+    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id)
+    if contract_status >= 400:
+        return jsonify(contract_result), contract_status
+    lead = contract_result.get("lead") if isinstance(contract_result.get("lead"), dict) else {}
+    if not _lead_is_test_flow(lead):
+        return jsonify({
+            "success": False,
+            "status": "test_cleanup_denied_not_marked_test_flow",
+            "lead_id": lead_id,
+            "requires_marker": "TEST FLOW or delete after test",
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }), 409
+    latest_event = lead.get("latest_event") if isinstance(lead.get("latest_event"), dict) else {}
+    if latest_event.get("event_type") == "closed":
+        return jsonify({
+            "success": True,
+            "status": "already_closed",
+            "lead_id": lead_id,
+            "sends_customer_message": False,
+            "calls_chatwoot": False,
+            "creates_quote": False,
+            "creates_order": False,
+            "changes_stock": False,
+        }), 200
+    result, status_code = record_sales_lead_event(lead_id, {
+        "event_type": "closed",
+        "recorded_by": str(payload.get("closed_by") or "Farm App").strip()[:80],
+        "status_observed": "closed",
+        "notes": "Test flow cleanup: soft-closed after owner WhatsApp pilot test.",
+    })
+    if status_code < 400:
+        result = {
+            **result,
+            "status": "test_flow_soft_closed",
+            "removes_from_launch_test_queue": True,
+            "deletes_physical_records": False,
+        }
     return jsonify(result), status_code
 
 

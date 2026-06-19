@@ -347,6 +347,73 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json()["payment_gate"]["state"], "pop_received_unverified")
         gate.assert_called_once_with("OSK-SALES-LEAD-1")
 
+    def test_meat_lead_test_cleanup_soft_closes_marked_test_flow(self):
+        contract_result = {
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "lead_label": "Charl N - Half Carcass interest",
+                "interest": {"notes": "TEST FLOW - delete after test. Half carcass Set A."},
+                "latest_event": {"event_type": "customer_followup_sent"},
+                "events": [],
+            },
+        }
+        event_result = {
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-TEST",
+            "event_type": "closed",
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_lead_preorder_contract",
+            return_value=(contract_result, 200),
+        ) as contract, patch.object(
+            sales_transaction_routes,
+            "record_sales_lead_event",
+            return_value=(event_result, 201),
+        ) as record_event:
+            response = self.client.post(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-TEST/test-cleanup",
+                json={"closed_by": "Charl"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.get_json()
+        self.assertTrue(payload["removes_from_launch_test_queue"])
+        self.assertFalse(payload["deletes_physical_records"])
+        self.assertEqual(payload["status"], "test_flow_soft_closed")
+        contract.assert_called_once_with("OSK-SALES-LEAD-TEST")
+        record_event.assert_called_once()
+        self.assertEqual(record_event.call_args.args[0], "OSK-SALES-LEAD-TEST")
+        self.assertEqual(record_event.call_args.args[1]["event_type"], "closed")
+
+    def test_meat_lead_test_cleanup_refuses_unmarked_real_lead(self):
+        contract_result = {
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-REAL",
+                "lead_label": "Real buyer",
+                "interest": {"notes": "Half carcass Set A."},
+                "latest_event": {"event_type": "customer_followup_sent"},
+                "events": [],
+            },
+        }
+
+        with patch.object(
+            sales_transaction_routes,
+            "get_sales_lead_preorder_contract",
+            return_value=(contract_result, 200),
+        ), patch.object(sales_transaction_routes, "record_sales_lead_event") as record_event:
+            response = self.client.post("/api/sales/meat-leads/OSK-SALES-LEAD-REAL/test-cleanup")
+
+        self.assertEqual(response.status_code, 409)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "test_cleanup_denied_not_marked_test_flow")
+        self.assertFalse(payload["sends_customer_message"])
+        record_event.assert_not_called()
+
     def test_beacon_media_assets_list_and_register_routes(self):
         service_result = {
             "success": True,
