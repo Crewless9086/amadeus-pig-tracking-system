@@ -19,11 +19,16 @@ Purpose: approved templates are needed when the 24-hour WhatsApp customer-servic
 - Create the templates in Meta/WhatsApp Manager under the Amadeus WhatsApp account.
 - Keep the exact template names above unless the backend envs are updated to match.
 - Set `MEAT_SALES_QUOTE_READY_TEMPLATE_NAME=amadeus_meat_quote_ready` once approved.
+- Set `MEAT_SALES_DEPOSIT_FOLLOWUP_TEMPLATE_NAME=amadeus_meat_deposit_followup` once approved.
+- Set `MEAT_SALES_BOOKING_UPDATE_TEMPLATE_NAME=amadeus_meat_booking_update` once approved.
+- Set `MEAT_SALES_DELIVERY_UPDATE_TEMPLATE_NAME=amadeus_meat_delivery_update` once approved.
+- Set `MEAT_SALES_FINAL_INVOICE_TEMPLATE_NAME=amadeus_meat_final_invoice_ready` once approved.
 - Keep `MEAT_SALES_QUOTE_READY_TEMPLATE_LANGUAGE=en` unless Meta approves a different language code.
 - Test each template against Charl's own WhatsApp first before using it for live buyers.
 
 ## Current Backend Behavior
 
+- `GET /api/sales/meat-whatsapp-templates` returns the machine-readable pilot template pack, configured env names, missing envs, and exact suggested bodies.
 - If the quote PDF send is inside the 24-hour service window, Chatwoot may accept the send.
 - Chatwoot acceptance is recorded as unverified until a delivery-status webhook confirms `delivered` or `read`.
 - If the window is closed or unknown, the backend returns `estimated_quote_template_required` and does not send the PDF.

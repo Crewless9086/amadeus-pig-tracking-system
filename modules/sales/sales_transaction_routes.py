@@ -39,6 +39,7 @@ from modules.sales.meat_ops import (
     approve_meat_instruction_draft,
     build_meat_instruction_drafts,
     create_carcass_reservation_from_lead,
+    get_meat_payment_gate,
     get_meat_ops_status,
     record_carcass_reservation_event,
     record_meat_deposit_event,
@@ -60,6 +61,8 @@ from modules.sales.meat_documents import (
     meat_document_policy,
     send_meat_estimated_quote_to_chatwoot,
 )
+from modules.sales.meat_pilot_readiness import get_meat_pilot_readiness
+from modules.sales.meat_template_pack import meat_whatsapp_template_pack
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
     handle_sam_meat_chatwoot_inbound,
@@ -71,6 +74,7 @@ from modules.sales.conversation_learning import (
     record_sales_conversation_learning_event,
 )
 from modules.sales.beacon_campaign import (
+    build_beacon_facebook_image_launch_packet,
     build_meat_launch_campaign_publish_packet,
     build_meat_launch_campaign_selection,
     execute_beacon_facebook_page_post,
@@ -189,6 +193,20 @@ def meat_documents_policy_route():
     return jsonify(meat_document_policy()), 200
 
 
+@sales_bp.route("/sales/meat-whatsapp-templates", methods=["GET"])
+def meat_whatsapp_templates_route():
+    return jsonify(meat_whatsapp_template_pack()), 200
+
+
+@sales_bp.route("/sales/meat-pilot-readiness", methods=["GET"])
+def meat_pilot_readiness_route():
+    result, status_code = get_meat_pilot_readiness(
+        limit=request.args.get("limit", 12),
+        status_filter=request.args.get("status", "launch_test"),
+    )
+    return jsonify(result), status_code
+
+
 @sales_bp.route("/sales/channels/chatwoot/meat-documents/delivery-status/policy", methods=["GET"])
 def meat_document_delivery_status_policy_route():
     return jsonify(meat_document_delivery_webhook_policy()), 200
@@ -278,6 +296,28 @@ def beacon_campaign_publish_packet():
         return jsonify(assets_result), assets_status
     result = build_meat_launch_campaign_publish_packet(payload, approved_assets=assets_result.get("assets", []))
     return jsonify(result), 200 if result.get("success") else 400
+
+
+@sales_bp.route("/beacon/facebook-image-launch-packet", methods=["GET", "POST"])
+def beacon_facebook_image_launch_packet():
+    payload = request.get_json(silent=True) or {}
+    if request.method == "GET":
+        payload = {
+            "pilot_name": request.args.get("pilot_name", ""),
+            "area": request.args.get("area", ""),
+            "product_focus": request.args.get("product_focus", ""),
+            "asset_id": request.args.get("asset_id", ""),
+            "pilot_cap": request.args.get("pilot_cap", ""),
+        }
+    assets_result, assets_status = list_beacon_media_assets(
+        limit=25,
+        approval_status="approved",
+        media_type="image",
+    )
+    if assets_status >= 400:
+        return jsonify(assets_result), assets_status
+    result = build_beacon_facebook_image_launch_packet(payload, approved_assets=assets_result.get("assets", []))
+    return jsonify(result), 200 if result.get("success") else 409
 
 
 @sales_bp.route("/beacon/manual-post-evidence", methods=["GET", "POST"])
@@ -466,6 +506,12 @@ def meat_sales_lead_meat_match(lead_id):
 @sales_bp.route("/sales/meat-leads/<lead_id>/meat-ops", methods=["GET"])
 def meat_sales_lead_ops_status(lead_id):
     result, status_code = get_meat_ops_status(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/payment-gate", methods=["GET"])
+def meat_sales_lead_payment_gate(lead_id):
+    result, status_code = get_meat_payment_gate(lead_id)
     return jsonify(result), status_code
 
 

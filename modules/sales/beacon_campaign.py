@@ -178,6 +178,51 @@ def build_meat_launch_campaign_publish_packet(payload=None, approved_assets=None
     }
 
 
+def build_beacon_facebook_image_launch_packet(payload=None, approved_assets=None):
+    payload = payload if isinstance(payload, dict) else {}
+    selection = build_meat_launch_campaign_selection(payload, approved_assets=approved_assets)
+    facebook_pairing = next(
+        (
+            item for item in selection.get("channel_draft_pairings", [])
+            if item.get("draft_id") == "facebook_post"
+        ),
+        {},
+    )
+    asset_id = _clean_text(payload.get("asset_id") or facebook_pairing.get("recommended_asset_id"))
+    publish_packet = build_meat_launch_campaign_publish_packet(
+        {
+            **payload,
+            "draft_id": "facebook_post",
+            "channel": "Facebook",
+            "asset_id": asset_id,
+            "pilot_cap": payload.get("pilot_cap") or "2 halves",
+        },
+        approved_assets=approved_assets,
+    )
+    execution_payload = {
+        "publish_packet_id": publish_packet.get("publish_packet_id", ""),
+        "channel": "Facebook",
+        "exact_text": (publish_packet.get("selected_draft") or {}).get("exact_text", ""),
+        "asset_id": ((publish_packet.get("selected_asset") or {}).get("asset_id") or ""),
+        "owner_confirmation": FACEBOOK_POST_CONFIRMATION_PHRASE,
+    }
+    return {
+        "success": bool(publish_packet.get("success")) and bool((publish_packet.get("selected_asset") or {}).get("asset_id")),
+        "mode": "beacon_facebook_image_launch_packet_owner_review",
+        "agent": "Beacon",
+        "alias": "Prisma/Beacon",
+        "publish_packet": publish_packet,
+        "recommended_pairing": facebook_pairing,
+        "execution_payload": execution_payload,
+        "owner_confirmation_required": FACEBOOK_POST_CONFIRMATION_PHRASE,
+        "ready_for_owner_post_approval": bool(publish_packet.get("success")) and bool(execution_payload["asset_id"]),
+        "posts_publicly_now": False,
+        "calls_meta_now": False,
+        "next_gate": "owner_posts_exact_execution_payload_through_facebook_post_executions",
+        **AUTHORITY_FLAGS,
+    }
+
+
 def manual_post_evidence_policy():
     return {
         "success": True,

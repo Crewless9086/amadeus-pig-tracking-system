@@ -68,14 +68,16 @@
           <div class="oom-brief-bubble">
             <p id="oom_answer" class="oom-answer">Morning. Here's what needs your attention today.</p>
           </div>
+          <div class="oom-listening-pill" aria-hidden="true">
+            <span>Listening...</span>
+          </div>
+          <div class="oom-presence-actions" hidden aria-hidden="true">
+            <button type="button" id="oom_voice_button">Speak</button>
+            <button type="button" id="oom_voice_ask_button">Ask anything</button>
+          </div>
           <div class="oom-question-panel">
             <p class="oom-label">You Asked</p>
             <p id="oom_user_text" class="oom-user-text">Ask what needs attention, what needs approval, or open an agent.</p>
-          </div>
-          <div class="oom-presence-actions" aria-label="Primary voice controls">
-            <button type="button" id="oom_voice_button">Speak</button>
-            <button type="button" data-quick-ask="Give me the daily command brief.">Daily Brief</button>
-            <button type="button" id="oom_voice_ask_button">Ask Anything</button>
           </div>
         </div>
       </section>
@@ -159,19 +161,21 @@
         <div id="oom_links" class="oom-links"></div>
       </div>
 
-      <section class="oom-command-deck" aria-label="Primary command deck">
+      <form id="oom_form" class="oom-input-bar">
+        <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
+        <span aria-hidden="true">You can say or type a command</span>
+        <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
+        <button type="button" data-oom-voice-button class="is-primary">Speak</button>
+        <button type="button" id="oom_type_button">Type</button>
+        <button type="button" data-oom-voice-ask-button>Ask anything</button>
+        <button type="button" data-quick-ask="Give me the daily command brief.">Daily Brief</button>
+      </form>
+      <section class="oom-command-deck" aria-label="Primary command deck" hidden aria-hidden="true">
         <button type="button" data-quick-ask="Give me the daily command brief."><span>Start Day</span><strong>Daily command brief</strong></button>
         <button type="button" data-quick-ask="What needs my approval?"><span>Owner Gate</span><strong>Needs approval</strong></button>
         <button type="button" data-quick-ask="Show me the agent command center."><span>Control Tower</span><strong>Agent command center</strong></button>
         <button type="button" data-quick-ask="Show me the safety gates."><span>Safety</span><strong>Gate status</strong></button>
       </section>
-
-      <form id="oom_form" class="oom-input-bar">
-        <label class="sr-only" for="oom_text">Ask Oom Sakkie</label>
-        <span aria-hidden="true">You can say or type a command</span>
-        <input id="oom_text" name="text" type="text" autocomplete="off" placeholder="Ask: What needs attention today?">
-        <button type="submit">Ask</button>
-      </form>
 
       <section class="oom-agent-dock-section" aria-label="Agent dock">
         <div class="oom-agent-dock" id="oom_agent_dock">
@@ -395,6 +399,29 @@
           <div id="oom_sales_workbench_status" class="oom-workbench-next-action">
             <p>Loading Ledger sales work...</p>
           </div>
+          <div class="oom-sales-launch-checklist" aria-label="Sales launch test checklist">
+            <p class="oom-label">Launch Test Checklist</p>
+            <ol>
+              <li>Record one real inbound/manual buyer lead.</li>
+              <li>Confirm it appears in the lead queue and Oom Sakkie summaries.</li>
+              <li>Choose the next manual owner action before any Sam/customer handoff.</li>
+            </ol>
+            <p class="oom-advisor-guard">manual launch test only | no customer send | no preorder/deposit/order/stock write</p>
+          </div>
+          <div class="oom-pilot-readiness-grid" aria-label="Meat pilot readiness">
+            <section id="oom_meat_pilot_readiness" class="oom-pilot-readiness-panel">
+              <p class="oom-label">Pilot Readiness</p>
+              <p class="oom-empty">Loading lead stages...</p>
+            </section>
+            <section id="oom_meat_template_pack" class="oom-pilot-readiness-panel">
+              <p class="oom-label">WhatsApp Templates</p>
+              <p class="oom-empty">Loading template pack...</p>
+            </section>
+            <section id="oom_beacon_image_launch" class="oom-pilot-readiness-panel">
+              <p class="oom-label">Beacon Image Launch</p>
+              <p class="oom-empty">Loading approved-media launch packet...</p>
+            </section>
+          </div>
           <div class="oom-sales-lead-capture" aria-label="Record sales lead">
             <div>
               <p class="oom-label">Record Lead</p>
@@ -451,9 +478,27 @@
               </div>
             </div>
             <div>
-              <p class="oom-label">4. Buyer Leads To Follow Up</p>
+              <div class="oom-section-heading">
+                <div>
+                  <p class="oom-label">4. Buyer Leads To Follow Up</p>
+                  <p class="oom-empty">Filter the queue before deciding the next manual owner action.</p>
+                </div>
+                <select id="oom_sales_lead_filter" aria-label="Sales lead filter">
+                  <option value="launch_test">Launch-test open</option>
+                  <option value="all">All leads</option>
+                  <option value="deposit_pending">Deposit pending</option>
+                  <option value="asked_price">Asked price</option>
+                  <option value="needs_callback">Needs callback</option>
+                  <option value="order_ready_for_approval">Order ready</option>
+                  <option value="closed">Closed</option>
+                  <option value="not_interested">Not interested</option>
+                </select>
+              </div>
               <div id="oom_sales_leads" class="oom-advisor-panel">
                 <p class="oom-empty">Sales leads not loaded yet.</p>
+              </div>
+              <div id="oom_sales_preorder_contract" class="oom-learning-packet" hidden>
+                <p class="oom-empty">No preorder/deposit contract generated yet.</p>
               </div>
             </div>
           </div>

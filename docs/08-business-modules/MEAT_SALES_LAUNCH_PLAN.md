@@ -66,8 +66,13 @@ Implementation status:
 - `GET|POST /api/sales/meat-leads/<lead_id>/estimated-quote` builds the quote-safe packet without sending anything.
 - `POST /api/sales/meat-leads/<lead_id>/estimated-quote/pdf` renders the estimated quote PDF and records an append-only lead event when the quote-safe gate passes.
 - `POST /api/sales/meat-leads/<lead_id>/estimated-quote/send` renders the estimated quote PDF and attempts a Chatwoot attachment only when the WhatsApp service window is open. It requires `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`, real bank details, quote-safe facts, a Chatwoot conversation id, fresh inbound window evidence, and Chatwoot API envs.
+- Explicit customer requests such as "send the quote again" force a quote resend while automatic background sends still avoid duplicate PDFs.
 - `POST /api/sales/meat-leads/<lead_id>/deposit-pro-forma/pdf` renders the deposit pro forma from the same quote-safe packet.
 - `POST /api/sales/meat-leads/<lead_id>/final-invoice/pdf` renders the final invoice from packed-weight reconciliation.
+- `GET /api/sales/meat-whatsapp-templates` exposes the pilot WhatsApp template pack for quote-ready, deposit follow-up, booking update, delivery update, and final invoice recovery.
+- `GET /api/sales/meat-leads/<lead_id>/payment-gate` exposes the formal payment state: `deposit_not_received`, `pop_received_unverified`, or `deposit_confirmed_in_bank`. POP never unlocks slaughter, butcher, or delivery gates.
+- `GET /api/sales/meat-pilot-readiness` returns the end-to-end pilot dashboard percentage, checklist, lead stages, payment states, template status, and next gate.
+- `GET|POST /api/beacon/facebook-image-launch-packet` prepares the Facebook launch post with the best approved Beacon image. It does not post; the existing Facebook execution gate still requires `POST EXACT BEACON PACKET`.
 - `GET /api/sales/channels/chatwoot/meat-documents/delivery-status/policy` reports whether the delivery-status webhook is enabled and tokened.
 - `POST /api/sales/channels/chatwoot/meat-documents/delivery-status` consumes authenticated Chatwoot/WhatsApp message delivery callbacks and records append-only lead events for `sent`, `delivered`, `read`, and failed/undelivered states.
 - The build is intentionally separate from the existing live-pig `Quote` and `Invoice` services so the old order document path is not changed.

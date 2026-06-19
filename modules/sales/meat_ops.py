@@ -51,8 +51,73 @@ def get_meat_ops_status(lead_id, database_url=None):
         "deposits": deposits,
         "instruction_drafts": drafts,
         "assembly": _assembly_status(reservations, deposits),
+        "payment_gate": build_meat_payment_gate(reservations, deposits),
         **_authority(False),
     }, 200
+
+
+def get_meat_payment_gate(lead_id, database_url=None):
+    result, status_code = get_meat_ops_status(lead_id, database_url=database_url)
+    if status_code != 200:
+        return result, status_code
+    return {
+        "success": True,
+        "configured": True,
+        "status": "ok",
+        "mode": "meat_payment_state_gate",
+        "lead_id": _clean(lead_id, 100),
+        "payment_gate": result.get("payment_gate", {}),
+        "assembly": result.get("assembly", {}),
+        "next_gate": (result.get("payment_gate") or {}).get("next_gate", ""),
+        **_authority(False),
+    }, 200
+
+
+def build_meat_payment_gate(reservations, deposits):
+    reservations = reservations if isinstance(reservations, list) else []
+    deposits = deposits if isinstance(deposits, list) else []
+    active = _active_reservations(reservations)
+    active_reservation_ids = {item.get("reservation_id") for item in active if item.get("reservation_id")}
+    active_deposits = [
+        item for item in deposits
+        if item.get("reservation_id") in active_reservation_ids
+    ]
+    latest_pop = _latest_deposit_event(active_deposits, "pop_received_unverified")
+    latest_rejection = _latest_deposit_event(active_deposits, "pop_rejected")
+    latest_bank = _latest_any_deposit_event(active_deposits, {"deposit_confirmed_in_bank", "deposit_confirmed"})
+    latest_balance = _latest_deposit_event(active_deposits, "balance_confirmed")
+    pop_is_open = bool(latest_pop) and (
+        not latest_rejection
+        or latest_rejection.get("created_at", "") < latest_pop.get("created_at", "")
+    )
+    bank_confirmed = bool(latest_bank)
+    balance_confirmed = bool(latest_balance)
+    if bank_confirmed:
+        state = "deposit_confirmed_in_bank"
+        customer_wording = "Deposit is confirmed in the farm account. The booking can move to the next operational gate."
+        next_gate = "carcass_assembly_and_instruction_drafts"
+    elif pop_is_open:
+        state = "pop_received_unverified"
+        customer_wording = "Proof of payment was received. The booking only moves forward once the money reflects in the farm account."
+        next_gate = "bank_confirmation_required"
+    else:
+        state = "deposit_not_received"
+        customer_wording = "Deposit is still outstanding. POP can be logged, but bank-confirmed money is required before slaughter or fulfilment gates."
+        next_gate = "request_or_wait_for_deposit"
+    return {
+        "state": state,
+        "pop_received_unverified": pop_is_open,
+        "deposit_confirmed_in_bank": bank_confirmed,
+        "balance_confirmed": balance_confirmed,
+        "latest_pop": latest_pop,
+        "latest_bank_confirmation": latest_bank,
+        "latest_balance_confirmation": latest_balance,
+        "customer_wording": customer_wording,
+        "sam_may_claim_money_received": bank_confirmed,
+        "sam_may_claim_pop_received": pop_is_open,
+        "unlocks_slaughter_or_delivery": bank_confirmed,
+        "next_gate": next_gate,
+    }
 
 
 def create_carcass_reservation_from_lead(lead_id, payload=None, database_url=None):
@@ -743,6 +808,14 @@ def _latest_instruction_event(events, event_type):
 def _latest_deposit_event(events, event_type):
     for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
         if event.get("event_type") == event_type:
+            return event
+    return {}
+
+
+def _latest_any_deposit_event(events, event_types):
+    event_types = set(event_types or [])
+    for event in sorted(events or [], key=lambda row: row.get("created_at", ""), reverse=True):
+        if event.get("event_type") in event_types:
             return event
     return {}
 

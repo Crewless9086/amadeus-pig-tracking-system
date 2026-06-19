@@ -51,6 +51,7 @@
   const intentConfidence = document.getElementById("oom_intent_confidence");
   const intentReason = document.getElementById("oom_intent_reason");
   const voiceButton = document.getElementById("oom_voice_button");
+  const typeButton = document.getElementById("oom_type_button");
   const voiceAskButton = document.getElementById("oom_voice_ask_button");
   const voiceStatus = document.getElementById("oom_voice_status");
   const voiceLoopCounter = document.getElementById("oom_voice_loop_counter");
@@ -109,12 +110,17 @@
   const salesOutreachDraftsPanel = document.getElementById("oom_sales_outreach_drafts");
   const salesSendDesignsPanel = document.getElementById("oom_sales_send_designs");
   const salesLeadsPanel = document.getElementById("oom_sales_leads");
+  const salesPreorderContractPanel = document.getElementById("oom_sales_preorder_contract");
+  const meatPilotReadinessPanel = document.getElementById("oom_meat_pilot_readiness");
+  const meatTemplatePackPanel = document.getElementById("oom_meat_template_pack");
+  const beaconImageLaunchPanel = document.getElementById("oom_beacon_image_launch");
   const salesLeadLabelInput = document.getElementById("oom_sales_lead_label");
   const salesLeadSourceInput = document.getElementById("oom_sales_lead_source");
   const salesLeadStatusInput = document.getElementById("oom_sales_lead_status");
   const salesLeadWhatsappStateInput = document.getElementById("oom_sales_lead_whatsapp_state");
   const salesLeadInterestInput = document.getElementById("oom_sales_lead_interest");
   const salesLeadNextActionInput = document.getElementById("oom_sales_lead_next_action");
+  const salesLeadFilterInput = document.getElementById("oom_sales_lead_filter");
   const salesLeadCaptureStatus = document.getElementById("oom_sales_lead_capture_status");
   const recordSalesLeadButton = document.getElementById("oom_record_sales_lead");
   const requestSentinelDryRunButton = document.getElementById("oom_request_sentinel_dry_run");
@@ -181,6 +187,9 @@
   let latestSalesOutreachDraftsData = null;
   let latestSalesSendDesignsData = null;
   let latestSalesLeadsData = null;
+  let latestMeatPilotReadinessData = null;
+  let latestMeatTemplatePackData = null;
+  let latestBeaconImageLaunchData = null;
   let latestFarmDashboardData = null;
   let latestPurposeReviewData = null;
   let latestMeatPlanningData = null;
@@ -2943,6 +2952,9 @@
   }
 
   function renderSalesWorkbench() {
+    renderMeatPilotReadiness(latestMeatPilotReadinessData || {});
+    renderMeatTemplatePack(latestMeatTemplatePackData || {});
+    renderBeaconImageLaunch(latestBeaconImageLaunchData || {});
     renderSalesCampaigns(latestSalesCampaignsData || {});
     renderSalesOutreachDrafts(latestSalesOutreachDraftsData || {});
     renderSalesSendDesigns(latestSalesSendDesignsData || {});
@@ -2969,6 +2981,117 @@
     salesWorkbenchStatus.appendChild(title);
     salesWorkbenchStatus.appendChild(summary);
     salesWorkbenchStatus.appendChild(guard);
+  }
+
+  function renderMeatPilotReadiness(data) {
+    if (!meatPilotReadinessPanel) return;
+    meatPilotReadinessPanel.innerHTML = "";
+    const title = document.createElement("p");
+    title.className = "oom-label";
+    title.textContent = "Pilot Readiness";
+    meatPilotReadinessPanel.appendChild(title);
+    if (!data.success) {
+      meatPilotReadinessPanel.appendChild(emptyParagraph("Pilot readiness is unavailable."));
+      return;
+    }
+    const percent = document.createElement("strong");
+    const next = document.createElement("p");
+    const checklist = document.createElement("div");
+    const stages = document.createElement("div");
+    percent.className = "oom-pilot-percent";
+    percent.textContent = `${data.pilot_percent || 0}%`;
+    next.textContent = `Next: ${(data.summary || {}).next_gate || data.next_gate || "review"}`;
+    checklist.className = "oom-pilot-checks";
+    (Array.isArray(data.checklist) ? data.checklist : []).forEach((item) => {
+      const row = document.createElement("span");
+      row.className = item.complete ? "is-complete" : "is-waiting";
+      row.textContent = `${item.complete ? "Done" : "Wait"}: ${item.label}`;
+      checklist.appendChild(row);
+    });
+    stages.className = "oom-pilot-stage-list";
+    (Array.isArray(data.lead_stages) ? data.lead_stages : []).slice(0, 4).forEach((item) => {
+      const stage = document.createElement("article");
+      const leadTitle = document.createElement("strong");
+      const leadState = document.createElement("span");
+      const leadNext = document.createElement("small");
+      leadTitle.textContent = item.lead_label || item.lead_id || "Lead";
+      leadState.textContent = `${item.stage_label || "Review"} | ${item.payment_state || "payment unknown"}`;
+      leadNext.textContent = item.next_action || "";
+      stage.appendChild(leadTitle);
+      stage.appendChild(leadState);
+      stage.appendChild(leadNext);
+      stages.appendChild(stage);
+    });
+    meatPilotReadinessPanel.appendChild(percent);
+    meatPilotReadinessPanel.appendChild(next);
+    meatPilotReadinessPanel.appendChild(checklist);
+    meatPilotReadinessPanel.appendChild(stages);
+  }
+
+  function renderMeatTemplatePack(data) {
+    if (!meatTemplatePackPanel) return;
+    meatTemplatePackPanel.innerHTML = "";
+    const title = document.createElement("p");
+    title.className = "oom-label";
+    title.textContent = "WhatsApp Templates";
+    meatTemplatePackPanel.appendChild(title);
+    if (!data.success) {
+      meatTemplatePackPanel.appendChild(emptyParagraph("Template pack is unavailable."));
+      return;
+    }
+    const summary = document.createElement("strong");
+    const missing = document.createElement("p");
+    const list = document.createElement("div");
+    summary.textContent = `${data.configured_count || 0}/${data.required_count || 0} configured`;
+    missing.textContent = (data.missing_envs || []).length
+      ? `Missing envs: ${(data.missing_envs || []).join(", ")}`
+      : "All pilot template env names are configured.";
+    list.className = "oom-pilot-checks";
+    (Array.isArray(data.templates) ? data.templates : []).forEach((item) => {
+      const row = document.createElement("span");
+      row.className = item.configured ? "is-complete" : "is-waiting";
+      row.textContent = `${item.configured ? "Ready" : "Meta"}: ${item.template_name}`;
+      list.appendChild(row);
+    });
+    meatTemplatePackPanel.appendChild(summary);
+    meatTemplatePackPanel.appendChild(missing);
+    meatTemplatePackPanel.appendChild(list);
+  }
+
+  function renderBeaconImageLaunch(data) {
+    if (!beaconImageLaunchPanel) return;
+    beaconImageLaunchPanel.innerHTML = "";
+    const title = document.createElement("p");
+    title.className = "oom-label";
+    title.textContent = "Beacon Image Launch";
+    beaconImageLaunchPanel.appendChild(title);
+    if (!data.success) {
+      beaconImageLaunchPanel.appendChild(emptyParagraph("No approved image launch packet yet. Approve one Beacon image first."));
+      return;
+    }
+    const packet = data.publish_packet || {};
+    const draft = packet.selected_draft || {};
+    const asset = packet.selected_asset || {};
+    const status = document.createElement("strong");
+    const media = document.createElement("p");
+    const copy = document.createElement("p");
+    const guard = document.createElement("p");
+    status.textContent = data.ready_for_owner_post_approval ? "Image post packet ready" : "Needs owner review";
+    media.textContent = `Image: ${asset.title || asset.asset_id || "selected approved media"}`;
+    copy.textContent = (draft.exact_text || "").slice(0, 240);
+    guard.className = "oom-advisor-guard";
+    guard.textContent = `Post requires exact phrase: ${data.owner_confirmation_required || "POST EXACT BEACON PACKET"}`;
+    beaconImageLaunchPanel.appendChild(status);
+    beaconImageLaunchPanel.appendChild(media);
+    beaconImageLaunchPanel.appendChild(copy);
+    beaconImageLaunchPanel.appendChild(guard);
+  }
+
+  function emptyParagraph(text) {
+    const empty = document.createElement("p");
+    empty.className = "oom-empty";
+    empty.textContent = text;
+    return empty;
   }
 
   function renderSalesCampaigns(data) {
@@ -3104,13 +3227,21 @@
   function renderSalesLeads(data) {
     if (!salesLeadsPanel) return;
     const items = Array.isArray(data.sales_leads) ? data.sales_leads : [];
+    const counts = (data && data.counts) || {};
     salesLeadsPanel.innerHTML = "";
     if (!data.success) {
       salesLeadsPanel.innerHTML = '<p class="oom-empty">Sales leads are unavailable.</p>';
       return;
     }
+    const summary = document.createElement("p");
+    summary.className = "oom-advisor-guard";
+    summary.textContent = `Filter: ${data.filter || "all"} | launch-test open: ${counts.launch_test_open || 0} | owner follow-up: ${counts.owner_followup_needed || 0} | deposit: ${counts.deposit_pending || 0} | template required: ${counts.template_required || 0}`;
+    salesLeadsPanel.appendChild(summary);
     if (!items.length) {
-      salesLeadsPanel.innerHTML = '<p class="oom-empty">No sales leads tracked yet. Future Sam/Chatwoot intake can record inbound buyer state here after review.</p>';
+      const empty = document.createElement("p");
+      empty.className = "oom-empty";
+      empty.textContent = "No sales leads match this filter. Record one real inbound/manual lead to start the launch test.";
+      salesLeadsPanel.appendChild(empty);
       return;
     }
     items.forEach((item) => {
@@ -3138,6 +3269,7 @@
       [
         ["owner_followup_needed", "Owner Follow-up"],
         ["deposit_followup_needed", "Deposit Follow-up"],
+        ["review_note", "Follow-up Logged"],
         ["closed", "Close Lead"],
       ].forEach(([eventType, label]) => {
         const button = document.createElement("button");
@@ -3147,6 +3279,12 @@
         button.addEventListener("click", () => recordSalesLeadEvent(item.lead_id, eventType, button));
         actions.appendChild(button);
       });
+      const contractButton = document.createElement("button");
+      contractButton.type = "button";
+      contractButton.className = "oom-build-brief-button";
+      contractButton.textContent = "Build Preorder Contract";
+      contractButton.addEventListener("click", () => buildPreorderDepositContract(item.lead_id, contractButton));
+      actions.appendChild(contractButton);
       row.appendChild(title);
       row.appendChild(detail);
       row.appendChild(interest);
@@ -3155,6 +3293,55 @@
       row.appendChild(actions);
       salesLeadsPanel.appendChild(row);
     });
+  }
+
+  function renderPreorderDepositContract(data) {
+    if (!salesPreorderContractPanel) return;
+    salesPreorderContractPanel.hidden = false;
+    salesPreorderContractPanel.innerHTML = "";
+    if (!data || !data.success || !data.contract) {
+      const error = document.createElement("p");
+      error.className = "oom-empty";
+      error.textContent = "Preorder/deposit contract could not be generated. No customer send, order, or stock write happened.";
+      salesPreorderContractPanel.appendChild(error);
+      return;
+    }
+    const contract = data.contract || {};
+    const summary = contract.lead_summary || {};
+    const required = contract.required_before_money_path || {};
+    const title = document.createElement("strong");
+    const status = document.createElement("p");
+    const present = document.createElement("ul");
+    const missing = document.createElement("p");
+    const prompt = document.createElement("p");
+    const guard = document.createElement("p");
+    title.textContent = "Preorder / Deposit Contract - Review Only";
+    status.textContent = `Lead: ${summary.buyer_or_contact || data.lead_id || "buyer"} | Status: ${contract.contract_status || "review"}`;
+    [
+      ["Product", summary.product],
+      ["Cut set", summary.cut_set],
+      ["Location", summary.location],
+      ["Price/kg", required.price_per_kg],
+      ["Available week", required.available_week],
+      ["Estimated size", required.estimated_weight_or_size],
+      ["Deposit rule", required.deposit_amount_or_rule],
+      ["Payment method", required.payment_method],
+      ["Delivery/collection", required.delivery_or_collection],
+    ].forEach(([label, value]) => {
+      const item = document.createElement("li");
+      item.textContent = `${label}: ${value || "missing"}`;
+      present.appendChild(item);
+    });
+    missing.textContent = `Missing before money path: ${(contract.missing_fields || []).join(", ") || "none"}`;
+    prompt.textContent = contract.manual_followup_prompt || "Owner review is required before any money-path build.";
+    guard.className = "oom-advisor-guard";
+    guard.textContent = "review packet only | no customer send | no preorder/deposit/order/stock write";
+    salesPreorderContractPanel.appendChild(title);
+    salesPreorderContractPanel.appendChild(status);
+    salesPreorderContractPanel.appendChild(present);
+    salesPreorderContractPanel.appendChild(missing);
+    salesPreorderContractPanel.appendChild(prompt);
+    salesPreorderContractPanel.appendChild(guard);
   }
 
   function renderWorkbenchNextAction() {
@@ -4328,16 +4515,22 @@
   async function loadSalesWorkbench() {
     if (!salesCampaignsPanel && !salesOutreachDraftsPanel && !salesSendDesignsPanel && !salesLeadsPanel) return;
     try {
-      const [campaignResponse, draftResponse, designResponse, leadResponse] = await Promise.all([
+      const [campaignResponse, draftResponse, designResponse, leadResponse, readinessResponse, templateResponse, beaconImageResponse] = await Promise.all([
         fetch("/api/oom-sakkie/sales-campaigns?limit=12"),
         fetch("/api/oom-sakkie/sales-outreach-drafts?limit=12"),
         fetch("/api/oom-sakkie/sales-send-design-requests?limit=12"),
-        fetch("/api/oom-sakkie/sales-leads?limit=12"),
+        fetch(`/api/oom-sakkie/sales-leads?limit=12&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`),
+        fetch(`/api/sales/meat-pilot-readiness?limit=8&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`),
+        fetch("/api/sales/meat-whatsapp-templates"),
+        fetch("/api/beacon/facebook-image-launch-packet"),
       ]);
       latestSalesCampaignsData = await campaignResponse.json();
       latestSalesOutreachDraftsData = await draftResponse.json();
       latestSalesSendDesignsData = await designResponse.json();
       latestSalesLeadsData = await leadResponse.json();
+      latestMeatPilotReadinessData = await readinessResponse.json();
+      latestMeatTemplatePackData = await templateResponse.json();
+      latestBeaconImageLaunchData = await beaconImageResponse.json();
       renderSalesWorkbench();
       renderWorkbenchNextAction();
       renderApprovalConsole();
@@ -4508,6 +4701,37 @@
       if (button) {
         button.disabled = false;
         button.textContent = originalText;
+      }
+    }
+  }
+
+  async function buildPreorderDepositContract(leadId, button) {
+    if (!leadId) return;
+    const originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Building...";
+    }
+    try {
+      const response = await fetch(`/api/oom-sakkie/sales-leads/${encodeURIComponent(leadId)}/preorder-contract`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.status || "preorder_contract_failed");
+      }
+      renderPreorderDepositContract(data);
+      if (salesLeadCaptureStatus) {
+        salesLeadCaptureStatus.textContent = "Preorder/deposit contract generated for owner review only. No customer send, order, or stock write happened.";
+      }
+    } catch (error) {
+      renderPreorderDepositContract({ success: false });
+      if (salesLeadCaptureStatus) {
+        const reason = error && error.message ? ` Reason: ${error.message}.` : "";
+        salesLeadCaptureStatus.textContent = `Preorder/deposit contract failed.${reason} No customer send, order, or stock write happened.`;
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText || "Build Preorder Contract";
       }
     }
   }
@@ -5184,6 +5408,13 @@
     });
   }
 
+  if (typeButton && form && input) {
+    typeButton.addEventListener("click", () => {
+      form.dataset.typing = form.dataset.typing === "open" ? "closed" : "open";
+      if (form.dataset.typing === "open") input.focus();
+    });
+  }
+
   agentDockButtons.forEach((button) => {
     button.addEventListener("click", () => openSpecialist(button.dataset.openAgent || "home"));
   });
@@ -5323,13 +5554,23 @@
     recordSalesLeadButton.addEventListener("click", () => recordManualSalesLead(recordSalesLeadButton));
   }
 
+  if (salesLeadFilterInput) {
+    salesLeadFilterInput.addEventListener("change", loadSalesWorkbench);
+  }
+
   if (voiceButton) {
     voiceButton.addEventListener("click", toggleVoiceDraft);
   }
+  document.querySelectorAll("[data-oom-voice-button]").forEach((button) => {
+    button.addEventListener("click", toggleVoiceDraft);
+  });
 
   if (voiceAskButton) {
     voiceAskButton.addEventListener("click", toggleVoiceAsk);
   }
+  document.querySelectorAll("[data-oom-voice-ask-button]").forEach((button) => {
+    button.addEventListener("click", toggleVoiceAsk);
+  });
 
   if (cancelVoiceSendButton) {
     cancelVoiceSendButton.addEventListener("click", () => {

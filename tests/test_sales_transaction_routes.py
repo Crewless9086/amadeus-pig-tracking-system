@@ -301,6 +301,52 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         authorize.assert_called_once()
         handler.assert_called_once_with({"status": "delivered"})
 
+    def test_meat_whatsapp_templates_route_returns_pack(self):
+        with patch.object(
+            sales_transaction_routes,
+            "meat_whatsapp_template_pack",
+            return_value={"success": True, "configured_count": 1, "required_count": 5},
+        ) as pack:
+            response = self.client.get("/api/sales/meat-whatsapp-templates")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["required_count"], 5)
+        pack.assert_called_once()
+
+    def test_meat_pilot_readiness_route_returns_dashboard(self):
+        service_result = {
+            "success": True,
+            "mode": "meat_sales_pilot_readiness_dashboard",
+            "pilot_percent": 78,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "get_meat_pilot_readiness",
+            return_value=(service_result, 200),
+        ) as readiness:
+            response = self.client.get("/api/sales/meat-pilot-readiness?limit=6&status=launch_test")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["pilot_percent"], 78)
+        readiness.assert_called_once_with(limit="6", status_filter="launch_test")
+
+    def test_meat_payment_gate_route_returns_gate(self):
+        service_result = {
+            "success": True,
+            "mode": "meat_payment_state_gate",
+            "payment_gate": {"state": "pop_received_unverified"},
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "get_meat_payment_gate",
+            return_value=(service_result, 200),
+        ) as gate:
+            response = self.client.get("/api/sales/meat-leads/OSK-SALES-LEAD-1/payment-gate")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["payment_gate"]["state"], "pop_received_unverified")
+        gate.assert_called_once_with("OSK-SALES-LEAD-1")
+
     def test_beacon_media_assets_list_and_register_routes(self):
         service_result = {
             "success": True,
@@ -362,6 +408,23 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json()["event_id"], "BEACON-ASSET-EVENT-1")
         record_event.assert_called_once_with("BEACON-ASSET-1", {"event_type": "review_note", "notes": "Good photo."})
+
+    def test_beacon_facebook_image_launch_packet_uses_approved_images(self):
+        with patch.object(
+            sales_transaction_routes,
+            "list_beacon_media_assets",
+            return_value=({"success": True, "assets": [{"asset_id": "A1", "media_type": "image", "public_use_approved": True}]}, 200),
+        ) as list_assets, patch.object(
+            sales_transaction_routes,
+            "build_beacon_facebook_image_launch_packet",
+            return_value={"success": True, "ready_for_owner_post_approval": True},
+        ) as packet:
+            response = self.client.get("/api/beacon/facebook-image-launch-packet")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ready_for_owner_post_approval"])
+        list_assets.assert_called_once_with(limit=25, approval_status="approved", media_type="image")
+        packet.assert_called_once()
 
     def test_beacon_campaign_draft_selection_route_uses_only_approved_media(self):
         assets_result = {
