@@ -2,7 +2,7 @@ import hashlib
 import json
 import mimetypes
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -37,6 +37,9 @@ LEGACY_BANK_ACCOUNT_TYPE_ENV = "MEAT_SALES_BANK_ACCOUNT_TYPE"
 DOCUMENT_OUTPUT_DIR_ENV = "MEAT_SALES_DOCUMENT_OUTPUT_DIR"
 LOGO_PATH_ENV = "MEAT_SALES_DOCUMENT_LOGO_PATH"
 DOCUMENT_AUTOSEND_ENABLED_ENV = "MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"
+QUOTE_READY_TEMPLATE_NAME_ENV = "MEAT_SALES_QUOTE_READY_TEMPLATE_NAME"
+QUOTE_READY_TEMPLATE_LANGUAGE_ENV = "MEAT_SALES_QUOTE_READY_TEMPLATE_LANGUAGE"
+WHATSAPP_WINDOW_HOURS_ENV = "MEAT_SALES_WHATSAPP_WINDOW_HOURS"
 
 DOCUMENT_TYPE_ESTIMATED_QUOTE = "Estimated Quote"
 DOCUMENT_TYPE_DEPOSIT_PRO_FORMA = "Deposit Pro Forma"
@@ -70,6 +73,10 @@ def meat_document_policy(environ=None):
         "bank_details_configured": bank["configured"],
         "document_autosend_enabled": _truthy(source.get(DOCUMENT_AUTOSEND_ENABLED_ENV)),
         "document_autosend_env": DOCUMENT_AUTOSEND_ENABLED_ENV,
+        "quote_ready_template_name_configured": bool(_clean(source.get(QUOTE_READY_TEMPLATE_NAME_ENV), 120)),
+        "quote_ready_template_name_env": QUOTE_READY_TEMPLATE_NAME_ENV,
+        "quote_ready_template_language": _clean(source.get(QUOTE_READY_TEMPLATE_LANGUAGE_ENV), 20) or "en",
+        "whatsapp_window_hours": _whatsapp_window_hours(source),
         "bank_detail_envs": [
             BANK_ACCOUNT_NAME_ENV,
             BANK_NAME_ENV,
@@ -277,12 +284,39 @@ def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, d
         return {**quote_packet, "sent": False, **_authority(False, False)}, quote_status
     document = quote_packet.get("document") if isinstance(quote_packet.get("document"), dict) else {}
     document_ref = _clean(document.get("document_ref"), 120)
-    if not _truthy(payload.get("force_resend")) and _document_already_sent(lead, document_ref):
+    window = quote_send_window_state(lead, source)
+    if window.get("requires_template"):
+        template_packet = build_quote_ready_template_packet(lead, quote_packet, window, source)
+        _record_document_send_event(
+            lead_id,
+            "estimated_quote_template_required",
+            conversation_id,
+            document_ref,
+            {"window": window, "template": template_packet.get("template", {})},
+            database_url=database_url,
+        )
+        return {
+            **quote_packet,
+            "success": False,
+            "status": "estimated_quote_template_required",
+            "sent": False,
+            "chatwoot_accepted": False,
+            "delivery_status": "template_required_before_document_send",
+            "conversation_id": conversation_id,
+            "document_ref": document_ref,
+            "whatsapp_window": window,
+            "template_required": True,
+            "template_packet": template_packet,
+            **_authority(False, True),
+        }, 409
+    if not _truthy(payload.get("force_resend")) and _document_send_already_attempted(lead, document_ref):
         return {
             **quote_packet,
             "success": True,
-            "status": "estimated_quote_already_sent",
+            "status": "estimated_quote_send_already_recorded",
             "sent": False,
+            "chatwoot_accepted": False,
+            "delivery_status": "already_recorded_no_duplicate_send",
             "conversation_id": conversation_id,
             "document_ref": document_ref,
             **_authority(False, True),
@@ -311,18 +345,26 @@ def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, d
             "calls_chatwoot": True,
         }, 502
 
+    delivery = _delivery_state_from_chatwoot_result(send_result)
+    accepted = delivery["chatwoot_accepted"]
+    verified = delivery["delivery_confirmed"]
+    event_type = "estimated_quote_sent" if verified else "estimated_quote_chatwoot_accepted"
+    status = "estimated_quote_sent" if verified else "estimated_quote_chatwoot_accepted_unverified"
     event_result = _record_document_send_event(
         lead_id,
-        "estimated_quote_sent",
+        event_type,
         conversation_id,
         document_ref,
-        {"file_path": str(file_path), "chatwoot": send_result},
+        {"file_path": str(file_path), "chatwoot": send_result, "delivery": delivery},
         database_url=database_url,
     )
     return {
         **pdf_result,
-        "status": "estimated_quote_sent",
-        "sent": True,
+        "status": status,
+        "sent": verified,
+        "chatwoot_accepted": accepted,
+        "delivery_status": delivery["delivery_status"],
+        "delivery_confirmed": verified,
         "conversation_id": conversation_id,
         "document_ref": document_ref,
         "message_text": message,
@@ -332,7 +374,7 @@ def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, d
         **_authority(True, True),
         "sends_customer_message": True,
         "calls_chatwoot": True,
-        "customer_public_output_enabled": True,
+        "customer_public_output_enabled": verified,
     }, 200
 
 
@@ -677,6 +719,65 @@ def payment_reference(lead_id, environ=None):
     return _short_reference(lead_id)
 
 
+def quote_send_window_state(lead, environ=None, now=None):
+    source = environ if environ is not None else os.environ
+    lead = lead if isinstance(lead, dict) else {}
+    state = _clean(lead.get("whatsapp_window_state"), 80) or "unknown"
+    last_inbound = _parse_datetime(lead.get("last_inbound_at"))
+    current = now or datetime.now(timezone.utc)
+    age_hours = None
+    stale = True
+    if last_inbound:
+        age_hours = round((current - last_inbound).total_seconds() / 3600, 2)
+        stale = age_hours > _whatsapp_window_hours(source)
+    open_state = state == "open" and not stale
+    return {
+        "whatsapp_window_state": state,
+        "last_inbound_at": _clean(lead.get("last_inbound_at"), 80),
+        "age_hours": age_hours,
+        "window_hours": _whatsapp_window_hours(source),
+        "service_window_open": open_state,
+        "requires_template": not open_state,
+        "reason": "service_window_open" if open_state else ("last_inbound_too_old" if last_inbound else "last_inbound_unknown"),
+    }
+
+
+def build_quote_ready_template_packet(lead, quote_packet, window, environ=None):
+    source = environ if environ is not None else os.environ
+    lead = lead if isinstance(lead, dict) else {}
+    document = quote_packet.get("document") if isinstance(quote_packet.get("document"), dict) else {}
+    customer = quote_packet.get("customer") if isinstance(quote_packet.get("customer"), dict) else {}
+    totals = quote_packet.get("totals") if isinstance(quote_packet.get("totals"), dict) else {}
+    template_name = _clean(source.get(QUOTE_READY_TEMPLATE_NAME_ENV), 120)
+    template_language = _clean(source.get(QUOTE_READY_TEMPLATE_LANGUAGE_ENV), 20) or "en"
+    return {
+        "mode": "quote_ready_whatsapp_template_required",
+        "template_configured": bool(template_name),
+        "template_required": True,
+        "template": {
+            "name": template_name,
+            "language": template_language,
+            "required_env": QUOTE_READY_TEMPLATE_NAME_ENV,
+            "approval_required_in_whatsapp_manager": True,
+            "category_suggestion": "UTILITY",
+            "purpose": "Reopen the WhatsApp service window so Sam can send the estimated quote PDF.",
+            "suggested_body": "Hi {{1}}, your Amadeus Farm pork estimate is ready. Please reply YES and I will send the quote details.",
+            "parameters": [
+                customer.get("name") or lead.get("contact_label") or "there",
+                document.get("document_ref", ""),
+                _money_label(totals.get("total_including_vat")),
+            ],
+        },
+        "whatsapp_window": window,
+        "next_action": (
+            "Configure an approved WhatsApp template name before automatic recovery can send."
+            if not template_name
+            else "Send the approved WhatsApp template, then wait for the customer reply before sending the PDF."
+        ),
+        "sends_document_now": False,
+    }
+
+
 def _document_send_message(packet):
     document = packet.get("document") if isinstance(packet.get("document"), dict) else {}
     totals = packet.get("totals") if isinstance(packet.get("totals"), dict) else {}
@@ -690,12 +791,12 @@ def _document_send_message(packet):
     )
 
 
-def _document_already_sent(lead, document_ref):
+def _document_send_already_attempted(lead, document_ref):
     events = lead.get("events") if isinstance(lead.get("events"), list) else []
     for event in events:
         if not isinstance(event, dict):
             continue
-        if event.get("event_type") != "estimated_quote_sent":
+        if event.get("event_type") not in {"estimated_quote_chatwoot_accepted", "estimated_quote_sent"}:
             continue
         notes = _parse_json_object(event.get("notes", ""))
         if _clean(notes.get("document_ref"), 120) == document_ref:
@@ -721,6 +822,46 @@ def _record_document_send_event(lead_id, event_type, conversation_id, document_r
         },
         database_url=database_url,
     )
+
+
+def _delivery_state_from_chatwoot_result(result):
+    result = result if isinstance(result, dict) else {}
+    raw_status = _clean(
+        result.get("delivery_status")
+        or result.get("status")
+        or result.get("message_status")
+        or result.get("source_status"),
+        80,
+    ).lower()
+    http_status = _number(result.get("status_code"))
+    accepted = bool(http_status and 200 <= http_status < 300)
+    if raw_status in {"delivered", "read"}:
+        return {
+            "chatwoot_accepted": accepted,
+            "delivery_status": raw_status,
+            "delivery_confirmed": True,
+            "delivery_failed": False,
+        }
+    if raw_status in {"sent"}:
+        return {
+            "chatwoot_accepted": accepted,
+            "delivery_status": "sent_unverified",
+            "delivery_confirmed": False,
+            "delivery_failed": False,
+        }
+    if raw_status in {"failed", "undelivered", "bounced"}:
+        return {
+            "chatwoot_accepted": accepted,
+            "delivery_status": raw_status,
+            "delivery_confirmed": False,
+            "delivery_failed": True,
+        }
+    return {
+        "chatwoot_accepted": accepted,
+        "delivery_status": "chatwoot_accepted_unverified" if accepted else "chatwoot_not_accepted",
+        "delivery_confirmed": False,
+        "delivery_failed": not accepted,
+    }
 
 
 def _customer_block(packet, style):
@@ -914,6 +1055,28 @@ def _vat_rate(source):
     if parsed > 1:
         parsed = parsed / 100
     return parsed
+
+
+def _whatsapp_window_hours(source):
+    parsed = _number(source.get(WHATSAPP_WINDOW_HOURS_ENV))
+    if parsed is None or parsed <= 0:
+        return 23.5
+    return min(parsed, 24)
+
+
+def _parse_datetime(value):
+    text = _clean(value, 80)
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _normal_product_type(value):

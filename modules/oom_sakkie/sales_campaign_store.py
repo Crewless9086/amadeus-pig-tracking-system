@@ -28,6 +28,8 @@ SALES_LEAD_EVENT_TYPES = {
     "sam_meat_autoreply_sent",
     "sam_meat_autoreply_failed",
     "estimated_quote_send_attempted",
+    "estimated_quote_chatwoot_accepted",
+    "estimated_quote_template_required",
     "estimated_quote_sent",
     "estimated_quote_send_failed",
     "customer_booking_confirmed",

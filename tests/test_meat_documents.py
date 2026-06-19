@@ -279,8 +279,10 @@ class MeatDocumentTests(unittest.TestCase):
             file_exists = Path(result["file_path"]).exists()
 
         self.assertEqual(status, 200)
-        self.assertTrue(result["sent"])
-        self.assertEqual(result["status"], "estimated_quote_sent")
+        self.assertFalse(result["sent"])
+        self.assertTrue(result["chatwoot_accepted"])
+        self.assertEqual(result["delivery_status"], "chatwoot_accepted_unverified")
+        self.assertEqual(result["status"], "estimated_quote_chatwoot_accepted_unverified")
         self.assertTrue(file_exists)
         sender.assert_called_once()
         self.assertEqual(sender.call_args.args[0], "1808")
@@ -290,7 +292,67 @@ class MeatDocumentTests(unittest.TestCase):
         self.assertTrue(result["calls_chatwoot"])
         event_types = [call.args[1]["event_type"] for call in record_event.call_args_list]
         self.assertIn("estimated_quote_send_attempted", event_types)
+        self.assertIn("estimated_quote_chatwoot_accepted", event_types)
+
+    def test_send_estimated_quote_marks_sent_only_when_delivery_confirmed(self):
+        env = dict(self.env)
+        env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
+        with tempfile.TemporaryDirectory() as tmp_dir, \
+             patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
+            contract.return_value = (self._contract_fixture(), 200)
+            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+            sender = Mock(return_value={
+                "status_code": 200,
+                "message_id": "M1",
+                "conversation_id": "1808",
+                "delivery_status": "delivered",
+            })
+
+            result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+                "OSK-SALES-LEAD-TEST",
+                environ=env,
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["delivery_status"], "delivered")
+        self.assertTrue(result["delivery_confirmed"])
+        event_types = [call.args[1]["event_type"] for call in record_event.call_args_list]
         self.assertIn("estimated_quote_sent", event_types)
+
+    def test_send_estimated_quote_requires_template_when_whatsapp_window_is_stale(self):
+        env = dict(self.env)
+        env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
+        env["MEAT_SALES_QUOTE_READY_TEMPLATE_NAME"] = "amadeus_quote_ready"
+        fixture = self._contract_fixture()
+        fixture["lead"]["last_inbound_at"] = "2020-01-01T01:07:06+00:00"
+        with patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            contract.return_value = (fixture, 200)
+            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+            sender = Mock()
+
+            result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+                "OSK-SALES-LEAD-TEST",
+                environ=env,
+                chatwoot_sender=sender,
+            )
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["status"], "estimated_quote_template_required")
+        self.assertTrue(result["template_required"])
+        self.assertEqual(result["template_packet"]["template"]["name"], "amadeus_quote_ready")
+        sender.assert_not_called()
+        event_types = [call.args[1]["event_type"] for call in record_event.call_args_list]
+        self.assertIn("estimated_quote_template_required", event_types)
 
     def test_send_estimated_quote_blocks_duplicate_without_force_resend(self):
         env = dict(self.env)
@@ -313,7 +375,7 @@ class MeatDocumentTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertFalse(result["sent"])
-        self.assertEqual(result["status"], "estimated_quote_already_sent")
+        self.assertEqual(result["status"], "estimated_quote_send_already_recorded")
 
     def _contract_fixture(self):
         return {
@@ -324,6 +386,8 @@ class MeatDocumentTests(unittest.TestCase):
                 "contact_label": "Charl Test",
                 "channel": "chatwoot_whatsapp",
                 "chatwoot_conversation_id": "1808",
+                "whatsapp_window_state": "open",
+                "last_inbound_at": "2099-06-19T01:00:00+00:00",
                 "interest": {
                     "product_type": "half_carcass",
                     "cut_set": "Set A",
