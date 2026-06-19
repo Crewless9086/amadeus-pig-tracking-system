@@ -159,6 +159,45 @@ class LitterAttentionSummaryTests(unittest.TestCase):
 
         self.assertEqual(result["items"][0]["reason"], "Linked pig records do not match born alive count")
 
+    def test_litter_attention_suppresses_stillborn_formula_conflict(self):
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-FORMULA",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Linked pig records do not match born alive count",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Mummified_Count": "0",
+                "Pig_Master_Row_Count": "9",
+                "Tagged_Pig_Count": "0",
+                "Active_Pig_Count": "6",
+            }
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=[overview_rows, [], [], [], []]):
+            result = pig_weights_service.get_litter_attention_summary()
+
+        self.assertEqual(result["count"], 0)
+
+    def test_litter_attention_builder_suppresses_stillborn_formula_conflict(self):
+        attention = pig_weights_service._build_litter_attention({
+            "Litter_ID": "LIT-FORMULA",
+            "Litter_Status": "Active",
+            "Needs_Attention": "Yes",
+            "Attention_Reason": "Linked pig records do not match born alive count",
+            "Total_Born": "9",
+            "Born_Alive": "7",
+            "Stillborn_Count": "2",
+            "Pig_Master_Row_Count": "9",
+            "Active_Pig_Count": "6",
+        })
+
+        self.assertEqual(attention["reason"], "")
+        self.assertEqual(attention["action_type"], "")
+        self.assertEqual(attention["recommended_action"], "")
+
     def test_litter_attention_actions_match_attention_reason(self):
         record_mismatch = pig_weights_service._build_litter_attention({
             "Litter_Status": "Weaned",

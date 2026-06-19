@@ -118,6 +118,11 @@ def matings_page():
     return render_template("matings.html")
 
 
+@app.route("/litters")
+def litters_page():
+    return render_template("litters.html")
+
+
 @app.route("/orders/new")
 def add_order_page():
     return render_template("add-order.html")

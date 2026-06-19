@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amadeus Litters</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell litters-shell">
+    <div class="page-card litters-page">
+      <div class="page-header page-header-with-link">
+        <div>
+          <h1>Litter Operations</h1>
+          <p id="litters_subtitle">Loading litter status...</p>
+        </div>
+        <div class="inline-action-group">
+          <a href="/" class="secondary-link">&larr; Dashboard</a>
+          <a href="/master/add-litter" class="button-link">Add Litter</a>
+        </div>
+      </div>
+
+      <div id="litters_message" class="message-box hidden"></div>
+
+      <section class="litters-summary-strip" aria-label="Litter summary">
+        <div>
+          <span>Litters</span>
+          <strong id="litters_total">-</strong>
+        </div>
+        <div>
+          <span>Need Attention</span>
+          <strong id="litters_attention">-</strong>
+        </div>
+        <div>
+          <span>Count Mismatch</span>
+          <strong id="litters_mismatch">-</strong>
+        </div>
+        <div>
+          <span>Formula Notes</span>
+          <strong id="litters_formula_conflict">-</strong>
+        </div>
+      </section>
+
+      <section class="litters-toolbar" aria-label="Litter filters">
+        <label>
+          <span>Search</span>
+          <input id="litters_search" type="search" placeholder="Litter, sow, pen, reason" />
+        </label>
+        <label>
+          <span>View</span>
+          <select id="litters_filter">
+            <option value="attention">Needs attention</option>
+            <option value="mismatch">Count mismatch</option>
+            <option value="all">All litters</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="litters-table-section">
+        <div class="simple-table-wrap">
+          <table class="simple-table litters-table">
+            <thead>
+              <tr>
+                <th>Litter</th>
+                <th>Status</th>
+                <th>Born Alive</th>
+                <th>Linked Records</th>
+                <th>Active / Exited</th>
+                <th>Attention</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="litters_table_body">
+              <tr><td colspan="7" class="table-empty">Loading litters...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/litters.js') }}"></script>
+</body>
+</html>

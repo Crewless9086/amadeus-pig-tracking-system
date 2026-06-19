@@ -135,6 +135,369 @@ class LitterPigletCreationTests(unittest.TestCase):
 
 
 class LitterAttentionActionTests(unittest.TestCase):
+    def test_list_litter_overview_flags_birth_count_mismatch(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Farrowing_Date": "01 May 2026",
+                "Sow_Tag_Number": "S1",
+                "Current_Pen_ID": "PEN-1",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Mummified_Count": "0",
+                "Pig_Master_Row_Count": "9",
+                "Active_Pig_Count": "6",
+                "Exited_Pig_Count": "3",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Linked pig records do not match born alive count",
+            }
+        ]
+        pig_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(6)
+        ] + [
+            {"Pig_ID": "PIG-D1", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-D2", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-D3", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Died"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.list_litter_overview()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["attention_count"], 1)
+        self.assertEqual(result["mismatch_count"], 1)
+        litter = result["litters"][0]
+        self.assertEqual(litter["born_alive"], 7)
+        self.assertEqual(litter["linked_pig_records"], 9)
+        self.assertTrue(litter["reconciliation"]["mismatch"])
+        self.assertEqual(litter["reconciliation"]["suggested_born_alive"], 9)
+        self.assertTrue(litter["reconciliation"]["can_reclassify_stillborn"])
+
+    def test_list_litter_overview_identifies_stillborn_formula_conflict(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Mummified_Count": "0",
+                "Pig_Master_Row_Count": "9",
+                "Active_Pig_Count": "6",
+                "Exited_Pig_Count": "3",
+                "Litter_Status": "Active",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Linked pig records do not match born alive count",
+            }
+        ]
+        pig_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(7)
+        ] + [
+            {"Pig_ID": "PIG-S1", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Stillborn"},
+            {"Pig_ID": "PIG-S2", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Stillborn"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.list_litter_overview()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["mismatch_count"], 0)
+        self.assertEqual(result["attention_count"], 0)
+        self.assertEqual(result["formula_conflict_count"], 1)
+        self.assertEqual(result["litters"][0]["needs_attention"], "")
+        self.assertEqual(result["litters"][0]["sheet_needs_attention"], "Yes")
+        reconciliation = result["litters"][0]["reconciliation"]
+        self.assertFalse(reconciliation["mismatch"])
+        self.assertTrue(reconciliation["formula_conflict"])
+        self.assertFalse(reconciliation["can_reconcile_birth_count"])
+        self.assertEqual(reconciliation["suggested_born_alive"], 7)
+        self.assertIn("Do not change Born_Alive", reconciliation["recommended_action"])
+
+    def test_reconcile_litter_birth_counts_dry_run_updates_litters_only_in_preview(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Born_Alive": "7",
+                "Pig_Master_Row_Count": "9",
+                "Active_Pig_Count": "6",
+                "Exited_Pig_Count": "3",
+            }
+        ]
+        litter_values = [
+            ["Litter_ID", "Born_Alive", "Litter_Notes"],
+            ["LIT-1", "7", "Original note"],
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values", return_value=litter_values), \
+             patch.object(pig_weights_service, "update_row_by_first_column_match") as update_litter:
+            result, status_code = pig_weights_service.reconcile_litter_birth_counts(
+                "LIT-1",
+                changed_by="Tester",
+                reason="Confirmed three died after live birth.",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["target_born_alive"], 9)
+        self.assertEqual(result["planned_updates"]["Born_Alive"], 9)
+        self.assertIn("Confirmed three died after live birth.", result["planned_updates"]["Litter_Notes"])
+        update_litter.assert_not_called()
+
+    def test_reconcile_litter_birth_counts_apply_writes_updated_litter_row(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Born_Alive": "7",
+                "Pig_Master_Row_Count": "9",
+            }
+        ]
+        litter_values = [
+            ["Litter_ID", "Born_Alive", "Litter_Notes", "Updated_At"],
+            ["LIT-1", "7", "", ""],
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values", return_value=litter_values), \
+             patch.object(pig_weights_service, "update_row_by_first_column_match", return_value=2) as update_litter:
+            result, status_code = pig_weights_service.reconcile_litter_birth_counts(
+                "LIT-1",
+                target_born_alive=9,
+                changed_by="Tester",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["row_updated"], 2)
+        updated_row = update_litter.call_args.args[2]
+        self.assertEqual(updated_row[1], 9)
+        self.assertIn("Born_Alive 7 -> 9", updated_row[2])
+
+    def test_reconcile_litter_birth_counts_blocks_target_that_does_not_match_linked_records(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Born_Alive": "7",
+                "Pig_Master_Row_Count": "9",
+            }
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values") as get_values:
+            result, status_code = pig_weights_service.reconcile_litter_birth_counts(
+                "LIT-1",
+                target_born_alive=8,
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        get_values.assert_not_called()
+
+    def test_reconcile_litter_birth_counts_blocks_stillborn_formula_conflict(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Pig_Master_Row_Count": "9",
+                "Needs_Attention": "Yes",
+                "Attention_Reason": "Linked pig records do not match born alive count",
+            }
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values") as get_values, \
+             patch.object(pig_weights_service, "update_row_by_first_column_match") as update_litter:
+            result, status_code = pig_weights_service.reconcile_litter_birth_counts(
+                "LIT-1",
+                target_born_alive=9,
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertTrue(result["reconciliation"]["formula_conflict"])
+        get_values.assert_not_called()
+        update_litter.assert_not_called()
+
+    def test_reclassify_litter_dead_piglets_as_stillborn_preview_selects_shortfall(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Farrowing_Date": "02 Jun 2026",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Pig_Master_Row_Count": "9",
+            }
+        ]
+        pig_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(6)
+        ] + [
+            {"Pig_ID": "PIG-D1", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Date": "03 Jun 2026", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-D2", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Date": "03 Jun 2026", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-D3", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Date": "03 Jun 2026", "Exit_Reason": "Died"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_rows:
+            result, status_code = pig_weights_service.reclassify_litter_dead_piglets_as_stillborn(
+                "LIT-1",
+                changed_by="Tester",
+                reason="Confirmed two were stillborn.",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["correction_count"], 2)
+        self.assertEqual([pig["pig_id"] for pig in result["selected_piglets"]], ["PIG-D1", "PIG-D2"])
+        self.assertEqual(result["planned_updates"]["PIG-D1"]["Exit_Reason"], "Stillborn")
+        self.assertEqual(result["planned_updates"]["PIG-D1"]["Exit_Date"], "02 Jun 2026")
+        self.assertIn("Confirmed two were stillborn.", result["planned_updates"]["PIG-D1"]["General_Notes"])
+        update_rows.assert_not_called()
+
+    def test_reclassify_litter_dead_piglets_as_stillborn_apply_writes_pig_master_rows(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Farrowing_Date": "02 Jun 2026",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Pig_Master_Row_Count": "9",
+            }
+        ]
+        pig_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(6)
+        ] + [
+            {"Pig_ID": "PIG-D1", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Date": "03 Jun 2026", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-D2", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Date": "03 Jun 2026", "Exit_Reason": "Died"},
+            {"Pig_ID": "PIG-D3", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Date": "03 Jun 2026", "Exit_Reason": "Died"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id", return_value=2) as update_rows:
+            result, status_code = pig_weights_service.reclassify_litter_dead_piglets_as_stillborn(
+                "LIT-1",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["rows_updated"], 2)
+        updates = update_rows.call_args.args[1]
+        self.assertEqual(sorted(updates.keys()), ["PIG-D1", "PIG-D2"])
+        self.assertEqual(updates["PIG-D2"]["Exit_Reason"], "Stillborn")
+        self.assertEqual(updates["PIG-D2"]["Exit_Date"], "02 Jun 2026")
+
+    def test_reclassify_litter_dead_piglets_as_stillborn_blocks_when_no_shortfall(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [
+            {
+                "Litter_ID": "LIT-1",
+                "Farrowing_Date": "02 Jun 2026",
+                "Total_Born": "9",
+                "Born_Alive": "7",
+                "Stillborn_Count": "2",
+                "Pig_Master_Row_Count": "9",
+            }
+        ]
+        pig_rows = [
+            {"Pig_ID": f"PIG-A{i}", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"}
+            for i in range(7)
+        ] + [
+            {"Pig_ID": "PIG-S1", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Stillborn"},
+            {"Pig_ID": "PIG-S2", "Litter_ID": "LIT-1", "Status": "Dead", "On_Farm": "No", "Exit_Reason": "Stillborn"},
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            if sheet_name == sheet_names["pig_master"]:
+                return pig_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_rows:
+            result, status_code = pig_weights_service.reclassify_litter_dead_piglets_as_stillborn(
+                "LIT-1",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        update_rows.assert_not_called()
+
     def test_mark_litter_weaned_updates_litter_and_active_piglets(self):
         pig_rows = [
             {

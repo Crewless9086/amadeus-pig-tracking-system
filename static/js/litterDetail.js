@@ -42,10 +42,39 @@ const sexCountNotes = document.getElementById("sex_count_notes");
 const sexCountPreview = document.getElementById("sex_count_preview");
 const sexCountPreviewButton = document.getElementById("sex_count_preview_button");
 const sexCountApplyButton = document.getElementById("sex_count_apply_button");
+const reconcilePanel = document.getElementById("litter_reconcile_panel");
+const reconcileForm = document.getElementById("litter_reconcile_form");
+const reconcileText = document.getElementById("litter_reconcile_text");
+const reconcileBornAlive = document.getElementById("reconcile_born_alive");
+const reconcileLinkedRecords = document.getElementById("reconcile_linked_records");
+const reconcileSuggested = document.getElementById("reconcile_suggested");
+const reconcileTargetBornAlive = document.getElementById("reconcile_target_born_alive");
+const reconcileChangedBy = document.getElementById("reconcile_changed_by");
+const reconcileReason = document.getElementById("reconcile_reason");
+const reconcilePreview = document.getElementById("litter_reconcile_preview");
+const reconcilePreviewButton = document.getElementById("reconcile_preview_button");
+const reconcileApplyButton = document.getElementById("reconcile_apply_button");
+const stillbornPanel = document.getElementById("litter_stillborn_panel");
+const stillbornReclassifyForm = document.getElementById("stillborn_reclassify_form");
+const stillbornReclassifyText = document.getElementById("stillborn_reclassify_text");
+const stillbornExpected = document.getElementById("stillborn_expected");
+const stillbornExisting = document.getElementById("stillborn_existing");
+const stillbornShortfall = document.getElementById("stillborn_shortfall");
+const stillbornReclassifyChangedBy = document.getElementById("stillborn_reclassify_changed_by");
+const stillbornReclassifyReason = document.getElementById("stillborn_reclassify_reason");
+const stillbornReclassifyPreview = document.getElementById("stillborn_reclassify_preview");
+const stillbornReclassifyPreviewButton = document.getElementById("stillborn_reclassify_preview_button");
+const stillbornReclassifyApplyButton = document.getElementById("stillborn_reclassify_apply_button");
+const manualActionsPanel = document.getElementById("litter_manual_actions_panel");
+const manualActionsText = document.getElementById("litter_manual_actions_text");
+const manualActionsToggle = document.getElementById("litter_manual_actions_toggle");
 let latestNewbornHealthPreview = null;
 let latestPigletDeathPreview = null;
 let latestSexCountPreview = null;
+let latestReconcilePreview = null;
+let latestStillbornReclassifyPreview = null;
 let productsLoaded = false;
+let manualActionsExpanded = false;
 
 function getLitterIdFromUrl() {
   const parts = window.location.pathname.split("/");
@@ -233,6 +262,292 @@ function renderLifecycleOutcomes(litter) {
   setText("litter_outcome_other", outcomes.other);
 }
 
+function reconcilePayload(dryRun) {
+  return {
+    target_born_alive: reconcileTargetBornAlive.value,
+    changed_by: reconcileChangedBy.value || "web_app",
+    reason: reconcileReason.value,
+    dry_run: dryRun,
+  };
+}
+
+function resetReconcilePreview() {
+  latestReconcilePreview = null;
+  if (reconcileApplyButton) reconcileApplyButton.disabled = true;
+  if (reconcilePreview) reconcilePreview.classList.add("hidden");
+}
+
+function setReconcileSubmitting(isSubmitting, mode = "preview") {
+  reconcilePreviewButton.disabled = isSubmitting;
+  reconcileApplyButton.disabled = isSubmitting || !latestReconcilePreview;
+  reconcilePreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
+  reconcileApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Correction";
+}
+
+function renderReconcilePreview(preview) {
+  if (!reconcilePreview) return;
+  reconcilePreview.classList.remove("hidden");
+  reconcilePreview.innerHTML = `
+    <div class="bulk-review-header">
+      <strong>Preview ready</strong>
+      <span>Born Alive will become ${escapeHtml(preview.target_born_alive)}</span>
+    </div>
+    <p class="form-helper">This writes only to LITTERS. LITTER_OVERVIEW will recalculate from the sheet formula.</p>
+  `;
+}
+
+function renderReconcilePanel(litter) {
+  const reconciliation = litter.reconciliation || {};
+  const canReconcileBirthCount = Boolean(reconciliation.can_reconcile_birth_count);
+  const stillbornFixAvailable = Boolean(reconciliation.can_reclassify_stillborn);
+  if (reconcilePanel) {
+    reconcilePanel.classList.toggle("hidden", stillbornFixAvailable || !canReconcileBirthCount);
+  }
+  if (stillbornFixAvailable || !canReconcileBirthCount) {
+    resetReconcilePreview();
+    return;
+  }
+
+  reconcileBornAlive.textContent = reconciliation.born_alive ?? "-";
+  reconcileLinkedRecords.textContent = reconciliation.linked_pig_records ?? "-";
+  reconcileSuggested.textContent = reconciliation.suggested_born_alive ?? "-";
+  reconcileTargetBornAlive.value = reconciliation.suggested_born_alive ?? "";
+  reconcileText.textContent = `The source litter says ${reconciliation.born_alive ?? "-"} born alive, but ${reconciliation.linked_pig_records ?? "-"} piglet record(s) are linked.`;
+  if (reconcileTargetBornAlive) reconcileTargetBornAlive.disabled = false;
+  if (reconcileReason) reconcileReason.disabled = false;
+  if (reconcilePreviewButton) reconcilePreviewButton.disabled = false;
+  if (reconcileApplyButton) reconcileApplyButton.disabled = true;
+}
+
+function stillbornReclassifyPayload(dryRun) {
+  const reconciliation = (window.currentLitterDetail || {}).reconciliation || {};
+  return {
+    count: reconciliation.stillborn_history_shortfall,
+    changed_by: stillbornReclassifyChangedBy.value || "web_app",
+    reason: stillbornReclassifyReason.value,
+    dry_run: dryRun,
+  };
+}
+
+function resetStillbornReclassifyPreview() {
+  latestStillbornReclassifyPreview = null;
+  if (stillbornReclassifyApplyButton) stillbornReclassifyApplyButton.disabled = true;
+  if (stillbornReclassifyPreview) stillbornReclassifyPreview.classList.add("hidden");
+}
+
+function setStillbornReclassifySubmitting(isSubmitting, mode = "preview") {
+  stillbornReclassifyPreviewButton.disabled = isSubmitting;
+  stillbornReclassifyApplyButton.disabled = isSubmitting || !latestStillbornReclassifyPreview;
+  stillbornReclassifyPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
+  stillbornReclassifyApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Stillborn Fix";
+}
+
+function renderStillbornReclassifyPreview(preview) {
+  if (!stillbornReclassifyPreview) return;
+  stillbornReclassifyPreview.classList.remove("hidden");
+  const selected = preview.selected_piglets || [];
+  const rows = selected.map((piglet) => `
+    <tr>
+      <td>${escapeHtml(piglet.tag_number || piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.exit_date || "-")}</td>
+      <td>${escapeHtml(piglet.exit_reason || "-")}</td>
+    </tr>
+  `).join("");
+  stillbornReclassifyPreview.innerHTML = `
+    <div class="bulk-review-header">
+      <strong>Preview ready</strong>
+      <span>${preview.correction_count || 0} row${preview.correction_count === 1 ? "" : "s"} will become Stillborn</span>
+    </div>
+    <div class="simple-table-wrap">
+      <table class="simple-table compact-table">
+        <thead>
+          <tr>
+            <th>Piglet</th>
+            <th>Pig ID</th>
+            <th>Old Exit Date</th>
+            <th>Old Reason</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="form-helper">Exit date will be set to the farrowing date and Exit Reason will become Stillborn.</p>
+  `;
+}
+
+function renderStillbornReclassifyPanel(litter) {
+  const reconciliation = litter.reconciliation || {};
+  const canFix = Boolean(reconciliation.can_reclassify_stillborn);
+  if (stillbornPanel) {
+    stillbornPanel.classList.toggle("hidden", !canFix);
+  }
+  if (!canFix) {
+    resetStillbornReclassifyPreview();
+    return;
+  }
+
+  stillbornExpected.textContent = reconciliation.stillborn_count ?? "-";
+  stillbornExisting.textContent = reconciliation.stillborn_history_count ?? "-";
+  stillbornShortfall.textContent = reconciliation.stillborn_history_shortfall ?? "-";
+  stillbornReclassifyText.textContent = reconciliation.recommended_action
+    || "Preview the dead piglet rows that should become Stillborn history rows.";
+}
+
+function manualActionAvailability(litter) {
+  const hasActivePiglets = Number(litter.active_count || 0) > 0;
+  const activeUnsexedPiglets = (litter.piglets || []).filter((piglet) => (
+    piglet.status === "Active"
+    && piglet.on_farm === "Yes"
+    && !piglet.sex
+  ));
+  return {
+    canRecordPigletDeath: hasActivePiglets,
+    canRecordSexCounts: activeUnsexedPiglets.length > 0,
+    activeUnsexedCount: activeUnsexedPiglets.length,
+  };
+}
+
+function renderManualActionsPanel(litter) {
+  const availability = manualActionAvailability(litter);
+  const hasManualActions = availability.canRecordPigletDeath || availability.canRecordSexCounts;
+  if (manualActionsPanel) {
+    manualActionsPanel.classList.toggle("hidden", !hasManualActions);
+  }
+  if (!hasManualActions) return;
+
+  const labels = [];
+  if (availability.canRecordPigletDeath) labels.push("piglet death");
+  if (availability.canRecordSexCounts) labels.push("sex counts");
+  manualActionsText.textContent = `Available: ${labels.join(", ")}. Keep hidden unless you need to record one now.`;
+  manualActionsToggle.textContent = manualActionsExpanded ? "Hide Manual Actions" : "Show Manual Actions";
+}
+
+async function previewStillbornReclassify() {
+  clearLitterMessage();
+  latestStillbornReclassifyPreview = null;
+  stillbornReclassifyApplyButton.disabled = true;
+
+  setStillbornReclassifySubmitting(true, "preview");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/reclassify-stillborn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(stillbornReclassifyPayload(true)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not preview Stillborn correction."]).join(" "));
+    }
+    latestStillbornReclassifyPreview = data;
+    renderStillbornReclassifyPreview(data);
+  } catch (error) {
+    showLitterMessage(error.message || "Could not preview Stillborn correction.", "error");
+  } finally {
+    setStillbornReclassifySubmitting(false, "preview");
+  }
+}
+
+async function submitStillbornReclassify(event) {
+  event.preventDefault();
+  clearLitterMessage();
+
+  if (!latestStillbornReclassifyPreview) {
+    showLitterMessage("Preview the Stillborn correction before saving.", "error");
+    return;
+  }
+  if (!window.confirm("Save this Stillborn history correction to PIG_MASTER?")) {
+    return;
+  }
+
+  setStillbornReclassifySubmitting(true, "apply");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/reclassify-stillborn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(stillbornReclassifyPayload(false)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not save Stillborn correction."]).join(" "));
+    }
+    resetStillbornReclassifyPreview();
+    showLitterMessage(data.message || "Stillborn correction saved.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Could not save Stillborn correction.", "error");
+  } finally {
+    setStillbornReclassifySubmitting(false, "apply");
+  }
+}
+
+async function previewReconcileBirthCounts() {
+  clearLitterMessage();
+  latestReconcilePreview = null;
+  reconcileApplyButton.disabled = true;
+
+  if (!reconcileTargetBornAlive.value) {
+    showLitterMessage("Enter the corrected born-alive count before previewing.", "error");
+    return;
+  }
+
+  setReconcileSubmitting(true, "preview");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/reconcile-birth-counts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reconcilePayload(true)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not preview correction."]).join(" "));
+    }
+    latestReconcilePreview = data;
+    renderReconcilePreview(data);
+  } catch (error) {
+    showLitterMessage(error.message || "Could not preview correction.", "error");
+  } finally {
+    setReconcileSubmitting(false, "preview");
+  }
+}
+
+async function submitReconcileBirthCounts(event) {
+  event.preventDefault();
+  clearLitterMessage();
+
+  if (!latestReconcilePreview) {
+    showLitterMessage("Preview the correction before saving.", "error");
+    return;
+  }
+  if (!window.confirm("Save this litter birth-count correction to LITTERS?")) {
+    return;
+  }
+
+  setReconcileSubmitting(true, "apply");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/reconcile-birth-counts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reconcilePayload(false)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not save correction."]).join(" "));
+    }
+    resetReconcilePreview();
+    showLitterMessage(data.message || "Litter birth count was reconciled.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Could not save correction.", "error");
+  } finally {
+    setReconcileSubmitting(false, "apply");
+  }
+}
+
 function setMarkWeanedSubmitting(isSubmitting) {
   markWeanedButton.disabled = isSubmitting;
   markWeanedButton.textContent = isSubmitting ? "Saving..." : "Mark as Weaned";
@@ -279,9 +594,9 @@ function setNewbornHealthSubmitting(isSubmitting, mode = "preview") {
 }
 
 function renderPigletDeathPanel(litter) {
-  const hasActivePiglets = Number(litter.active_count || 0) > 0;
+  const hasActivePiglets = manualActionAvailability(litter).canRecordPigletDeath;
   if (pigletDeathPanel) {
-    pigletDeathPanel.classList.toggle("hidden", !hasActivePiglets);
+    pigletDeathPanel.classList.toggle("hidden", !hasActivePiglets || !manualActionsExpanded);
   }
   if (pigletDeathDate && !pigletDeathDate.value) {
     pigletDeathDate.value = todayIsoDate();
@@ -289,14 +604,9 @@ function renderPigletDeathPanel(litter) {
 }
 
 function renderSexCountPanel(litter) {
-  const activeUnsexedPiglets = (litter.piglets || []).filter((piglet) => (
-    piglet.status === "Active"
-    && piglet.on_farm === "Yes"
-    && !piglet.sex
-  ));
-  const hasUnsexedPiglets = activeUnsexedPiglets.length > 0;
+  const hasUnsexedPiglets = manualActionAvailability(litter).canRecordSexCounts;
   if (sexCountPanel) {
-    sexCountPanel.classList.toggle("hidden", !hasUnsexedPiglets);
+    sexCountPanel.classList.toggle("hidden", !hasUnsexedPiglets || !manualActionsExpanded);
   }
   if (sexCountDate && !sexCountDate.value) {
     sexCountDate.value = todayIsoDate();
@@ -749,6 +1059,7 @@ async function loadLitterDetail(options = {}) {
     }
 
     const litter = data.litter;
+    window.currentLitterDetail = litter;
 
     document.getElementById("litter_title").textContent = `Litter - ${litter.litter_id}`;
     document.getElementById("litter_subtitle").textContent = `${litter.count} piglet(s) linked to this litter`;
@@ -782,6 +1093,9 @@ async function loadLitterDetail(options = {}) {
 
     renderAttention(litter);
     renderLifecycleOutcomes(litter);
+    renderReconcilePanel(litter);
+    renderStillbornReclassifyPanel(litter);
+    renderManualActionsPanel(litter);
     renderPigletDeathPanel(litter);
     renderSexCountPanel(litter);
     litterPigletsList.innerHTML = "";
@@ -810,6 +1124,16 @@ pigletDeathPreviewButton.addEventListener("click", previewPigletDeath);
 pigletDeathForm.addEventListener("submit", submitPigletDeath);
 sexCountPreviewButton.addEventListener("click", previewSexCount);
 sexCountForm.addEventListener("submit", submitSexCount);
+reconcilePreviewButton.addEventListener("click", previewReconcileBirthCounts);
+reconcileForm.addEventListener("submit", submitReconcileBirthCounts);
+stillbornReclassifyPreviewButton.addEventListener("click", previewStillbornReclassify);
+stillbornReclassifyForm.addEventListener("submit", submitStillbornReclassify);
+manualActionsToggle.addEventListener("click", () => {
+  manualActionsExpanded = !manualActionsExpanded;
+  renderManualActionsPanel(window.currentLitterDetail || {});
+  renderPigletDeathPanel(window.currentLitterDetail || {});
+  renderSexCountPanel(window.currentLitterDetail || {});
+});
 [
   newbornHealthDate,
   newbornHealthEarmarked,
@@ -837,6 +1161,19 @@ sexCountForm.addEventListener("submit", submitSexCount);
   sexCountNotes,
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetSexCountPreview);
+});
+[
+  reconcileTargetBornAlive,
+  reconcileChangedBy,
+  reconcileReason,
+].forEach((element) => {
+  if (element) element.addEventListener("change", resetReconcilePreview);
+});
+[
+  stillbornReclassifyChangedBy,
+  stillbornReclassifyReason,
+].forEach((element) => {
+  if (element) element.addEventListener("change", resetStillbornReclassifyPreview);
 });
 loadLitterDetail();
 updateBackLinkFromQuery();

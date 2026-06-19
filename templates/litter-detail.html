@@ -199,6 +199,88 @@
             </form>
           </section>
 
+          <section id="litter_reconcile_panel" class="litter-side-panel hidden">
+            <div class="section-subtitle">Birth Count Reconcile</div>
+            <p id="litter_reconcile_text" class="form-helper">Review the linked piglet records before saving a correction.</p>
+            <div class="litter-reconcile-grid">
+              <div>
+                <span>Born Alive</span>
+                <strong id="reconcile_born_alive">-</strong>
+              </div>
+              <div>
+                <span>Linked Records</span>
+                <strong id="reconcile_linked_records">-</strong>
+              </div>
+              <div>
+                <span>Suggested Fix</span>
+                <strong id="reconcile_suggested">-</strong>
+              </div>
+            </div>
+            <form id="litter_reconcile_form" class="attention-action-form">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="reconcile_target_born_alive">Correct Born Alive To</label>
+                  <input type="number" id="reconcile_target_born_alive" min="0" step="1" required />
+                </div>
+                <div class="form-field">
+                  <label for="reconcile_changed_by">Changed By</label>
+                  <input type="text" id="reconcile_changed_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="reconcile_reason">Reason</label>
+                  <textarea id="reconcile_reason" rows="3" placeholder="Example: confirmed 9 piglets were born alive; 3 died later."></textarea>
+                </div>
+              </div>
+              <div id="litter_reconcile_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="reconcile_preview_button" class="button-link button-link-secondary">Preview</button>
+                <button type="submit" id="reconcile_apply_button" disabled>Save Correction</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="litter_stillborn_panel" class="litter-side-panel hidden">
+            <div class="section-subtitle">Stillborn History Fix</div>
+            <p id="stillborn_reclassify_text" class="form-helper">Preview the dead piglet rows before reclassifying them as Stillborn.</p>
+            <div class="litter-reconcile-grid">
+              <div>
+                <span>Stillborn Expected</span>
+                <strong id="stillborn_expected">-</strong>
+              </div>
+              <div>
+                <span>Stillborn Rows</span>
+                <strong id="stillborn_existing">-</strong>
+              </div>
+              <div>
+                <span>Rows to Fix</span>
+                <strong id="stillborn_shortfall">-</strong>
+              </div>
+            </div>
+            <form id="stillborn_reclassify_form" class="attention-action-form">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="stillborn_reclassify_changed_by">Changed By</label>
+                  <input type="text" id="stillborn_reclassify_changed_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="stillborn_reclassify_reason">Reason</label>
+                  <textarea id="stillborn_reclassify_reason" rows="3" placeholder="Example: confirmed 2 were stillborn and 1 died the next day."></textarea>
+                </div>
+              </div>
+              <div id="stillborn_reclassify_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="stillborn_reclassify_preview_button" class="button-link button-link-secondary">Preview</button>
+                <button type="submit" id="stillborn_reclassify_apply_button" disabled>Save Stillborn Fix</button>
+              </div>
+            </form>
+          </section>
+
+          <section id="litter_manual_actions_panel" class="litter-side-panel hidden">
+            <div class="section-subtitle">Manual Actions</div>
+            <p id="litter_manual_actions_text" class="form-helper">Use only when you need to record an event manually.</p>
+            <button type="button" id="litter_manual_actions_toggle" class="button-link button-link-secondary">Show Manual Actions</button>
+          </section>
+
           <section id="litter_piglet_death_panel" class="litter-side-panel hidden">
             <div class="section-subtitle">Piglet Death Capture</div>
             <p class="form-helper">Use this for pre-weaning deaths before tag numbers are assigned.</p>

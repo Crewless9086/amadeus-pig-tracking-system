@@ -12,12 +12,15 @@ from modules.pig_weights.pig_weights_controller import (
     list_parent_options,
     list_active_pigs,
     list_sales_availability,
+    list_litters,
     get_family_tree_profile,
     get_litter_profile,
     mark_litter_profile_weaned,
     record_litter_profile_newborn_health,
     mark_litter_profile_piglets_dead,
     record_litter_profile_piglet_sex_counts,
+    reconcile_litter_profile_birth_counts,
+    reclassify_litter_profile_stillborn,
     mark_pig_lifecycle_death,
     list_products,
     list_pens,
@@ -100,6 +103,11 @@ def pigs():
 @pig_weights_bp.route("/sales-availability", methods=["GET"])
 def sales_availability():
     return jsonify(list_sales_availability())
+
+
+@pig_weights_bp.route("/litters", methods=["GET"])
+def litters():
+    return jsonify(list_litters())
 
 
 @pig_weights_bp.route("/products", methods=["GET"])
@@ -202,6 +210,20 @@ def litter_piglet_deaths_route(litter_id):
 def litter_sex_counts_route(litter_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = record_litter_profile_piglet_sex_counts(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/reconcile-birth-counts", methods=["POST"])
+def litter_reconcile_birth_counts_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = reconcile_litter_profile_birth_counts(litter_id, payload)
+    return jsonify(result), status_code
+
+
+@pig_weights_bp.route("/litter/<litter_id>/reclassify-stillborn", methods=["POST"])
+def litter_reclassify_stillborn_route(litter_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = reclassify_litter_profile_stillborn(litter_id, payload)
     return jsonify(result), status_code
 
 

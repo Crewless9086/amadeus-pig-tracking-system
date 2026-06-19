@@ -46,6 +46,7 @@ LITTER_PIGLET_DEATH_REASONS = {
     "Weak piglet",
     "Unknown",
 }
+STILLBORN_RECLASSIFY_CANDIDATE_REASONS = {"Died", "Died after birth", "Unknown", ""}
 LITTER_HEALTH_EARMARK_FIELDS = ("Earmarked", "Earmark_Date")
 DEFAULT_LITTER_WEAN_AGE_DAYS = 35
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
@@ -468,6 +469,8 @@ def get_litter_attention_summary(limit: int = 5, today=None):
             reason = newborn_attention["reason"]
             action_type = newborn_attention["action_type"]
             recommended_action = newborn_attention["recommended_action"]
+        elif _litter_birth_reconciliation(row).get("formula_conflict"):
+            reason = ""
         elif needs_attention == "Yes":
             reason = _litter_attention_reason(row)
             if _is_tag_number_attention(reason) and _wean_tag_attention_is_not_due(wean_timing):
@@ -513,7 +516,581 @@ def get_litter_attention_summary(limit: int = 5, today=None):
     }
 
 
-def _litter_attention_reason(row):
+def _litter_birth_reconciliation(row):
+    born_alive = to_float(row.get("Born_Alive", ""))
+    total_born = to_float(row.get("Total_Born", ""))
+    stillborn_count = to_float(row.get("Stillborn_Count", "")) or 0
+    mummified_count = to_float(row.get("Mummified_Count", "")) or 0
+    pig_master_count = to_float(row.get("Pig_Master_Row_Count", ""))
+    active_pig_count = to_float(row.get("Active_Pig_Count", "")) or 0
+    exited_pig_count = to_float(row.get("Exited_Pig_Count", "")) or 0
+    linked_count = int(pig_master_count or 0)
+    born_alive_int = int(born_alive) if born_alive is not None else None
+    total_born_int = int(total_born) if total_born is not None else None
+    stillborn_int = int(stillborn_count)
+    mummified_int = int(mummified_count)
+    non_live_count = stillborn_int + mummified_int
+    source_counts_total = born_alive_int + non_live_count if born_alive_int is not None else None
+    source_counts_consistent = (
+        total_born_int is not None
+        and source_counts_total is not None
+        and source_counts_total == total_born_int
+    )
+    formula_conflict = (
+        non_live_count > 0
+        and source_counts_consistent
+        and linked_count == total_born_int
+        and born_alive_int != linked_count
+    )
+    mismatch = (
+        born_alive is not None
+        and pig_master_count is not None
+        and born_alive != pig_master_count
+        and not formula_conflict
+    )
+    suggested_born_alive = linked_count if mismatch else born_alive_int
+
+    return {
+        "born_alive": born_alive_int,
+        "total_born": total_born_int,
+        "stillborn_count": stillborn_int,
+        "mummified_count": mummified_int,
+        "non_live_count": non_live_count,
+        "linked_pig_records": linked_count,
+        "active_pig_records": int(active_pig_count),
+        "exited_pig_records": int(exited_pig_count),
+        "suggested_born_alive": suggested_born_alive,
+        "mismatch": mismatch,
+        "formula_conflict": formula_conflict,
+        "source_counts_consistent": source_counts_consistent,
+        "can_reconcile_birth_count": mismatch,
+        "delta": int(pig_master_count - born_alive) if (mismatch or formula_conflict) else 0,
+        "sheet_needs_attention": to_clean_string(row.get("Needs_Attention", "")),
+        "sheet_attention_reason": to_clean_string(row.get("Attention_Reason", "")),
+        "rule": "Born_Alive must match linked PIG_MASTER rows for the current Google Sheets attention formula.",
+        "recommended_action": (
+            "Do not change Born_Alive. The source counts reconcile as Total_Born = Born_Alive + Stillborn/Mummified, "
+            "but the overview formula is counting non-live pig records as linked rows."
+            if formula_conflict
+            else "Preview the Born_Alive correction before saving."
+            if mismatch
+            else "No birth-count correction needed."
+        ),
+    }
+
+
+def _litter_master_rows_for_litter(litter_id, pig_master_rows):
+    return [
+        row for row in (pig_master_rows or [])
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id
+    ]
+
+
+def _is_stillborn_history_row(row):
+    return to_clean_string(row.get("Exit_Reason", "")).lower() == "stillborn"
+
+
+def _is_stillborn_reclassify_candidate(row):
+    exit_reason = to_clean_string(row.get("Exit_Reason", ""))
+    return (
+        to_clean_string(row.get("Status", "")) == "Dead"
+        and to_clean_string(row.get("On_Farm", "")) == "No"
+        and exit_reason in STILLBORN_RECLASSIFY_CANDIDATE_REASONS
+        and exit_reason != "Stillborn"
+    )
+
+
+def _is_birth_count_attention_reason(reason):
+    normalized = to_clean_string(reason).lower()
+    return (
+        "born alive" in normalized
+        or "birth count" in normalized
+        or "linked pig records" in normalized
+        or "linked live pig records" in normalized
+    )
+
+
+def _piglet_correction_summary(row):
+    return {
+        "pig_id": to_clean_string(row.get("Pig_ID", "")),
+        "tag_number": to_clean_string(row.get("Tag_Number", "")),
+        "sex": to_clean_string(row.get("Sex", "")),
+        "status": to_clean_string(row.get("Status", "")),
+        "on_farm": to_clean_string(row.get("On_Farm", "")),
+        "exit_date": format_date_for_json(row.get("Exit_Date", "")) or to_clean_string(row.get("Exit_Date", "")),
+        "exit_reason": to_clean_string(row.get("Exit_Reason", "")),
+    }
+
+
+def _augment_litter_birth_reconciliation_with_history(litter_id, reconciliation, pig_master_rows):
+    reconciliation = dict(reconciliation or {})
+    litter_rows = _litter_master_rows_for_litter(litter_id, pig_master_rows)
+    stillborn_rows = [row for row in litter_rows if _is_stillborn_history_row(row)]
+    candidates = [row for row in litter_rows if _is_stillborn_reclassify_candidate(row)]
+    candidates.sort(key=lambda row: (
+        to_clean_string(row.get("Tag_Number", "")),
+        to_clean_string(row.get("Pig_ID", "")),
+    ))
+
+    born_alive = reconciliation.get("born_alive")
+    linked_records = len(litter_rows)
+    existing_stillborn = len(stillborn_rows)
+    live_linked_records = linked_records - existing_stillborn
+    stillborn_count = int(reconciliation.get("stillborn_count") or 0)
+    stillborn_shortfall = max(stillborn_count - existing_stillborn, 0)
+    source_counts_consistent = reconciliation.get("source_counts_consistent") is True
+    history_mismatch = (
+        born_alive is not None
+        and linked_records > 0
+        and live_linked_records != int(born_alive)
+    )
+    formula_conflict = (
+        born_alive is not None
+        and linked_records > 0
+        and reconciliation.get("sheet_needs_attention") == "Yes"
+        and _is_birth_count_attention_reason(reconciliation.get("sheet_attention_reason", ""))
+        and source_counts_consistent
+        and linked_records != int(born_alive)
+        and live_linked_records == int(born_alive)
+    )
+    can_reclassify = (
+        history_mismatch
+        and stillborn_shortfall > 0
+        and len(candidates) >= stillborn_shortfall
+    )
+
+    reconciliation.update({
+        "linked_pig_records": linked_records or reconciliation.get("linked_pig_records", 0),
+        "live_linked_pig_records": live_linked_records,
+        "stillborn_history_count": existing_stillborn,
+        "stillborn_history_shortfall": stillborn_shortfall,
+        "dead_reclassify_candidate_count": len(candidates),
+        "mismatch": history_mismatch and not formula_conflict,
+        "formula_conflict": formula_conflict,
+        "can_reclassify_stillborn": can_reclassify,
+        "can_reconcile_birth_count": history_mismatch and not formula_conflict and not can_reclassify,
+        "suggested_born_alive": live_linked_records if history_mismatch else born_alive,
+        "delta": live_linked_records - int(born_alive) if born_alive is not None else 0,
+        "stillborn_reclassify_candidates": [_piglet_correction_summary(row) for row in candidates[:10]],
+    })
+
+    if formula_conflict:
+        reconciliation["recommended_action"] = (
+            "Do not change Born_Alive. The pig history already has the right number of stillborn rows; "
+            "the sheet formula is counting non-live rows as linked live records."
+        )
+    elif can_reclassify:
+        reconciliation["recommended_action"] = (
+            f"Preview reclassifying {stillborn_shortfall} dead piglet row(s) as Stillborn. "
+            "This keeps Total Born history intact and clears the live-count mismatch."
+        )
+    elif history_mismatch:
+        reconciliation["recommended_action"] = "Review the linked piglet history before changing the Born_Alive count."
+    else:
+        reconciliation["recommended_action"] = "No birth-count correction needed."
+
+    return reconciliation
+
+
+def _litter_birth_reconciliation_for_id(litter_id):
+    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    for row in rows:
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+            return _litter_birth_reconciliation(row)
+    return {
+        "born_alive": None,
+        "total_born": None,
+        "stillborn_count": 0,
+        "mummified_count": 0,
+        "linked_pig_records": 0,
+        "active_pig_records": 0,
+        "exited_pig_records": 0,
+        "suggested_born_alive": 0,
+        "mismatch": False,
+        "formula_conflict": False,
+        "source_counts_consistent": False,
+        "can_reconcile_birth_count": False,
+        "delta": 0,
+        "rule": "Litter overview row was not found.",
+        "recommended_action": "No litter overview row was found.",
+    }
+
+
+def list_litter_overview():
+    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+    litters = []
+
+    for row in rows:
+        litter_id = to_clean_string(row.get("Litter_ID", ""))
+        if not litter_id:
+            continue
+
+        reconciliation = _augment_litter_birth_reconciliation_with_history(
+            litter_id,
+            _litter_birth_reconciliation(row),
+            pig_master_rows,
+        )
+        sheet_needs_attention = to_clean_string(row.get("Needs_Attention", ""))
+        effective_needs_attention = sheet_needs_attention
+        if reconciliation["formula_conflict"]:
+            effective_needs_attention = ""
+
+        litters.append({
+            "litter_id": litter_id,
+            "sow_pig_id": to_clean_string(row.get("Sow_Pig_ID", "")),
+            "sow_tag_number": to_clean_string(row.get("Sow_Tag_Number", "")),
+            "boar_pig_id": to_clean_string(row.get("Boar_Pig_ID", "")),
+            "boar_tag_number": to_clean_string(row.get("Boar_Tag_Number", "")),
+            "current_pen_id": to_clean_string(row.get("Current_Pen_ID", "")),
+            "farrowing_date": format_date_for_json(row.get("Farrowing_Date", "")),
+            "wean_date": format_date_for_json(row.get("Wean_Date", "")),
+            "litter_status": to_clean_string(row.get("Litter_Status", "")),
+            "needs_attention": effective_needs_attention,
+            "sheet_needs_attention": sheet_needs_attention,
+            "attention_reason": _litter_attention_reason(row, reconciliation) if effective_needs_attention == "Yes" else "",
+            "born_alive": reconciliation["born_alive"],
+            "total_born": reconciliation["total_born"],
+            "linked_pig_records": reconciliation["linked_pig_records"],
+            "active_pig_records": reconciliation["active_pig_records"],
+            "exited_pig_records": reconciliation["exited_pig_records"],
+            "tagged_pig_count": int(to_float(row.get("Tagged_Pig_Count", "")) or 0),
+            "untagged_pig_count": int(to_float(row.get("Untagged_Pig_Count", "")) or 0),
+            "average_current_weight_kg": to_float(row.get("Average_Current_Weight_Kg", "")),
+            "reconciliation": reconciliation,
+        })
+
+    litters.sort(key=lambda item: (
+        item["needs_attention"] != "Yes",
+        item["farrowing_date"] or "9999-12-31",
+        item["litter_id"],
+    ))
+
+    return {
+        "success": True,
+        "count": len(litters),
+        "attention_count": sum(1 for item in litters if item["needs_attention"] == "Yes"),
+        "mismatch_count": sum(1 for item in litters if item["reconciliation"]["mismatch"]),
+        "formula_conflict_count": sum(1 for item in litters if item["reconciliation"]["formula_conflict"]),
+        "litters": litters,
+        "source": {
+            "reads_from": "LITTER_OVERVIEW",
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        },
+    }
+
+
+def _litter_register_row(litter_id):
+    all_values = get_all_values(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"])
+    if not all_values or len(all_values) < 2:
+        return None, None, None
+
+    headers = all_values[0]
+    for row in all_values[1:]:
+        if row and to_clean_string(row[0]) == litter_id:
+            padded_row = list(row) + [""] * (len(headers) - len(row))
+            return headers, {header: padded_row[index] for index, header in enumerate(headers)}, padded_row
+
+    return headers, None, None
+
+
+def _append_litter_correction_note(existing_notes, changed_by, reason, previous_born_alive, new_born_alive):
+    clean_existing = to_clean_string(existing_notes)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    reason = to_clean_string(reason) or "Birth count reconciled from litter detail."
+    entry = (
+        f"{format_date_for_sheet(datetime.now().date())} birth-count correction by {changed_by}: "
+        f"Born_Alive {previous_born_alive or '-'} -> {new_born_alive}. {reason}"
+    )
+    return f"{clean_existing}\n{entry}" if clean_existing else entry
+
+
+def _append_stillborn_reclassification_note(existing_notes, changed_by, reason, previous_exit_reason, previous_exit_date):
+    clean_existing = to_clean_string(existing_notes)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    reason = to_clean_string(reason) or "Corrected litter birth history from litter detail."
+    entry = (
+        f"{format_date_for_sheet(datetime.now().date())} stillborn correction by {changed_by}: "
+        f"reclassified from {previous_exit_reason or '-'} to Stillborn. "
+        f"Previous exit date: {previous_exit_date or '-'}. {reason}"
+    )
+    return f"{clean_existing}\n{entry}" if clean_existing else entry
+
+
+def reclassify_litter_dead_piglets_as_stillborn(
+    litter_id: str,
+    pig_ids=None,
+    count=None,
+    changed_by: str = "web_app",
+    reason: str = "",
+    dry_run: bool = True,
+):
+    litter_id = to_clean_string(litter_id)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    pig_ids = [to_clean_string(pig_id) for pig_id in (pig_ids or []) if to_clean_string(pig_id)]
+    dry_run = dry_run is True
+
+    if not litter_id:
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+
+    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    overview_row = next(
+        (row for row in overview_rows if to_clean_string(row.get("Litter_ID", "")) == litter_id),
+        None,
+    )
+    if not overview_row:
+        return {"success": False, "errors": [f"Litter '{litter_id}' was not found in LITTER_OVERVIEW."]}, 404
+
+    farrowing_date = _litter_birth_date_from_row(overview_row)
+    if not farrowing_date:
+        return {
+            "success": False,
+            "errors": ["Farrowing date is required before stillborn rows can be corrected."],
+        }, 409
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    pig_master_rows = get_all_records(pig_master_sheet)
+    reconciliation = _augment_litter_birth_reconciliation_with_history(
+        litter_id,
+        _litter_birth_reconciliation(overview_row),
+        pig_master_rows,
+    )
+    stillborn_shortfall = int(reconciliation.get("stillborn_history_shortfall") or 0)
+    if stillborn_shortfall <= 0:
+        return {
+            "success": False,
+            "errors": ["This litter already has the required Stillborn piglet history rows."],
+            "litter_id": litter_id,
+            "reconciliation": reconciliation,
+        }, 409
+
+    target_count = to_float(count)
+    if target_count is None:
+        target_count = len(pig_ids) if pig_ids else stillborn_shortfall
+    if target_count < 1 or int(target_count) != target_count:
+        return {"success": False, "errors": ["Correction count must be a whole number greater than zero."]}, 400
+    target_count = int(target_count)
+    if target_count != stillborn_shortfall:
+        return {
+            "success": False,
+            "errors": [f"This correction must reclassify exactly {stillborn_shortfall} piglet row(s)."],
+            "litter_id": litter_id,
+            "requested_count": target_count,
+            "reconciliation": reconciliation,
+        }, 409
+
+    litter_rows = _litter_master_rows_for_litter(litter_id, pig_master_rows)
+    candidates = [row for row in litter_rows if _is_stillborn_reclassify_candidate(row)]
+    candidates.sort(key=lambda row: (
+        to_clean_string(row.get("Tag_Number", "")),
+        to_clean_string(row.get("Pig_ID", "")),
+    ))
+    candidate_lookup = {
+        to_clean_string(row.get("Pig_ID", "")): row
+        for row in candidates
+        if to_clean_string(row.get("Pig_ID", ""))
+    }
+
+    if pig_ids:
+        missing = [pig_id for pig_id in pig_ids if pig_id not in candidate_lookup]
+        if missing:
+            return {
+                "success": False,
+                "errors": ["Selected piglet rows are not valid dead-row Stillborn correction candidates."],
+                "invalid_pig_ids": missing,
+                "available_candidates": [_piglet_correction_summary(row) for row in candidates],
+            }, 409
+        selected_rows = [candidate_lookup[pig_id] for pig_id in pig_ids]
+    else:
+        selected_rows = candidates[:target_count]
+
+    if len(selected_rows) != target_count:
+        return {
+            "success": False,
+            "errors": [f"Only {len(selected_rows)} valid correction candidate(s) were found; {target_count} required."],
+            "available_candidates": [_piglet_correction_summary(row) for row in candidates],
+            "reconciliation": reconciliation,
+        }, 409
+
+    today_sheet = format_date_for_sheet(datetime.now().date())
+    farrowing_date_sheet = format_date_for_sheet(farrowing_date)
+    planned_updates = {}
+    selected_piglets = []
+    for row in selected_rows:
+        pig_id = to_clean_string(row.get("Pig_ID", ""))
+        previous_exit_reason = to_clean_string(row.get("Exit_Reason", ""))
+        previous_exit_date = to_clean_string(row.get("Exit_Date", ""))
+        planned_updates[pig_id] = {
+            "Status": "Dead",
+            "On_Farm": "No",
+            "Exit_Date": farrowing_date_sheet,
+            "Exit_Reason": "Stillborn",
+            "Updated_At": today_sheet,
+            "General_Notes": _append_stillborn_reclassification_note(
+                row.get("General_Notes", ""),
+                changed_by,
+                reason,
+                previous_exit_reason,
+                previous_exit_date,
+            ),
+        }
+        selected_piglets.append(_piglet_correction_summary(row))
+
+    rows_updated = 0
+    if not dry_run:
+        rows_updated = batch_update_rows_by_id(pig_master_sheet, planned_updates)
+
+    return {
+        "success": True,
+        "action": "reclassify_litter_dead_piglets_as_stillborn",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "changed_by": changed_by,
+        "reason": to_clean_string(reason),
+        "correction_count": target_count,
+        "selected_piglets": selected_piglets,
+        "planned_updates": planned_updates,
+        "rows_updated": rows_updated,
+        "reconciliation": reconciliation,
+        "source": {
+            "reads_from": ["LITTER_OVERVIEW", "PIG_MASTER"],
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+        },
+        "message": (
+            f"Stillborn correction previewed for {target_count} piglet row(s)."
+            if dry_run
+            else f"Stillborn correction saved for {target_count} piglet row(s)."
+        ),
+    }, 200
+
+
+def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, changed_by: str = "web_app", reason: str = "", dry_run: bool = True):
+    litter_id = to_clean_string(litter_id)
+    changed_by = to_clean_string(changed_by) or "web_app"
+    dry_run = dry_run is True
+
+    if not litter_id:
+        return {"success": False, "errors": ["Litter ID is required."]}, 400
+
+    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    overview_row = None
+    for row in overview_rows:
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+            overview_row = row
+            break
+
+    if not overview_row:
+        return {"success": False, "errors": [f"Litter '{litter_id}' was not found in LITTER_OVERVIEW."]}, 404
+
+    reconciliation = _litter_birth_reconciliation(overview_row)
+    current_born_alive = reconciliation["born_alive"]
+    linked_pig_records = reconciliation["linked_pig_records"]
+    if reconciliation.get("formula_conflict"):
+        return {
+            "success": False,
+            "errors": [reconciliation["recommended_action"]],
+            "litter_id": litter_id,
+            "reconciliation": reconciliation,
+            "source": {
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            },
+        }, 409
+
+    target_value = to_float(target_born_alive)
+    if target_value is None:
+        target_value = linked_pig_records
+    if target_value < 0 or int(target_value) != target_value:
+        return {"success": False, "errors": ["Target born alive must be a whole number zero or greater."]}, 400
+
+    target_int = int(target_value)
+    if target_int != linked_pig_records:
+        return {
+            "success": False,
+            "errors": [
+                "This reconcile action only clears the current count mismatch when Born_Alive matches linked pig records. "
+                "Use a future piglet-record correction workflow if the linked pig records are wrong."
+            ],
+            "litter_id": litter_id,
+            "target_born_alive": target_int,
+            "linked_pig_records": linked_pig_records,
+        }, 409
+
+    headers, register_row, padded_row = _litter_register_row(litter_id)
+    if not register_row:
+        return {"success": False, "errors": [f"Litter '{litter_id}' was not found in LITTERS."]}, 404
+
+    required_columns = {"Born_Alive", "Litter_Notes"}
+    missing_columns = sorted(required_columns - set(headers))
+    if missing_columns:
+        return {
+            "success": False,
+            "errors": ["LITTERS is missing required columns for safe reconciliation."],
+            "missing_columns": missing_columns,
+        }, 409
+
+    planned_updates = {
+        "Born_Alive": target_int,
+        "Litter_Notes": _append_litter_correction_note(
+            register_row.get("Litter_Notes", ""),
+            changed_by,
+            reason,
+            current_born_alive,
+            target_int,
+        ),
+    }
+    if "Updated_At" in headers:
+        planned_updates["Updated_At"] = format_date_for_sheet(datetime.now().date())
+
+    updated_row = list(padded_row)
+    header_map = {header: index for index, header in enumerate(headers)}
+    for field_name, field_value in planned_updates.items():
+        updated_row[header_map[field_name]] = field_value
+
+    row_updated = 0
+    if not dry_run:
+        row_updated = update_row_by_first_column_match(
+            PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
+            litter_id,
+            updated_row,
+        )
+
+    return {
+        "success": True,
+        "action": "reconcile_litter_birth_counts",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "changed_by": changed_by,
+        "reason": to_clean_string(reason),
+        "previous": {
+            "born_alive": current_born_alive,
+            "linked_pig_records": linked_pig_records,
+        },
+        "target_born_alive": target_int,
+        "planned_updates": planned_updates,
+        "row_updated": row_updated,
+        "source": {
+            "reads_from": ["LITTER_OVERVIEW", "LITTERS"],
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+        },
+        "message": (
+            f"Litter {litter_id} birth-count correction previewed."
+            if dry_run
+            else f"Litter {litter_id} birth count was reconciled."
+        ),
+    }, 200
+
+
+def _litter_attention_reason(row, reconciliation=None):
+    reconciliation = reconciliation or _litter_birth_reconciliation(row)
+    if reconciliation.get("formula_conflict"):
+        return ""
+    if reconciliation.get("can_reclassify_stillborn"):
+        return "Dead piglet rows need Stillborn history correction"
+
     explicit_reason = to_clean_string(row.get("Attention_Reason", ""))
     if explicit_reason:
         return explicit_reason
@@ -993,8 +1570,17 @@ def _build_litter_attention(row, pig_rows=None, pig_master_rows=None, medical_ro
         reason = newborn_attention["reason"]
         recommended_action = newborn_attention["recommended_action"]
         action_type = newborn_attention["action_type"]
-    elif needs_attention == "Yes":
-        reason = _litter_attention_reason(row)
+    else:
+        reconciliation = _litter_birth_reconciliation(row)
+        if pig_master_rows is not None:
+            reconciliation = _augment_litter_birth_reconciliation_with_history(litter_id, reconciliation, pig_master_rows)
+
+    if not newborn_attention and reconciliation.get("formula_conflict"):
+        reason = ""
+        recommended_action = ""
+        action_type = ""
+    elif not newborn_attention and needs_attention == "Yes":
+        reason = _litter_attention_reason(row, reconciliation)
         reason_lower = reason.lower()
         if "linked pig records" in reason_lower:
             recommended_action = (
@@ -2863,11 +3449,13 @@ def get_litter_detail(litter_id: str):
         return None
 
     attention = _litter_attention_for_id(litter_id)
+    reconciliation = _litter_birth_reconciliation_for_id(litter_id)
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
     rows = get_all_records(sheet_name)
     pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+    reconciliation = _augment_litter_birth_reconciliation_with_history(litter_id, reconciliation, pig_master_rows)
     lifecycle_outcomes = _litter_lifecycle_outcomes(litter_id, pig_master_rows)
 
     pig_lookup = {}
@@ -2900,6 +3488,7 @@ def get_litter_detail(litter_id: str):
                     "average_weight_kg": None,
                     "piglets": [],
                     "attention": attention,
+                    "reconciliation": reconciliation,
                     "lifecycle_outcomes": lifecycle_outcomes,
                     **wean_timing,
                 }
@@ -2972,6 +3561,7 @@ def get_litter_detail(litter_id: str):
         "average_weight_kg": average_weight,
         "piglets": piglets,
         "attention": attention,
+        "reconciliation": reconciliation,
         "lifecycle_outcomes": lifecycle_outcomes,
         **wean_timing,
     }

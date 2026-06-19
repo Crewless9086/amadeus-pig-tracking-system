@@ -11,8 +11,11 @@ from modules.pig_weights.pig_weights_service import (
     get_parent_options,
     get_active_pigs,
     get_sales_availability,
+    list_litter_overview,
     get_family_tree,
     get_litter_detail,
+    reconcile_litter_birth_counts,
+    reclassify_litter_dead_piglets_as_stillborn,
     mark_litter_weaned,
     mark_pig_death_or_removal,
     mark_litter_piglets_dead,
@@ -126,6 +129,10 @@ def list_sales_availability():
     }
 
 
+def list_litters():
+    return list_litter_overview()
+
+
 def get_family_tree_profile(pig_id: str):
     tree = get_family_tree(pig_id)
 
@@ -210,6 +217,29 @@ def record_litter_profile_piglet_sex_counts(litter_id: str, payload: dict):
         female_count=payload.get("female_count", None),
         changed_by=payload.get("changed_by", "web_app"),
         notes=payload.get("notes", ""),
+        dry_run=payload.get("dry_run", True) is True,
+    )
+
+
+def reconcile_litter_profile_birth_counts(litter_id: str, payload: dict):
+    payload = payload or {}
+    return reconcile_litter_birth_counts(
+        litter_id=litter_id,
+        target_born_alive=payload.get("target_born_alive", None),
+        changed_by=payload.get("changed_by", "web_app"),
+        reason=payload.get("reason", ""),
+        dry_run=payload.get("dry_run", True) is True,
+    )
+
+
+def reclassify_litter_profile_stillborn(litter_id: str, payload: dict):
+    payload = payload or {}
+    return reclassify_litter_dead_piglets_as_stillborn(
+        litter_id=litter_id,
+        pig_ids=payload.get("pig_ids", []),
+        count=payload.get("count", None),
+        changed_by=payload.get("changed_by", "web_app"),
+        reason=payload.get("reason", ""),
         dry_run=payload.get("dry_run", True) is True,
     )
 
