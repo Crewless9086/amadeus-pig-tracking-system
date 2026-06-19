@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from modules.sales import meat_documents
 
@@ -247,6 +247,106 @@ class MeatDocumentTests(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertFalse(packet["quote_safe"])
         self.assertIn("bank_details_placeholder_values", packet["blockers"])
+
+    def test_send_estimated_quote_requires_autosend_enabled(self):
+        packet, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+            "OSK-SALES-LEAD-TEST",
+            environ=self.env,
+        )
+
+        self.assertEqual(status, 409)
+        self.assertFalse(packet["sent"])
+        self.assertEqual(packet["status"], "meat_sales_document_autosend_disabled")
+
+    def test_send_estimated_quote_to_chatwoot_generates_pdf_and_calls_sender(self):
+        env = dict(self.env)
+        env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
+        with tempfile.TemporaryDirectory() as tmp_dir, \
+             patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            env["MEAT_SALES_DOCUMENT_OUTPUT_DIR"] = tmp_dir
+            contract.return_value = (self._contract_fixture(), 200)
+            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+            sender = Mock(return_value={"status_code": 200, "message_id": "M1", "conversation_id": "1808"})
+
+            result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+                "OSK-SALES-LEAD-TEST",
+                environ=env,
+                chatwoot_sender=sender,
+            )
+            file_exists = Path(result["file_path"]).exists()
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["status"], "estimated_quote_sent")
+        self.assertTrue(file_exists)
+        sender.assert_called_once()
+        self.assertEqual(sender.call_args.args[0], "1808")
+        self.assertIn("estimated pork quote", sender.call_args.args[1])
+        self.assertEqual(sender.call_args.args[2], Path(result["file_path"]))
+        self.assertTrue(result["sends_customer_message"])
+        self.assertTrue(result["calls_chatwoot"])
+
+    def test_send_estimated_quote_blocks_duplicate_without_force_resend(self):
+        env = dict(self.env)
+        env["MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"] = "1"
+        sent_ref = meat_documents._document_ref("MQ", "TEST")
+        fixture = self._contract_fixture()
+        fixture["lead"]["events"] = [{
+            "event_type": "estimated_quote_sent",
+            "notes": '{"document_ref":"' + sent_ref + '"}',
+        }]
+        with patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "list_meat_price_book_entries") as prices:
+            contract.return_value = (fixture, 200)
+            prices.return_value = ({"success": True, "price_entries": meat_documents.DEFAULT_MEAT_PRICE_BOOK}, 200)
+
+            result, status = meat_documents.send_meat_estimated_quote_to_chatwoot(
+                "OSK-SALES-LEAD-TEST",
+                environ=env,
+            )
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["sent"])
+        self.assertEqual(result["status"], "estimated_quote_already_sent")
+
+    def _contract_fixture(self):
+        return {
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "lead_label": "Charl Test",
+                "contact_label": "Charl Test",
+                "channel": "chatwoot_whatsapp",
+                "chatwoot_conversation_id": "1808",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_town": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "delivery_address_line_1": "12 Test Street",
+                    "payment_method": "EFT",
+                },
+            },
+            "contract": {
+                "contract_status": "owner_money_path_ready",
+                "lead_summary": {
+                    "buyer_or_contact": "Charl Test",
+                    "product": "Half Carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                },
+                "required_before_money_path": {
+                    "delivery_or_collection": "delivery",
+                    "payment_method": "EFT",
+                    "estimated_weight_or_size": "25kg",
+                    "deposit_amount_or_rule": "50% deposit to confirm",
+                },
+            },
+        }
 
 
 if __name__ == "__main__":

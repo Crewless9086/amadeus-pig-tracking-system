@@ -30,6 +30,7 @@ from modules.sales.meat_documents import (
     bank_details as _shared_bank_details,
     build_meat_estimated_quote_packet,
     payment_reference as _shared_payment_reference,
+    send_meat_estimated_quote_to_chatwoot,
 )
 from modules.sales.meat_fulfillment import record_meat_fulfillment_event
 from modules.sales.chatwoot_hygiene import (
@@ -111,7 +112,7 @@ def authorize_sam_meat_webhook(headers, query_args=None, environ=None):
     return True, {}
 
 
-def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=None, llm_extractor=None):
+def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=None, document_sender=None, llm_extractor=None):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
     if not inbound["processable"]:
@@ -135,7 +136,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         lead_payload["lead_id"] = _fresh_lead_id(inbound, facts)
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
-    decision = build_sam_meat_decision(inbound, facts, record_result, record_status)
+    decision = build_sam_meat_decision(inbound, facts, record_result, record_status, environ=source)
     if booking_confirmation.get("recorded"):
         deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
         if deposit_instruction.get("ready"):
@@ -172,11 +173,15 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     )
 
     send_result = {}
+    document_send_result = {}
     sent = False
+    document_sent = False
     send_status = "autoreply_not_enabled"
+    document_send_status = "not_requested"
     if decision["should_reply"] and _truthy(source.get(AUTOREPLY_ENABLED_ENV)):
         if inbound["whatsapp_window_state"] != "open":
             send_status = "whatsapp_window_not_open"
+            document_send_status = "whatsapp_window_not_open"
         else:
             sender = chatwoot_sender or _send_chatwoot_message
             _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_attempted", decision["reply_text"], {
@@ -187,9 +192,23 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
                 sent = True
                 send_status = "sent"
                 _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_sent", decision["reply_text"], send_result)
+                if decision.get("document_send_requested"):
+                    try:
+                        document_send_result, document_status_code = send_meat_estimated_quote_to_chatwoot(
+                            decision.get("lead_id"),
+                            {"conversation_id": inbound["conversation_id"]},
+                            environ=source,
+                            chatwoot_sender=document_sender,
+                        )
+                        document_sent = bool(document_send_result.get("sent"))
+                        document_send_status = document_send_result.get("status") or f"status_{document_status_code}"
+                    except Exception as exc:
+                        document_send_result = {"error_type": exc.__class__.__name__, "error": str(exc)[:180]}
+                        document_send_status = "document_send_failed"
             except Exception as exc:
                 send_result = {"error_type": exc.__class__.__name__, "error": str(exc)[:180]}
                 send_status = "chatwoot_send_failed"
+                document_send_status = "skipped_autoreply_failed"
                 _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_failed", decision["reply_text"], send_result)
 
     status_code = 200 if record_status in {200, 201, 400} else record_status
@@ -211,8 +230,11 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "sent": sent,
         "send_status": send_status,
         "chatwoot_send": send_result,
+        "document_sent": document_sent,
+        "document_send_status": document_send_status,
+        "document_send": document_send_result,
         "policy": sam_meat_webhook_policy(source),
-        **_authority_flags(sent, sent),
+        **_authority_flags(sent or document_sent, sent or document_sent),
     }
     learning_result, learning_status = record_learning_event_from_sam_result(result)
     result["conversation_learning"] = {
@@ -365,10 +387,12 @@ def _fresh_lead_id(inbound, facts):
     return "OSK-SALES-LEAD-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16].upper()
 
 
-def build_sam_meat_decision(inbound, facts, record_result, record_status):
+def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None):
+    source = environ if environ is not None else os.environ
     reply = ""
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
+    document_send_requested = False
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
@@ -412,11 +436,12 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
                 if (
                     quote_status == 200
                     and quote_packet.get("quote_safe")
-                    and _truthy(os.getenv(DOCUMENT_AUTOSEND_ENABLED_ENV))
+                    and _truthy(source.get(DOCUMENT_AUTOSEND_ENABLED_ENV))
                 ):
                     reply = quote_packet.get("sam_preparing_message") or (
                         "I am preparing your estimated quote now and will send it through shortly."
                     )
+                    document_send_requested = True
                 elif quote_status == 200 and quote_packet.get("quote_safe"):
                     reply = (
                         "I have the details needed for your estimated quote. "
@@ -434,6 +459,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status):
         "should_reply": should_reply,
         "reply_text": reply,
         "lead_id": lead_id,
+        "document_send_requested": document_send_requested,
         "records_tracking_lead": bool(lead_id),
         "blocked_actions": [
             "no_price_quote_without_owner_approval",

@@ -65,9 +65,11 @@ Implementation status:
 - `GET /api/sales/meat-documents/policy` reports the EFT-only, VAT-inclusive document policy and whether bank details are real or still placeholders.
 - `GET|POST /api/sales/meat-leads/<lead_id>/estimated-quote` builds the quote-safe packet without sending anything.
 - `POST /api/sales/meat-leads/<lead_id>/estimated-quote/pdf` renders the estimated quote PDF and records an append-only lead event when the quote-safe gate passes.
+- `POST /api/sales/meat-leads/<lead_id>/estimated-quote/send` renders the estimated quote PDF, sends it to the lead's Chatwoot conversation as an attachment, and records append-only attempted/sent/failed events. It requires `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`, real bank details, quote-safe facts, a Chatwoot conversation id, and Chatwoot API envs.
 - `POST /api/sales/meat-leads/<lead_id>/deposit-pro-forma/pdf` renders the deposit pro forma from the same quote-safe packet.
 - `POST /api/sales/meat-leads/<lead_id>/final-invoice/pdf` renders the final invoice from packed-weight reconciliation.
 - The build is intentionally separate from the existing live-pig `Quote` and `Invoice` services so the old order document path is not changed.
+- Current correction: when `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`, Sam may say he is preparing the quote and the backend attempts the estimated quote PDF attachment send after the normal Chatwoot text reply succeeds. Duplicate protection blocks repeat sends for the same document reference unless `force_resend` is used for testing.
 - Sam only uses the “I am preparing your estimated quote now and will send it through shortly” wording when `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`; until then he reports that the document send step is not enabled yet.
 
 ## Roles

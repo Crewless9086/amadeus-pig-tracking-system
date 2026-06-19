@@ -35,6 +35,7 @@ Required env:
 - `CHATWOOT_API_ACCESS_TOKEN=<Chatwoot token>`
 - `SAM_MEAT_BACKEND_LLM_ENABLED=1` only if LLM extraction is allowed
 - `SAM_MEAT_BACKEND_LLM_MODEL=<model>` when LLM extraction is enabled
+- `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1` only when quote-safe estimated quote PDF attachment sends are allowed for the private pilot
 
 Optional Sam Meat payment instruction envs:
 
@@ -50,6 +51,14 @@ Compatibility note: older `MEAT_SALES_BANK_*` envs are still read as fallback on
 
 When these are configured, Sam may send payment instructions after the customer confirms an owner-approved meat follow-up. Sam uses the same short sale/payment reference across the quote, deposit pro forma, final invoice, and payment instructions. Proof of payment remains `pop_received_unverified`; only `deposit_confirmed_in_bank` unlocks slaughter, butcher, and delivery operational gates.
 - `OPENAI_API_KEY=<optional for LLM extraction; deterministic fallback remains required>`
+
+Estimated quote document send:
+
+```text
+POST /api/sales/meat-leads/<lead_id>/estimated-quote/send
+```
+
+This route generates the estimated quote PDF and sends it as a Chatwoot attachment only when `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`, the lead is quote-safe, bank details are configured, a Chatwoot conversation id exists, and the Chatwoot API envs are present. Sam can trigger this route after his normal "I am preparing your estimated quote now and will send it through shortly" reply succeeds. Duplicate sends for the same document reference are blocked unless `force_resend` is passed for a deliberate test.
 
 Accepted auth:
 

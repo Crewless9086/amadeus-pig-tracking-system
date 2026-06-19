@@ -1,8 +1,11 @@
 import hashlib
 import json
+import mimetypes
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -41,6 +44,10 @@ DOCUMENT_TYPE_FINAL_INVOICE = "Final Invoice"
 DEFAULT_VAT_NUMBER = "4510286224"
 DEFAULT_VAT_RATE = 0.15
 DEFAULT_OUTPUT_DIR = Path("generated_documents") / "meat_sales"
+CHATWOOT_BASE_URL_ENV = "CHATWOOT_BASE_URL"
+CHATWOOT_ACCOUNT_ID_ENV = "CHATWOOT_ACCOUNT_ID"
+CHATWOOT_API_ACCESS_TOKEN_ENV = "CHATWOOT_API_ACCESS_TOKEN"
+CHATWOOT_API_TOKEN_ENV = "CHATWOOT_API_TOKEN"
 
 
 def meat_document_policy(environ=None):
@@ -235,6 +242,155 @@ def generate_meat_estimated_quote_pdf(lead_id, payload=None, environ=None, datab
         "document_event": event_result if isinstance(event_result, dict) else {},
         **_authority(True, True),
     }, 201
+
+
+def send_meat_estimated_quote_to_chatwoot(lead_id, payload=None, environ=None, database_url=None, chatwoot_sender=None):
+    payload = payload if isinstance(payload, dict) else {}
+    source = environ if environ is not None else os.environ
+    lead_id = _clean(lead_id, 100)
+    if not lead_id:
+        return {"success": False, "status": "lead_id_required", "sent": False, **_authority(False, False)}, 400
+    if not _truthy(source.get(DOCUMENT_AUTOSEND_ENABLED_ENV)):
+        return {
+            "success": False,
+            "status": "meat_sales_document_autosend_disabled",
+            "sent": False,
+            "required_env": DOCUMENT_AUTOSEND_ENABLED_ENV,
+            **_authority(False, False),
+        }, 409
+
+    contract_result, contract_status = get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    if contract_status != 200:
+        return contract_result, contract_status
+    lead = contract_result.get("lead") if isinstance(contract_result.get("lead"), dict) else {}
+    conversation_id = _clean(payload.get("conversation_id") or lead.get("chatwoot_conversation_id"), 100)
+    if not conversation_id:
+        return {
+            "success": False,
+            "status": "chatwoot_conversation_id_required",
+            "sent": False,
+            **_authority(False, False),
+        }, 409
+
+    quote_packet, quote_status = build_meat_estimated_quote_packet(lead_id, payload, environ=source, database_url=database_url)
+    if quote_status != 200 or not quote_packet.get("quote_safe"):
+        return {**quote_packet, "sent": False, **_authority(False, False)}, quote_status
+    document = quote_packet.get("document") if isinstance(quote_packet.get("document"), dict) else {}
+    document_ref = _clean(document.get("document_ref"), 120)
+    if not _truthy(payload.get("force_resend")) and _document_already_sent(lead, document_ref):
+        return {
+            **quote_packet,
+            "success": True,
+            "status": "estimated_quote_already_sent",
+            "sent": False,
+            "conversation_id": conversation_id,
+            "document_ref": document_ref,
+            **_authority(False, True),
+        }, 200
+
+    pdf_result, pdf_status = generate_meat_estimated_quote_pdf(lead_id, payload, environ=source, database_url=database_url)
+    if pdf_status >= 400:
+        return {**pdf_result, "sent": False}, pdf_status
+    file_path = Path(pdf_result.get("file_path") or "")
+    message = _document_send_message(pdf_result)
+    sender = chatwoot_sender or send_chatwoot_attachment
+    _record_document_send_event(lead_id, "estimated_quote_send_attempted", conversation_id, document_ref, database_url=database_url)
+    try:
+        send_result = sender(conversation_id, message, file_path, environ=source)
+    except Exception as exc:
+        failure = {"error_type": exc.__class__.__name__, "error": str(exc)[:200]}
+        _record_document_send_event(lead_id, "estimated_quote_send_failed", conversation_id, document_ref, failure, database_url=database_url)
+        return {
+            **pdf_result,
+            "success": False,
+            "status": "chatwoot_document_send_failed",
+            "sent": False,
+            "conversation_id": conversation_id,
+            "chatwoot_send": failure,
+            **_authority(True, True),
+            "calls_chatwoot": True,
+        }, 502
+
+    event_result = _record_document_send_event(
+        lead_id,
+        "estimated_quote_sent",
+        conversation_id,
+        document_ref,
+        {"file_path": str(file_path), "chatwoot": send_result},
+        database_url=database_url,
+    )
+    return {
+        **pdf_result,
+        "status": "estimated_quote_sent",
+        "sent": True,
+        "conversation_id": conversation_id,
+        "document_ref": document_ref,
+        "message_text": message,
+        "chatwoot_send": send_result,
+        "send_event": event_result[0] if isinstance(event_result, tuple) else {},
+        "send_event_status_code": event_result[1] if isinstance(event_result, tuple) else 0,
+        **_authority(True, True),
+        "sends_customer_message": True,
+        "calls_chatwoot": True,
+        "customer_public_output_enabled": True,
+    }, 200
+
+
+def send_chatwoot_attachment(conversation_id, message, file_path, environ=None):
+    source = environ if environ is not None else os.environ
+    base_url = _clean(source.get(CHATWOOT_BASE_URL_ENV) or "https://app.chatwoot.com", 200).rstrip("/")
+    account_id = _clean(source.get(CHATWOOT_ACCOUNT_ID_ENV) or "147387", 80)
+    token = _clean(source.get(CHATWOOT_API_ACCESS_TOKEN_ENV) or source.get(CHATWOOT_API_TOKEN_ENV), 300)
+    conversation_id = _clean(conversation_id, 100)
+    message = _clean(message, 1600)
+    path = Path(file_path)
+    if not base_url:
+        raise RuntimeError("CHATWOOT_BASE_URL is required")
+    if not account_id:
+        raise RuntimeError("CHATWOOT_ACCOUNT_ID is required")
+    if not token:
+        raise RuntimeError("CHATWOOT_API_ACCESS_TOKEN is required")
+    if not conversation_id:
+        raise RuntimeError("conversation_id is required")
+    if not message:
+        raise RuntimeError("message is required")
+    if not path.exists() or not path.is_file():
+        raise RuntimeError("attachment file is required")
+
+    boundary = "----AmadeusMeatDocument" + hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+    body = _multipart_body(
+        boundary,
+        {
+            "content": message,
+            "message_type": "outgoing",
+            "private": "false",
+        },
+        "attachments[]",
+        path.name,
+        mimetypes.guess_type(path.name)[0] or "application/pdf",
+        path.read_bytes(),
+    )
+    req = urllib_request.Request(
+        f"{base_url}/api/v1/accounts/{account_id}/conversations/{conversation_id}/messages",
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "api_access_token": token,
+        },
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=25) as response:
+            parsed = _parse_json_object(response.read().decode("utf-8", errors="replace"))
+            return {
+                "status_code": getattr(response, "status", 200),
+                "message_id": _clean(parsed.get("id"), 100),
+                "conversation_id": conversation_id,
+                "file_name": path.name,
+            }
+    except urllib_error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:200]
+        raise RuntimeError(f"chatwoot_attachment_http_{exc.code}: {detail}") from exc
 
 
 def generate_meat_deposit_pro_forma_pdf(lead_id, payload=None, environ=None, database_url=None):
@@ -521,6 +677,52 @@ def payment_reference(lead_id, environ=None):
     return _short_reference(lead_id)
 
 
+def _document_send_message(packet):
+    document = packet.get("document") if isinstance(packet.get("document"), dict) else {}
+    totals = packet.get("totals") if isinstance(packet.get("totals"), dict) else {}
+    ref = document.get("payment_reference") or ""
+    total = _money_label(totals.get("total_including_vat"))
+    deposit = _money_label(totals.get("deposit_due"))
+    return (
+        f"Here is your estimated pork quote. The estimate is {total} incl VAT, "
+        f"with a deposit of {deposit}. Please use reference {ref} for EFT. "
+        "Final amount is confirmed after actual packed weight."
+    )
+
+
+def _document_already_sent(lead, document_ref):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("event_type") != "estimated_quote_sent":
+            continue
+        notes = _parse_json_object(event.get("notes", ""))
+        if _clean(notes.get("document_ref"), 120) == document_ref:
+            return True
+    return False
+
+
+def _record_document_send_event(lead_id, event_type, conversation_id, document_ref, extra=None, database_url=None):
+    notes = {
+        "source": "backend_meat_documents",
+        "kind": event_type,
+        "conversation_id": conversation_id,
+        "document_ref": document_ref,
+        **(extra if isinstance(extra, dict) else {}),
+    }
+    return record_sales_lead_event(
+        lead_id,
+        {
+            "event_type": event_type,
+            "status_observed": event_type,
+            "recorded_by": "backend_meat_documents",
+            "notes": json.dumps(notes, ensure_ascii=True, sort_keys=True),
+        },
+        database_url=database_url,
+    )
+
+
 def _customer_block(packet, style):
     customer = packet.get("customer") if isinstance(packet.get("customer"), dict) else {}
     lines = [
@@ -762,6 +964,34 @@ def _number(value):
 
 def _money(value):
     return round(float(value or 0), 2)
+
+
+def _multipart_body(boundary, fields, file_field, filename, content_type, file_bytes):
+    lines = []
+    for name, value in fields.items():
+        lines.extend([
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+            str(value).encode("utf-8"),
+            b"\r\n",
+        ])
+    lines.extend([
+        f"--{boundary}\r\n".encode("utf-8"),
+        f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'.encode("utf-8"),
+        f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+        file_bytes,
+        b"\r\n",
+        f"--{boundary}--\r\n".encode("utf-8"),
+    ])
+    return b"".join(lines)
+
+
+def _parse_json_object(value):
+    try:
+        parsed = json.loads(value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _clean(value, limit):

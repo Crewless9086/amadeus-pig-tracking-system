@@ -55,6 +55,7 @@ from modules.sales.meat_documents import (
     generate_meat_estimated_quote_pdf,
     generate_meat_final_invoice_pdf,
     meat_document_policy,
+    send_meat_estimated_quote_to_chatwoot,
 )
 from modules.sales.sam_meat_runtime import (
     authorize_sam_meat_webhook,
@@ -406,6 +407,13 @@ def meat_sales_lead_estimated_quote(lead_id):
 def meat_sales_lead_estimated_quote_pdf(lead_id):
     payload = request.get_json(silent=True) or {}
     result, status_code = generate_meat_estimated_quote_pdf(lead_id, payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/estimated-quote/send", methods=["POST"])
+def meat_sales_lead_estimated_quote_send(lead_id):
+    payload = request.get_json(silent=True) or {}
+    result, status_code = send_meat_estimated_quote_to_chatwoot(lead_id, payload)
     return jsonify(result), status_code
 
 
