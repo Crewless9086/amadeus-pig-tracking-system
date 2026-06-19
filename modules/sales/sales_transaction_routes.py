@@ -50,10 +50,13 @@ from modules.sales.meat_reconciliation import (
     record_meat_reconciliation_event,
 )
 from modules.sales.meat_documents import (
+    authorize_meat_document_delivery_webhook,
     build_meat_estimated_quote_packet,
     generate_meat_deposit_pro_forma_pdf,
     generate_meat_estimated_quote_pdf,
     generate_meat_final_invoice_pdf,
+    handle_meat_document_delivery_status_webhook,
+    meat_document_delivery_webhook_policy,
     meat_document_policy,
     send_meat_estimated_quote_to_chatwoot,
 )
@@ -186,6 +189,11 @@ def meat_documents_policy_route():
     return jsonify(meat_document_policy()), 200
 
 
+@sales_bp.route("/sales/channels/chatwoot/meat-documents/delivery-status/policy", methods=["GET"])
+def meat_document_delivery_status_policy_route():
+    return jsonify(meat_document_delivery_webhook_policy()), 200
+
+
 @sales_bp.route("/sales/channels/chatwoot/sam-meat/inbound", methods=["POST"])
 def sam_meat_chatwoot_inbound():
     allowed, denied = authorize_sam_meat_webhook(request.headers, request.args)
@@ -194,6 +202,17 @@ def sam_meat_chatwoot_inbound():
         return jsonify(denied), status_code
     payload = request.get_json(silent=True) or {}
     result, status_code = handle_sam_meat_chatwoot_inbound(payload)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/channels/chatwoot/meat-documents/delivery-status", methods=["POST"])
+def meat_document_delivery_status_webhook():
+    allowed, denied = authorize_meat_document_delivery_webhook(request.headers, request.args)
+    if not allowed:
+        status_code = 403 if denied.get("status") == "meat_sales_delivery_webhook_auth_denied" else 503
+        return jsonify(denied), status_code
+    payload = request.get_json(silent=True) or {}
+    result, status_code = handle_meat_document_delivery_status_webhook(payload)
     return jsonify(result), status_code
 
 

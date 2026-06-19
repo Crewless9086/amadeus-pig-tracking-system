@@ -1,7 +1,9 @@
 import hashlib
+import hmac
 import json
 import mimetypes
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib import error as urllib_error
@@ -14,6 +16,7 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 
 from modules.oom_sakkie.sales_campaign_store import (
     DEFAULT_MEAT_PRICE_BOOK,
+    get_active_sales_lead_by_conversation,
     get_sales_lead_preorder_contract,
     list_meat_price_book_entries,
     record_sales_lead_event,
@@ -40,6 +43,8 @@ DOCUMENT_AUTOSEND_ENABLED_ENV = "MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED"
 QUOTE_READY_TEMPLATE_NAME_ENV = "MEAT_SALES_QUOTE_READY_TEMPLATE_NAME"
 QUOTE_READY_TEMPLATE_LANGUAGE_ENV = "MEAT_SALES_QUOTE_READY_TEMPLATE_LANGUAGE"
 WHATSAPP_WINDOW_HOURS_ENV = "MEAT_SALES_WHATSAPP_WINDOW_HOURS"
+DELIVERY_WEBHOOK_ENABLED_ENV = "MEAT_SALES_DELIVERY_WEBHOOK_ENABLED"
+DELIVERY_WEBHOOK_TOKEN_ENV = "MEAT_SALES_DELIVERY_WEBHOOK_TOKEN"
 
 DOCUMENT_TYPE_ESTIMATED_QUOTE = "Estimated Quote"
 DOCUMENT_TYPE_DEPOSIT_PRO_FORMA = "Deposit Pro Forma"
@@ -51,11 +56,13 @@ CHATWOOT_BASE_URL_ENV = "CHATWOOT_BASE_URL"
 CHATWOOT_ACCOUNT_ID_ENV = "CHATWOOT_ACCOUNT_ID"
 CHATWOOT_API_ACCESS_TOKEN_ENV = "CHATWOOT_API_ACCESS_TOKEN"
 CHATWOOT_API_TOKEN_ENV = "CHATWOOT_API_TOKEN"
+MIN_DELIVERY_WEBHOOK_TOKEN_CHARS = 32
 
 
 def meat_document_policy(environ=None):
     source = environ if environ is not None else os.environ
     bank = bank_details(source)
+    delivery_policy = meat_document_delivery_webhook_policy(source)
     return {
         "success": True,
         "mode": "meat_sales_document_policy",
@@ -73,6 +80,10 @@ def meat_document_policy(environ=None):
         "bank_details_configured": bank["configured"],
         "document_autosend_enabled": _truthy(source.get(DOCUMENT_AUTOSEND_ENABLED_ENV)),
         "document_autosend_env": DOCUMENT_AUTOSEND_ENABLED_ENV,
+        "delivery_webhook_enabled": delivery_policy["enabled"],
+        "delivery_webhook_token_configured": delivery_policy["token_configured"],
+        "delivery_webhook_enabled_env": DELIVERY_WEBHOOK_ENABLED_ENV,
+        "delivery_webhook_token_env": DELIVERY_WEBHOOK_TOKEN_ENV,
         "quote_ready_template_name_configured": bool(_clean(source.get(QUOTE_READY_TEMPLATE_NAME_ENV), 120)),
         "quote_ready_template_name_env": QUOTE_READY_TEMPLATE_NAME_ENV,
         "quote_ready_template_language": _clean(source.get(QUOTE_READY_TEMPLATE_LANGUAGE_ENV), 20) or "en",
@@ -433,6 +444,231 @@ def send_chatwoot_attachment(conversation_id, message, file_path, environ=None):
     except urllib_error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:200]
         raise RuntimeError(f"chatwoot_attachment_http_{exc.code}: {detail}") from exc
+
+
+def meat_document_delivery_webhook_policy(environ=None):
+    source = environ if environ is not None else os.environ
+    token = str(source.get(DELIVERY_WEBHOOK_TOKEN_ENV, "") or "").strip()
+    return {
+        "success": True,
+        "mode": "meat_sales_chatwoot_delivery_status_webhook",
+        "enabled": _truthy(source.get(DELIVERY_WEBHOOK_ENABLED_ENV)),
+        "enabled_env": DELIVERY_WEBHOOK_ENABLED_ENV,
+        "token_configured": len(token) >= MIN_DELIVERY_WEBHOOK_TOKEN_CHARS,
+        "token_env": DELIVERY_WEBHOOK_TOKEN_ENV,
+        "min_token_chars": MIN_DELIVERY_WEBHOOK_TOKEN_CHARS,
+        "records_delivery_statuses": ["failed", "undelivered", "bounced", "sent", "delivered", "read"],
+        "target_document_type": DOCUMENT_TYPE_ESTIMATED_QUOTE,
+        **_authority(False, False),
+    }
+
+
+def authorize_meat_document_delivery_webhook(headers, query_args=None, environ=None):
+    source = environ if environ is not None else os.environ
+    if not _truthy(source.get(DELIVERY_WEBHOOK_ENABLED_ENV)):
+        return False, _delivery_webhook_denied("meat_sales_delivery_webhook_disabled", source)
+    expected = str(source.get(DELIVERY_WEBHOOK_TOKEN_ENV, "") or "").strip()
+    if not expected:
+        return False, _delivery_webhook_denied("meat_sales_delivery_webhook_token_not_configured", source)
+    if len(expected) < MIN_DELIVERY_WEBHOOK_TOKEN_CHARS:
+        return False, _delivery_webhook_denied("meat_sales_delivery_webhook_token_too_short", source)
+    if not _delivery_webhook_token_matches(headers or {}, query_args or {}, expected):
+        return False, _delivery_webhook_denied("meat_sales_delivery_webhook_auth_denied", source)
+    return True, {}
+
+
+def handle_meat_document_delivery_status_webhook(payload, *, environ=None, database_url=None):
+    source = environ if environ is not None else os.environ
+    normalized = normalize_meat_document_delivery_status_payload(payload)
+    if not normalized["processable"]:
+        return {
+            "success": True,
+            "status": normalized["status"],
+            "processed": False,
+            "delivery": normalized,
+            **_authority(False, False),
+        }, 200
+
+    lead_result, lead_status = _resolve_delivery_webhook_lead(normalized, database_url=database_url)
+    if lead_status >= 400:
+        return {
+            "success": False,
+            "status": lead_result.get("status", "delivery_status_lead_lookup_failed"),
+            "processed": False,
+            "delivery": normalized,
+            "lead_lookup": lead_result,
+            **_authority(False, False),
+        }, lead_status
+
+    lead = lead_result.get("lead") if isinstance(lead_result.get("lead"), dict) else {}
+    lead_id = _clean(normalized.get("lead_id") or lead.get("lead_id"), 100)
+    if not lead_id:
+        return {
+            "success": False,
+            "status": "delivery_status_lead_id_required",
+            "processed": False,
+            "delivery": normalized,
+            **_authority(False, False),
+        }, 409
+
+    document_ref = normalized.get("document_ref")
+    message_id = normalized.get("message_id")
+    delivery_status = normalized.get("delivery_status")
+    if _delivery_status_already_recorded(lead, message_id, delivery_status, document_ref):
+        return {
+            "success": True,
+            "status": "delivery_status_already_recorded",
+            "processed": False,
+            "lead_id": lead_id,
+            "delivery": normalized,
+            **_authority(False, False),
+        }, 200
+
+    event_type = _delivery_webhook_event_type(delivery_status)
+    event_result, event_status = _record_document_send_event(
+        lead_id,
+        event_type,
+        normalized.get("conversation_id") or lead.get("chatwoot_conversation_id", ""),
+        document_ref,
+        {
+            "message_id": message_id,
+            "delivery_status": delivery_status,
+            "delivery_confirmed": normalized.get("delivery_confirmed"),
+            "delivery_failed": normalized.get("delivery_failed"),
+            "event_name": normalized.get("event_name"),
+            "source_payload_keys": normalized.get("source_payload_keys", []),
+        },
+        database_url=database_url,
+    )
+    if event_status >= 400:
+        return {
+            "success": False,
+            "status": "delivery_status_event_record_failed",
+            "processed": False,
+            "lead_id": lead_id,
+            "delivery": normalized,
+            "event": event_result,
+            **_authority(True, False),
+        }, event_status
+
+    return {
+        "success": True,
+        "status": event_type,
+        "processed": True,
+        "lead_id": lead_id,
+        "document_ref": document_ref,
+        "message_id": message_id,
+        "delivery_status": delivery_status,
+        "delivery_confirmed": normalized.get("delivery_confirmed"),
+        "delivery_failed": normalized.get("delivery_failed"),
+        "event": event_result,
+        **_authority(True, False),
+    }, 201
+
+
+def normalize_meat_document_delivery_status_payload(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    message = _first_dict(
+        payload.get("message"),
+        payload.get("messages"),
+        payload.get("message_payload"),
+        payload.get("data"),
+    )
+    conversation = _first_dict(
+        payload.get("conversation"),
+        message.get("conversation") if isinstance(message, dict) else {},
+    )
+    attachments = _first_list(
+        payload.get("attachments"),
+        message.get("attachments") if isinstance(message, dict) else [],
+    )
+    content = _clean(
+        payload.get("content")
+        or payload.get("text")
+        or message.get("content")
+        or message.get("text"),
+        2000,
+    )
+    event_name = _clean(payload.get("event") or payload.get("event_name") or payload.get("webhook_event"), 120).lower()
+    raw_status = _clean(
+        payload.get("delivery_status")
+        or payload.get("message_status")
+        or payload.get("status")
+        or message.get("delivery_status")
+        or message.get("message_status")
+        or message.get("status")
+        or message.get("source_status"),
+        80,
+    ).lower()
+    delivery_status = _normal_delivery_status(raw_status)
+    conversation_id = _clean(
+        payload.get("conversation_id")
+        or payload.get("chatwoot_conversation_id")
+        or conversation.get("id")
+        or message.get("conversation_id"),
+        100,
+    )
+    lead_id = _clean(
+        payload.get("lead_id")
+        or payload.get("sales_lead_id")
+        or _nested(payload, "custom_attributes", "lead_id")
+        or _nested(conversation, "custom_attributes", "lead_id")
+        or _nested(message, "custom_attributes", "lead_id"),
+        100,
+    )
+    message_id = _clean(
+        payload.get("message_id")
+        or payload.get("id")
+        or message.get("message_id")
+        or message.get("id")
+        or message.get("source_id"),
+        100,
+    )
+    document_ref = _clean(
+        payload.get("document_ref")
+        or _nested(payload, "custom_attributes", "document_ref")
+        or _nested(message, "custom_attributes", "document_ref")
+        or _document_ref_from_text(content)
+        or _document_ref_from_attachments(attachments),
+        120,
+    )
+    outgoing = _is_outgoing_message(payload, message)
+    if not delivery_status:
+        return {
+            "processable": False,
+            "status": "delivery_status_missing",
+            "event_name": event_name,
+            "source_payload_keys": sorted(payload.keys()),
+        }
+    if not outgoing and event_name and "message" in event_name:
+        return {
+            "processable": False,
+            "status": "delivery_status_ignored_non_outgoing_message",
+            "event_name": event_name,
+            "delivery_status": delivery_status,
+            "source_payload_keys": sorted(payload.keys()),
+        }
+    if not lead_id and not conversation_id:
+        return {
+            "processable": False,
+            "status": "delivery_status_missing_lead_or_conversation",
+            "event_name": event_name,
+            "delivery_status": delivery_status,
+            "source_payload_keys": sorted(payload.keys()),
+        }
+    return {
+        "processable": True,
+        "status": "delivery_status_processable",
+        "event_name": event_name,
+        "lead_id": lead_id,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "document_ref": document_ref,
+        "delivery_status": delivery_status,
+        "delivery_confirmed": delivery_status in {"delivered", "read"},
+        "delivery_failed": delivery_status in {"failed", "undelivered", "bounced"},
+        "source_payload_keys": sorted(payload.keys()),
+    }
 
 
 def generate_meat_deposit_pro_forma_pdf(lead_id, payload=None, environ=None, database_url=None):
@@ -861,6 +1097,139 @@ def _delivery_state_from_chatwoot_result(result):
         "delivery_status": "chatwoot_accepted_unverified" if accepted else "chatwoot_not_accepted",
         "delivery_confirmed": False,
         "delivery_failed": not accepted,
+    }
+
+
+def _resolve_delivery_webhook_lead(normalized, database_url=None):
+    lead_id = _clean(normalized.get("lead_id"), 100)
+    if lead_id:
+        return get_sales_lead_preorder_contract(lead_id, database_url=database_url)
+    conversation_id = _clean(normalized.get("conversation_id"), 100)
+    if not conversation_id:
+        return {"success": False, "status": "conversation_id_required", **_authority(False, False)}, 400
+    return get_active_sales_lead_by_conversation(conversation_id, database_url=database_url)
+
+
+def _delivery_webhook_event_type(delivery_status):
+    if delivery_status in {"delivered", "read"}:
+        return "estimated_quote_delivery_read" if delivery_status == "read" else "estimated_quote_delivery_delivered"
+    if delivery_status in {"failed", "undelivered", "bounced"}:
+        return "estimated_quote_delivery_failed"
+    return "estimated_quote_delivery_status_observed"
+
+
+def _delivery_status_already_recorded(lead, message_id, delivery_status, document_ref):
+    events = lead.get("events") if isinstance(lead.get("events"), list) else []
+    event_type = _delivery_webhook_event_type(delivery_status)
+    message_id = _clean(message_id, 100)
+    document_ref = _clean(document_ref, 120)
+    for event in events:
+        if not isinstance(event, dict) or event.get("event_type") != event_type:
+            continue
+        notes = _parse_json_object(event.get("notes", ""))
+        if _clean(notes.get("delivery_status"), 80) != delivery_status:
+            continue
+        same_message = message_id and _clean(notes.get("message_id"), 100) == message_id
+        same_document = document_ref and _clean(notes.get("document_ref"), 120) == document_ref
+        if same_message or same_document:
+            return True
+    return False
+
+
+def _normal_delivery_status(value):
+    status = _clean(value, 80).lower().replace(" ", "_")
+    if status in {"delivered", "read", "sent", "failed", "undelivered", "bounced"}:
+        return status
+    if status in {"delivery_failed", "send_failed", "error", "errored"}:
+        return "failed"
+    if status in {"seen"}:
+        return "read"
+    if status in {"queued", "created", "accepted", "processed"}:
+        return "sent"
+    return ""
+
+
+def _is_outgoing_message(payload, message):
+    candidates = [
+        payload.get("message_type"),
+        payload.get("direction"),
+        payload.get("source"),
+        message.get("message_type") if isinstance(message, dict) else "",
+        message.get("direction") if isinstance(message, dict) else "",
+        message.get("source") if isinstance(message, dict) else "",
+    ]
+    text = " ".join(_clean(item, 40).lower() for item in candidates if item)
+    if "incoming" in text or "inbound" in text:
+        return False
+    return True
+
+
+def _document_ref_from_text(text):
+    match = re.search(r"\bM[QPF]-20\d{2}-[A-Z0-9]{3,10}\b", str(text or "").upper())
+    return match.group(0) if match else ""
+
+
+def _document_ref_from_attachments(attachments):
+    for attachment in attachments:
+        if not isinstance(attachment, dict):
+            continue
+        candidate = _document_ref_from_text(
+            attachment.get("file_name")
+            or attachment.get("filename")
+            or attachment.get("data_url")
+            or attachment.get("download_url")
+            or attachment.get("url")
+        )
+        if candidate:
+            return candidate
+    return ""
+
+
+def _first_dict(*values):
+    for value in values:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    return item
+    return {}
+
+
+def _first_list(*values):
+    for value in values:
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _nested(source, *keys):
+    current = source if isinstance(source, dict) else {}
+    for key in keys:
+        if not isinstance(current, dict):
+            return ""
+        current = current.get(key)
+    return current
+
+
+def _delivery_webhook_token_matches(headers, query_args, expected):
+    authorization = str(headers.get("Authorization", "") or "").strip()
+    if authorization.startswith("Bearer "):
+        return hmac.compare_digest(authorization[len("Bearer "):].strip(), expected)
+    provided = str(headers.get("X-Amadeus-Meat-Delivery-Webhook-Key", "") or "").strip()
+    if provided:
+        return hmac.compare_digest(provided, expected)
+    provided = str(query_args.get("token") or query_args.get("delivery_token") or "").strip()
+    return hmac.compare_digest(provided, expected)
+
+
+def _delivery_webhook_denied(status, source):
+    return {
+        "success": False,
+        "status": status,
+        "processed": False,
+        "policy": meat_document_delivery_webhook_policy(source),
+        **_authority(False, False),
     }
 
 

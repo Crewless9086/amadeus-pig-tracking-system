@@ -377,6 +377,101 @@ class MeatDocumentTests(unittest.TestCase):
         self.assertFalse(result["sent"])
         self.assertEqual(result["status"], "estimated_quote_send_already_recorded")
 
+    def test_delivery_webhook_authorization_requires_enabled_long_token(self):
+        allowed, denied = meat_documents.authorize_meat_document_delivery_webhook(
+            {"Authorization": "Bearer abc"},
+            {},
+            environ={"MEAT_SALES_DELIVERY_WEBHOOK_ENABLED": "1", "MEAT_SALES_DELIVERY_WEBHOOK_TOKEN": "short"},
+        )
+
+        self.assertFalse(allowed)
+        self.assertEqual(denied["status"], "meat_sales_delivery_webhook_token_too_short")
+
+    def test_delivery_webhook_normalizes_nested_delivered_payload(self):
+        payload = {
+            "event": "message_updated",
+            "message": {
+                "id": 123,
+                "message_type": "outgoing",
+                "status": "delivered",
+                "content": "Here is your estimated pork quote MQ-2026-A99273",
+                "conversation": {"id": 1808},
+            },
+        }
+
+        normalized = meat_documents.normalize_meat_document_delivery_status_payload(payload)
+
+        self.assertTrue(normalized["processable"])
+        self.assertEqual(normalized["conversation_id"], "1808")
+        self.assertEqual(normalized["message_id"], "123")
+        self.assertEqual(normalized["document_ref"], "MQ-2026-A99273")
+        self.assertEqual(normalized["delivery_status"], "delivered")
+        self.assertTrue(normalized["delivery_confirmed"])
+
+    def test_delivery_webhook_records_failed_event_for_explicit_lead(self):
+        with patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            contract.return_value = (self._contract_fixture(), 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+
+            result, status = meat_documents.handle_meat_document_delivery_status_webhook({
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "conversation_id": "1808",
+                "message_id": "M1",
+                "document_ref": "MQ-2026-A99273",
+                "status": "failed",
+                "message_type": "outgoing",
+            })
+
+        self.assertEqual(status, 201)
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["status"], "estimated_quote_delivery_failed")
+        self.assertTrue(result["delivery_failed"])
+        record_event.assert_called_once()
+        self.assertEqual(record_event.call_args.args[1]["event_type"], "estimated_quote_delivery_failed")
+
+    def test_delivery_webhook_maps_conversation_to_active_lead(self):
+        fixture = self._contract_fixture()
+        with patch.object(meat_documents, "get_active_sales_lead_by_conversation") as active_lead, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            active_lead.return_value = ({"success": True, "lead": fixture["lead"]}, 200)
+            record_event.return_value = ({"success": True, "event_id": "E1"}, 201)
+
+            result, status = meat_documents.handle_meat_document_delivery_status_webhook({
+                "conversation": {"id": "1808"},
+                "message": {"id": "M1", "message_status": "read", "message_type": "outgoing"},
+                "document_ref": "MQ-2026-A99273",
+            })
+
+        self.assertEqual(status, 201)
+        self.assertEqual(result["lead_id"], "OSK-SALES-LEAD-TEST")
+        self.assertEqual(result["status"], "estimated_quote_delivery_read")
+        active_lead.assert_called_once_with("1808", database_url=None)
+
+    def test_delivery_webhook_deduplicates_same_message_status(self):
+        fixture = self._contract_fixture()
+        fixture["lead"]["events"] = [{
+            "event_type": "estimated_quote_delivery_delivered",
+            "notes": '{"delivery_status":"delivered","document_ref":"MQ-2026-A99273","message_id":"M1"}',
+        }]
+        with patch.object(meat_documents, "get_sales_lead_preorder_contract") as contract, \
+             patch.object(meat_documents, "record_sales_lead_event") as record_event:
+            contract.return_value = (fixture, 200)
+
+            result, status = meat_documents.handle_meat_document_delivery_status_webhook({
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "conversation_id": "1808",
+                "message_id": "M1",
+                "document_ref": "MQ-2026-A99273",
+                "delivery_status": "delivered",
+                "message_type": "outgoing",
+            })
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["processed"])
+        self.assertEqual(result["status"], "delivery_status_already_recorded")
+        record_event.assert_not_called()
+
     def _contract_fixture(self):
         return {
             "success": True,

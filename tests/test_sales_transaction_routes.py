@@ -260,6 +260,47 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertFalse(response.get_json()["farm_app_standard_upload_enabled"])
         policy.assert_called_once()
 
+    def test_meat_document_delivery_status_route_requires_valid_token(self):
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_meat_document_delivery_webhook",
+            return_value=(False, {"success": False, "status": "meat_sales_delivery_webhook_auth_denied"}),
+        ) as authorize:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/meat-documents/delivery-status",
+                json={"status": "delivered"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "meat_sales_delivery_webhook_auth_denied")
+        authorize.assert_called_once()
+
+    def test_meat_document_delivery_status_route_calls_handler_when_authorized(self):
+        service_result = {
+            "success": True,
+            "status": "estimated_quote_delivery_delivered",
+            "processed": True,
+        }
+        with patch.object(
+            sales_transaction_routes,
+            "authorize_meat_document_delivery_webhook",
+            return_value=(True, {}),
+        ) as authorize, patch.object(
+            sales_transaction_routes,
+            "handle_meat_document_delivery_status_webhook",
+            return_value=(service_result, 201),
+        ) as handler:
+            response = self.client.post(
+                "/api/sales/channels/chatwoot/meat-documents/delivery-status",
+                json={"status": "delivered"},
+                headers={"Authorization": "Bearer test"},
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json(), service_result)
+        authorize.assert_called_once()
+        handler.assert_called_once_with({"status": "delivered"})
+
     def test_beacon_media_assets_list_and_register_routes(self):
         service_result = {
             "success": True,

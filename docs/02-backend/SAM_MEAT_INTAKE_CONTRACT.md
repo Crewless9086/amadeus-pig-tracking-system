@@ -36,6 +36,8 @@ Required env:
 - `SAM_MEAT_BACKEND_LLM_ENABLED=1` only if LLM extraction is allowed
 - `SAM_MEAT_BACKEND_LLM_MODEL=<model>` when LLM extraction is enabled
 - `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1` only when quote-safe estimated quote PDF attachment sends are allowed for the private pilot
+- `MEAT_SALES_DELIVERY_WEBHOOK_ENABLED=1` when Chatwoot/WhatsApp delivery callbacks are allowed to update meat lead delivery state
+- `MEAT_SALES_DELIVERY_WEBHOOK_TOKEN=<long random token, 32+ chars>`
 - `MEAT_SALES_QUOTE_READY_TEMPLATE_NAME=<approved WhatsApp template name>` before automatic closed-window quote recovery can send a template
 - `MEAT_SALES_QUOTE_READY_TEMPLATE_LANGUAGE=en` or the approved template language code
 
@@ -62,11 +64,24 @@ POST /api/sales/meat-leads/<lead_id>/estimated-quote/send
 
 This route generates the estimated quote PDF and attempts a Chatwoot attachment only when `MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED=1`, the lead is quote-safe, bank details are configured, a Chatwoot conversation id exists, the WhatsApp service window is open, and the Chatwoot API envs are present. Sam can trigger this route after his normal "I am preparing your estimated quote now and will send it through shortly" reply succeeds.
 
-Important delivery rule: Chatwoot HTTP 200 means the message was accepted by Chatwoot only. It is recorded as `estimated_quote_chatwoot_accepted` and `delivery_status = chatwoot_accepted_unverified`. It is not treated as delivered to WhatsApp. Only an explicit delivered/read status may record `estimated_quote_sent`.
+Important delivery rule: Chatwoot HTTP 200 means the message was accepted by Chatwoot only. It is recorded as `estimated_quote_chatwoot_accepted` and `delivery_status = chatwoot_accepted_unverified`. It is not treated as delivered to WhatsApp. Delivery/read/failure state is updated only by the delivery-status webhook.
 
-Closed-window recovery: if the service window is stale or unknown, the route returns `estimated_quote_template_required` and does not send the PDF. The template must already be approved in WhatsApp/Meta. Suggested template body: `Hi {{1}}, your Amadeus Farm pork estimate is ready. Please reply YES and I will send the quote details.`
+Delivery-status webhook:
 
-Accepted auth:
+```text
+GET  /api/sales/channels/chatwoot/meat-documents/delivery-status/policy
+POST /api/sales/channels/chatwoot/meat-documents/delivery-status
+```
+
+Delivery-status accepted auth:
+
+- `Authorization: Bearer <token>`
+- or `X-Amadeus-Meat-Delivery-Webhook-Key: <token>`
+- or URL token for webhook tools that cannot send custom headers: `?token=<token>`
+
+Closed-window recovery: if the service window is stale or unknown, the route returns `estimated_quote_template_required` and does not send the PDF. The template must already be approved in WhatsApp/Meta. Pilot template names and suggested wording are logged in `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`.
+
+Sam inbound accepted auth:
 
 - `Authorization: Bearer <token>`
 - or `X-Amadeus-Sam-Meat-Webhook-Key: <token>`
