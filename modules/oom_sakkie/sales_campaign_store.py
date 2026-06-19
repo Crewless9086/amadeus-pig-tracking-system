@@ -570,7 +570,7 @@ def record_sales_lead(payload, database_url=None):
                         next_owner_action = excluded.next_owner_action,
                         linked_order_id = coalesce(nullif(excluded.linked_order_id, ''), public.oom_sakkie_sales_leads.linked_order_id),
                         linked_preorder_id = coalesce(nullif(excluded.linked_preorder_id, ''), public.oom_sakkie_sales_leads.linked_preorder_id)
-                    returning lead_id, (xmax = 0) as inserted
+                    returning lead_id, (xmax::text = '0') as inserted
                     """,
                     params,
                 )
