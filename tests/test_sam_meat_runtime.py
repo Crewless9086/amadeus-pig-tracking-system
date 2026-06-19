@@ -407,6 +407,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
         mock_document_send.assert_called_once()
         self.assertEqual(mock_document_send.call_args.args[0], "OSK-SALES-LEAD-PROGRESSED")
         self.assertEqual(mock_document_send.call_args.args[1]["conversation_id"], "1808")
+        self.assertNotIn("force_resend", mock_document_send.call_args.args[1])
         self.assertEqual(mock_document_send.call_args.kwargs["chatwoot_sender"], document_sender)
 
     @patch("modules.sales.sam_meat_runtime.send_meat_estimated_quote_to_chatwoot")
@@ -459,9 +460,11 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(status_code, 200)
         self.assertEqual(result["send_status"], "sent")
         self.assertTrue(result["sam_decision"]["document_send_requested"])
+        self.assertTrue(result["sam_decision"]["document_force_resend_requested"])
         self.assertIn("preparing your estimated quote", result["sam_decision"]["reply_text"])
         self.assertNotIn("farm must confirm", result["sam_decision"]["reply_text"])
         mock_document_send.assert_called_once()
+        self.assertTrue(mock_document_send.call_args.args[1]["force_resend"])
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")

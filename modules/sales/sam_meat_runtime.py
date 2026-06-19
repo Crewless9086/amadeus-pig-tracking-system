@@ -194,9 +194,12 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
                 _record_autoreply_event(decision.get("lead_id"), "sam_meat_autoreply_sent", decision["reply_text"], send_result)
                 if decision.get("document_send_requested"):
                     try:
+                        document_payload = {"conversation_id": inbound["conversation_id"]}
+                        if decision.get("document_force_resend_requested"):
+                            document_payload["force_resend"] = True
                         document_send_result, document_status_code = send_meat_estimated_quote_to_chatwoot(
                             decision.get("lead_id"),
-                            {"conversation_id": inbound["conversation_id"]},
+                            document_payload,
                             environ=source,
                             chatwoot_sender=document_sender,
                         )
@@ -393,6 +396,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
     document_send_requested = False
+    document_force_resend_requested = False
     quote_or_document_requested = _asks_money_or_document(inbound.get("content"))
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts)
@@ -443,6 +447,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
                         "I am preparing your estimated quote now and will send it through shortly."
                     )
                     document_send_requested = True
+                    document_force_resend_requested = quote_or_document_requested
                 elif quote_status == 200 and quote_packet.get("quote_safe"):
                     reply = (
                         "I have the details needed for your estimated quote. "
@@ -467,6 +472,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         "reply_text": reply,
         "lead_id": lead_id,
         "document_send_requested": document_send_requested,
+        "document_force_resend_requested": document_force_resend_requested,
         "records_tracking_lead": bool(lead_id),
         "blocked_actions": [
             "no_price_quote_without_owner_approval",
