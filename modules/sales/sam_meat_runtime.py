@@ -339,7 +339,7 @@ def extract_meat_facts(message, inbound=None, *, environ=None, llm_extractor=Non
             facts["llm_status"] = "used"
         else:
             facts["llm_status"] = "fallback_deterministic"
-    return facts
+    return _apply_meat_pilot_defaults(facts)
 
 
 def build_sam_meat_lead_payload_from_inbound(inbound, facts):
@@ -399,6 +399,7 @@ def _fresh_lead_id(inbound, facts):
 def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None):
     source = environ if environ is not None else os.environ
     prior_context = prior_context if isinstance(prior_context, dict) else {}
+    facts = _apply_meat_pilot_defaults(facts)
     knowledge_result = load_sam_farm_knowledge(source)
     knowledge = knowledge_result.get("knowledge") if isinstance(knowledge_result.get("knowledge"), dict) else {}
     reply = ""
@@ -439,6 +440,9 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         reply = "Please send the delivery street address or farm name, town, and any useful directions for the driver."
     elif not facts.get("timing"):
         reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
+    elif facts.get("payment_method") == "Cash":
+        rule = meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For this meat pilot we are using EFT only so the reference and payment trail stay clean."
+        reply = f"{rule} EFT is the only payment option for this pilot."
     elif not facts.get("payment_method"):
         rule = meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For this meat pilot we are using EFT only so the reference and payment trail stay clean."
         reply = f"{rule} Is EFT fine for the deposit and final balance?"
@@ -948,6 +952,16 @@ def _merge_prior_context(facts, prior_context):
             facts[key] = prior
     if not facts.get("delivery_town") and facts.get("location"):
         facts["delivery_town"] = facts["location"]
+    return _apply_meat_pilot_defaults(facts)
+
+
+def _apply_meat_pilot_defaults(facts):
+    facts = dict(facts or {})
+    if (
+        not facts.get("payment_method")
+        and facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut", "assisted_slaughter"}
+    ):
+        facts["payment_method"] = "EFT"
     return facts
 
 
@@ -1405,14 +1419,22 @@ def _extract_shared_location(payload):
     for item in candidates:
         lat = item.get("latitude") or item.get("lat")
         lng = item.get("longitude") or item.get("lng") or item.get("lon")
-        maps_url = item.get("maps_url") or item.get("map_url") or item.get("url") or item.get("data_url")
+        raw_maps_url = item.get("maps_url") or item.get("map_url") or item.get("url") or item.get("data_url")
+        maps_url = raw_maps_url if _looks_like_map_url(raw_maps_url) else ""
         place = item.get("name") or item.get("place_name") or item.get("title") or item.get("address")
+        type_hint = " ".join(
+            str(item.get(key) or "")
+            for key in ("file_type", "type", "attachment_type", "content_type", "message_type")
+        ).lower()
+        location_hint = "location" in type_hint or "map" in type_hint
+        if lat in (None, "") and lng in (None, "") and not maps_url and not location_hint:
+            continue
         if lat not in (None, "") and lng not in (None, ""):
             merged["latitude"] = _clean(lat, 40)
             merged["longitude"] = _clean(lng, 40)
         if maps_url:
             merged["maps_url"] = _clean(maps_url, 500)
-        if place:
+        if place and (location_hint or maps_url or (lat not in (None, "") and lng not in (None, ""))):
             merged["place_name"] = _clean(place, 240)
     if not merged:
         return {}
@@ -1424,6 +1446,10 @@ def _extract_shared_location(payload):
         300,
     )
     return merged
+
+
+def _looks_like_map_url(value):
+    return bool(re.search(r"https?://(?:www\.)?(?:maps\.google\.|goo\.gl/maps/|maps\.app\.goo\.gl/)", str(value or ""), re.I))
 
 
 def _shared_location_fact_patch(shared_location, facts):

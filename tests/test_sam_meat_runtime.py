@@ -209,6 +209,23 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(lead_payload["delivery_location_latitude"], "-34.0921")
         self.assertEqual(lead_payload["delivery_location_longitude"], "21.2576")
 
+    def test_pop_image_attachment_does_not_pollute_delivery_location(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="POP sent",
+            attachments=[{
+                "file_type": "image",
+                "url": "https://app.chatwoot.com/rails/active_storage/blobs/redirect/example/File.jpg",
+                "name": "File.jpg",
+            }],
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertTrue(inbound["processable"])
+        self.assertEqual(inbound["shared_location"], {})
+        self.assertEqual(facts["delivery_maps_url"], "")
+        self.assertEqual(facts["delivery_address_line_1"], "")
+        self.assertEqual(facts["delivery_or_collection"], "")
+
     def test_cut_set_question_gets_bounded_pork_model_answer(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="What does Set A include for a half carcass in Riversdale?",
@@ -345,6 +362,36 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertIn("money reflects", decision["reply_text"])
         self.assertIn("bank receipt", decision["reply_text"])
         self.assertNotIn("Is EFT fine", decision["reply_text"])
+
+    def test_meat_pilot_defaults_payment_to_eft_once_core_facts_exist(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Half carcass Set A, Riversdale, delivery to 12 Test Street, next week.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertEqual(facts["payment_method"], "EFT")
+        self.assertNotIn("Is EFT fine", decision["reply_text"])
+
+    def test_cash_payment_is_redirected_to_eft_for_meat_pilot(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Half carcass Set A, Riversdale, delivery to 12 Test Street, next week. Cash please.",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertEqual(facts["payment_method"], "Cash")
+        self.assertIn("EFT is the only payment option", decision["reply_text"])
 
     def test_sam_asks_for_timing_before_review_handoff(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
