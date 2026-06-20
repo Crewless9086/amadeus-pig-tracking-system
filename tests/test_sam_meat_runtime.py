@@ -61,6 +61,28 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertFalse(inbound["processable"])
         self.assertEqual(inbound["status"], "ignored_non_incoming_message")
 
+    def test_parse_chatwoot_inbound_accepts_numeric_incoming_message_type(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            message_type=0,
+            content="TEST FLOW - I want a half carcasse",
+            conversation={"id": 1813, "inbox": {"channel_type": "Channel::Whatsapp"}},
+        ))
+
+        self.assertTrue(inbound["processable"])
+        self.assertEqual(inbound["message_type"], "incoming")
+        self.assertEqual(inbound["conversation_id"], "1813")
+
+    def test_parse_chatwoot_inbound_ignores_numeric_activity_message_type(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            message_type=2,
+            content="Charl Nieuwendyk added half_carcass",
+            conversation={"id": 1813, "inbox": {"channel_type": "Channel::Whatsapp"}},
+        ))
+
+        self.assertFalse(inbound["processable"])
+        self.assertEqual(inbound["message_type"], "activity")
+        self.assertEqual(inbound["status"], "ignored_non_incoming_message")
+
     def test_extract_meat_facts_uses_deterministic_fallback(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload())
         facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
@@ -644,6 +666,37 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertNotEqual(lead_payload["lead_id"], "OSK-SALES-LEAD-FRESH")
         self.assertEqual(len(lead_payload["lead_id"]), len("OSK-SALES-LEAD-1234567890ABCDEF"))
         self.assertEqual(result["inbound"]["message_id"], "695457280")
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_numeric_chatwoot_message_type_reaches_lead_recording(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-1813",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(
+                message_type=0,
+                content="TEST FLOW - I want a half carcasse",
+                conversation={"id": 1813, "inbox": {"channel_type": "Channel::Whatsapp"}},
+            ),
+            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0"},
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["processed"])
+        self.assertEqual(result["inbound"]["conversation_id"], "1813")
+        mock_record.assert_called_once()
+        self.assertEqual(mock_record.call_args.args[0]["conversation_id"], "1813")
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")

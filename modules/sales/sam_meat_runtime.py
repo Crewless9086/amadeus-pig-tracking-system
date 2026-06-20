@@ -261,7 +261,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
 
 def parse_chatwoot_inbound(payload):
     payload = payload if isinstance(payload, dict) else {}
-    message_type = _clean(payload.get("message_type") or payload.get("message_type_string"), 60).lower()
+    message_type = _normal_chatwoot_message_type(payload)
     event = _clean(payload.get("event"), 80).lower()
     content = _clean(payload.get("content") or payload.get("message") or payload.get("text"), 1800)
     shared_location = _extract_shared_location(payload)
@@ -1220,6 +1220,21 @@ def _normal_whatsapp_window_state(value):
     if text == "unknown":
         return "unknown"
     return ""
+
+
+def _normal_chatwoot_message_type(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    raw = payload.get("message_type_string")
+    if raw in (None, ""):
+        raw = payload.get("message_type")
+    text = _clean(raw, 60).lower()
+    if text in {"0", "incoming"}:
+        return "incoming"
+    if text in {"1", "outgoing"}:
+        return "outgoing"
+    if text in {"2", "activity", "template"}:
+        return "activity"
+    return text
 
 
 def _normalized_customer_text(value):
