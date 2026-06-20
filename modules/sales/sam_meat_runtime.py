@@ -50,6 +50,7 @@ WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
 WEBHOOK_TOKEN_ENV = "SAM_MEAT_BACKEND_WEBHOOK_TOKEN"
 AUTOREPLY_ENABLED_ENV = "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED"
 LLM_ENABLED_ENV = "SAM_MEAT_BACKEND_LLM_ENABLED"
+AGENT_V2_ENABLED_ENV = "SAM_MEAT_BACKEND_AGENT_V2_ENABLED"
 LLM_MODEL_ENV = "SAM_MEAT_BACKEND_LLM_MODEL"
 LLM_URL_ENV = "SAM_MEAT_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
@@ -70,6 +71,7 @@ def sam_meat_webhook_policy(environ=None):
     token = str(source.get(WEBHOOK_TOKEN_ENV, "") or "").strip()
     autoreply_enabled = _truthy(source.get(AUTOREPLY_ENABLED_ENV))
     llm_enabled = _truthy(source.get(LLM_ENABLED_ENV))
+    agent_v2_enabled = _truthy(source.get(AGENT_V2_ENABLED_ENV))
     hygiene_enabled = _truthy(source.get(HYGIENE_ENABLED_ENV))
     llm_configured = bool(str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
     return {
@@ -78,6 +80,8 @@ def sam_meat_webhook_policy(environ=None):
         "autoreply_enabled": autoreply_enabled,
         "chatwoot_hygiene_enabled": hygiene_enabled,
         "llm_enabled": llm_enabled and llm_configured,
+        "agent_v2_enabled": agent_v2_enabled and llm_configured,
+        "agent_v2_explicitly_enabled": agent_v2_enabled,
         "llm_explicitly_enabled": llm_enabled,
         "llm_configured": llm_configured,
         "enabled_env": WEBHOOK_ENABLED_ENV,
@@ -85,6 +89,7 @@ def sam_meat_webhook_policy(environ=None):
         "autoreply_env": AUTOREPLY_ENABLED_ENV,
         "chatwoot_hygiene_env": HYGIENE_ENABLED_ENV,
         "llm_enabled_env": LLM_ENABLED_ENV,
+        "agent_v2_enabled_env": AGENT_V2_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
         "bank_details_configured": _bank_details_configured(source),
@@ -118,7 +123,15 @@ def authorize_sam_meat_webhook(headers, query_args=None, environ=None):
     return True, {}
 
 
-def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=None, document_sender=None, llm_extractor=None):
+def handle_sam_meat_chatwoot_inbound(
+    payload,
+    *,
+    environ=None,
+    chatwoot_sender=None,
+    document_sender=None,
+    llm_extractor=None,
+    llm_agent_decider=None,
+):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
     if not inbound["processable"]:
@@ -135,6 +148,15 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
     prior_context = _conversation_lead_context(inbound.get("conversation_id"))
     facts = _merge_prior_context(facts, prior_context)
+    agent_decision = _build_agent_v2_decision_if_enabled(
+        inbound,
+        facts,
+        prior_context,
+        source,
+        decider=llm_agent_decider,
+    )
+    if agent_decision.get("used"):
+        facts = _merge_agent_fact_patch(facts, agent_decision)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
     if prior_context.get("lead_id"):
         lead_payload["lead_id"] = prior_context["lead_id"]
@@ -142,7 +164,15 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         lead_payload["lead_id"] = _fresh_lead_id(inbound, facts)
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
-    decision = build_sam_meat_decision(inbound, facts, record_result, record_status, environ=source, prior_context=prior_context)
+    decision = build_sam_meat_decision(
+        inbound,
+        facts,
+        record_result,
+        record_status,
+        environ=source,
+        prior_context=prior_context,
+        agent_decision=agent_decision,
+    )
     if booking_confirmation.get("recorded"):
         deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
         if deposit_instruction.get("ready"):
@@ -227,6 +257,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         "processed": True,
         "inbound": inbound,
         "facts": facts,
+        "agent_decision": agent_decision,
         "prior_context": prior_context,
         "lead_payload": lead_payload,
         "lead_result": record_result,
@@ -396,7 +427,7 @@ def _fresh_lead_id(inbound, facts):
     return "OSK-SALES-LEAD-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16].upper()
 
 
-def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None):
+def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None, agent_decision=None):
     source = environ if environ is not None else os.environ
     prior_context = prior_context if isinstance(prior_context, dict) else {}
     facts = _apply_meat_pilot_defaults(facts)
@@ -414,20 +445,36 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts, knowledge)
     payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context, knowledge)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
+    agent_decision = agent_decision if isinstance(agent_decision, dict) else {}
+    agent_reply = _validated_agent_reply(agent_decision)
+    agent_wants_no_reply = agent_decision.get("used") and agent_decision.get("should_reply") is False
     if non_pork_reply:
         reply = non_pork_reply
+        should_reply = True
     elif frustration_reply:
         reply = frustration_reply
+        should_reply = True
     elif cut_menu_reply:
         reply = cut_menu_reply
+        should_reply = True
     elif deposit_question_reply:
         reply = deposit_question_reply
+        should_reply = True
     elif payment_state_reply:
         reply = payment_state_reply
+        should_reply = True
     elif price_or_document_reply:
         reply = price_or_document_reply
+        should_reply = True
+    elif agent_wants_no_reply:
+        reply = ""
+        should_reply = False
+    elif agent_reply:
+        reply = agent_reply
+        should_reply = True
     elif record_status == 400 and record_result.get("sam_next_question"):
         reply = record_result["sam_next_question"]
+        should_reply = True
     elif facts.get("product_type") == "unknown":
         reply = _sam_intro_options_reply(knowledge)
     elif facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
@@ -441,10 +488,10 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif not facts.get("timing"):
         reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
     elif facts.get("payment_method") == "Cash":
-        rule = meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For this meat pilot we are using EFT only so the reference and payment trail stay clean."
-        reply = f"{rule} EFT is the only payment option for this pilot."
+        rule = meat_sales_knowledge(knowledge).get("payment_rule") or meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For meat sales we use EFT only so the reference and payment trail stay clean."
+        reply = f"{rule} EFT is the only payment option for now."
     elif not facts.get("payment_method"):
-        rule = meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For this meat pilot we are using EFT only so the reference and payment trail stay clean."
+        rule = meat_sales_knowledge(knowledge).get("payment_rule") or meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For meat sales we use EFT only so the reference and payment trail stay clean."
         reply = f"{rule} Is EFT fine for the deposit and final balance?"
     else:
         reply = (
@@ -491,6 +538,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         "should_reply": should_reply,
         "reply_text": reply,
         "lead_id": lead_id,
+        "agent_v2": _agent_decision_summary(agent_decision),
         "document_send_requested": document_send_requested,
         "document_force_resend_requested": document_force_resend_requested,
         "records_tracking_lead": bool(lead_id),
@@ -549,6 +597,223 @@ def _llm_payload(message, inbound, source):
         ],
         "response_format": {"type": "json_object"},
     }
+
+
+def _build_agent_v2_decision_if_enabled(inbound, facts, prior_context, source, decider=None):
+    if not _truthy(source.get(AGENT_V2_ENABLED_ENV)):
+        return {"used": False, "status": "agent_v2_disabled"}
+    if not (str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
+        return {"used": False, "status": "agent_v2_not_configured"}
+    caller = decider or _call_sam_meat_agent_llm
+    raw = caller(inbound, facts, prior_context, source)
+    if not isinstance(raw, dict) or not raw:
+        return {"used": False, "status": "agent_v2_no_decision"}
+    decision = _safe_sam_agent_decision(raw)
+    decision["used"] = bool(decision.get("status") == "agent_v2_decision_accepted")
+    return decision
+
+
+def _call_sam_meat_agent_llm(inbound, facts, prior_context, source):
+    payload = _agent_v2_payload(inbound, facts, prior_context, source)
+    req = urllib_request.Request(
+        str(source.get(LLM_URL_ENV, DEFAULT_LLM_URL) or DEFAULT_LLM_URL).strip() or DEFAULT_LLM_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {str(source.get(OPENAI_API_KEY_ENV, '') or '').strip()}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+            body = response.read().decode("utf-8")
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
+        return {}
+    try:
+        data = json.loads(body or "{}")
+        content = data["choices"][0]["message"]["content"]
+        return json.loads(_strip_code_fence(str(content or "")))
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _agent_v2_payload(inbound, facts, prior_context, source):
+    knowledge_result = load_sam_farm_knowledge(source)
+    knowledge = knowledge_result.get("knowledge") if isinstance(knowledge_result.get("knowledge"), dict) else {}
+    system = (
+        "You are Sam, the human-feeling sales agent for Amadeus Farm. "
+        "You sell by listening first, keeping WhatsApp replies short, warm, practical, and clear. "
+        "You may answer farm, pork, delivery, payment, and preorder questions, then gently steer back to the useful sales next step. "
+        "If there is no clear customer intent or no useful next question, set should_reply false. "
+        "Never assume uncertain facts; ask one natural confirmation question instead. "
+        "Never use the word pilot. Never invent prices, stock, weights, availability, booking status, payment status, slaughter dates, butcher slots, or delivery dates. "
+        "Only return JSON."
+    )
+    schema_note = {
+        "required_json_shape": {
+            "intent": "meat_preorder|live_sales|farm_info|payment|document_request|general|unknown",
+            "should_reply": True,
+            "reply_text": "short customer-facing WhatsApp reply",
+            "facts_patch": {
+                "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
+                "cut_set": "Set A|Set B|Set C|Set D",
+                "location": "town or area",
+                "timing": "this week|next week|next available farm run|customer wording",
+                "delivery_or_collection": "delivery|collection",
+                "delivery_address_line_1": "street address or farm name",
+                "delivery_town": "town",
+                "delivery_area": "area/suburb",
+                "delivery_notes": "short driver notes",
+                "payment_method": "EFT|Cash",
+                "budget_amount": "number only",
+                "target_packed_kg": "number only",
+                "match_preference": "heaviest|soonest|cheapest|best_fit|closest_weight|budget_fit",
+            },
+            "missing_fields": ["field_name"],
+            "confidence": 0.0,
+            "requires_confirmation": False,
+            "risk_flags": [],
+        }
+    }
+    return {
+        "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
+        "temperature": 0.2,
+        "messages": [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "customer_message": inbound.get("content") or "",
+                        "current_known_facts": facts,
+                        "prior_context": prior_context,
+                        "farm_knowledge": knowledge,
+                        "business_rules": {
+                            "payment_rule": meat_sales_knowledge(knowledge).get("payment_rule")
+                            or meat_sales_knowledge(knowledge).get("pilot_payment_rule")
+                            or "For meat sales we use EFT only for now.",
+                            "must_not_assume": True,
+                            "ask_one_question_at_a_time": True,
+                            "if_customer_asks_farm_info_answer_briefly_then_steer_to_sales": True,
+                            "if_no_intent_do_not_force_reply": True,
+                        },
+                        **schema_note,
+                    },
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                )[:9000],
+            },
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+
+def _safe_sam_agent_decision(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    reply = _clean(raw.get("reply_text"), 1800)
+    confidence = _normal_confidence(raw.get("confidence"))
+    should_reply = raw.get("should_reply")
+    should_reply = False if should_reply is False else bool(reply)
+    risk_flags = [_clean(item, 80) for item in (raw.get("risk_flags") if isinstance(raw.get("risk_flags"), list) else [])]
+    facts_patch = _safe_llm_fact_patch(raw.get("facts_patch") if isinstance(raw.get("facts_patch"), dict) else {})
+    requires_confirmation = bool(raw.get("requires_confirmation"))
+    if confidence < 0.70:
+        facts_patch = {}
+    if requires_confirmation and confidence < 0.85:
+        facts_patch = {}
+    intent = _clean(raw.get("intent"), 80)
+    has_decision = bool(reply or facts_patch or (should_reply is False and intent and confidence >= 0.75))
+    if not has_decision:
+        return {
+            "used": False,
+            "status": "agent_v2_no_actionable_decision",
+            "should_reply": False,
+            "reply_text": "",
+            "facts_patch": {},
+            "confidence": confidence,
+            "requires_confirmation": requires_confirmation,
+            "risk_flags": risk_flags,
+        }
+    blocked = _agent_reply_blockers(reply)
+    if blocked:
+        return {
+            "used": False,
+            "status": "agent_v2_reply_blocked",
+            "should_reply": True,
+            "reply_text": "",
+            "facts_patch": facts_patch,
+            "confidence": confidence,
+            "requires_confirmation": requires_confirmation,
+            "risk_flags": [*risk_flags, *blocked],
+        }
+    return {
+        "used": True,
+        "status": "agent_v2_decision_accepted",
+        "intent": intent,
+        "should_reply": should_reply,
+        "reply_text": reply,
+        "facts_patch": facts_patch,
+        "missing_fields": [_clean(item, 80) for item in (raw.get("missing_fields") if isinstance(raw.get("missing_fields"), list) else [])],
+        "confidence": confidence,
+        "requires_confirmation": requires_confirmation,
+        "risk_flags": risk_flags,
+    }
+
+
+def _merge_agent_fact_patch(facts, agent_decision):
+    facts = dict(facts or {})
+    patch = agent_decision.get("facts_patch") if isinstance(agent_decision.get("facts_patch"), dict) else {}
+    for key, value in patch.items():
+        cleaned = _clean(value, 700)
+        if cleaned:
+            facts[key] = value
+    return _apply_meat_pilot_defaults(facts)
+
+
+def _validated_agent_reply(agent_decision):
+    if not agent_decision.get("used"):
+        return ""
+    reply = _clean(agent_decision.get("reply_text"), 1800)
+    if not reply or _agent_reply_blockers(reply):
+        return ""
+    return reply
+
+
+def _agent_reply_blockers(reply):
+    text = str(reply or "").lower()
+    blockers = []
+    if "pilot" in text:
+        blockers.append("uses_pilot_word")
+    unsafe_patterns = [
+        (r"\br\s*\d", "mentions_money_amount"),
+        (r"\b(booking|order|reservation)\b.{0,40}\b(confirmed|final|booked|reserved)\b", "confirms_booking_without_gate"),
+        (r"\b(payment|money|deposit)\b.{0,40}\b(received|confirmed|cleared|reflects)\b", "confirms_payment_without_bank_gate"),
+        (r"\b(slaughter|butcher|delivery|collection)\b.{0,40}\b(booked|confirmed|scheduled)\b", "confirms_fulfillment_without_gate"),
+    ]
+    for pattern, label in unsafe_patterns:
+        if re.search(pattern, text):
+            blockers.append(label)
+    return blockers
+
+
+def _agent_decision_summary(agent_decision):
+    agent_decision = agent_decision if isinstance(agent_decision, dict) else {}
+    return {
+        "used": bool(agent_decision.get("used")),
+        "status": _clean(agent_decision.get("status"), 120),
+        "intent": _clean(agent_decision.get("intent"), 80),
+        "confidence": agent_decision.get("confidence", 0),
+        "requires_confirmation": bool(agent_decision.get("requires_confirmation")),
+        "risk_flags": agent_decision.get("risk_flags") if isinstance(agent_decision.get("risk_flags"), list) else [],
+    }
+
+
+def _normal_confidence(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, number))
 
 
 def _record_autoreply_event(lead_id, event_type, message, extra=None):
@@ -777,7 +1042,7 @@ def _next_fact_question(facts):
     if not facts.get("timing"):
         return "When would you ideally like the pork: this week, next week, or the next available farm run?"
     if not facts.get("payment_method"):
-        return "For this meat pilot we are using EFT only. Is EFT fine for the deposit and final balance?"
+        return "For meat sales we use EFT only for now. Is EFT fine for the deposit and final balance?"
     return "I have the core details and will keep the next step clear."
 
 

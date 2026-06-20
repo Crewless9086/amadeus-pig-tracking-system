@@ -47,6 +47,26 @@ The backend still controls:
 - slaughter/butcher/delivery gates,
 - final invoice and delivery release.
 
+## Sam LLM Agent V2
+
+Sam can run as an LLM-first conversation agent when:
+
+- `SAM_MEAT_BACKEND_AGENT_V2_ENABLED=1`
+- `SAM_MEAT_BACKEND_LLM_MODEL` is set
+- `OPENAI_API_KEY` is set
+
+In this mode the LLM may propose:
+
+- a short customer reply,
+- a structured fact patch,
+- missing fields,
+- confidence,
+- whether Sam should reply at all.
+
+The LLM does not get final authority. The backend validates the output before it is used and blocks unsafe wording such as invented prices, final booking claims, payment-confirmed claims, or confirmed slaughter/butcher/delivery promises.
+
+Customer-facing Sam wording must not use internal rollout terms such as `pilot`.
+
 ## How To Check It
 
 After deploy, open:

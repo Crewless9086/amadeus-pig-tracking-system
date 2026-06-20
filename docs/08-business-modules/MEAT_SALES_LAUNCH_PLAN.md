@@ -19,9 +19,10 @@ Meat Sales is backend-native enough for private pilot testing:
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
 - Sam Meat now finds active conversation context through a direct backend lookup, merges append-only Sam fact events, handles common Afrikaans/typo/map-link inputs, and respects explicit WhatsApp service-window state.
 - Sam now reads an editable farm knowledge pack from `config/sam_farm_knowledge.json`; owner guidance is in `SAM_FARM_KNOWLEDGE_PACK.md`.
+- Sam now has an opt-in LLM-first conversation brain behind `SAM_MEAT_BACKEND_AGENT_V2_ENABLED=1`. The LLM may propose a human WhatsApp reply and fact patch, but backend validation still blocks invented prices, payment-confirmed claims, final bookings, stock changes, and confirmed slaughter/butcher/delivery promises.
 - Beacon now has private media-library metadata/API foundation, a Farm App review UI, approved-media campaign draft selection, and owner-review publish packet preparation for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
-- Meat sales document rules are now fixed for the pilot: Amadeus is VAT registered, VAT number `4510286224`, meat prices are entered and shown as VAT-inclusive, the pilot is EFT-only, deposits are 50% of the estimated VAT-inclusive total for standard carcass orders, and final invoices use actual packed weight. Cash is not part of the Sam Meat pilot path.
+- Meat sales document rules are now fixed for the controlled launch: Amadeus is VAT registered, VAT number `4510286224`, meat prices are entered and shown as VAT-inclusive, meat sales are EFT-only for now, deposits are 50% of the estimated VAT-inclusive total for standard carcass orders, and final invoices use actual packed weight. Cash is not part of the Sam Meat customer path.
 
 This is not yet a public money machine. Beacon now has a draft-only launch packet, conversation learning evidence, a safe private media-library foundation, a Farm App media review UI, approved-media draft pairing, and publish packet preparation. The next work should define a manual public posting execution checklist and evidence capture before real campaign traffic is pushed into it.
 

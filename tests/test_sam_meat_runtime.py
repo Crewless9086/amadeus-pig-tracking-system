@@ -55,6 +55,17 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertTrue(allowed)
 
+    def test_webhook_policy_reports_agent_v2_gate(self):
+        policy = sam_meat_runtime.sam_meat_webhook_policy(environ={
+            "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+            "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+            "OPENAI_API_KEY": "test-key",
+        })
+
+        self.assertTrue(policy["agent_v2_enabled"])
+        self.assertTrue(policy["agent_v2_explicitly_enabled"])
+        self.assertEqual(policy["agent_v2_enabled_env"], "SAM_MEAT_BACKEND_AGENT_V2_ENABLED")
+
     def test_parse_chatwoot_inbound_ignores_outbound_messages(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(message_type="outgoing"))
 
@@ -697,6 +708,263 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(result["inbound"]["conversation_id"], "1813")
         mock_record.assert_called_once()
         self.assertEqual(mock_record.call_args.args[0]["conversation_id"], "1813")
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_agent_v2_handles_typo_timing_without_repeating_question(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-1814",
+                "chatwoot_conversation_id": "1814",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set C",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "delivery_address_line_1": "Test Street 12",
+                    "delivery_town": "Riversdale",
+                    "payment_method": "EFT",
+                },
+            },
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-1814",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        agent = Mock(return_value={
+            "intent": "meat_preorder",
+            "should_reply": True,
+            "reply_text": "Perfect, I have that as the next available farm run. I have the main details now and will keep the next step clear.",
+            "facts_patch": {"timing": "next available farm run"},
+            "missing_fields": [],
+            "confidence": 0.94,
+            "requires_confirmation": False,
+            "risk_flags": [],
+        })
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(
+                message_type=0,
+                content="Next availble farm run",
+                conversation={"id": 1814, "inbox": {"channel_type": "Channel::Whatsapp"}},
+            ),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=agent,
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["facts"]["timing"], "next available farm run")
+        self.assertIn("next available farm run", result["sam_decision"]["reply_text"])
+        self.assertNotIn("When would you ideally like", result["sam_decision"]["reply_text"])
+        self.assertEqual(mock_record.call_args.args[0]["timing"], "next available farm run")
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_agent_v2_blocks_unsafe_price_or_booking_claim(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-V2",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        agent = Mock(return_value={
+            "intent": "meat_preorder",
+            "should_reply": True,
+            "reply_text": "Your booking is confirmed at R100 per kg.",
+            "facts_patch": {"product_type": "half_carcass", "cut_set": "Set A", "location": "Riversdale"},
+            "confidence": 0.95,
+        })
+
+        result, _status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="I want a half carcass Set A in Riversdale."),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=agent,
+        )
+
+        self.assertFalse(result["agent_decision"]["used"])
+        self.assertIn("mentions_money_amount", result["agent_decision"]["risk_flags"])
+        self.assertNotIn("R100", result["sam_decision"]["reply_text"])
+        self.assertNotIn("confirmed", result["sam_decision"]["reply_text"].lower())
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_agent_v2_does_not_write_low_confidence_assumption(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-V2",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set C",
+                    "location": "Riversdale",
+                },
+            },
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-V2",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        agent = Mock(return_value={
+            "intent": "meat_preorder",
+            "should_reply": True,
+            "reply_text": "Just to confirm, would you like delivery or collection?",
+            "facts_patch": {"delivery_or_collection": "delivery"},
+            "confidence": 0.62,
+            "requires_confirmation": True,
+        })
+
+        result, _status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Riversdale"),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=agent,
+        )
+
+        self.assertEqual(result["agent_decision"]["facts_patch"], {})
+        self.assertNotEqual(result["facts"].get("delivery_or_collection"), "delivery")
+        self.assertIn("delivery or collection", result["sam_decision"]["reply_text"].lower())
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_agent_v2_can_let_no_intent_conversation_fade_out(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
+        mock_record.return_value = ({
+            "success": False,
+            "status": "sam_meat_intake_missing_core_fields",
+            "sam_next_question": "Which pork option are you interested in?",
+            "contract": {},
+        }, 400)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        agent = Mock(return_value={
+            "intent": "general",
+            "should_reply": False,
+            "reply_text": "",
+            "facts_patch": {},
+            "confidence": 0.91,
+        })
+
+        result, _status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Thanks, noted."),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=agent,
+        )
+
+        self.assertFalse(result["sam_decision"]["should_reply"])
+        self.assertEqual(result["sam_decision"]["reply_text"], "")
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_agent_v2_cannot_suppress_document_or_price_guard(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-V2",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+        agent = Mock(return_value={
+            "intent": "document_request",
+            "should_reply": False,
+            "reply_text": "",
+            "facts_patch": {"product_type": "half_carcass", "cut_set": "Set A", "location": "Riversdale"},
+            "confidence": 0.88,
+        })
+
+        result, _status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="What is the price for half carcass Set A in Riversdale?"),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=agent,
+        )
+
+        self.assertTrue(result["sam_decision"]["should_reply"])
+        self.assertTrue(result["sam_decision"]["reply_text"])
+        self.assertIn("quote", result["sam_decision"]["reply_text"].lower())
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_agent_v2_empty_llm_decision_falls_back_to_guarded_reply(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
+        mock_record.return_value = ({
+            "success": False,
+            "status": "sam_meat_intake_missing_core_fields",
+            "sam_next_question": "Which cut set would you prefer?",
+            "contract": {},
+        }, 400)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        result, _status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="I want a half carcass for Riversdale."),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=Mock(return_value={}),
+        )
+
+        self.assertFalse(result["agent_decision"]["used"])
+        self.assertEqual(result["agent_decision"]["status"], "agent_v2_no_decision")
+        self.assertTrue(result["sam_decision"]["should_reply"])
+        self.assertIn("cut set", result["sam_decision"]["reply_text"].lower())
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")

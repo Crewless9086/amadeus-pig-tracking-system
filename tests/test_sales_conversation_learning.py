@@ -157,7 +157,7 @@ class SalesConversationLearningTests(unittest.TestCase):
             },
             sam_decision={
                 "lead_id": "OSK-SALES-LEAD-TEST",
-                "reply_text": "For the meat pilot we use EFT only. Is EFT fine for the deposit and final balance?",
+                "reply_text": "For meat sales we use EFT only for now. Is EFT fine for the deposit and final balance?",
             },
         ))
 
