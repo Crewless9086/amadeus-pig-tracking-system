@@ -502,6 +502,8 @@ def _confusion_signals(message, facts, reply):
         signals.append("customer_confusion")
     if re.search(r"\b(angry|ridiculous|stupid|frustrated|fuck)\b", text):
         signals.append("customer_frustration")
+    if re.search(r"\b(no personality|human factor|too robotic|robot|rigid|cold)\b", text):
+        signals.append("robotic_tone")
     return signals
 
 
@@ -519,6 +521,10 @@ def _sam_misses(message, facts, decision, missing_facts):
         misses.append("missed_cut_set_question")
     if "fuck" in text and "sorry" not in reply and "understand" not in reply:
         misses.append("missed_frustration_acknowledgement")
+    if re.search(r"\b(already paid|paid the deposit|sent pop|pop sent|proof sent|how long does that take)\b", text) and "eft" in reply and "money reflects" not in reply:
+        misses.append("repeated_payment_method_after_payment_context")
+    if re.search(r"\b(no personality|human factor|too robotic|robot|rigid|cold)\b", text) and "amadeus farm" not in reply:
+        misses.append("missed_brand_voice")
     return misses
 
 

@@ -272,6 +272,80 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertIn("delivery street address", decision["reply_text"])
 
+    def test_vague_intro_has_sam_and_amadeus_voice(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Hi Sam, I want pork for my freezer. What options do you have?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("I am Sam from Amadeus Farm", decision["reply_text"])
+        self.assertIn("half carcass", decision["reply_text"])
+        self.assertIn("live pig sales", decision["reply_text"])
+
+    def test_frustrated_customer_gets_human_acknowledgement_and_next_step(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="This system is shit, where is the human factor? I want Half Carcass with Set A, in Riversdale for Delivery",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+        )
+
+        self.assertIn("I hear you", decision["reply_text"])
+        self.assertIn("Amadeus Farm", decision["reply_text"])
+        self.assertIn("delivery street address", decision["reply_text"])
+
+    def test_deposit_question_explains_reason_without_repeating_payment_method(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Why the deposit?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+            prior_context={"lead_id": "OSK-SALES-LEAD-TEST", "latest_event": "estimated_quote_chatwoot_accepted"},
+        )
+
+        self.assertIn("hold your place", decision["reply_text"])
+        self.assertIn("money reflects", decision["reply_text"])
+        self.assertNotIn("Is EFT fine", decision["reply_text"])
+
+    def test_payment_followup_does_not_loop_back_to_eft_question(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="How long does that take?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        facts.update({
+            "product_type": "half_carcass",
+            "cut_set": "Set A",
+            "location": "Riversdale",
+            "delivery_or_collection": "delivery",
+            "delivery_address_line_1": "12 Test Street",
+            "timing": "next week",
+        })
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+            prior_context={"lead_id": "OSK-SALES-LEAD-TEST", "latest_event": "deposit_followup_needed"},
+        )
+
+        self.assertIn("money reflects", decision["reply_text"])
+        self.assertIn("bank receipt", decision["reply_text"])
+        self.assertNotIn("Is EFT fine", decision["reply_text"])
+
     def test_sam_asks_for_timing_before_review_handoff(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Half carcass Set A, Riversdale, delivery to 12 Long Street. EFT.",

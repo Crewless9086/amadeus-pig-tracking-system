@@ -125,6 +125,44 @@ class SalesConversationLearningTests(unittest.TestCase):
         self.assertEqual(summary["top_improvement_suggestions"][0]["value"], "Review budget extraction.")
         self.assertEqual(summary["top_improvement_suggestions"][0]["count"], 2)
 
+    def test_learning_flags_robotic_voice_and_payment_loop(self):
+        robotic = build_learning_event_from_sam_result(sam_result(
+            inbound={
+                "conversation_id": "1812",
+                "content": "This system is shit, where is the human factor?",
+                "channel": "chatwoot_whatsapp",
+            },
+            facts={"product_type": "unknown"},
+            sam_decision={
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "reply_text": "Are you interested in a pork half carcass, full carcass, custom cuts, or assisted slaughter?",
+            },
+        ))
+
+        self.assertIn("robotic_tone", robotic["confusion_signals"])
+        self.assertIn("missed_brand_voice", robotic["sam_misses"])
+
+        payment_loop = build_learning_event_from_sam_result(sam_result(
+            inbound={
+                "conversation_id": "1812",
+                "content": "How long does that take?",
+                "channel": "chatwoot_whatsapp",
+            },
+            facts={
+                "product_type": "half_carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "delivery_or_collection": "delivery",
+                "timing": "next week",
+            },
+            sam_decision={
+                "lead_id": "OSK-SALES-LEAD-TEST",
+                "reply_text": "For the meat pilot we use EFT only. Is EFT fine for the deposit and final balance?",
+            },
+        ))
+
+        self.assertIn("repeated_payment_method_after_payment_context", payment_loop["sam_misses"])
+
     def test_record_requires_database_and_never_sets_authority(self):
         result, status_code = record_sales_conversation_learning_event({
             "lead_id": "OSK-SALES-LEAD-TEST",

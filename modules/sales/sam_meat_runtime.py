@@ -136,7 +136,7 @@ def handle_sam_meat_chatwoot_inbound(payload, *, environ=None, chatwoot_sender=N
         lead_payload["lead_id"] = _fresh_lead_id(inbound, facts)
     record_result, record_status = record_sam_meat_intake_lead(lead_payload)
     booking_confirmation = _record_booking_confirmation_if_ready(inbound, prior_context)
-    decision = build_sam_meat_decision(inbound, facts, record_result, record_status, environ=source)
+    decision = build_sam_meat_decision(inbound, facts, record_result, record_status, environ=source, prior_context=prior_context)
     if booking_confirmation.get("recorded"):
         deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
         if deposit_instruction.get("ready"):
@@ -390,8 +390,9 @@ def _fresh_lead_id(inbound, facts):
     return "OSK-SALES-LEAD-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16].upper()
 
 
-def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None):
+def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None):
     source = environ if environ is not None else os.environ
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
     reply = ""
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
@@ -401,6 +402,8 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
+    deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts)
+    payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
     if non_pork_reply:
         reply = non_pork_reply
@@ -408,28 +411,32 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         reply = frustration_reply
     elif cut_menu_reply:
         reply = cut_menu_reply
+    elif deposit_question_reply:
+        reply = deposit_question_reply
+    elif payment_state_reply:
+        reply = payment_state_reply
     elif price_or_document_reply:
         reply = price_or_document_reply
     elif record_status == 400 and record_result.get("sam_next_question"):
         reply = record_result["sam_next_question"]
     elif facts.get("product_type") == "unknown":
-        reply = "Are you interested in a pork half carcass, full carcass, custom cuts, or assisted slaughter?"
+        reply = _sam_intro_options_reply()
     elif facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
-        reply = "Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
+        reply = "I can help with that. Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
     elif not facts.get("location"):
-        reply = "Which town or area would you prefer for collection or delivery?"
+        reply = "Which town or area would you prefer for collection or delivery? I use that to keep the farm run practical."
     elif not facts.get("delivery_or_collection"):
-        reply = "Would you prefer collection or delivery?"
+        reply = "Would you prefer collection or delivery? For meat orders we plan this carefully around the farm run."
     elif facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
         reply = "Please send the delivery street address or farm name, town, and any useful directions for the driver."
     elif not facts.get("timing"):
         reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
     elif not facts.get("payment_method"):
-        reply = "For the meat pilot we use EFT only. Is EFT fine for the deposit and final balance?"
+        reply = "For this meat pilot we are using EFT only, so the reference and payment trail stay clean. Is EFT fine for the deposit and final balance?"
     else:
         reply = (
             "Thanks, I have noted your pork interest for the farm to review. "
-            "I still need the farm to confirm price, timing, and any deposit rule before quoting or booking anything."
+            "This is pre-booked Amadeus Farm pork, so I still need the farm to confirm price, timing, and the deposit rule before quoting or booking anything."
         )
 
     if lead_id:
@@ -658,6 +665,14 @@ def _cut_menu_reply(message, facts):
     )
 
 
+def _sam_intro_options_reply():
+    return (
+        "Hi, I am Sam from Amadeus Farm. I can help with pork meat sales, live pig sales, or basic farm questions. "
+        "For pork preorders, the main options are half carcass, full carcass, custom cuts, or assisted slaughter. "
+        "Tell me what you are looking for and I will guide you from there."
+    )
+
+
 def _non_pork_guard_reply(message):
     text = str(message or "").lower()
     if not re.search(r"\b(beef|mutton|lamb|chicken|goat)\b", text):
@@ -672,10 +687,19 @@ def _non_pork_guard_reply(message):
 
 def _frustration_guard_reply(message, facts):
     text = str(message or "").lower()
-    if not re.search(r"\b(annoying|frustrated|frustrating|upset|irritated|nobody)\b", text):
+    if not re.search(r"\b(annoying|frustrated|frustrating|upset|irritated|nobody|shit|fuck|ridiculous|stupid)\b", text):
         return ""
     if not re.search(r"\b(price|cost|quote|invoice|how much)\b", text):
-        return ""
+        if facts.get("product_type") != "unknown":
+            next_step = _next_fact_question(facts)
+            return (
+                "I hear you. I am Sam from Amadeus Farm, and I will keep this practical. "
+                f"{next_step}"
+            )
+        return (
+            "I hear you. I am Sam from Amadeus Farm, and I will keep this practical. "
+            "Are you looking for pork meat sales, live pig sales, or just general farm information?"
+        )
     if facts.get("product_type") == "unknown":
         return (
             "I understand, and I do not want to waste your time. "
@@ -686,6 +710,50 @@ def _frustration_guard_reply(message, facts):
         "I understand, and I do not want to waste your time. "
         "The farm still has to approve price, timing, and any deposit rule before I quote or book anything."
     )
+
+
+def _deposit_question_reply(message, facts):
+    text = str(message or "").lower()
+    if not re.search(r"\b(why|what|how)\b.*\b(deposit|pay|payment)\b|\bdeposit\b.*\b(why|for what|needed)\b", text):
+        return ""
+    return (
+        "The deposit is there to hold your place in the preorder run and to help the farm plan slaughter, cutting, and delivery properly. "
+        "It is still not treated as a final booking until the money reflects in the farm account and the farm confirms the available run."
+    )
+
+
+def _payment_state_reply(message, facts, prior_context):
+    text = str(message or "").lower()
+    latest_event = _clean((prior_context or {}).get("latest_event"), 100)
+    asks_payment_state = bool(re.search(
+        r"\b(already paid|i paid|paid the deposit|sent pop|sent proof|proof sent|pop sent|"
+        r"money reflect|reflects|how long|how long does that take|when.*delivery|release delivery)\b",
+        text,
+    ))
+    if not asks_payment_state:
+        return ""
+    if latest_event in {"deposit_followup_needed", "pop_received_unverified", "customer_followup_sent", "estimated_quote_chatwoot_accepted"} or facts.get("product_type") != "unknown":
+        return (
+            "Thanks for checking. POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account. "
+            "Once the farm confirms the bank receipt, the booking can move to the carcass and delivery planning steps."
+        )
+    return ""
+
+
+def _next_fact_question(facts):
+    if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
+        return "Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
+    if not facts.get("location"):
+        return "Which town or area should I use for collection or delivery?"
+    if not facts.get("delivery_or_collection"):
+        return "Would you prefer collection or delivery?"
+    if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
+        return "Please send the delivery street address or farm name, town, and any useful directions for the driver."
+    if not facts.get("timing"):
+        return "When would you ideally like the pork: this week, next week, or the next available farm run?"
+    if not facts.get("payment_method"):
+        return "For this meat pilot we are using EFT only. Is EFT fine for the deposit and final balance?"
+    return "I have the core details and will keep the next step clear."
 
 
 def _price_or_document_guard_reply(message, facts):
