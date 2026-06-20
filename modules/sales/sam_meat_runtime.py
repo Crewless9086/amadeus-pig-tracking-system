@@ -38,6 +38,12 @@ from modules.sales.chatwoot_hygiene import (
     sync_sam_meat_chatwoot_hygiene,
 )
 from modules.sales.conversation_learning import record_learning_event_from_sam_result
+from modules.sales.sam_farm_knowledge import (
+    load_sam_farm_knowledge,
+    meat_sales_knowledge,
+    product_menu_text,
+    public_profile,
+)
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -393,6 +399,8 @@ def _fresh_lead_id(inbound, facts):
 def build_sam_meat_decision(inbound, facts, record_result, record_status, environ=None, prior_context=None):
     source = environ if environ is not None else os.environ
     prior_context = prior_context if isinstance(prior_context, dict) else {}
+    knowledge_result = load_sam_farm_knowledge(source)
+    knowledge = knowledge_result.get("knowledge") if isinstance(knowledge_result.get("knowledge"), dict) else {}
     reply = ""
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
@@ -400,10 +408,10 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     document_force_resend_requested = False
     quote_or_document_requested = _asks_money_or_document(inbound.get("content"))
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
-    frustration_reply = _frustration_guard_reply(inbound.get("content"), facts)
+    frustration_reply = _frustration_guard_reply(inbound.get("content"), facts, knowledge)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
-    deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts)
-    payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context)
+    deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts, knowledge)
+    payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context, knowledge)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
     if non_pork_reply:
         reply = non_pork_reply
@@ -420,7 +428,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif record_status == 400 and record_result.get("sam_next_question"):
         reply = record_result["sam_next_question"]
     elif facts.get("product_type") == "unknown":
-        reply = _sam_intro_options_reply()
+        reply = _sam_intro_options_reply(knowledge)
     elif facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
         reply = "I can help with that. Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
     elif not facts.get("location"):
@@ -432,7 +440,8 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif not facts.get("timing"):
         reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
     elif not facts.get("payment_method"):
-        reply = "For this meat pilot we are using EFT only, so the reference and payment trail stay clean. Is EFT fine for the deposit and final balance?"
+        rule = meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For this meat pilot we are using EFT only so the reference and payment trail stay clean."
+        reply = f"{rule} Is EFT fine for the deposit and final balance?"
     else:
         reply = (
             "Thanks, I have noted your pork interest for the farm to review. "
@@ -665,10 +674,16 @@ def _cut_menu_reply(message, facts):
     )
 
 
-def _sam_intro_options_reply():
+def _sam_intro_options_reply(knowledge=None):
+    profile = public_profile(knowledge or {})
+    menu = product_menu_text(knowledge or {})
+    intro = profile.get("short_intro") or "Hi, I am Sam from Amadeus Farm."
+    story = profile.get("one_line_story") or "I can help you find the right farm sales path."
+    if not menu:
+        menu = "Pork meat sales, live pig sales, or farm information."
     return (
-        "Hi, I am Sam from Amadeus Farm. I can help with pork meat sales, live pig sales, or basic farm questions. "
-        "For pork preorders, the main options are half carcass, full carcass, custom cuts, or assisted slaughter. "
+        f"{intro} {story} "
+        f"I can help with {menu}. "
         "Tell me what you are looking for and I will guide you from there."
     )
 
@@ -685,19 +700,22 @@ def _non_pork_guard_reply(message):
     )
 
 
-def _frustration_guard_reply(message, facts):
+def _frustration_guard_reply(message, facts, knowledge=None):
     text = str(message or "").lower()
     if not re.search(r"\b(annoying|frustrated|frustrating|upset|irritated|nobody|shit|fuck|ridiculous|stupid)\b", text):
         return ""
+    profile = public_profile(knowledge or {})
+    acknowledgement = ((knowledge or {}).get("voice") or {}).get("frustration_acknowledgement") or "I hear you. I will keep this practical."
+    farm_name = profile.get("farm_name") or "Amadeus Farm"
     if not re.search(r"\b(price|cost|quote|invoice|how much)\b", text):
         if facts.get("product_type") != "unknown":
             next_step = _next_fact_question(facts)
             return (
-                "I hear you. I am Sam from Amadeus Farm, and I will keep this practical. "
+                f"{acknowledgement} I am Sam from {farm_name}. "
                 f"{next_step}"
             )
         return (
-            "I hear you. I am Sam from Amadeus Farm, and I will keep this practical. "
+            f"{acknowledgement} I am Sam from {farm_name}. "
             "Are you looking for pork meat sales, live pig sales, or just general farm information?"
         )
     if facts.get("product_type") == "unknown":
@@ -712,17 +730,19 @@ def _frustration_guard_reply(message, facts):
     )
 
 
-def _deposit_question_reply(message, facts):
+def _deposit_question_reply(message, facts, knowledge=None):
     text = str(message or "").lower()
     if not re.search(r"\b(why|what|how)\b.*\b(deposit|pay|payment)\b|\bdeposit\b.*\b(why|for what|needed)\b", text):
         return ""
+    meat = meat_sales_knowledge(knowledge or {})
+    explanation = meat.get("deposit_explanation") or "The deposit is there to hold your place in the preorder run and to help the farm plan properly."
     return (
-        "The deposit is there to hold your place in the preorder run and to help the farm plan slaughter, cutting, and delivery properly. "
+        f"{explanation} "
         "It is still not treated as a final booking until the money reflects in the farm account and the farm confirms the available run."
     )
 
 
-def _payment_state_reply(message, facts, prior_context):
+def _payment_state_reply(message, facts, prior_context, knowledge=None):
     text = str(message or "").lower()
     latest_event = _clean((prior_context or {}).get("latest_event"), 100)
     asks_payment_state = bool(re.search(
@@ -733,8 +753,9 @@ def _payment_state_reply(message, facts, prior_context):
     if not asks_payment_state:
         return ""
     if latest_event in {"deposit_followup_needed", "pop_received_unverified", "customer_followup_sent", "estimated_quote_chatwoot_accepted"} or facts.get("product_type") != "unknown":
+        pop_explanation = meat_sales_knowledge(knowledge or {}).get("pop_explanation") or "POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account."
         return (
-            "Thanks for checking. POP is useful, but I cannot mark the deposit as received until the money reflects in the farm account. "
+            f"Thanks for checking. {pop_explanation} "
             "Once the farm confirms the bank receipt, the booking can move to the carcass and delivery planning steps."
         )
     return ""

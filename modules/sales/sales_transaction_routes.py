@@ -69,6 +69,7 @@ from modules.sales.sam_meat_runtime import (
     handle_sam_meat_chatwoot_inbound,
     sam_meat_webhook_policy,
 )
+from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.conversation_learning import (
     build_owner_review_learning_event,
     list_sales_conversation_learning_events,
@@ -211,6 +212,11 @@ def sam_meat_chatwoot_policy():
         "success": True,
         "policy": sam_meat_webhook_policy(),
     }), 200
+
+
+@sales_bp.route("/sales/sam-farm-knowledge", methods=["GET"])
+def sam_farm_knowledge_route():
+    return jsonify(load_sam_farm_knowledge()), 200
 
 
 @sales_bp.route("/sales/meat-documents/policy", methods=["GET"])

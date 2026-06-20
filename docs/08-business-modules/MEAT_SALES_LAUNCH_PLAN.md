@@ -18,6 +18,7 @@ Meat Sales is backend-native enough for private pilot testing:
 - The Sam Meat sales stress-test pack covers 40 realistic buyer scenarios and now passes launch-blocking assertions with 0 known improvement opportunities. Report: `MEAT_SALES_STRESS_TEST_REPORT.md`.
 - Sam Meat now captures buyer budget amount, target packed kg, and match preference for later Butcher matching.
 - Sam Meat now finds active conversation context through a direct backend lookup, merges append-only Sam fact events, handles common Afrikaans/typo/map-link inputs, and respects explicit WhatsApp service-window state.
+- Sam now reads an editable farm knowledge pack from `config/sam_farm_knowledge.json`; owner guidance is in `SAM_FARM_KNOWLEDGE_PACK.md`.
 - Beacon now has private media-library metadata/API foundation, a Farm App review UI, approved-media campaign draft selection, and owner-review publish packet preparation for future approved photo/video use.
 - Customer sends and third-party informs remain gated by env flags and exact approval where required.
 - Meat sales document rules are now fixed for the pilot: Amadeus is VAT registered, VAT number `4510286224`, meat prices are entered and shown as VAT-inclusive, the pilot is EFT-only, deposits are 50% of the estimated VAT-inclusive total for standard carcass orders, and final invoices use actual packed weight. Cash is not part of the Sam Meat pilot path.

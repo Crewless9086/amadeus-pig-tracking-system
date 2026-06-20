@@ -240,7 +240,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertEqual(facts["product_type"], "unknown")
         self.assertIn("pork orders only", decision["reply_text"])
-        self.assertIn("half carcass", decision["reply_text"])
+        self.assertIn("half carcass", decision["reply_text"].lower())
 
     def test_frustrated_price_request_gets_soft_acknowledgement_without_price(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -285,8 +285,8 @@ class SamMeatRuntimeTests(unittest.TestCase):
         )
 
         self.assertIn("I am Sam from Amadeus Farm", decision["reply_text"])
-        self.assertIn("half carcass", decision["reply_text"])
-        self.assertIn("live pig sales", decision["reply_text"])
+        self.assertIn("half carcass", decision["reply_text"].lower())
+        self.assertIn("live pig sales", decision["reply_text"].lower())
 
     def test_frustrated_customer_gets_human_acknowledgement_and_next_step(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -317,7 +317,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             prior_context={"lead_id": "OSK-SALES-LEAD-TEST", "latest_event": "estimated_quote_chatwoot_accepted"},
         )
 
-        self.assertIn("hold your place", decision["reply_text"])
+        self.assertIn("place in the preorder run", decision["reply_text"])
         self.assertIn("money reflects", decision["reply_text"])
         self.assertNotIn("Is EFT fine", decision["reply_text"])
 
