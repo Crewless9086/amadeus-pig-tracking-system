@@ -15,6 +15,7 @@ This document is the live operational truth of the project. It summarizes what i
 | Live order system | Stabilizing | Reject, customer cancel, first-turn create-with-lines, payment method capture, send-for-approval, lifecycle guards, auto-reservation, outbound notifications, quote/invoice generation, and document delivery are implemented and have been live-verified through the documented phases. |
 | Web app | Operational slices improving | Orders list/detail usability is complete through Phase 6.2. Breeding board Phase 8D is live-verified on a real repeat-service case. |
 | Pork sales launch rail | Private money-test build | Sam records meat preorder facts, delivery details, buyer budget, target packed kg, match preference, payment preference, and customer context into append-only sales/fulfilment rails. Farm App can use price-book estimates and Butcher match recommendations. Carcass reservation, deposit gate, abattoir/butcher instruction drafts, exact draft approval, env-gated instruction send, exception review, fulfilment timeline, driver route, exact customer journey approval, direct Chatwoot/webhook journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, the 40-scenario stress-test pack, Beacon's draft-only meat launch campaign packet, append-only sales conversation learning, Beacon media-library metadata/API foundation, private Storage smoke, Farm App Beacon Media Review UI, approved-media campaign draft selection, owner-review campaign publish packet preparation, manual public post evidence, performance/boost recommendation packet, and owner-approved Facebook Page text-post gate are built. Next priority is deploy/env/live post smoke. |
+| Farm-wide calendar | Planned | Prompt 1-4 planning is complete in `docs/08-business-modules/FARM_CALENDAR_PLAN.md`. Next build is Supabase manual calendar events, backend aggregation, and a clean month UI with weather-aware day tiles and source links. |
 | Media workflow | Disabled | `1.3` is official but must remain disabled until fixed and tested. |
 
 ## Completed Documentation Work
@@ -43,6 +44,12 @@ Current money-first plan:
 - Active phase: Phase 11W - Beacon read-only Meta/Facebook performance import after live post smoke.
 - Last completed phase: 11V Beacon owner-approved Facebook Page text-post gate.
 - Other sales streams remain planned: live pig sales continue as-is, slaughter/abattoir remains the fallback outlet, assisted slaughter/custom cuts come after standard meat preorder flow is stable.
+
+Current operations-app plan:
+
+- Source: `docs/08-business-modules/FARM_CALENDAR_PLAN.md`.
+- Active phase: Phase 12A - Farm-wide calendar backend foundation.
+- Goal: one calendar surface that combines manual Supabase reminders, important system-generated farm dates, and weather context without turning the web app into another long workbench.
 
 ## Known Critical Order Gaps
 

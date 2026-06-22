@@ -29,6 +29,39 @@ Orders are the profit section. They must be reliable before the system grows.
 | Phase 10: Farm Operating System Integration | 10.1 Complete; 10.2A Verified; 10.2B/C Dry-Run Complete; 10.2D Applied And Verified; 10.2E Complete; 10.2F Deployed And Verified; 10.2G Planned; 10.2H Verified; 10.2I Live-Verified; 10.3J4 Live-Verified; 10.3K Live-Verified; 10.3L4 Live-Verified And Cleaned; 10.3N Live-Verified And Cleaned; 10.3O Planned; 10.3P Deployed And Verified; 10.3Q Live-Verified; 10.3R Deployed And Verified; 10.3S Dry-Run Complete; 10.3T Applied And Verified; 10.3U/V Live-Verified; 10.3W8 Scheduled Run Verified; Farm Home Dashboard Live-Verified; 10.6A Owner-Tested; 10.6B Owner-Tested; 10.6C Local Ready; 10.6D Local Ready; 10.6E Local Ready; 10.6F Local Ready; 10.6G Local Ready; 10.6H Local Ready; 10.6I Local Ready; 10.6J Owner-Tested; 10.6K Local Ready; 10.6L Owner-Tested; 10.6M Owner-Tested; 10.6N Owner-Tested; 10.6O Local Ready; 10.6P Local Ready; 10.6Q Local Ready; 10.6R Local Ready; 10.6S Local Ready; 10.6T Local Ready; 10.6U Local Ready; 10.6V Local Ready; 10.6W Local Ready; 10.6X Local Ready; 10.6Y Local Ready; 10.6Z Local Ready | Next: browser-test spoken stop commands, inspect the local Voice Session log, smoke the expanded read-only tool set, verify Available Checks and Safety Status panels from the local browser, open the Review Packet locally, test unsupported action refusal/mixed action safety notes, and confirm traces carry a stable kiosk session ID. |
 | Phase 10.7: Oom Sakkie Specialist Agent Roster | 10.7G Local Ready | Planned-only specialist manifests, advisory trace-review endpoint, user-action-triggered kiosk advisor panel, combined advisor trace reader, and advisor SQL hardening exist. No live delegation, autonomous loops, write tools, auto-marking, or second user-facing brain. |
 | Phase 11: Pork Sales Business Module | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass ops, deposit gate, instruction drafts/sends, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, Sam Meat pressure hardening, structured buyer-preference capture, EFT-only VAT-inclusive meat document packet/PDF generation, gated Chatwoot estimated-quote attachment send/resend, stale WhatsApp-window/template-required protection, a token-gated Chatwoot/WhatsApp delivery-status consumer, machine-readable WhatsApp template pack, formal POP-vs-bank payment gate, pilot-readiness dashboard, and Beacon approved-image Facebook launch packet | Next: create and approve the pilot WhatsApp templates in `docs/08-business-modules/MEAT_SALES_WHATSAPP_TEMPLATES.md`, configure the template envs, approve at least one Beacon image for public use, then run one small live Facebook post into Sam and watch the pilot-readiness dashboard before boosting. |
+| Phase 12: Farm-Wide Calendar | Prompt 1-4 planning complete; no runtime built yet | Next: build Phase 12A backend foundation from `docs/08-business-modules/FARM_CALENDAR_PLAN.md`, then Phase 12B calendar UI. |
+
+### Phase 12 Planned - Farm-Wide Calendar
+
+Owner direction on 2026-06-22: add one farm-wide calendar in the web application that can show manual tasks/events/reminders, important farm dates, and weather context in a clean month view.
+
+Planning source:
+
+- `docs/08-business-modules/FARM_CALENDAR_PLAN.md`
+
+Required outcome for first implementation:
+
+- Supabase-backed `farm_calendar_events` manual calendar table.
+- Backend `GET /api/calendar/events?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` aggregation endpoint.
+- Manual task/event/reminder create, edit, and delete endpoints.
+- System-generated read-only calendar events from useful breeding, litter, medical, meat sales, fulfilment, meat planning, and weather dates.
+- Backend-owned source links for generated events.
+- `/calendar` month view with weather-aware day tiles, filters, selected-day detail, and manual item controls.
+- Desktop and mobile layouts that follow the PRISMA rules in `planning/Prompts.md`.
+
+Non-goals:
+
+- No notifications.
+- No autonomous agent actions.
+- No customer/public output.
+- No write-back to source farm records from the calendar.
+- No external calendar sync.
+
+Next build:
+
+1. Phase 12A - Calendar Backend Foundation.
+2. Phase 12B - Farm Calendar UI.
+3. Phase 12C - Dashboard Preview.
 
 ### Product Vision Repoint - 2026-06-15
 

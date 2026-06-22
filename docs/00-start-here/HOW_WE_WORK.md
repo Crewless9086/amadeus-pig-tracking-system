@@ -10,10 +10,10 @@ Edit the lines below so every session starts with clarity.
 
 | Field | Value |
 |--------|--------|
-| **Today's focus** | Deploy/env/live smoke for Phase 11V Beacon Facebook Page post gate |
-| **Status** | Meat Sales private pilot rails are built through Sam intake, price book, Butcher match, carcass reservation, deposit gate, fulfilment, driver route, journey sends, packed-weight reconciliation, final balance, delivery-release gate, Chatwoot sales hygiene, 40-scenario stress-test pack, structured buyer-preference capture, Beacon draft-only launch packet, sales conversation learning evidence, Beacon media-library metadata/API foundation, private Storage smoke, Farm App Beacon Media Review UI, approved-media campaign draft selection, owner-review campaign publish packet preparation, manual public post evidence capture, performance/boost recommendation packets, and owner-approved Facebook Page text-post gate. The Farm App remains the operational surface. |
-| **Current focus** | Add Facebook Page envs and run one live post smoke. Paid boost execution remains locked. |
-| **Current last verified** | **2026-06-18** - Phase 11V Beacon Facebook Page text-post gate disabled-path smoke passed locally. Sam Meat stress pack remains 40/40 launch-blocking scenarios. |
+| **Today's focus** | Phase 12A Farm-wide Calendar backend foundation |
+| **Status** | Meat Sales private pilot rails remain built through the current Sam/Butcher/Beacon gates. Calendar planning is now complete through Prompt 4 and logged in `docs/08-business-modules/FARM_CALENDAR_PLAN.md`. The Farm App remains the operational surface. |
+| **Current focus** | Build Supabase-backed manual calendar events and a backend aggregation endpoint before the `/calendar` UI. |
+| **Current last verified** | **2026-06-22** - Farm-wide calendar Prompt 1-4 plan logged. No runtime built yet. |
 | **Last verified** | **2026-05-30** - Herd dashboard count audit owner-verified after deploy. |
 
 **Rule:** Do **not** start a later phase because it feels urgent, unless **`NEXT_STEPS.md`** is officially updated to reprioritise. Cursor should default to **the next incomplete required outcome** in order.
