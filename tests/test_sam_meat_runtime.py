@@ -210,6 +210,61 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertIn("delivery street address", decision["reply_text"])
         self.assertNotIn("Hi, I am Sam", decision["reply_text"])
 
+    def test_address_with_street_name_before_number_is_captured_after_delivery_prompt(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Test street 12, Riversdale, 6670\n\nBlue gate, next to purple house",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        prior_context = {
+            "lead_id": "OSK-SALES-LEAD-1818",
+            "interest": {
+                "product_type": "custom_cut",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "delivery_or_collection": "delivery",
+                "sam_intake_lane": "meat_preorder",
+            },
+        }
+        facts = sam_meat_runtime._merge_prior_context(facts, prior_context)
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-1818"},
+            201,
+            prior_context=prior_context,
+        )
+
+        self.assertEqual(facts["delivery_address_line_1"], "Test street 12")
+        self.assertIn("When would you ideally like", decision["reply_text"])
+        self.assertNotIn("delivery street address", decision["reply_text"])
+
+    def test_multiline_address_with_common_street_typo_is_captured(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Test Steer 12,\nRiversdale,\n6670\n\nBlue gate, next to the purple house",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        prior_context = {
+            "lead_id": "OSK-SALES-LEAD-1818",
+            "interest": {
+                "product_type": "custom_cut",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "delivery_or_collection": "delivery",
+                "sam_intake_lane": "meat_preorder",
+            },
+        }
+        facts = sam_meat_runtime._merge_prior_context(facts, prior_context)
+
+        self.assertEqual(facts["delivery_address_line_1"], "Test Steer 12")
+        self.assertEqual(facts["delivery_town"], "Riversdale")
+
+    def test_set_selection_without_carcass_context_uses_cut_set_pack_lane(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="Set A would work"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["product_type"], "custom_cut")
+        self.assertEqual(facts["cut_set"], "Set A")
+
     def test_extract_meat_facts_handles_common_typos_without_llm(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Hlaf carcas set a rivrsdale colect eft nxt week",

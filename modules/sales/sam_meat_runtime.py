@@ -873,6 +873,12 @@ def _deterministic_extract(message):
     match = re.search(r"\bset\s*([abcd])\b", normalized)
     if match:
         cut_set = f"Set {match.group(1).upper()}"
+    if (
+        cut_set
+        and product_type == "unknown"
+        and re.search(r"\b(i\s+want|want|would\s+work|works|go\s+with|take|choose|note|yes|that\s+one)\b", normalized)
+    ):
+        product_type = "custom_cut"
 
     location = ""
     for place in ("Riversdale", "Albertinia"):
@@ -914,10 +920,8 @@ def _deterministic_extract(message):
     )
     if address_match:
         delivery_address_line_1 = address_match.group(1).strip(" .,:;-")
-    elif delivery_or_collection == "delivery":
-        simple_address = re.search(r"\b(\d{1,5}\s+[A-Za-z][A-Za-z0-9 '\-]{2,80})", text)
-        if simple_address:
-            delivery_address_line_1 = simple_address.group(1).strip(" .,:;-")
+    else:
+        delivery_address_line_1 = _delivery_address_from_text(text)
     maps_location = _maps_location_from_text(text)
     if delivery_or_collection == "delivery" and not delivery_address_line_1 and maps_location:
         delivery_address_line_1 = maps_location.get("place_name") or "Shared Google Maps location"
@@ -1730,6 +1734,41 @@ def _maps_location_from_text(value):
         "longitude": longitude,
         "place_name": "Shared Google Maps location",
     }
+
+
+def _delivery_address_from_text(value):
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    lines = [line.strip(" .,:;-") for line in re.split(r"[\r\n]+", text) if line.strip(" .,:;-")]
+    candidates = []
+    street_words = r"(?:street|straat|road|rd|avenue|ave|lane|ln|farm|plot|smallholding|steer)"
+    for line in lines or [text]:
+        lowered = line.lower()
+        if _town_from_text(line) and not re.search(r"\d", line):
+            continue
+        if re.fullmatch(r"\d{4,6}", line.strip()):
+            continue
+        if re.search(r"\b(?:blue|green|red|white|black|purple)\s+gate\b|\bnext\s+to\b|\bdirections?\b", lowered):
+            continue
+        if re.search(rf"\b\d{{1,5}}\s+[A-Za-z][A-Za-z0-9 '\-]{{2,80}}\b", line):
+            candidates.append(line)
+            continue
+        if re.search(rf"\b[A-Za-z][A-Za-z0-9 '\-]{{0,60}}?\s+{street_words}\s+\d{{1,5}}\b", line, re.I):
+            candidates.append(line)
+            continue
+        if re.search(rf"\b[A-Za-z][A-Za-z0-9 '\-]{{2,80}}\s+\d{{1,5}}\b", line) and len(line.split()) <= 6:
+            candidates.append(line)
+    if candidates:
+        return candidates[0].strip(" .,:;-")
+    compact = " ".join(lines)
+    street_name_first = re.search(rf"\b([A-Za-z][A-Za-z0-9 '\-]{{0,60}}?\s+{street_words}\s+\d{{1,5}})\b", compact, re.I)
+    if street_name_first:
+        return street_name_first.group(1).strip(" .,:;-")
+    number_first = re.search(rf"\b(\d{{1,5}}\s+[A-Za-z][A-Za-z0-9 '\-]{{2,80}})\b", compact)
+    if number_first and not re.match(r"\d{4,6}\s+\w+\s+gate\b", number_first.group(1), re.I):
+        return number_first.group(1).strip(" .,:;-")
+    return ""
 
 
 def _town_from_text(value):

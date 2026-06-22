@@ -173,6 +173,28 @@ STRESS_SCENARIOS = [
         "expected_attrs": {"meat_product_type": "half_carcass", "meat_cut_set": "Set B", "meat_delivery_mode": "delivery", "meat_next_gate": "collect_missing_facts"},
     },
     {
+        "id": "street_name_first_address_after_delivery_prompt",
+        "category": "context_memory",
+        "message": "Test street 12, Riversdale, 6670\n\nBlue gate, next to purple house",
+        "context": {
+            "prior_context": {
+                "lead_id": "OSK-SALES-LEAD-STRESS",
+                "interest": {
+                    "product_type": "custom_cut",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "sam_intake_lane": "meat_preorder",
+                },
+            },
+        },
+        "expected_facts": {"product_type": "custom_cut", "cut_set": "Set A", "delivery_address_line_1": "Test street 12"},
+        "expected_reply_any": ["When would you ideally like"],
+        "forbidden_reply_any": ["delivery street address", "Hi, I am Sam"],
+        "expected_labels": ["meat_lead", "custom_cut", "set_a", "delivery", "needs_followup"],
+        "expected_attrs": {"meat_product_type": "custom_cut", "meat_cut_set": "Set A", "meat_delivery_mode": "delivery", "meat_next_gate": "collect_missing_facts"},
+    },
+    {
         "id": "price_direct_question",
         "category": "price_objection",
         "message": "How much is a half carcass Set A in Riversdale?",
