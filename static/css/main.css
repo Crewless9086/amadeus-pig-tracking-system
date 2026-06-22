@@ -1411,6 +1411,42 @@ button:disabled {
   margin-top: 0;
 }
 
+.litter-inline-edit-toolbar {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.inline-edit-controls {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(160px, 1.2fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.inline-edit-controls label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-soft);
+}
+
+.inline-edit-controls input,
+.piglet-tag-input {
+  width: 100%;
+  min-height: 38px;
+}
+
+.piglet-tag-input {
+  max-width: 130px;
+  font-weight: 800;
+}
+
 .litter-piglet-table th,
 .litter-piglet-table td {
   padding: 11px 12px;
@@ -1433,6 +1469,16 @@ button:disabled {
   min-height: 32px;
   padding: 6px 10px;
   text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .inline-edit-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .piglet-tag-input {
+    max-width: none;
+  }
 }
 
 .pig-list-meta {

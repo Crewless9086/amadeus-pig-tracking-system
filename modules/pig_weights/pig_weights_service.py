@@ -2290,6 +2290,7 @@ def _append_tag_assignment_note(existing_notes, action_date, changed_by, notes):
 def assign_litter_piglet_tag_numbers(
     litter_id: str,
     tag_numbers=None,
+    assignments=None,
     action_date_value=None,
     changed_by: str = "web_app",
     notes: str = "",
@@ -2300,16 +2301,17 @@ def assign_litter_piglet_tag_numbers(
     changed_by = to_clean_string(changed_by) or "web_app"
     notes = to_clean_string(notes)
     dry_run = dry_run is True
+    assignments = assignments if isinstance(assignments, list) else []
     tag_numbers = [to_clean_string(tag) for tag in (tag_numbers or []) if to_clean_string(tag)]
 
     errors = []
     if not litter_id:
         errors.append("Litter ID is required.")
-    if not tag_numbers:
+    if not assignments and not tag_numbers:
         errors.append("Enter at least one tag number.")
-    duplicate_input_tags = sorted({tag for tag in tag_numbers if tag_numbers.count(tag) > 1})
-    if duplicate_input_tags:
-        errors.append(f"Duplicate tag number(s) in this request: {', '.join(duplicate_input_tags)}.")
+    duplicate_direct_tags = sorted({tag for tag in tag_numbers if tag_numbers.count(tag) > 1})
+    if duplicate_direct_tags:
+        errors.append(f"Duplicate tag number(s) in this request: {', '.join(duplicate_direct_tags)}.")
     if errors:
         return {"success": False, "errors": errors}, 400
 
@@ -2330,6 +2332,11 @@ def assign_litter_piglet_tag_numbers(
         row for row in active_litter_piglets
         if not to_clean_string(row.get("Tag_Number", ""))
     ]
+    untagged_by_id = {
+        to_clean_string(row.get(columns["pig_id"], "")): row
+        for row in untagged_piglets
+        if to_clean_string(row.get(columns["pig_id"], ""))
+    }
 
     if not active_litter_piglets:
         return {
@@ -2337,17 +2344,59 @@ def assign_litter_piglet_tag_numbers(
             "errors": ["No active on-farm piglets were found for this litter."],
             "litter_id": litter_id,
         }, 409
-    if len(tag_numbers) != len(untagged_piglets):
+
+    if assignments:
+        assignment_map = {}
+        unknown_pig_ids = []
+        for assignment in assignments:
+            if not isinstance(assignment, dict):
+                continue
+            pig_id = to_clean_string(assignment.get("pig_id", ""))
+            tag_number = to_clean_string(assignment.get("tag_number", ""))
+            if not pig_id and not tag_number:
+                continue
+            if pig_id not in untagged_by_id:
+                unknown_pig_ids.append(pig_id or "(blank)")
+                continue
+            if tag_number:
+                assignment_map[pig_id] = tag_number
+        if unknown_pig_ids:
+            return {
+                "success": False,
+                "errors": [f"These piglet rows are not active untagged piglets in this litter: {', '.join(unknown_pig_ids)}."],
+                "litter_id": litter_id,
+            }, 409
+        missing_pig_ids = [pig_id for pig_id in untagged_by_id if pig_id not in assignment_map]
+        if missing_pig_ids:
+            return {
+                "success": False,
+                "errors": [f"Enter tag numbers for every active untagged piglet: {', '.join(missing_pig_ids)}."],
+                "litter_id": litter_id,
+                "untagged_piglet_count": len(untagged_piglets),
+            }, 409
+        selected_rows_and_tags = [(row, assignment_map[to_clean_string(row.get(columns["pig_id"], ""))]) for row in untagged_piglets]
+        tag_numbers = [tag for _row, tag in selected_rows_and_tags]
+    else:
+        if len(tag_numbers) != len(untagged_piglets):
+            return {
+                "success": False,
+                "errors": [
+                    f"Enter exactly {len(untagged_piglets)} tag number(s) for the active untagged piglet(s). "
+                    f"You entered {len(tag_numbers)}."
+                ],
+                "litter_id": litter_id,
+                "active_piglet_count": len(active_litter_piglets),
+                "untagged_piglet_count": len(untagged_piglets),
+            }, 409
+        selected_rows_and_tags = list(zip(untagged_piglets, tag_numbers))
+
+    duplicate_input_tags = sorted({tag for tag in tag_numbers if tag_numbers.count(tag) > 1})
+    if duplicate_input_tags:
         return {
             "success": False,
-            "errors": [
-                f"Enter exactly {len(untagged_piglets)} tag number(s) for the active untagged piglet(s). "
-                f"You entered {len(tag_numbers)}."
-            ],
+            "errors": [f"Duplicate tag number(s) in this request: {', '.join(duplicate_input_tags)}."],
             "litter_id": litter_id,
-            "active_piglet_count": len(active_litter_piglets),
-            "untagged_piglet_count": len(untagged_piglets),
-        }, 409
+        }, 400
 
     existing_tags = {
         to_clean_string(row.get("Tag_Number", ""))
@@ -2366,7 +2415,7 @@ def assign_litter_piglet_tag_numbers(
     today = format_date_for_sheet(datetime.now().date())
     pig_updates = {}
     selected_piglets = []
-    for row, tag_number in zip(untagged_piglets, tag_numbers):
+    for row, tag_number in selected_rows_and_tags:
         pig_id = to_clean_string(row.get(columns["pig_id"], ""))
         pig_updates[pig_id] = {
             "Tag_Number": tag_number,

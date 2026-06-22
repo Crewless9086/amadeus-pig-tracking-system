@@ -227,6 +227,7 @@ def assign_litter_profile_piglet_tag_numbers(litter_id: str, payload: dict):
     return assign_litter_piglet_tag_numbers(
         litter_id=litter_id,
         tag_numbers=payload.get("tag_numbers", []),
+        assignments=payload.get("assignments", []),
         action_date_value=payload.get("action_date", None),
         changed_by=payload.get("changed_by", "web_app"),
         notes=payload.get("notes", ""),

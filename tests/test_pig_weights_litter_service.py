@@ -964,6 +964,56 @@ class PigLifecycleOutcomeTests(unittest.TestCase):
         self.assertEqual(update_map["PIG-1"]["Tag_Number"], "101")
         self.assertEqual(update_map["PIG-2"]["Tag_Number"], "102")
 
+    def test_assign_litter_piglet_tag_numbers_accepts_explicit_row_assignments(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Female"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Male"},
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+                "LIT-1",
+                assignments=[
+                    {"pig_id": "PIG-1", "tag_number": "201"},
+                    {"pig_id": "PIG-2", "tag_number": "202"},
+                ],
+                action_date_value="2026-06-22",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["selected_piglets"][0]["pig_id"], "PIG-1")
+        self.assertEqual(result["selected_piglets"][0]["tag_number"], "201")
+        self.assertEqual(result["selected_piglets"][1]["pig_id"], "PIG-2")
+        self.assertEqual(result["selected_piglets"][1]["tag_number"], "202")
+        update_pigs.assert_not_called()
+
+    def test_assign_litter_piglet_tag_numbers_blocks_missing_inline_assignment(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+                "LIT-1",
+                assignments=[
+                    {"pig_id": "PIG-1", "tag_number": "201"},
+                    {"pig_id": "PIG-2", "tag_number": ""},
+                ],
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("every active untagged piglet", result["errors"][0])
+        update_pigs.assert_not_called()
+
     def test_assign_litter_piglet_tag_numbers_blocks_wrong_count(self):
         pig_rows = [
             {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},

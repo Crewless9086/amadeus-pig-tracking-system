@@ -42,12 +42,10 @@ const sexCountNotes = document.getElementById("sex_count_notes");
 const sexCountPreview = document.getElementById("sex_count_preview");
 const sexCountPreviewButton = document.getElementById("sex_count_preview_button");
 const sexCountApplyButton = document.getElementById("sex_count_apply_button");
-const tagNumbersPanel = document.getElementById("litter_tag_numbers_panel");
 const tagNumbersForm = document.getElementById("tag_numbers_form");
 const tagNumbersText = document.getElementById("tag_numbers_text");
 const tagNumbersDate = document.getElementById("tag_numbers_date");
 const tagNumbersRecordedBy = document.getElementById("tag_numbers_recorded_by");
-const tagNumbersInput = document.getElementById("tag_numbers_input");
 const tagNumbersNotes = document.getElementById("tag_numbers_notes");
 const tagNumbersPreview = document.getElementById("tag_numbers_preview");
 const tagNumbersPreviewButton = document.getElementById("tag_numbers_preview_button");
@@ -636,18 +634,14 @@ function renderTagNumbersPanel(litter) {
   const availability = manualActionAvailability(litter);
   const attentionAction = ((litter.attention || {}).action_type || "") === "assign_tag_numbers";
   const showPanel = availability.canAssignTagNumbers && (manualActionsExpanded || attentionAction);
-  const untaggedPiglets = (litter.piglets || [])
-    .filter((piglet) => piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number)
-    .sort((left, right) => `${left.sex || ""}|${left.pig_id || ""}`.localeCompare(`${right.sex || ""}|${right.pig_id || ""}`));
-  if (tagNumbersPanel) {
-    tagNumbersPanel.classList.toggle("hidden", !showPanel);
+  if (tagNumbersForm) {
+    tagNumbersForm.classList.toggle("hidden", !showPanel);
   }
   if (tagNumbersDate && !tagNumbersDate.value) {
     tagNumbersDate.value = todayIsoDate();
   }
   if (tagNumbersText) {
-    const order = untaggedPiglets.map((piglet, index) => `${index + 1}. ${piglet.pig_id || "-"}`).join("  ");
-    tagNumbersText.textContent = `Enter exactly ${availability.activeUntaggedCount} tag number${availability.activeUntaggedCount === 1 ? "" : "s"}, one per line. Assignment order: ${order}.`;
+    tagNumbersText.textContent = `Type tags directly in the ${availability.activeUntaggedCount} editable piglet row${availability.activeUntaggedCount === 1 ? "" : "s"}, then preview before saving.`;
   }
 }
 
@@ -764,13 +758,14 @@ function setSexCountSubmitting(isSubmitting, mode = "preview") {
 }
 
 function tagNumbersPayload(dryRun) {
-  const tagNumbers = String(tagNumbersInput.value || "")
-    .split(/\r?\n|,/)
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const assignments = Array.from(document.querySelectorAll(".piglet-tag-input"))
+    .map((input) => ({
+      pig_id: input.dataset.pigId || "",
+      tag_number: input.value.trim(),
+    }));
   return {
     action_date: tagNumbersDate.value,
-    tag_numbers: tagNumbers,
+    assignments,
     changed_by: tagNumbersRecordedBy.value || "web_app",
     notes: tagNumbersNotes.value,
     dry_run: dryRun,
@@ -831,8 +826,9 @@ async function previewTagNumbers() {
     showLitterMessage("Choose an action date before previewing.", "error");
     return;
   }
-  if (!tagNumbersPayload(true).tag_numbers.length) {
-    showLitterMessage("Enter tag numbers before previewing.", "error");
+  const payload = tagNumbersPayload(true);
+  if (!payload.assignments.some((assignment) => assignment.tag_number)) {
+    showLitterMessage("Enter tag numbers in the piglet table before previewing.", "error");
     return;
   }
 
@@ -842,7 +838,7 @@ async function previewTagNumbers() {
     const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/tag-numbers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tagNumbersPayload(true)),
+      body: JSON.stringify(payload),
     });
     const data = await response.json();
     if (!response.ok || !data.success) {
@@ -882,7 +878,6 @@ async function submitTagNumbers(event) {
       throw new Error((data.errors || [data.error || "Could not save tag numbers."]).join(" "));
     }
     resetTagNumbersPreview();
-    tagNumbersInput.value = "";
     showLitterMessage(data.message || "Tag numbers saved.", "success");
     await loadLitterDetail({ keepMessage: true });
   } catch (error) {
@@ -1148,15 +1143,18 @@ function buildPigletTable(piglets) {
   const litterId = getLitterIdFromUrl();
   const rows = piglets.map((piglet) => {
     const profileHref = pigProfileHref(piglet.pig_id, litterId);
-    const tagOrId = piglet.tag_number || piglet.pig_id;
+    const canEditTag = piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number;
+    const tagCell = canEditTag
+      ? `<input class="piglet-tag-input" data-pig-id="${escapeHtml(piglet.pig_id || "")}" type="text" placeholder="Add tag" aria-label="Tag number for ${escapeHtml(piglet.pig_id || "piglet")}" />`
+      : `<strong>${escapeHtml(piglet.tag_number || "-")}</strong>`;
     return `
       <tr class="litter-piglet-row" data-pig-profile="${profileHref}" tabindex="0">
         <td>
-          <strong>${escapeHtml(tagOrId || "-")}</strong>
-          <span class="table-subtext">${escapeHtml(piglet.pig_id || "-")}</span>
+          <strong>${escapeHtml(piglet.pig_id || "-")}</strong>
+          <span class="table-subtext">${escapeHtml(piglet.calculated_stage || "-")}</span>
         </td>
+        <td>${tagCell}</td>
         <td>${escapeHtml(piglet.sex || "-")}</td>
-        <td>${escapeHtml(piglet.calculated_stage || "-")}</td>
         <td>${escapeHtml(pigletWeightText(piglet))}</td>
         <td>${escapeHtml(piglet.status || "-")}</td>
         <td>${escapeHtml(piglet.on_farm || "-")}</td>
@@ -1172,9 +1170,9 @@ function buildPigletTable(piglets) {
       <table class="simple-table">
         <thead>
           <tr>
-            <th>Piglet</th>
+            <th>Pig ID</th>
+            <th>Tag Number</th>
             <th>Sex</th>
-            <th>Stage</th>
             <th>Weight</th>
             <th>Status</th>
             <th>On Farm</th>
@@ -1192,7 +1190,7 @@ function buildPigletTable(piglets) {
 function wirePigletTableRows() {
   document.querySelectorAll("[data-pig-profile]").forEach((row) => {
     row.addEventListener("click", (event) => {
-      if (event.target.closest("a")) return;
+      if (event.target.closest("a, input, button, select, textarea")) return;
       window.location.href = row.dataset.pigProfile;
     });
     row.addEventListener("keydown", (event) => {
@@ -1201,6 +1199,10 @@ function wirePigletTableRows() {
         window.location.href = row.dataset.pigProfile;
       }
     });
+  });
+  document.querySelectorAll(".piglet-tag-input").forEach((input) => {
+    input.addEventListener("input", resetTagNumbersPreview);
+    input.addEventListener("change", resetTagNumbersPreview);
   });
 }
 
@@ -1335,7 +1337,6 @@ manualActionsToggle.addEventListener("click", () => {
 });
 [
   tagNumbersDate,
-  tagNumbersInput,
   tagNumbersNotes,
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetTagNumbersPreview);
