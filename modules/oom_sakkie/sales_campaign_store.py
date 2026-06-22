@@ -557,7 +557,17 @@ def record_sales_lead(payload, database_url=None):
                         %(writes_farm_data)s,
                         now()
                     )
-                    on conflict (lead_id) do nothing
+                    on conflict (lead_id) do update set
+                        status = excluded.status,
+                        lead_label = excluded.lead_label,
+                        contact_label = excluded.contact_label,
+                        channel = excluded.channel,
+                        chatwoot_conversation_id = excluded.chatwoot_conversation_id,
+                        whatsapp_window_state = excluded.whatsapp_window_state,
+                        last_inbound_at = excluded.last_inbound_at,
+                        opt_in_state = excluded.opt_in_state,
+                        interest_json = excluded.interest_json,
+                        next_owner_action = excluded.next_owner_action
                     returning lead_id
                     """,
                     params,
@@ -892,13 +902,13 @@ def build_sam_meat_intake_lead_payload(payload):
     missing_core = [
         key for key, value in {
             "customer_name": customer_name,
-            "product_type": product_type if product_type != "unknown" else "",
-            "location": location,
         }.items()
         if not value
     ]
     missing_before_money_path = [
         key for key, value in {
+            "product_type": product_type if product_type != "unknown" else "",
+            "location": location,
             "cut_set": cut_set,
             "timing": timing,
             "delivery_or_collection": delivery_or_collection,

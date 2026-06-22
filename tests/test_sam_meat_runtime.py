@@ -119,6 +119,15 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(facts["payment_method"], "EFT")
         self.assertFalse(facts["llm_used"])
 
+    def test_extract_meat_facts_handles_half_pig_customer_wording_without_llm(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="I want half pig?",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+
+        self.assertEqual(facts["product_type"], "half_carcass")
+        self.assertFalse(facts["llm_used"])
+
     def test_extract_meat_facts_handles_common_typos_without_llm(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Hlaf carcas set a rivrsdale colect eft nxt week",
@@ -322,7 +331,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertIn("delivery street address", decision["reply_text"])
 
-    def test_vague_intro_has_sam_and_amadeus_voice(self):
+    def test_vague_pork_options_reply_is_specific_and_not_generic_intro(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Hi Sam, I want pork for my freezer. What options do you have?",
         ))
@@ -334,9 +343,10 @@ class SamMeatRuntimeTests(unittest.TestCase):
             201,
         )
 
-        self.assertIn("I am Sam from Amadeus Farm", decision["reply_text"])
+        self.assertIn("pork for freezer orders", decision["reply_text"].lower())
         self.assertIn("half carcass", decision["reply_text"].lower())
-        self.assertIn("live pig sales", decision["reply_text"].lower())
+        self.assertIn("full carcass", decision["reply_text"].lower())
+        self.assertNotIn("live pig sales", decision["reply_text"].lower())
 
     def test_frustrated_customer_gets_human_acknowledgement_and_next_step(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -965,6 +975,38 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(result["agent_decision"]["status"], "agent_v2_no_decision")
         self.assertTrue(result["sam_decision"]["should_reply"])
         self.assertIn("cut set", result["sam_decision"]["reply_text"].lower())
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_vague_meat_interest_does_not_repeat_generic_intro_when_agent_v2_empty(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "active_sales_lead_by_conversation_not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-VAGUE",
+            "contract": {"missing_before_money_path": ["product_type", "location"]},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        result, _status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="I want pig meat"),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_decider=Mock(return_value={}),
+        )
+
+        reply = result["sam_decision"]["reply_text"]
+        self.assertIn("pork", reply.lower())
+        self.assertIn("half carcass", reply.lower())
+        self.assertNotIn("Tell me what you are looking for and I will guide you from there", reply)
 
     @patch("modules.sales.sam_meat_runtime.record_meat_fulfillment_event")
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")

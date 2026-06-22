@@ -439,6 +439,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     document_send_requested = False
     document_force_resend_requested = False
     quote_or_document_requested = _asks_money_or_document(inbound.get("content"))
+    vague_meat_interest_reply = _vague_meat_interest_reply(inbound.get("content"), facts, knowledge)
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts, knowledge)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
@@ -465,6 +466,9 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         should_reply = True
     elif price_or_document_reply:
         reply = price_or_document_reply
+        should_reply = True
+    elif vague_meat_interest_reply:
+        reply = vague_meat_interest_reply
         should_reply = True
     elif agent_wants_no_reply:
         reply = ""
@@ -842,7 +846,7 @@ def _deterministic_extract(message):
     lower = text.lower()
     normalized = _normalized_customer_text(text)
     product_type = "unknown"
-    if re.search(r"\bhalf\s+(?:pig\s+)?carcass|half\s+carcase|half\s+pork\b", normalized):
+    if re.search(r"\bhalf\s+(?:pig\s+)?carcass|half\s+carcase|half\s+pork\b|\bhalf\s+pig\b", normalized):
         product_type = "half_carcass"
     elif re.search(r"\bfull\s+(?:pig\s+)?carcass|whole\s+(?:pig|carcass)\b", normalized):
         product_type = "full_carcass"
@@ -955,6 +959,46 @@ def _sam_intro_options_reply(knowledge=None):
         f"I can help with {menu}. "
         "Tell me what you are looking for and I will guide you from there."
     )
+
+
+def _vague_meat_interest_reply(message, facts, knowledge=None):
+    if facts.get("product_type") != "unknown":
+        return ""
+    normalized = _normalized_customer_text(message)
+    if not _meat_interest_detected(normalized):
+        return ""
+    if re.search(r"\bcarcass\b", normalized):
+        return (
+            "Yes, we can help with pork carcass orders. "
+            "Are you thinking half carcass or full carcass?"
+        )
+    if re.search(r"\b(option|options|available|what.*have|what.*sell)\b", normalized):
+        return (
+            "Yes, we do pork for freezer orders. The usual starting points are a half carcass, "
+            "a full carcass, or a cut-set pack like Set A. "
+            "Are you looking for freezer stock, a half carcass, or a smaller cut set?"
+        )
+    if re.search(r"\bdo\s+you\s+sell\b|\bsell\s+meat\b", normalized):
+        return (
+            "Yes, we sell pork from planned farm runs. "
+            "Would you like me to guide you through half carcass, full carcass, or cut-set options?"
+        )
+    if re.search(r"\b(i\s+want|i'?m\s+looking|looking\s+for|need)\b", normalized):
+        return (
+            "Good, I can help with pork for the freezer. "
+            "Should I work around a half carcass, a full carcass, or a cut-set pack?"
+        )
+    return (
+        "I can help with pork meat orders. "
+        "Would you like a half carcass, full carcass, or a cut-set pack?"
+    )
+
+
+def _meat_interest_detected(normalized_text):
+    return bool(re.search(
+        r"\b(pork|pig\s+meat|meat|freezer|carcass|carcase|karkas|vleis|varkvleis)\b",
+        str(normalized_text or "").lower(),
+    ))
 
 
 def _non_pork_guard_reply(message):

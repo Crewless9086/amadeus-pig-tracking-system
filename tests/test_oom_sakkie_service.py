@@ -5851,7 +5851,7 @@ def literal_false_is_allowed():
         self.assertFalse(event_notes["authority"]["creates_order"])
         self.assertFalse(event_notes["authority"]["sends_customer_message"])
 
-    def test_sam_meat_intake_requires_core_fields_before_recording(self):
+    def test_sam_meat_intake_tracks_vague_interest_before_money_path_fields(self):
         lead_payload, contract = build_sam_meat_intake_lead_payload({
             "customer_name": "Jan",
             "product_type": "unknown",
@@ -5859,8 +5859,9 @@ def literal_false_is_allowed():
         })
 
         self.assertEqual(lead_payload["created_by"], "sam_meat_intake")
-        self.assertIn("product_type", contract["missing_core_fields"])
-        self.assertIn("location", contract["missing_core_fields"])
+        self.assertEqual(contract["missing_core_fields"], [])
+        self.assertIn("product_type", contract["missing_before_money_path"])
+        self.assertIn("location", contract["missing_before_money_path"])
         self.assertIn("interested in a half carcass", contract["sam_next_question"])
 
     def test_sales_lead_rejects_invalid_event_type_before_database(self):
@@ -6004,11 +6005,15 @@ def literal_false_is_allowed():
         self.assertFalse(result["calls_chatwoot"])
         self.assertFalse(result["creates_order"])
 
-    def test_sales_lead_insert_remains_append_only_on_conflict(self):
+    def test_sales_lead_conflict_updates_tracking_context_only(self):
         source = Path("modules/oom_sakkie/sales_campaign_store.py").read_text(encoding="utf-8")
 
-        self.assertIn("on conflict (lead_id) do nothing", source)
-        self.assertNotIn("on conflict (lead_id) do update set", source)
+        self.assertIn("on conflict (lead_id) do update set", source)
+        self.assertIn("interest_json = excluded.interest_json", source)
+        self.assertIn("next_owner_action = excluded.next_owner_action", source)
+        self.assertNotIn("sends_customer_message = excluded.sends_customer_message", source)
+        self.assertNotIn("creates_order = excluded.creates_order", source)
+        self.assertNotIn("changes_stock = excluded.changes_stock", source)
         self.assertNotIn("xmax", source)
 
     def test_approve_first_waiting_sales_campaign_returns_unavailable_without_database(self):
