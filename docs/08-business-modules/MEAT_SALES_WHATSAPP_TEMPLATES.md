@@ -1,6 +1,6 @@
 # Meat Sales WhatsApp Templates
 
-Pilot status: not yet created in Meta/WhatsApp Manager.
+Pilot status: created and approved in Meta/WhatsApp Manager on 2026-06-22. Render env check confirmed all five template names are configured.
 
 Purpose: approved templates are needed when the 24-hour WhatsApp customer-service window is closed. Sam must not assume a normal PDF/message was delivered if WhatsApp blocks it. The backend now blocks stale-window document sends and waits for template recovery first.
 
@@ -14,17 +14,22 @@ Purpose: approved templates are needed when the 24-hour WhatsApp customer-servic
 | 4 | `amadeus_meat_delivery_update` | Utility | Delivery route/date update must be sent after the window closes. | `Hi {{1}}, your Amadeus Farm pork delivery update for reference {{2}} is ready. Please reply YES and I will send the latest details.` | `{{1}}` customer first name, `{{2}}` payment reference |
 | 5 | `amadeus_meat_final_invoice_ready` | Utility | Final packed weight/final invoice is ready and the window is closed. | `Hi {{1}}, your final Amadeus Farm pork invoice for reference {{2}} is ready. Please reply YES and I will send it through.` | `{{1}}` customer first name, `{{2}}` payment reference |
 
-## Later Setup Checklist
+## Setup Checklist
 
-- Create the templates in Meta/WhatsApp Manager under the Amadeus WhatsApp account.
+- Templates have been created and approved in Meta/WhatsApp Manager under the Amadeus WhatsApp account.
 - Keep the exact template names above unless the backend envs are updated to match.
-- Set `MEAT_SALES_QUOTE_READY_TEMPLATE_NAME=amadeus_meat_quote_ready` once approved.
-- Set `MEAT_SALES_DEPOSIT_FOLLOWUP_TEMPLATE_NAME=amadeus_meat_deposit_followup` once approved.
-- Set `MEAT_SALES_BOOKING_UPDATE_TEMPLATE_NAME=amadeus_meat_booking_update` once approved.
-- Set `MEAT_SALES_DELIVERY_UPDATE_TEMPLATE_NAME=amadeus_meat_delivery_update` once approved.
-- Set `MEAT_SALES_FINAL_INVOICE_TEMPLATE_NAME=amadeus_meat_final_invoice_ready` once approved.
+- Set `MEAT_SALES_QUOTE_READY_TEMPLATE_NAME=amadeus_meat_quote_ready` - approved and "Yes" button added.
+C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\screenshots\amadeus_meat_quote_ready.png
+- Set `MEAT_SALES_DEPOSIT_FOLLOWUP_TEMPLATE_NAME=amadeus_meat_deposit_followup` approved and "POP sent" button added
+C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\screenshots\amadeus_meat_deposit_followup.png
+- Set `MEAT_SALES_BOOKING_UPDATE_TEMPLATE_NAME=amadeus_meat_booking_update` approved and "Yes" button added.
+C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\screenshots\amadeus_meat_booking_update.png
+- Set `MEAT_SALES_DELIVERY_UPDATE_TEMPLATE_NAME=amadeus_meat_delivery_update` approved and "Yes" button added
+C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\screenshots\amadeus_meat_delivery_update.png
+- Set `MEAT_SALES_FINAL_INVOICE_TEMPLATE_NAME=amadeus_meat_final_invoice_ready` approved and "Yes" button added
+C:\Users\charl\OneDrive\1. Amadeus\AGENTS\amadeus-pig-tracking-system\screenshots\amadeus_meat_final_invoice_ready.png
 - Keep `MEAT_SALES_QUOTE_READY_TEMPLATE_LANGUAGE=en` unless Meta approves a different language code.
-- Test each template against Charl's own WhatsApp first before using it for live buyers.
+- Next: test each template against Charl's own WhatsApp first before using it for live buyers.
 
 ## Current Backend Behavior
 
