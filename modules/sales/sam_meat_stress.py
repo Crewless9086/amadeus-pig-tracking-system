@@ -121,6 +121,58 @@ STRESS_SCENARIOS = [
         "expected_attrs": {"meat_last_customer_intent": "asks_options"},
     },
     {
+        "id": "family_of_three_recommendation_after_cut_menu",
+        "category": "context_memory",
+        "message": "What is the best option for my family of 3",
+        "context": {
+            "prior_context": {
+                "lead_id": "OSK-SALES-LEAD-STRESS",
+                "interest": {"product_type": "custom_cut", "sam_intake_lane": "meat_preorder"},
+            },
+        },
+        "expected_facts": {"product_type": "custom_cut"},
+        "expected_reply_any": ["Set A", "family of 3", "balanced freezer"],
+        "forbidden_reply_any": ["Hi, I am Sam", "Pork meat sales", "Tell me what you are looking for"],
+        "expected_labels": ["meat_lead", "custom_cut", "needs_followup"],
+        "expected_attrs": {"meat_product_type": "custom_cut", "meat_next_gate": "collect_missing_facts"},
+    },
+    {
+        "id": "set_selection_preserves_half_carcass_context",
+        "category": "context_memory",
+        "message": "I want Set b",
+        "context": {
+            "prior_context": {
+                "lead_id": "OSK-SALES-LEAD-STRESS",
+                "interest": {"product_type": "half_carcass", "sam_intake_lane": "meat_preorder"},
+            },
+        },
+        "expected_facts": {"product_type": "half_carcass", "cut_set": "Set B"},
+        "expected_reply_any": ["Which town", "area"],
+        "forbidden_reply_any": ["Hi, I am Sam", "Pork meat sales"],
+        "expected_labels": ["meat_lead", "half_carcass", "set_b", "needs_followup"],
+        "expected_attrs": {"meat_product_type": "half_carcass", "meat_cut_set": "Set B", "meat_next_gate": "collect_missing_facts"},
+    },
+    {
+        "id": "delivery_location_after_set_selection_asks_address",
+        "category": "context_memory",
+        "message": "Riversdale, for delivery",
+        "context": {
+            "prior_context": {
+                "lead_id": "OSK-SALES-LEAD-STRESS",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set B",
+                    "sam_intake_lane": "meat_preorder",
+                },
+            },
+        },
+        "expected_facts": {"product_type": "half_carcass", "cut_set": "Set B", "location": "Riversdale", "delivery_or_collection": "delivery"},
+        "expected_reply_any": ["delivery street address", "directions"],
+        "forbidden_reply_any": ["Hi, I am Sam", "Pork meat sales"],
+        "expected_labels": ["meat_lead", "half_carcass", "set_b", "delivery", "needs_followup"],
+        "expected_attrs": {"meat_product_type": "half_carcass", "meat_cut_set": "Set B", "meat_delivery_mode": "delivery", "meat_next_gate": "collect_missing_facts"},
+    },
+    {
         "id": "price_direct_question",
         "category": "price_objection",
         "message": "How much is a half carcass Set A in Riversdale?",
@@ -309,10 +361,21 @@ STRESS_SCENARIOS = [
         "message": "Yes that works, please proceed.",
         "context": {
             "booking_confirmation": {"recorded": True, "lead_id": "OSK-SALES-LEAD-STRESS"},
-            "prior_context": {"latest_event": "customer_followup_sent", "lead_id": "OSK-SALES-LEAD-STRESS"},
+            "prior_context": {
+                "latest_event": "customer_followup_sent",
+                "lead_id": "OSK-SALES-LEAD-STRESS",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "collection",
+                    "timing": "next available farm run",
+                    "payment_method": "EFT",
+                },
+            },
         },
-        "expected_facts": {"product_type": "unknown"},
-        "expected_reply_any": ["half carcass", "full carcass", "custom cuts", "assisted slaughter"],
+        "expected_facts": {"product_type": "half_carcass"},
+        "expected_reply_any": ["farm to review", "confirm"],
         "expected_labels": ["meat_lead", "deposit_pending", "needs_followup"],
         "expected_attrs": {"meat_payment_state": "deposit_pending", "meat_next_gate": "send_deposit_instruction"},
     },
@@ -480,12 +543,19 @@ def evaluate_scenario(scenario):
         issues.append(_issue("processing", f"Expected processable but got {inbound.get('status')}"))
         return _result(scenario, inbound, facts, decision, hygiene, issues)
 
-    facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
     context = scenario.get("context") if isinstance(scenario.get("context"), dict) else {}
     prior_context = context.get("prior_context") if isinstance(context.get("prior_context"), dict) else {}
     booking_confirmation = context.get("booking_confirmation") if isinstance(context.get("booking_confirmation"), dict) else {}
     pop_capture = context.get("pop_capture") if isinstance(context.get("pop_capture"), dict) else {}
-    decision = sam_meat_runtime.build_sam_meat_decision(inbound, facts, {"success": True}, 201)
+    facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+    facts = sam_meat_runtime._merge_prior_context(facts, prior_context)
+    decision = sam_meat_runtime.build_sam_meat_decision(
+        inbound,
+        facts,
+        {"success": True},
+        201,
+        prior_context=prior_context,
+    )
     hygiene = build_sam_meat_chatwoot_hygiene_payload(
         lead_payload=sam_meat_runtime.build_sam_meat_lead_payload_from_inbound(inbound, facts),
         facts=facts,
@@ -576,11 +646,12 @@ def _check_expected_facts(scenario, facts, issues):
 
 def _check_reply(scenario, decision, issues):
     expected = scenario.get("expected_reply_any") or []
-    if not expected:
-        return
     reply = decision.get("reply_text", "")
-    if not any(fragment.lower() in reply.lower() for fragment in expected):
+    if expected and not any(fragment.lower() in reply.lower() for fragment in expected):
         issues.append(_issue("reply", f"Reply missing one of {expected!r}; got {reply!r}"))
+    for fragment in scenario.get("forbidden_reply_any") or []:
+        if fragment.lower() in reply.lower():
+            issues.append(_issue("reply", f"Reply included forbidden fragment {fragment!r}; got {reply!r}"))
 
 
 def _check_labels(scenario, hygiene, issues):

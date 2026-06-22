@@ -146,7 +146,10 @@ def handle_sam_meat_chatwoot_inbound(
         }, 200
 
     facts = extract_meat_facts(inbound["content"], inbound, environ=source, llm_extractor=llm_extractor)
-    prior_context = _conversation_lead_context(inbound.get("conversation_id"))
+    prior_context = _merge_inbound_attribute_context(
+        _conversation_lead_context(inbound.get("conversation_id")),
+        inbound,
+    )
     facts = _merge_prior_context(facts, prior_context)
     agent_decision = _build_agent_v2_decision_if_enabled(
         inbound,
@@ -343,6 +346,7 @@ def parse_chatwoot_inbound(payload):
         "whatsapp_window_state": explicit_window_state or "open",
         "message_id": _clean(payload.get("id") or payload.get("message_id"), 100),
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
+        "conversation_custom_attributes": custom_attributes,
     }
 
 
@@ -442,10 +446,12 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     vague_meat_interest_reply = _vague_meat_interest_reply(inbound.get("content"), facts, knowledge)
     non_pork_reply = _non_pork_guard_reply(inbound.get("content"))
     frustration_reply = _frustration_guard_reply(inbound.get("content"), facts, knowledge)
+    set_recommendation_reply = _set_recommendation_reply(inbound.get("content"), facts, prior_context, knowledge)
     cut_menu_reply = _cut_menu_reply(inbound.get("content"), facts)
     deposit_question_reply = _deposit_question_reply(inbound.get("content"), facts, knowledge)
     payment_state_reply = _payment_state_reply(inbound.get("content"), facts, prior_context, knowledge)
     price_or_document_reply = _price_or_document_guard_reply(inbound.get("content"), facts)
+    partial_meat_fact_reply = _partial_meat_fact_reply(inbound.get("content"), facts)
     agent_decision = agent_decision if isinstance(agent_decision, dict) else {}
     agent_reply = _validated_agent_reply(agent_decision)
     agent_wants_no_reply = agent_decision.get("used") and agent_decision.get("should_reply") is False
@@ -454,6 +460,9 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         should_reply = True
     elif frustration_reply:
         reply = frustration_reply
+        should_reply = True
+    elif set_recommendation_reply:
+        reply = set_recommendation_reply
         should_reply = True
     elif cut_menu_reply:
         reply = cut_menu_reply
@@ -467,6 +476,9 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif price_or_document_reply:
         reply = price_or_document_reply
         should_reply = True
+    elif partial_meat_fact_reply:
+        reply = partial_meat_fact_reply
+        should_reply = True
     elif vague_meat_interest_reply:
         reply = vague_meat_interest_reply
         should_reply = True
@@ -479,6 +491,8 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif record_status == 400 and record_result.get("sam_next_question"):
         reply = record_result["sam_next_question"]
         should_reply = True
+    elif facts.get("product_type") == "unknown" and _is_established_meat_context(facts, prior_context):
+        reply = _contextual_meat_fallback_reply(inbound.get("content"), facts, prior_context, knowledge)
     elif facts.get("product_type") == "unknown":
         reply = _sam_intro_options_reply(knowledge)
     elif facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
@@ -850,7 +864,7 @@ def _deterministic_extract(message):
         product_type = "half_carcass"
     elif re.search(r"\bfull\s+(?:pig\s+)?carcass|whole\s+(?:pig|carcass)\b", normalized):
         product_type = "full_carcass"
-    elif re.search(r"\bcut|cuts|set\s+[abcd]\b", normalized):
+    elif re.search(r"\bcustom\s+cut|cut\s*set|cut\s+pack|specific\s+cut|smaller\s+cut", normalized):
         product_type = "custom_cut"
     elif "assisted slaughter" in normalized:
         product_type = "assisted_slaughter"
@@ -944,6 +958,89 @@ def _cut_menu_reply(message, facts):
     return (
         f"The current pork cut options are: {menu} "
         "I can note which one you prefer, but price, timing, and deposit still need farm approval before a quote or booking."
+    )
+
+
+def _set_recommendation_reply(message, facts, prior_context=None, knowledge=None):
+    text = str(message or "").lower()
+    normalized = _normalized_customer_text(message)
+    asks_recommendation = bool(re.search(
+        r"\b(best|suggest|recommend|which\s+set|which\s+option|family\s+of\s+\d+|for\s+my\s+family)\b",
+        normalized,
+    ))
+    if not asks_recommendation:
+        return ""
+    if not (_is_established_meat_context(facts, prior_context) or _meat_interest_detected(normalized)):
+        return ""
+    if re.search(r"\b(braai|chop|rib|belly|rashers?)\b", normalized):
+        suggestion = "Set B is the better fit if your family will braai often or wants chops, ribs, rashers and belly-style cuts."
+        suggested_set = "Set B"
+    elif re.search(r"\b(lean|less fat|healthy|mince|stew)\b", normalized):
+        suggestion = "Set C is the better fit if you want leaner freezer meat, mince and stew cuts with fewer fatty belly cuts."
+        suggested_set = "Set C"
+    elif re.search(r"\b(budget|cheap|cheapest|bulk)\b", normalized):
+        suggestion = "Set D is the practical budget-bulk option, with larger roasting cuts, mince, stew meat and mixed chops."
+        suggested_set = "Set D"
+    else:
+        suggestion = (
+            "For a family of 3, I would normally start with Set A. "
+            "It is the safest balanced freezer pack: chops, roasts, belly, ribs, mince or stew meat, and bones for stock."
+        )
+        suggested_set = "Set A"
+    product_note = ""
+    if facts.get("product_type") in {"half_carcass", "full_carcass"}:
+        product_note = " I can note that against the carcass option you are asking about."
+    return (
+        f"{suggestion}{product_note} "
+        f"Should I note {suggested_set} for you, or would you like the full set list first?"
+    )
+
+
+def _partial_meat_fact_reply(message, facts):
+    normalized = _normalized_customer_text(message)
+    if not _meat_interest_detected(normalized):
+        return ""
+    if facts.get("product_type") != "unknown":
+        return ""
+    if not any(_clean(facts.get(key), 120) for key in ("cut_set", "target_packed_kg", "budget_amount")):
+        return ""
+    if facts.get("delivery_or_collection") == "delivery" and facts.get("location") and not facts.get("delivery_address_line_1"):
+        return "Please send the delivery street address or farm name, town, and any useful directions for the driver."
+    if facts.get("delivery_or_collection") == "collection" and facts.get("location") and not facts.get("timing"):
+        return "When would you ideally like the pork: this week, next week, or the next available farm run?"
+    return (
+        "I can work with that. Should I treat this as a cut-set pork pack, "
+        "or are you asking for a half carcass?"
+    )
+
+
+def _is_established_meat_context(facts, prior_context=None):
+    facts = facts if isinstance(facts, dict) else {}
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    interest = prior_context.get("interest") if isinstance(prior_context.get("interest"), dict) else {}
+    if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut", "assisted_slaughter"}:
+        return True
+    if _clean(facts.get("cut_set"), 120):
+        return True
+    if prior_context.get("lead_id"):
+        return True
+    if interest.get("sam_intake_lane") == "meat_preorder":
+        return True
+    if interest.get("product_type") in {"half_carcass", "full_carcass", "custom_cut", "assisted_slaughter"}:
+        return True
+    return any(_clean(interest.get(key), 120) for key in ("cut_set", "location", "delivery_or_collection", "target_packed_kg", "budget_amount"))
+
+
+def _contextual_meat_fallback_reply(message, facts, prior_context=None, knowledge=None):
+    text = str(message or "").lower()
+    if re.search(r"\b(thanks|thank you|ok|okay|cool|great|perfect)\b", text) and len(text.split()) <= 4:
+        return "Pleasure. I will keep the pork preorder details together here."
+    next_step = _next_fact_question(facts)
+    if next_step and next_step != "I have the core details and will keep the next step clear.":
+        return f"I am still with you on the pork preorder. {next_step}"
+    return (
+        "I am still with you on the pork preorder. "
+        "Tell me what you want to adjust or ask, and I will keep it practical."
     )
 
 
@@ -1180,6 +1277,48 @@ def _conversation_lead_context(conversation_id):
     }
 
 
+def _merge_inbound_attribute_context(prior_context, inbound):
+    prior_context = dict(prior_context or {})
+    inbound = inbound if isinstance(inbound, dict) else {}
+    attr_interest = _chatwoot_attribute_interest(inbound.get("conversation_custom_attributes"))
+    if not attr_interest:
+        return prior_context
+    interest = dict(prior_context.get("interest") if isinstance(prior_context.get("interest"), dict) else {})
+    for key, value in attr_interest.items():
+        current = _clean(interest.get(key), 700)
+        incoming = _clean(value, 700)
+        if incoming and (not current or current == "unknown"):
+            interest[key] = incoming
+    if interest:
+        prior_context["interest"] = interest
+    lead_id = _clean(attr_interest.get("lead_id"), 100)
+    if lead_id and not prior_context.get("lead_id"):
+        prior_context["lead_id"] = lead_id
+    return prior_context
+
+
+def _chatwoot_attribute_interest(attributes):
+    attributes = attributes if isinstance(attributes, dict) else {}
+    if not attributes:
+        return {}
+    product_type = _clean(attributes.get("meat_product_type"), 80)
+    if product_type not in {"half_carcass", "full_carcass", "custom_cut", "assisted_slaughter", "unknown"}:
+        product_type = ""
+    delivery_town = _normal_location(attributes.get("meat_delivery_town"))
+    interest = {
+        "lead_id": _clean(attributes.get("meat_lead_id"), 100),
+        "product_type": product_type,
+        "cut_set": _normal_cut_set(attributes.get("meat_cut_set")),
+        "delivery_or_collection": _normal_delivery(attributes.get("meat_delivery_mode")),
+        "location": delivery_town,
+        "delivery_town": delivery_town,
+        "budget_amount": _normal_money_amount(attributes.get("meat_budget_amount")),
+        "target_packed_kg": _normal_kg_amount(attributes.get("meat_target_packed_kg")),
+        "match_preference": _normal_match_preference(attributes.get("meat_match_preference")),
+    }
+    return {key: value for key, value in interest.items() if value}
+
+
 def _latest_event_type(lead):
     latest_event = lead.get("latest_event") if isinstance(lead, dict) else ""
     if isinstance(latest_event, dict):
@@ -1256,6 +1395,8 @@ def _merge_prior_context(facts, prior_context):
         current = _clean(facts.get(key), 600)
         prior = _clean(interest.get(key), 600)
         if key == "product_type" and current == "unknown" and prior:
+            facts[key] = prior
+        elif key == "product_type" and current == "custom_cut" and prior in {"half_carcass", "full_carcass"} and facts.get("cut_set"):
             facts[key] = prior
         elif not current and prior:
             facts[key] = prior

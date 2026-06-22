@@ -24,6 +24,7 @@ class SamMeatStressTests(unittest.TestCase):
             "frustration",
             "ignore",
             "channel",
+            "context_memory",
         }
 
         self.assertTrue(required.issubset(categories))
@@ -54,7 +55,7 @@ class SamMeatStressTests(unittest.TestCase):
         text = format_stress_summary(summary)
 
         self.assertIn("Sam Meat Sales Stress-Test Run", text)
-        self.assertIn("Scenarios: 40", text)
+        self.assertIn(f"Scenarios: {len(STRESS_SCENARIOS)}", text)
         self.assertIn("No launch-blocking stress assertions failed", text)
         self.assertIn("No known gaps recorded", text)
 

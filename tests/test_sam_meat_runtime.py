@@ -94,6 +94,28 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(inbound["message_type"], "activity")
         self.assertEqual(inbound["status"], "ignored_non_incoming_message")
 
+    def test_parse_chatwoot_inbound_keeps_custom_attributes_for_context_recovery(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Which set is best for my family of 3?",
+            conversation={
+                "id": 1817,
+                "inbox": {"channel_type": "Channel::Whatsapp"},
+                "custom_attributes": {
+                    "meat_lead_id": "OSK-SALES-LEAD-1817",
+                    "meat_product_type": "half_carcass",
+                    "meat_cut_set": "Set B",
+                    "meat_delivery_mode": "delivery",
+                    "meat_delivery_town": "Riversdale",
+                },
+            },
+        ))
+        recovered = sam_meat_runtime._merge_inbound_attribute_context({}, inbound)
+
+        self.assertEqual(recovered["lead_id"], "OSK-SALES-LEAD-1817")
+        self.assertEqual(recovered["interest"]["product_type"], "half_carcass")
+        self.assertEqual(recovered["interest"]["cut_set"], "Set B")
+        self.assertEqual(recovered["interest"]["location"], "Riversdale")
+
     def test_extract_meat_facts_uses_deterministic_fallback(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload())
         facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
@@ -127,6 +149,66 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertEqual(facts["product_type"], "half_carcass")
         self.assertFalse(facts["llm_used"])
+
+    def test_set_selection_does_not_replace_prior_half_carcass_context(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="I want Set b"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        facts = sam_meat_runtime._merge_prior_context(
+            facts,
+            {
+                "lead_id": "OSK-SALES-LEAD-1817",
+                "interest": {"product_type": "half_carcass", "sam_intake_lane": "meat_preorder"},
+            },
+        )
+
+        self.assertEqual(facts["product_type"], "half_carcass")
+        self.assertEqual(facts["cut_set"], "Set B")
+
+    def test_family_recommendation_in_meat_context_never_uses_generic_intro(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="Which set do you suggest is best for a family of 3",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        prior_context = {
+            "lead_id": "OSK-SALES-LEAD-1817",
+            "interest": {"product_type": "half_carcass", "sam_intake_lane": "meat_preorder"},
+        }
+        facts = sam_meat_runtime._merge_prior_context(facts, prior_context)
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-1817"},
+            201,
+            prior_context=prior_context,
+        )
+
+        self.assertIn("Set A", decision["reply_text"])
+        self.assertIn("family of 3", decision["reply_text"])
+        self.assertNotIn("Hi, I am Sam", decision["reply_text"])
+        self.assertNotIn("Tell me what you are looking for", decision["reply_text"])
+
+    def test_delivery_location_in_meat_context_asks_for_address_not_intro(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="Riversdale, for delivery"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        prior_context = {
+            "lead_id": "OSK-SALES-LEAD-1817",
+            "interest": {
+                "product_type": "half_carcass",
+                "cut_set": "Set B",
+                "sam_intake_lane": "meat_preorder",
+            },
+        }
+        facts = sam_meat_runtime._merge_prior_context(facts, prior_context)
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-1817"},
+            201,
+            prior_context=prior_context,
+        )
+
+        self.assertIn("delivery street address", decision["reply_text"])
+        self.assertNotIn("Hi, I am Sam", decision["reply_text"])
 
     def test_extract_meat_facts_handles_common_typos_without_llm(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
