@@ -2279,6 +2279,142 @@ def record_litter_piglet_sex_counts(
     }, 200
 
 
+def _append_tag_assignment_note(existing_notes, action_date, changed_by, notes):
+    note = f"Tag number assigned on {format_date_for_sheet(action_date)} by {changed_by}."
+    if notes:
+        note = f"{note} Notes: {notes}"
+    existing = to_clean_string(existing_notes)
+    return f"{existing} | {note}" if existing else note
+
+
+def assign_litter_piglet_tag_numbers(
+    litter_id: str,
+    tag_numbers=None,
+    action_date_value=None,
+    changed_by: str = "web_app",
+    notes: str = "",
+    dry_run: bool = True,
+):
+    litter_id = to_clean_string(litter_id)
+    action_date = parse_sheet_date(action_date_value) or datetime.now().date()
+    changed_by = to_clean_string(changed_by) or "web_app"
+    notes = to_clean_string(notes)
+    dry_run = dry_run is True
+    tag_numbers = [to_clean_string(tag) for tag in (tag_numbers or []) if to_clean_string(tag)]
+
+    errors = []
+    if not litter_id:
+        errors.append("Litter ID is required.")
+    if not tag_numbers:
+        errors.append("Enter at least one tag number.")
+    duplicate_input_tags = sorted({tag for tag in tag_numbers if tag_numbers.count(tag) > 1})
+    if duplicate_input_tags:
+        errors.append(f"Duplicate tag number(s) in this request: {', '.join(duplicate_input_tags)}.")
+    if errors:
+        return {"success": False, "errors": errors}, 400
+
+    pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
+    columns = PIG_WEIGHTS_CONFIG["columns"]
+    pig_rows = get_all_records(pig_master_sheet)
+    active_litter_piglets = [
+        row for row in pig_rows
+        if to_clean_string(row.get("Litter_ID", "")) == litter_id
+        and to_clean_string(row.get(columns["status"], "")) == "Active"
+        and to_clean_string(row.get(columns["on_farm"], "")) == "Yes"
+    ]
+    active_litter_piglets.sort(key=lambda row: (
+        to_clean_string(row.get("Sex", "")),
+        to_clean_string(row.get(columns["pig_id"], "")),
+    ))
+    untagged_piglets = [
+        row for row in active_litter_piglets
+        if not to_clean_string(row.get("Tag_Number", ""))
+    ]
+
+    if not active_litter_piglets:
+        return {
+            "success": False,
+            "errors": ["No active on-farm piglets were found for this litter."],
+            "litter_id": litter_id,
+        }, 409
+    if len(tag_numbers) != len(untagged_piglets):
+        return {
+            "success": False,
+            "errors": [
+                f"Enter exactly {len(untagged_piglets)} tag number(s) for the active untagged piglet(s). "
+                f"You entered {len(tag_numbers)}."
+            ],
+            "litter_id": litter_id,
+            "active_piglet_count": len(active_litter_piglets),
+            "untagged_piglet_count": len(untagged_piglets),
+        }, 409
+
+    existing_tags = {
+        to_clean_string(row.get("Tag_Number", ""))
+        for row in pig_rows
+        if to_clean_string(row.get("Tag_Number", ""))
+    }
+    duplicate_existing_tags = [tag for tag in tag_numbers if tag in existing_tags]
+    if duplicate_existing_tags:
+        return {
+            "success": False,
+            "errors": [f"Tag number(s) already exist in PIG_MASTER: {', '.join(duplicate_existing_tags)}."],
+            "litter_id": litter_id,
+        }, 409
+
+    action_date_sheet = format_date_for_sheet(action_date)
+    today = format_date_for_sheet(datetime.now().date())
+    pig_updates = {}
+    selected_piglets = []
+    for row, tag_number in zip(untagged_piglets, tag_numbers):
+        pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+        pig_updates[pig_id] = {
+            "Tag_Number": tag_number,
+            "Earmarked": "Yes",
+            "Earmark_Date": action_date_sheet,
+            "Updated_At": today,
+            "General_Notes": _append_tag_assignment_note(
+                row.get("General_Notes", ""),
+                action_date,
+                changed_by,
+                notes,
+            ),
+        }
+        selected_piglets.append({
+            "pig_id": pig_id,
+            "tag_number": tag_number,
+            "sex": to_clean_string(row.get("Sex", "")),
+        })
+
+    rows_updated = 0
+    if not dry_run:
+        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+
+    return {
+        "success": True,
+        "action": "assign_litter_piglet_tag_numbers",
+        "dry_run": dry_run,
+        "litter_id": litter_id,
+        "action_date": action_date.isoformat(),
+        "piglet_count": len(selected_piglets),
+        "selected_piglets": selected_piglets,
+        "pig_ids": [piglet["pig_id"] for piglet in selected_piglets],
+        "tag_numbers": tag_numbers,
+        "rows_updated": rows_updated,
+        "planned_updates": pig_updates,
+        "changed_by": changed_by,
+        "source": {
+            "writes_to_sheets": not dry_run,
+            "writes_to_supabase": False,
+        },
+        "message": (
+            f"Litter {litter_id} tag assignment previewed for {len(selected_piglets)} piglet(s)."
+            if dry_run
+            else f"Litter {litter_id} tag numbers saved for {len(selected_piglets)} piglet(s)."
+        ),
+    }, 200
+
+
 def record_litter_newborn_health(
     litter_id: str,
     action_date_value,

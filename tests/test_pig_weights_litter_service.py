@@ -909,6 +909,112 @@ class LitterAttentionActionTests(unittest.TestCase):
 
 
 class PigLifecycleOutcomeTests(unittest.TestCase):
+    def test_assign_litter_piglet_tag_numbers_dry_run_maps_tags_without_writing(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Female"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Male"},
+            {"Pig_ID": "PIG-OTHER", "Tag_Number": "200", "Litter_ID": "LIT-OTHER", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+                "LIT-1",
+                tag_numbers=["101", "102"],
+                action_date_value="2026-06-22",
+                changed_by="Charl",
+                notes="Tagged at weaning.",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["dry_run"])
+        self.assertEqual(result["piglet_count"], 2)
+        self.assertEqual(result["tag_numbers"], ["101", "102"])
+        self.assertEqual(result["selected_piglets"][0]["pig_id"], "PIG-1")
+        self.assertEqual(result["selected_piglets"][0]["tag_number"], "101")
+        self.assertIn("Tag_Number", result["planned_updates"]["PIG-1"])
+        self.assertEqual(result["planned_updates"]["PIG-1"]["Earmarked"], "Yes")
+        self.assertIn("Tagged at weaning.", result["planned_updates"]["PIG-1"]["General_Notes"])
+        update_pigs.assert_not_called()
+
+    def test_assign_litter_piglet_tag_numbers_writes_previewed_tags(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Female"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Male"},
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id", return_value=2) as update_pigs:
+
+            result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+                "LIT-1",
+                tag_numbers=["101", "102"],
+                action_date_value="2026-06-22",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["dry_run"])
+        self.assertEqual(result["rows_updated"], 2)
+        update_map = update_pigs.call_args.args[1]
+        self.assertEqual(update_map["PIG-1"]["Tag_Number"], "101")
+        self.assertEqual(update_map["PIG-2"]["Tag_Number"], "102")
+
+    def test_assign_litter_piglet_tag_numbers_blocks_wrong_count(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+                "LIT-1",
+                tag_numbers=["101"],
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("exactly 2", result["errors"][0])
+        update_pigs.assert_not_called()
+
+    def test_assign_litter_piglet_tag_numbers_blocks_duplicate_existing_tag(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-OTHER", "Tag_Number": "101", "Litter_ID": "LIT-OTHER", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as update_pigs:
+
+            result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+                "LIT-1",
+                tag_numbers=["101"],
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 409)
+        self.assertFalse(result["success"])
+        self.assertIn("already exist", result["errors"][0])
+        update_pigs.assert_not_called()
+
+    def test_assign_litter_piglet_tag_numbers_blocks_duplicate_input(self):
+        result, status_code = pig_weights_service.assign_litter_piglet_tag_numbers(
+            "LIT-1",
+            tag_numbers=["101", "101"],
+            dry_run=True,
+        )
+
+        self.assertEqual(status_code, 400)
+        self.assertFalse(result["success"])
+        self.assertIn("Duplicate", result["errors"][0])
+
     def test_mark_pig_death_or_removal_updates_active_on_farm_pig(self):
         pig_rows = [
             {

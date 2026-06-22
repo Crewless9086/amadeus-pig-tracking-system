@@ -42,6 +42,16 @@ const sexCountNotes = document.getElementById("sex_count_notes");
 const sexCountPreview = document.getElementById("sex_count_preview");
 const sexCountPreviewButton = document.getElementById("sex_count_preview_button");
 const sexCountApplyButton = document.getElementById("sex_count_apply_button");
+const tagNumbersPanel = document.getElementById("litter_tag_numbers_panel");
+const tagNumbersForm = document.getElementById("tag_numbers_form");
+const tagNumbersText = document.getElementById("tag_numbers_text");
+const tagNumbersDate = document.getElementById("tag_numbers_date");
+const tagNumbersRecordedBy = document.getElementById("tag_numbers_recorded_by");
+const tagNumbersInput = document.getElementById("tag_numbers_input");
+const tagNumbersNotes = document.getElementById("tag_numbers_notes");
+const tagNumbersPreview = document.getElementById("tag_numbers_preview");
+const tagNumbersPreviewButton = document.getElementById("tag_numbers_preview_button");
+const tagNumbersApplyButton = document.getElementById("tag_numbers_apply_button");
 const reconcilePanel = document.getElementById("litter_reconcile_panel");
 const reconcileForm = document.getElementById("litter_reconcile_form");
 const reconcileText = document.getElementById("litter_reconcile_text");
@@ -71,6 +81,7 @@ const manualActionsToggle = document.getElementById("litter_manual_actions_toggl
 let latestNewbornHealthPreview = null;
 let latestPigletDeathPreview = null;
 let latestSexCountPreview = null;
+let latestTagNumbersPreview = null;
 let latestReconcilePreview = null;
 let latestStillbornReclassifyPreview = null;
 let productsLoaded = false;
@@ -401,16 +412,23 @@ function manualActionAvailability(litter) {
     && piglet.on_farm === "Yes"
     && !piglet.sex
   ));
+  const activeUntaggedPiglets = (litter.piglets || []).filter((piglet) => (
+    piglet.status === "Active"
+    && piglet.on_farm === "Yes"
+    && !piglet.tag_number
+  ));
   return {
     canRecordPigletDeath: hasActivePiglets,
     canRecordSexCounts: activeUnsexedPiglets.length > 0,
+    canAssignTagNumbers: activeUntaggedPiglets.length > 0,
     activeUnsexedCount: activeUnsexedPiglets.length,
+    activeUntaggedCount: activeUntaggedPiglets.length,
   };
 }
 
 function renderManualActionsPanel(litter) {
   const availability = manualActionAvailability(litter);
-  const hasManualActions = availability.canRecordPigletDeath || availability.canRecordSexCounts;
+  const hasManualActions = availability.canRecordPigletDeath || availability.canRecordSexCounts || availability.canAssignTagNumbers;
   if (manualActionsPanel) {
     manualActionsPanel.classList.toggle("hidden", !hasManualActions);
   }
@@ -419,6 +437,7 @@ function renderManualActionsPanel(litter) {
   const labels = [];
   if (availability.canRecordPigletDeath) labels.push("piglet death");
   if (availability.canRecordSexCounts) labels.push("sex counts");
+  if (availability.canAssignTagNumbers) labels.push("tag numbers");
   manualActionsText.textContent = `Available: ${labels.join(", ")}. Keep hidden unless you need to record one now.`;
   manualActionsToggle.textContent = manualActionsExpanded ? "Hide Manual Actions" : "Show Manual Actions";
 }
@@ -613,6 +632,25 @@ function renderSexCountPanel(litter) {
   }
 }
 
+function renderTagNumbersPanel(litter) {
+  const availability = manualActionAvailability(litter);
+  const attentionAction = ((litter.attention || {}).action_type || "") === "assign_tag_numbers";
+  const showPanel = availability.canAssignTagNumbers && (manualActionsExpanded || attentionAction);
+  const untaggedPiglets = (litter.piglets || [])
+    .filter((piglet) => piglet.status === "Active" && piglet.on_farm === "Yes" && !piglet.tag_number)
+    .sort((left, right) => `${left.sex || ""}|${left.pig_id || ""}`.localeCompare(`${right.sex || ""}|${right.pig_id || ""}`));
+  if (tagNumbersPanel) {
+    tagNumbersPanel.classList.toggle("hidden", !showPanel);
+  }
+  if (tagNumbersDate && !tagNumbersDate.value) {
+    tagNumbersDate.value = todayIsoDate();
+  }
+  if (tagNumbersText) {
+    const order = untaggedPiglets.map((piglet, index) => `${index + 1}. ${piglet.pig_id || "-"}`).join("  ");
+    tagNumbersText.textContent = `Enter exactly ${availability.activeUntaggedCount} tag number${availability.activeUntaggedCount === 1 ? "" : "s"}, one per line. Assignment order: ${order}.`;
+  }
+}
+
 function pigletDeathPayload(dryRun) {
   return {
     event_date: pigletDeathDate.value,
@@ -723,6 +761,135 @@ function setSexCountSubmitting(isSubmitting, mode = "preview") {
   sexCountApplyButton.disabled = isSubmitting || !latestSexCountPreview;
   sexCountPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
   sexCountApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Sex Counts";
+}
+
+function tagNumbersPayload(dryRun) {
+  const tagNumbers = String(tagNumbersInput.value || "")
+    .split(/\r?\n|,/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return {
+    action_date: tagNumbersDate.value,
+    tag_numbers: tagNumbers,
+    changed_by: tagNumbersRecordedBy.value || "web_app",
+    notes: tagNumbersNotes.value,
+    dry_run: dryRun,
+  };
+}
+
+function renderTagNumbersPreview(preview) {
+  if (!tagNumbersPreview) return;
+  tagNumbersPreview.classList.remove("hidden");
+  const selected = preview.selected_piglets || [];
+  const rows = selected.map((piglet) => `
+    <tr>
+      <td>${escapeHtml(piglet.pig_id || "-")}</td>
+      <td>${escapeHtml(piglet.sex || "-")}</td>
+      <td><strong>${escapeHtml(piglet.tag_number || "-")}</strong></td>
+    </tr>
+  `).join("");
+  tagNumbersPreview.innerHTML = `
+    <div class="bulk-review-header">
+      <strong>Preview ready</strong>
+      <span>${preview.piglet_count || 0} tag number${preview.piglet_count === 1 ? "" : "s"} will be saved</span>
+    </div>
+    <div class="simple-table-wrap">
+      <table class="simple-table compact-table">
+        <thead>
+          <tr>
+            <th>Pig ID</th>
+            <th>Sex</th>
+            <th>New Tag</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="form-helper">Tags are assigned to active untagged piglets in the order shown here.</p>
+  `;
+}
+
+function resetTagNumbersPreview() {
+  latestTagNumbersPreview = null;
+  if (tagNumbersApplyButton) tagNumbersApplyButton.disabled = true;
+  if (tagNumbersPreview) tagNumbersPreview.classList.add("hidden");
+}
+
+function setTagNumbersSubmitting(isSubmitting, mode = "preview") {
+  tagNumbersPreviewButton.disabled = isSubmitting;
+  tagNumbersApplyButton.disabled = isSubmitting || !latestTagNumbersPreview;
+  tagNumbersPreviewButton.textContent = isSubmitting && mode === "preview" ? "Previewing..." : "Preview";
+  tagNumbersApplyButton.textContent = isSubmitting && mode === "apply" ? "Saving..." : "Save Tag Numbers";
+}
+
+async function previewTagNumbers() {
+  clearLitterMessage();
+  latestTagNumbersPreview = null;
+  tagNumbersApplyButton.disabled = true;
+
+  if (!tagNumbersDate.value) {
+    showLitterMessage("Choose an action date before previewing.", "error");
+    return;
+  }
+  if (!tagNumbersPayload(true).tag_numbers.length) {
+    showLitterMessage("Enter tag numbers before previewing.", "error");
+    return;
+  }
+
+  setTagNumbersSubmitting(true, "preview");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/tag-numbers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(tagNumbersPayload(true)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not preview tag numbers."]).join(" "));
+    }
+    latestTagNumbersPreview = data;
+    renderTagNumbersPreview(data);
+  } catch (error) {
+    showLitterMessage(error.message || "Could not preview tag numbers.", "error");
+  } finally {
+    setTagNumbersSubmitting(false, "preview");
+  }
+}
+
+async function submitTagNumbers(event) {
+  event.preventDefault();
+  clearLitterMessage();
+
+  if (!latestTagNumbersPreview) {
+    showLitterMessage("Preview the tag numbers before saving.", "error");
+    return;
+  }
+  if (!window.confirm("Save the previewed tag numbers to these piglet rows?")) {
+    return;
+  }
+
+  setTagNumbersSubmitting(true, "apply");
+  try {
+    const litterId = getLitterIdFromUrl();
+    const response = await fetch(`/api/pig-weights/litter/${encodeURIComponent(litterId)}/tag-numbers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(tagNumbersPayload(false)),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error((data.errors || [data.error || "Could not save tag numbers."]).join(" "));
+    }
+    resetTagNumbersPreview();
+    tagNumbersInput.value = "";
+    showLitterMessage(data.message || "Tag numbers saved.", "success");
+    await loadLitterDetail({ keepMessage: true });
+  } catch (error) {
+    showLitterMessage(error.message || "Could not save tag numbers.", "error");
+  } finally {
+    setTagNumbersSubmitting(false, "apply");
+  }
 }
 
 async function previewSexCount() {
@@ -1098,6 +1265,7 @@ async function loadLitterDetail(options = {}) {
     renderManualActionsPanel(litter);
     renderPigletDeathPanel(litter);
     renderSexCountPanel(litter);
+    renderTagNumbersPanel(litter);
     litterPigletsList.innerHTML = "";
 
     if (!litter.piglets.length) {
@@ -1124,6 +1292,8 @@ pigletDeathPreviewButton.addEventListener("click", previewPigletDeath);
 pigletDeathForm.addEventListener("submit", submitPigletDeath);
 sexCountPreviewButton.addEventListener("click", previewSexCount);
 sexCountForm.addEventListener("submit", submitSexCount);
+tagNumbersPreviewButton.addEventListener("click", previewTagNumbers);
+tagNumbersForm.addEventListener("submit", submitTagNumbers);
 reconcilePreviewButton.addEventListener("click", previewReconcileBirthCounts);
 reconcileForm.addEventListener("submit", submitReconcileBirthCounts);
 stillbornReclassifyPreviewButton.addEventListener("click", previewStillbornReclassify);
@@ -1133,6 +1303,7 @@ manualActionsToggle.addEventListener("click", () => {
   renderManualActionsPanel(window.currentLitterDetail || {});
   renderPigletDeathPanel(window.currentLitterDetail || {});
   renderSexCountPanel(window.currentLitterDetail || {});
+  renderTagNumbersPanel(window.currentLitterDetail || {});
 });
 [
   newbornHealthDate,
@@ -1161,6 +1332,14 @@ manualActionsToggle.addEventListener("click", () => {
   sexCountNotes,
 ].forEach((element) => {
   if (element) element.addEventListener("change", resetSexCountPreview);
+});
+[
+  tagNumbersDate,
+  tagNumbersInput,
+  tagNumbersNotes,
+].forEach((element) => {
+  if (element) element.addEventListener("change", resetTagNumbersPreview);
+  if (element) element.addEventListener("input", resetTagNumbersPreview);
 });
 [
   reconcileTargetBornAlive,

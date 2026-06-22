@@ -281,6 +281,36 @@
             <button type="button" id="litter_manual_actions_toggle" class="button-link button-link-secondary">Show Manual Actions</button>
           </section>
 
+          <section id="litter_tag_numbers_panel" class="litter-side-panel hidden">
+            <div class="section-subtitle">Tag Number Capture</div>
+            <p id="tag_numbers_text" class="form-helper">Enter one tag number per active untagged piglet, in the preview order shown below.</p>
+            <form id="tag_numbers_form" class="attention-action-form">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="tag_numbers_date">Action Date</label>
+                  <input type="date" id="tag_numbers_date" required />
+                </div>
+                <div class="form-field">
+                  <label for="tag_numbers_recorded_by">Recorded By</label>
+                  <input type="text" id="tag_numbers_recorded_by" value="web_app" required />
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="tag_numbers_input">Tag Numbers</label>
+                  <textarea id="tag_numbers_input" rows="5" placeholder="Example:&#10;101&#10;102&#10;103"></textarea>
+                </div>
+                <div class="form-field form-field-wide">
+                  <label for="tag_numbers_notes">Notes</label>
+                  <textarea id="tag_numbers_notes" rows="2"></textarea>
+                </div>
+              </div>
+              <div id="tag_numbers_preview" class="bulk-review-panel hidden"></div>
+              <div class="form-actions">
+                <button type="button" id="tag_numbers_preview_button" class="button-link button-link-secondary">Preview</button>
+                <button type="submit" id="tag_numbers_apply_button" disabled>Save Tag Numbers</button>
+              </div>
+            </form>
+          </section>
+
           <section id="litter_piglet_death_panel" class="litter-side-panel hidden">
             <div class="section-subtitle">Piglet Death Capture</div>
             <p class="form-helper">Use this for pre-weaning deaths before tag numbers are assigned.</p>
@@ -367,6 +397,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260604-piglet-deaths"></script>
+  <script src="{{ url_for('static', filename='js/litterDetail.js') }}?v=20260622-tag-numbers"></script>
 </body>
 </html>
