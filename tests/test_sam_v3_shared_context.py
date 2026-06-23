@@ -7,6 +7,25 @@ from tests.test_sam_meat_runtime import inbound_payload
 
 
 class SamV3SharedContextTests(unittest.TestCase):
+    def test_policy_reports_v3_only_when_global_llm_switch_is_on(self):
+        policy = sam_meat_runtime.sam_meat_webhook_policy(environ={
+            "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+            "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+            "OPENAI_API_KEY": "test-key",
+        })
+
+        self.assertFalse(policy["agent_v3_enabled"])
+        self.assertTrue(policy["agent_v3_explicitly_enabled"])
+
+        policy = sam_meat_runtime.sam_meat_webhook_policy(environ={
+            "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+            "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+            "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+            "OPENAI_API_KEY": "test-key",
+        })
+
+        self.assertTrue(policy["agent_v3_enabled"])
+
     def test_context_packet_uses_beacon_campaign_and_chatwoot_history(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Yummy",
@@ -97,6 +116,7 @@ class SamV3SharedContextTests(unittest.TestCase):
             ),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
                 "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
@@ -132,6 +152,7 @@ class SamV3SharedContextTests(unittest.TestCase):
             inbound_payload(content="How much is the half carcass?"),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
                 "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",

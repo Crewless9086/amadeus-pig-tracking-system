@@ -13,6 +13,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
         agent_raw,
         active_interest=None,
         contract_status="needs_owner_confirmation",
+        extra_env=None,
     ):
         lead_id = "OSK-SALES-LEAD-V3-STRESS"
         active_interest = active_interest if isinstance(active_interest, dict) else {}
@@ -44,6 +45,14 @@ class SamV3ReplayStressTests(unittest.TestCase):
             }, 200)
             mock_fulfillment.return_value = ({"success": True, "status": "ok"}, 201)
 
+            env = {
+                "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            }
+            env.update(extra_env if isinstance(extra_env, dict) else {})
             return sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
                 inbound_payload(
                     content=content,
@@ -57,12 +66,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
                         },
                     },
                 ),
-                environ={
-                    "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
-                    "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
-                    "OPENAI_API_KEY": "test-key",
-                    "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
-                },
+                environ=env,
                 llm_agent_v3_decider=Mock(return_value=agent_raw),
             )
 
@@ -163,6 +167,91 @@ class SamV3ReplayStressTests(unittest.TestCase):
                 self.assertFalse(result["agent_decision"]["used"])
                 self.assertEqual(result["agent_decision"]["status"], "agent_v3_reply_blocked")
                 self.assertNotEqual(result["sam_decision"]["reply_text"], reply_text)
+
+    def test_replay_stress_v3_quote_request_is_overridden_by_document_gate(self):
+        with patch("modules.sales.sam_meat_runtime.build_meat_estimated_quote_packet") as mock_quote:
+            mock_quote.return_value = ({
+                "success": True,
+                "quote_safe": True,
+                "sam_preparing_message": "I am preparing your estimated quote now and will send it through shortly.",
+            }, 200)
+
+            result, status_code = self._run_sam_v3_case(
+                content="Please send the estimated quote now.",
+                active_interest={
+                    "product_type": "half_carcass",
+                    "cut_set": "Set A",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "delivery_address_line_1": "12 Test Street",
+                    "timing": "next available farm run",
+                    "payment_method": "EFT",
+                },
+                contract_status="owner_money_path_ready",
+                extra_env={"MEAT_SALES_DOCUMENT_AUTOSEND_ENABLED": "1"},
+                agent_raw={
+                    "intent": "document_request",
+                    "should_reply": True,
+                    "reply_text": "Sure, I will get that ready for you.",
+                    "facts_patch": {},
+                    "next_action": "document_request_gate",
+                    "confidence": 0.96,
+                    "risk_flags": [],
+                },
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["agent_decision"]["used"])
+        self.assertTrue(result["sam_decision"]["document_send_requested"])
+        self.assertIn("preparing your estimated quote", result["sam_decision"]["reply_text"])
+        self.assertNotEqual(result["sam_decision"]["reply_text"], "Sure, I will get that ready for you.")
+
+    @patch("modules.sales.sam_meat_runtime.record_meat_deposit_event")
+    @patch("modules.sales.sam_meat_runtime.get_meat_ops_status")
+    def test_replay_stress_v3_pop_message_is_overridden_by_payment_gate(self, mock_ops, mock_deposit):
+        mock_ops.return_value = ({
+            "success": True,
+            "reservations": [{
+                "reservation_id": "OSK-MEAT-RES-V3",
+                "status": "deposit_pending",
+                "effective_status": "deposit_pending",
+                "created_at": "2026-06-23T08:00:00Z",
+            }],
+        }, 200)
+        mock_deposit.return_value = ({
+            "success": True,
+            "status": "pop_received_unverified",
+        }, 201)
+
+        result, status_code = self._run_sam_v3_case(
+            content="I paid and sent POP ref TEST123.",
+            active_interest={
+                "product_type": "half_carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+                "delivery_or_collection": "delivery",
+                "delivery_address_line_1": "12 Test Street",
+                "timing": "next available farm run",
+                "payment_method": "EFT",
+            },
+            contract_status="owner_money_path_ready",
+            agent_raw={
+                "intent": "payment",
+                "should_reply": True,
+                "reply_text": "Thanks, I have your POP and will keep your order moving.",
+                "facts_patch": {},
+                "next_action": "record_unverified_pop",
+                "confidence": 0.94,
+                "risk_flags": [],
+            },
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["agent_decision"]["used"])
+        self.assertTrue(result["pop_capture"]["recorded"])
+        self.assertIn("only moves forward once the money reflects", result["sam_decision"]["reply_text"])
+        self.assertNotIn("order moving", result["sam_decision"]["reply_text"])
+        mock_deposit.assert_called_once()
 
 
 if __name__ == "__main__":

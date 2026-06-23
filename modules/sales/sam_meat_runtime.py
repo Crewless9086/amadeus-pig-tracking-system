@@ -84,7 +84,7 @@ def sam_meat_webhook_policy(environ=None):
         "chatwoot_hygiene_enabled": hygiene_enabled,
         "llm_enabled": llm_enabled and llm_configured,
         "agent_v2_enabled": agent_v2_enabled and llm_configured,
-        "agent_v3_enabled": agent_v3_enabled and llm_configured,
+        "agent_v3_enabled": agent_v3_enabled and llm_enabled and llm_configured,
         "agent_v2_explicitly_enabled": agent_v2_enabled,
         "agent_v3_explicitly_enabled": agent_v3_enabled,
         "llm_explicitly_enabled": llm_enabled,
@@ -167,7 +167,7 @@ def handle_sam_meat_chatwoot_inbound(
     )
     if (
         not agent_decision.get("used")
-        and agent_decision.get("status") in {"agent_v3_disabled", "agent_v3_not_configured", "agent_v3_no_decision"}
+        and agent_decision.get("status") in {"agent_v3_disabled", "agent_v3_llm_disabled", "agent_v3_not_configured", "agent_v3_no_decision"}
     ):
         agent_decision = _build_agent_v2_decision_if_enabled(
             inbound,
@@ -663,6 +663,8 @@ def _build_agent_v2_decision_if_enabled(inbound, facts, prior_context, source, d
 def _build_agent_v3_decision_if_enabled(context_packet, facts, source, decider=None):
     if not _truthy(source.get(AGENT_V3_ENABLED_ENV)):
         return {"used": False, "status": "agent_v3_disabled", "version": "v3"}
+    if not _truthy(source.get(LLM_ENABLED_ENV)):
+        return {"used": False, "status": "agent_v3_llm_disabled", "version": "v3"}
     if not (str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
         return {"used": False, "status": "agent_v3_not_configured", "version": "v3"}
     caller = decider or _call_sam_meat_agent_v3_llm

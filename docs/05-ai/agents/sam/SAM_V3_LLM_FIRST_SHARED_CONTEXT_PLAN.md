@@ -145,6 +145,17 @@ Verification:
 - `python -m unittest tests.test_sam_v3_shared_context tests.test_sam_v3_replay_stress tests.test_sam_meat_runtime` passes.
 - `python -m unittest tests.test_sam_meat_stress` passes.
 
+### 2026-06-23 - Post-Deploy Hardening
+
+Render policy confirmed v3 is active, v2 is off, LLM is configured, autoreply is on, bank details are configured, and Chatwoot hygiene is on.
+
+Additional hardening:
+
+- v3 now also respects `SAM_MEAT_BACKEND_LLM_ENABLED=1`; the policy reports v3 usable only when the global LLM switch, v3 switch, model, and API key are all present.
+- Replay tests now prove quote/document requests are controlled by the backend document gate even when v3 writes a friendly answer.
+- Replay tests now prove POP/payment-proof messages are controlled by the POP-vs-bank gate even when v3 proposes a conversational reply.
+- The standalone Sam Meat stress runner currently passes 44/44 scenarios with 0 known improvement opportunities.
+
 Next live check:
 
 - Deploy with `SAM_MEAT_BACKEND_AGENT_V3_ENABLED=1`, `SAM_MEAT_BACKEND_AGENT_V2_ENABLED=0`, `SAM_MEAT_BACKEND_LLM_ENABLED=1`, `SAM_MEAT_BACKEND_LLM_MODEL` set, and `OPENAI_API_KEY` set.

@@ -1,7 +1,7 @@
 # Sam Meat Sales Stress-Test Run
 
-- Scenarios: 40
-- Passed: 40
+- Scenarios: 44
+- Passed: 44
 - Failed: 0
 - Known improvement opportunities: 0
 
@@ -43,7 +43,7 @@
 
 ## Sam v3 Replay Addendum - 2026-06-23
 
-Sam v3 LLM-first shared-context replay tests were added beside the existing 40-scenario deterministic stress pack.
+Sam v3 LLM-first shared-context replay tests were added beside the deterministic meat-sales stress pack.
 
 Covered:
 
@@ -52,8 +52,13 @@ Covered:
 - Existing delivery context prevents repeated address prompts.
 - No-intent fade-out can produce `no_reply`.
 - Unsafe LLM claims about money, payment, booking, slaughter, butcher, or delivery are blocked before customer send.
+- Quote/document requests are overridden by the backend document gate.
+- POP/payment-proof messages are overridden by the POP-vs-bank payment gate.
+- The v3 policy only reports usable when both `SAM_MEAT_BACKEND_AGENT_V3_ENABLED=1` and `SAM_MEAT_BACKEND_LLM_ENABLED=1` are set with model/API key configured.
 
 Verification:
 
-- `python -m unittest tests.test_sam_v3_shared_context tests.test_sam_v3_replay_stress tests.test_sam_meat_runtime` passed.
+- `python -m unittest tests.test_sam_v3_shared_context tests.test_sam_v3_replay_stress tests.test_sam_meat_runtime tests.test_sam_meat_stress` passed.
 - `python -m unittest tests.test_sam_meat_stress` passed.
+- `python scripts/sam_meat_stress_test.py` passed 44/44.
+- `python -m unittest tests.test_sales_transaction_routes tests.test_chatwoot_hygiene tests.test_sales_conversation_learning tests.test_sam_farm_knowledge` passed.
