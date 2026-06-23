@@ -44,6 +44,7 @@ from modules.sales.sam_farm_knowledge import (
     product_menu_text,
     public_profile,
 )
+from modules.sales.sam_shared_context import build_sam_v3_context_packet
 
 
 WEBHOOK_ENABLED_ENV = "SAM_MEAT_BACKEND_WEBHOOK_ENABLED"
@@ -51,6 +52,7 @@ WEBHOOK_TOKEN_ENV = "SAM_MEAT_BACKEND_WEBHOOK_TOKEN"
 AUTOREPLY_ENABLED_ENV = "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED"
 LLM_ENABLED_ENV = "SAM_MEAT_BACKEND_LLM_ENABLED"
 AGENT_V2_ENABLED_ENV = "SAM_MEAT_BACKEND_AGENT_V2_ENABLED"
+AGENT_V3_ENABLED_ENV = "SAM_MEAT_BACKEND_AGENT_V3_ENABLED"
 LLM_MODEL_ENV = "SAM_MEAT_BACKEND_LLM_MODEL"
 LLM_URL_ENV = "SAM_MEAT_BACKEND_LLM_URL"
 LLM_TIMEOUT_ENV = "SAM_MEAT_BACKEND_LLM_TIMEOUT_SECONDS"
@@ -72,6 +74,7 @@ def sam_meat_webhook_policy(environ=None):
     autoreply_enabled = _truthy(source.get(AUTOREPLY_ENABLED_ENV))
     llm_enabled = _truthy(source.get(LLM_ENABLED_ENV))
     agent_v2_enabled = _truthy(source.get(AGENT_V2_ENABLED_ENV))
+    agent_v3_enabled = _truthy(source.get(AGENT_V3_ENABLED_ENV))
     hygiene_enabled = _truthy(source.get(HYGIENE_ENABLED_ENV))
     llm_configured = bool(str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip())
     return {
@@ -81,7 +84,9 @@ def sam_meat_webhook_policy(environ=None):
         "chatwoot_hygiene_enabled": hygiene_enabled,
         "llm_enabled": llm_enabled and llm_configured,
         "agent_v2_enabled": agent_v2_enabled and llm_configured,
+        "agent_v3_enabled": agent_v3_enabled and llm_configured,
         "agent_v2_explicitly_enabled": agent_v2_enabled,
+        "agent_v3_explicitly_enabled": agent_v3_enabled,
         "llm_explicitly_enabled": llm_enabled,
         "llm_configured": llm_configured,
         "enabled_env": WEBHOOK_ENABLED_ENV,
@@ -90,6 +95,7 @@ def sam_meat_webhook_policy(environ=None):
         "chatwoot_hygiene_env": HYGIENE_ENABLED_ENV,
         "llm_enabled_env": LLM_ENABLED_ENV,
         "agent_v2_enabled_env": AGENT_V2_ENABLED_ENV,
+        "agent_v3_enabled_env": AGENT_V3_ENABLED_ENV,
         "llm_model_env": LLM_MODEL_ENV,
         "api_key_env": OPENAI_API_KEY_ENV,
         "bank_details_configured": _bank_details_configured(source),
@@ -131,6 +137,7 @@ def handle_sam_meat_chatwoot_inbound(
     document_sender=None,
     llm_extractor=None,
     llm_agent_decider=None,
+    llm_agent_v3_decider=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -151,13 +158,24 @@ def handle_sam_meat_chatwoot_inbound(
         inbound,
     )
     facts = _merge_prior_context(facts, prior_context)
-    agent_decision = _build_agent_v2_decision_if_enabled(
-        inbound,
+    context_packet = build_sam_v3_context_packet(inbound, prior_context, environ=source)
+    agent_decision = _build_agent_v3_decision_if_enabled(
+        context_packet,
         facts,
-        prior_context,
         source,
-        decider=llm_agent_decider,
+        decider=llm_agent_v3_decider,
     )
+    if (
+        not agent_decision.get("used")
+        and agent_decision.get("status") in {"agent_v3_disabled", "agent_v3_not_configured", "agent_v3_no_decision"}
+    ):
+        agent_decision = _build_agent_v2_decision_if_enabled(
+            inbound,
+            facts,
+            prior_context,
+            source,
+            decider=llm_agent_decider,
+        )
     if agent_decision.get("used"):
         facts = _merge_agent_fact_patch(facts, agent_decision)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
@@ -261,6 +279,7 @@ def handle_sam_meat_chatwoot_inbound(
         "inbound": inbound,
         "facts": facts,
         "agent_decision": agent_decision,
+        "sam_context_packet": context_packet,
         "prior_context": prior_context,
         "lead_payload": lead_payload,
         "lead_result": record_result,
@@ -320,6 +339,7 @@ def parse_chatwoot_inbound(payload):
     if event and event not in {"message_created", "conversation_created"}:
         return _ignored("ignored_non_message_event", event, message_type, content, conversation_id, customer_name, channel)
     custom_attributes = conversation.get("custom_attributes") if isinstance(conversation.get("custom_attributes"), dict) else {}
+    labels = _conversation_labels_from_payload(payload, conversation)
     explicit_window_state = _normal_whatsapp_window_state(
         payload.get("whatsapp_window_state")
         or payload.get("service_window_state")
@@ -347,6 +367,8 @@ def parse_chatwoot_inbound(payload):
         "message_id": _clean(payload.get("id") or payload.get("message_id"), 100),
         "last_inbound_at": _clean(payload.get("created_at") or payload.get("timestamp"), 80),
         "conversation_custom_attributes": custom_attributes,
+        "conversation_labels": labels,
+        "recent_messages": _conversation_messages_from_payload(payload, conversation),
     }
 
 
@@ -455,8 +477,15 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     agent_decision = agent_decision if isinstance(agent_decision, dict) else {}
     agent_reply = _validated_agent_reply(agent_decision)
     agent_wants_no_reply = agent_decision.get("used") and agent_decision.get("should_reply") is False
+    agent_is_v3 = agent_decision.get("version") == "v3"
     if non_pork_reply:
         reply = non_pork_reply
+        should_reply = True
+    elif agent_is_v3 and agent_wants_no_reply:
+        reply = ""
+        should_reply = False
+    elif agent_is_v3 and agent_reply:
+        reply = agent_reply
         should_reply = True
     elif frustration_reply:
         reply = frustration_reply
@@ -631,6 +660,113 @@ def _build_agent_v2_decision_if_enabled(inbound, facts, prior_context, source, d
     return decision
 
 
+def _build_agent_v3_decision_if_enabled(context_packet, facts, source, decider=None):
+    if not _truthy(source.get(AGENT_V3_ENABLED_ENV)):
+        return {"used": False, "status": "agent_v3_disabled", "version": "v3"}
+    if not (str(source.get(LLM_MODEL_ENV, "") or "").strip() and str(source.get(OPENAI_API_KEY_ENV, "") or "").strip()):
+        return {"used": False, "status": "agent_v3_not_configured", "version": "v3"}
+    caller = decider or _call_sam_meat_agent_v3_llm
+    raw = caller(context_packet, facts, source)
+    if not isinstance(raw, dict) or not raw:
+        return {"used": False, "status": "agent_v3_no_decision", "version": "v3"}
+    decision = _safe_sam_agent_v3_decision(raw, context_packet)
+    decision["used"] = bool(decision.get("status") == "agent_v3_decision_accepted")
+    return decision
+
+
+def _call_sam_meat_agent_v3_llm(context_packet, facts, source):
+    payload = _agent_v3_payload(context_packet, facts, source)
+    req = urllib_request.Request(
+        str(source.get(LLM_URL_ENV, DEFAULT_LLM_URL) or DEFAULT_LLM_URL).strip() or DEFAULT_LLM_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {str(source.get(OPENAI_API_KEY_ENV, '') or '').strip()}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+            body = response.read().decode("utf-8")
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
+        return {}
+    try:
+        data = json.loads(body or "{}")
+        content = data["choices"][0]["message"]["content"]
+        return json.loads(_strip_code_fence(str(content or "")))
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _agent_v3_payload(context_packet, facts, source):
+    system = (
+        "You are Sam, the LLM-first shared-context sales agent for Amadeus Farm. "
+        "Speak like a capable human farm salesperson on WhatsApp: warm, concise, practical, and not pushy. "
+        "Use the shared context packet before deciding what the customer means. If the customer is responding to a Beacon meat post, "
+        "use that post/campaign/media context naturally instead of asking them to repeat obvious context. "
+        "You may chat briefly about the farm story, pork, live sales, delivery, payment process, and product options, then steer gently to one useful next step. "
+        "If there is no clear intent and no useful next step, set should_reply false. "
+        "Never assume uncertain facts; ask a short clarifying question. "
+        "Never use the word pilot. Never invent prices, weights, stock, availability, booking status, payment status, slaughter dates, butcher slots, or delivery dates. "
+        "Never say payment is confirmed unless the bank gate says so. Never create or confirm an order. "
+        "Return JSON only."
+    )
+    schema_note = {
+        "required_json_shape": {
+            "intent": "warm_campaign_interest|meat_preorder|live_sales|farm_info|payment|document_request|general|unknown",
+            "should_reply": True,
+            "reply_text": "natural customer-facing WhatsApp reply, normally 1-4 short sentences",
+            "facts_patch": {
+                "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
+                "cut_set": "Set A|Set B|Set C|Set D",
+                "location": "town or area",
+                "timing": "this week|next week|next available farm run|customer wording",
+                "delivery_or_collection": "delivery|collection",
+                "delivery_address_line_1": "street address, farm name, or shared location label",
+                "delivery_town": "town",
+                "delivery_area": "area/suburb",
+                "delivery_notes": "short driver notes",
+                "payment_method": "EFT|Cash",
+                "budget_amount": "number only",
+                "target_packed_kg": "number only",
+                "match_preference": "heaviest|soonest|cheapest|best_fit|closest_weight|budget_fit",
+            },
+            "missing_fields": ["field_name"],
+            "next_action": "soft_qualify_interest|request_missing_fact|answer_farm_info|explain_product_options|document_request_gate|payment_state_gate|record_unverified_pop|handoff_for_owner_review|no_reply",
+            "confidence": 0.0,
+            "requires_confirmation": False,
+            "risk_flags": [],
+        }
+    }
+    return {
+        "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
+        "temperature": 0.35,
+        "messages": [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "context_packet": context_packet,
+                        "current_known_facts": facts,
+                        "backend_authority": {
+                            "llm_writes_customer_language": True,
+                            "backend_validates_and_records_facts": True,
+                            "backend_handles_quote_document_payment_booking_gates": True,
+                            "allowed_actions": context_packet.get("allowed_actions") if isinstance(context_packet, dict) else [],
+                            "blocked_actions": context_packet.get("blocked_actions") if isinstance(context_packet, dict) else [],
+                        },
+                        **schema_note,
+                    },
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                )[:14000],
+            },
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+
 def _call_sam_meat_agent_llm(inbound, facts, prior_context, source):
     payload = _agent_v2_payload(inbound, facts, prior_context, source)
     req = urllib_request.Request(
@@ -778,6 +914,35 @@ def _safe_sam_agent_decision(raw):
     }
 
 
+def _safe_sam_agent_v3_decision(raw, context_packet=None):
+    decision = _safe_sam_agent_decision(raw)
+    decision["version"] = "v3"
+    status = decision.get("status") or ""
+    if status.startswith("agent_v2_"):
+        decision["status"] = "agent_v3_" + status[len("agent_v2_"):]
+    allowed_next_actions = {
+        "soft_qualify_interest",
+        "request_missing_fact",
+        "answer_farm_info",
+        "explain_product_options",
+        "document_request_gate",
+        "payment_state_gate",
+        "record_unverified_pop",
+        "handoff_for_owner_review",
+        "no_reply",
+    }
+    next_action = _clean(raw.get("next_action"), 80)
+    if next_action not in allowed_next_actions:
+        next_action = "request_missing_fact" if decision.get("missing_fields") else "soft_qualify_interest"
+    if decision.get("should_reply") is False:
+        next_action = "no_reply"
+    packet = context_packet if isinstance(context_packet, dict) else {}
+    decision["next_action"] = next_action
+    decision["allowed_actions"] = packet.get("allowed_actions") if isinstance(packet.get("allowed_actions"), list) else []
+    decision["blocked_actions"] = packet.get("blocked_actions") if isinstance(packet.get("blocked_actions"), list) else []
+    return decision
+
+
 def _merge_agent_fact_patch(facts, agent_decision):
     facts = dict(facts or {})
     patch = agent_decision.get("facts_patch") if isinstance(agent_decision.get("facts_patch"), dict) else {}
@@ -823,6 +988,8 @@ def _agent_decision_summary(agent_decision):
         "confidence": agent_decision.get("confidence", 0),
         "requires_confirmation": bool(agent_decision.get("requires_confirmation")),
         "risk_flags": agent_decision.get("risk_flags") if isinstance(agent_decision.get("risk_flags"), list) else [],
+        "version": _clean(agent_decision.get("version"), 20),
+        "next_action": _clean(agent_decision.get("next_action"), 80),
     }
 
 
@@ -1659,6 +1826,35 @@ def _normal_channel(payload, conversation):
     if "email" in raw:
         return "chatwoot_email"
     return "chatwoot"
+
+
+def _conversation_labels_from_payload(payload, conversation):
+    payload = payload if isinstance(payload, dict) else {}
+    conversation = conversation if isinstance(conversation, dict) else {}
+    raw = payload.get("labels")
+    if raw is None:
+        raw = conversation.get("labels")
+    labels = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                label = _clean(item.get("title") or item.get("name"), 80)
+            else:
+                label = _clean(item, 80)
+            if label:
+                labels.append(label)
+    return labels
+
+
+def _conversation_messages_from_payload(payload, conversation):
+    payload = payload if isinstance(payload, dict) else {}
+    conversation = conversation if isinstance(conversation, dict) else {}
+    raw = payload.get("messages")
+    if raw is None:
+        raw = conversation.get("messages")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw[-12:] if isinstance(item, dict)]
 
 
 def _normal_whatsapp_window_state(value):

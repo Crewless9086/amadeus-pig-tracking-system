@@ -67,6 +67,22 @@ The LLM does not get final authority. The backend validates the output before it
 
 Customer-facing Sam wording must not use internal rollout terms such as `pilot`.
 
+## Sam LLM Agent V3
+
+Sam v3 is the preferred customer-facing runtime for Meat Sales.
+
+Enable it with:
+
+- `SAM_MEAT_BACKEND_AGENT_V3_ENABLED=1`
+- `SAM_MEAT_BACKEND_AGENT_V2_ENABLED=0`
+- `SAM_MEAT_BACKEND_LLM_ENABLED=1`
+- `SAM_MEAT_BACKEND_LLM_MODEL` set
+- `OPENAI_API_KEY` set
+
+Sam v3 uses the farm knowledge pack plus a shared context packet. That packet can include Chatwoot labels, custom attributes, recent messages, active lead facts, and Beacon/source campaign context. This lets Sam answer like a human who knows which post or campaign the customer is responding to.
+
+The backend remains the authority layer. Sam v3 writes natural WhatsApp wording and proposes fact patches, but Python still validates the reply, records facts, blocks unsafe claims, and controls quote, payment, booking, stock, slaughter, butcher, delivery, and public-posting gates.
+
 ## How To Check It
 
 After deploy, open:

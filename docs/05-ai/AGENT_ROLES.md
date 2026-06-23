@@ -23,6 +23,17 @@ Specialists must not become uncontrolled separate brains. They start read-only o
 | Atlas / Analyst | Reviews sales conversations, objections, missing facts, conversion/loss reasons, and improvement opportunities. Phase 11O records append-only sales conversation learning evidence for later summary. | Learning evidence and recommendations only. No automatic prompt/rule/tool changes. |
 | Oom Sakkie | Summarizes state, next gates, risks, and learning for the owner. | Internal command center. Does not replace Sam in customer conversations. |
 
+## Sam v3 Direction
+
+Sam Meat is moving from rule-first replies to an LLM-first shared-context runtime. The plan and implementation log are in `docs/05-ai/agents/sam/SAM_V3_LLM_FIRST_SHARED_CONTEXT_PLAN.md`.
+
+The operating target is:
+
+- Beacon creates campaign/post/media context.
+- Sam reads that shared context plus Chatwoot, lead, conversation, and farm knowledge before replying.
+- The LLM writes normal customer-facing wording.
+- Backend code validates, saves facts, and blocks unsafe actions instead of being the main conversation script.
+
 ## Learning Structure
 
 Each module can have narrow learning evidence:

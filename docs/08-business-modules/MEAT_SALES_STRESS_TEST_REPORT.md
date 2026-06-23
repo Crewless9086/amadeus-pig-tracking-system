@@ -40,3 +40,20 @@
 ## Failures
 
 - No launch-blocking stress assertions failed.
+
+## Sam v3 Replay Addendum - 2026-06-23
+
+Sam v3 LLM-first shared-context replay tests were added beside the existing 40-scenario deterministic stress pack.
+
+Covered:
+
+- Beacon/Facebook meat-post context handed into Sam's context packet.
+- Warm social reply such as `Yummy` uses LLM wording instead of the old menu script.
+- Existing delivery context prevents repeated address prompts.
+- No-intent fade-out can produce `no_reply`.
+- Unsafe LLM claims about money, payment, booking, slaughter, butcher, or delivery are blocked before customer send.
+
+Verification:
+
+- `python -m unittest tests.test_sam_v3_shared_context tests.test_sam_v3_replay_stress tests.test_sam_meat_runtime` passed.
+- `python -m unittest tests.test_sam_meat_stress` passed.
