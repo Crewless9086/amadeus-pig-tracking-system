@@ -172,6 +172,7 @@ def handle_sam_meat_chatwoot_inbound(
         source,
         decider=llm_agent_v3_decider,
     )
+    agent_v3_decision = dict(agent_decision)
     if (
         not agent_decision.get("used")
         and agent_decision.get("status") in {"agent_v3_disabled", "agent_v3_llm_disabled", "agent_v3_not_configured", "agent_v3_no_decision"}
@@ -183,6 +184,7 @@ def handle_sam_meat_chatwoot_inbound(
             source,
             decider=llm_agent_decider,
         )
+        agent_decision["previous_agent_v3_status"] = agent_v3_decision.get("status", "")
     if agent_decision.get("used"):
         facts = _merge_agent_fact_patch(facts, agent_decision)
     lead_payload = build_sam_meat_lead_payload_from_inbound(inbound, facts)
@@ -833,6 +835,8 @@ def _safe_rewritten_reply(raw):
     raw = raw if isinstance(raw, dict) else {}
     reply = _clean(raw.get("reply_text"), 1800)
     confidence = _normal_confidence(raw.get("confidence"))
+    if reply and "confidence" not in raw:
+        confidence = 0.80
     if not reply or confidence < 0.65:
         return ""
     if _agent_reply_blockers(reply):
@@ -1014,6 +1018,8 @@ def _safe_sam_agent_decision(raw):
     raw = raw if isinstance(raw, dict) else {}
     reply = _clean(raw.get("reply_text"), 1800)
     confidence = _normal_confidence(raw.get("confidence"))
+    if reply and "confidence" not in raw:
+        confidence = 0.80
     should_reply = raw.get("should_reply")
     should_reply = False if should_reply is False else bool(reply)
     risk_flags = [_clean(item, 80) for item in (raw.get("risk_flags") if isinstance(raw.get("risk_flags"), list) else [])]

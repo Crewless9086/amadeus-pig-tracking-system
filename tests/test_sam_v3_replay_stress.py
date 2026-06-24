@@ -238,6 +238,27 @@ class SamV3ReplayStressTests(unittest.TestCase):
         self.assertNotIn("Pork meat sales: Half carcass", reply)
         self.assertNotIn("Tell me what you are looking for", reply)
 
+    def test_rewriter_accepts_clean_reply_when_confidence_is_omitted(self):
+        reply = sam_meat_runtime._safe_rewritten_reply({
+            "reply_text": "Hello, I am Sam from Amadeus Farm. Are you looking for pork for your freezer, or do you want farm information first?"
+        })
+
+        self.assertIn("Amadeus Farm", reply)
+
+    def test_v3_accepts_clean_agent_reply_when_confidence_is_omitted(self):
+        decision = sam_meat_runtime._safe_sam_agent_v3_decision({
+            "intent": "warm_campaign_interest",
+            "should_reply": True,
+            "reply_text": "Hi, I am Sam from Amadeus Farm. Are you looking for pork for your freezer?",
+            "facts_patch": {},
+            "next_action": "soft_qualify_interest",
+            "risk_flags": [],
+        })
+
+        self.assertTrue(decision["used"])
+        self.assertEqual(decision["status"], "agent_v3_decision_accepted")
+        self.assertEqual(decision["confidence"], 0.80)
+
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
