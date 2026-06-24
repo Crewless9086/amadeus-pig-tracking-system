@@ -638,8 +638,17 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
             inbound_payload(),
-            environ={"SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1"},
+            environ={
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+                "OPENAI_API_KEY": "test-key",
+            },
             chatwoot_sender=sender,
+            llm_reply_rewriter=Mock(return_value={
+                "reply_text": "Great, I have your pork freezer interest. I will keep the next step practical while the farm confirms the money path.",
+                "confidence": 0.9,
+            }),
         )
 
         self.assertEqual(status_code, 200)
@@ -1101,11 +1110,16 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="I want a half carcass for Riversdale."),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
                 "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
             llm_agent_decider=Mock(return_value={}),
+            llm_reply_rewriter=Mock(return_value={
+                "reply_text": "A half carcass can work well. Which cut set should I note for you?",
+                "confidence": 0.9,
+            }),
         )
 
         self.assertFalse(result["agent_decision"]["used"])
@@ -1133,11 +1147,16 @@ class SamMeatRuntimeTests(unittest.TestCase):
             inbound_payload(content="I want pig meat"),
             environ={
                 "SAM_MEAT_BACKEND_AGENT_V2_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
                 "SAM_MEAT_BACKEND_LLM_MODEL": "test-model",
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
             llm_agent_decider=Mock(return_value={}),
+            llm_reply_rewriter=Mock(return_value={
+                "reply_text": "Yes, I can help with pork for the freezer. A half carcass is usually the best starting point; should I explain that route first?",
+                "confidence": 0.9,
+            }),
         )
 
         reply = result["sam_decision"]["reply_text"]

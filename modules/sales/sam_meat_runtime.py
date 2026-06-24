@@ -144,6 +144,7 @@ def handle_sam_meat_chatwoot_inbound(
     llm_extractor=None,
     llm_agent_decider=None,
     llm_agent_v3_decider=None,
+    llm_reply_rewriter=None,
 ):
     source = environ if environ is not None else os.environ
     inbound = parse_chatwoot_inbound(payload)
@@ -204,6 +205,7 @@ def handle_sam_meat_chatwoot_inbound(
         deposit_instruction = _build_deposit_instruction_if_ready(booking_confirmation.get("lead_id"), source)
         if deposit_instruction.get("ready"):
             decision["reply_text"] = deposit_instruction["message"]
+            decision["reply_source"] = "hard_deposit_gate"
             decision["deposit_payment_instruction"] = deposit_instruction
             decision["blocked_actions"] = [
                 item for item in decision.get("blocked_actions", [])
@@ -214,6 +216,7 @@ def handle_sam_meat_chatwoot_inbound(
                 "Thanks, I have noted your confirmation for final booking review. "
                 "The farm will prepare the next booking step."
             )
+            decision["reply_source"] = "hard_booking_gate"
             decision["deposit_payment_instruction"] = deposit_instruction
     pop_capture = _record_pop_if_ready(inbound, prior_context, source)
     if pop_capture.get("recorded") or pop_capture.get("detected"):
@@ -221,7 +224,17 @@ def handle_sam_meat_chatwoot_inbound(
             "Thanks, I have received the payment proof. "
             "The booking only moves forward once the money reflects in the farm account."
         )
+        decision["reply_source"] = "hard_payment_gate"
         decision["pop_capture"] = pop_capture
+    decision = _rewrite_code_reply_if_needed(
+        decision,
+        inbound,
+        facts,
+        prior_context,
+        context_packet,
+        source,
+        rewriter=llm_reply_rewriter,
+    )
     fulfillment_capture = _record_delivery_address_if_ready(decision.get("lead_id"), inbound, facts)
     chatwoot_hygiene = sync_sam_meat_chatwoot_hygiene(
         inbound.get("conversation_id"),
@@ -466,6 +479,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     knowledge_result = load_sam_farm_knowledge(source)
     knowledge = knowledge_result.get("knowledge") if isinstance(knowledge_result.get("knowledge"), dict) else {}
     reply = ""
+    reply_source = "code_fallback"
     should_reply = True
     lead_id = _clean(record_result.get("lead_id") if isinstance(record_result, dict) else "", 100)
     document_send_requested = False
@@ -486,15 +500,19 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     agent_is_v3 = agent_decision.get("version") == "v3"
     if non_pork_reply:
         reply = non_pork_reply
+        reply_source = "code_guard"
         should_reply = True
     elif agent_is_v3 and agent_wants_no_reply:
         reply = ""
+        reply_source = "llm_agent_v3"
         should_reply = False
     elif agent_is_v3 and agent_reply:
         reply = agent_reply
+        reply_source = "llm_agent_v3"
         should_reply = True
     elif frustration_reply:
         reply = frustration_reply
+        reply_source = "code_guard"
         should_reply = True
     elif set_recommendation_reply:
         reply = set_recommendation_reply
@@ -519,9 +537,11 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         should_reply = True
     elif agent_wants_no_reply:
         reply = ""
+        reply_source = "llm_agent"
         should_reply = False
     elif agent_reply:
         reply = agent_reply
+        reply_source = "llm_agent"
         should_reply = True
     elif record_status == 400 and record_result.get("sam_next_question"):
         reply = record_result["sam_next_question"]
@@ -565,6 +585,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
                     reply = quote_packet.get("sam_preparing_message") or (
                         "I am preparing your estimated quote now and will send it through shortly."
                     )
+                    reply_source = "hard_document_gate"
                     document_send_requested = True
                     document_force_resend_requested = quote_or_document_requested
                 elif quote_status == 200 and quote_packet.get("quote_safe"):
@@ -572,23 +593,27 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
                         "I have the details needed for your estimated quote. "
                         "The farm document send step is not enabled yet, so the team will send it once that is switched on."
                     )
+                    reply_source = "hard_document_gate"
                 elif quote_or_document_requested:
                     blockers = quote_packet.get("blockers") if isinstance(quote_packet, dict) else []
                     blocker_text = _quote_blocker_reply(blockers)
                     reply = blocker_text or (
                         "I am not able to prepare the estimated quote yet because the farm document gate is incomplete."
                     )
+                    reply_source = "hard_document_gate"
                 else:
                     reply = (
                         "I have your meat preorder details. I still need the farm document setup to be completed "
                         "before I can send the estimated quote."
                     )
+                    reply_source = "hard_document_gate"
 
     return {
         "agent": "sam_meat_backend",
         "decision": "reply" if should_reply else "no_reply",
         "should_reply": should_reply,
         "reply_text": reply,
+        "reply_source": reply_source,
         "lead_id": lead_id,
         "agent_v2": _agent_decision_summary(agent_decision),
         "document_send_requested": document_send_requested,
@@ -703,6 +728,116 @@ def _call_sam_meat_agent_v3_llm(context_packet, facts, source):
         return json.loads(_strip_code_fence(str(content or "")))
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return {}
+
+
+def _rewrite_code_reply_if_needed(decision, inbound, facts, prior_context, context_packet, source, rewriter=None):
+    decision = dict(decision or {})
+    if not decision.get("should_reply"):
+        return decision
+    reply_source = _clean(decision.get("reply_source"), 80)
+    if reply_source.startswith("llm_agent") or reply_source.startswith("hard_"):
+        return decision
+    original = _clean(decision.get("reply_text"), 1800)
+    if not original:
+        return decision
+    if not _truthy(source.get(LLM_ENABLED_ENV)) or not str(source.get(LLM_MODEL_ENV, "") or "").strip() or not str(source.get(OPENAI_API_KEY_ENV, "") or "").strip():
+        decision["should_reply"] = False
+        decision["decision"] = "no_reply"
+        decision["reply_text"] = ""
+        decision["reply_source"] = "code_reply_withheld_llm_rewrite_unavailable"
+        decision["rewrite_status"] = "llm_rewrite_unavailable"
+        return decision
+    caller = rewriter or _call_sam_meat_reply_rewriter_llm
+    raw = caller(decision, inbound, facts, prior_context, context_packet, source)
+    rewritten = _safe_rewritten_reply(raw)
+    if not rewritten:
+        decision["should_reply"] = False
+        decision["decision"] = "no_reply"
+        decision["reply_text"] = ""
+        decision["reply_source"] = "code_reply_withheld_rewrite_failed"
+        decision["rewrite_status"] = "rewrite_failed_or_blocked"
+        return decision
+    decision["reply_text"] = rewritten
+    decision["reply_source"] = "llm_rewritten_" + (reply_source or "code_fallback")
+    decision["rewrite_status"] = "rewritten"
+    decision["code_reply_brief"] = original
+    return decision
+
+
+def _call_sam_meat_reply_rewriter_llm(decision, inbound, facts, prior_context, context_packet, source):
+    payload = _reply_rewriter_payload(decision, inbound, facts, prior_context, context_packet, source)
+    req = urllib_request.Request(
+        str(source.get(LLM_URL_ENV, DEFAULT_LLM_URL) or DEFAULT_LLM_URL).strip() or DEFAULT_LLM_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {str(source.get(OPENAI_API_KEY_ENV, '') or '').strip()}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
+            body = response.read().decode("utf-8")
+    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
+        return {}
+    try:
+        data = json.loads(body or "{}")
+        content = data["choices"][0]["message"]["content"]
+        return json.loads(_strip_code_fence(str(content or "")))
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _reply_rewriter_payload(decision, inbound, facts, prior_context, context_packet, source):
+    system = (
+        "You are Sam, Amadeus Farm's public WhatsApp sales agent. "
+        "Rewrite the backend's structured reply brief into a natural human customer message. "
+        "The backend brief is policy, not wording. Do not copy its phrasing. "
+        "Be warm, useful, confident, and commercially focused. Avoid sounding like a form or a chatbot. "
+        "Ask at most one natural next question. "
+        "Never invent prices, weights, stock, booking status, payment confirmation, slaughter dates, butcher slots, or delivery dates. "
+        "Never say payment is confirmed. Never create or confirm an order. Never use the word pilot. "
+        "Return JSON only."
+    )
+    return {
+        "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
+        "temperature": 0.45,
+        "messages": [
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "customer_message": inbound.get("content") or "",
+                        "backend_reply_brief": decision.get("reply_text") or "",
+                        "reply_source": decision.get("reply_source") or "",
+                        "known_facts": facts,
+                        "prior_context": prior_context,
+                        "source_context": (context_packet or {}).get("source_context") if isinstance(context_packet, dict) else {},
+                        "conversation_summary": ((context_packet or {}).get("conversation") or {}).get("summary") if isinstance(context_packet, dict) else "",
+                        "required_json_shape": {
+                            "reply_text": "final customer-facing WhatsApp reply",
+                            "confidence": 0.0,
+                        },
+                    },
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                )[:12000],
+            },
+        ],
+        "response_format": {"type": "json_object"},
+    }
+
+
+def _safe_rewritten_reply(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    reply = _clean(raw.get("reply_text"), 1800)
+    confidence = _normal_confidence(raw.get("confidence"))
+    if not reply or confidence < 0.65:
+        return ""
+    if _agent_reply_blockers(reply):
+        return ""
+    return reply
 
 
 def _agent_v3_payload(context_packet, facts, source):

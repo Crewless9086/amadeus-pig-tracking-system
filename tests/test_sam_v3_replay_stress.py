@@ -199,6 +199,71 @@ class SamV3ReplayStressTests(unittest.TestCase):
         self.assertIn("robotic_public_reply", result["agent_decision"]["risk_flags"])
         self.assertNotIn("I am still with you", reply)
 
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_code_intro_is_rewritten_before_public_send(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-REWRITE",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Hi"),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_v3_decider=Mock(return_value={}),
+            llm_reply_rewriter=Mock(return_value={
+                "reply_text": "Hi, I am Sam from Amadeus Farm. Are you looking for pork for your freezer, or do you need farm information first?",
+                "confidence": 0.92,
+            }),
+        )
+
+        reply = result["sam_decision"]["reply_text"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["sam_decision"]["reply_source"], "llm_rewritten_code_fallback")
+        self.assertEqual(result["sam_decision"]["rewrite_status"], "rewritten")
+        self.assertNotIn("Pork meat sales: Half carcass", reply)
+        self.assertNotIn("Tell me what you are looking for", reply)
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_code_sales_reply_is_withheld_when_rewriter_unavailable(self, mock_record, mock_active):
+        mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-NO-REWRITE",
+            "contract": {},
+        }, 201)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Hi"),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "0",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_v3_decider=Mock(return_value={}),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["sam_decision"]["should_reply"])
+        self.assertEqual(result["sam_decision"]["reply_text"], "")
+        self.assertEqual(result["sam_decision"]["reply_source"], "code_reply_withheld_llm_rewrite_unavailable")
+
     def test_replay_stress_v3_rejects_payment_booking_and_money_hallucinations(self):
         unsafe_outputs = [
             "Your payment is confirmed and the order is booked.",
