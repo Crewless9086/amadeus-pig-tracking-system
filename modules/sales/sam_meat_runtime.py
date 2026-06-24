@@ -669,15 +669,14 @@ def _llm_payload(message, inbound, source):
         "Allowed match_preference: heaviest, soonest, cheapest, best_fit, closest_weight, budget_fit, or blank. "
         "Never include prices, deposit promises, order creation, stock reservation, or customer-send commands."
     )
-    return {
+    return _with_supported_temperature({
         "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
-        "temperature": 0,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps({"message": str(message or "")[:1800], "inbound": inbound}, separators=(",", ":"))},
         ],
         "response_format": {"type": "json_object"},
-    }
+    }, source, 0)
 
 
 def _build_agent_v2_decision_if_enabled(inbound, facts, prior_context, source, decider=None):
@@ -828,9 +827,8 @@ def _reply_rewriter_payload(decision, inbound, facts, prior_context, context_pac
         "Never say payment is confirmed. Never create or confirm an order. Never use the word pilot. "
         "Return JSON only."
     )
-    return {
+    return _with_supported_temperature({
         "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
-        "temperature": 0.45,
         "messages": [
             {"role": "system", "content": system},
             {
@@ -855,7 +853,7 @@ def _reply_rewriter_payload(decision, inbound, facts, prior_context, context_pac
             },
         ],
         "response_format": {"type": "json_object"},
-    }
+    }, source, 0.45)
 
 
 def _safe_rewritten_reply(raw):
@@ -917,9 +915,8 @@ def _agent_v3_payload(context_packet, facts, source):
             "risk_flags": [],
         }
     }
-    return {
+    return _with_supported_temperature({
         "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
-        "temperature": 0.35,
         "messages": [
             {"role": "system", "content": system},
             {
@@ -943,7 +940,7 @@ def _agent_v3_payload(context_packet, facts, source):
             },
         ],
         "response_format": {"type": "json_object"},
-    }
+    }, source, 0.35)
 
 
 def _call_sam_meat_agent_llm(inbound, facts, prior_context, source):
@@ -1010,9 +1007,8 @@ def _agent_v2_payload(inbound, facts, prior_context, source):
             "risk_flags": [],
         }
     }
-    return {
+    return _with_supported_temperature({
         "model": str(source.get(LLM_MODEL_ENV, "") or "").strip(),
-        "temperature": 0.2,
         "messages": [
             {"role": "system", "content": system},
             {
@@ -1040,7 +1036,7 @@ def _agent_v2_payload(inbound, facts, prior_context, source):
             },
         ],
         "response_format": {"type": "json_object"},
-    }
+    }, source, 0.2)
 
 
 def _safe_sam_agent_decision(raw):
@@ -2437,6 +2433,15 @@ def _timeout(source):
         return max(1, min(30, int(source.get(LLM_TIMEOUT_ENV, "8"))))
     except (TypeError, ValueError):
         return 8
+
+
+def _with_supported_temperature(payload, source, temperature):
+    payload = dict(payload or {})
+    model = str((source or {}).get(LLM_MODEL_ENV, "") or payload.get("model") or "").strip().lower()
+    if model.startswith("gpt-5"):
+        return payload
+    payload["temperature"] = temperature
+    return payload
 
 
 def _strip_code_fence(value):

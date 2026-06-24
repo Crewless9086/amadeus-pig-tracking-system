@@ -276,6 +276,24 @@ class SamV3ReplayStressTests(unittest.TestCase):
 
         self.assertEqual(parsed, {})
 
+    def test_gpt5_payload_omits_unsupported_temperature(self):
+        payload = sam_meat_runtime._agent_v3_payload(
+            {"allowed_actions": [], "blocked_actions": []},
+            {"product_type": "unknown"},
+            {"SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5"},
+        )
+
+        self.assertNotIn("temperature", payload)
+
+    def test_gpt4_payload_keeps_temperature(self):
+        payload = sam_meat_runtime._agent_v3_payload(
+            {"allowed_actions": [], "blocked_actions": []},
+            {"product_type": "unknown"},
+            {"SAM_MEAT_BACKEND_LLM_MODEL": "gpt-4.1-mini"},
+        )
+
+        self.assertEqual(payload["temperature"], 0.35)
+
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
