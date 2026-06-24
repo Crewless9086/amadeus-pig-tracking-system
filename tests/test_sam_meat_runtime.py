@@ -422,6 +422,30 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertIn("before quoting or booking", decision["reply_text"])
         self.assertNotIn("R100", decision["reply_text"])
 
+    def test_cut_set_sheet_request_returns_actual_set_details(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
+            content="send me the set sheet",
+        ))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        decision = sam_meat_runtime.build_sam_meat_decision(
+            inbound,
+            facts,
+            {"success": True, "lead_id": "OSK-SALES-LEAD-TEST"},
+            201,
+            agent_decision={
+                "used": True,
+                "version": "v3",
+                "should_reply": True,
+                "reply_text": "I can send the cut sheet now.",
+                "status": "agent_v3_decision_accepted",
+            },
+        )
+
+        self.assertEqual(decision["reply_source"], "code_product_knowledge")
+        self.assertIn("Set A", decision["reply_text"])
+        self.assertIn("Set D", decision["reply_text"])
+        self.assertIn("Budget Bulk Pack", decision["reply_text"])
+
     def test_non_pork_request_is_redirected_without_pretending_to_sell_it(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
             content="Can I order beef mince from you?",

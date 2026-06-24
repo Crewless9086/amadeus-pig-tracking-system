@@ -504,6 +504,14 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         reply = non_pork_reply
         reply_source = "code_guard"
         should_reply = True
+    elif cut_menu_reply:
+        reply = cut_menu_reply
+        reply_source = "code_product_knowledge"
+        should_reply = True
+    elif set_recommendation_reply:
+        reply = set_recommendation_reply
+        reply_source = "code_product_knowledge"
+        should_reply = True
     elif agent_is_v3 and agent_wants_no_reply and not _is_opening_sales_greeting(inbound.get("content"), facts, prior_context):
         reply = ""
         reply_source = "llm_agent_v3"
@@ -515,12 +523,6 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif frustration_reply:
         reply = frustration_reply
         reply_source = "code_guard"
-        should_reply = True
-    elif set_recommendation_reply:
-        reply = set_recommendation_reply
-        should_reply = True
-    elif cut_menu_reply:
-        reply = cut_menu_reply
         should_reply = True
     elif deposit_question_reply:
         reply = deposit_question_reply
@@ -821,6 +823,8 @@ def _reply_rewriter_payload(decision, inbound, facts, prior_context, context_pac
         "You are Sam, Amadeus Farm's public WhatsApp sales agent. "
         "Rewrite the backend's structured reply brief into a natural human customer message. "
         "The backend brief is policy, not wording. Do not copy its phrasing. "
+        "If the brief contains named product options, cut sets, or included cuts, preserve those facts in the customer reply. "
+        "Never promise to send a set sheet when the brief already contains the set details; answer with the details instead. "
         "Be warm, useful, confident, and commercially focused. Avoid sounding like a form or a chatbot. "
         "Ask at most one natural next question. "
         "Never invent prices, weights, stock, booking status, payment confirmation, slaughter dates, butcher slots, or delivery dates. "
@@ -1299,7 +1303,13 @@ def _deterministic_extract(message):
 
 def _cut_menu_reply(message, facts):
     text = str(message or "").lower()
-    asks_cut_menu = bool(re.search(r"\bwhat\b.*\b(set|cut|cuts)\b|\b(set|cut|cuts)\b.*\b(include|includes|mean|option|difference)\b|\bcut\s*menu\b", text))
+    asks_cut_menu = bool(re.search(
+        r"\bwhat\b.*\b(set|sets|cut|cuts)\b|"
+        r"\b(set|sets|cut|cuts)\b.*\b(include|includes|mean|means|option|options|different|difference|sheet|list|explain)\b|"
+        r"\b(different|difference)\b.*\b(set|sets|cut|cuts)\b|"
+        r"\b(set\s*sheet|cut\s*sheet|cut\s*menu|cut\s*list)\b",
+        text,
+    ))
     if not asks_cut_menu:
         return ""
     cut_set = facts.get("cut_set") or _mentioned_cut_set(text)

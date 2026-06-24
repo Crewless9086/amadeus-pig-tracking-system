@@ -202,6 +202,79 @@ class SamV3ReplayStressTests(unittest.TestCase):
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_cut_set_question_forces_product_knowledge_before_v3_vague_reply(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({
+            "success": True,
+            "lead": {
+                "lead_id": "OSK-SALES-LEAD-CUTS",
+                "chatwoot_conversation_id": "1820",
+                "interest": {
+                    "product_type": "half_carcass",
+                    "location": "Riversdale",
+                    "delivery_or_collection": "delivery",
+                    "payment_method": "EFT",
+                },
+            },
+        }, 200)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-CUTS",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        def rewrite(decision, *_args):
+            self.assertIn("Set A", decision["reply_text"])
+            self.assertIn("Set D", decision["reply_text"])
+            self.assertIn("ribs", decision["reply_text"])
+            return {
+                "reply_text": (
+                    "The half-carcass cut sets are: Set A is the family freezer pack with chops, roasts, belly, ribs, mince or stew meat and bones. "
+                    "Set B leans braai with chops, rashers or belly, ribs and sausage/mince options. "
+                    "Set C is leaner with lean chops, leg steaks, mince and stew cuts. "
+                    "Set D is the budget bulk pack with bigger roasts, mince, stew meat, soup bones and mixed chops."
+                ),
+                "confidence": 0.93,
+            }
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(
+                content="What is the different sets?",
+                conversation={"id": 1820, "inbox": {"channel_type": "Channel::Whatsapp"}},
+            ),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_v3_decider=Mock(return_value={
+                "intent": "meat_preorder",
+                "should_reply": True,
+                "reply_text": "We have Sets A-D. I can send the set sheet. Do you want chops or mince?",
+                "facts_patch": {},
+                "next_action": "explain_product_options",
+                "confidence": 0.92,
+                "risk_flags": [],
+            }),
+            llm_reply_rewriter=Mock(side_effect=rewrite),
+        )
+
+        reply = result["sam_decision"]["reply_text"]
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["sam_decision"]["reply_source"], "llm_rewritten_code_product_knowledge")
+        self.assertIn("Set A", reply)
+        self.assertIn("Set D", reply)
+        self.assertNotIn("send the set sheet", reply.lower())
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
     def test_code_intro_is_rewritten_before_public_send(self, mock_record, mock_contract, mock_active):
         mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
         mock_record.return_value = ({
