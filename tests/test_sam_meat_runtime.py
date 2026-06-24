@@ -441,7 +441,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(decision["reply_source"], "code_product_knowledge")
+        self.assertEqual(decision["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", decision["reply_text"])
         self.assertIn("Set D", decision["reply_text"])
         self.assertIn("Budget Bulk Pack", decision["reply_text"])

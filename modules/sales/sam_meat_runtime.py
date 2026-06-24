@@ -166,12 +166,20 @@ def handle_sam_meat_chatwoot_inbound(
     )
     facts = _merge_prior_context(facts, prior_context)
     context_packet = build_sam_v3_context_packet(inbound, prior_context, environ=source)
-    agent_decision = _build_agent_v3_decision_if_enabled(
-        context_packet,
-        facts,
-        source,
-        decider=llm_agent_v3_decider,
-    )
+    product_knowledge_preselected = _should_use_product_knowledge_tool(inbound.get("content"), facts, prior_context)
+    if product_knowledge_preselected:
+        agent_decision = {
+            "used": False,
+            "status": "product_knowledge_tool_preselected",
+            "version": "tool",
+        }
+    else:
+        agent_decision = _build_agent_v3_decision_if_enabled(
+            context_packet,
+            facts,
+            source,
+            decider=llm_agent_v3_decider,
+        )
     agent_v3_decision = dict(agent_decision)
     if (
         not agent_decision.get("used")
@@ -506,11 +514,11 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         should_reply = True
     elif cut_menu_reply:
         reply = cut_menu_reply
-        reply_source = "code_product_knowledge"
+        reply_source = "hard_product_knowledge"
         should_reply = True
     elif set_recommendation_reply:
         reply = set_recommendation_reply
-        reply_source = "code_product_knowledge"
+        reply_source = "hard_product_knowledge"
         should_reply = True
     elif agent_is_v3 and agent_wants_no_reply and not _is_opening_sales_greeting(inbound.get("content"), facts, prior_context):
         reply = ""
@@ -1375,6 +1383,14 @@ def _partial_meat_fact_reply(message, facts):
     return (
         "I can work with that. Should I treat this as a cut-set pork pack, "
         "or are you asking for a half carcass?"
+    )
+
+
+def _should_use_product_knowledge_tool(message, facts, prior_context=None):
+    knowledge = {}
+    return bool(
+        _cut_menu_reply(message, facts)
+        or _set_recommendation_reply(message, facts, prior_context, knowledge)
     )
 
 

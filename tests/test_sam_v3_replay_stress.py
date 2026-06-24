@@ -202,7 +202,7 @@ class SamV3ReplayStressTests(unittest.TestCase):
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
-    def test_cut_set_question_forces_product_knowledge_before_v3_vague_reply(self, mock_record, mock_contract, mock_active):
+    def test_cut_set_question_uses_product_knowledge_tool_before_v3(self, mock_record, mock_contract, mock_active):
         mock_active.return_value = ({
             "success": True,
             "lead": {
@@ -227,19 +227,19 @@ class SamV3ReplayStressTests(unittest.TestCase):
             "contract": {"contract_status": "needs_owner_confirmation"},
         }, 200)
 
-        def rewrite(decision, *_args):
-            self.assertIn("Set A", decision["reply_text"])
-            self.assertIn("Set D", decision["reply_text"])
-            self.assertIn("ribs", decision["reply_text"])
-            return {
-                "reply_text": (
-                    "The half-carcass cut sets are: Set A is the family freezer pack with chops, roasts, belly, ribs, mince or stew meat and bones. "
-                    "Set B leans braai with chops, rashers or belly, ribs and sausage/mince options. "
-                    "Set C is leaner with lean chops, leg steaks, mince and stew cuts. "
-                    "Set D is the budget bulk pack with bigger roasts, mince, stew meat, soup bones and mixed chops."
-                ),
-                "confidence": 0.93,
-            }
+        v3_decider = Mock(return_value={
+            "intent": "meat_preorder",
+            "should_reply": True,
+            "reply_text": "We have Sets A-D. I can send the set sheet. Do you want chops or mince?",
+            "facts_patch": {},
+            "next_action": "explain_product_options",
+            "confidence": 0.92,
+            "risk_flags": [],
+        })
+        rewriter = Mock(return_value={
+            "reply_text": "This should not be needed for product knowledge.",
+            "confidence": 0.93,
+        })
 
         result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
             inbound_payload(
@@ -253,23 +253,19 @@ class SamV3ReplayStressTests(unittest.TestCase):
                 "OPENAI_API_KEY": "test-key",
                 "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
             },
-            llm_agent_v3_decider=Mock(return_value={
-                "intent": "meat_preorder",
-                "should_reply": True,
-                "reply_text": "We have Sets A-D. I can send the set sheet. Do you want chops or mince?",
-                "facts_patch": {},
-                "next_action": "explain_product_options",
-                "confidence": 0.92,
-                "risk_flags": [],
-            }),
-            llm_reply_rewriter=Mock(side_effect=rewrite),
+            llm_agent_v3_decider=v3_decider,
+            llm_reply_rewriter=rewriter,
         )
 
         reply = result["sam_decision"]["reply_text"]
         self.assertEqual(status_code, 200)
-        self.assertEqual(result["sam_decision"]["reply_source"], "llm_rewritten_code_product_knowledge")
+        self.assertEqual(result["agent_decision"]["status"], "product_knowledge_tool_preselected")
+        v3_decider.assert_not_called()
+        rewriter.assert_not_called()
+        self.assertEqual(result["sam_decision"]["reply_source"], "hard_product_knowledge")
         self.assertIn("Set A", reply)
         self.assertIn("Set D", reply)
+        self.assertIn("ribs", reply)
         self.assertNotIn("send the set sheet", reply.lower())
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
