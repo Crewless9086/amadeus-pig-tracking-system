@@ -207,7 +207,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             prior_context=prior_context,
         )
 
-        self.assertIn("delivery street address", decision["reply_text"])
+        self.assertIn("For delivery I need the street address", decision["reply_text"])
         self.assertNotIn("Hi, I am Sam", decision["reply_text"])
 
     def test_address_with_street_name_before_number_is_captured_after_delivery_prompt(self):
@@ -236,7 +236,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertEqual(facts["delivery_address_line_1"], "Test street 12")
         self.assertIn("When would you ideally like", decision["reply_text"])
-        self.assertNotIn("delivery street address", decision["reply_text"])
+        self.assertNotIn("For delivery I need the street address", decision["reply_text"])
 
     def test_multiline_address_with_common_street_typo_is_captured(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -466,7 +466,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
             201,
         )
 
-        self.assertIn("delivery street address", decision["reply_text"])
+        self.assertIn("For delivery I need the street address", decision["reply_text"])
 
     def test_vague_pork_options_reply_is_specific_and_not_generic_intro(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(
@@ -480,9 +480,9 @@ class SamMeatRuntimeTests(unittest.TestCase):
             201,
         )
 
-        self.assertIn("pork for freezer orders", decision["reply_text"].lower())
+        self.assertIn("pork for the freezer", decision["reply_text"].lower())
         self.assertIn("half carcass", decision["reply_text"].lower())
-        self.assertIn("full carcass", decision["reply_text"].lower())
+        self.assertIn("half carcass", decision["reply_text"].lower())
         self.assertNotIn("live pig sales", decision["reply_text"].lower())
 
     def test_frustrated_customer_gets_human_acknowledgement_and_next_step(self):
@@ -499,7 +499,7 @@ class SamMeatRuntimeTests(unittest.TestCase):
 
         self.assertIn("I hear you", decision["reply_text"])
         self.assertIn("Amadeus Farm", decision["reply_text"])
-        self.assertIn("delivery street address", decision["reply_text"])
+        self.assertIn("For delivery I need the street address", decision["reply_text"])
 
     def test_deposit_question_explains_reason_without_repeating_payment_method(self):
         inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(

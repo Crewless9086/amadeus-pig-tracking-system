@@ -143,6 +143,62 @@ class SamV3ReplayStressTests(unittest.TestCase):
                     self.assertIn(scenario["must_include"], result["sam_decision"]["reply_text"])
                     self.assertNotIn(scenario.get("must_not_include", "__never__"), result["sam_decision"]["reply_text"])
 
+    def test_public_sales_agent_accepts_human_beacon_reply_over_form_flow(self):
+        result, status_code = self._run_sam_v3_case(
+            content="Hi, I saw the pork half-carcass post and want more info for Riversdale.",
+            agent_raw={
+                "intent": "warm_campaign_interest",
+                "should_reply": True,
+                "reply_text": (
+                    "Great, you are in the right place. That post is about Amadeus Farm pork for freezer orders around Riversdale. "
+                    "For most homes I would start with the half-carcass route, then we match the cut style before the farm confirms price and timing. "
+                    "Are you buying mainly for your household freezer?"
+                ),
+                "facts_patch": {
+                    "product_type": "half_carcass",
+                    "location": "Riversdale",
+                },
+                "missing_fields": ["cut_set", "delivery_or_collection", "timing"],
+                "next_action": "soft_qualify_interest",
+                "confidence": 0.97,
+                "risk_flags": [],
+            },
+        )
+
+        reply = result["sam_decision"]["reply_text"]
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["agent_decision"]["used"])
+        self.assertIn("you are in the right place", reply)
+        self.assertIn("household freezer", reply)
+        self.assertNotIn("Would you prefer collection or delivery", reply)
+        self.assertNotIn("For delivery", reply)
+
+    def test_public_sales_agent_rejects_robotic_llm_reply_and_uses_better_fallback(self):
+        result, status_code = self._run_sam_v3_case(
+            content="Ok thanks",
+            active_interest={
+                "product_type": "half_carcass",
+                "cut_set": "Set A",
+                "location": "Riversdale",
+            },
+            agent_raw={
+                "intent": "meat_preorder",
+                "should_reply": True,
+                "reply_text": "I am still with you on the pork preorder. Would you prefer collection or delivery?",
+                "facts_patch": {},
+                "next_action": "request_missing_fact",
+                "confidence": 0.92,
+                "risk_flags": [],
+            },
+        )
+
+        reply = result["sam_decision"]["reply_text"]
+        self.assertEqual(status_code, 200)
+        self.assertFalse(result["agent_decision"]["used"])
+        self.assertEqual(result["agent_decision"]["status"], "agent_v3_reply_blocked")
+        self.assertIn("robotic_public_reply", result["agent_decision"]["risk_flags"])
+        self.assertNotIn("I am still with you", reply)
+
     def test_replay_stress_v3_rejects_payment_booking_and_money_hallucinations(self):
         unsafe_outputs = [
             "Your payment is confirmed and the order is booked.",

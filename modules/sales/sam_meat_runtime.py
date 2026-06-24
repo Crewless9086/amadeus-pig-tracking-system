@@ -65,6 +65,12 @@ CUT_SET_MENU = {
     "Set C": "Lean Pack: lean chops, leg steaks, lean shoulder cuts, mince, stew cubes, and fewer fatty belly cuts.",
     "Set D": "Budget Bulk Pack: larger roasting cuts, mince, stew meat, soup bones, shoulder, mixed chops, and less detailed trimming.",
 }
+ROBOTIC_REPLY_PATTERNS = [
+    r"\bI am still with you on the pork preorder\b",
+    r"\bPlease send the delivery street address\b",
+    r"\bTell me what you are looking for and I will guide you from there\b",
+    r"\bhalf carcass, full carcass, or a cut-set pack\b",
+]
 
 
 def sam_meat_webhook_policy(environ=None):
@@ -525,21 +531,20 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif facts.get("product_type") == "unknown":
         reply = _sam_intro_options_reply(knowledge)
     elif facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
-        reply = "I can help with that. Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
+        reply = _next_fact_question(facts)
     elif not facts.get("location"):
-        reply = "Which town or area would you prefer for collection or delivery? I use that to keep the farm run practical."
+        reply = _next_fact_question(facts)
     elif not facts.get("delivery_or_collection"):
-        reply = "Would you prefer collection or delivery? For meat orders we plan this carefully around the farm run."
+        reply = "For the handover, should I plan this as collection or delivery? We keep that clear early so the farm run stays practical."
     elif facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
-        reply = "Please send the delivery street address or farm name, town, and any useful directions for the driver."
+        reply = _next_fact_question(facts)
     elif not facts.get("timing"):
-        reply = "When would you ideally like the pork: this week, next week, or the next available farm run?"
+        reply = _next_fact_question(facts)
     elif facts.get("payment_method") == "Cash":
         rule = meat_sales_knowledge(knowledge).get("payment_rule") or meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For meat sales we use EFT only so the reference and payment trail stay clean."
         reply = f"{rule} EFT is the only payment option for now."
     elif not facts.get("payment_method"):
-        rule = meat_sales_knowledge(knowledge).get("payment_rule") or meat_sales_knowledge(knowledge).get("pilot_payment_rule") or "For meat sales we use EFT only so the reference and payment trail stay clean."
-        reply = f"{rule} Is EFT fine for the deposit and final balance?"
+        reply = _next_fact_question(facts)
     else:
         reply = (
             "Thanks, I have noted your pork interest for the farm to review. "
@@ -702,22 +707,27 @@ def _call_sam_meat_agent_v3_llm(context_packet, facts, source):
 
 def _agent_v3_payload(context_packet, facts, source):
     system = (
-        "You are Sam, the LLM-first shared-context sales agent for Amadeus Farm. "
-        "Speak like a capable human farm salesperson on WhatsApp: warm, concise, practical, and not pushy. "
+        "You are Sam, the public-facing LLM-first sales agent for Amadeus Farm. "
+        "Your job is to make customers feel heard, understand the farm offer, and move real buyers toward a safe owner-approved sale. "
+        "Speak like a capable human farm salesperson on WhatsApp: warm, confident, concise, practical, and commercially useful. "
+        "Do not sound like a form, workflow, chatbot menu, support macro, or database field collector. "
         "Use the shared context packet before deciding what the customer means. If the customer is responding to a Beacon meat post, "
         "use that post/campaign/media context naturally instead of asking them to repeat obvious context. "
-        "You may chat briefly about the farm story, pork, live sales, delivery, payment process, and product options, then steer gently to one useful next step. "
+        "You may chat briefly about the farm story, pork, live sales, delivery, payment process, and product options, then steer to one useful next buying step. "
+        "Sell the value: planned farm runs, honest freezer meat, practical family packs, traceability, and personal service. "
+        "Ask one natural question at a time only when it improves the sale. "
         "If there is no clear intent and no useful next step, set should_reply false. "
         "Never assume uncertain facts; ask a short clarifying question. "
         "Never use the word pilot. Never invent prices, weights, stock, availability, booking status, payment status, slaughter dates, butcher slots, or delivery dates. "
         "Never say payment is confirmed unless the bank gate says so. Never create or confirm an order. "
+        "Avoid robotic phrases such as 'I am still with you on the pork preorder', 'Please send the delivery street address', and generic option menus. "
         "Return JSON only."
     )
     schema_note = {
         "required_json_shape": {
             "intent": "warm_campaign_interest|meat_preorder|live_sales|farm_info|payment|document_request|general|unknown",
             "should_reply": True,
-            "reply_text": "natural customer-facing WhatsApp reply, normally 1-4 short sentences",
+            "reply_text": "natural customer-facing WhatsApp sales reply, normally 1-4 short sentences",
             "facts_patch": {
                 "product_type": "half_carcass|full_carcass|custom_cut|assisted_slaughter|unknown",
                 "cut_set": "Set A|Set B|Set C|Set D",
@@ -969,6 +979,10 @@ def _agent_reply_blockers(reply):
     blockers = []
     if "pilot" in text:
         blockers.append("uses_pilot_word")
+    for pattern in ROBOTIC_REPLY_PATTERNS:
+        if re.search(pattern, str(reply or ""), re.I):
+            blockers.append("robotic_public_reply")
+            break
     unsafe_patterns = [
         (r"\br\s*\d", "mentions_money_amount"),
         (r"\b(booking|order|reservation)\b.{0,40}\b(confirmed|final|booked|reserved)\b", "confirms_booking_without_gate"),
@@ -1178,7 +1192,7 @@ def _partial_meat_fact_reply(message, facts):
     if not any(_clean(facts.get(key), 120) for key in ("cut_set", "target_packed_kg", "budget_amount")):
         return ""
     if facts.get("delivery_or_collection") == "delivery" and facts.get("location") and not facts.get("delivery_address_line_1"):
-        return "Please send the delivery street address or farm name, town, and any useful directions for the driver."
+        return _next_fact_question(facts)
     if facts.get("delivery_or_collection") == "collection" and facts.get("location") and not facts.get("timing"):
         return "When would you ideally like the pork: this week, next week, or the next available farm run?"
     return (
@@ -1210,9 +1224,9 @@ def _contextual_meat_fallback_reply(message, facts, prior_context=None, knowledg
         return "Pleasure. I will keep the pork preorder details together here."
     next_step = _next_fact_question(facts)
     if next_step and next_step != "I have the core details and will keep the next step clear.":
-        return f"I am still with you on the pork preorder. {next_step}"
+        return f"Got it. I am keeping this on the pork preorder. {next_step}"
     return (
-        "I am still with you on the pork preorder. "
+        "Got it. I am keeping this on the pork preorder. "
         "Tell me what you want to adjust or ask, and I will keep it practical."
     )
 
@@ -1226,8 +1240,7 @@ def _sam_intro_options_reply(knowledge=None):
         menu = "Pork meat sales, live pig sales, or farm information."
     return (
         f"{intro} {story} "
-        f"I can help with {menu}. "
-        "Tell me what you are looking for and I will guide you from there."
+        f"I can help with {menu}. If you are here for pork, I can quickly help you choose the right freezer option."
     )
 
 
@@ -1239,28 +1252,28 @@ def _vague_meat_interest_reply(message, facts, knowledge=None):
         return ""
     if re.search(r"\bcarcass\b", normalized):
         return (
-            "Yes, we can help with pork carcass orders. "
-            "Are you thinking half carcass or full carcass?"
+            "Yes, that is exactly the right lane. We do planned Amadeus Farm pork runs for freezer orders. "
+            "Are you thinking a half carcass for home use, or do you want me to explain the full-carcass option as well?"
         )
     if re.search(r"\b(option|options|available|what.*have|what.*sell)\b", normalized):
         return (
-            "Yes, we do pork for freezer orders. The usual starting points are a half carcass, "
-            "a full carcass, or a cut-set pack like Set A. "
-            "Are you looking for freezer stock, a half carcass, or a smaller cut set?"
+            "Yes, we can help with pork for the freezer. The easiest starting point is usually a half carcass with a family-style cut set, "
+            "then the farm confirms price and timing before anything is booked. "
+            "Are you buying mainly for household freezer stock, or for a bigger group?"
         )
     if re.search(r"\bdo\s+you\s+sell\b|\bsell\s+meat\b", normalized):
         return (
-            "Yes, we sell pork from planned farm runs. "
-            "Would you like me to guide you through half carcass, full carcass, or cut-set options?"
+            "Yes, we sell pork from planned farm runs. I can help you choose the practical option first, then the farm confirms the exact money path. "
+            "Would a half carcass be the right size to start with?"
         )
     if re.search(r"\b(i\s+want|i'?m\s+looking|looking\s+for|need)\b", normalized):
         return (
-            "Good, I can help with pork for the freezer. "
-            "Should I work around a half carcass, a full carcass, or a cut-set pack?"
+            "Good, I can help with pork for the freezer. To keep it practical, I first need to know whether you want a half carcass, "
+            "a full carcass, or a smaller cut-set pack."
         )
     return (
-        "I can help with pork meat orders. "
-        "Would you like a half carcass, full carcass, or a cut-set pack?"
+        "I can help with pork meat orders. Most buyers start by choosing the size of the freezer order, then we narrow down the cut style. "
+        "Would you like to look at a half carcass first?"
     )
 
 
@@ -1346,17 +1359,17 @@ def _payment_state_reply(message, facts, prior_context, knowledge=None):
 
 def _next_fact_question(facts):
     if facts.get("product_type") in {"half_carcass", "full_carcass", "custom_cut"} and not facts.get("cut_set"):
-        return "Which cut set would you prefer? Set A is the family freezer pack, or I can explain the available sets."
+        return "For the cutting style, Set A is the safest family freezer pack. Should I note Set A, or would you like the other cut sets first?"
     if not facts.get("location"):
-        return "Which town or area should I use for collection or delivery?"
+        return "Which town or area should I plan around so the farm can keep the run practical?"
     if not facts.get("delivery_or_collection"):
-        return "Would you prefer collection or delivery?"
+        return "For the handover, should I plan this as collection or delivery?"
     if facts.get("delivery_or_collection") == "delivery" and not facts.get("delivery_address_line_1"):
-        return "Please send the delivery street address or farm name, town, and any useful directions for the driver."
+        return "For delivery I need the street address or farm name, plus any useful directions or driver notes that will make the drop-off easy."
     if not facts.get("timing"):
         return "When would you ideally like the pork: this week, next week, or the next available farm run?"
     if not facts.get("payment_method"):
-        return "For meat sales we use EFT only for now. Is EFT fine for the deposit and final balance?"
+        return "We keep meat payments on EFT so the reference and payment trail stay clean. Is EFT fine for you?"
     return "I have the core details and will keep the next step clear."
 
 
