@@ -647,8 +647,10 @@ def _call_sam_meat_llm(message, inbound, source):
     try:
         with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
             body = response.read().decode("utf-8")
-    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
-        return {}
+    except urllib_error.HTTPError as exc:
+        return _llm_error_payload("http_error", exc)
+    except (urllib_error.URLError, TimeoutError, OSError) as exc:
+        return _llm_error_payload("request_error", exc)
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
@@ -685,6 +687,12 @@ def _build_agent_v2_decision_if_enabled(inbound, facts, prior_context, source, d
         return {"used": False, "status": "agent_v2_not_configured"}
     caller = decider or _call_sam_meat_agent_llm
     raw = caller(inbound, facts, prior_context, source)
+    if isinstance(raw, dict) and raw.get("_llm_error"):
+        return {
+            "used": False,
+            "status": "agent_v2_llm_call_failed",
+            "llm_error": raw.get("_llm_error", {}),
+        }
     if not isinstance(raw, dict) or not raw:
         return {"used": False, "status": "agent_v2_no_decision"}
     decision = _safe_sam_agent_decision(raw)
@@ -701,6 +709,13 @@ def _build_agent_v3_decision_if_enabled(context_packet, facts, source, decider=N
         return {"used": False, "status": "agent_v3_not_configured", "version": "v3"}
     caller = decider or _call_sam_meat_agent_v3_llm
     raw = caller(context_packet, facts, source)
+    if isinstance(raw, dict) and raw.get("_llm_error"):
+        return {
+            "used": False,
+            "status": "agent_v3_llm_call_failed",
+            "version": "v3",
+            "llm_error": raw.get("_llm_error", {}),
+        }
     if not isinstance(raw, dict) or not raw:
         return {"used": False, "status": "agent_v3_no_decision", "version": "v3"}
     decision = _safe_sam_agent_v3_decision(raw, context_packet)
@@ -722,8 +737,10 @@ def _call_sam_meat_agent_v3_llm(context_packet, facts, source):
     try:
         with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
             body = response.read().decode("utf-8")
-    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
-        return {}
+    except urllib_error.HTTPError as exc:
+        return _llm_error_payload("http_error", exc)
+    except (urllib_error.URLError, TimeoutError, OSError) as exc:
+        return _llm_error_payload("request_error", exc)
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
@@ -751,6 +768,14 @@ def _rewrite_code_reply_if_needed(decision, inbound, facts, prior_context, conte
         return decision
     caller = rewriter or _call_sam_meat_reply_rewriter_llm
     raw = caller(decision, inbound, facts, prior_context, context_packet, source)
+    if isinstance(raw, dict) and raw.get("_llm_error"):
+        decision["should_reply"] = False
+        decision["decision"] = "no_reply"
+        decision["reply_text"] = ""
+        decision["reply_source"] = "code_reply_withheld_rewrite_failed"
+        decision["rewrite_status"] = "rewrite_llm_call_failed"
+        decision["rewrite_error"] = raw.get("_llm_error", {})
+        return decision
     rewritten = _safe_rewritten_reply(raw)
     if not rewritten:
         decision["should_reply"] = False
@@ -780,8 +805,10 @@ def _call_sam_meat_reply_rewriter_llm(decision, inbound, facts, prior_context, c
     try:
         with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
             body = response.read().decode("utf-8")
-    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
-        return {}
+    except urllib_error.HTTPError as exc:
+        return _llm_error_payload("http_error", exc)
+    except (urllib_error.URLError, TimeoutError, OSError) as exc:
+        return _llm_error_payload("request_error", exc)
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
@@ -933,8 +960,10 @@ def _call_sam_meat_agent_llm(inbound, facts, prior_context, source):
     try:
         with urllib_request.urlopen(req, timeout=_timeout(source)) as response:
             body = response.read().decode("utf-8")
-    except (urllib_error.HTTPError, urllib_error.URLError, TimeoutError, OSError):
-        return {}
+    except urllib_error.HTTPError as exc:
+        return _llm_error_payload("http_error", exc)
+    except (urllib_error.URLError, TimeoutError, OSError) as exc:
+        return _llm_error_payload("request_error", exc)
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
@@ -2443,6 +2472,22 @@ def _parse_llm_json_object(content, fallback_reply_text=False):
         if reply:
             return {"reply_text": reply, "confidence": 0.72}
     return {}
+
+
+def _llm_error_payload(kind, exc):
+    details = {
+        "kind": _clean(kind, 40),
+        "type": _clean(exc.__class__.__name__, 80),
+        "message": _clean(str(exc), 240),
+    }
+    if isinstance(exc, urllib_error.HTTPError):
+        details["status_code"] = exc.code
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            body = ""
+        details["body_excerpt"] = _clean(body, 400)
+    return {"_llm_error": details}
 
 
 def _clean(value, limit):
