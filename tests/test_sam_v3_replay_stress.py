@@ -259,6 +259,23 @@ class SamV3ReplayStressTests(unittest.TestCase):
         self.assertEqual(decision["status"], "agent_v3_decision_accepted")
         self.assertEqual(decision["confidence"], 0.80)
 
+    def test_llm_parser_accepts_plain_text_for_public_voice(self):
+        parsed = sam_meat_runtime._parse_llm_json_object(
+            "Hi, I am Sam from Amadeus Farm. Are you looking for pork for your freezer?",
+            fallback_reply_text=True,
+        )
+
+        self.assertIn("Amadeus Farm", parsed["reply_text"])
+        self.assertGreaterEqual(parsed["confidence"], 0.70)
+
+    def test_llm_parser_keeps_extractor_json_strict(self):
+        parsed = sam_meat_runtime._parse_llm_json_object(
+            "Hi, I am Sam from Amadeus Farm.",
+            fallback_reply_text=False,
+        )
+
+        self.assertEqual(parsed, {})
+
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")

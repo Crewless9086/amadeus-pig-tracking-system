@@ -652,7 +652,7 @@ def _call_sam_meat_llm(message, inbound, source):
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
-        return json.loads(_strip_code_fence(str(content or "")))
+        return _parse_llm_json_object(str(content or ""), fallback_reply_text=False)
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return {}
 
@@ -727,7 +727,7 @@ def _call_sam_meat_agent_v3_llm(context_packet, facts, source):
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
-        return json.loads(_strip_code_fence(str(content or "")))
+        return _parse_llm_json_object(str(content or ""), fallback_reply_text=True)
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return {}
 
@@ -785,7 +785,7 @@ def _call_sam_meat_reply_rewriter_llm(decision, inbound, facts, prior_context, c
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
-        return json.loads(_strip_code_fence(str(content or "")))
+        return _parse_llm_json_object(str(content or ""), fallback_reply_text=True)
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return {}
 
@@ -938,7 +938,7 @@ def _call_sam_meat_agent_llm(inbound, facts, prior_context, source):
     try:
         data = json.loads(body or "{}")
         content = data["choices"][0]["message"]["content"]
-        return json.loads(_strip_code_fence(str(content or "")))
+        return _parse_llm_json_object(str(content or ""), fallback_reply_text=True)
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
         return {}
 
@@ -2420,6 +2420,29 @@ def _strip_code_fence(value):
             lines = lines[:-1]
         return "\n".join(lines).strip()
     return text
+
+
+def _parse_llm_json_object(content, fallback_reply_text=False):
+    text = _strip_code_fence(str(content or ""))
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{.*\}", text, re.S)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            pass
+    if fallback_reply_text:
+        reply = _clean(text, 1800)
+        if reply:
+            return {"reply_text": reply, "confidence": 0.72}
+    return {}
 
 
 def _clean(value, limit):
