@@ -511,6 +511,11 @@ def _sam_misses(message, facts, decision, missing_facts):
     misses = []
     reply = (decision.get("reply_text") or "").lower()
     text = message.lower()
+    if decision.get("should_reply") is False:
+        if re.fullmatch(r"\s*(hi|hello|hey|hallo|good morning|good afternoon|good evening|morning|afternoon|evening|hi sam|hello sam|hey sam)[.! ]*\s*", text):
+            misses.append("suppressed_opening_greeting")
+        elif text.strip():
+            misses.append("sam_no_reply")
     if "delivery" in text and "delivery_or_collection" in missing_facts:
         misses.append("missed_delivery_intent")
     if re.search(r"\b(r\s?\d+|budget|about r)\b", text) and not facts.get("budget_amount"):

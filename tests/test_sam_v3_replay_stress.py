@@ -239,6 +239,52 @@ class SamV3ReplayStressTests(unittest.TestCase):
         self.assertNotIn("Tell me what you are looking for", reply)
 
     @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
+    @patch("modules.sales.sam_meat_runtime.get_sales_lead_preorder_contract")
+    @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
+    def test_opening_hi_cannot_be_suppressed_by_v3_no_reply(self, mock_record, mock_contract, mock_active):
+        mock_active.return_value = ({"success": False, "status": "not_found"}, 404)
+        mock_record.return_value = ({
+            "success": True,
+            "status": "ok",
+            "lead_id": "OSK-SALES-LEAD-HI",
+            "contract": {},
+        }, 201)
+        mock_contract.return_value = ({
+            "success": True,
+            "contract": {"contract_status": "needs_owner_confirmation"},
+        }, 200)
+
+        result, status_code = sam_meat_runtime.handle_sam_meat_chatwoot_inbound(
+            inbound_payload(content="Hi"),
+            environ={
+                "SAM_MEAT_BACKEND_AGENT_V3_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_ENABLED": "1",
+                "SAM_MEAT_BACKEND_LLM_MODEL": "gpt-5",
+                "OPENAI_API_KEY": "test-key",
+                "SAM_MEAT_BACKEND_AUTOREPLY_ENABLED": "0",
+            },
+            llm_agent_v3_decider=Mock(return_value={
+                "intent": "general",
+                "should_reply": False,
+                "reply_text": "",
+                "facts_patch": {},
+                "next_action": "no_reply",
+                "confidence": 0.93,
+                "risk_flags": [],
+            }),
+            llm_reply_rewriter=Mock(return_value={
+                "reply_text": "Hi, I am Sam from Amadeus Farm. Are you looking for pork for your freezer, or would you like to know more about the farm first?",
+                "confidence": 0.93,
+            }),
+        )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["agent_decision"]["used"])
+        self.assertTrue(result["sam_decision"]["should_reply"])
+        self.assertEqual(result["sam_decision"]["reply_source"], "llm_rewritten_code_fallback")
+        self.assertIn("Amadeus Farm", result["sam_decision"]["reply_text"])
+
+    @patch("modules.sales.sam_meat_runtime.get_active_sales_lead_by_conversation")
     @patch("modules.sales.sam_meat_runtime.record_sam_meat_intake_lead")
     def test_code_sales_reply_is_withheld_when_rewriter_unavailable(self, mock_record, mock_active):
         mock_active.return_value = ({"success": False, "status": "not_found"}, 404)

@@ -502,7 +502,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
         reply = non_pork_reply
         reply_source = "code_guard"
         should_reply = True
-    elif agent_is_v3 and agent_wants_no_reply:
+    elif agent_is_v3 and agent_wants_no_reply and not _is_opening_sales_greeting(inbound.get("content"), facts, prior_context):
         reply = ""
         reply_source = "llm_agent_v3"
         should_reply = False
@@ -535,7 +535,7 @@ def build_sam_meat_decision(inbound, facts, record_result, record_status, enviro
     elif vague_meat_interest_reply:
         reply = vague_meat_interest_reply
         should_reply = True
-    elif agent_wants_no_reply:
+    elif agent_wants_no_reply and not _is_opening_sales_greeting(inbound.get("content"), facts, prior_context):
         reply = ""
         reply_source = "llm_agent"
         should_reply = False
@@ -851,7 +851,8 @@ def _agent_v3_payload(context_packet, facts, source):
         "You may chat briefly about the farm story, pork, live sales, delivery, payment process, and product options, then steer to one useful next buying step. "
         "Sell the value: planned farm runs, honest freezer meat, practical family packs, traceability, and personal service. "
         "Ask one natural question at a time only when it improves the sale. "
-        "If there is no clear intent and no useful next step, set should_reply false. "
+        "A normal opening greeting like 'hi', 'hello', or 'good morning' is a useful sales opener: reply warmly and open the pork/farm sales path. "
+        "Only set should_reply false for a low-value acknowledgement or conversation close such as 'thanks', 'ok', or 'noted' when no useful next step remains. "
         "Never assume uncertain facts; ask a short clarifying question. "
         "Never use the word pilot. Never invent prices, weights, stock, availability, booking status, payment status, slaughter dates, butcher slots, or delivery dates. "
         "Never say payment is confirmed unless the bank gate says so. Never create or confirm an order. "
@@ -1351,6 +1352,31 @@ def _is_established_meat_context(facts, prior_context=None):
     if interest.get("product_type") in {"half_carcass", "full_carcass", "custom_cut", "assisted_slaughter"}:
         return True
     return any(_clean(interest.get(key), 120) for key in ("cut_set", "location", "delivery_or_collection", "target_packed_kg", "budget_amount"))
+
+
+def _is_opening_sales_greeting(message, facts=None, prior_context=None):
+    text = _normalized_customer_text(message)
+    if not text:
+        return False
+    if not re.fullmatch(r"(hi|hello|hey|hallo|good morning|good afternoon|good evening|morning|afternoon|evening|hi sam|hello sam|hey sam)[.! ]*", text):
+        return False
+    facts = facts if isinstance(facts, dict) else {}
+    prior_context = prior_context if isinstance(prior_context, dict) else {}
+    interest = prior_context.get("interest") if isinstance(prior_context.get("interest"), dict) else {}
+    has_meaningful_context = any(
+        _clean(value, 120)
+        for value in [
+            facts.get("product_type") if facts.get("product_type") != "unknown" else "",
+            facts.get("cut_set"),
+            facts.get("location"),
+            facts.get("delivery_or_collection"),
+            interest.get("product_type") if interest.get("product_type") != "unknown" else "",
+            interest.get("cut_set"),
+            interest.get("location"),
+            interest.get("delivery_or_collection"),
+        ]
+    )
+    return not has_meaningful_context
 
 
 def _contextual_meat_fallback_reply(message, facts, prior_context=None, knowledge=None):
