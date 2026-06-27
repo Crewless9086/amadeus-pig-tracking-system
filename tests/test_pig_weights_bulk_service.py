@@ -254,6 +254,42 @@ class BulkWeightServiceTests(unittest.TestCase):
         save_move.assert_called_once()
         self.assertEqual(save_move.call_args.args[0]["reason_for_move"], "Moved during duplicate weight review")
 
+    def test_saved_weight_does_not_fail_when_latest_lookup_fails(self):
+        with patch.object(pig_weights_service, "get_all_records", return_value=[]), \
+             patch.object(pig_weights_service, "append_row") as append_row, \
+             patch.object(pig_weights_service, "get_latest_weight_for_pig", side_effect=RuntimeError("quota")):
+            result = pig_weights_service.save_weight_entry({
+                "pig_id": "PIG-1",
+                "weight_date": date(2026, 6, 1),
+                "weight_kg": 42.5,
+                "weighed_by": "WebApp",
+                "condition_notes": "",
+                "allow_duplicate": False,
+            })
+
+        self.assertTrue(result["success"])
+        self.assertIn("warnings", result)
+        self.assertIn("latest weight lookup failed", result["warnings"][0])
+        append_row.assert_called_once()
+
+    def test_saved_movement_does_not_fail_when_pen_lookup_fails(self):
+        with patch.object(pig_weights_service, "append_row") as append_row, \
+             patch.object(pig_weights_service, "get_pen_by_id", side_effect=RuntimeError("quota")):
+            result = pig_weights_service.save_movement_entry({
+                "pig_id": "PIG-1",
+                "move_date": date(2026, 6, 1),
+                "from_pen_id": "PEN-1",
+                "to_pen_id": "PEN-2",
+                "reason_for_move": "Moved during weight capture",
+                "moved_by": "WebApp",
+                "move_notes": "",
+            })
+
+        self.assertTrue(result["success"])
+        self.assertIn("warnings", result)
+        self.assertIn("pen name lookup failed", result["warnings"][0])
+        append_row.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

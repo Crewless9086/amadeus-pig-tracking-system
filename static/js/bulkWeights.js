@@ -351,7 +351,10 @@ async function uploadBatch() {
     const auditWarning = uploadData.audit?.warnings?.length
       ? ` Audit warning: ${uploadData.audit.warnings.join(" ")}`
       : "";
-    setMessage(`Uploaded ${uploadData.saved_count} weight record${uploadData.saved_count === 1 ? "" : "s"} and ${movementSaved} pen movement${movementSaved === 1 ? "" : "s"}. Duplicate weights protected: ${duplicateSaved}. Blank/no-change rows skipped: ${uploadData.skipped_count}.${extraSkipped}${auditWarning}`, "success");
+    const backendWarning = uploadData.warnings?.length
+      ? ` Warning: ${uploadData.warnings.join(" ")}`
+      : "";
+    setMessage(`Uploaded ${uploadData.saved_count} weight record${uploadData.saved_count === 1 ? "" : "s"} and ${movementSaved} pen movement${movementSaved === 1 ? "" : "s"}. Duplicate weights protected: ${duplicateSaved}. Blank/no-change rows skipped: ${uploadData.skipped_count}.${extraSkipped}${backendWarning}${auditWarning}`, "success");
     await loadData();
   } catch (error) {
     console.error("bulk upload error:", error);

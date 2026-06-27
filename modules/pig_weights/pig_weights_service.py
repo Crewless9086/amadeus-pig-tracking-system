@@ -4802,9 +4802,14 @@ def save_weight_entry(cleaned_data: dict):
 
     append_row(sheet_name, row_values)
 
-    latest_info = get_latest_weight_for_pig(cleaned_data["pig_id"])
+    latest_info = {}
+    latest_warning = ""
+    try:
+        latest_info = get_latest_weight_for_pig(cleaned_data["pig_id"])
+    except Exception as exc:
+        latest_warning = f"Weight was saved, but latest weight lookup failed: {exc}"
 
-    return {
+    result = {
         "success": True,
         "message": "Weight entry saved successfully.",
         "saved": {
@@ -4816,6 +4821,9 @@ def save_weight_entry(cleaned_data: dict):
         },
         "latest": latest_info
     }
+    if latest_warning:
+        result["warnings"] = [latest_warning]
+    return result
 
 def save_weight_entry_with_optional_move(cleaned_data: dict):
     weight_result = save_weight_entry({
@@ -4833,32 +4841,36 @@ def save_weight_entry_with_optional_move(cleaned_data: dict):
     moved_to_pen_id = to_clean_string(cleaned_data.get("moved_to_pen_id", ""))
     movement_logged = False
     movement_result = None
+    movement_warning = ""
 
     if moved_to_pen_id:
-        overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
-        columns = PIG_WEIGHTS_CONFIG["columns"]
-        overview_rows = get_all_records(overview_sheet)
+        try:
+            overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+            columns = PIG_WEIGHTS_CONFIG["columns"]
+            overview_rows = get_all_records(overview_sheet)
 
-        current_pen_id = ""
-        for row in overview_rows:
-            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
-            if row_pig_id == cleaned_data["pig_id"]:
-                current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
-                break
+            current_pen_id = ""
+            for row in overview_rows:
+                row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+                if row_pig_id == cleaned_data["pig_id"]:
+                    current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+                    break
 
-        if moved_to_pen_id != current_pen_id:
-            movement_result = save_movement_entry({
-                "pig_id": cleaned_data["pig_id"],
-                "move_date": cleaned_data["weight_date"],
-                "from_pen_id": current_pen_id,
-                "to_pen_id": moved_to_pen_id,
-                "reason_for_move": "Moved during weight capture",
-                "moved_by": "WebApp",
-                "move_notes": "",
-            })
-            movement_logged = True
+            if moved_to_pen_id != current_pen_id:
+                movement_result = save_movement_entry({
+                    "pig_id": cleaned_data["pig_id"],
+                    "move_date": cleaned_data["weight_date"],
+                    "from_pen_id": current_pen_id,
+                    "to_pen_id": moved_to_pen_id,
+                    "reason_for_move": "Moved during weight capture",
+                    "moved_by": "WebApp",
+                    "move_notes": "",
+                })
+                movement_logged = True
+        except Exception as exc:
+            movement_warning = f"Weight was saved, but movement lookup/save failed: {exc}"
 
-    return {
+    result = {
         "success": True,
         "message": "Weight entry saved successfully.",
         "saved": weight_result.get("saved", {}),
@@ -4866,6 +4878,13 @@ def save_weight_entry_with_optional_move(cleaned_data: dict):
         "movement_logged": movement_logged,
         "movement": movement_result.get("saved", {}) if movement_result else None,
     }
+    warnings = []
+    warnings.extend(weight_result.get("warnings", []))
+    if movement_warning:
+        warnings.append(movement_warning)
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def _bulk_weight_existing_key(row, columns):
@@ -5143,6 +5162,7 @@ def save_bulk_weight_entries(payload: dict):
     saved_rows = []
     movement_rows = []
     failed_rows = []
+    warnings = []
     movement_count = 0
     duplicate_weight_count = 0
 
@@ -5174,6 +5194,7 @@ def save_bulk_weight_entries(payload: dict):
                 continue
 
             movement_count += 1
+            warnings.extend(movement_result.get("warnings", []))
             saved_movement = {
                 **row,
                 **movement_result.get("saved", {}),
@@ -5204,6 +5225,7 @@ def save_bulk_weight_entries(payload: dict):
                 **row,
                 **(result.get("movement") or {}),
             })
+        warnings.extend(result.get("warnings", []))
         saved_rows.append({
             **row,
             **result.get("saved", {}),
@@ -5220,6 +5242,7 @@ def save_bulk_weight_entries(payload: dict):
             "failed_count": len(failed_rows),
             "movement_count": movement_count,
             "duplicate_weight_count": duplicate_weight_count,
+            "warnings": warnings,
             "blocked_rows": preflight.get("blocked_rows", []),
             "failed_rows": failed_rows,
         }, 409 if preflight.get("blocked_count", 0) or failed_rows else 400
@@ -5246,6 +5269,7 @@ def save_bulk_weight_entries(payload: dict):
         "movement_rows": movement_rows,
         "blocked_rows": preflight.get("blocked_rows", []),
         "failed_rows": failed_rows,
+        "warnings": warnings,
     }
     result["audit"] = _write_bulk_batch_audit(batch_id, payload, result, batch_date)
     return result, 201
@@ -5332,10 +5356,16 @@ def save_movement_entry(cleaned_data: dict):
 
     append_row(sheet_name, row_values)
 
-    from_pen = get_pen_by_id(cleaned_data["from_pen_id"])
-    to_pen = get_pen_by_id(cleaned_data["to_pen_id"])
+    from_pen = None
+    to_pen = None
+    warnings = []
+    try:
+        from_pen = get_pen_by_id(cleaned_data["from_pen_id"])
+        to_pen = get_pen_by_id(cleaned_data["to_pen_id"])
+    except Exception as exc:
+        warnings.append(f"Movement was saved, but pen name lookup failed: {exc}")
 
-    return {
+    result = {
         "success": True,
         "message": "Movement entry saved successfully.",
         "saved": {
@@ -5350,3 +5380,6 @@ def save_movement_entry(cleaned_data: dict):
             "move_notes": cleaned_data["move_notes"],
         }
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
