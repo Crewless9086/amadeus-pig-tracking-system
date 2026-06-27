@@ -221,6 +221,9 @@ function clearUploadedAndDuplicateDraftRows(uploadData) {
   (uploadData.saved_rows || []).forEach((row) => {
     if (row.pig_id) clearPigIds.add(row.pig_id);
   });
+  (uploadData.movement_rows || []).forEach((row) => {
+    if (row.pig_id) clearPigIds.add(row.pig_id);
+  });
   (uploadData.blocked_rows || []).forEach((row) => {
     const reason = String(row.reason || "").toLowerCase();
     if (row.pig_id && reason.includes("already has a weight entry")) {
@@ -248,6 +251,9 @@ function clearUploadedAndDuplicateDraftRows(uploadData) {
 
 function renderReview(data) {
   const blockedRows = data.blocked_rows || [];
+  const acceptedRows = data.accepted_rows || [];
+  const movementRows = acceptedRows.filter((row) => row.action_type === "movement_only");
+  const duplicateMovementRows = acceptedRows.filter((row) => row.action_type === "duplicate_weight_movement");
   const blockedHtml = blockedRows.length
     ? `<div class="bulk-review-errors">
         ${blockedRows.map((row) => `
@@ -255,13 +261,20 @@ function renderReview(data) {
         `).join("")}
       </div>`
     : "";
+  const movementHtml = movementRows.length || duplicateMovementRows.length
+    ? `<div class="bulk-review-notes">
+        ${movementRows.length ? `<div>${movementRows.length} pen movement${movementRows.length === 1 ? "" : "s"} will be saved without a weight row.</div>` : ""}
+        ${duplicateMovementRows.length ? `<div>${duplicateMovementRows.length} duplicate weight row${duplicateMovementRows.length === 1 ? "" : "s"} will keep the existing weight and save only the pen move.</div>` : ""}
+      </div>`
+    : "";
 
   reviewPanel.classList.remove("hidden");
   reviewPanel.innerHTML = `
     <div class="bulk-review-header">
       <strong>Batch Review</strong>
-      <span>${Number(data.accepted_count || 0)} ready, ${Number(data.skipped_count || 0)} blank skipped, ${Number(data.blocked_count || 0)} blocked</span>
+      <span>${Number(data.weight_count || data.accepted_count || 0)} weights, ${Number(data.movement_only_count || 0) + Number(data.duplicate_weight_movement_count || 0)} moves, ${Number(data.skipped_count || 0)} skipped, ${Number(data.blocked_count || 0)} blocked</span>
     </div>
+    ${movementHtml}
     ${blockedHtml}
   `;
 }
@@ -298,10 +311,14 @@ async function uploadBatch() {
       return;
     }
 
+    const movementCount = Number(data.movement_only_count || 0) + Number(data.duplicate_weight_movement_count || 0);
     const blockedText = Number(data.blocked_count || 0)
       ? ` ${data.blocked_count} blocked/existing row${data.blocked_count === 1 ? "" : "s"} will be skipped.`
       : "";
-    const confirmed = window.confirm(`Upload ${data.accepted_count} weight record${data.accepted_count === 1 ? "" : "s"} now? Blank rows will be skipped.${blockedText}`);
+    const moveText = movementCount
+      ? ` ${movementCount} pen movement${movementCount === 1 ? "" : "s"} will also be saved.`
+      : "";
+    const confirmed = window.confirm(`Upload ${data.weight_count || data.accepted_count} new weight record${(data.weight_count || data.accepted_count) === 1 ? "" : "s"} now?${moveText} Blank rows will be skipped. No-change rows will be skipped.${blockedText}`);
     if (!confirmed) {
       setMessage("Batch upload cancelled. Draft is still available on this device.", "error");
       return;
@@ -329,7 +346,12 @@ async function uploadBatch() {
     const extraSkipped = Number(uploadData.blocked_count || 0) || Number(uploadData.failed_count || 0)
       ? ` Blocked/existing rows skipped: ${Number(uploadData.blocked_count || 0)}. Failed rows kept for review: ${Number(uploadData.failed_count || 0)}.`
       : "";
-    setMessage(`Uploaded ${uploadData.saved_count} weight record${uploadData.saved_count === 1 ? "" : "s"}. Blank rows skipped: ${uploadData.skipped_count}.${extraSkipped}`, "success");
+    const movementSaved = Number(uploadData.movement_count || 0);
+    const duplicateSaved = Number(uploadData.duplicate_weight_count || 0);
+    const auditWarning = uploadData.audit?.warnings?.length
+      ? ` Audit warning: ${uploadData.audit.warnings.join(" ")}`
+      : "";
+    setMessage(`Uploaded ${uploadData.saved_count} weight record${uploadData.saved_count === 1 ? "" : "s"} and ${movementSaved} pen movement${movementSaved === 1 ? "" : "s"}. Duplicate weights protected: ${duplicateSaved}. Blank/no-change rows skipped: ${uploadData.skipped_count}.${extraSkipped}${auditWarning}`, "success");
     await loadData();
   } catch (error) {
     console.error("bulk upload error:", error);

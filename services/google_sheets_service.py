@@ -2,7 +2,7 @@ import os
 import threading
 import time
 import gspread
-from gspread.exceptions import APIError
+from gspread.exceptions import APIError, WorksheetNotFound
 from google.oauth2.service_account import Credentials
 
 SCOPES = [
@@ -160,6 +160,25 @@ def get_all_records_from_spreadsheet(spreadsheet_name: str, sheet_name: str):
 def append_row(sheet_name: str, row_values: list):
     worksheet = get_worksheet(sheet_name)
     _run_with_quota_retry(lambda: worksheet.append_row(row_values, value_input_option="USER_ENTERED"))
+
+
+def ensure_worksheet(sheet_name: str, headers: list, rows: int = 1000, cols: int = 26):
+    sheet_name = str(sheet_name or "").strip()
+    if not sheet_name:
+        raise ValueError("Sheet name is required.")
+
+    try:
+        return get_worksheet(sheet_name)
+    except WorksheetNotFound:
+        spreadsheet = _get_spreadsheet()
+        worksheet = _run_with_quota_retry(
+            lambda: spreadsheet.add_worksheet(title=sheet_name, rows=rows, cols=cols)
+        )
+        if headers:
+            _run_with_quota_retry(lambda: worksheet.append_row(headers, value_input_option="USER_ENTERED"))
+        with _CACHE_LOCK:
+            _WORKSHEETS[sheet_name] = worksheet
+        return worksheet
 
 
 def get_all_values(sheet_name: str):
