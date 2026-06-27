@@ -1,179 +1,66 @@
 # System Architecture
 
-> Migrated from legacy system architecture.
+## Purpose
 
----
+This document defines the approved top-level system architecture after the CHARLIE CORE decision.
 
-1. PURPOSE
-This system is designed to manage:
-
-Customer conversations
-Order creation and tracking
-Stock-aware decision making
-Human escalation when needed
-
-The system must operate as a single intelligent workflow, even though it is built across multiple platforms.
-
-2. CORE COMPONENTS
-2.1 Chatwoot (Communication Layer)
-Handles:
-
-Incoming messages (WhatsApp, Messenger, Telegram, Instagram, Web Chatbot.)
-Conversation tracking
-User identity
-Message sending
-
-Chatwoot is the entry and exit point of the system. This is the single used Inbox.
-
-2.2 n8n (Orchestration Engine)
-Handles:
-
-Workflow execution
-Decision routing
-AI agent calls
-Data transformation
-Triggering backend actions
-
-n8n is the brain that connects everything.
-
-2.3 AI Agents (Decision Layer)
-Includes:
-
-Sales Agent (SAM)
-Escalation Classifier
-Clarification Handler
-
-Responsible for:
-
-Understanding user intent
-Generating responses
-Deciding next actions
-
-AI does NOT store data — it only interprets and responds.
-
-2.4 Backend (Flask API)
-Handles:
-
-Order creation
-Order updates
-Stock validation
-Business logic enforcement
-
-Backend is the source of truth for all transactional data.
-
-2.5 Google Sheets (Data Layer)
-Stores:
-
-Orders
-Order lines
-Stock availability
-Escalation logs
-
-Sheets are the current database, but logic must not live here.
-
-3. SYSTEM FLOW (HIGH LEVEL)
-
-
-User sends message → Chatwoot
-
-Chatwoot triggers n8n webhook
-
-n8n normalizes message
-
-AI evaluates intent
-
-System decides:
-→ Auto reply
-→ Clarification
-→ Order processing
-→ Human escalation
-
-If needed:
-→ Backend is called for order actions
-→ Sheets updated
-
-Final reply is sent via Chatwoot
-
-
-4. RESPONSIBILITY RULES
-
-Component
-Responsibility
-
-Chatwoot
-Messaging only
-
-n8n
-Logic + orchestration
-
-AI Agents
-Interpretation + response
-
-Backend
-Data truth + business rules
-
-Sheets
-Data storage
-
-
-5. CRITICAL PRINCIPLES
-5.1 Single Source of Truth
-
-Orders → Backend
-Stock → Sheets (for now)
-Conversations → Chatwoot
-
-
-5.2 No Logic Duplication
-Logic must NOT be:
-
-split between n8n and backend
-recreated inside AI prompts
-embedded in Google Sheets formulas
-
-
-5.3 Controlled Data Flow
-Each step must:
-
-receive structured input
-produce structured output
-
-No hidden transformations.
-
-5.4 Deterministic Workflow
-Same input = same output
-(No random behavior)
-
-6. FUTURE STATE
-This system will evolve into:
-
-Fully API-driven backend
-Reduced reliance on Google Sheets
-Stronger AI decision agents
-Modular workflows (plug-and-play)
-
-
-7. WHAT THIS DOCUMENT DOES
-This document defines:
-
-The system structure
-The role of each component
-The boundaries between systems
-
-It does NOT define:
-
-Node-level logic
-Field mappings
-Workflow decisions
-
-Those are defined in other documents.
+## Top-Level Model
 
----
+CHARLIE CORE is the top-level owner operating layer.
 
-## Phase 10 Operating-System Map
+Oom Sakkie remains the Farm Commander under CHARLIE.
 
-The broader farm operating-system planning source is:
+SAM Meat Sales is the urgent money-flow recovery path.
 
-- `docs/01-architecture/FARM_OPERATING_SYSTEM_MAP.md`
+FRED Transport is the planned transport commander and future money path.
 
-Use that document before Supabase migration or cross-system integration work. It defines module ownership, integration boundaries, data ownership, and migration sequencing.
+Build Team is the controlled engineering workflow for structured build requests, patch plans, tests, docs, and release gates.
+
+## Component Roles
+
+| Component | Role |
+| --- | --- |
+| Supabase | Live operational source of truth for operational records, approvals, ledgers, handoffs, and owner decisions. |
+| Flask backend | Business logic, validation, route contracts, read models, and safe writes behind approved gates. |
+| Oom Sakkie | Farm Commander and owner-facing farm command center under CHARLIE. |
+| SAM | Meat sales/customer conversation specialist under approved customer-message gates. |
+| FRED | Planned transport commander, starting with lead/opportunity capture and read-only board. |
+| Gatekeeper | Approval boundary and safety enforcement. |
+| Chatwoot / WhatsApp | Customer communication transport, not the brain. |
+| n8n | Workflow runner/integration helper, not the brain. |
+| Google Sheets | Legacy input/operator view/import source where still used, not final operational truth. |
+| Markdown / Brain / Vault | Human-readable guidance only, not live state. |
+| Cursor / Codex | Build workshop, not production brain. |
+
+## Source Of Truth
+
+Supabase is the live operational source of truth.
+
+Markdown/docs/Brain/Vault are guidance only.
+
+Google Sheets must not be treated as the final operational truth. Existing modules may still read from Sheets during migration, but new operational collaboration state should be designed for Supabase.
+
+## Data Flow
+
+```text
+User / owner / customer event
+  -> approved interface or webhook
+  -> backend validation and business rules
+  -> Supabase operational record
+  -> agent result packet / approval request where needed
+  -> owner decision
+  -> approved action or blocked state
+  -> CHARLIE / Oom Sakkie summary
+```
+
+## Safety Rules
+
+No component may bypass Gatekeeper or owner approval rails.
+
+No customer messages, public posts, deposits, dispatch commitments, farm record writes, hardware control, quotes, stock allocation, order mutation, or deployments may happen without approved rails.
+
+## Non-Core Tools
+
+Obsidian, Jarvis-style references, ZOEY, OpenCove, hosted assistants, Cursor, and Codex are not runtime core infrastructure.
+
+They may be used as references or build tools only when approved.

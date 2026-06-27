@@ -1,5 +1,7 @@
 # Pork Business Integration Readiness Map
 
+> Legacy note: this document predates ADR_0002 CHARLIE CORE. Where this document conflicts with the current architecture, ADR_0002 and the CHARLIE CORE architecture docs win. Current rule: CHARLIE CORE is the top-level owner orchestrator, Oom Sakkie is Farm Commander, Supabase is operational truth, and Markdown/docs are guidance only.
+
 ## Status
 
 Phase 11A planning bridge.
@@ -284,6 +286,16 @@ Resume status 2026-06-15:
 - The Oom Sakkie Ledger Sales Workbench now includes owner manual lead capture through `POST /api/oom-sakkie/sales-leads`.
 - The form is for inbound/manual tracking only and does not contact customers or create orders.
 - Next proof step: record one real owner-approved inbound/manual lead and confirm it appears in Oom Sakkie summaries before calling the rail live-verified.
+
+Sales launch readiness update 2026-06-16:
+
+- The next build should not be a broad meat-order system yet.
+- The next build is a launch-test rail: use the existing append-only lead capture to record one real inbound/manual buyer lead, confirm it appears in Oom Sakkie/Ledger summaries, and then decide the smallest next contract needed to turn interest into money.
+- The likely next contract is either a preorder/deposit draft or a Sam/Chatwoot handoff design, but neither should send customers, create orders, reserve stock, request deposits, or update allocations until reviewed separately.
+- Manual owner follow-up remains valid for the first launch test. The system's job in this slice is to remember the lead, show the next action, and prevent the opportunity from disappearing.
+- First proof passed: `Jan - half carcass interest` is recorded as `OSK-SALES-LEAD-733F06EE5501FB3B` with all send/order/stock/financial authority flags false. Use this lead as the concrete input for the next preorder/deposit or Sam handoff contract.
+- Preorder/deposit contract packet is now built as a read-only review layer from the lead. For Jan's lead, it identifies the fields still needed before any money path: price/kg, available week, estimated half-carcass size or weight range, deposit rule, payment method, delivery/collection, and owner final approval. The next build should let the owner fill/confirm these fields as a draft/review record only, without requesting payment or creating an order.
+- Sam meat-intake contract is now defined and locally mapped into the same append-only sales lead rail. Sam remains the customer-facing agent; Ledger remains the owner/business rail. The backend now has a review-gated local endpoint for bounded `meat_preorder` intake proof, but live n8n/Chatwoot automation is still not enabled.
 
 ## Backend-Owned Actions Later
 

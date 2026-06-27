@@ -343,16 +343,31 @@
     return img;
   }
 
+  function fallbackInitials(profile, asset) {
+    return (asset && asset.initials) || (profile && profile.initials) || "AG";
+  }
+
   function setAvatarImage(container, profile, asset, imageKey) {
     if (!container || !profile) return;
     container.innerHTML = "";
-    container.textContent = profile.initials || "";
+    const initials = fallbackInitials(profile, asset);
+    container.textContent = initials;
+    container.dataset.fallbackInitials = initials;
+    container.dataset.agentColor = profile.color || "";
+    container.dataset.assetState = "fallback";
+    container.setAttribute("aria-label", `${profile.name || (asset && asset.display_name) || "Agent"} portrait fallback`);
     const src = asset && (asset[imageKey] || asset.portrait_main || asset.portrait_panel || asset.portrait_dock);
     const img = createAgentImage(src, profile.name || asset?.display_name || "Agent portrait");
     if (img) {
       if (imageKey === "portrait_main") img.loading = "eager";
-      img.addEventListener("load", () => container.classList.add("has-image"), { once: true });
-      img.addEventListener("error", () => container.classList.remove("has-image"), { once: true });
+      img.addEventListener("load", () => {
+        container.classList.add("has-image");
+        container.dataset.assetState = "image";
+      }, { once: true });
+      img.addEventListener("error", () => {
+        container.classList.remove("has-image");
+        container.dataset.assetState = "fallback";
+      }, { once: true });
       container.appendChild(img);
     } else {
       container.classList.remove("has-image");
@@ -820,12 +835,32 @@
   }
 
   async function fetchSpecialistJson(url) {
-    const response = await fetch(url);
-    const data = await response.json();
-    if (!response.ok || data.success === false) {
-      throw new Error(data.message || data.status || `Request failed: ${url}`);
+    try {
+      const response = await fetch(url);
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (error) {
+        data = {};
+      }
+      if (!response.ok || data.success === false) {
+        return {
+          ...data,
+          success: false,
+          degraded: true,
+          http_status: response.status,
+          status: data.status || data.message || `unavailable_${response.status}`,
+        };
+      }
+      return data;
+    } catch (error) {
+      return {
+        success: false,
+        degraded: true,
+        status: "network_unavailable",
+        message: error && error.message ? error.message : "Request unavailable.",
+      };
     }
-    return data;
   }
 
   async function loadSpecialistLiveSummaries() {
@@ -3066,7 +3101,10 @@
     title.textContent = "Beacon Image Launch";
     beaconImageLaunchPanel.appendChild(title);
     if (!data.success) {
-      beaconImageLaunchPanel.appendChild(emptyParagraph("No approved image launch packet yet. Approve one Beacon image first."));
+      const status = data.degraded || data.http_status
+        ? `Beacon image launch is degraded (${data.http_status || data.status || "unavailable"}). No post packet is ready.`
+        : "No approved image launch packet yet. Approve one Beacon image first.";
+      beaconImageLaunchPanel.appendChild(emptyParagraph(status));
       return;
     }
     const packet = data.publish_packet || {};
@@ -4515,22 +4553,31 @@
   async function loadSalesWorkbench() {
     if (!salesCampaignsPanel && !salesOutreachDraftsPanel && !salesSendDesignsPanel && !salesLeadsPanel) return;
     try {
-      const [campaignResponse, draftResponse, designResponse, leadResponse, readinessResponse, templateResponse, beaconImageResponse] = await Promise.all([
-        fetch("/api/oom-sakkie/sales-campaigns?limit=12"),
-        fetch("/api/oom-sakkie/sales-outreach-drafts?limit=12"),
-        fetch("/api/oom-sakkie/sales-send-design-requests?limit=12"),
-        fetch(`/api/oom-sakkie/sales-leads?limit=12&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`),
-        fetch(`/api/sales/meat-pilot-readiness?limit=8&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`),
-        fetch("/api/sales/meat-whatsapp-templates"),
-        fetch("/api/beacon/facebook-image-launch-packet"),
+      const salesLeadFilter = encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test");
+      const [
+        campaignData,
+        draftData,
+        designData,
+        leadData,
+        readinessData,
+        templateData,
+        beaconImageData,
+      ] = await Promise.all([
+        fetchSpecialistJson("/api/oom-sakkie/sales-campaigns?limit=12"),
+        fetchSpecialistJson("/api/oom-sakkie/sales-outreach-drafts?limit=12"),
+        fetchSpecialistJson("/api/oom-sakkie/sales-send-design-requests?limit=12"),
+        fetchSpecialistJson(`/api/oom-sakkie/sales-leads?limit=12&status=${salesLeadFilter}`),
+        fetchSpecialistJson(`/api/sales/meat-pilot-readiness?limit=8&status=${salesLeadFilter}`),
+        fetchSpecialistJson("/api/sales/meat-whatsapp-templates"),
+        fetchSpecialistJson("/api/beacon/facebook-image-launch-packet"),
       ]);
-      latestSalesCampaignsData = await campaignResponse.json();
-      latestSalesOutreachDraftsData = await draftResponse.json();
-      latestSalesSendDesignsData = await designResponse.json();
-      latestSalesLeadsData = await leadResponse.json();
-      latestMeatPilotReadinessData = await readinessResponse.json();
-      latestMeatTemplatePackData = await templateResponse.json();
-      latestBeaconImageLaunchData = await beaconImageResponse.json();
+      latestSalesCampaignsData = campaignData;
+      latestSalesOutreachDraftsData = draftData;
+      latestSalesSendDesignsData = designData;
+      latestSalesLeadsData = leadData;
+      latestMeatPilotReadinessData = readinessData;
+      latestMeatTemplatePackData = templateData;
+      latestBeaconImageLaunchData = beaconImageData;
       renderSalesWorkbench();
       renderWorkbenchNextAction();
       renderApprovalConsole();

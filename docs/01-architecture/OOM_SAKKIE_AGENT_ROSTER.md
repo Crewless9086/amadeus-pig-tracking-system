@@ -1,5 +1,7 @@
 # Oom Sakkie Agent Roster
 
+> Legacy note: this document predates ADR_0002 CHARLIE CORE. Where this document conflicts with the current architecture, ADR_0002 and the CHARLIE CORE architecture docs win. Current rule: CHARLIE CORE is the top-level owner orchestrator, Oom Sakkie is Farm Commander, Supabase is operational truth, and Markdown/docs are guidance only.
+
 Status: Planning document. Do not implement these as autonomous workers until the read-only kiosk has been used daily and reviewed.
 
 ## Design Direction

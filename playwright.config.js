@@ -1,7 +1,6 @@
 const { defineConfig } = require("@playwright/test");
 
 const baseURL = process.env.OOM_SAKKIE_PLAYWRIGHT_BASE_URL || "http://127.0.0.1:5000";
-const serverURL = process.env.OOM_SAKKIE_PLAYWRIGHT_SERVER_URL || `${baseURL}/oom-sakkie`;
 
 module.exports = defineConfig({
   testDir: "tests",
@@ -10,11 +9,5 @@ module.exports = defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
-  },
-  webServer: {
-    command: process.env.OOM_SAKKIE_PLAYWRIGHT_SERVER_COMMAND || "python app.py",
-    url: serverURL,
-    reuseExistingServer: true,
-    timeout: 120000,
   },
 });
