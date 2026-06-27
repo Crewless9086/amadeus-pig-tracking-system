@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from services.google_sheets_service import (
     append_row,
     batch_update_rows_by_id,
+    ensure_worksheet,
     get_all_records,
     get_all_values,
     update_row_by_first_column_match,
@@ -57,6 +58,35 @@ MEAT_TARGET_MAX_KG = 70
 SLAUGHTER_TARGET_MIN_KG = 80
 SLAUGHTER_TARGET_MAX_KG = 95
 STALE_WEIGHT_DAYS = 45
+BULK_WEIGHT_BATCH_AUDIT_SHEET = "BULK_WEIGHT_BATCH_LOG"
+BULK_WEIGHT_ROW_AUDIT_SHEET = "BULK_WEIGHT_BATCH_ROWS"
+BULK_WEIGHT_BATCH_AUDIT_HEADERS = [
+    "Batch_ID",
+    "Uploaded_At",
+    "Weight_Date",
+    "Uploaded_By",
+    "Submitted_Rows",
+    "Saved_Weights",
+    "Saved_Movements",
+    "Duplicate_Weights_Protected",
+    "Skipped_Rows",
+    "Blocked_Rows",
+    "Failed_Rows",
+    "Message",
+]
+BULK_WEIGHT_ROW_AUDIT_HEADERS = [
+    "Batch_ID",
+    "Uploaded_At",
+    "Event_Type",
+    "Row_Index",
+    "Pig_ID",
+    "Tag_Number",
+    "Weight_Date",
+    "Weight_Kg",
+    "From_Pen_ID",
+    "To_Pen_ID",
+    "Reason",
+]
 ALLOCATION_BUCKET_ORDER = {
     "Needs Data": 0,
     "Needs Classification": 1,
@@ -4844,6 +4874,101 @@ def _bulk_weight_existing_key(row, columns):
     return (pig_id, weight_date)
 
 
+def _bulk_batch_id(batch_date):
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    date_part = batch_date.strftime("%Y%m%d") if batch_date else "nodate"
+    return f"BWB-{date_part}-{stamp}"
+
+
+def _bulk_audit_headers(sheet_name):
+    if sheet_name == BULK_WEIGHT_BATCH_AUDIT_SHEET:
+        return BULK_WEIGHT_BATCH_AUDIT_HEADERS
+    if sheet_name == BULK_WEIGHT_ROW_AUDIT_SHEET:
+        return BULK_WEIGHT_ROW_AUDIT_HEADERS
+    return []
+
+
+def _bulk_audit_append(sheet_name, row_values):
+    try:
+        ensure_worksheet(sheet_name, _bulk_audit_headers(sheet_name))
+        append_row(sheet_name, row_values)
+        return {"success": True, "sheet": sheet_name}
+    except Exception as exc:
+        return {
+            "success": False,
+            "sheet": sheet_name,
+            "error": str(exc),
+        }
+
+
+def _write_bulk_batch_audit(batch_id, payload, result, batch_date):
+    uploaded_at = datetime.now()
+    audit = {
+        "batch_log": None,
+        "row_log": None,
+        "warnings": [],
+    }
+    rows = payload.get("rows", [])
+    batch_log = _bulk_audit_append(BULK_WEIGHT_BATCH_AUDIT_SHEET, [
+        batch_id,
+        uploaded_at.isoformat(timespec="seconds"),
+        format_date_for_sheet(batch_date),
+        to_clean_string(payload.get("weighed_by", "")) or "WebApp",
+        len(rows) if isinstance(rows, list) else 0,
+        result.get("saved_count", 0),
+        result.get("movement_count", 0),
+        result.get("duplicate_weight_count", 0),
+        result.get("skipped_count", 0),
+        result.get("blocked_count", 0),
+        result.get("failed_count", 0),
+        result.get("message", ""),
+    ])
+    audit["batch_log"] = batch_log
+    if not batch_log.get("success"):
+        audit["warnings"].append(
+            f"Could not write {BULK_WEIGHT_BATCH_AUDIT_SHEET}: {batch_log.get('error')}"
+        )
+
+    row_log_results = []
+    row_events = []
+    for row in result.get("saved_rows", []):
+        row_events.append(("saved_weight", row))
+    for row in result.get("movement_rows", []):
+        row_events.append(("saved_movement", row))
+    for row in result.get("blocked_rows", []):
+        row_events.append(("blocked", row))
+    for row in result.get("failed_rows", []):
+        row_events.append(("failed", row.get("row", row)))
+
+    for event_type, row in row_events:
+        row_log_results.append(_bulk_audit_append(BULK_WEIGHT_ROW_AUDIT_SHEET, [
+            batch_id,
+            uploaded_at.isoformat(timespec="seconds"),
+            event_type,
+            row.get("row_index", ""),
+            row.get("pig_id", ""),
+            row.get("tag_number", ""),
+            format_date_for_sheet(batch_date),
+            row.get("weight_kg", ""),
+            row.get("from_pen_id", row.get("current_pen_id", "")),
+            row.get("to_pen_id", row.get("moved_to_pen_id", "")),
+            row.get("reason", row.get("condition_notes", "")),
+        ]))
+
+    failed_row_logs = [item for item in row_log_results if not item.get("success")]
+    audit["row_log"] = {
+        "attempted": len(row_log_results),
+        "written": len(row_log_results) - len(failed_row_logs),
+        "failed": len(failed_row_logs),
+    }
+    if failed_row_logs:
+        audit["warnings"].append(
+            f"Could not write {len(failed_row_logs)} {BULK_WEIGHT_ROW_AUDIT_SHEET} row audit item(s)."
+        )
+
+    return audit
+
+
 def preflight_bulk_weight_entries(payload: dict):
     columns = PIG_WEIGHTS_CONFIG["columns"]
     batch_date = parse_sheet_date(payload.get("weight_date", ""))
@@ -4894,23 +5019,15 @@ def preflight_bulk_weight_entries(payload: dict):
         moved_to_pen_id = to_clean_string(row.get("moved_to_pen_id", ""))
         condition_notes = to_clean_string(row.get("condition_notes", ""))
 
-        if weight_value in (None, "") or str(weight_value).strip() == "":
-            skipped_rows.append({
-                "row_index": index,
-                "pig_id": pig_id,
-                "tag_number": tag_number,
-                "reason": "No weight entered.",
-            })
-            continue
-
         errors = []
         parsed_weight = to_float(weight_value)
+        has_weight = not (weight_value in (None, "") or str(weight_value).strip() == "")
 
         if not pig_id or pig_id not in active_pigs:
             errors.append("Pig is not active/on-farm or could not be found.")
-        if parsed_weight is None:
+        if has_weight and parsed_weight is None:
             errors.append("Weight must be a valid number.")
-        elif parsed_weight <= 0:
+        elif has_weight and parsed_weight <= 0:
             errors.append("Weight must be greater than 0.")
         if moved_to_pen_id and moved_to_pen_id not in active_pen_ids:
             errors.append("Selected new pen is not active or could not be found.")
@@ -4918,7 +5035,12 @@ def preflight_bulk_weight_entries(payload: dict):
         batch_key = (pig_id, batch_date)
         if batch_key in seen_batch_keys:
             errors.append("This pig appears more than once in this batch.")
-        if batch_key in existing_weights:
+
+        pig = active_pigs.get(pig_id, {})
+        current_pen_id = to_clean_string(pig.get("current_pen_id", ""))
+        has_pen_change = bool(moved_to_pen_id and moved_to_pen_id != current_pen_id)
+        duplicate_weight = bool(has_weight and batch_key in existing_weights)
+        if duplicate_weight and not has_pen_change:
             errors.append("This pig already has a weight entry for this date.")
 
         if errors:
@@ -4939,25 +5061,60 @@ def preflight_bulk_weight_entries(payload: dict):
             })
             continue
 
-        seen_batch_keys.add(batch_key)
-        pig = active_pigs[pig_id]
+        if not has_weight and not has_pen_change:
+            skipped_rows.append({
+                "row_index": index,
+                "pig_id": pig_id,
+                "tag_number": tag_number or pig.get("tag_number", ""),
+                "reason": "No weight entered and no pen change selected.",
+            })
+            continue
+
+        if not has_weight and moved_to_pen_id and not has_pen_change:
+            skipped_rows.append({
+                "row_index": index,
+                "pig_id": pig_id,
+                "tag_number": tag_number or pig.get("tag_number", ""),
+                "reason": "No weight entered and selected pen is already current.",
+            })
+            continue
+
+        if has_weight:
+            seen_batch_keys.add(batch_key)
+        action_type = "weight"
+        if duplicate_weight and has_pen_change:
+            action_type = "duplicate_weight_movement"
+        elif not has_weight and has_pen_change:
+            action_type = "movement_only"
+
         accepted_rows.append({
             "row_index": index,
+            "action_type": action_type,
             "pig_id": pig_id,
             "tag_number": tag_number or pig.get("tag_number", ""),
             "weight_date": format_date_for_json(batch_date),
-            "weight_kg": parsed_weight,
+            "weight_kg": parsed_weight if has_weight else None,
             "weighed_by": weighed_by,
             "moved_to_pen_id": moved_to_pen_id,
             "condition_notes": condition_notes,
-            "current_pen_id": pig.get("current_pen_id", ""),
+            "current_pen_id": current_pen_id,
             "current_pen_name": pig.get("current_pen_name", ""),
+            "duplicate_weight": duplicate_weight,
+            "movement_planned": has_pen_change,
+            "existing_weight": {
+                "weight_log_id": to_clean_string(existing_weights.get(batch_key, {}).get(columns["weight_log_id"], "")),
+                "weight_date": format_date_for_json(existing_weights.get(batch_key, {}).get(columns["weight_date"], "")),
+                "weight_kg": to_float(existing_weights.get(batch_key, {}).get(columns["weight_kg"], "")),
+            } if duplicate_weight else {},
         })
 
     return {
         "success": len(blocked_rows) == 0,
         "message": "Batch preflight passed." if len(blocked_rows) == 0 else "Batch has rows that need attention.",
         "accepted_count": len(accepted_rows),
+        "weight_count": sum(1 for row in accepted_rows if row["action_type"] == "weight"),
+        "movement_only_count": sum(1 for row in accepted_rows if row["action_type"] == "movement_only"),
+        "duplicate_weight_movement_count": sum(1 for row in accepted_rows if row["action_type"] == "duplicate_weight_movement"),
         "blocked_count": len(blocked_rows),
         "skipped_count": len(skipped_rows),
         "accepted_rows": accepted_rows,
@@ -4981,11 +5138,49 @@ def save_bulk_weight_entries(payload: dict):
             "blocked_rows": preflight.get("blocked_rows", []),
         }, 409 if preflight.get("blocked_count", 0) else 400
 
+    batch_date = parse_sheet_date(payload.get("weight_date", ""))
+    batch_id = _bulk_batch_id(batch_date)
     saved_rows = []
+    movement_rows = []
     failed_rows = []
     movement_count = 0
+    duplicate_weight_count = 0
 
     for row in preflight.get("accepted_rows", []):
+        action_type = row.get("action_type", "weight")
+        if row.get("duplicate_weight"):
+            duplicate_weight_count += 1
+
+        if action_type in {"movement_only", "duplicate_weight_movement"}:
+            try:
+                movement_result = save_movement_entry({
+                    "pig_id": row["pig_id"],
+                    "move_date": parse_sheet_date(row["weight_date"]),
+                    "from_pen_id": row.get("current_pen_id", ""),
+                    "to_pen_id": row.get("moved_to_pen_id", ""),
+                    "reason_for_move": (
+                        "Moved during duplicate weight review"
+                        if action_type == "duplicate_weight_movement"
+                        else "Moved during bulk capture"
+                    ),
+                    "moved_by": "WebApp",
+                    "move_notes": row.get("condition_notes", ""),
+                })
+            except Exception as exc:
+                failed_rows.append({
+                    "row": row,
+                    "error": {"success": False, "message": str(exc)},
+                })
+                continue
+
+            movement_count += 1
+            saved_movement = {
+                **row,
+                **movement_result.get("saved", {}),
+            }
+            movement_rows.append(saved_movement)
+            continue
+
         result = save_weight_entry_with_optional_move({
             "pig_id": row["pig_id"],
             "weight_date": parse_sheet_date(row["weight_date"]),
@@ -5005,9 +5200,16 @@ def save_bulk_weight_entries(payload: dict):
 
         if result.get("movement_logged"):
             movement_count += 1
-        saved_rows.append(result.get("saved", {}))
+            movement_rows.append({
+                **row,
+                **(result.get("movement") or {}),
+            })
+        saved_rows.append({
+            **row,
+            **result.get("saved", {}),
+        })
 
-    if not saved_rows:
+    if not saved_rows and not movement_rows:
         return {
             "success": False,
             "message": "No new weight rows were uploaded.",
@@ -5016,6 +5218,8 @@ def save_bulk_weight_entries(payload: dict):
             "skipped_count": preflight.get("skipped_count", 0),
             "blocked_count": preflight.get("blocked_count", 0),
             "failed_count": len(failed_rows),
+            "movement_count": movement_count,
+            "duplicate_weight_count": duplicate_weight_count,
             "blocked_rows": preflight.get("blocked_rows", []),
             "failed_rows": failed_rows,
         }, 409 if preflight.get("blocked_count", 0) or failed_rows else 400
@@ -5023,8 +5227,9 @@ def save_bulk_weight_entries(payload: dict):
     blocked_count = preflight.get("blocked_count", 0)
     failed_count = len(failed_rows)
     partial_count = blocked_count + failed_count
-    return {
+    result = {
         "success": True,
+        "batch_id": batch_id,
         "message": (
             "Bulk weight batch uploaded with skipped rows."
             if partial_count
@@ -5032,13 +5237,18 @@ def save_bulk_weight_entries(payload: dict):
         ),
         "saved_count": len(saved_rows),
         "movement_count": movement_count,
+        "movement_only_count": len([row for row in movement_rows if row.get("action_type") == "movement_only"]),
+        "duplicate_weight_count": duplicate_weight_count,
         "skipped_count": preflight.get("skipped_count", 0),
         "blocked_count": blocked_count,
         "failed_count": failed_count,
         "saved_rows": saved_rows,
+        "movement_rows": movement_rows,
         "blocked_rows": preflight.get("blocked_rows", []),
         "failed_rows": failed_rows,
-    }, 201
+    }
+    result["audit"] = _write_bulk_batch_audit(batch_id, payload, result, batch_date)
+    return result, 201
 
 
 def save_treatment_entry(cleaned_data: dict):
