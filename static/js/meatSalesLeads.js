@@ -43,6 +43,13 @@
     detailTitle: byId("meat_lead_detail_title"),
     detailStatus: byId("meat_lead_detail_status"),
     operatorStrip: byId("meat_operator_strip"),
+    commandNextLabel: byId("sam_command_next_label"),
+    commandNextReason: byId("sam_command_next_reason"),
+    commandDraftState: byId("sam_command_draft_state"),
+    commandDraftReason: byId("sam_command_draft_reason"),
+    commandOwnerState: byId("sam_command_owner_state"),
+    commandOwnerReason: byId("sam_command_owner_reason"),
+    gateStack: byId("sam_gate_stack"),
     facts: byId("meat_lead_facts"),
     guidedStatus: byId("meat_guided_status"),
     guidedNext: byId("meat_guided_next"),
@@ -144,33 +151,243 @@
 
   const hasLoadedEvent = (type) => leadEvents().some((event) => event.event_type === type);
 
-  const guidedState = () => {
-    const contract = state.contract?.contract || {};
-    const missing = Array.isArray(contract.missing_fields) ? contract.missing_fields : [];
-    const sent = hasLoadedEvent("customer_followup_sent");
-    const customerYes = hasLoadedEvent("customer_booking_confirmed");
-    const draftOrder = latestDraftOrderEvent();
-    if (!state.selectedLeadId || !state.contract?.lead) {
-      return { label: "Select a lead", detail: "Choose a lead first.", disabled: true };
+  const eventsOf = (lead) => (Array.isArray(lead?.events) ? lead.events : []);
+
+  const eventExists = (lead, type) => {
+    if (lead?.latest_event?.event_type === type) return true;
+    return eventsOf(lead).some((event) => event.event_type === type);
+  };
+
+  const latestEventForLead = (lead, type) => {
+    const events = eventsOf(lead);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      if (events[index].event_type === type) return events[index];
     }
-    if (draftOrder.order_id) {
-      return { label: "Draft order created", detail: `Draft order ${draftOrder.order_id} exists.`, disabled: true };
-    }
-    if (customerYes) {
-      return { label: "Create Draft Order", detail: "Customer confirmation is recorded. Create the draft order next.", disabled: false };
-    }
-    if (sent) {
-      return { label: "Waiting For Customer Yes", detail: "The approved follow-up was sent. Sam/customer must confirm before an order is created.", disabled: true };
+    return lead?.latest_event?.event_type === type ? lead.latest_event : {};
+  };
+
+  const computeLeadNextAction = (lead, relatedState = {}) => {
+    const item = lead && typeof lead === "object" ? lead : {};
+    const contract = relatedState.contract && typeof relatedState.contract === "object" ? relatedState.contract : {};
+    const meatOps = relatedState.meatOps && typeof relatedState.meatOps === "object" ? relatedState.meatOps : {};
+    const fulfillment = relatedState.meatFulfillment?.fulfillment || {};
+    const reconciliation = relatedState.meatReconciliation?.reconciliation || {};
+    const interest = interestOf(item);
+    const events = eventsOf(item);
+    const missing = Array.isArray(contract.missing_fields)
+      ? contract.missing_fields
+      : ["product_type", "cut_set", "location", "timing", "delivery_or_collection"].filter((key) => {
+          if (key === "product_type") return !interest.product_type || interest.product_type === "unknown";
+          return !String(interest[key] || "").trim();
+        });
+    const assembly = meatOps.assembly || {};
+    const paymentGate = meatOps.payment_gate || {};
+    const reservations = Array.isArray(meatOps.reservations) ? meatOps.reservations : [];
+    const instructionDrafts = Array.isArray(meatOps.instruction_drafts) ? meatOps.instruction_drafts : [];
+    const activeReservation = reservations.find((reservation) => reservation.effective_status !== "cancelled") || {};
+    const approvedInstruction = instructionDrafts.find((draft) => draft.effective_status === "approved_to_send" || draft.effective_status === "send_failed");
+    const openInstruction = instructionDrafts.find((draft) => !["sent", "exception_review_required"].includes(draft.effective_status || draft.status));
+    const hasLead = Boolean(item.lead_id);
+    const hasMoneyApproval = contract.contract_status === "owner_money_path_ready" || eventExists(item, "owner_money_path_approved");
+    const hasCustomerDraft = Boolean(relatedState.draft?.message || relatedState.draft?.text);
+    const hasSendApproval = Boolean(relatedState.messageApproved || eventExists(item, "owner_customer_followup_send_approved"));
+    const customerSent = eventExists(item, "customer_followup_sent");
+    const customerYes = eventExists(item, "customer_booking_confirmed");
+    const draftOrder = latestEventForLead(item, "draft_order_created");
+    const popOnly = paymentGate.state === "pop_received_unverified" || assembly.payment_review_status === "pop_received_unverified";
+    const moneyConfirmed = Boolean(paymentGate.deposit_confirmed_in_bank || assembly.deposit_confirmed);
+    const readyForInstructions = Boolean(assembly.ready_for_instruction_drafts);
+    const finalBalanceReady = reconciliation.next_gate === "delivery_release_ready" || reconciliation.balance_confirmed;
+
+    if (!hasLead) {
+      return {
+        key: "missing_facts",
+        label: "Select a lead",
+        reason: "Choose a SAM meat lead before taking action.",
+        risk: "idle",
+        moneyState: "not_loaded",
+        blockedReasons: ["no lead selected"],
+        canPrepare: false,
+      };
     }
     if (missing.length) {
       return {
-        label: "Approve And Send Price",
-        detail: `Uses active pricing rules, records owner approval, then sends the approved follow-up. Missing now: ${missing.join(", ")}.`,
-        disabled: false,
+        key: "missing_facts",
+        label: "Capture Missing Facts",
+        reason: `Sam still needs: ${missing.slice(0, 5).join(", ")}.`,
+        risk: "medium",
+        moneyState: "not_ready",
+        blockedReasons: ["approval missing", "price/deposit facts incomplete"],
+        canPrepare: false,
       };
     }
-    return { label: "Send Approved Follow-Up", detail: "Owner money path is ready. Build, approve, and send the follow-up.", disabled: false };
+    if (!hasMoneyApproval) {
+      return {
+        key: "owner_price_deposit_review",
+        label: "Review Price And Deposit",
+        reason: "Owner must approve price, timing, deposit rule, payment method, and delivery/collection before any customer-facing draft is sent.",
+        risk: "high",
+        moneyState: "owner_review",
+        blockedReasons: ["approval missing", "no price/deposit promise allowed"],
+        canPrepare: true,
+      };
+    }
+    if (!hasCustomerDraft) {
+      return {
+        key: "build_draft_reply",
+        label: "Build Draft Reply",
+        reason: "Money path is approved. Build a draft for owner review only; this does not send.",
+        risk: "medium",
+        moneyState: "approved",
+        blockedReasons: [],
+        canPrepare: true,
+      };
+    }
+    if (!hasSendApproval) {
+      return {
+        key: "approve_exact_reply",
+        label: "Approve Exact Reply",
+        reason: "The reply draft exists. Owner must approve this exact text before any send endpoint can accept it.",
+        risk: "high",
+        moneyState: "approved",
+        blockedReasons: ["approval missing", "hash approval required"],
+        canPrepare: false,
+      };
+    }
+    if (!customerSent) {
+      const windowOpen = item.whatsapp_window_state === "open";
+      return {
+        key: "ready_for_owner_send_review",
+        label: "Final Send Review",
+        reason: windowOpen
+          ? "Exact reply is approved. Use the existing gated send button only after final owner review."
+          : "Exact reply is approved, but the WhatsApp window is closed or unknown.",
+        risk: "critical",
+        moneyState: "approved",
+        blockedReasons: windowOpen ? [] : ["WhatsApp window closed"],
+        canPrepare: false,
+      };
+    }
+    if (!customerYes) {
+      return {
+        key: "wait_for_customer_yes",
+        label: "Wait For Customer Yes",
+        reason: "The approved follow-up was sent. Record customer confirmation only after the buyer clearly accepts.",
+        risk: "medium",
+        moneyState: "customer_review",
+        blockedReasons: ["customer confirmation missing"],
+        canPrepare: false,
+      };
+    }
+    if (customerYes && !activeReservation.reservation_id && !draftOrder.event_type) {
+      return {
+        key: "reserve_or_pair_carcass",
+        label: "Reserve Or Pair Carcass",
+        reason: "Customer accepted. Butcher match and explicit owner reservation are needed before operations can continue.",
+        risk: "high",
+        moneyState: "awaiting_reservation",
+        blockedReasons: ["no Butcher reservation"],
+        canPrepare: false,
+      };
+    }
+    if (popOnly) {
+      return {
+        key: "confirm_money_in_bank",
+        label: "Confirm Money In Bank",
+        reason: "POP is evidence only. Slaughter, fulfilment, and instruction gates stay blocked until money reflects in the farm account.",
+        risk: "critical",
+        moneyState: "pop_only",
+        blockedReasons: ["POP only", "money not confirmed"],
+        canPrepare: false,
+      };
+    }
+    if (activeReservation.reservation_id && !moneyConfirmed) {
+      return {
+        key: "record_pop_evidence",
+        label: "Record POP Or Wait",
+        reason: "A reservation exists, but money is not confirmed. POP can be logged as evidence only.",
+        risk: "high",
+        moneyState: "deposit_not_confirmed",
+        blockedReasons: ["money not confirmed"],
+        canPrepare: false,
+      };
+    }
+    if (moneyConfirmed && readyForInstructions && !instructionDrafts.length) {
+      return {
+        key: "create_instruction_drafts",
+        label: "Create Instruction Drafts",
+        reason: "Full carcass and bank-confirmed money are ready. Build internal abattoir and butcher drafts; nothing external is sent.",
+        risk: "high",
+        moneyState: "confirmed",
+        blockedReasons: [],
+        canPrepare: false,
+      };
+    }
+    if (openInstruction && !approvedInstruction) {
+      return {
+        key: "approve_external_instruction",
+        label: "Approve External Instruction",
+        reason: "Instruction drafts exist. Approve exact draft text before any backend-gated external send.",
+        risk: "critical",
+        moneyState: "confirmed",
+        blockedReasons: ["Gatekeeper approval required"],
+        canPrepare: false,
+      };
+    }
+    if (fulfillment.next_gate && fulfillment.next_gate !== "record_final_packed_weight") {
+      return {
+        key: "record_fulfillment",
+        label: "Record Fulfilment",
+        reason: `Fulfilment is at ${safe(fulfillment.next_gate, "the next operational gate")}. Record real events only.`,
+        risk: "medium",
+        moneyState: moneyConfirmed ? "confirmed" : "not_confirmed",
+        blockedReasons: moneyConfirmed ? [] : ["money not confirmed"],
+        canPrepare: false,
+      };
+    }
+    if (!finalBalanceReady) {
+      return {
+        key: "reconcile_final_invoice",
+        label: "Reconcile Final Invoice",
+        reason: "Actual packed weight and final balance must be reconciled before delivery release.",
+        risk: "high",
+        moneyState: moneyConfirmed ? "confirmed" : "not_confirmed",
+        blockedReasons: finalBalanceReady ? [] : ["final balance not confirmed"],
+        canPrepare: false,
+      };
+    }
+    return {
+      key: "close_or_follow_up",
+      label: "Close Or Follow Up",
+      reason: "The main gates are complete. Review history and decide whether to close or follow up.",
+      risk: "low",
+      moneyState: "complete",
+      blockedReasons: [],
+      canPrepare: false,
+    };
   };
+
+  const guidedState = () => {
+    const action = computeLeadNextAction(state.contract?.lead || selectedLead(), {
+      contract: state.contract?.contract || {},
+      meatOps: state.meatOps,
+      meatFulfillment: state.meatFulfillment,
+      meatReconciliation: state.meatReconciliation,
+      draft: state.draft,
+      messageApproved: state.messageApproved,
+    });
+    return {
+      ...action,
+      detail: action.reason,
+      disabled: !state.selectedLeadId || !action.canPrepare,
+    };
+  };
+
+  if (typeof window !== "undefined") {
+    window.SamMeatCommandRoom = Object.freeze({
+      computeLeadNextAction,
+    });
+  }
 
   const latestDraftOrderEvent = () => {
     const events = leadEvents();
@@ -375,16 +592,44 @@
       elements.list.innerHTML = '<div class="table-empty">No active meat leads found.</div>';
       return;
     }
-    state.leads.forEach((lead) => {
+    const urgency = {
+      confirm_money_in_bank: 10,
+      ready_for_owner_send_review: 9,
+      approve_exact_reply: 8,
+      owner_price_deposit_review: 7,
+      reserve_or_pair_carcass: 6,
+      create_instruction_drafts: 5,
+      approve_external_instruction: 5,
+      build_draft_reply: 4,
+      missing_facts: 3,
+      record_pop_evidence: 3,
+      wait_for_customer_yes: 2,
+      record_fulfillment: 2,
+      reconcile_final_invoice: 2,
+      close_or_follow_up: 1,
+    };
+    state.leads
+      .slice()
+      .sort((left, right) => {
+        const leftAction = computeLeadNextAction(left, {});
+        const rightAction = computeLeadNextAction(right, {});
+        return (urgency[rightAction.key] || 0) - (urgency[leftAction.key] || 0);
+      })
+      .forEach((lead) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "meat-lead-row";
       button.classList.toggle("is-selected", lead.lead_id === state.selectedLeadId);
       button.dataset.leadId = lead.lead_id;
+      const action = computeLeadNextAction(lead, {});
       button.innerHTML = `
-        <strong>${safe(lead.contact_label || lead.lead_label, "Unknown buyer")}</strong>
+        <span class="meat-lead-row-head">
+          <strong>${safe(lead.contact_label || lead.lead_label, "Unknown buyer")}</strong>
+          <em data-risk="${safe(action.risk, "idle")}">${safe(action.risk, "idle")}</em>
+        </span>
         <span>${leadSummaryText(lead)}</span>
-        <small>${safe(lead.status)} / ${safe(lead.whatsapp_window_state, "window unknown")}</small>
+        <small>${safe(lead.status)} / ${safe(latestEventType(lead), "no event")} / ${safe(lead.whatsapp_window_state, "window unknown")}</small>
+        <span class="meat-lead-next-action">${safe(action.label)}<small>${safe(action.moneyState)}</small></span>
       `;
       button.addEventListener("click", () => selectLead(lead.lead_id));
       elements.list.appendChild(button);
@@ -430,6 +675,89 @@
         <span>${label}</span>
         <strong>${safe(value)}</strong>
       </div>
+    `).join("");
+  };
+
+  const renderCommandPanel = (lead, contract) => {
+    if (!elements.commandNextLabel) return;
+    const action = computeLeadNextAction(lead, {
+      contract,
+      meatOps: state.meatOps,
+      meatFulfillment: state.meatFulfillment,
+      meatReconciliation: state.meatReconciliation,
+      draft: state.draft,
+      messageApproved: state.messageApproved,
+    });
+    const draftMessage = safe(state.draft?.message || state.draft?.text, "");
+    const hasSendApproval = Boolean(state.messageApproved || eventExists(lead, "owner_customer_followup_send_approved"));
+    elements.commandNextLabel.textContent = action.label;
+    elements.commandNextReason.textContent = action.reason;
+    elements.commandDraftState.textContent = draftMessage ? "Draft ready for review" : "No draft loaded";
+    elements.commandDraftReason.textContent = draftMessage
+      ? "Draft is local review text only until exact owner approval and backend send gates pass."
+      : "Build a draft only after owner money facts are ready.";
+    elements.commandOwnerState.textContent = hasSendApproval
+      ? "Exact reply approved"
+      : contract?.contract_status === "owner_money_path_ready" ? "Money facts approved" : "Owner review needed";
+    elements.commandOwnerReason.textContent = action.blockedReasons.length
+      ? `Blocked by: ${action.blockedReasons.join(", ")}.`
+      : "No frontend block detected; backend gates remain final.";
+  };
+
+  const renderGateStack = (lead, contract) => {
+    if (!elements.gateStack) return;
+    const action = computeLeadNextAction(lead, {
+      contract,
+      meatOps: state.meatOps,
+      meatFulfillment: state.meatFulfillment,
+      meatReconciliation: state.meatReconciliation,
+      draft: state.draft,
+      messageApproved: state.messageApproved,
+    });
+    const assembly = state.meatOps?.assembly || {};
+    const paymentGate = state.meatOps?.payment_gate || {};
+    const reservation = latestReservation();
+    const events = Array.isArray(lead?.events) ? lead.events : [];
+    const hasDraft = Boolean(state.draft?.message || state.draft?.text);
+    const hasSendApproval = Boolean(state.messageApproved || eventExists(lead, "owner_customer_followup_send_approved"));
+    const gateCards = [
+      {
+        label: "Ledger Money Gate",
+        state: contract?.contract_status === "owner_money_path_ready" ? "ready" : "blocked",
+        title: contract?.contract_status === "owner_money_path_ready" ? "Money facts approved" : "Owner approval needed",
+        detail: contract?.missing_fields?.length ? `Missing ${contract.missing_fields.join(", ")}` : "Price, deposit, payment, timing, and delivery are controlled by existing rails.",
+      },
+      {
+        label: "Butcher Availability Gate",
+        state: reservation.reservation_id ? (assembly.ready_for_instruction_drafts ? "ready" : "wait") : "idle",
+        title: reservation.reservation_id ? safe(reservation.status, "Reservation exists") : "No reservation",
+        detail: reservation.reservation_id ? "Reservation exists; slaughter still needs full carcass and bank-confirmed money." : "Build match is read-only. Reservation requires explicit owner action.",
+      },
+      {
+        label: "Beacon Demand Draft",
+        state: "idle",
+        title: "Draft-only from this room",
+        detail: "No public post button is exposed here. Beacon publishing remains separate and gated.",
+      },
+      {
+        label: "Gatekeeper Approval/Block",
+        state: action.blockedReasons.length ? "blocked" : hasSendApproval ? "ready" : "wait",
+        title: action.blockedReasons.length ? "Blocked" : hasSendApproval ? "Exact send approval exists" : "Review required",
+        detail: action.blockedReasons.length ? action.blockedReasons.join(", ") : "Exact-message approval and backend send rules remain final.",
+      },
+      {
+        label: "Supabase History",
+        state: events.length ? "ready" : "idle",
+        title: `${events.length} event${events.length === 1 ? "" : "s"}`,
+        detail: hasDraft ? "Draft exists in browser state; persisted actions are append-only lead events." : "Lead events are loaded from the existing Supabase-backed rail.",
+      },
+    ];
+    elements.gateStack.innerHTML = gateCards.map((card) => `
+      <article class="sam-gate-card" data-state="${card.state}">
+        <span>${card.label}</span>
+        <strong>${card.title}</strong>
+        <p>${card.detail}</p>
+      </article>
     `).join("");
   };
 
@@ -820,6 +1148,8 @@
       ? `${safe(lead.status)} / ${safe(contract.contract_status, "contract pending")}`
       : "Lead details will show here.";
     renderOperatorStrip(hasLead ? lead : null, contract);
+    renderCommandPanel(hasLead ? lead : {}, contract);
+    renderGateStack(hasLead ? lead : {}, contract);
     renderFacts(lead, contract);
     renderEvents(lead);
 
@@ -847,6 +1177,8 @@
       elements.guidedNext.disabled = true;
       elements.guidedStatus.textContent = "Select a lead to see the next useful action.";
       elements.guidedResult.innerHTML = "";
+      renderCommandPanel({}, {});
+      renderGateStack({}, {});
       renderToolVisibility();
       return;
     }
@@ -898,6 +1230,8 @@
       elements.createDraftOrder.disabled = true;
     }
     renderToolVisibility();
+    renderCommandPanel(lead, contract);
+    renderGateStack(lead, contract);
   };
 
   const loadLeads = async () => {
@@ -1646,58 +1980,27 @@
     setBusy(true);
     setMessage("");
     try {
-      if (hasLoadedEvent("customer_booking_confirmed")) {
-        await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/draft-order`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ created_by: "Farm App guided flow" }),
-        });
-        await loadLeadDetail(state.selectedLeadId);
-        setMessage("Draft order created from confirmed customer booking.", "success");
+      if (guide.key === "owner_price_deposit_review") {
+        await loadPricingEstimate(false);
+        applyPricingEstimate(state.pricingEstimate, true);
+        setMessage("Pricing estimate prepared in the owner review fields. Review and approve details separately.", "success");
         return;
       }
 
-      if (!state.pricingEstimate) {
-        await loadPricingEstimate(false);
+      if (guide.key === "build_draft_reply") {
+        const draftPayload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-draft`);
+        state.draft = draftPayload.customer_followup_draft || {};
+        const message = safe(state.draft.message || state.draft.text, "");
+        elements.preview.value = message;
+        state.messageApproved = false;
+        elements.sendStatus.textContent = message
+          ? "Draft built. Approve the exact message separately before any send."
+          : "Draft endpoint returned no message.";
+        setMessage("Draft reply built for owner review only. Nothing was approved or sent.", "success");
+        return;
       }
-      applyPricingEstimate(state.pricingEstimate, true);
-      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/owner-money-path-approval`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...approvalPayload(),
-          recorded_by: "Farm App guided flow",
-        }),
-      });
 
-      const draftPayload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-draft`);
-      state.draft = draftPayload.customer_followup_draft || {};
-      const message = safe(state.draft.message || state.draft.text, "");
-      elements.preview.value = message;
-      if (!message) throw new Error("customer_followup_message_missing");
-
-      await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-send-approval`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          approved_by: "Farm App guided flow",
-          owner_final_send_approval: "Approved by guided flow",
-        }),
-      });
-      state.messageApproved = true;
-
-      const sendPayload = await fetchJson(`/api/sales/meat-leads/${encodeURIComponent(state.selectedLeadId)}/customer-followup-send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
-      await loadLeadDetail(state.selectedLeadId);
-      const sentLabel = sendPayload.sent
-        ? `Sent via Chatwoot. Message ID: ${safe(sendPayload.chatwoot_message_id || sendPayload.message_id, "")}`
-        : safe(sendPayload.status, "Send handled.");
-      elements.sendStatus.textContent = sentLabel;
-      setMessage(sentLabel, sendPayload.sent ? "success" : "");
+      setMessage(`${guide.label}: ${guide.reason} Use the named gated control for this action.`, guide.blockedReasons?.length ? "error" : "");
     } catch (error) {
       const missing = Array.isArray(error.payload?.missing_fields) ? ` Missing: ${error.payload.missing_fields.join(", ")}.` : "";
       setMessage(`Guided step stopped: ${error.message}.${missing}`, "error");

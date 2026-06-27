@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meat Leads</title>
+  <title>SAM Meat Sales Command Room</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/meatSalesLeads.css') }}">
 </head>
@@ -12,8 +12,8 @@
     <div class="page-card meat-leads-card">
       <div class="page-header page-header-with-link">
         <div>
-          <h1>Meat Leads</h1>
-          <p id="meat_leads_subtitle">Sam-captured pork interest, owner approval, and Chatwoot follow-up.</p>
+          <h1>SAM Meat Sales Command Room</h1>
+          <p id="meat_leads_subtitle">One clear next action per pork lead, with money, butcher, Beacon, and Gatekeeper rails visible.</p>
         </div>
         <div class="ops-header-actions">
           <a href="/sales-dashboard">Sales Overview</a>
@@ -24,6 +24,14 @@
       </div>
 
       <div id="meat_leads_message" class="message-box hidden"></div>
+
+      <section class="sam-command-brief" aria-label="SAM meat sales command focus">
+        <div>
+          <span>Money path</span>
+          <strong>Sell meat with controlled gates</strong>
+        </div>
+        <p>Sam captures interest. The owner approves money facts and exact replies. Backend gates stay final for sends, deposits, reservations, fulfilment, and documents.</p>
+      </section>
 
       <section class="meat-control-room" aria-label="Pilot meat sales control room">
         <div class="meat-control-primary">
@@ -54,10 +62,10 @@
         </article>
       </section>
 
-      <details class="meat-price-book-panel" aria-label="Meat price book">
+      <details class="meat-price-book-panel sam-system-workbench" aria-label="System Workbench price book">
         <summary>
-          <span>Price Book</span>
-          <small id="meat_price_book_status">Active price and deposit rules used for Sam estimates.</small>
+          <span>System Workbench: Price Book</span>
+          <small id="meat_price_book_status">Secondary admin tools. Active price and deposit rules used for Sam estimates.</small>
         </summary>
         <div class="page-header section-header-compact">
           <div>
@@ -123,17 +131,38 @@
 
           <section id="meat_operator_strip" class="meat-operator-strip" aria-label="Current lead operating state"></section>
 
-          <section id="meat_lead_facts" class="meat-lead-facts" aria-label="Sam lead facts"></section>
+          <section class="sam-selected-command" aria-label="Selected SAM command state">
+            <article>
+              <span>Recommended Next Step</span>
+              <strong id="sam_command_next_label">Select a lead</strong>
+              <p id="sam_command_next_reason">Choose a meat lead to see the next owner-safe action.</p>
+            </article>
+            <article>
+              <span>Draft Reply</span>
+              <strong id="sam_command_draft_state">Not loaded</strong>
+              <p id="sam_command_draft_reason">Drafts are built for owner review only.</p>
+            </article>
+            <article>
+              <span>Owner Decision</span>
+              <strong id="sam_command_owner_state">Pending</strong>
+              <p id="sam_command_owner_reason">Customer-visible actions remain blocked until approved rails allow them.</p>
+            </article>
+          </section>
+
+          <section class="sam-missing-facts-panel" aria-label="Sam missing facts">
+            <h3>Sam Missing Facts</h3>
+            <div id="meat_lead_facts" class="meat-lead-facts"></div>
+          </section>
 
           <section class="meat-lead-guided-panel" aria-label="Guided meat sale flow">
             <div class="page-header section-header-compact">
               <div>
-                <h3>Next Step</h3>
+                <h3>One Next Action</h3>
                 <p id="meat_guided_status">Select a lead to see the next useful action.</p>
               </div>
             </div>
             <div class="meat-lead-actions">
-              <button type="button" id="meat_guided_next" class="button-link">Run Next Step</button>
+              <button type="button" id="meat_guided_next" class="button-link">Prepare Step</button>
             </div>
             <div id="meat_guided_result" class="ops-list"></div>
           </section>
@@ -376,10 +405,46 @@
             <div id="meat_lead_events" class="ops-list"></div>
           </section>
         </div>
+
+        <aside class="sam-gate-stack" aria-label="SAM gate stack">
+          <div class="page-header section-header-compact">
+            <div>
+              <h2>Gate Stack</h2>
+              <p>Visible blockers before the lead can move.</p>
+            </div>
+          </div>
+          <div id="sam_gate_stack" class="sam-gate-stack-list">
+            <article class="sam-gate-card" data-state="idle">
+              <span>Ledger Money Gate</span>
+              <strong>Select a lead</strong>
+              <p>Price, deposit, and payment method approval will show here.</p>
+            </article>
+            <article class="sam-gate-card" data-state="idle">
+              <span>Butcher Availability Gate</span>
+              <strong>Not loaded</strong>
+              <p>Build a match to review capacity without reserving anything.</p>
+            </article>
+            <article class="sam-gate-card" data-state="idle">
+              <span>Beacon Demand Draft</span>
+              <strong>Draft only</strong>
+              <p>No public post is available from this command room.</p>
+            </article>
+            <article class="sam-gate-card" data-state="idle">
+              <span>Gatekeeper Approval/Block</span>
+              <strong>Waiting</strong>
+              <p>Exact-message approval and backend send gates remain final.</p>
+            </article>
+            <article class="sam-gate-card" data-state="idle">
+              <span>Supabase History</span>
+              <strong>Events</strong>
+              <p>Lead events remain the current operational history.</p>
+            </article>
+          </div>
+        </aside>
       </section>
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260617-final-balance"></script>
+  <script src="{{ url_for('static', filename='js/meatSalesLeads.js') }}?v=20260627-sam-command-room"></script>
 </body>
 </html>
