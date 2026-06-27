@@ -6,6 +6,44 @@
   padding-bottom: 18px;
 }
 
+.sam-command-brief {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1.3fr);
+  gap: 12px;
+  align-items: center;
+  border: 1px solid #c8d4c7;
+  border-left: 5px solid #386641;
+  border-radius: 8px;
+  background: #f6faf4;
+  margin-top: 12px;
+  padding: 14px;
+}
+
+.sam-command-brief span,
+.sam-selected-command span,
+.sam-gate-card span,
+.meat-lead-next-action small,
+.meat-lead-row-head em {
+  color: #607066;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.sam-command-brief strong,
+.sam-selected-command strong,
+.sam-gate-card strong {
+  display: block;
+  color: #203528;
+  line-height: 1.2;
+}
+
+.sam-command-brief p,
+.sam-selected-command p,
+.sam-gate-card p {
+  margin: 0;
+  color: #4c5f52;
+}
+
 .meat-control-room {
   display: grid;
   grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1fr) minmax(300px, 1.1fr);
@@ -86,7 +124,7 @@
 .meat-leads-workflow {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(300px, 0.82fr) minmax(520px, 1.38fr);
+  grid-template-columns: minmax(280px, 0.8fr) minmax(500px, 1.3fr) minmax(260px, 0.72fr);
   align-items: start;
 }
 
@@ -117,7 +155,8 @@
 
 .meat-price-book-panel,
 .meat-leads-list-panel,
-.meat-leads-detail-panel {
+.meat-leads-detail-panel,
+.sam-gate-stack {
   border: 1px solid #d7ded6;
   border-radius: 8px;
   padding: 16px;
@@ -182,6 +221,94 @@
   background: #f8faf7;
   padding: 12px;
   cursor: pointer;
+}
+
+.meat-lead-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.meat-lead-row-head em {
+  border: 1px solid #d7ded6;
+  border-radius: 999px;
+  background: #fff;
+  font-style: normal;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.meat-lead-row-head em[data-risk="high"],
+.meat-lead-row-head em[data-risk="critical"] {
+  border-color: #d5b6a2;
+  background: #fff3ec;
+  color: #8b3f1f;
+}
+
+.meat-lead-next-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid #e1e6de;
+  color: #203528;
+  font-weight: 700;
+  padding-top: 6px;
+}
+
+.sam-selected-command {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.sam-selected-command article {
+  border: 1px solid #d7ded6;
+  border-radius: 8px;
+  background: #fbfcfa;
+  min-height: 116px;
+  padding: 10px;
+}
+
+.sam-gate-stack {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100dvh - 28px);
+  overflow: auto;
+}
+
+.sam-gate-stack-list {
+  display: grid;
+  gap: 10px;
+}
+
+.sam-gate-card {
+  border: 1px solid #d7ded6;
+  border-left: 4px solid #8e9490;
+  border-radius: 8px;
+  background: #fbfcfa;
+  padding: 10px;
+}
+
+.sam-gate-card[data-state="ready"] {
+  border-left-color: #4f7d5a;
+  background: #f1f7ef;
+}
+
+.sam-gate-card[data-state="wait"] {
+  border-left-color: #b78b35;
+  background: #fff9ea;
+}
+
+.sam-gate-card[data-state="blocked"] {
+  border-left-color: #b45b3c;
+  background: #fff3ec;
+}
+
+.sam-system-workbench {
+  background: #fcfdfb;
 }
 
 .meat-lead-row:hover,
@@ -410,7 +537,9 @@
   .meat-lead-facts,
   .meat-lead-form-grid,
   .meat-payment-state,
-  .meat-operator-rail {
+  .meat-operator-rail,
+  .sam-command-brief,
+  .sam-selected-command {
     grid-template-columns: 1fr;
   }
 
@@ -424,6 +553,11 @@
   }
 
   .meat-leads-detail-panel {
+    position: static;
+    max-height: none;
+  }
+
+  .sam-gate-stack {
     position: static;
     max-height: none;
   }
