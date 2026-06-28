@@ -1,3 +1,4 @@
+import ipaddress
 import os
 
 from flask import Blueprint, jsonify, request
@@ -69,6 +70,7 @@ from modules.sales.sam_meat_runtime import (
     handle_sam_meat_chatwoot_inbound,
     sam_meat_webhook_policy,
 )
+from modules.sales.sam_command_state import get_sam_command_state
 from modules.sales.sam_farm_knowledge import load_sam_farm_knowledge
 from modules.sales.conversation_learning import (
     build_owner_review_learning_event,
@@ -101,6 +103,33 @@ sales_bp = Blueprint("sales", __name__)
 
 def _env_truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sam_command_state_access_allowed(remote_addr, headers):
+    try:
+        address = ipaddress.ip_address(str(remote_addr or "").strip())
+    except ValueError:
+        return False
+    if address.is_loopback:
+        return True
+    expected = str(os.getenv("SAM_COMMAND_STATE_OWNER_TOKEN", "") or "").strip()
+    if len(expected) < 32:
+        return False
+    provided = str((headers or {}).get("X-Sam-Command-State-Token") or "").strip()
+    auth = str((headers or {}).get("Authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        provided = auth[7:].strip()
+    return provided == expected
+
+
+def _sam_command_state_access_denied(remote_addr):
+    return {
+        "ok": False,
+        "success": False,
+        "status": "sam_command_state_access_denied",
+        "message": "SAM command-state is owner/local read-only.",
+        "remote_addr": str(remote_addr or ""),
+    }, 403
 
 
 def _text_contains_test_marker(*values):
@@ -453,6 +482,15 @@ def meat_price_book_create():
 @sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])
 def meat_sales_lead_contract(lead_id):
     result, status_code = get_sales_lead_preorder_contract(lead_id)
+    return jsonify(result), status_code
+
+
+@sales_bp.route("/sales/meat-leads/<lead_id>/command-state", methods=["GET"])
+def meat_sales_lead_command_state(lead_id):
+    if not _sam_command_state_access_allowed(request.remote_addr, request.headers):
+        result, status_code = _sam_command_state_access_denied(request.remote_addr)
+        return jsonify(result), status_code
+    result, status_code = get_sam_command_state(lead_id)
     return jsonify(result), status_code
 
 
