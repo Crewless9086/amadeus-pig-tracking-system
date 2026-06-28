@@ -442,7 +442,7 @@ class FrontendRouteContractTests(unittest.TestCase):
 
         self.assertIn('@app.route("/sales/beacon-media")', app_source)
         self.assertIn('return render_template("beacon-media.html")', app_source)
-        self.assertIn("Beacon Media", template)
+        self.assertIn("Beacon Media Command Room", template)
         self.assertIn('id="beacon_media_asset_list"', template)
         self.assertIn('id="beacon_media_upload_form"', template)
         self.assertIn('id="beacon_campaign_selection_list"', template)
@@ -493,6 +493,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("This does not call Meta or spend.", template)
         self.assertIn("paid boost locked", js)
 
+        self.assertIn(".beacon-media-card", css)
+        self.assertIn("max-width: 1680px", css)
+        self.assertIn("@media (min-width: 1180px)", css)
         self.assertIn(".beacon-media-workflow", css)
         self.assertIn(".beacon-campaign-selection-list", css)
         self.assertIn(".beacon-publish-packet-card", css)
@@ -1458,10 +1461,15 @@ class FrontendRouteContractTests(unittest.TestCase):
     def test_pig_detail_has_controlled_lifecycle_death_action(self):
         template = Path("templates/pig-detail.html").read_text(encoding="utf-8")
         js = Path("static/js/pigDetail.js").read_text(encoding="utf-8")
+        css = Path("static/css/main.css").read_text(encoding="utf-8")
 
         self.assertIn('id="lifecycle_action_panel"', template)
         self.assertIn('id="lifecycle_death_form"', template)
         self.assertIn('id="pig_detail_back_link"', template)
+        self.assertIn("pig-detail-shell", template)
+        self.assertIn("pig-detail-card", template)
+        self.assertIn(".pig-detail-card .detail-grid", css)
+        self.assertIn("max-width: 1640px", css)
         self.assertIn('id="detail_exit_reason"', template)
         self.assertIn('id="detail_carcass_weight"', template)
         self.assertIn("Record Death / Removal", template)
@@ -1936,6 +1944,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Pig Allocation Readiness", template)
         self.assertIn('id="allocation_body"', template)
         self.assertIn('id="allocation_rules"', template)
+        self.assertIn('id="allocation_review_panel"', template)
+        self.assertIn("Purpose Review", template)
         self.assertIn('id="bucket_filter"', template)
         self.assertIn("/api/pig-weights/pig-allocation-readiness", js)
         self.assertIn("BUCKET_ORDER", js)
@@ -1953,6 +1963,9 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("suggested_purpose", js)
         self.assertIn("suggested_purpose_reason", js)
         self.assertIn("suggested_purpose_confidence", js)
+        self.assertIn("renderPurposeReview", js)
+        self.assertIn("data-review-pig-id", js)
+        self.assertIn("Draft-only in this build", js)
         self.assertIn("litter_quality", js)
         self.assertIn("average_daily_gain_kg", js)
         self.assertIn("No writes are made from this page", js)
@@ -1966,6 +1979,7 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn('href="/meat-planning"', dashboard)
         self.assertIn(".allocation-filters", css)
         self.assertIn(".allocation-rules", css)
+        self.assertIn(".allocation-review-panel", css)
 
     def test_purpose_review_page_is_herdmaster_owner_approval_queue(self):
         app_source = Path("app.py").read_text(encoding="utf-8")

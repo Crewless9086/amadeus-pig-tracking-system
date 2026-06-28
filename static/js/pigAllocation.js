@@ -11,9 +11,12 @@ const sexFilter = document.getElementById("sex_filter");
 const purposeFilter = document.getElementById("purpose_filter");
 const searchFilter = document.getElementById("search_filter");
 const resetFiltersButton = document.getElementById("reset_allocation_filters");
+const reviewStatus = document.getElementById("allocation_review_status");
+const reviewDetail = document.getElementById("allocation_review_detail");
 
 let allocationRows = [];
 let allocationSummary = {};
+let selectedReviewPigId = "";
 
 const BUCKET_ORDER = [
   "Needs Data",
@@ -204,6 +207,53 @@ function filteredRows() {
   });
 }
 
+
+function renderPurposeReview(row) {
+  if (!reviewDetail || !reviewStatus) return;
+  if (!row) {
+    reviewStatus.textContent = "Select a pig from the table to inspect the recommendation before any purpose decision.";
+    reviewDetail.innerHTML = '<div class="table-empty">No pig selected. Use Review on a table row to open a read-only recommendation packet.</div>';
+    return;
+  }
+
+  reviewStatus.textContent = `${pigLabel(row)} selected for read-only purpose review. No record is changed from this panel.`;
+  const purposeOptions = ["Keep Current", "Breeding", "Meat", "Slaughter", "Livestock Sale", "Hold / Grow Longer", "Needs Data"];
+  reviewDetail.innerHTML = `
+    <div class="allocation-review-grid">
+      <div class="allocation-review-primary">
+        <span>Selected Pig</span>
+        <strong>${escapeHtml(pigLabel(row))}</strong>
+        <small>${escapeHtml(row.pig_id || "-")}</small>
+      </div>
+      <div>
+        <span>Recommendation</span>
+        <strong>${escapeHtml(row.suggested_purpose || row.outlet_priority || "Review")}</strong>
+        <small>${escapeHtml(row.suggested_purpose_confidence || "confidence not supplied")}</small>
+      </div>
+      <div>
+        <span>Latest Weight</span>
+        <strong>${escapeHtml(formatKg(row.latest_weight_kg))}</strong>
+        <small>${row.latest_weight_date ? `${escapeHtml(row.latest_weight_date)} / ${escapeHtml(row.days_since_weight ?? "-")} days` : "No weight date"}</small>
+      </div>
+      <div>
+        <span>Current Purpose</span>
+        <strong>${escapeHtml(row.purpose || "Unknown")}</strong>
+        <small>${escapeHtml(row.readiness_bucket || "-")}</small>
+      </div>
+    </div>
+    <div class="allocation-review-reason">
+      <span>Why this recommendation</span>
+      <p>${escapeHtml(row.suggested_purpose_reason || row.readiness_reason || "No recommendation reason supplied.")}</p>
+    </div>
+    <div class="allocation-review-options">
+      <label for="allocation_review_purpose_choice">Draft purpose option</label>
+      <select id="allocation_review_purpose_choice" disabled>
+        ${purposeOptions.map((option) => `<option${option === (row.suggested_purpose || "") ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}
+      </select>
+      <p class="form-helper">Draft-only in this build. Purpose/lifecycle changes still require a separately approved audit and owner-confirmation rail.</p>
+    </div>
+  `;
+}
 function bucketClass(bucket) {
   const normalized = String(bucket || "").toLowerCase();
   if (normalized.includes("needs")) return "status-pill status-pill-warning";
@@ -266,6 +316,7 @@ function renderRows(rows) {
           <strong>${escapeHtml(row.suggested_purpose || "-")}</strong>
           <span class="table-subtext">${escapeHtml(row.suggested_purpose_reason || "-")}</span>
           <span class="table-subtext">Confidence: ${escapeHtml(row.suggested_purpose_confidence || "-")}</span>
+          <button type="button" class="button-link button-link-secondary allocation-review-button" data-review-pig-id="${escapeHtml(row.pig_id || "")}">Review</button>
         </td>
         <td>
           <strong>${escapeHtml(row.litter_id || "-")}</strong>
@@ -318,4 +369,13 @@ resetFiltersButton.addEventListener("click", () => {
   purposeFilter.value = "";
   searchFilter.value = "";
   applyFilters();
+});
+
+
+bodyEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-review-pig-id]");
+  if (!button) return;
+  selectedReviewPigId = button.dataset.reviewPigId || "";
+  const row = allocationRows.find((item) => item.pig_id === selectedReviewPigId);
+  renderPurposeReview(row || null);
 });
