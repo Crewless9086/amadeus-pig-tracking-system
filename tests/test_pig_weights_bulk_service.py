@@ -67,7 +67,7 @@ class BulkWeightServiceTests(unittest.TestCase):
         preflight_result = {
             "success": True,
             "accepted_count": 1,
-            "skipped_count": 2,
+            "skipped_count": 0,
             "accepted_rows": [{
                 "pig_id": "PIG-1",
                 "weight_date": "2026-06-01",
@@ -89,6 +89,7 @@ class BulkWeightServiceTests(unittest.TestCase):
 
         self.assertEqual(status, 201)
         self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ok")
         self.assertEqual(result["saved_count"], 1)
         self.assertEqual(result["movement_count"], 1)
         save_weight.assert_called_once()
@@ -124,8 +125,9 @@ class BulkWeightServiceTests(unittest.TestCase):
              }) as save_weight:
             result, status = pig_weights_service.save_bulk_weight_entries({"weight_date": "2026-06-01", "rows": []})
 
-        self.assertEqual(status, 201)
-        self.assertTrue(result["success"])
+        self.assertEqual(status, 207)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "partial_failure")
         self.assertEqual(result["saved_count"], 1)
         self.assertEqual(result["blocked_count"], 1)
         self.assertEqual(result["skipped_count"], 2)
@@ -255,5 +257,79 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(save_move.call_args.args[0]["reason_for_move"], "Moved during duplicate weight review")
 
 
+
+    def test_save_bulk_71_row_partial_failure_reports_degraded_audit_trail(self):
+        accepted_rows = [
+            {
+                "row_index": index,
+                "action_type": "weight",
+                "pig_id": f"PIG-{index:02d}",
+                "tag_number": str(index),
+                "weight_date": "2026-06-15",
+                "weight_kg": 60 + index / 10,
+                "weighed_by": "WebApp",
+                "moved_to_pen_id": "",
+                "condition_notes": "",
+                "duplicate_weight": False,
+            }
+            for index in range(71)
+        ]
+        preflight_result = {
+            "success": True,
+            "accepted_count": 71,
+            "skipped_count": 0,
+            "blocked_count": 0,
+            "accepted_rows": accepted_rows,
+            "blocked_rows": [],
+            "skipped_rows": [],
+        }
+
+        def save_weight(payload):
+            index = int(payload["pig_id"].split("-")[-1])
+            if index >= 60:
+                return {"success": False, "status": "simulated_sheet_failure", "message": "timeout after 60"}
+            return {"success": True, "saved": {"pig_id": payload["pig_id"]}, "movement_logged": False}
+
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight_result, 200)), \
+             patch.object(pig_weights_service, "_write_bulk_batch_audit", return_value={"warnings": []}), \
+             patch.object(pig_weights_service, "save_weight_entry_with_optional_move", side_effect=save_weight):
+            result, status = pig_weights_service.save_bulk_weight_entries({"weight_date": "2026-06-15", "rows": accepted_rows})
+
+        self.assertEqual(status, 207)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "partial_failure")
+        self.assertEqual(result["operation_id"], result["batch_id"])
+        self.assertEqual(result["expected_count"], 71)
+        self.assertEqual(result["processed_count"], 71)
+        self.assertEqual(result["success_count"], 60)
+        self.assertEqual(result["saved_count"], 60)
+        self.assertEqual(result["failed_count"], 11)
+        self.assertEqual(len(result["row_results"]), 71)
+        self.assertIn("No silent partial success", result["message"])
+        self.assertFalse(result["writes_to_supabase"])
+
+    def test_save_bulk_retry_same_operation_uses_duplicate_preflight_protection(self):
+        preflight_result = {
+            "success": False,
+            "accepted_count": 0,
+            "skipped_count": 0,
+            "blocked_count": 1,
+            "accepted_rows": [],
+            "blocked_rows": [{"row_index": 0, "pig_id": "PIG-1", "reason": "This pig already has a weight entry for this date."}],
+            "skipped_rows": [],
+        }
+
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight_result, 200)), \
+             patch.object(pig_weights_service, "save_weight_entry_with_optional_move") as save_weight:
+            result, status = pig_weights_service.save_bulk_weight_entries({"weight_date": "2026-06-15", "rows": [{"pig_id": "PIG-1"}]})
+
+        self.assertEqual(status, 409)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["processed_count"], 0)
+        self.assertEqual(result["blocked_count"], 1)
+        self.assertEqual(result["row_results"][0]["status"], "blocked")
+        self.assertFalse(result["writes_to_google_sheets"])
+        save_weight.assert_not_called()
 if __name__ == "__main__":
+
     unittest.main()

@@ -53,11 +53,11 @@ DEFAULT_LITTER_WEAN_AGE_DAYS = 35
 WEAN_TAG_ATTENTION_WINDOW_DAYS = 3
 POST_WEAN_PURPOSE_REVIEW_DAYS = 14
 LIVE_SALE_TARGET_KG = 60
-MEAT_TARGET_MIN_KG = 55
-MEAT_TARGET_MAX_KG = 70
+MEAT_TARGET_MIN_KG = 60
+MEAT_TARGET_MAX_KG = 80
 SLAUGHTER_TARGET_MIN_KG = 80
-SLAUGHTER_TARGET_MAX_KG = 95
-STALE_WEIGHT_DAYS = 45
+SLAUGHTER_TARGET_MAX_KG = None
+STALE_WEIGHT_DAYS = 30
 BULK_WEIGHT_BATCH_AUDIT_SHEET = "BULK_WEIGHT_BATCH_LOG"
 BULK_WEIGHT_ROW_AUDIT_SHEET = "BULK_WEIGHT_BATCH_ROWS"
 BULK_WEIGHT_BATCH_AUDIT_HEADERS = [
@@ -113,6 +113,9 @@ DEFAULT_ALLOCATION_SETTINGS = {
     "meat_target_max_kg": MEAT_TARGET_MAX_KG,
     "slaughter_target_min_kg": SLAUGHTER_TARGET_MIN_KG,
     "slaughter_target_max_kg": SLAUGHTER_TARGET_MAX_KG,
+    "meat_window_upper_exclusive": True,
+    "abattoir_window_upper_unbounded": True,
+    "fresh_weight_days": 14,
     "exceptional_grower_adg_kg_day": EXCEPTIONAL_GROWER_ADG_KG_DAY,
     "good_grower_adg_kg_day": GOOD_GROWER_ADG_KG_DAY,
     "steady_grower_adg_kg_day": STEADY_GROWER_ADG_KG_DAY,
@@ -3054,7 +3057,7 @@ def _readiness_timing(growth, today, settings=None):
         meat_status = "Unknown"
     elif latest_weight_kg < settings["meat_target_min_kg"]:
         meat_status = "Before meat window"
-    elif latest_weight_kg <= settings["meat_target_max_kg"]:
+    elif latest_weight_kg < settings["meat_target_max_kg"]:
         meat_status = "In meat window"
     else:
         meat_status = "Past meat window"
@@ -3063,7 +3066,7 @@ def _readiness_timing(growth, today, settings=None):
         slaughter_status = "Unknown"
     elif latest_weight_kg < settings["slaughter_target_min_kg"]:
         slaughter_status = "Before abattoir window"
-    elif latest_weight_kg <= settings["slaughter_target_max_kg"]:
+    elif settings.get("slaughter_target_max_kg") is None or latest_weight_kg <= settings["slaughter_target_max_kg"]:
         slaughter_status = "In abattoir window"
     else:
         slaughter_status = "Past abattoir window"
@@ -3081,6 +3084,12 @@ def _readiness_timing(growth, today, settings=None):
         "abattoir_target_max_kg": settings["slaughter_target_max_kg"],
     }
 
+
+def _weight_window_label(min_kg, max_kg=None, *, upper_exclusive=False, upper_unbounded=False):
+    if upper_unbounded or max_kg is None:
+        return f"{min_kg:g} kg+"
+    separator = "-<" if upper_exclusive else "-"
+    return f"{min_kg:g}{separator}{max_kg:g} kg"
 
 def _recommended_outlet_action(bucket, growth, timing, litter_quality):
     growth_class = growth.get("growth_class", "Unknown")
@@ -3349,10 +3358,10 @@ def _readiness_bucket(row, growth, sales_meta, litter_quality, today, settings=N
     if available_for_sale.lower() == "yes" and weight_kg >= settings["live_sale_target_kg"]:
         return "Livestock Candidate", "Sales availability says this pig is available and weight is at or above live-sale target."
 
-    if settings["meat_target_min_kg"] <= weight_kg <= settings["meat_target_max_kg"]:
+    if settings["meat_target_min_kg"] <= weight_kg < settings["meat_target_max_kg"]:
         return "Meat Candidate", "Weight is in the first planned meat-candidate range."
 
-    if settings["slaughter_target_min_kg"] <= weight_kg <= settings["slaughter_target_max_kg"]:
+    if weight_kg >= settings["slaughter_target_min_kg"] and (settings.get("slaughter_target_max_kg") is None or weight_kg <= settings["slaughter_target_max_kg"]):
         return "Slaughter Candidate", "Weight is in the first planned slaughter-candidate range."
 
     if animal_type in {"Grower", "Finisher", "Weaner"}:
@@ -3484,8 +3493,8 @@ def get_pig_allocation_readiness(today=None):
         "business_rules": {
             "source": settings["source"],
             "writes_enabled": settings["writes_enabled"],
-            "meat_window_label": f"{settings['meat_target_min_kg']}-{settings['meat_target_max_kg']} kg",
-            "abattoir_window_label": f"{settings['slaughter_target_min_kg']}-{settings['slaughter_target_max_kg']} kg",
+            "meat_window_label": _weight_window_label(settings["meat_target_min_kg"], settings["meat_target_max_kg"], upper_exclusive=settings.get("meat_window_upper_exclusive")),
+            "abattoir_window_label": _weight_window_label(settings["slaughter_target_min_kg"], settings.get("slaughter_target_max_kg"), upper_unbounded=settings.get("abattoir_window_upper_unbounded")),
             "live_sale_label": f"{settings['live_sale_target_kg']} kg+ when available for sale, or slow-growth fallback",
             "target_growth_label": f"{settings['exceptional_grower_adg_kg_day']:.3f} kg/day target",
             "slow_growth_label": f"Under {settings['slow_grower_adg_kg_day']:.3f} kg/day",
@@ -3501,6 +3510,153 @@ def get_pig_allocation_readiness(today=None):
         "writes_to_supabase": False,
     }
 
+
+def get_meat_ready_stock_summary(today=None, allocation=None, price_entries=None):
+    today = today or datetime.now().date()
+    allocation = allocation if isinstance(allocation, dict) else get_pig_allocation_readiness(today=today)
+    if price_entries is None:
+        price_entries = _read_current_meat_price_entries()
+    groups = _empty_meat_ready_groups()
+    rows = []
+
+    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        classification = _meat_ready_classification(pig)
+        freshness = _weight_freshness(pig.get("days_since_weight"), allocation.get("thresholds", {}))
+        price_rule = _stock_value_price_rule(classification["category_key"], price_entries)
+        estimated_value = _stock_value_estimate(pig, freshness, price_rule)
+        row = {
+            "pig_id": pig.get("pig_id", ""),
+            "tag_number": pig.get("tag_number", ""),
+            "category": classification["category"],
+            "category_key": classification["category_key"],
+            "reason": classification["reason"],
+            "latest_weight_kg": pig.get("latest_weight_kg"),
+            "latest_weight_date": pig.get("latest_weight_date", ""),
+            "days_since_weight": pig.get("days_since_weight"),
+            "weight_freshness": freshness["status"],
+            "weight_freshness_label": freshness["label"],
+            "valuation_status": estimated_value["status"],
+            "estimated_value": estimated_value["value"],
+            "price_source": price_rule.get("source", "pricing_not_configured"),
+            "price_label": price_rule.get("label", "pricing not configured"),
+            "excluded_from_sam_availability": True,
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        }
+        rows.append(row)
+        group = groups[row["category_key"]]
+        group["count"] += 1
+        if row["estimated_value"] is not None:
+            group["estimated_value"] = round(group["estimated_value"] + row["estimated_value"], 2)
+        if row["valuation_status"] != "valued":
+            group["warnings"].append(f"{row['tag_number'] or row['pig_id']}: {row['valuation_status']}")
+
+    return {
+        "success": True,
+        "source": "pig_allocation_readiness",
+        "generated_date": today.isoformat(),
+        "settings": allocation.get("business_rules", {}),
+        "groups": list(groups.values()),
+        "pigs": rows,
+        "summary": {
+            "total_pigs_reviewed": len(rows),
+            "total_estimated_value": round(sum(group["estimated_value"] for group in groups.values()), 2),
+            "pricing_not_configured_count": len([row for row in rows if row["valuation_status"] == "pricing_not_configured"]),
+            "stale_or_missing_weight_count": len([row for row in rows if row["valuation_status"] in {"stale_weight_review", "not_valuation_ready", "missing_weight"}]),
+        },
+        "no_feed_cost_included": True,
+        "customer_promise_enabled": False,
+        "sam_availability_enabled": False,
+        "writes_to_sheets": False,
+        "writes_to_supabase": False,
+    }
+
+
+def _empty_meat_ready_groups():
+    labels = [
+        ("meat_window_candidate", "Meat Window Candidate Value"),
+        ("abattoir_cull_candidate", "Abattoir/Cull Candidate Value"),
+        ("live_sale_candidate", "Live Sale Candidate Value"),
+        ("hold_grow_longer", "Hold/Grow Longer Review Value"),
+        ("slow_grower_review", "Slow Grower Review List"),
+        ("excluded", "Excluded / No Reliable Value Yet"),
+    ]
+    return {key: {"category_key": key, "category": label, "count": 0, "estimated_value": 0.0, "warnings": []} for key, label in labels}
+
+
+def _meat_ready_classification(pig):
+    status = to_clean_string(pig.get("status", "")).lower()
+    on_farm = to_clean_string(pig.get("on_farm", "")).lower()
+    reserved = to_clean_string(pig.get("reserved_status", "")).lower() == "reserved" or bool(pig.get("reserved_for_order_id"))
+    if status in {value.lower() for value in TERMINAL_PIG_STATUSES} or on_farm != "yes" or reserved or pig.get("readiness_bucket") in {"Allocated", "Exited"}:
+        return {"category_key": "excluded", "category": "Excluded / No Reliable Value Yet", "reason": "reserved_sold_dead_removed_or_not_on_farm"}
+    if pig.get("readiness_bucket") == "Meat Candidate" or pig.get("meat_window_status") == "In meat window":
+        return {"category_key": "meat_window_candidate", "category": "Meat Window Candidate Value", "reason": "weight_in_meat_window"}
+    if pig.get("readiness_bucket") == "Slaughter Candidate" or pig.get("abattoir_window_status") == "In abattoir window":
+        return {"category_key": "abattoir_cull_candidate", "category": "Abattoir/Cull Candidate Value", "reason": "weight_in_abattoir_or_cull_window"}
+    if pig.get("readiness_bucket") == "Livestock Candidate":
+        if pig.get("growth_class") in {"Slow", "Extremely Slow"}:
+            return {"category_key": "slow_grower_review", "category": "Slow Grower Review List", "reason": "slow_grower_consuming_feed"}
+        return {"category_key": "live_sale_candidate", "category": "Live Sale Candidate Value", "reason": "livestock_sale_candidate"}
+    return {"category_key": "hold_grow_longer", "category": "Hold/Grow Longer Review Value", "reason": "not_ready_or_better_value_later"}
+
+
+def _weight_freshness(days_since_weight, settings):
+    if days_since_weight is None:
+        return {"status": "missing", "label": "missing latest weight"}
+    fresh_days = int((settings or {}).get("fresh_weight_days") or 14)
+    stale_days = int((settings or {}).get("stale_weight_days") or 30)
+    if days_since_weight <= fresh_days:
+        return {"status": "fresh", "label": "fresh weight"}
+    if days_since_weight <= stale_days:
+        return {"status": "stale_warning", "label": "stale warning"}
+    return {"status": "expired", "label": "not valuation-ready"}
+
+
+def _read_current_meat_price_entries():
+    try:
+        from modules.oom_sakkie.sales_campaign_store import list_meat_price_book_entries
+        result, status = list_meat_price_book_entries(limit=100)
+    except Exception:
+        return []
+    if status != 200 or not isinstance(result, dict):
+        return []
+    return result.get("entries", []) if isinstance(result.get("entries"), list) else []
+
+
+def _stock_value_price_rule(category_key, price_entries):
+    product_type = "half_carcass" if category_key == "meat_window_candidate" else "assisted_slaughter" if category_key == "abattoir_cull_candidate" else "live_pig"
+    for entry in price_entries if isinstance(price_entries, list) else []:
+        if entry.get("active") is False:
+            continue
+        if entry.get("product_type") != product_type:
+            continue
+        amount = to_float(entry.get("price_amount"))
+        if amount is None:
+            continue
+        return {
+            "amount": amount,
+            "unit": entry.get("price_unit") or "per_kg",
+            "source": entry.get("source") or "meat_price_book",
+            "label": f"R{amount:,.2f}/kg" if entry.get("price_unit") != "per_pig_fee" else f"R{amount:,.2f} fee",
+        }
+    return {"amount": None, "unit": "", "source": "pricing_not_configured", "label": "pricing not configured"}
+
+
+def _stock_value_estimate(pig, freshness, price_rule):
+    weight = pig.get("latest_weight_kg")
+    if weight is None:
+        return {"status": "missing_weight", "value": None}
+    if freshness["status"] == "expired":
+        return {"status": "not_valuation_ready", "value": None}
+    amount = price_rule.get("amount")
+    if amount is None:
+        return {"status": "pricing_not_configured", "value": None}
+    if price_rule.get("unit") == "per_pig_fee":
+        value = amount
+    else:
+        value = float(weight) * float(amount)
+    return {"status": "stale_weight_review" if freshness["status"] == "stale_warning" else "valued", "value": round(value, 2)}
 
 def _meat_planning_bucket(row):
     suggested_purpose = to_clean_string(row.get("suggested_purpose", ""))
@@ -5128,25 +5284,44 @@ def save_bulk_weight_entries(payload: dict):
     preflight, status_code = preflight_bulk_weight_entries(payload)
     if status_code != 200:
         return preflight, status_code
-    if preflight.get("accepted_count", 0) == 0:
-        return {
-            "success": False,
-            "message": "No new weight rows were ready to upload.",
-            "saved_count": 0,
-            "skipped_count": preflight.get("skipped_count", 0),
-            "blocked_count": preflight.get("blocked_count", 0),
-            "blocked_rows": preflight.get("blocked_rows", []),
-        }, 409 if preflight.get("blocked_count", 0) else 400
 
     batch_date = parse_sheet_date(payload.get("weight_date", ""))
     batch_id = _bulk_batch_id(batch_date)
+    accepted_rows = preflight.get("accepted_rows", [])
+    if preflight.get("accepted_count", 0) == 0:
+        return {
+            "success": False,
+            "status": "no_bulk_rows_ready",
+            "batch_id": batch_id,
+            "operation_id": batch_id,
+            "message": "No new weight rows were ready to upload.",
+            "submitted_count": len(payload.get("rows", []) if isinstance(payload.get("rows"), list) else []),
+            "expected_count": 0,
+            "processed_count": 0,
+            "success_count": 0,
+            "saved_count": 0,
+            "movement_count": 0,
+            "skipped_count": preflight.get("skipped_count", 0),
+            "blocked_count": preflight.get("blocked_count", 0),
+            "failed_count": 0,
+            "duplicate_weight_count": 0,
+            "blocked_rows": preflight.get("blocked_rows", []),
+            "skipped_rows": preflight.get("skipped_rows", []),
+            "failed_rows": [],
+            "row_results": _bulk_row_results([], [], [], preflight.get("blocked_rows", []), preflight.get("skipped_rows", [])),
+            "retry_safe": True,
+            "idempotency_basis": "pig_id + weight_date duplicate preflight protection",
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": False,
+        }, 409 if preflight.get("blocked_count", 0) else 400
+
     saved_rows = []
     movement_rows = []
     failed_rows = []
     movement_count = 0
     duplicate_weight_count = 0
 
-    for row in preflight.get("accepted_rows", []):
+    for row in accepted_rows:
         action_type = row.get("action_type", "weight")
         if row.get("duplicate_weight"):
             duplicate_weight_count += 1
@@ -5169,7 +5344,14 @@ def save_bulk_weight_entries(payload: dict):
             except Exception as exc:
                 failed_rows.append({
                     "row": row,
-                    "error": {"success": False, "message": str(exc)},
+                    "error": {"success": False, "status": "movement_save_exception", "message": str(exc)},
+                })
+                continue
+
+            if not movement_result.get("success", True):
+                failed_rows.append({
+                    "row": row,
+                    "error": movement_result,
                 })
                 continue
 
@@ -5181,15 +5363,22 @@ def save_bulk_weight_entries(payload: dict):
             movement_rows.append(saved_movement)
             continue
 
-        result = save_weight_entry_with_optional_move({
-            "pig_id": row["pig_id"],
-            "weight_date": parse_sheet_date(row["weight_date"]),
-            "weight_kg": row["weight_kg"],
-            "condition_notes": row.get("condition_notes", ""),
-            "weighed_by": row.get("weighed_by", "WebApp"),
-            "moved_to_pen_id": row.get("moved_to_pen_id", ""),
-            "allow_duplicate": False,
-        })
+        try:
+            result = save_weight_entry_with_optional_move({
+                "pig_id": row["pig_id"],
+                "weight_date": parse_sheet_date(row["weight_date"]),
+                "weight_kg": row["weight_kg"],
+                "condition_notes": row.get("condition_notes", ""),
+                "weighed_by": row.get("weighed_by", "WebApp"),
+                "moved_to_pen_id": row.get("moved_to_pen_id", ""),
+                "allow_duplicate": False,
+            })
+        except Exception as exc:
+            failed_rows.append({
+                "row": row,
+                "error": {"success": False, "status": "weight_save_exception", "message": str(exc)},
+            })
+            continue
 
         if not result.get("success"):
             failed_rows.append({
@@ -5209,47 +5398,80 @@ def save_bulk_weight_entries(payload: dict):
             **result.get("saved", {}),
         })
 
-    if not saved_rows and not movement_rows:
-        return {
-            "success": False,
-            "message": "No new weight rows were uploaded.",
-            "saved_count": 0,
-            "movement_count": movement_count,
-            "skipped_count": preflight.get("skipped_count", 0),
-            "blocked_count": preflight.get("blocked_count", 0),
-            "failed_count": len(failed_rows),
-            "movement_count": movement_count,
-            "duplicate_weight_count": duplicate_weight_count,
-            "blocked_rows": preflight.get("blocked_rows", []),
-            "failed_rows": failed_rows,
-        }, 409 if preflight.get("blocked_count", 0) or failed_rows else 400
-
     blocked_count = preflight.get("blocked_count", 0)
     failed_count = len(failed_rows)
+    skipped_count = preflight.get("skipped_count", 0)
+    processed_count = len(accepted_rows)
+    success_count = len(saved_rows) + len(movement_rows)
     partial_count = blocked_count + failed_count
+    success = partial_count == 0 and success_count > 0
+    status_text = "ok" if success else "partial_failure" if success_count else "failed"
+    message = (
+        "Bulk weight batch uploaded successfully."
+        if success else
+        "Bulk weight batch has rows that need owner review. No silent partial success was reported."
+        if success_count else
+        "No new weight rows were uploaded. Review failed, blocked, or skipped rows."
+    )
     result = {
-        "success": True,
+        "success": success,
+        "status": status_text,
         "batch_id": batch_id,
-        "message": (
-            "Bulk weight batch uploaded with skipped rows."
-            if partial_count
-            else "Bulk weight batch uploaded successfully."
-        ),
+        "operation_id": batch_id,
+        "message": message,
+        "submitted_count": len(payload.get("rows", []) if isinstance(payload.get("rows"), list) else []),
+        "expected_count": len(accepted_rows),
+        "processed_count": processed_count,
+        "success_count": success_count,
         "saved_count": len(saved_rows),
         "movement_count": movement_count,
         "movement_only_count": len([row for row in movement_rows if row.get("action_type") == "movement_only"]),
         "duplicate_weight_count": duplicate_weight_count,
-        "skipped_count": preflight.get("skipped_count", 0),
+        "skipped_count": skipped_count,
         "blocked_count": blocked_count,
         "failed_count": failed_count,
         "saved_rows": saved_rows,
         "movement_rows": movement_rows,
         "blocked_rows": preflight.get("blocked_rows", []),
+        "skipped_rows": preflight.get("skipped_rows", []),
         "failed_rows": failed_rows,
+        "row_results": _bulk_row_results(saved_rows, movement_rows, failed_rows, preflight.get("blocked_rows", []), preflight.get("skipped_rows", [])),
+        "retry_safe": True,
+        "idempotency_basis": "pig_id + weight_date duplicate preflight protection",
+        "writes_to_google_sheets": bool(success_count),
+        "writes_to_supabase": False,
     }
     result["audit"] = _write_bulk_batch_audit(batch_id, payload, result, batch_date)
-    return result, 201
+    return result, 201 if success else 207 if success_count else 409
 
+
+def _bulk_row_results(saved_rows, movement_rows, failed_rows, blocked_rows, skipped_rows):
+    row_results = []
+    for row in saved_rows or []:
+        row_results.append(_bulk_row_result("saved_weight", row, "Weight saved."))
+    for row in movement_rows or []:
+        row_results.append(_bulk_row_result("saved_movement", row, "Movement saved."))
+    for item in failed_rows or []:
+        row = item.get("row", {}) if isinstance(item, dict) else {}
+        error = item.get("error", {}) if isinstance(item, dict) and isinstance(item.get("error"), dict) else {}
+        row_results.append(_bulk_row_result("failed", row, error.get("message") or error.get("status") or "Save failed."))
+    for row in blocked_rows or []:
+        row_results.append(_bulk_row_result("blocked", row, row.get("reason") or "Blocked by preflight."))
+    for row in skipped_rows or []:
+        row_results.append(_bulk_row_result("skipped", row, row.get("reason") or "Skipped by preflight."))
+    return sorted(row_results, key=lambda item: item.get("row_index") if item.get("row_index") is not None else 999999)
+
+
+def _bulk_row_result(status, row, message):
+    row = row if isinstance(row, dict) else {}
+    return {
+        "row_index": row.get("row_index"),
+        "pig_id": row.get("pig_id", ""),
+        "tag_number": row.get("tag_number", ""),
+        "action_type": row.get("action_type", ""),
+        "status": status,
+        "message": to_clean_string(message),
+    }
 
 def save_treatment_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]

@@ -892,6 +892,8 @@ def build_sam_meat_intake_lead_payload(payload):
     target_packed_kg = _clean_text(payload.get("target_packed_kg"), 80)
     match_preference = _clean_text(payload.get("match_preference") or payload.get("preference"), 80)
     notes = _clean_text(payload.get("notes") or payload.get("customer_message"), 700)
+    qualification_status = _clean_text(payload.get("lead_qualification_status") or (payload.get("lead_qualification") or {}).get("status"), 80) or "qualified_meat_lead"
+    qualification_reason = _clean_text(payload.get("lead_qualification_reason") or (payload.get("lead_qualification") or {}).get("reason"), 240)
     conversation_id = _clean_text(payload.get("conversation_id") or payload.get("chatwoot_conversation_id"), 100)
     contact_id = _clean_text(payload.get("contact_id"), 100)
     whatsapp_state = _clean_text(payload.get("whatsapp_window_state") or "unknown", 80)
@@ -956,6 +958,8 @@ def build_sam_meat_intake_lead_payload(payload):
         "conversation_id": conversation_id,
         "contact_id": contact_id,
         "sam_intake_lane": "meat_preorder",
+        "lead_qualification_status": qualification_status,
+        "lead_qualification_reason": qualification_reason,
     }
     contract = {
         "lane": "meat_preorder",
@@ -967,6 +971,8 @@ def build_sam_meat_intake_lead_payload(payload):
         "missing_before_money_path": missing_before_money_path,
         "next_owner_action": next_owner_action,
         "sam_next_question": _sam_meat_next_question(missing_core, missing_before_money_path),
+        "lead_qualification_status": qualification_status,
+        "lead_qualification_reason": qualification_reason,
         "authority": {
             "records_tracking_lead": True,
             **_false_flags(),
@@ -1053,6 +1059,8 @@ def list_sales_leads(limit=20, status_filter=None, database_url=None):
         }, 503
 
     leads = [_sales_lead_row(row) for row in rows]
+    if status_filter == "launch_test":
+        leads = [lead for lead in leads if _sales_lead_is_qualified_for_command_room(lead)]
     return {
         "success": True,
         "configured": True,
@@ -3119,6 +3127,28 @@ def _sales_lead_params(payload):
         **_false_flags(),
     }
 
+
+def _sales_lead_is_qualified_for_command_room(lead):
+    interest = lead.get("interest") if isinstance(lead.get("interest"), dict) else {}
+    qualification = _clean_text(interest.get("lead_qualification_status"), 80)
+    if qualification:
+        return qualification == "qualified_meat_lead"
+    product_type = _clean_text(interest.get("product_type"), 80)
+    has_product = bool(product_type and product_type != "unknown")
+    has_actionable = any(_clean_text(interest.get(key), 120) for key in (
+        "cut_set",
+        "location",
+        "timing",
+        "delivery_or_collection",
+        "delivery_address_line_1",
+        "budget_amount",
+        "target_packed_kg",
+        "match_preference",
+        "payment_method",
+    ))
+    notes = _clean_text(interest.get("notes"), 700).lower()
+    asks_price_with_product = has_product and bool("price" in notes or "quote" in notes or "cost" in notes)
+    return has_product and (has_actionable or asks_price_with_product)
 
 def _sales_lead_counts(leads):
     by_status = {}

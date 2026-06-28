@@ -428,8 +428,68 @@ def extract_meat_facts(message, inbound=None, *, environ=None, llm_extractor=Non
     return _apply_meat_pilot_defaults(facts)
 
 
+def classify_sam_meat_lead(inbound, facts):
+    inbound = inbound if isinstance(inbound, dict) else {}
+    facts = facts if isinstance(facts, dict) else {}
+    content = str(inbound.get("content") or "").strip()
+    text = _normalized_customer_text(content)
+    words = [word for word in re.findall(r"[a-z0-9]+", text) if word]
+    has_identity = bool(inbound.get("conversation_id") or inbound.get("contact_id") or facts.get("conversation_id") or facts.get("contact_id"))
+    product_type = facts.get("product_type") or "unknown"
+    has_product_intent = product_type != "unknown" or bool(re.search(r"\b(meat|pork|vark|varkvleis|carcass|carcase|karkas|cut|cuts|half|full|whole|pig|abattoir|slaughter)\b", text))
+    asks_price = bool(re.search(r"\b(price|cost|how much|quote|quotation|per kg|kg price|prys)\b", text))
+    actionable_fields = [
+        "cut_set",
+        "location",
+        "timing",
+        "delivery_or_collection",
+        "delivery_address_line_1",
+        "budget_amount",
+        "target_packed_kg",
+        "match_preference",
+        "payment_method",
+    ]
+    has_actionable_fact = any(facts.get(key) for key in actionable_fields)
+    has_explicit_buying_intent = bool(re.search(r"\b(i want|i need|looking for|want to buy|order|book|buy|interested in|can i get|ek soek|wil koop)\b", text))
+    if asks_price and has_product_intent:
+        has_actionable_fact = True
+    if has_explicit_buying_intent and has_product_intent:
+        has_actionable_fact = True
+
+    if not has_identity:
+        status = "raw_conversation_event"
+        reason = "missing_contact_or_conversation_id"
+    elif asks_price and not has_product_intent:
+        status = "intake_candidate"
+        reason = "price_question_missing_product_context"
+    elif len(words) <= 1 and not has_product_intent:
+        status = "disqualified_or_noise"
+        reason = "one_word_or_name_only_without_product_intent"
+    elif not has_product_intent:
+        status = "intake_candidate"
+        reason = "missing_product_intent"
+    elif not has_actionable_fact:
+        status = "needs_auto_qualification"
+        reason = "missing_actionable_sales_fact"
+    else:
+        status = "qualified_meat_lead"
+        reason = "product_intent_and_actionable_fact_present"
+
+    return {
+        "status": status,
+        "reason": reason,
+        "has_identity": has_identity,
+        "has_product_intent": has_product_intent,
+        "has_actionable_sales_fact": has_actionable_fact,
+        "word_count": len(words),
+        "appears_in_sam_command_room": status == "qualified_meat_lead",
+        "safe_followup_mode": "draft_or_existing_send_rails_only" if status != "qualified_meat_lead" else "owner_business_action",
+    }
+
+
 def build_sam_meat_lead_payload_from_inbound(inbound, facts):
     product_type = facts.get("product_type") or "unknown"
+    qualification = classify_sam_meat_lead(inbound, facts)
     product_label = {
         "half_carcass": "Half Carcass",
         "full_carcass": "Full Carcass",
@@ -461,10 +521,12 @@ def build_sam_meat_lead_payload_from_inbound(inbound, facts):
         "target_packed_kg": facts.get("target_packed_kg") or "",
         "match_preference": facts.get("match_preference") or "",
         "notes": inbound.get("content") or "",
-        "status": "interested" if product_type != "unknown" else "new",
+        "status": "interested" if qualification["status"] == "qualified_meat_lead" else "new",
+        "lead_qualification_status": qualification["status"],
+        "lead_qualification_reason": qualification["reason"],
+        "lead_qualification": qualification,
         "last_inbound_at": inbound.get("last_inbound_at") or "",
     }
-
 
 def _fresh_lead_id(inbound, facts):
     seed = json.dumps(

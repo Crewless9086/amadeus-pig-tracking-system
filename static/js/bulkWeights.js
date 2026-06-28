@@ -261,6 +261,20 @@ function renderReview(data) {
         `).join("")}
       </div>`
     : "";
+  const failedHtml = failedRows.length
+    ? `<div class="bulk-review-errors">
+        ${failedRows.map((item) => {
+          const row = item.row || {};
+          const error = item.error || {};
+          return `<div><strong>${escapeHtml(formatTagNumber(row.tag_number || row.pig_id || "-"))}</strong>: ${escapeHtml(error.message || error.status || "Save failed")}</div>`;
+        }).join("")}
+      </div>`
+    : "";
+  const rowResultsHtml = rowResults.length
+    ? `<div class="bulk-review-notes">
+        ${rowResults.slice(0, 12).map((row) => `<div><strong>${escapeHtml(formatTagNumber(row.tag_number || row.pig_id || "-"))}</strong>: ${escapeHtml(row.status || "review")} - ${escapeHtml(row.message || "")}</div>`).join("")}
+      </div>`
+    : "";
   const movementHtml = movementRows.length || duplicateMovementRows.length
     ? `<div class="bulk-review-notes">
         ${movementRows.length ? `<div>${movementRows.length} pen movement${movementRows.length === 1 ? "" : "s"} will be saved without a weight row.</div>` : ""}
@@ -272,7 +286,7 @@ function renderReview(data) {
   reviewPanel.innerHTML = `
     <div class="bulk-review-header">
       <strong>Batch Review</strong>
-      <span>${Number(data.weight_count || data.accepted_count || 0)} weights, ${Number(data.movement_only_count || 0) + Number(data.duplicate_weight_movement_count || 0)} moves, ${Number(data.skipped_count || 0)} skipped, ${Number(data.blocked_count || 0)} blocked</span>
+      <span>${Number(data.weight_count || data.expected_count || data.accepted_count || 0)} expected, ${Number(data.success_count || data.saved_count || 0)} processed, ${Number(data.skipped_count || 0)} skipped, ${Number(data.blocked_count || 0)} blocked, ${Number(data.failed_count || 0)} failed</span>
     </div>
     ${movementHtml}
     ${blockedHtml}
@@ -338,7 +352,7 @@ async function uploadBatch() {
 
     if (!uploadResponse.ok || !uploadData.success) {
       renderReview(uploadData);
-      setMessage(uploadData.message || "Batch upload failed. Check the review panel.", "error");
+      setMessage(uploadData.message || "Batch upload needs review. Check the review panel.", "error");
       return;
     }
 
