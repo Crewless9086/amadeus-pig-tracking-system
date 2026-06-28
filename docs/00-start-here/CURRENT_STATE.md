@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `ed2f1c3` Add docs inbox and archive governance (#6)
 - `2de81f2` Create active start-here docs workflow (#5)
 - `560a345` Add owner logout controls (#4)
 - `97e63a0` Add owner access session guard for SAM reads (#3)
@@ -19,7 +20,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 ## Active Branches / PRs
 
 - PR #5 is merged into `main`.
-- CLEANUP-2 is the active documentation governance cleanup branch.
+- PR #6 is merged into `main`.
+- CLEANUP-4B is the active owner-note triage branch.
 - Cleanup work must use clean worktrees from `origin/main`.
 - Do not merge polluted branches such as old SAM release branches or CHARLIE planning branches unless a later owner-approved cleanup explicitly says so.
 
@@ -89,7 +91,7 @@ SAM safety remains unchanged:
 - Old screenshots and `external_sources` need later owner review before archive/delete.
 - Mutation route guards still need ACCESS-2 later.
 - Frontend command-state consumption has not been implemented yet.
-- `planning/ToDoList.md` was triaged in CLEANUP-2 and remains preserved.
+- `planning/ToDoList.md` was triaged in CLEANUP-2 and is being updated again in CLEANUP-4B with fresh owner operational notes preserved.
 
 ## Last Updated
 
