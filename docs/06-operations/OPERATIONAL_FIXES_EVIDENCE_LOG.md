@@ -96,6 +96,26 @@ Pressure-test coverage added:
 Owner retest gate:
 
 - The owner should not manually retype the 71-row scenario until this P0 branch is reviewed, merged, deployed, and the local pressure tests pass.
+## P0 Simple Bulk Upload UX - 2026-06-29
+
+Mode: P0 usability/reliability polish on the durable bulk rail. No migration, production data rewrite, customer send, public post, payment/deposit change, reservation change, unrelated lifecycle/purpose write, Phase 3A.6, CHARLIE/FRED/ledger work, screenshot, external source, asset, `.env`, or `.claude` change is approved.
+
+Owner live finding after durable rail deploy:
+
+- Owner restored the 2026-06-22 draft and pressed Save Draft.
+- The page then required Stage Batch and exposed backend mechanics.
+- Batch Review showed confusing zero draft counts while still showing 42 remaining rows and 31 blocked rows.
+- There was no obvious action to finish the upload.
+
+Final UX rule:
+
+- Keep Supabase staging and chunk processing internally.
+- Owner-facing actions are Save Draft, Upload Weights, Download Draft, and Import Draft.
+- Upload Weights must stage and auto-process chunks in one flow.
+- Continue Upload appears only when processing is interrupted or rows remain.
+- Duplicate weights are shown as Already recorded for this date, not scary errors.
+- Blank/no-change rows are skipped clearly.
+
 ## P0 Supabase-First Durable Bulk Rail - 2026-06-28
 
 Mode: P0 data-loss reliability build. Owner approved a narrow additive Supabase migration for bulk-weight batch staging/audit only. No production data writes, customer sends, public posts, payment/deposit changes, reservations, unrelated lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes are approved.

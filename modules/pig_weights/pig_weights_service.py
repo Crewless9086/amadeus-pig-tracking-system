@@ -4933,7 +4933,7 @@ def save_weight_entry(cleaned_data: dict):
                 return {
                     "success": False,
                     "duplicate_weight": True,
-                    "message": "This pig already has a weight entry for this date.",
+                    "message": "Already recorded for this date.",
                     "existing": {
                         "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
                         "pig_id": row_pig_id,
@@ -5207,7 +5207,7 @@ def preflight_bulk_weight_entries(payload: dict):
         has_pen_change = bool(moved_to_pen_id and moved_to_pen_id != current_pen_id)
         duplicate_weight = bool(has_weight and batch_key in existing_weights)
         if duplicate_weight and not has_pen_change:
-            errors.append("This pig already has a weight entry for this date.")
+            errors.append("Already recorded for this date.")
 
         if errors:
             existing = existing_weights.get(batch_key, {})
@@ -5232,7 +5232,7 @@ def preflight_bulk_weight_entries(payload: dict):
                 "row_index": index,
                 "pig_id": pig_id,
                 "tag_number": tag_number or pig.get("tag_number", ""),
-                "reason": "No weight entered and no pen change selected.",
+                "reason": "No new weight or pen change entered.",
             })
             continue
 
