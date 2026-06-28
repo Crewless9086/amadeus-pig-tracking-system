@@ -96,6 +96,35 @@ Pressure-test coverage added:
 Owner retest gate:
 
 - The owner should not manually retype the 71-row scenario until this P0 branch is reviewed, merged, deployed, and the local pressure tests pass.
+## P0 Supabase-First Durable Bulk Rail - 2026-06-28
+
+Mode: P0 data-loss reliability build. Owner approved a narrow additive Supabase migration for bulk-weight batch staging/audit only. No production data writes, customer sends, public posts, payment/deposit changes, reservations, unrelated lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes are approved.
+
+Second live failure after JSON-safe hotfix:
+
+- Owner restored the saved draft and attempted a 73-row upload dated 2026-06-22.
+- About 21 rows included pen changes.
+- The old synchronous endpoint `POST /api/pig-weights/weights-batch` still returned non-JSON HTML with HTTP 500.
+- Batch Review showed 116 visible, 73 actionable, 0 weight rows, 0 pen changes, 0 processed, 43 skipped, 0 blocked, 0 failed.
+- Draft recovery protected the typed rows, but the backend upload path remained unreliable.
+
+Final decision:
+
+- The synchronous Google Sheets upload path is not reliable enough for large weekly batches.
+- The new durable rail stages the full browser draft and every row in Supabase before processing.
+- Processing happens in chunks of 10 by default, never as one opaque 73-row request.
+- Row status and result details remain durable so failures can be retried without wiping the batch.
+- Google Sheets remains a downstream compatibility target during chunk processing.
+- Import Draft and Download Draft remain required so the owner never has to retype a large batch.
+
+Pressure-test gate:
+
+- 73 rows plus 21 pen changes must stage durably.
+- Chunk processing must handle only a small number of rows per request.
+- Failure after row 60 must leave batch/rows available with failure details.
+- Retry must not reprocess successful rows.
+- HTML/non-JSON responses must keep draft and staged batch state.
+
 ## OP-1.2 Evidence Push - 2026-06-28
 
 Mode: read-only evidence gathering. No code edits, database writes, migrations, customer sends, public posts, payment/deposit changes, reservations, lifecycle writes, screenshots, external sources, or assets were touched.
