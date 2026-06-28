@@ -379,11 +379,14 @@ test("computeLeadNextAction covers command-room states without side effects", as
 });
 
 test("SAM command room renders gates and captures screenshot", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
   await stubSamApis(page);
   await page.goto(`${BASE_URL}/sales/meat-leads`, { waitUntil: "domcontentloaded" });
   await page.locator(".meat-leads-shell").waitFor();
   await expect(page.locator("h1")).toContainText("SAM Meat Sales Command Room");
   await expect(page.locator("#meat_leads_list .meat-lead-row")).toHaveCount(1);
+  await expect(page.locator(".meat-leads-list-panel")).toBeVisible();
+  await expect(page.locator("#meat_leads_detail_panel")).toBeVisible();
   await expect(page.locator(".sam-selected-command")).toBeVisible();
   await expect(page.locator(".sam-gate-stack")).toBeVisible();
   await expect(page.locator(".sam-gate-card")).toContainText([
@@ -397,7 +400,48 @@ test("SAM command room renders gates and captures screenshot", async ({ page }) 
   await expect(page.locator("#meat_lead_send_message")).toBeDisabled();
   await expect(page.locator("#meat_guided_next")).toContainText(/Build Draft Reply|Review Price And Deposit|Prepare Step/);
   await expect(page.locator("#meat_guided_next")).not.toContainText(/Send|Approve And Send/);
-  await page.screenshot({ path: "test-results/sam-meat-command-room.png", fullPage: true });
+
+  const layout = await page.evaluate(() => {
+    const rectFor = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        right: rect.right,
+        bottom: rect.bottom,
+      };
+    };
+    const workflowStyle = window.getComputedStyle(document.querySelector(".meat-leads-workflow"));
+    return {
+      viewportWidth: window.innerWidth,
+      shell: rectFor(".meat-leads-shell"),
+      workflow: rectFor(".meat-leads-workflow"),
+      list: rectFor(".meat-leads-list-panel"),
+      detail: rectFor("#meat_leads_detail_panel"),
+      gate: rectFor(".sam-gate-stack"),
+      workbench: rectFor(".sam-system-workbench"),
+      columnCount: workflowStyle.gridTemplateColumns.split(" ").filter(Boolean).length,
+      hasHorizontalScroll: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    };
+  });
+
+  expect(layout.viewportWidth).toBe(1366);
+  expect(layout.shell.width).toBeGreaterThan(1280);
+  expect(layout.workflow.width).toBeGreaterThan(1260);
+  expect(layout.columnCount).toBe(3);
+  expect(layout.list.width).toBeGreaterThanOrEqual(280);
+  expect(layout.detail.width).toBeGreaterThanOrEqual(580);
+  expect(layout.gate.width).toBeGreaterThanOrEqual(300);
+  expect(layout.gate.x).toBeGreaterThan(layout.detail.x + layout.detail.width - 1);
+  expect(layout.gate.x).toBeGreaterThan(layout.list.x + layout.list.width);
+  expect(layout.hasHorizontalScroll).toBe(false);
+  expect(layout.workbench.y).toBeGreaterThan(layout.workflow.y);
+
+  await page.screenshot({ path: "test-results/sam-meat-command-room-full-width.png", fullPage: true });
 });
 
 test("guided next step does not chain approval or send endpoints", async ({ page }) => {

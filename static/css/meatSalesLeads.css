@@ -1,9 +1,30 @@
 .meat-leads-shell {
-  max-width: 1440px;
+  width: 100%;
+  max-width: 1680px;
+  padding: 24px;
+  display: block;
+  margin: 0 auto;
+  align-items: initial;
 }
 
 .meat-leads-card {
+  width: 100%;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
   padding-bottom: 18px;
+  flex: none;
+}
+
+.meat-leads-card .page-header-with-link {
+  margin-bottom: 18px;
+}
+
+.meat-leads-card .ops-header-actions {
+  max-width: 560px;
 }
 
 .sam-command-brief {
@@ -46,7 +67,7 @@
 
 .meat-control-room {
   display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(300px, 1fr) minmax(300px, 1.1fr);
+  grid-template-columns: minmax(240px, 0.72fr) minmax(340px, 1fr) minmax(340px, 1.1fr);
   gap: 12px;
   align-items: stretch;
   border: 1px solid #c9d5c8;
@@ -123,9 +144,11 @@
 
 .meat-leads-workflow {
   display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(500px, 1.3fr) minmax(260px, 0.72fr);
+  gap: 20px;
+  grid-template-columns: minmax(280px, 340px) minmax(580px, 1fr) minmax(300px, 380px);
   align-items: start;
+  margin-top: 18px;
+  width: 100%;
 }
 
 .meat-leads-summary {
@@ -164,7 +187,7 @@
 }
 
 .meat-price-book-panel {
-  margin: 18px 0;
+  margin: 24px 0 0;
 }
 
 .meat-price-book-panel summary {
@@ -199,16 +222,13 @@
 .meat-leads-list {
   display: grid;
   gap: 10px;
-  max-height: calc(100dvh - 330px);
+  max-height: calc(100dvh - 300px);
   overflow: auto;
   padding-right: 2px;
 }
 
 .meat-leads-detail-panel {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100dvh - 28px);
-  overflow: auto;
+  min-width: 0;
 }
 
 .meat-lead-row {
@@ -275,8 +295,9 @@
 .sam-gate-stack {
   position: sticky;
   top: 12px;
-  max-height: calc(100dvh - 28px);
+  max-height: calc(100dvh - 48px);
   overflow: auto;
+  min-width: 0;
 }
 
 .sam-gate-stack-list {
@@ -309,6 +330,7 @@
 
 .sam-system-workbench {
   background: #fcfdfb;
+  opacity: 0.92;
 }
 
 .meat-lead-row:hover,
@@ -483,6 +505,18 @@
   margin-top: 12px;
 }
 
+.meat-leads-list-panel,
+.meat-leads-detail-panel,
+.sam-gate-stack,
+.sam-selected-command article,
+.meat-lead-fact,
+.meat-lead-row,
+.meat-control-room,
+.sam-command-brief,
+.meat-price-book-panel {
+  min-width: 0;
+}
+
 .meat-payment-state {
   display: grid;
   gap: 10px;
@@ -531,6 +565,22 @@
   resize: vertical;
 }
 
+@media (max-width: 1220px) {
+  .meat-leads-workflow {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  }
+
+  .sam-gate-stack {
+    grid-column: 1 / -1;
+    position: static;
+    max-height: none;
+  }
+
+  .sam-gate-stack-list {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 980px) {
   .meat-control-room,
   .meat-leads-workflow,
@@ -562,12 +612,24 @@
     max-height: none;
   }
 
+  .sam-gate-stack-list {
+    grid-template-columns: 1fr;
+  }
+
   .meat-operator-head {
     display: grid;
   }
 }
 
 @media (max-width: 560px) {
+  .meat-leads-shell {
+    padding: 16px;
+  }
+
+  .meat-leads-card .ops-header-actions {
+    max-width: none;
+  }
+
   .meat-control-metrics,
   .meat-control-checklist,
   .meat-leads-summary {

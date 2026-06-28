@@ -62,52 +62,6 @@
         </article>
       </section>
 
-      <details class="meat-price-book-panel sam-system-workbench" aria-label="System Workbench price book">
-        <summary>
-          <span>System Workbench: Price Book</span>
-          <small id="meat_price_book_status">Secondary admin tools. Active price and deposit rules used for Sam estimates.</small>
-        </summary>
-        <div class="page-header section-header-compact">
-          <div>
-            <h2>Price Book</h2>
-            <p>Latest active pricing entries. Add a new entry only when the farm price changes.</p>
-          </div>
-          <button type="button" id="meat_price_refresh" class="button-link button-link-secondary">Refresh Prices</button>
-        </div>
-        <form id="meat_price_form" class="meat-lead-form" autocomplete="off">
-          <div class="meat-lead-form-grid">
-            <div class="form-group">
-              <label for="meat_price_product_type">Product</label>
-              <select id="meat_price_product_type">
-                <option value="half_carcass">Half carcass</option>
-                <option value="full_carcass">Full carcass</option>
-                <option value="custom_cut">Custom cut</option>
-                <option value="assisted_slaughter">Assisted slaughter</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="meat_price_cut_set">Cut set</label>
-              <input type="text" id="meat_price_cut_set" placeholder="Set A or blank for all" />
-            </div>
-            <div class="form-group">
-              <label for="meat_price_amount">Amount</label>
-              <input type="number" id="meat_price_amount" min="0" step="0.01" placeholder="130.00" />
-            </div>
-            <div class="form-group">
-              <label for="meat_price_unit">Unit</label>
-              <select id="meat_price_unit">
-                <option value="per_kg">per kg</option>
-                <option value="per_pig_fee">per pig fee</option>
-              </select>
-            </div>
-          </div>
-          <div class="meat-lead-actions">
-            <button type="submit" id="meat_price_save" class="button-link">Add Price Entry</button>
-          </div>
-        </form>
-        <div id="meat_price_book_list" class="ops-list"></div>
-      </details>
-
       <section class="meat-leads-workflow">
         <div class="meat-leads-list-panel">
           <div class="page-header section-header-compact">
@@ -442,6 +396,52 @@
           </div>
         </aside>
       </section>
+
+      <details class="meat-price-book-panel sam-system-workbench" aria-label="System Workbench price book">
+        <summary>
+          <span>System Workbench: Price Book</span>
+          <small id="meat_price_book_status">Secondary admin tools. Active price and deposit rules used for Sam estimates.</small>
+        </summary>
+        <div class="page-header section-header-compact">
+          <div>
+            <h2>Price Book</h2>
+            <p>Latest active pricing entries. Add a new entry only when the farm price changes.</p>
+          </div>
+          <button type="button" id="meat_price_refresh" class="button-link button-link-secondary">Refresh Prices</button>
+        </div>
+        <form id="meat_price_form" class="meat-lead-form" autocomplete="off">
+          <div class="meat-lead-form-grid">
+            <div class="form-group">
+              <label for="meat_price_product_type">Product</label>
+              <select id="meat_price_product_type">
+                <option value="half_carcass">Half carcass</option>
+                <option value="full_carcass">Full carcass</option>
+                <option value="custom_cut">Custom cut</option>
+                <option value="assisted_slaughter">Assisted slaughter</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="meat_price_cut_set">Cut set</label>
+              <input type="text" id="meat_price_cut_set" placeholder="Set A or blank for all" />
+            </div>
+            <div class="form-group">
+              <label for="meat_price_amount">Amount</label>
+              <input type="number" id="meat_price_amount" min="0" step="0.01" placeholder="130.00" />
+            </div>
+            <div class="form-group">
+              <label for="meat_price_unit">Unit</label>
+              <select id="meat_price_unit">
+                <option value="per_kg">per kg</option>
+                <option value="per_pig_fee">per pig fee</option>
+              </select>
+            </div>
+          </div>
+          <div class="meat-lead-actions">
+            <button type="submit" id="meat_price_save" class="button-link">Add Price Entry</button>
+          </div>
+        </form>
+        <div id="meat_price_book_list" class="ops-list"></div>
+      </details>
     </div>
   </div>
 
