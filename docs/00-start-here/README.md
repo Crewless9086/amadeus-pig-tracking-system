@@ -1,59 +1,44 @@
 # Start Here
 
-## Purpose
+This folder is the active entry point for future Cursor/Codex sessions.
 
-This folder is the entry point for the Amadeus Pig Tracking and Sales System documentation.
+Read in this order:
 
-## Current Documentation Source Of Truth
+1. `CURRENT_STATE.md` - what is live, what is protected, and what is risky now.
+2. `NEXT_STEPS.md` - the current priority queue.
+3. `WORKFLOW.md` - how owner notes become scoped plans and phases.
+4. `DEPLOYMENT_SOP.md` - release and branch safety rules.
+5. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
 
-The canonical project documentation lives in `docs/`.
+## Operating Truth
 
-Use this folder first to understand:
+Supabase is the operational truth for live state, approvals, ledgers, and future cross-agent work records.
 
-- what the project is
-- what is working now
-- what is risky
-- what the approved build order is
+Markdown/docs are guidance. They describe decisions, plans, safety rules, and current state. They are not runtime infrastructure and must not become live collaboration state.
 
-## Key Files
+## Current Hierarchy
 
-| File | Purpose |
-| --- | --- |
-| `PROJECT_OVERVIEW.md` | Plain-language system overview and layer map. |
-| `CURRENT_STATE.md` | Current project status and live risks. |
-| `NEXT_STEPS.md` | Approved build order and current first task. |
-| `GLOSSARY.md` | Shared terms used across docs, backend, n8n, Sheets, and AI. |
+CHARLIE is the top-level owner operating layer.
 
-## Main Documentation Areas
+Oom Sakkie remains Farm Commander under CHARLIE.
 
-| Folder | Purpose |
-| --- | --- |
-| `docs/02-backend/` | Flask API, order logic, backend data models, module structure, and refactor plan. |
-| `docs/03-google-sheets/` | Sheet schema, formulas, ownership, fields, and business rules. |
-| `docs/04-n8n/` | n8n workflow suite, data flow, node responsibilities, protected logic, and workflow exports. |
-| `docs/05-ai/` | AI roles, prompt rules, and response rules. |
-| `docs/06-operations/` | Testing, release, troubleshooting, and runbook guidance. |
-| `docs/07-decisions/` | Architecture and documentation decisions. |
-| `docs/08-business-modules/` | Pork/meat business model, launch plan, and business integration maps. |
+SAM is Meat Sales Command and is the urgent money-flow path.
 
-## Current Build Focus
+FRED is the future Transport Commander and transport money path.
 
-Meat Sales is the current money-test focus.
+## Safety Rails
 
-The order system remains live and profit-critical, but the active growth path is now the controlled Meat Sales pilot:
+Gatekeeper and owner approval rails cannot be bypassed.
 
-1. Chatwoot Sales Hygiene.
-2. Sales Stress-Test Pack.
-3. Prisma/Beacon Meat Launch Campaign.
-4. Sales Conversation Learning Loop.
+No customer sends, public posts, payment/deposit actions, reservations, dispatch, stock allocation, farm records, hardware control, migrations, or deployments may happen without the approved rail for that action.
 
-Use `docs/08-business-modules/MEAT_SALES_LAUNCH_PLAN.md` for the short launch plan and `docs/00-start-here/NEXT_STEPS.md` for the approved build order.
+## Canonical Active Docs
 
-## Rule For Agents
+- `docs/00-start-here/CURRENT_STATE.md`
+- `docs/00-start-here/NEXT_STEPS.md`
+- `docs/00-start-here/WORKFLOW.md`
+- `docs/00-start-here/DEPLOYMENT_SOP.md`
+- `docs/00-start-here/OWNER_INBOX_GUIDE.md`
+- `docs/05-ai/AGENT_ROLES.md`
 
-Before changing code, workflows, Sheets, or prompts:
-
-1. Read the relevant docs area.
-2. Keep the change scoped.
-3. Update docs when behavior changes.
-4. Run the relevant testing checklist.
+Some older docs are still useful as history or module detail. If an older doc conflicts with this folder or the accepted CHARLIE direction, treat it as legacy until it is reviewed.
