@@ -159,6 +159,20 @@ async function main() {
   const recoveredPastDate = helpers.buildDraftPayload({ now: "2026-06-28T12:05:00.000Z" });
   assert.strictEqual(recoveredPastDate.rows["PIG-1"].weight_kg, "61.2", "past-date draft rows should recover after refresh");
 
+  const imported = {
+    draft_id: "DRAFT-IMPORT",
+    weight_date: "2026-06-22",
+    rows,
+  };
+  helpers.importDraftPayload(imported);
+  assert.strictEqual(elements.get("bulk_weight_date").value, "2026-06-22", "import should restore the draft date");
+  const importedDraft = helpers.buildDraftPayload({ now: "2026-06-28T12:10:00.000Z" });
+  assert.strictEqual(importedDraft.draft_id, "DRAFT-IMPORT");
+  assert.strictEqual(importedDraft.rows["PIG-2"].moved_to_pen_id, "PEN-2", "import should restore pen-change rows");
+
+  assert.strictEqual(helpers.isCompleteUploadSuccess({ ok: true, status: "complete", counts: { actionable_count: 2, processed_count: 2, success_count: 2, failed_count: 0, blocked_count: 0, remaining_count: 0 } }), true);
+  assert.strictEqual(helpers.isCompleteUploadSuccess({ ok: true, status: "partial", counts: { actionable_count: 2, processed_count: 1, success_count: 1, failed_count: 1, remaining_count: 0 } }), false);
+
   console.log("bulk weight draft recovery helpers passed");
 }
 

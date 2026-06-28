@@ -2,6 +2,28 @@
 
 # Processed Notes
 
+## 2026-06-28 Supabase-First Durable Bulk Rail
+
+Status: active P0 build.
+
+Branch: `p0-bulk-supabase-durable-rail`
+
+Evidence log: `docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md`
+
+Owner live result after JSON-safe hotfix:
+
+- 73 bulk-weight entries were restored from draft and uploaded for 2026-06-22.
+- About 21 rows included pen changes.
+- The old synchronous endpoint still returned non-JSON HTML from `POST /api/pig-weights/weights-batch`.
+- Batch Review showed 116 visible, 73 actionable, 0 weight rows, 0 pen changes, 0 processed, 43 skipped, 0 blocked, 0 failed.
+
+Decision:
+
+- Build a Supabase-first durable staging/audit rail for bulk weights.
+- Process rows in chunks and keep Google Sheets as downstream sync.
+- Add Import Draft so downloaded drafts can be restored without retyping.
+- Do not ask for another large manual owner retest until automated 73-row + 21 pen-change pressure tests pass and the durable rail is deployed.
+
 ## 2026-06-28 Bulk Weight Live Failure
 
 Status: escalated to P0 data-loss fix.

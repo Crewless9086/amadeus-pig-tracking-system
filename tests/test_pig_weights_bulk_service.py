@@ -2,7 +2,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from modules.pig_weights import pig_weights_service
+from modules.pig_weights import bulk_weight_batch_service, pig_weights_service
 
 
 class BulkWeightServiceTests(unittest.TestCase):
@@ -454,6 +454,194 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(body["endpoint"], "/api/pig-weights/weights-batch/preflight")
         self.assertEqual(body["submitted_count"], 1)
         self.assertFalse(body["writes_to_google_sheets"])
+
+class DurableBulkWeightBatchServiceTests(unittest.TestCase):
+    def setUp(self):
+        bulk_weight_batch_service._MEMORY_BATCHES.clear()
+        bulk_weight_batch_service._MEMORY_ROWS.clear()
+
+    def _rows_73_with_21_moves(self):
+        rows = []
+        for index in range(73):
+            row = {
+                "pig_id": f"PIG-{index:02d}",
+                "tag_number": str(index),
+                "weight_kg": "",
+                "moved_to_pen_id": "",
+                "condition_notes": "",
+            }
+            if index < 52:
+                row["weight_kg"] = str(60 + index / 10)
+            elif index < 73:
+                row["moved_to_pen_id"] = "PEN-2"
+            rows.append(row)
+        return rows
+
+    def _preflight_for_rows(self, rows):
+        accepted = []
+        skipped = []
+        for index, row in enumerate(rows):
+            if row.get("weight_kg"):
+                accepted.append({
+                    **row,
+                    "row_index": index,
+                    "weight_date": "2026-06-22",
+                    "weighed_by": "WebApp",
+                    "current_pen_id": "PEN-1",
+                    "action_type": "weight",
+                    "weight_kg": float(row["weight_kg"]),
+                })
+            elif row.get("moved_to_pen_id"):
+                accepted.append({
+                    **row,
+                    "row_index": index,
+                    "weight_date": "2026-06-22",
+                    "weighed_by": "WebApp",
+                    "current_pen_id": "PEN-1",
+                    "action_type": "movement_only",
+                })
+            else:
+                skipped.append({**row, "row_index": index, "reason": "No weight or pen change entered."})
+        return {
+            "success": True,
+            "submitted_count": len(rows),
+            "visible_count": len(rows),
+            "expected_count": len(accepted),
+            "accepted_count": len(accepted),
+            "weight_count": len([row for row in accepted if row.get("action_type") == "weight"]),
+            "movement_only_count": len([row for row in accepted if row.get("action_type") == "movement_only"]),
+            "duplicate_weight_movement_count": 0,
+            "blocked_count": 0,
+            "skipped_count": len(skipped),
+            "accepted_rows": accepted,
+            "blocked_rows": [],
+            "skipped_rows": skipped,
+        }
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_stage_73_rows_with_21_pen_changes_returns_batch_id(self):
+        rows = self._rows_73_with_21_moves()
+        preflight = self._preflight_for_rows(rows)
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)):
+            result, status = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-73", "weight_date": "2026-06-22", "rows": rows})
+
+        self.assertEqual(status, 201)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "staged")
+        self.assertTrue(result["batch_id"])
+        self.assertEqual(result["counts"]["visible_row_count"], 73)
+        self.assertEqual(result["counts"]["actionable_row_count"], 73)
+        self.assertEqual(result["counts"]["weight_row_count"], 52)
+        self.assertEqual(result["counts"]["movement_row_count"], 21)
+        self.assertFalse(result["writes_to_google_sheets"])
+        self.assertTrue(result["writes_to_supabase"])
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_processes_only_one_chunk_at_a_time(self):
+        rows = self._rows_73_with_21_moves()
+        preflight = self._preflight_for_rows(rows)
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)), \
+             patch.object(bulk_weight_batch_service, "save_weight_entry_with_optional_move", return_value={"success": True, "movement_logged": False}), \
+             patch.object(bulk_weight_batch_service, "save_movement_entry", return_value={"success": True}):
+            staged, _ = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-73", "weight_date": "2026-06-22", "rows": rows})
+            result, status = bulk_weight_batch_service.process_bulk_weight_batch(staged["batch_id"], chunk_size=10)
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "processing")
+        self.assertEqual(result["counts"]["success_count"], 10)
+        self.assertEqual(result["counts"]["remaining_count"], 63)
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_processes_all_chunks_to_complete(self):
+        rows = self._rows_73_with_21_moves()
+        preflight = self._preflight_for_rows(rows)
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)), \
+             patch.object(bulk_weight_batch_service, "save_weight_entry_with_optional_move", return_value={"success": True, "movement_logged": False}), \
+             patch.object(bulk_weight_batch_service, "save_movement_entry", return_value={"success": True}):
+            staged, _ = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-73", "weight_date": "2026-06-22", "rows": rows})
+            batch_id = staged["batch_id"]
+            last = staged
+            for _ in range(8):
+                last, _ = bulk_weight_batch_service.process_bulk_weight_batch(batch_id, chunk_size=10)
+
+        self.assertEqual(last["status"], "complete")
+        self.assertEqual(last["counts"]["success_count"], 73)
+        self.assertEqual(last["counts"]["remaining_count"], 0)
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_failure_after_row_60_keeps_failed_rows_and_batch_status(self):
+        rows = self._rows_73_with_21_moves()
+        preflight = self._preflight_for_rows(rows)
+        calls = {"count": 0}
+
+        def next_result():
+            calls["count"] += 1
+            if calls["count"] > 60:
+                return {"success": False, "status": "sheet_timeout", "message": "timeout after row 60"}
+            return {"success": True, "movement_logged": False}
+
+        def save_weight(payload):
+            return next_result()
+
+        def save_move(payload):
+            return next_result()
+
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)), \
+             patch.object(bulk_weight_batch_service, "save_weight_entry_with_optional_move", side_effect=save_weight), \
+             patch.object(bulk_weight_batch_service, "save_movement_entry", side_effect=save_move):
+            staged, _ = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-73", "weight_date": "2026-06-22", "rows": rows})
+            batch_id = staged["batch_id"]
+            for _ in range(8):
+                last, _ = bulk_weight_batch_service.process_bulk_weight_batch(batch_id, chunk_size=10)
+
+        self.assertIn(last["status"], {"partial", "failed"})
+        self.assertGreater(last["counts"]["failed_count"], 0)
+        self.assertEqual(last["counts"]["remaining_count"], 0)
+        self.assertTrue(any(row["status"] == "failed" for row in last["rows"]))
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_retry_does_not_duplicate_success_rows(self):
+        rows = self._rows_73_with_21_moves()[:3]
+        preflight = self._preflight_for_rows(rows)
+        calls = {"weight": 0}
+
+        def save_weight(payload):
+            calls["weight"] += 1
+            if payload["pig_id"] == "PIG-01":
+                return {"success": False, "message": "temporary failure"}
+            return {"success": True, "movement_logged": False}
+
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)), \
+             patch.object(bulk_weight_batch_service, "save_weight_entry_with_optional_move", side_effect=save_weight):
+            staged, _ = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-3", "weight_date": "2026-06-22", "rows": rows})
+            batch_id = staged["batch_id"]
+            first, _ = bulk_weight_batch_service.process_bulk_weight_batch(batch_id, chunk_size=3)
+            self.assertEqual(first["counts"]["success_count"], 2)
+            self.assertEqual(first["counts"]["failed_count"], 1)
+            calls["weight"] = 0
+            retry, _ = bulk_weight_batch_service.retry_failed_bulk_weight_batch(batch_id, chunk_size=3)
+
+        self.assertEqual(calls["weight"], 1)
+        self.assertEqual(len([row for row in retry["rows"] if row["status"] == "success"]), 2)
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_stage_route_returns_json_on_store_exception(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        client = app.test_client()
+        with patch.object(pig_weights_routes, "stage_bulk_weight_batch", side_effect=RuntimeError("database unavailable")):
+            response = client.post("/api/pig-weights/bulk-batches", json={"weight_date": "2026-06-22", "rows": [{"pig_id": "PIG-1", "weight_kg": "61"}]})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.content_type, "application/json")
+        body = response.get_json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["endpoint"], "/api/pig-weights/bulk-batches")
+        self.assertFalse(body["writes_to_google_sheets"])
+        self.assertFalse(body["writes_to_supabase"])
+
 if __name__ == "__main__":
 
     unittest.main()

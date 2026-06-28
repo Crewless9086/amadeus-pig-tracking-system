@@ -1,5 +1,12 @@
 from flask import Blueprint, jsonify, request
 
+from modules.pig_weights.bulk_weight_batch_service import (
+    get_bulk_weight_batch_status,
+    process_bulk_weight_batch,
+    retry_failed_bulk_weight_batch,
+    stage_bulk_weight_batch,
+)
+
 from modules.pig_weights.pig_weights_controller import (
     get_status,
     get_dashboard_data,
@@ -307,6 +314,45 @@ def add_weight_with_optional_move():
     result, status_code = create_weight_entry_with_optional_move(payload)
     return jsonify(result), status_code
 
+
+
+@pig_weights_bp.route("/bulk-batches", methods=["POST"])
+def stage_weights_batch():
+    payload = request.get_json(silent=True) or {}
+    try:
+        result, status_code = stage_bulk_weight_batch(payload)
+        return jsonify(result), status_code
+    except Exception as exc:
+        return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint="/api/pig-weights/bulk-batches")
+
+
+@pig_weights_bp.route("/bulk-batches/<batch_id>", methods=["GET"])
+def bulk_batch_status(batch_id):
+    try:
+        result, status_code = get_bulk_weight_batch_status(batch_id)
+        return jsonify(result), status_code
+    except Exception as exc:
+        return _bulk_json_failure(exc, status_code=500, payload={}, endpoint=f"/api/pig-weights/bulk-batches/{batch_id}")
+
+
+@pig_weights_bp.route("/bulk-batches/<batch_id>/process", methods=["POST"])
+def bulk_batch_process(batch_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result, status_code = process_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 10))
+        return jsonify(result), status_code
+    except Exception as exc:
+        return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint=f"/api/pig-weights/bulk-batches/{batch_id}/process")
+
+
+@pig_weights_bp.route("/bulk-batches/<batch_id>/retry-failed", methods=["POST"])
+def bulk_batch_retry_failed(batch_id):
+    payload = request.get_json(silent=True) or {}
+    try:
+        result, status_code = retry_failed_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 10))
+        return jsonify(result), status_code
+    except Exception as exc:
+        return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint=f"/api/pig-weights/bulk-batches/{batch_id}/retry-failed")
 
 @pig_weights_bp.route("/weights-batch/preflight", methods=["POST"])
 def preflight_weights_batch():
