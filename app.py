@@ -1,7 +1,15 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, jsonify, render_template, send_from_directory
+from modules.auth.owner_access import (
+    configure_owner_access,
+    owner_login_get,
+    owner_login_post,
+    owner_logout_post,
+    owner_status,
+    require_owner_page_access,
+)
 from modules.pig_weights.pig_weights_routes import pig_weights_bp
 from modules.pig_weights.mating_routes import mating_bp
 from modules.orders.order_routes import orders_bp
@@ -24,6 +32,7 @@ from services.database_service import (
 load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 
 app = Flask(__name__)
+configure_owner_access(app)
 app.register_blueprint(pig_weights_bp, url_prefix="/api/pig-weights")
 app.register_blueprint(mating_bp, url_prefix="/api/pig-weights")
 app.register_blueprint(orders_bp, url_prefix="/api")
@@ -55,7 +64,31 @@ def sales_dashboard_page():
 
 @app.route("/sales/meat-leads")
 def meat_sales_leads_page():
+    guard = require_owner_page_access()
+    if guard:
+        return guard
     return render_template("meat-sales-leads.html")
+
+
+@app.route("/owner/login", methods=["GET"])
+def owner_login_page():
+    return owner_login_get()
+
+
+@app.route("/owner/login", methods=["POST"])
+def owner_login_submit():
+    return owner_login_post()
+
+
+@app.route("/owner/logout", methods=["POST"])
+def owner_logout_submit():
+    return owner_logout_post()
+
+
+@app.route("/owner/status", methods=["GET"])
+def owner_status_route():
+    body, status_code = owner_status()
+    return jsonify(body), status_code
 
 
 @app.route("/sales/beacon-media")

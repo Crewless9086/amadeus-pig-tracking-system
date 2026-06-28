@@ -145,6 +145,27 @@ class SamCommandStateTests(unittest.TestCase):
         self.assertTrue(response.get_json()["ok"])
         command_state.assert_called_once_with(LEAD_ID)
 
+    @patch.dict("os.environ", {
+        "OWNER_ACCESS_ENABLED": "1",
+        "OWNER_ACCESS_ALLOW_LOCAL_DEV": "1",
+        "OWNER_READ_TOKEN": "read-owner-token-1234567890abcdef",
+        "OWNER_SESSION_SECRET": "owner-session-secret-1234567890abcdef",
+    }, clear=False)
+    def test_remote_owner_read_session_allows_command_state(self):
+        self.client.post(
+            "/owner/login",
+            data={"owner_token": "read-owner-token-1234567890abcdef"},
+            environ_base={"REMOTE_ADDR": "203.0.113.10"},
+        )
+        with patch.object(sales_transaction_routes, "get_sam_command_state", return_value=({"ok": True}, 200)) as command_state:
+            response = self.client.get(
+                f"/api/sales/meat-leads/{LEAD_ID}/command-state",
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["ok"])
+        command_state.assert_called_once_with(LEAD_ID)
+
     def test_missing_facts_returns_missing_facts_next_action(self):
         result, _ = self._service_result(contract=contract_response(missing=["product_type"]))
         self.assertEqual(result["next_action"]["key"], "missing_facts")
