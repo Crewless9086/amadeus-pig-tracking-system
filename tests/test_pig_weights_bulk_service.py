@@ -126,7 +126,9 @@ class BulkWeightServiceTests(unittest.TestCase):
             result, status = pig_weights_service.save_bulk_weight_entries({"weight_date": "2026-06-01", "rows": []})
 
         self.assertEqual(status, 207)
+        self.assertFalse(result["ok"])
         self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "partial_failure")
         self.assertEqual(result["status"], "partial_failure")
         self.assertEqual(result["saved_count"], 1)
         self.assertEqual(result["blocked_count"], 1)
@@ -307,6 +309,7 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(len(result["row_results"]), 71)
         self.assertIn("No silent partial success", result["message"])
         self.assertFalse(result["writes_to_supabase"])
+        self.assertTrue(any(row["status"] == "failed" for row in result["row_results"]))
 
     def test_save_bulk_retry_same_operation_uses_duplicate_preflight_protection(self):
         preflight_result = {

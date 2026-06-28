@@ -2,6 +2,25 @@
 
 # Processed Notes
 
+## 2026-06-28 Bulk Weight Live Failure
+
+Status: escalated to P0 data-loss fix.
+
+Branch: `p0-bulk-weight-draft-recovery`
+
+Evidence log: `docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md`
+
+Owner live result:
+
+- 71 bulk-weight rows entered.
+- 60 rows were recorded before upload.
+- Save Draft and Upload Batch ended in a vague error.
+- Refresh lost all entered rows.
+
+Requirement:
+
+- Do not ask the owner to manually re-enter the 71-row test until draft recovery, upload-failure retention, partial-failure handling, and download/export pressure tests pass and the fix is deployed.
+
 ## 2026-06-28 Operational Notes
 
 Status: moved to operational plan

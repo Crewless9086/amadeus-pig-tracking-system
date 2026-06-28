@@ -1,5 +1,50 @@
-﻿# Operational Fixes Evidence Log
+# Operational Fixes Evidence Log
 
+## P0 Bulk Weight Live Failure - 2026-06-28
+
+Mode: emergency data-loss fix. No production Google Sheets write, Supabase write, migration, customer send, public post, payment/deposit change, reservation change, stock/lifecycle write, screenshot, external source, asset, `.env`, or `.claude` change was made.
+
+Owner live failure:
+
+- Owner entered 71 bulk-weight rows.
+- 60 rows were recorded in the draft/session.
+- Owner pressed Save Draft, then Upload Batch.
+- Page returned a vague "Something went wrong" style error.
+- Owner refreshed the page and all entered rows were gone.
+- This is classified as a P0 data-loss bug.
+
+Root cause found in code:
+
+- The backend bulk service already had row-level partial-failure information after OP-BUILD-2.
+- The frontend `renderReview()` function referenced `failedRows` and `rowResults` without defining them.
+- When upload/preflight returned a partial or failed payload, that renderer could throw a JavaScript exception.
+- The thrown exception fell into the generic upload catch path, producing the vague error message and hiding useful server details.
+- Browser draft storage existed, but Save Draft/autosave/recovery behavior was not strong enough around upload failure, partial success, and refresh.
+
+P0 fix direction:
+
+- Autosave bulk-weight drafts to versioned localStorage after edits.
+- Save Draft writes a durable browser draft with draft id, timestamp, expected row count, selected pen context, validation status, and all entered rows.
+- Page load shows a recovered unsent-draft banner with restore/discard controls.
+- Page load can recover the latest unsent draft even if its weight date differs from today's default date.
+- Upload preflight/upload persists the draft before network calls.
+- Failed or partial upload keeps all rows and localStorage draft intact.
+- Only a complete confirmed success can clear the draft.
+- Add Download Draft so the owner can export the entered rows before retrying.
+- Backend/API responses now include explicit `ok` and `error` fields around validation, partial failure, and no-ready-rows cases.
+
+Pressure-test coverage added:
+
+- Node draft recovery harness proves Save Draft writes durable localStorage.
+- Node harness proves reload recovery restores saved rows.
+- Node harness proves a past-date draft is recovered after refresh instead of being hidden by today's default date.
+- Node harness proves partial upload failure does not clear localStorage.
+- Node harness proves complete confirmed upload may clear localStorage.
+- Bulk service unit test covers 71 rows with simulated failure after 60 and asserts partial failure, row-level failures, and no silent partial success.
+
+Owner retest gate:
+
+- The owner should not manually retype the 71-row scenario until this P0 branch is reviewed, merged, deployed, and the local pressure tests pass.
 ## OP-1.2 Evidence Push - 2026-06-28
 
 Mode: read-only evidence gathering. No code edits, database writes, migrations, customer sends, public posts, payment/deposit changes, reservations, lifecycle writes, screenshots, external sources, or assets were touched.

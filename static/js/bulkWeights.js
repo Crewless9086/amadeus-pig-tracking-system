@@ -9,10 +9,19 @@ const visibleCount = document.getElementById("bulk_visible_count");
 const enteredCount = document.getElementById("bulk_entered_count");
 const draftStatus = document.getElementById("bulk_draft_status");
 const reviewPanel = document.getElementById("bulk_review_panel");
+const recoveryBanner = document.getElementById("bulk_recovery_banner");
+const recoverySummary = document.getElementById("bulk_recovery_summary");
+const restoreDraftButton = document.getElementById("bulk_restore_draft_button");
+const discardDraftButton = document.getElementById("bulk_discard_draft_button");
+const downloadDraftButton = document.getElementById("bulk_download_draft_button");
 
+const DRAFT_VERSION = 2;
 let allPigs = [];
 let allPens = [];
 let draftRows = {};
+let activeDraftId = "";
+let autosaveTimer = null;
+let recoveredDraftPayload = null;
 
 function todayIso() {
   const today = new Date();
@@ -70,7 +79,170 @@ function clearMessage() {
 }
 
 function draftKey() {
+  return `bulkWeightsDraft:v${DRAFT_VERSION}:${bulkDateInput.value || "no-date"}`;
+}
+
+function legacyDraftKey() {
   return `bulkWeightsDraft:v1:${bulkDateInput.value || "no-date"}`;
+}
+
+function readStoredDraft(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error("bulk draft read error:", error);
+    return null;
+  }
+}
+
+function findLatestStoredDraft() {
+  const drafts = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key || !key.startsWith("bulkWeightsDraft:v")) continue;
+    const payload = readStoredDraft(key);
+    if (payload && payload.rows) drafts.push({ key, payload });
+  }
+  drafts.sort((a, b) => String(b.payload.saved_at || "").localeCompare(String(a.payload.saved_at || "")));
+  return drafts[0] || null;
+}
+
+function createDraftId() {
+  return `BULK-DRAFT-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+}
+
+function draftRowValues() {
+  return Object.values(draftRows || {});
+}
+
+function actionableDraftRows() {
+  return draftRowValues().filter((row) =>
+    String(row.weight_kg || "").trim() !== "" ||
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.condition_notes || "").trim() !== ""
+  );
+}
+
+function enteredWeightCount() {
+  return draftRowValues().filter((row) => String(row.weight_kg || "").trim() !== "").length;
+}
+
+function buildDraftPayload(options = {}) {
+  const now = options.now || new Date().toISOString();
+  const rows = options.rows || draftRows || {};
+  const rowValues = Object.values(rows);
+  const enteredRows = rowValues.filter((row) => String(row.weight_kg || "").trim() !== "");
+  const actionableRows = rowValues.filter((row) =>
+    String(row.weight_kg || "").trim() !== "" ||
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.condition_notes || "").trim() !== ""
+  );
+  return {
+    draft_id: options.draft_id || activeDraftId || createDraftId(),
+    version: DRAFT_VERSION,
+    saved_at: now,
+    weight_date: options.weight_date || bulkDateInput.value,
+    expected_row_count: enteredRows.length,
+    actionable_row_count: actionableRows.length,
+    visible_row_count: Number(visibleCount.textContent || 0) || filteredRows().length || allPigs.length,
+    selected_pen_ids: selectedPenIds(),
+    source: "browser_local_draft",
+    validation_status: options.validation_status || "not_preflighted",
+    rows,
+  };
+}
+
+function writeDraftPayload(payload) {
+  activeDraftId = payload.draft_id || activeDraftId || createDraftId();
+  const finalPayload = { ...payload, draft_id: activeDraftId };
+  window.localStorage.setItem(draftKey(), JSON.stringify(finalPayload));
+  return finalPayload;
+}
+
+function persistDraft(options = {}) {
+  collectDraftFromDom();
+  const payload = writeDraftPayload(buildDraftPayload(options));
+  draftStatus.textContent = options.statusLabel || "Saved";
+  return payload;
+}
+
+function scheduleAutosave() {
+  window.clearTimeout(autosaveTimer);
+  autosaveTimer = window.setTimeout(() => {
+    try {
+      persistDraft({ statusLabel: "Autosaved" });
+    } catch (error) {
+      console.error("bulk draft autosave error:", error);
+      draftStatus.textContent = "Draft save error";
+    }
+  }, 250);
+}
+
+function draftSavedLabel(payload) {
+  if (!payload || !payload.saved_at) return "unknown time";
+  try {
+    return new Date(payload.saved_at).toLocaleString();
+  } catch (error) {
+    return payload.saved_at;
+  }
+}
+
+function showRecoveryBanner(payload) {
+  if (!recoveryBanner || !recoverySummary || !payload) return;
+  recoveredDraftPayload = payload;
+  recoverySummary.textContent = `Recovered unsent bulk weight draft from ${draftSavedLabel(payload)} with ${Number(payload.expected_row_count || 0)} entered weight row${Number(payload.expected_row_count || 0) === 1 ? "" : "s"}.`;
+  recoveryBanner.classList.remove("hidden");
+}
+
+function hideRecoveryBanner() {
+  if (recoveryBanner) recoveryBanner.classList.add("hidden");
+  recoveredDraftPayload = null;
+}
+
+function isCompleteUploadSuccess(data) {
+  if (!data || !data.success) return false;
+  const expected = Number(data.expected_count || data.accepted_count || 0);
+  const processed = Number(data.processed_count || 0);
+  const successCount = Number(data.success_count || data.saved_count || 0);
+  const failed = Number(data.failed_count || 0);
+  const blocked = Number(data.blocked_count || 0);
+  if (failed || blocked) return false;
+  if (expected && processed !== expected) return false;
+  if (expected && successCount !== expected) return false;
+  return true;
+}
+
+function uploadFailureMessage(data, fallback = "Upload failed before completion.") {
+  if (!data || typeof data !== "object") return fallback;
+  const parts = [];
+  if (data.message) parts.push(data.message);
+  if (data.status) parts.push(`Status: ${data.status}.`);
+  const expected = Number(data.expected_count || data.accepted_count || 0);
+  const successCount = Number(data.success_count || data.saved_count || 0);
+  const failed = Number(data.failed_count || 0);
+  const blocked = Number(data.blocked_count || 0);
+  const skipped = Number(data.skipped_count || 0);
+  if (expected || successCount || failed || blocked || skipped) {
+    parts.push(`Expected ${expected}, succeeded ${successCount}, failed ${failed}, blocked ${blocked}, skipped ${skipped}. Draft kept for recovery/retry.`);
+  }
+  const firstFailed = Array.isArray(data.failed_rows) ? data.failed_rows[0] : null;
+  const firstError = firstFailed && firstFailed.error ? (firstFailed.error.message || firstFailed.error.status) : "";
+  if (firstError) parts.push(`First failed row: ${firstError}.`);
+  return parts.join(" ") || fallback;
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function selectedPenIds() {
@@ -123,7 +295,7 @@ function collectDraftFromDom() {
 
 function countEnteredRows() {
   collectDraftFromDom();
-  return Object.values(draftRows).filter((row) => String(row.weight_kg || "").trim() !== "").length;
+  return enteredWeightCount();
 }
 
 function updateSummary() {
@@ -166,8 +338,14 @@ function renderTable() {
   }).join("");
 
   document.querySelectorAll("[data-bulk-weight], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
-    input.addEventListener("input", updateSummary);
-    input.addEventListener("change", updateSummary);
+    input.addEventListener("input", () => {
+      updateSummary();
+      scheduleAutosave();
+    });
+    input.addEventListener("change", () => {
+      updateSummary();
+      scheduleAutosave();
+    });
   });
   document.querySelectorAll("[data-bulk-weight]").forEach((input) => {
     input.addEventListener("wheel", (event) => {
@@ -177,29 +355,31 @@ function renderTable() {
   updateSummary();
 }
 
-function loadDraft() {
+function loadDraft(options = {}) {
   try {
-    const raw = window.localStorage.getItem(draftKey());
-    draftRows = raw ? JSON.parse(raw).rows || {} : {};
-    draftStatus.textContent = raw ? "Loaded" : "Not saved";
+    let payload = readStoredDraft(draftKey()) || readStoredDraft(legacyDraftKey());
+    if (!payload && options.allowLatestFallback !== false) {
+      const latest = findLatestStoredDraft();
+      payload = latest ? latest.payload : null;
+      if (payload && payload.weight_date) bulkDateInput.value = payload.weight_date;
+    }
+    draftRows = payload ? payload.rows || {} : {};
+    activeDraftId = payload ? payload.draft_id || createDraftId() : createDraftId();
+    draftStatus.textContent = payload ? "Recovered" : "Not saved";
+    if (payload && actionableDraftRows().length) showRecoveryBanner({ ...payload, draft_id: activeDraftId });
   } catch (error) {
     console.error("load bulk draft error:", error);
     draftRows = {};
+    activeDraftId = createDraftId();
     draftStatus.textContent = "Draft error";
   }
 }
 
 function saveDraft() {
-  collectDraftFromDom();
-  const payload = {
-    saved_at: new Date().toISOString(),
-    weight_date: bulkDateInput.value,
-    rows: draftRows,
-  };
-  window.localStorage.setItem(draftKey(), JSON.stringify(payload));
-  draftStatus.textContent = "Saved";
-  setMessage("Draft saved on this device.", "success");
+  const payload = persistDraft({ statusLabel: "Saved" });
+  setMessage(`Draft saved on this device. ${payload.expected_row_count} entered weight row${payload.expected_row_count === 1 ? "" : "s"} are recoverable after refresh.`, "success");
   updateSummary();
+  showRecoveryBanner(payload);
 }
 
 function rowsPayload() {
@@ -217,40 +397,23 @@ function rowsPayload() {
 }
 
 function clearUploadedAndDuplicateDraftRows(uploadData) {
-  const clearPigIds = new Set();
-  (uploadData.saved_rows || []).forEach((row) => {
-    if (row.pig_id) clearPigIds.add(row.pig_id);
-  });
-  (uploadData.movement_rows || []).forEach((row) => {
-    if (row.pig_id) clearPigIds.add(row.pig_id);
-  });
-  (uploadData.blocked_rows || []).forEach((row) => {
-    const reason = String(row.reason || "").toLowerCase();
-    if (row.pig_id && reason.includes("already has a weight entry")) {
-      clearPigIds.add(row.pig_id);
-    }
-  });
-
-  clearPigIds.forEach((pigId) => {
-    delete draftRows[pigId];
-  });
-
-  if (Object.values(draftRows).some((row) => String(row.weight_kg || "").trim() !== "")) {
-    window.localStorage.setItem(draftKey(), JSON.stringify({
-      saved_at: new Date().toISOString(),
-      weight_date: bulkDateInput.value,
-      rows: draftRows,
-    }));
-    draftStatus.textContent = "Needs review";
-  } else {
-    window.localStorage.removeItem(draftKey());
-    draftRows = {};
-    draftStatus.textContent = "Uploaded";
+  if (!isCompleteUploadSuccess(uploadData)) {
+    persistDraft({ statusLabel: "Upload failed - draft kept", validation_status: "upload_incomplete" });
+    return false;
   }
+  window.localStorage.removeItem(draftKey());
+  window.localStorage.removeItem(legacyDraftKey());
+  draftRows = {};
+  activeDraftId = createDraftId();
+  draftStatus.textContent = "Uploaded";
+  hideRecoveryBanner();
+  return true;
 }
 
 function renderReview(data) {
   const blockedRows = data.blocked_rows || [];
+  const failedRows = data.failed_rows || [];
+  const rowResults = data.row_results || [];
   const acceptedRows = data.accepted_rows || [];
   const movementRows = acceptedRows.filter((row) => row.action_type === "movement_only");
   const duplicateMovementRows = acceptedRows.filter((row) => row.action_type === "duplicate_weight_movement");
@@ -290,10 +453,13 @@ function renderReview(data) {
     </div>
     ${movementHtml}
     ${blockedHtml}
+    ${failedHtml}
+    ${rowResultsHtml}
   `;
 }
 
 async function preflightBatch() {
+  persistDraft({ statusLabel: "Autosaved before check", validation_status: "preflight_pending" });
   const response = await fetch("/api/pig-weights/weights-batch/preflight", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -316,7 +482,8 @@ async function uploadBatch() {
   try {
     const { response, data } = await preflightBatch();
     if (!response.ok) {
-      setMessage("Batch has rows that need attention. Nothing was uploaded.", "error");
+      persistDraft({ statusLabel: "Preflight failed - draft kept", validation_status: "preflight_failed" });
+      setMessage(uploadFailureMessage(data, "Batch has rows that need attention. Nothing was uploaded. Draft kept."), "error");
       return;
     }
 
@@ -352,7 +519,15 @@ async function uploadBatch() {
 
     if (!uploadResponse.ok || !uploadData.success) {
       renderReview(uploadData);
-      setMessage(uploadData.message || "Batch upload needs review. Check the review panel.", "error");
+      persistDraft({ statusLabel: "Upload failed - draft kept", validation_status: "upload_failed" });
+      setMessage(uploadFailureMessage(uploadData, "Batch upload needs review. Draft kept for recovery and retry."), "error");
+      return;
+    }
+
+    if (!isCompleteUploadSuccess(uploadData)) {
+      renderReview(uploadData);
+      persistDraft({ statusLabel: "Partial upload - draft kept", validation_status: "partial_upload" });
+      setMessage(uploadFailureMessage(uploadData, "Batch upload was partial. Draft kept for review and retry."), "error");
       return;
     }
 
@@ -369,7 +544,8 @@ async function uploadBatch() {
     await loadData();
   } catch (error) {
     console.error("bulk upload error:", error);
-    setMessage("Something went wrong while uploading the batch.", "error");
+    persistDraft({ statusLabel: "Upload error - draft kept", validation_status: "upload_exception" });
+    setMessage(`Upload failed before completion: ${error.message || "network/server error"}. Draft kept on this device; use Download Draft before retrying if needed.`, "error");
   } finally {
     uploadButton.disabled = false;
     uploadButton.textContent = "Upload Batch";
@@ -403,8 +579,13 @@ async function loadData() {
 
 penFilterSelect.addEventListener("change", renderTable);
 bulkDateInput.addEventListener("change", () => {
-  collectDraftFromDom();
-  loadDraft();
+  try {
+    persistDraft({ statusLabel: "Saved before date change" });
+  } catch (error) {
+    console.error("bulk draft save before date change error:", error);
+  }
+  hideRecoveryBanner();
+  loadDraft({ allowLatestFallback: false });
   renderTable();
 });
 clearPensButton.addEventListener("click", () => {
@@ -415,6 +596,48 @@ clearPensButton.addEventListener("click", () => {
 });
 saveDraftButton.addEventListener("click", saveDraft);
 uploadButton.addEventListener("click", uploadBatch);
+if (downloadDraftButton) {
+  downloadDraftButton.addEventListener("click", () => {
+    const payload = persistDraft({ statusLabel: "Downloaded", validation_status: "manual_export" });
+    downloadTextFile(`bulk-weight-draft-${payload.weight_date || "no-date"}.json`, JSON.stringify(payload, null, 2));
+    setMessage("Draft downloaded. Keep this file until the batch upload is confirmed.", "success");
+  });
+}
+if (restoreDraftButton) {
+  restoreDraftButton.addEventListener("click", () => {
+    if (!recoveredDraftPayload) return;
+    draftRows = recoveredDraftPayload.rows || {};
+    activeDraftId = recoveredDraftPayload.draft_id || activeDraftId || createDraftId();
+    writeDraftPayload(buildDraftPayload({ draft_id: activeDraftId, validation_status: recoveredDraftPayload.validation_status || "restored" }));
+    renderTable();
+    setMessage("Recovered draft restored on screen. Review rows before uploading.", "success");
+    hideRecoveryBanner();
+  });
+}
+if (discardDraftButton) {
+  discardDraftButton.addEventListener("click", () => {
+    if (!window.confirm("Discard the saved bulk weight draft for this date?")) return;
+    window.localStorage.removeItem(draftKey());
+    window.localStorage.removeItem(legacyDraftKey());
+    draftRows = {};
+    activeDraftId = createDraftId();
+    draftStatus.textContent = "Discarded";
+    hideRecoveryBanner();
+    renderTable();
+    setMessage("Saved draft discarded for this date.", "success");
+  });
+}
+
+if (typeof window !== "undefined") {
+  window.bulkWeightsDraftRecovery = {
+    buildDraftPayload,
+    clearUploadedAndDuplicateDraftRows,
+    isCompleteUploadSuccess,
+    loadDraft,
+    persistDraft,
+    uploadFailureMessage,
+  };
+}
 
 (async function initPage() {
   bulkDateInput.value = todayIso();

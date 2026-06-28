@@ -38,6 +38,7 @@
         <div class="form-actions compact-actions">
           <button type="button" id="bulk_clear_pens_button" class="button-link button-link-secondary">All Pens</button>
           <button type="button" id="bulk_save_draft_button" class="button-link button-link-secondary">Save Draft</button>
+          <button type="button" id="bulk_download_draft_button" class="button-link button-link-secondary">Download Draft</button>
           <button type="button" id="bulk_upload_button">Upload Batch</button>
         </div>
       </form>
@@ -54,6 +55,17 @@
         <div>
           <span class="info-title">Draft</span>
           <span id="bulk_draft_status" class="info-value">Not saved</span>
+        </div>
+      </div>
+
+      <div id="bulk_recovery_banner" class="bulk-review-panel hidden" role="status">
+        <div class="bulk-review-header">
+          <strong>Recovered Unsent Draft</strong>
+          <span id="bulk_recovery_summary">A saved draft is available.</span>
+        </div>
+        <div class="form-actions compact-actions">
+          <button type="button" id="bulk_restore_draft_button" class="button-link button-link-secondary">Restore Draft</button>
+          <button type="button" id="bulk_discard_draft_button" class="button-link button-link-secondary">Discard Draft</button>
         </div>
       </div>
 
