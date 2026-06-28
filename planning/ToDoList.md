@@ -2,6 +2,20 @@
 
 ## Triage Status
 
+Triaged into `docs/00-start-here/NEXT_STEPS.md` on 2026-06-28 during CLEANUP-4B.
+
+Key headings triaged:
+
+- meat lead creation quality.
+- bulk weight reliability.
+- meat planning weight windows.
+- pig allocation workflow.
+- Beacon full-width UI.
+- pig detail full-width layout.
+- sales stock/value questions.
+- SAM pilot readiness 500.
+- Logout redirect preference.
+
 Triaged into `docs/00-start-here/NEXT_STEPS.md` on 2026-06-28.
 
 Raw notes are preserved below. Do not delete owner notes from this file unless the owner explicitly approves clearing processed items.
@@ -68,3 +82,21 @@ Add new scratch bullets below, then move them into the correct canonical file.
 - Telegram Order Alert with buttons/suggested values remains covered by `NEXT_STEPS.md` Phase 1.9 follow-up/internal operations notification planning; do not build it while Phase 11L Chatwoot Sales Hygiene is the active money-test slice.
 
 No active scratch bullets. Move any new note into `NEXT_STEPS.md`, `CURRENT_STATE.md`, or a module doc before implementation.
+
+## Raw Owner Notes Preserved From 2026-06-28
+
+MEAT LEADS:
+
+- Explain how leads work. The owner saw three chats, Sinethemba, Pappa G, and Thando, where short one-word messages appeared to become meat leads. This feels too broad and needs investigation before changing the lead creation rules.
+
+PIG TRACKER IMPROVEMENTS:
+
+- Bulk weight add is not reliably adding all weights or movements. The owner saw a run on the 15th where only 60 entries were added when 71 were expected. Investigate whether this is Google Sheets timeout behavior, whether Supabase should become the rail for this workflow, and how to provide logs/trails.
+- Meat planning has meat window and abattoir window settings on `/meat-planning`. Owner wants to understand how to edit them and whether meat window should be 60-80kg with abattoir window at 80kg+.
+- Pig allocation at `/pig-allocation` shows recommendations but no obvious review/action workflow for assigning purpose. Plan how the owner should inspect and assign a pig purpose.
+- Beacon page `/sales/beacon-media` is squeezed into the side and confusing. Owner wants a clearer, full-width Beacon UI.
+- Pig detail page `/pig/PIG-2026-92F3` is also narrow and should use the web dashboard width better.
+- Sales Overview `/sales-dashboard` has an Available Stock table. Confirm whether it shows meat-ready stock and add planning if it does not.
+- Owner wants a current stock value/estimated value view for livestock, meat, slaughter-to-butcher, slow growers, and sales availability planning.
+- SAM Meat Sales Command Room `/sales/meat-leads` shows Pilot Control Room readiness as `--%` with `Pilot readiness unavailable: Request failed: 500`. Investigate.
+- SAM Meat Sales Command Room logout currently redirects to sign-in. Owner asks whether logout can redirect to the dashboard instead.
