@@ -18,7 +18,7 @@ const importDraftButton = document.getElementById("bulk_import_draft_button");
 const importDraftInput = document.getElementById("bulk_import_draft_input");
 const continueButton = document.getElementById("bulk_continue_button");
 
-const DRAFT_VERSION = 2;
+const DRAFT_VERSION = 3;
 let allPigs = [];
 let allPens = [];
 let draftRows = {};
@@ -154,6 +154,7 @@ function buildDraftPayload(options = {}) {
     selected_pen_ids: selectedPenIds(),
     source: "browser_local_draft",
     validation_status: options.validation_status || "not_preflighted",
+    batch_id: options.batch_id || activeBatchId || "",
     rows,
   };
 }
@@ -209,17 +210,17 @@ function isCompleteUploadSuccess(data) {
   if (!data || (!data.success && !data.ok)) return false;
   const status = String(data.status || "").toLowerCase();
   const counts = data.counts || data;
-  const expected = Number(counts.expected_count || counts.accepted_count || counts.actionable_count || 0);
-  const processed = Number(counts.processed_count || counts.success_count || 0);
-  const successCount = Number(counts.success_count || counts.saved_count || 0);
   const failed = Number(counts.failed_count || 0);
   const blocked = Number(counts.blocked_count || 0);
   const remaining = Number(counts.remaining_count || 0);
   if (failed || blocked || remaining) return false;
-  if (status && status !== "complete" && status !== "uploaded") return false;
-  if (expected && processed !== expected) return false;
-  if (expected && successCount !== expected) return false;
-  return true;
+  if (!status) {
+    const expected = Number(counts.expected_count || counts.accepted_count || counts.actionable_count || 0);
+    const processed = Number(counts.processed_count || counts.success_count || 0);
+    const successCount = Number(counts.success_count || counts.saved_count || 0);
+    return Boolean(expected && processed === expected && successCount === expected);
+  }
+  return status === "complete" || status === "uploaded";
 }
 
 function uploadFailureMessage(data, fallback = "Upload failed before completion.") {
@@ -234,7 +235,7 @@ function uploadFailureMessage(data, fallback = "Upload failed before completion.
   const blocked = Number(counts.blocked_count || 0);
   const skipped = Number(counts.skipped_count || 0);
   if (expected || successCount || failed || blocked || skipped) {
-    parts.push(`Expected ${expected}, succeeded ${successCount}, failed ${failed}, blocked ${blocked}, skipped ${skipped}. Draft kept for recovery/retry.`);
+    parts.push(`Actionable ${expected}, completed ${successCount}, already recorded ${Number(counts.duplicate_count || counts.duplicate_weight_count || 0)}, failed ${failed}, needs review ${blocked}, skipped ${skipped}. Draft kept for recovery/retry.`);
   }
   const firstFailed = Array.isArray(data.failed_rows) ? data.failed_rows[0] : null;
   const firstError = firstFailed && firstFailed.error ? (firstFailed.error.message || firstFailed.error.status) : "";
@@ -272,7 +273,7 @@ async function parseBulkJsonResponse(response, endpoint) {
       endpoint,
       http_status: response.status,
       content_type: contentType || "unknown",
-      message: `Server returned non-JSON response from ${endpoint} (HTTP ${response.status}). Your draft is still saved.`,
+      message: `The server returned a response this page could not read from ${endpoint} (HTTP ${response.status}). Your draft is still saved.`,
       submitted_count: counts.submittedCount,
       visible_count: counts.submittedCount,
       expected_count: counts.actionableCount,
@@ -300,7 +301,7 @@ async function parseBulkJsonResponse(response, endpoint) {
       endpoint,
       http_status: response.status,
       content_type: contentType,
-      message: `Server returned invalid JSON from ${endpoint} (HTTP ${response.status}). Your draft is still saved.`,
+      message: `The server returned an unreadable response from ${endpoint} (HTTP ${response.status}). Your draft is still saved.`,
       submitted_count: counts.submittedCount,
       visible_count: counts.submittedCount,
       expected_count: counts.actionableCount,
@@ -450,6 +451,8 @@ function loadDraft(options = {}) {
     }
     draftRows = payload ? payload.rows || {} : {};
     activeDraftId = payload ? payload.draft_id || createDraftId() : createDraftId();
+    activeBatchId = payload ? payload.batch_id || "" : "";
+    if (continueButton && activeBatchId) continueButton.classList.remove("hidden");
     draftStatus.textContent = payload ? "Recovered" : "Not saved";
     if (payload && actionableDraftRows().length) showRecoveryBanner({ ...payload, draft_id: activeDraftId });
   } catch (error) {
@@ -483,7 +486,7 @@ function rowsPayload() {
 
 function importDraftPayload(payload) {
   if (!payload || typeof payload !== "object" || !payload.rows || typeof payload.rows !== "object") {
-    throw new Error("Imported file is not a bulk weight draft JSON file.");
+    throw new Error("Imported file is not a bulk weight draft file.");
   }
   if (payload.weight_date) bulkDateInput.value = payload.weight_date;
   draftRows = payload.rows || {};
@@ -509,6 +512,17 @@ function clearUploadedAndDuplicateDraftRows(uploadData) {
   return true;
 }
 
+function displayReason(row) {
+  const reason = String(row.status_reason || row.reason || row.message || "");
+  if (row.status === "duplicate" || /already has a weight|already recorded/i.test(reason)) {
+    return "Already recorded for this date.";
+  }
+  if (row.status === "skipped" || /no weight|no pen change|no action/i.test(reason)) {
+    return "No new weight or pen change entered.";
+  }
+  return reason || "Needs review.";
+}
+
 function renderReview(data) {
   const counts = data.counts || data || {};
   const blockedRows = data.blocked_rows || [];
@@ -517,59 +531,54 @@ function renderReview(data) {
   const acceptedRows = data.accepted_rows || [];
   const movementRows = acceptedRows.filter((row) => row.action_type === "movement_only");
   const duplicateMovementRows = acceptedRows.filter((row) => row.action_type === "duplicate_weight_movement");
-  const submittedCount = Number(counts.submitted_count || counts.visible_count || 0);
-  const actionableCount = Number(counts.expected_count || counts.accepted_count || counts.actionable_count || 0);
-  const weightCount = Number(counts.weight_count || counts.saved_count || 0);
-  const movementCount = Number(counts.movement_only_count || 0) + Number(counts.duplicate_weight_movement_count || 0) + Number(counts.movement_count || 0);
+  const draft = buildDraftPayload({ validation_status: "review_snapshot" });
+  const submittedCount = Number(counts.submitted_count || counts.visible_row_count || counts.visible_count || draft.visible_row_count || 0);
+  const actionableCount = Number(counts.expected_count || counts.actionable_row_count || counts.accepted_count || counts.actionable_count || draft.actionable_row_count || 0);
+  const weightCount = Number(counts.weight_row_count || counts.weight_count || counts.saved_count || draft.expected_row_count || 0);
+  const movementCount = Number(counts.movement_row_count || counts.movement_only_count || 0) + Number(counts.duplicate_weight_movement_count || 0) + Number(counts.movement_count || 0);
+  const skippedCount = Number(counts.skipped_row_count || counts.skipped_count || Math.max(submittedCount - actionableCount, 0));
   const processedCount = Number(counts.processed_count || counts.success_count || counts.saved_count || 0);
   const successCount = Number(counts.success_count || counts.saved_count || 0);
   const duplicateCount = Number(counts.duplicate_count || counts.duplicate_weight_count || 0);
-  const skippedCount = Number(counts.skipped_count || 0);
   const blockedCount = Number(counts.blocked_count || 0);
   const failedCount = Number(counts.failed_count || 0);
   const remainingCount = Number(counts.remaining_count || 0);
-  const batchStatus = data.status ? `<div class="bulk-review-notes"><div>Batch status: ${escapeHtml(data.status)}${data.batch_id ? ` (${escapeHtml(data.batch_id)})` : ""}. Remaining rows: ${remainingCount}.</div></div>` : "";
-  const blockedHtml = blockedRows.length
-    ? `<div class="bulk-review-errors">
-        ${blockedRows.map((row) => `
-          <div><strong>${escapeHtml(formatTagNumber(row.tag_number || row.pig_id || "-"))}</strong>: ${escapeHtml(row.reason || "Needs attention")}</div>
-        `).join("")}
-      </div>`
+  const batchLine = data.status
+    ? `<div class="bulk-review-notes"><div>Upload status: ${escapeHtml(data.status)}. ${remainingCount ? `${remainingCount} row${remainingCount === 1 ? "" : "s"} still need upload.` : "No rows waiting to upload."}${data.batch_id ? ` <small>Batch ${escapeHtml(data.batch_id)}</small>` : ""}</div></div>`
     : "";
-  const failedHtml = failedRows.length
-    ? `<div class="bulk-review-errors">
-        ${failedRows.map((item) => {
-          const row = item.row || item.original_row_json || item || {};
-          const error = item.error || {};
-          return `<div><strong>${escapeHtml(formatTagNumber(row.tag_number || row.pig_id || "-"))}</strong>: ${escapeHtml(item.status_reason || error.message || error.status || "Save failed")}</div>`;
-        }).join("")}
-      </div>`
-    : "";
-  const rowResultsHtml = rowResults.length
+  const issueRows = [
+    ...blockedRows.map((row) => ({ ...row, status: "blocked" })),
+    ...failedRows.map((item) => ({ ...(item.row || item.original_row_json || item), status: "failed", status_reason: item.status_reason || item.error?.message || item.error?.status })),
+    ...rowResults.filter((row) => ["failed", "blocked", "duplicate", "skipped"].includes(String(row.status || ""))).slice(0, 12),
+  ];
+  const issueHtml = issueRows.length
     ? `<div class="bulk-review-notes">
-        ${rowResults.slice(0, 12).map((row) => `<div><strong>${escapeHtml(formatTagNumber(row.tag_number || row.pig_id || "-"))}</strong>: ${escapeHtml(row.status || "review")} - ${escapeHtml(row.status_reason || row.message || "")}</div>`).join("")}
+        ${issueRows.slice(0, 16).map((row) => `<div><strong>${escapeHtml(formatTagNumber(row.tag_number || row.pig_id || "-"))}</strong>: ${escapeHtml(displayReason(row))}</div>`).join("")}
       </div>`
     : "";
   const movementHtml = movementRows.length || duplicateMovementRows.length
     ? `<div class="bulk-review-notes">
-        ${movementRows.length ? `<div>${movementRows.length} pen movement${movementRows.length === 1 ? "" : "s"} will be saved without a weight row.</div>` : ""}
-        ${duplicateMovementRows.length ? `<div>${duplicateMovementRows.length} duplicate weight row${duplicateMovementRows.length === 1 ? "" : "s"} will keep the existing weight and save only the pen move.</div>` : ""}
+        ${movementRows.length ? `<div>${movementRows.length} pen movement${movementRows.length === 1 ? "" : "s"} will be uploaded without a weight row.</div>` : ""}
+        ${duplicateMovementRows.length ? `<div>${duplicateMovementRows.length} already-recorded weight row${duplicateMovementRows.length === 1 ? "" : "s"} will still upload the valid pen move.</div>` : ""}
       </div>`
     : "";
 
   reviewPanel.classList.remove("hidden");
   reviewPanel.innerHTML = `
     <div class="bulk-review-header">
-      <strong>Batch Review</strong>
-      <span>${submittedCount} visible, ${actionableCount} actionable, ${weightCount} weight row${weightCount === 1 ? "" : "s"}, ${movementCount} pen change${movementCount === 1 ? "" : "s"}, ${processedCount} processed, ${successCount} success, ${duplicateCount} duplicate, ${remainingCount} remaining, ${skippedCount} skipped, ${blockedCount} blocked, ${failedCount} failed</span>
+      <strong>Draft Review</strong>
+      <span>${submittedCount} visible, ${actionableCount} actionable, ${weightCount} weight row${weightCount === 1 ? "" : "s"}, ${movementCount} pen change${movementCount === 1 ? "" : "s"}, ${skippedCount} blank/no-change skipped</span>
     </div>
-    ${batchStatus}
+    <div class="bulk-review-header">
+      <strong>Upload Progress</strong>
+      <span>${processedCount} processed, ${successCount} uploaded, ${duplicateCount} already recorded, ${remainingCount} remaining, ${blockedCount} needs review, ${failedCount} failed</span>
+    </div>
+    ${batchLine}
     ${movementHtml}
-    ${blockedHtml}
-    ${failedHtml}
-    ${rowResultsHtml}
+    ${issueHtml}
   `;
 }
+
 
 async function preflightBatch() {
   persistDraft({ statusLabel: "Autosaved before check", validation_status: "preflight_pending" });
@@ -608,10 +617,10 @@ async function stageBulkBatch() {
 
 async function processActiveBatch(options = {}) {
   if (!activeBatchId) {
-    setMessage("No staged batch is available. Stage the saved draft before processing.", "error");
+    setMessage("No saved upload is available. Use Upload Weights to start again from the saved draft.", "error");
     return null;
   }
-  const maxLoops = Number(options.maxLoops || 20);
+  const maxLoops = Number(options.maxLoops || 50);
   let lastData = null;
   for (let loop = 0; loop < maxLoops; loop += 1) {
     const endpoint = `/api/pig-weights/bulk-batches/${encodeURIComponent(activeBatchId)}/process`;
@@ -639,7 +648,10 @@ async function processActiveBatch(options = {}) {
         clearUploadedAndDuplicateDraftRows(data);
         activeBatchId = "";
         if (continueButton) continueButton.classList.add("hidden");
-        setMessage(`Bulk batch complete. ${Number((data.counts || data).success_count || 0)} row action${Number((data.counts || data).success_count || 0) === 1 ? "" : "s"} succeeded.`, "success");
+        const counts = data.counts || data;
+        const duplicateCount = Number(counts.duplicate_count || 0);
+        const skippedCount = Number(counts.skipped_row_count || counts.skipped_count || 0);
+        setMessage(`Upload complete: ${Number(counts.success_count || 0)} row action${Number(counts.success_count || 0) === 1 ? "" : "s"} uploaded, ${duplicateCount} already recorded, ${skippedCount} blank/no-change skipped.`, "success");
         await loadData();
       } else {
         persistDraft({ statusLabel: "Batch incomplete - draft kept", validation_status: "batch_incomplete" });
@@ -652,7 +664,7 @@ async function processActiveBatch(options = {}) {
   if (lastData) {
     persistDraft({ statusLabel: "Processing paused - draft kept", validation_status: "processing_paused" });
     if (continueButton) continueButton.classList.remove("hidden");
-    setMessage("Processing paused after several chunks. Continue Processing will resume the staged batch.", "success");
+    setMessage("Upload paused safely. Continue Upload will resume the saved batch.", "success");
   }
   return lastData;
 }
@@ -660,11 +672,15 @@ async function processActiveBatch(options = {}) {
 async function uploadBatch() {
   clearMessage();
   uploadButton.disabled = true;
-  uploadButton.textContent = "Staging...";
+  uploadButton.textContent = activeBatchId ? "Continuing upload..." : "Preparing batch...";
   if (continueButton) continueButton.classList.add("hidden");
 
   try {
-    persistDraft({ statusLabel: "Autosaved before staging", validation_status: "stage_pending" });
+    persistDraft({ statusLabel: "Autosaved before upload", validation_status: "upload_pending" });
+    if (activeBatchId) {
+      await processActiveBatch();
+      return;
+    }
     const { response, data } = await stageBulkBatch();
     if (!response.ok || !data.ok) {
       persistDraft({ statusLabel: "Staging failed - draft kept", validation_status: "stage_failed" });
@@ -679,15 +695,9 @@ async function uploadBatch() {
       return;
     }
 
-    const confirmed = window.confirm(`Stage saved as ${data.batch_id}. Process ${counts.actionable_count || 0} actionable row${Number(counts.actionable_count || 0) === 1 ? "" : "s"} in safe chunks now?`);
-    if (!confirmed) {
-      persistDraft({ statusLabel: "Staged - draft kept", validation_status: "staged" });
-      if (continueButton) continueButton.classList.remove("hidden");
-      setMessage(`Batch staged as ${data.batch_id}. Draft remains saved. Use Continue Processing when ready.`, "success");
-      return;
-    }
-
-    uploadButton.textContent = "Processing chunks...";
+    persistDraft({ statusLabel: "Uploading", validation_status: "staged", batch_id: activeBatchId });
+    uploadButton.textContent = "Uploading rows...";
+    setMessage(`Preparing batch and uploading ${counts.actionable_count || 0} actionable row${Number(counts.actionable_count || 0) === 1 ? "" : "s"}.`, "success");
     await processActiveBatch();
   } catch (error) {
     console.error("bulk upload error:", error);
@@ -696,7 +706,7 @@ async function uploadBatch() {
     setMessage(`Upload failed before completion: ${error.message || "network/server error"}. Draft kept on this device; use Download Draft before retrying if needed.`, "error");
   } finally {
     uploadButton.disabled = false;
-    uploadButton.textContent = "Stage Batch";
+    uploadButton.textContent = "Upload Weights";
   }
 }
 

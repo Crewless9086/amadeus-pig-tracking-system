@@ -6,10 +6,11 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.
 - P0 Bulk Upload HTML/JSON Failure: owner entered 73 entries with about 21 pen changes; upload returned HTML/non-JSON (`Unexpected token '<'`) instead of structured JSON. JSON-safe hotfix is merged, but live retest still failed through the old synchronous path.
-- P0 Supabase-First Durable Bulk Rail: active branch `p0-bulk-supabase-durable-rail`; stage the full draft into Supabase first, process rows in chunks, preserve row-level status, support retry/resume, and keep Google Sheets as downstream compatibility sync.
+- P0 Supabase-First Durable Bulk Rail: merged, but owner-facing staging/chunk mechanics are confusing and must be hidden.
+- P0 Simple Bulk Upload UX: active branch `p0-bulk-simple-auto-upload`; owner workflow must be Save Draft, Upload Weights, Download Draft, Import Draft. Upload Weights stages and processes chunks automatically.
 - Bulk-weight draft recovery requirement: typed rows must autosave to durable browser storage, survive refresh, survive upload failure, import from downloaded draft JSON, and remain exportable until a complete confirmed upload clears them.
-- Do not ask the owner to manually re-enter/test 71 or 73 rows again until automated 73-row + 21 pen-change, chunking, import/download, failure/retry, and non-JSON response pressure tests pass and the durable rail is deployed.
-- Decision made: Google Sheets/Render synchronous upload is not reliable enough for large weekly batches; use a narrow additive Supabase batch/audit rail before downstream Sheets sync.
+- Do not ask the owner to manually re-enter/test 71 or 73 rows again until automated 73-row + 21 pen-change, auto-processing, import/download, failure/retry, duplicate/already-recorded, and blank/no-change wording tests pass and the simple flow is deployed.
+- Decision made: Google Sheets/Render synchronous upload is not reliable enough for large weekly batches; use Supabase batch/audit rail before downstream Sheets sync, but hide that complexity from the owner.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
 - OP-002 Bulk Weight Reliability And Audit Trail: build-ready at 96%; mocked 71-row pressure probe proved partial-success behavior and the audit/UI fix direction.

@@ -103,13 +103,13 @@ async function main() {
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 60, success_count: 60, failed_count: 0 }), false);
 
   const message = helpers.uploadFailureMessage({ message: "Batch partial", status: "partial_failure", expected_count: 71, success_count: 60, failed_count: 11, blocked_count: 0, skipped_count: 0, failed_rows: [{ error: { message: "timeout after 60" } }] });
-  assert(message.includes("Expected 71"));
+  assert(message.includes("Actionable 71"));
   assert(message.includes("failed 11"));
   assert(message.includes("Draft kept"));
   assert(message.includes("timeout after 60"));
 
   helpers.persistDraft({ statusLabel: "Saved" });
-  const draftKey = [...storage.keys()].find((key) => key.startsWith("bulkWeightsDraft:v2:"));
+  const draftKey = [...storage.keys()].find((key) => key.startsWith("bulkWeightsDraft:v"));
   assert(storage.has(draftKey), "Save Draft should write durable localStorage");
   const storedDraft = JSON.parse(storage.get(draftKey));
   assert.strictEqual(storedDraft.expected_row_count, 1);
@@ -132,7 +132,7 @@ async function main() {
   const htmlData = await helpers.parseBulkJsonResponse(htmlResponse, "/api/pig-weights/weights-batch");
   assert.strictEqual(htmlData.error, "non_json_response");
   assert.strictEqual(htmlData.http_status, 502);
-  assert(htmlData.message.includes("Server returned non-JSON response"));
+  assert(htmlData.message.includes("could not read"));
   assert(htmlData.message.includes("Your draft is still saved"));
 
   const invalidJsonResponse = {
@@ -143,12 +143,12 @@ async function main() {
   };
   const invalidData = await helpers.parseBulkJsonResponse(invalidJsonResponse, "/api/pig-weights/weights-batch");
   assert.strictEqual(invalidData.error, "invalid_json_response");
-  assert(invalidData.message.includes("invalid JSON"));
+  assert(invalidData.message.includes("unreadable response"));
 
   helpers.clearUploadedAndDuplicateDraftRows({ success: true, expected_count: 1, processed_count: 1, success_count: 1, failed_count: 0, blocked_count: 0 });
   assert(!storage.has(draftKey), "complete confirmed upload may clear the localStorage draft");
 
-  storage.set("bulkWeightsDraft:v2:2026-06-15", JSON.stringify({
+  storage.set("bulkWeightsDraft:v2026-06-15", JSON.stringify({
     ...storedDraft,
     weight_date: "2026-06-15",
     saved_at: "2026-06-28T12:00:00.000Z",

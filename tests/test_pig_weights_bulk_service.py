@@ -60,7 +60,7 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(result["success"])
         self.assertEqual(result["blocked_count"], 1)
-        self.assertIn("already has a weight", result["blocked_rows"][0]["reason"])
+        self.assertIn("Already recorded for this date", result["blocked_rows"][0]["reason"])
         self.assertEqual(result["blocked_rows"][0]["existing"]["weight_log_id"], "WGT-1")
 
     def test_save_bulk_uses_optional_move_service_for_accepted_rows(self):
@@ -145,7 +145,7 @@ class BulkWeightServiceTests(unittest.TestCase):
             "blocked_rows": [{
                 "pig_id": "PIG-OLD",
                 "tag_number": "2",
-                "reason": "This pig already has a weight entry for this date.",
+                "reason": "Already recorded for this date.",
             }],
         }
 
@@ -178,7 +178,7 @@ class BulkWeightServiceTests(unittest.TestCase):
             "accepted_rows": [],
             "blocked_rows": [{
                 "pig_id": "PIG-OLD",
-                "reason": "This pig already has a weight entry for this date.",
+                "reason": "Already recorded for this date.",
             }],
         }
 
@@ -396,7 +396,7 @@ class BulkWeightServiceTests(unittest.TestCase):
             "skipped_count": 0,
             "blocked_count": 1,
             "accepted_rows": [],
-            "blocked_rows": [{"row_index": 0, "pig_id": "PIG-1", "reason": "This pig already has a weight entry for this date."}],
+            "blocked_rows": [{"row_index": 0, "pig_id": "PIG-1", "reason": "Already recorded for this date."}],
             "skipped_rows": [],
         }
 
@@ -641,6 +641,37 @@ class DurableBulkWeightBatchServiceTests(unittest.TestCase):
         self.assertEqual(body["endpoint"], "/api/pig-weights/bulk-batches")
         self.assertFalse(body["writes_to_google_sheets"])
         self.assertFalse(body["writes_to_supabase"])
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_duplicate_weight_without_move_is_already_recorded_not_blocking(self):
+        rows = [{"pig_id": "PIG-1", "tag_number": "1", "weight_kg": "61", "moved_to_pen_id": "", "condition_notes": ""}]
+        preflight = {
+            "success": False,
+            "submitted_count": 1,
+            "visible_count": 1,
+            "expected_count": 0,
+            "accepted_count": 0,
+            "weight_count": 0,
+            "movement_only_count": 0,
+            "duplicate_weight_movement_count": 0,
+            "blocked_count": 1,
+            "skipped_count": 0,
+            "accepted_rows": [],
+            "blocked_rows": [{"row_index": 0, "pig_id": "PIG-1", "tag_number": "1", "reason": "Already recorded for this date."}],
+            "skipped_rows": [],
+        }
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)):
+            staged, status = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-DUP", "weight_date": "2026-06-22", "rows": rows})
+            result, process_status = bulk_weight_batch_service.process_bulk_weight_batch(staged["batch_id"], chunk_size=10)
+
+        self.assertEqual(status, 201)
+        self.assertEqual(process_status, 200)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["counts"]["duplicate_count"], 1)
+        self.assertEqual(result["counts"]["blocked_count"], 0)
+        self.assertEqual(result["counts"]["remaining_count"], 0)
+        self.assertEqual(result["rows"][0]["status"], "duplicate")
+        self.assertEqual(result["rows"][0]["status_reason"], "Already recorded for this date.")
 
 if __name__ == "__main__":
 

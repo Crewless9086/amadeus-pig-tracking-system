@@ -2,6 +2,25 @@
 
 # Processed Notes
 
+## 2026-06-29 Simple Bulk Upload UX
+
+Status: active P0 UX fix.
+
+Branch: `p0-bulk-simple-auto-upload`
+
+Owner live result after durable rail deploy:
+
+- The page exposed Stage Batch and backend-style remaining-row mechanics.
+- Batch Review showed 0 visible/actionable rows even though a saved draft/batch had rows.
+- The owner could not see an obvious way to finish uploading.
+
+Decision:
+
+- Keep the Supabase-first durable rail.
+- Hide staging/chunking from the owner.
+- Owner-facing flow must be Save Draft, Upload Weights, Download Draft, Import Draft.
+- Upload Weights must stage and process automatically.
+
 ## 2026-06-28 Supabase-First Durable Bulk Rail
 
 Status: active P0 build.

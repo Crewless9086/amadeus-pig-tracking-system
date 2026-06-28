@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `206d483` Add durable bulk weight batch rail
 - `981f1a5` Return JSON for bulk upload failures
 - `bf25c5e` Protect bulk weight drafts from upload failure
 - `36738bd` Polish remaining operational review views (#12)
@@ -31,10 +32,11 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Cleanup is complete enough to pause housekeeping.
 - OP-BUILD-1A, OP-BUILD-2/3/4, and remaining operational review-view polish are merged.
 - P0 draft recovery and JSON-safe upload hotfixes are merged, but owner retest still received app/server HTML from the old synchronous Google Sheets path.
-- Active P0 branch: `p0-bulk-supabase-durable-rail`.
-- Owner live test reported 73 entries with about 21 pen changes failed after the JSON-safe hotfix; this confirmed the synchronous Google Sheets upload path is not reliable enough for large weekly batches.
-- Current P0 direction: Supabase-first durable bulk-weight batch staging, row audit records, chunked processing, resumable retry, and Google Sheets as downstream compatibility sync.
-- No further owner manual 71/73-row retest should happen until automated 73-row + 21 pen-change, chunking, import/download, failure/retry, and non-JSON pressure tests pass and the durable rail is deployed.
+- P0 durable rail is merged, but owner live test found the exposed Stage Batch / remaining rows flow is confusing and incomplete for farm use.
+- Active P0 branch: `p0-bulk-simple-auto-upload`.
+- Current P0 direction: keep Supabase-first durable staging/chunking internally, but make owner workflow only Save Draft, Upload Weights, Download Draft, and Import Draft.
+- Upload Weights must stage, process chunks automatically, show plain progress, and only reveal Continue Upload / Retry Failed Rows if interrupted or unresolved.
+- No further owner manual 71/73-row retest should happen until automated 73-row + 21 pen-change, auto-processing, import/download, failure/retry, and duplicate/skipped wording tests pass and the simple flow is deployed.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

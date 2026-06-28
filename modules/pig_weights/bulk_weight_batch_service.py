@@ -69,7 +69,7 @@ def _row_has_action(row):
 
 def _counts_from_records(row_records):
     visible = len(row_records)
-    actionable = len([row for row in row_records if row.get("status") != "skipped"])
+    actionable = len([row for row in row_records if row.get("status") not in {"skipped", "duplicate"}])
     weight_rows = len([row for row in row_records if row.get("result_json", {}).get("has_weight")])
     movement_rows = len([row for row in row_records if row.get("result_json", {}).get("has_pen_change")])
     skipped = len([row for row in row_records if row.get("status") == "skipped"])
@@ -113,7 +113,11 @@ def _build_row_records(batch_id, payload, preflight):
     for item in preflight.get("accepted_rows", []):
         by_index[item.get("row_index")] = ("staged", item.get("action_type", "weight"), item.get("reason", ""), item)
     for item in preflight.get("blocked_rows", []):
-        by_index[item.get("row_index")] = ("blocked", "blocked", item.get("reason", "Blocked by preflight."), item)
+        reason = item.get("reason", "Blocked by preflight.")
+        if "already has a weight" in reason.lower() or "already recorded" in reason.lower():
+            by_index[item.get("row_index")] = ("duplicate", "duplicate_weight", "Already recorded for this date.", item)
+        else:
+            by_index[item.get("row_index")] = ("blocked", "blocked", reason, item)
     for item in preflight.get("skipped_rows", []):
         by_index[item.get("row_index")] = ("skipped", "skipped", item.get("reason", "Skipped by preflight."), item)
 
