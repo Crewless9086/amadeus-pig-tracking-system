@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `2de81f2` Create active start-here docs workflow (#5)
 - `560a345` Add owner logout controls (#4)
 - `97e63a0` Add owner access session guard for SAM reads (#3)
 - `7d7dc7e` Add read-only SAM command state endpoint (#2)
@@ -17,6 +18,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 
 ## Active Branches / PRs
 
+- PR #5 is merged into `main`.
+- CLEANUP-2 is the active documentation governance cleanup branch.
 - Cleanup work must use clean worktrees from `origin/main`.
 - Do not merge polluted branches such as old SAM release branches or CHARLIE planning branches unless a later owner-approved cleanup explicitly says so.
 
@@ -25,6 +28,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - `OWNER_ACCESS_ENABLED` is supported.
 - Owner login/session exists.
 - Owner logout UX exists.
+- Owner reported `OWNER_ACCESS_ENABLED=true` login worked in production before ACCESS-1.1; logout UX has now been merged and should be live-verified after deploy.
 - Tokens must not be committed.
 - Render env vars must be configured separately.
 - `/sales/meat-leads` is owner protected when owner access is enabled.
@@ -43,7 +47,7 @@ Required owner access env vars:
 - Full-width layout is live.
 - Read-only command-state endpoint is live.
 - Frontend has not yet been switched to command-state.
-- Next SAM phase after cleanup: Phase 3A.6 frontend consumes command-state with fallback.
+- Next phase after cleanup: resolve live operational issues first, then Phase 3A.6 frontend consumes command-state with fallback.
 
 SAM safety remains unchanged:
 
@@ -85,7 +89,7 @@ SAM safety remains unchanged:
 - Old screenshots and `external_sources` need later owner review before archive/delete.
 - Mutation route guards still need ACCESS-2 later.
 - Frontend command-state consumption has not been implemented yet.
-- `planning/ToDoList.md` contains fresh owner issue notes that need triage, not deletion.
+- `planning/ToDoList.md` was triaged in CLEANUP-2 and remains preserved.
 
 ## Last Updated
 

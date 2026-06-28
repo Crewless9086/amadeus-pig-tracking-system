@@ -1,9 +1,16 @@
 # Archive
 
-## Purpose
+This folder keeps old plans, prompts, reports, and legacy docs for reference.
 
-This folder is for superseded documentation after its useful content has been migrated into the canonical `docs/` structure.
+Current truth lives in:
 
-## Rule
+- `docs/00-start-here/`
+- current architecture docs
+- current business-module docs
+- accepted ADRs
 
-Do not move legacy files here until their content has been reviewed and the replacement document is complete.
+Archived docs must not guide active work unless the owner explicitly restores them to active status.
+
+Do not delete archive files without owner approval.
+
+Do not move screenshots or external source dumps into the archive without a separate owner-approved cleanup phase.

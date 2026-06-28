@@ -14,6 +14,8 @@ for rough notes, bugs, ideas, screenshots references, and questions.
 
 This file is scratch. It is not production truth.
 
+When a note is triaged, copy the action into `NEXT_STEPS.md` and update `CURRENT_STATE.md` if it changes live status or risk.
+
 ## Future Inbox Structure
 
 Proposed folders:

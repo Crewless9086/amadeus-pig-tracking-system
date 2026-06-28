@@ -10,6 +10,8 @@ Later, use the inbox structure described in `OWNER_INBOX_GUIDE.md`.
 
 `planning/ToDoList.md` is scratch. It is not production truth and it is not the roadmap.
 
+If a note is important, copy or summarize it into `NEXT_STEPS.md` and keep enough context in `CURRENT_STATE.md` for the next session to understand the live risk.
+
 ## Triage
 
 Cursor/Codex triages owner notes into:
@@ -48,6 +50,8 @@ Use one clean terminal/worktree for releases.
 Do not do release work from a dirty or polluted branch.
 
 Do not use multi-terminal coding unless a later workflow explicitly controls separate worktrees.
+
+For cleanup and releases, prefer one clean worktree created from `origin/main`.
 
 Never use `git add .`.
 

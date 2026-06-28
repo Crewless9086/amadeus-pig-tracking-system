@@ -4,8 +4,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## P0 Operational / Live Issues
 
-- Verify owner logout works live after ACCESS-1.1 deploy.
-- Keep Render owner access env vars correct.
+- Verify owner logout works live after ACCESS-1.1 deploy from `560a345`.
+- Keep Render owner access env vars correct, especially `OWNER_ACCESS_ENABLED`, token values, and session secret.
 - Do not commit `.env`, tokens, screenshots, test-results, external sources, or unrelated owner files.
 - Investigate reported SAM pilot readiness `500` on `/sales/meat-leads`.
 - Investigate owner report that one-word Chatwoot messages became meat leads too easily.
@@ -20,9 +20,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## P2 Current Build
 
-- CLEANUP-1: active start-here docs and owner intake workflow.
+- CLEANUP-2: docs archive skeleton, owner inbox structure, and ToDoList triage.
 - ACCESS-2 planning/implementation later for mutation routes.
-- Triage `planning/ToDoList.md` into this file after owner approves touching it.
+- Keep `planning/ToDoList.md` preserved; do not wipe owner notes without explicit approval.
 
 ## P3 Planned Build
 
@@ -54,6 +54,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## Done Since Last Review
 
+- CLEANUP-1 start-here docs workflow: `2de81f2`.
 - Pig Tracker bulk-weight deploy: `ed3a27d`.
 - SAM Command Room: `f6487da`.
 - SAM full-width layout: `e41d4a6`.
