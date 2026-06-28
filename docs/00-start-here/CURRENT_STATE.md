@@ -1,4 +1,4 @@
-# Current State
+﻿# Current State
 
 This is the short live-state dashboard for the project. Keep it current after accepted phases, PR merges, and deploys.
 
@@ -6,6 +6,8 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `fe1c71f` Archive local markdown planning docs (#8)
+- `afefb5f` Triage owner notes into next steps (#7)
 - `ed2f1c3` Add docs inbox and archive governance (#6)
 - `2de81f2` Create active start-here docs workflow (#5)
 - `560a345` Add owner logout controls (#4)
@@ -19,18 +21,21 @@ Render deploys from `main` unless the service configuration says otherwise.
 
 ## Active Branches / PRs
 
-- PR #5 is merged into `main`.
-- PR #6 is merged into `main`.
-- CLEANUP-4B is the active owner-note triage branch.
-- Cleanup work must use clean worktrees from `origin/main`.
-- Do not merge polluted branches such as old SAM release branches or CHARLIE planning branches unless a later owner-approved cleanup explicitly says so.
+- PR #8 is merged into `main`.
+- Cleanup is complete enough to pause housekeeping.
+- OP-1 operational planning is active on a clean worktree.
+- OP-1.2 evidence push is active.
+- No operational build has started.
+- Owner decisions for lead qualification, logout redirect, bulk weight reliability, meat windows, stock definition, and valuation basis have been captured; read-only inspection is approved and in progress.
+- Builds require 96%+ ticket confidence and a pressure-test plan before implementation.
+- Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
 ## Current Access Status
 
 - `OWNER_ACCESS_ENABLED` is supported.
 - Owner login/session exists.
 - Owner logout UX exists.
-- Owner reported `OWNER_ACCESS_ENABLED=true` login worked in production before ACCESS-1.1; logout UX has now been merged and should be live-verified after deploy.
+- Owner reported `OWNER_ACCESS_ENABLED=true` login worked in production before ACCESS-1.1; logout UX has been merged and should remain live-verified after deploys.
 - Tokens must not be committed.
 - Render env vars must be configured separately.
 - `/sales/meat-leads` is owner protected when owner access is enabled.
@@ -49,7 +54,10 @@ Required owner access env vars:
 - Full-width layout is live.
 - Read-only command-state endpoint is live.
 - Frontend has not yet been switched to command-state.
-- Next phase after cleanup: resolve live operational issues first, then Phase 3A.6 frontend consumes command-state with fallback.
+- Phase 3A.6 has not started.
+- OP-009 SAM pilot readiness 500 must be fixed or safely degraded before Phase 3A.6.
+- Operational blockers are being pressure-tested first.
+- Current next implementation should be OP-BUILD-1A after OP-1.2 approval: OP-010 logout redirect plus OP-009 pilot readiness degraded handling.
 
 SAM safety remains unchanged:
 
@@ -87,12 +95,13 @@ SAM safety remains unchanged:
 ## Known Risks
 
 - Original `sam-meat-command-room-release` worktree is dirty and polluted.
-- Old docs and phase notes contain noise and stale architecture wording.
 - Old screenshots and `external_sources` need later owner review before archive/delete.
 - Mutation route guards still need ACCESS-2 later.
 - Frontend command-state consumption has not been implemented yet.
-- `planning/ToDoList.md` was triaged in CLEANUP-2 and is being updated again in CLEANUP-4B with fresh owner operational notes preserved.
+- OP-001, OP-002, OP-003, OP-007, OP-008, OP-009, and OP-010 are now at or above the 96% planning confidence gate; OP-004, OP-005, and OP-006 still need inspection.
+- Google Sheets may still allow operational risk if bulk writes cannot be made retry-safe and auditable.
 
 ## Last Updated
 
 2026-06-28
+

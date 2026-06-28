@@ -1,4 +1,33 @@
-# Scratch (`planning/ToDoList.md`)
+﻿# Scratch (`planning/ToDoList.md`)
+
+# Processed Notes
+
+## 2026-06-28 Operational Notes
+
+Status: moved to operational plan
+
+OP-1.1 status: owner decisions incorporated into the operational master plan; tickets require 96%+ confidence and pressure-test plans before implementation.
+
+OP-1.2 status: read-only evidence push added Supabase/Sheets/service summaries, non-mutating pressure probes, and updated confidence gates in the operational master plan and evidence log.
+
+Plan file: `docs/06-operations/OPERATIONAL_FIXES_MASTER_PLAN.md`
+
+Processed copy: `planning/inbox/processed/2026-06/ToDoList_2026-06-28_operational_notes.md`
+
+Tickets:
+
+- OP-001 Meat Lead Creation And Qualification
+- OP-002 Bulk Weight Reliability And Audit Trail
+- OP-003 Meat Planning Weight Window Settings
+- OP-004 Pig Allocation Purpose Review Workflow
+- OP-005 Beacon Full-Width Command UI Plan
+- OP-006 Pig Detail Full-Width Web View Plan
+- OP-007 Sales Dashboard Meat-Ready Stock Visibility
+- OP-008 Current Stock Value And Sale Readiness Model
+- OP-009 SAM Pilot Readiness 500 Fix
+- OP-010 Owner Logout Redirect Preference
+
+Raw notes remain preserved below and were copied into the processed inbox file.
 
 ## Triage Status
 
@@ -100,3 +129,6 @@ PIG TRACKER IMPROVEMENTS:
 - Owner wants a current stock value/estimated value view for livestock, meat, slaughter-to-butcher, slow growers, and sales availability planning.
 - SAM Meat Sales Command Room `/sales/meat-leads` shows Pilot Control Room readiness as `--%` with `Pilot readiness unavailable: Request failed: 500`. Investigate.
 - SAM Meat Sales Command Room logout currently redirects to sign-in. Owner asks whether logout can redirect to the dashboard instead.
+
+
+
