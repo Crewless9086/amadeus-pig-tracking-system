@@ -145,8 +145,8 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(result["thresholds"]["slaughter_target_min_kg"], 80)
         self.assertEqual(result["thresholds"]["source"], "code_defaults")
         self.assertFalse(result["thresholds"]["writes_enabled"])
-        self.assertEqual(result["business_rules"]["meat_window_label"], "55-70 kg")
-        self.assertEqual(result["business_rules"]["abattoir_window_label"], "80-95 kg")
+        self.assertEqual(result["business_rules"]["meat_window_label"], "60-<80 kg")
+        self.assertEqual(result["business_rules"]["abattoir_window_label"], "80 kg+")
         self.assertEqual(result["business_rules"]["target_growth_label"], "0.500 kg/day target")
         self.assertEqual(by_id["PIG-1"]["litter_quality"], "Good")
         self.assertEqual(by_id["PIG-1"]["litter_survival_rate"], 0.9)
@@ -325,7 +325,7 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertEqual(row["meat_target_max_kg"], 75)
         self.assertEqual(row["abattoir_target_min_kg"], 90)
         self.assertEqual(result["business_rules"]["source"], "test_override")
-        self.assertEqual(result["business_rules"]["meat_window_label"], "65-75 kg")
+        self.assertEqual(result["business_rules"]["meat_window_label"], "65-<75 kg")
         self.assertFalse(result["writes_to_sheets"])
         self.assertFalse(result["writes_to_supabase"])
 
@@ -513,6 +513,95 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertIn("Pig is active/on farm.", result["analysis_points"])
 
 
+    def test_owner_weight_window_boundaries_include_80kg_plus_culls(self):
+        cases = [
+            ("PIG-LOW", "59.9", "Growing", "Before meat window", "Before abattoir window"),
+            ("PIG-MEAT-MIN", "60", "Meat Candidate", "In meat window", "Before abattoir window"),
+            ("PIG-MEAT-HIGH", "79.9", "Meat Candidate", "In meat window", "Before abattoir window"),
+            ("PIG-ABATTOIR", "80", "Slaughter Candidate", "Past meat window", "In abattoir window"),
+            ("PIG-HEAVY", "120", "Slaughter Candidate", "Past meat window", "In abattoir window"),
+        ]
+        overview_rows = [
+            {
+                "Pig_ID": pig_id,
+                "Tag_Number": pig_id[-2:],
+                "Animal_Type": "Finisher",
+                "Sex": "Male",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Grow_Out",
+                "Current_Pen_ID": "PEN-1",
+                "Current_Weight_Kg": weight,
+                "Last_Weight_Date": "2026-06-28",
+                "Age_Days": "180",
+            }
+            for pig_id, weight, _bucket, _meat, _abattoir in cases
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == "PIG_OVERVIEW":
+                return overview_rows
+            if sheet_name == "WEIGHT_LOG":
+                return [{"Pig_ID": pig_id, "Weight_Date": "2026-06-28", "Weight_Kg": weight} for pig_id, weight, *_ in cases]
+            if sheet_name == "PEN_REGISTER":
+                return [{"Pen_ID": "PEN-1", "Pen_Name": "Grower Pen"}]
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
+            result = pig_weights_service.get_pig_allocation_readiness(today=date(2026, 6, 28))
+
+        by_id = {row["pig_id"]: row for row in result["pigs"]}
+        self.assertEqual(result["business_rules"]["meat_window_label"], "60-<80 kg")
+        self.assertEqual(result["business_rules"]["abattoir_window_label"], "80 kg+")
+        for pig_id, _weight, bucket, meat_status, abattoir_status in cases:
+            with self.subTest(pig_id=pig_id):
+                self.assertEqual(by_id[pig_id]["readiness_bucket"], bucket)
+                self.assertEqual(by_id[pig_id]["meat_window_status"], meat_status)
+                self.assertEqual(by_id[pig_id]["abattoir_window_status"], abattoir_status)
+
+    def test_meat_ready_stock_summary_values_fresh_and_stale_animals_without_feed_cost(self):
+        allocation = {
+            "success": True,
+            "generated_date": "2026-06-28",
+            "thresholds": {"fresh_weight_days": 14, "stale_weight_days": 30},
+            "business_rules": {"meat_window_label": "60-<80 kg", "abattoir_window_label": "80 kg+"},
+            "pigs": [
+                {"pig_id": "PIG-MEAT", "tag_number": "1", "status": "Active", "on_farm": "Yes", "latest_weight_kg": 70, "days_since_weight": 10, "readiness_bucket": "Meat Candidate", "meat_window_status": "In meat window", "reserved_status": ""},
+                {"pig_id": "PIG-CULL", "tag_number": "2", "status": "Active", "on_farm": "Yes", "latest_weight_kg": 120, "days_since_weight": 20, "readiness_bucket": "Slaughter Candidate", "abattoir_window_status": "In abattoir window", "reserved_status": ""},
+                {"pig_id": "PIG-OLD", "tag_number": "3", "status": "Active", "on_farm": "Yes", "latest_weight_kg": 65, "days_since_weight": 40, "readiness_bucket": "Meat Candidate", "meat_window_status": "In meat window", "reserved_status": ""},
+                {"pig_id": "PIG-RES", "tag_number": "4", "status": "Active", "on_farm": "Yes", "latest_weight_kg": 75, "days_since_weight": 3, "readiness_bucket": "Allocated", "reserved_status": "Reserved"},
+            ],
+        }
+        prices = [
+            {"product_type": "half_carcass", "price_unit": "per_kg", "price_amount": 130, "active": True, "source": "test_price_book"},
+            {"product_type": "assisted_slaughter", "price_unit": "per_kg", "price_amount": 45, "active": True, "source": "test_price_book"},
+        ]
+
+        result = pig_weights_service.get_meat_ready_stock_summary(today=date(2026, 6, 28), allocation=allocation, price_entries=prices)
+        by_id = {row["pig_id"]: row for row in result["pigs"]}
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["no_feed_cost_included"])
+        self.assertFalse(result["sam_availability_enabled"])
+        self.assertEqual(by_id["PIG-MEAT"]["estimated_value"], 9100)
+        self.assertEqual(by_id["PIG-CULL"]["valuation_status"], "stale_weight_review")
+        self.assertEqual(by_id["PIG-CULL"]["estimated_value"], 5400)
+        self.assertEqual(by_id["PIG-OLD"]["valuation_status"], "not_valuation_ready")
+        self.assertEqual(by_id["PIG-RES"]["category_key"], "excluded")
+
+    def test_meat_ready_stock_summary_reports_missing_price_without_inventing_value(self):
+        allocation = {
+            "thresholds": {"fresh_weight_days": 14, "stale_weight_days": 30},
+            "business_rules": {},
+            "pigs": [{"pig_id": "PIG-MEAT", "tag_number": "1", "status": "Active", "on_farm": "Yes", "latest_weight_kg": 70, "days_since_weight": 2, "readiness_bucket": "Meat Candidate", "meat_window_status": "In meat window"}],
+        }
+
+        result = pig_weights_service.get_meat_ready_stock_summary(today=date(2026, 6, 28), allocation=allocation, price_entries=[])
+        row = result["pigs"][0]
+
+        self.assertEqual(row["valuation_status"], "pricing_not_configured")
+        self.assertIsNone(row["estimated_value"])
+        self.assertEqual(result["summary"]["pricing_not_configured_count"], 1)
 class MeatPlanningServiceTests(unittest.TestCase):
     def test_meat_planning_groups_allocation_signals_without_writes(self):
         allocation_result = {

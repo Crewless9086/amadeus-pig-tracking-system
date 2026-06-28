@@ -11,6 +11,7 @@ const transactionsBody = document.getElementById("sales_transactions_body");
 const transactionsCount = document.getElementById("sales_transactions_count");
 const totalsGrid = document.getElementById("sales_totals_grid");
 const summaryList = document.getElementById("sales_summary_list");
+const meatReadyStockList = document.getElementById("meat_ready_stock_list");
 
 let allTransactions = [];
 
@@ -127,9 +128,11 @@ async function loadStockAvailability() {
       throw new Error("Failed to load stock availability.");
     }
     renderStockAvailability(data.totals || [], data.summary || []);
+    renderMeatReadyStock(data.meat_ready_stock || {});
   } catch (error) {
     totalsGrid.innerHTML = '<div class="empty-state"><div>Could not load available stock.</div></div>';
     summaryList.innerHTML = "";
+    if (meatReadyStockList) meatReadyStockList.innerHTML = "";
   }
 }
 
@@ -257,6 +260,49 @@ function renderStockAvailability(totals, summary) {
     : '<div class="empty-state"><div>No weight band summary available.</div></div>';
 }
 
+
+function renderMeatReadyStock(stock) {
+  if (!meatReadyStockList) return;
+  const groups = Array.isArray(stock.groups) ? stock.groups : [];
+  const pigs = Array.isArray(stock.pigs) ? stock.pigs : [];
+  if (!groups.length) {
+    meatReadyStockList.innerHTML = '<div class="empty-state"><div>No meat-ready stock model available.</div></div>';
+    return;
+  }
+
+  const groupRows = groups.map((group) => `
+    <div class="sales-stock-row">
+      <strong>${escapeHtml(group.category || group.category_key || "Stock group")}</strong>
+      <span>${Number(group.count || 0)} pig${Number(group.count || 0) === 1 ? "" : "s"}</span>
+      <span>${money(group.estimated_value || 0)}</span>
+      <span>${(group.warnings || []).length ? `${group.warnings.length} warning${group.warnings.length === 1 ? "" : "s"}` : "Ready for review"}</span>
+    </div>
+  `).join("");
+
+  const sampleRows = pigs.slice(0, 8).map((pig) => `
+    <div class="sales-stock-row">
+      <strong>${escapeHtml(pig.tag_number || pig.pig_id || "-")}</strong>
+      <span>${escapeHtml(pig.category || "-")}</span>
+      <span>${escapeHtml(pig.weight_freshness_label || "-")}</span>
+      <span>${pig.estimated_value === null || pig.estimated_value === undefined ? escapeHtml(pig.valuation_status || "not valued") : money(pig.estimated_value)}</span>
+      <span>${escapeHtml(pig.price_label || "pricing not configured")}</span>
+    </div>
+  `).join("");
+
+  meatReadyStockList.innerHTML = `
+    ${groupRows}
+    ${sampleRows || '<div class="empty-state"><div>No qualifying animals in the derived meat-ready model.</div></div>'}
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 function saleDetailHref(saleId) {
   const params = new URLSearchParams({
     return_to: "/sales-dashboard",

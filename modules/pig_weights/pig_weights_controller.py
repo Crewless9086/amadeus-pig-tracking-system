@@ -3,6 +3,7 @@ from modules.pig_weights.pig_weights_service import (
     get_litter_attention_summary,
     get_sales_stock_summary,
     get_sales_stock_totals,
+    get_meat_ready_stock_summary,
     get_pig_allocation_readiness,
     get_purpose_review_queue,
     apply_purpose_review_decisions,

@@ -1484,5 +1484,31 @@ class SamMeatRuntimeTests(unittest.TestCase):
         self.assertEqual(mock_deposit.call_args.args[1]["payment_reference"], "POP-12345")
 
 
+    def test_one_word_chat_is_not_qualified_meat_lead(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="Hi"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        lead_payload = sam_meat_runtime.build_sam_meat_lead_payload_from_inbound(inbound, facts)
+
+        self.assertEqual(lead_payload["lead_qualification_status"], "disqualified_or_noise")
+        self.assertEqual(lead_payload["status"], "new")
+        self.assertFalse(lead_payload["lead_qualification"]["appears_in_sam_command_room"])
+
+    def test_vague_price_chat_becomes_intake_candidate_not_qualified(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="price"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        lead_payload = sam_meat_runtime.build_sam_meat_lead_payload_from_inbound(inbound, facts)
+
+        self.assertIn(lead_payload["lead_qualification_status"], {"disqualified_or_noise", "intake_candidate"})
+        self.assertFalse(lead_payload["lead_qualification"]["appears_in_sam_command_room"])
+
+    def test_real_buying_intent_chat_is_qualified(self):
+        inbound = sam_meat_runtime.parse_chatwoot_inbound(inbound_payload(content="I want half carcass Set A in Riversdale next week"))
+        facts = sam_meat_runtime.extract_meat_facts(inbound["content"], inbound, environ={})
+        lead_payload = sam_meat_runtime.build_sam_meat_lead_payload_from_inbound(inbound, facts)
+
+        self.assertEqual(lead_payload["lead_qualification_status"], "qualified_meat_lead")
+        self.assertEqual(lead_payload["status"], "interested")
+        self.assertTrue(lead_payload["lead_qualification"]["appears_in_sam_command_room"])
 if __name__ == "__main__":
+
     unittest.main()
