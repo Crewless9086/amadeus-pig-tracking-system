@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, send_from_directory
+from flask import Flask, render_template, send_from_directory
 from modules.auth.owner_access import (
     configure_owner_access,
     owner_login_get,
@@ -87,8 +87,7 @@ def owner_logout_submit():
 
 @app.route("/owner/status", methods=["GET"])
 def owner_status_route():
-    body, status_code = owner_status()
-    return jsonify(body), status_code
+    return owner_status()
 
 
 @app.route("/sales/beacon-media")

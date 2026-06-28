@@ -12,12 +12,42 @@
       <div class="page-header">
         <div>
           <h1>Owner Access</h1>
+          {% if status_mode %}
+          <p>Review the current owner access session.</p>
+          {% elif session_valid %}
+          <p>Owner access is active for this browser.</p>
+          {% else %}
           <p>Enter the owner access token to continue.</p>
+          {% endif %}
         </div>
       </div>
       {% if error %}
       <div class="message-box error">{{ error }}</div>
       {% endif %}
+      {% if status_mode %}
+      <div class="form-card">
+        <p><strong>Owner access enabled:</strong> {{ "yes" if owner_access_enabled else "no" }}</p>
+        <p><strong>Local development allowed:</strong> {{ "yes" if local_dev_allowed else "no" }}</p>
+        <p><strong>Logged in:</strong> {{ "yes" if session_valid else "no" }}</p>
+        <p><strong>Session level:</strong> {{ session_role or "none" }}</p>
+        {% if session_valid %}
+        <form method="post" action="/owner/logout">
+          <button type="submit" class="button-link">Log out</button>
+        </form>
+        {% else %}
+        <a class="button-link" href="/owner/login">Log in</a>
+        {% endif %}
+      </div>
+      {% elif session_valid %}
+      <div class="form-card">
+        <p><strong>Logged in:</strong> yes</p>
+        <p><strong>Session level:</strong> {{ session_role }}</p>
+        <form method="post" action="/owner/logout">
+          <button type="submit" class="button-link">Log out</button>
+        </form>
+        <a class="button-link" href="/sales/meat-leads">Open SAM Meat Sales</a>
+      </div>
+      {% else %}
       <form method="post" action="/owner/login" class="form-card">
         <input type="hidden" name="next" value="{{ next_url }}">
         <div class="form-group">
@@ -26,6 +56,7 @@
         </div>
         <button type="submit" class="button-link">Unlock</button>
       </form>
+      {% endif %}
     </div>
   </div>
 </body>

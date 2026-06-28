@@ -72,9 +72,9 @@ class OwnerAccessTests(unittest.TestCase):
             response = self._login(READ_TOKEN)
             status = self.client.get("/owner/status", environ_base={"REMOTE_ADDR": "203.0.113.10"})
         self.assertEqual(response.status_code, 302)
-        payload = status.get_json()
-        self.assertTrue(payload["session_valid"])
-        self.assertEqual(payload["session_role"], "read")
+        self.assertEqual(status.status_code, 200)
+        self.assertIn(b"Logged in:</strong> yes", status.data)
+        self.assertIn(b"Session level:</strong> read", status.data)
 
     def test_valid_owner_admin_token_login_creates_admin_session(self):
         with patch.dict(os.environ, owner_env(), clear=False):
@@ -82,9 +82,9 @@ class OwnerAccessTests(unittest.TestCase):
             response = self._login(ADMIN_TOKEN)
             status = self.client.get("/owner/status", environ_base={"REMOTE_ADDR": "203.0.113.10"})
         self.assertEqual(response.status_code, 302)
-        payload = status.get_json()
-        self.assertTrue(payload["session_valid"])
-        self.assertEqual(payload["session_role"], "admin")
+        self.assertEqual(status.status_code, 200)
+        self.assertIn(b"Logged in:</strong> yes", status.data)
+        self.assertIn(b"Session level:</strong> admin", status.data)
 
     def test_invalid_token_denied(self):
         with patch.dict(os.environ, owner_env(), clear=False):
@@ -100,7 +100,42 @@ class OwnerAccessTests(unittest.TestCase):
             logout = self.client.post("/owner/logout", environ_base={"REMOTE_ADDR": "203.0.113.10"})
             status = self.client.get("/owner/status", environ_base={"REMOTE_ADDR": "203.0.113.10"})
         self.assertEqual(logout.status_code, 302)
-        self.assertFalse(status.get_json()["session_valid"])
+        self.assertIn(b"Logged in:</strong> no", status.data)
+        self.assertIn("session=", logout.headers.get("Set-Cookie", ""))
+
+    def test_owner_status_includes_logout_form_when_logged_in(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(READ_TOKEN)
+            status = self.client.get("/owner/status", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+        self.assertEqual(status.status_code, 200)
+        html = status.data.decode("utf-8")
+        self.assertIn('method="post" action="/owner/logout"', html)
+        self.assertIn("Log out", html)
+
+    def test_login_page_includes_logout_form_when_already_logged_in(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(READ_TOKEN)
+            login = self.client.get("/owner/login", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+        self.assertEqual(login.status_code, 200)
+        self.assertIn(b"Owner access is active for this browser.", login.data)
+        self.assertIn(b'action="/owner/logout"', login.data)
+
+    def test_logout_blocks_sales_page_and_command_state_again(self):
+        with patch.dict(os.environ, owner_env(), clear=False):
+            self._configure()
+            self._login(READ_TOKEN)
+            self.client.post("/owner/logout", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+            page = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+            command_state = self.client.get(
+                "/api/sales/meat-leads/OSK-SALES-LEAD-1/command-state",
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+        self.assertEqual(page.status_code, 302)
+        self.assertIn("/owner/login", page.headers.get("Location", ""))
+        self.assertEqual(command_state.status_code, 403)
+        self.assertEqual(command_state.get_json()["status"], "sam_command_state_access_denied")
 
     def test_session_cookie_flags_are_http_only_and_lax(self):
         with patch.dict(os.environ, owner_env(), clear=False):

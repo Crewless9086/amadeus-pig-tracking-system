@@ -104,7 +104,16 @@ def clear_owner_session():
 
 
 def owner_login_get():
-    return render_template("owner-login.html", error="", next_url=_safe_next(request.args.get("next")))
+    return render_template(
+        "owner-login.html",
+        error="",
+        next_url=_safe_next(request.args.get("next")),
+        owner_access_enabled=owner_access_enabled(),
+        local_dev_allowed=owner_local_dev_allowed(),
+        session_valid=owner_session_is_valid("read"),
+        session_role=_session_role(),
+        status_mode=False,
+    )
 
 
 def owner_login_post():
@@ -113,12 +122,22 @@ def owner_login_post():
             "owner-login.html",
             error="Owner access is not enabled.",
             next_url=_safe_next(request.form.get("next")),
+            owner_access_enabled=owner_access_enabled(),
+            local_dev_allowed=owner_local_dev_allowed(),
+            session_valid=owner_session_is_valid("read"),
+            session_role=_session_role(),
+            status_mode=False,
         ), 503
     if not _configured():
         return render_template(
             "owner-login.html",
             error="Owner access is not configured.",
             next_url=_safe_next(request.form.get("next")),
+            owner_access_enabled=owner_access_enabled(),
+            local_dev_allowed=owner_local_dev_allowed(),
+            session_valid=owner_session_is_valid("read"),
+            session_role=_session_role(),
+            status_mode=False,
         ), 503
     token = str(request.form.get("owner_token") or "").strip()
     role = _role_for_token(token)
@@ -127,6 +146,11 @@ def owner_login_post():
             "owner-login.html",
             error="Owner token was not accepted.",
             next_url=_safe_next(request.form.get("next")),
+            owner_access_enabled=owner_access_enabled(),
+            local_dev_allowed=owner_local_dev_allowed(),
+            session_valid=owner_session_is_valid("read"),
+            session_role=_session_role(),
+            status_mode=False,
         ), 403
     set_owner_session(role)
     return redirect(_safe_next(request.form.get("next")) or url_for("meat_sales_leads_page"))
@@ -138,13 +162,26 @@ def owner_logout_post():
 
 
 def owner_status():
+    return render_template(
+        "owner-login.html",
+        error="",
+        next_url="",
+        owner_access_enabled=owner_access_enabled(),
+        local_dev_allowed=owner_local_dev_allowed(),
+        session_valid=owner_session_is_valid("read"),
+        session_role=_session_role(),
+        status_mode=True,
+    )
+
+
+def owner_status_payload():
     return {
         "success": True,
         "owner_access_enabled": owner_access_enabled(),
         "local_dev_allowed": owner_local_dev_allowed(),
         "session_valid": owner_session_is_valid("read"),
-        "session_role": (session.get(SESSION_KEY) or {}).get("role", "") if isinstance(session.get(SESSION_KEY), dict) else "",
-    }, 200
+        "session_role": _session_role(),
+    }
 
 
 def _access_disabled_or_local_allowed():
@@ -155,6 +192,14 @@ def _access_disabled_or_local_allowed():
 
 def _configured():
     return bool(_secret_configured() and (_valid_token_env(OWNER_READ_TOKEN_ENV) or _valid_token_env(OWNER_ADMIN_TOKEN_ENV)))
+
+
+def _session_role():
+    data = session.get(SESSION_KEY)
+    if not isinstance(data, dict):
+        return ""
+    role = str(data.get("role") or "").strip()
+    return role if role in {"read", "admin"} else ""
 
 
 def _role_for_token(token):
