@@ -28,9 +28,10 @@ Render deploys from `main` unless the service configuration says otherwise.
 - PR #12 is merged into `main`.
 - Cleanup is complete enough to pause housekeeping.
 - OP-BUILD-1A, OP-BUILD-2/3/4, and remaining operational review-view polish are merged.
-- P0 bulk-weight draft data-loss fix is active on branch `p0-bulk-weight-draft-recovery`.
-- Owner live test reported 71 typed bulk-weight rows were lost after upload failure and refresh.
-- No further owner manual 71-row retest should happen until this P0 fix passes pressure tests and is deployed.
+- P0 bulk-weight draft recovery fix is merged, but owner retest found the upload endpoint can still return HTML instead of JSON.
+- Active P0 branch: `p0-bulk-upload-json-durable`.
+- Owner live test reported 73 entries with about 21 pen changes failed with `Unexpected token '<'`, meaning the browser received HTML from the upload path.
+- No further owner manual 71/73-row retest should happen until automated 73-row + pen-change and non-JSON pressure tests pass and the fix is deployed.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
@@ -103,8 +104,8 @@ SAM safety remains unchanged:
 - Mutation route guards still need ACCESS-2 later.
 - Frontend command-state consumption has not been implemented yet.
 - OP-001, OP-002, OP-003, OP-007, OP-008, OP-009, and OP-010 are now at or above the 96% planning confidence gate; OP-004, OP-005, and OP-006 still need inspection.
-- Bulk-weight entry had a confirmed P0 data-loss failure in live owner testing; draft recovery and failure-safe upload behavior must be fixed before another manual 71-row owner test.
-- Google Sheets may still allow operational risk if bulk writes cannot be made retry-safe and auditable, but browser draft loss must be prevented regardless of backend outcome.
+- Bulk-weight entry had confirmed P0 failures in live owner testing: first browser draft loss after upload failure, then HTML/non-JSON upload failure after draft recovery.
+- Google Sheets/Render synchronous upload may still be structurally unreliable for large batches; if JSON-safe hardening does not make 73-row batches reliable, the next P0 should be a Supabase-first durable batch rail.
 
 ## Last Updated
 

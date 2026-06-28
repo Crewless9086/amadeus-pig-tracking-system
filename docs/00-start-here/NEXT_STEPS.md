@@ -5,8 +5,10 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 ## P0 Operational / Live Issues
 
 - P0 Bulk Weight Data-Loss Fix: owner entered 71 rows, 60 were recorded in the draft/session, upload failed with a vague error, refresh lost all typed rows. Branch: `p0-bulk-weight-draft-recovery`.
+- P0 Bulk Upload HTML/JSON Failure: owner entered 73 entries with about 21 pen changes; upload returned HTML/non-JSON (`Unexpected token '<'`) instead of structured JSON. Branch: `p0-bulk-upload-json-durable`.
 - Bulk-weight draft recovery requirement: typed rows must autosave to durable browser storage, survive refresh, survive upload failure, and remain exportable until a complete confirmed upload clears them.
-- Do not ask the owner to manually re-enter/test 71 rows again until the P0 branch passes 71-row pressure tests and is deployed.
+- Do not ask the owner to manually re-enter/test 71 or 73 rows again until automated 73-row + pen-change pressure tests and non-JSON response tests pass and the fix is deployed.
+- Decision point: if Google Sheets/Render synchronous upload still returns platform HTML or times out outside app control, move to a Supabase-first durable batch rail.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
 - OP-002 Bulk Weight Reliability And Audit Trail: build-ready at 96%; mocked 71-row pressure probe proved partial-success behavior and the audit/UI fix direction.

@@ -47,6 +47,37 @@ from modules.pig_weights.pig_weights_controller import (
 pig_weights_bp = Blueprint("pig_weights", __name__)
 
 
+def _bulk_json_failure(error, status_code=500, payload=None, endpoint=""):
+    rows = (payload or {}).get("rows", [])
+    submitted_count = len(rows) if isinstance(rows, list) else 0
+    safe_error = str(error) if error else "Bulk upload failed."
+    return jsonify({
+        "ok": False,
+        "success": False,
+        "error": "bulk_upload_exception",
+        "status": "upload_failed",
+        "endpoint": endpoint,
+        "message": "Bulk weight upload failed before completion. Draft kept; no complete upload confirmation was returned.",
+        "detail": safe_error[:240],
+        "submitted_count": submitted_count,
+        "visible_count": submitted_count,
+        "expected_count": 0,
+        "processed_count": 0,
+        "success_count": 0,
+        "saved_count": 0,
+        "movement_count": 0,
+        "movement_only_count": 0,
+        "skipped_count": 0,
+        "blocked_count": 0,
+        "failed_count": submitted_count,
+        "failed_rows": [],
+        "row_results": [],
+        "retry_safe": True,
+        "writes_to_google_sheets": False,
+        "writes_to_supabase": False,
+    }), status_code
+
+
 @pig_weights_bp.route("/status", methods=["GET"])
 def status():
     return jsonify(get_status())
@@ -280,15 +311,21 @@ def add_weight_with_optional_move():
 @pig_weights_bp.route("/weights-batch/preflight", methods=["POST"])
 def preflight_weights_batch():
     payload = request.get_json(silent=True) or {}
-    result, status_code = preview_bulk_weight_entries(payload)
-    return jsonify(result), status_code
+    try:
+        result, status_code = preview_bulk_weight_entries(payload)
+        return jsonify(result), status_code
+    except Exception as exc:
+        return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint="/api/pig-weights/weights-batch/preflight")
 
 
 @pig_weights_bp.route("/weights-batch", methods=["POST"])
 def add_weights_batch():
     payload = request.get_json(silent=True) or {}
-    result, status_code = create_bulk_weight_entries(payload)
-    return jsonify(result), status_code
+    try:
+        result, status_code = create_bulk_weight_entries(payload)
+        return jsonify(result), status_code
+    except Exception as exc:
+        return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint="/api/pig-weights/weights-batch")
 
 
 @pig_weights_bp.route("/treatments", methods=["POST"])
