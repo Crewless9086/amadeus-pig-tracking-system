@@ -10,6 +10,8 @@ Feature branches do not go live unless merged to `main` or Render is intentional
 
 Always verify Render after `main` changes.
 
+Feature-branch deploy assumptions must be verified before relying on them.
+
 ## Branch Policy
 
 Start from a clean branch or clean worktree based on `origin/main`.

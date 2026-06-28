@@ -10,6 +10,8 @@ Read in this order:
 4. `DEPLOYMENT_SOP.md` - release and branch safety rules.
 5. `OWNER_INBOX_GUIDE.md` - where raw notes, screenshots, prompts, and reports go.
 
+Raw intake can use `planning/ToDoList.md` today and the `planning/inbox/` structure as it grows.
+
 ## Operating Truth
 
 Supabase is the operational truth for live state, approvals, ledgers, and future cross-agent work records.
@@ -42,3 +44,5 @@ No customer sends, public posts, payment/deposit actions, reservations, dispatch
 - `docs/05-ai/AGENT_ROLES.md`
 
 Some older docs are still useful as history or module detail. If an older doc conflicts with this folder or the accepted CHARLIE direction, treat it as legacy until it is reviewed.
+
+Archived docs live under `docs/99-archive/`. They are reference material only unless the owner restores them to active status.

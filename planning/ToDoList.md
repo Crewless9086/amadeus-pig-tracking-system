@@ -1,5 +1,11 @@
 # Scratch (`planning/ToDoList.md`)
 
+## Triage Status
+
+Triaged into `docs/00-start-here/NEXT_STEPS.md` on 2026-06-28.
+
+Raw notes are preserved below. Do not delete owner notes from this file unless the owner explicitly approves clearing processed items.
+
 Use this **only** for fleeting notes before they land in the real plan.
 
 Canonical build order: **`docs/00-start-here/NEXT_STEPS.md`**.
