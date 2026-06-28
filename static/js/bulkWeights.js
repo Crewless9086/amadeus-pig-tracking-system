@@ -233,6 +233,80 @@ function uploadFailureMessage(data, fallback = "Upload failed before completion.
   return parts.join(" ") || fallback;
 }
 
+function draftCountsForFailure() {
+  const rows = rowsPayload();
+  const fallbackRows = Object.values(draftRows || {}).map((row) => ({
+    weight_kg: row.weight_kg || "",
+    moved_to_pen_id: row.moved_to_pen_id || "",
+    condition_notes: row.condition_notes || "",
+  }));
+  const countRows = rows.length ? rows : fallbackRows;
+  const submittedCount = rows.length || Number(visibleCount.textContent || 0) || fallbackRows.length;
+  const actionableCount = countRows.filter((row) =>
+    String(row.weight_kg || "").trim() !== "" ||
+    String(row.moved_to_pen_id || "").trim() !== "" ||
+    String(row.condition_notes || "").trim() !== ""
+  ).length;
+  return { rows, submittedCount, actionableCount };
+}
+
+async function parseBulkJsonResponse(response, endpoint) {
+  const contentType = response.headers?.get ? response.headers.get("content-type") || "" : "";
+  const text = await response.text();
+  if (!contentType.toLowerCase().includes("application/json")) {
+    const counts = draftCountsForFailure();
+    return {
+      ok: false,
+      success: false,
+      error: "non_json_response",
+      status: "non_json_response",
+      endpoint,
+      http_status: response.status,
+      content_type: contentType || "unknown",
+      message: `Server returned non-JSON response from ${endpoint} (HTTP ${response.status}). Your draft is still saved.`,
+      submitted_count: counts.submittedCount,
+      visible_count: counts.submittedCount,
+      expected_count: counts.actionableCount,
+      processed_count: 0,
+      success_count: 0,
+      saved_count: 0,
+      movement_count: 0,
+      skipped_count: Math.max(counts.submittedCount - counts.actionableCount, 0),
+      blocked_count: 0,
+      failed_count: 0,
+      row_results: [],
+      response_preview: text.slice(0, 120),
+    };
+  }
+  try {
+    return JSON.parse(text || "{}");
+  } catch (error) {
+    const counts = draftCountsForFailure();
+    return {
+      ok: false,
+      success: false,
+      error: "invalid_json_response",
+      status: "invalid_json_response",
+      endpoint,
+      http_status: response.status,
+      content_type: contentType,
+      message: `Server returned invalid JSON from ${endpoint} (HTTP ${response.status}). Your draft is still saved.`,
+      submitted_count: counts.submittedCount,
+      visible_count: counts.submittedCount,
+      expected_count: counts.actionableCount,
+      processed_count: 0,
+      success_count: 0,
+      saved_count: 0,
+      movement_count: 0,
+      skipped_count: Math.max(counts.submittedCount - counts.actionableCount, 0),
+      blocked_count: 0,
+      failed_count: 0,
+      row_results: [],
+      response_preview: text.slice(0, 120),
+    };
+  }
+}
+
 function downloadTextFile(filename, text) {
   const blob = new Blob([text], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -417,6 +491,14 @@ function renderReview(data) {
   const acceptedRows = data.accepted_rows || [];
   const movementRows = acceptedRows.filter((row) => row.action_type === "movement_only");
   const duplicateMovementRows = acceptedRows.filter((row) => row.action_type === "duplicate_weight_movement");
+  const submittedCount = Number(data.submitted_count || data.visible_count || 0);
+  const actionableCount = Number(data.expected_count || data.accepted_count || 0);
+  const weightCount = Number(data.weight_count || data.saved_count || 0);
+  const movementCount = Number(data.movement_only_count || 0) + Number(data.duplicate_weight_movement_count || 0) + Number(data.movement_count || 0);
+  const processedCount = Number(data.processed_count || data.success_count || data.saved_count || 0);
+  const skippedCount = Number(data.skipped_count || 0);
+  const blockedCount = Number(data.blocked_count || 0);
+  const failedCount = Number(data.failed_count || 0);
   const blockedHtml = blockedRows.length
     ? `<div class="bulk-review-errors">
         ${blockedRows.map((row) => `
@@ -449,7 +531,7 @@ function renderReview(data) {
   reviewPanel.innerHTML = `
     <div class="bulk-review-header">
       <strong>Batch Review</strong>
-      <span>${Number(data.weight_count || data.expected_count || data.accepted_count || 0)} expected, ${Number(data.success_count || data.saved_count || 0)} processed, ${Number(data.skipped_count || 0)} skipped, ${Number(data.blocked_count || 0)} blocked, ${Number(data.failed_count || 0)} failed</span>
+      <span>${submittedCount} visible, ${actionableCount} actionable, ${weightCount} weight row${weightCount === 1 ? "" : "s"}, ${movementCount} pen change${movementCount === 1 ? "" : "s"}, ${processedCount} processed, ${skippedCount} skipped, ${blockedCount} blocked, ${failedCount} failed</span>
     </div>
     ${movementHtml}
     ${blockedHtml}
@@ -460,6 +542,7 @@ function renderReview(data) {
 
 async function preflightBatch() {
   persistDraft({ statusLabel: "Autosaved before check", validation_status: "preflight_pending" });
+  const endpoint = "/api/pig-weights/weights-batch/preflight";
   const response = await fetch("/api/pig-weights/weights-batch/preflight", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -469,7 +552,7 @@ async function preflightBatch() {
       rows: rowsPayload(),
     }),
   });
-  const data = await response.json();
+  const data = await parseBulkJsonResponse(response, endpoint);
   renderReview(data);
   return { response, data };
 }
@@ -506,6 +589,7 @@ async function uploadBatch() {
     }
 
     uploadButton.textContent = "Uploading...";
+    const uploadEndpoint = "/api/pig-weights/weights-batch";
     const uploadResponse = await fetch("/api/pig-weights/weights-batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -515,7 +599,7 @@ async function uploadBatch() {
         rows: rowsPayload(),
       }),
     });
-    const uploadData = await uploadResponse.json();
+    const uploadData = await parseBulkJsonResponse(uploadResponse, uploadEndpoint);
 
     if (!uploadResponse.ok || !uploadData.success) {
       renderReview(uploadData);
@@ -634,6 +718,7 @@ if (typeof window !== "undefined") {
     clearUploadedAndDuplicateDraftRows,
     isCompleteUploadSuccess,
     loadDraft,
+    parseBulkJsonResponse,
     persistDraft,
     uploadFailureMessage,
   };

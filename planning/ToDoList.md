@@ -21,6 +21,26 @@ Requirement:
 
 - Do not ask the owner to manually re-enter the 71-row test until draft recovery, upload-failure retention, partial-failure handling, and download/export pressure tests pass and the fix is deployed.
 
+## 2026-06-28 Bulk Upload HTML/JSON Failure
+
+Status: escalated to P0 upload-pipeline JSON fix.
+
+Branch: `p0-bulk-upload-json-durable`
+
+Evidence log: `docs/06-operations/OPERATIONAL_FIXES_EVIDENCE_LOG.md`
+
+Owner live result:
+
+- 73 bulk-weight entries entered.
+- About 21 rows included pen changes.
+- Upload returned HTML/non-JSON and the browser showed `Unexpected token '<'`.
+- Batch Review showed 73 expected, 0 processed, 43 skipped, 0 blocked, 0 failed.
+- Draft recovery appears to have kept the draft available.
+
+Requirement:
+
+- Do not ask the owner to manually re-enter or retest large batches until non-JSON response handling, JSON route error envelopes, 73-row + pen-change pressure tests, and draft preservation tests pass and the fix is deployed.
+
 ## 2026-06-28 Operational Notes
 
 Status: moved to operational plan

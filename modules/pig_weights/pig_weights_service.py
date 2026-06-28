@@ -5137,6 +5137,9 @@ def preflight_bulk_weight_entries(payload: dict):
             "success": False,
             "error": "validation_error",
             "errors": ["Weight_Date is required and must be a valid date."],
+            "submitted_count": len(source_rows) if isinstance(source_rows, list) else 0,
+            "visible_count": len(source_rows) if isinstance(source_rows, list) else 0,
+            "expected_count": 0,
             "accepted_rows": [],
             "blocked_rows": [],
             "skipped_rows": [],
@@ -5148,6 +5151,9 @@ def preflight_bulk_weight_entries(payload: dict):
             "success": False,
             "error": "validation_error",
             "errors": ["Rows must be a list."],
+            "submitted_count": 0,
+            "visible_count": 0,
+            "expected_count": 0,
             "accepted_rows": [],
             "blocked_rows": [],
             "skipped_rows": [],
@@ -5273,6 +5279,12 @@ def preflight_bulk_weight_entries(payload: dict):
         "ok": preflight_success,
         "success": preflight_success,
         "message": "Batch preflight passed." if len(blocked_rows) == 0 else "Batch has rows that need attention.",
+        "submitted_count": len(source_rows),
+        "visible_count": len(source_rows),
+        "expected_count": len(accepted_rows),
+        "processed_count": 0,
+        "success_count": 0,
+        "failed_count": 0,
         "accepted_count": len(accepted_rows),
         "weight_count": sum(1 for row in accepted_rows if row["action_type"] == "weight"),
         "movement_only_count": sum(1 for row in accepted_rows if row["action_type"] == "movement_only"),
@@ -5451,8 +5463,21 @@ def save_bulk_weight_entries(payload: dict):
         "writes_to_google_sheets": bool(success_count),
         "writes_to_supabase": False,
     }
-    result["audit"] = _write_bulk_batch_audit(batch_id, payload, result, batch_date)
-    return result, 201 if success else 207 if success_count else 409
+    try:
+        result["audit"] = _write_bulk_batch_audit(batch_id, payload, result, batch_date)
+    except Exception as exc:
+        result["audit"] = {
+            "batch_log": {"success": False, "error": str(exc)},
+            "row_log": {"attempted": 0, "written": 0, "failed": 0},
+            "warnings": [f"Could not write bulk batch audit: {exc}"],
+        }
+        if result["success"]:
+            result["ok"] = False
+            result["success"] = False
+            result["error"] = "audit_write_failed"
+            result["status"] = "partial_failure"
+            result["message"] = "Bulk rows were processed, but the audit trail failed. Draft kept for owner review."
+    return result, 201 if result.get("success") else 207 if success_count else 409
 
 
 def _bulk_row_results(saved_rows, movement_rows, failed_rows, blocked_rows, skipped_rows):

@@ -2113,6 +2113,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("bulkWeightsDraft:v", js)
         self.assertIn("scheduleAutosave", js)
         self.assertIn("findLatestStoredDraft", js)
+        self.assertIn("parseBulkJsonResponse", js)
+        self.assertIn("Server returned non-JSON response", js)
+        self.assertIn("visible,", js)
+        self.assertIn("actionable,", js)
+        self.assertIn("pen change", js)
         self.assertIn("Recovered unsent bulk weight draft", js)
         self.assertIn("Upload failed before completion", js)
         self.assertIn("Draft kept", js)
@@ -2121,6 +2126,11 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("clearUploadedAndDuplicateDraftRows", js)
         self.assertIn("Duplicate weights protected", js)
         self.assertIn("Blocked/existing rows skipped", js)
+
+        routes = Path("modules/pig_weights/pig_weights_routes.py").read_text(encoding="utf-8")
+        self.assertIn("def _bulk_json_failure", routes)
+        self.assertIn('endpoint="/api/pig-weights/weights-batch"', routes)
+        self.assertIn('endpoint="/api/pig-weights/weights-batch/preflight"', routes)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,56 @@
 # Operational Fixes Evidence Log
 
+## P0 Bulk Upload HTML/JSON Failure - 2026-06-28
+
+Mode: emergency JSON-safety and upload-pipeline hardening. No production Google Sheets write, Supabase write, migration, customer send, public post, payment/deposit change, reservation change, stock/lifecycle write, screenshot, external source, asset, `.env`, or `.claude` change was made.
+
+Owner live failure:
+
+- Owner entered 73 bulk-weight entries.
+- About 21 rows included pen changes.
+- Upload failed with `Unexpected token '<', "<html> <"... is not valid JSON`.
+- Batch Review showed 73 expected, 0 processed, 43 skipped, 0 blocked, 0 failed.
+- Draft recovery appears to have protected the browser draft, but the upload pipeline returned HTML instead of structured JSON.
+
+Root cause class found in code:
+
+- Upload endpoint is `POST /api/pig-weights/weights-batch`.
+- Preflight endpoint is `POST /api/pig-weights/weights-batch/preflight`.
+- Both routes returned JSON only after service functions returned normally.
+- If a service, Google Sheets, audit, validation, or other app-controlled exception escaped the service, Flask could return an HTML error page.
+- The frontend called `response.json()` directly, so an HTML Flask/Render error produced the raw `Unexpected token '<'` parser error.
+- A Render/platform timeout can still return HTML outside Flask control; the frontend must handle that safely, and durable Supabase-first processing is needed if synchronous Sheets remains unreliable.
+
+Batch count explanation:
+
+- The review count was overloaded. It did not clearly separate visible rows, actionable rows, weight rows, movement-only rows, skipped blank/no-change rows, blocked rows, and failed rows.
+- A 73-row batch with about 21 pen changes and 43 blank/no-change rows implies roughly 30 actionable rows. The new pressure test models 9 weight rows + 21 movement-only rows + 43 skipped rows.
+
+P0 fix direction:
+
+- Frontend detects non-JSON or invalid JSON responses before parsing.
+- Non-JSON response becomes a structured failure object with endpoint, HTTP status, content type, response preview, and `Server returned non-JSON response... Your draft is still saved`.
+- Upload/preflight failure still renders Batch Review and keeps localStorage intact.
+- Batch Review now shows visible, actionable, weight rows, pen changes, processed, skipped, blocked, and failed counts.
+- Bulk routes wrap app-controlled exceptions and return JSON envelopes instead of Flask HTML.
+- Bulk service audit failures degrade inside the result so processed counts are preserved.
+
+Pressure-test coverage added:
+
+- Node draft-recovery harness covers HTML non-JSON response and invalid JSON response.
+- Backend route tests prove upload/preflight service exceptions return JSON with no Google Sheets/Supabase write flags.
+- Backend pressure test covers 73 submitted rows, 21 pen changes, 43 skipped blank/no-change rows, and explainable counts.
+- Backend test covers audit exception after row processing as partial JSON summary instead of route-level crash.
+
+Durable rail decision:
+
+- This branch is an emergency hybrid: app-controlled JSON errors plus draft-safe frontend behavior.
+- If owner/live/staged tests still show Render timeout HTML or unreliable synchronous Sheets behavior for large batches, the next P0 should be a Supabase-first durable batch rail with stored batch operation, stored row records, chunked processing, idempotent retries, downstream Sheets sync, and UI operation status.
+
+Owner retest gate:
+
+- The owner should not manually retype or retest large 71/73-row batches until this branch is reviewed, merged, deployed, and automated 73-row + pen-change/non-JSON pressure tests pass.
+
 ## P0 Bulk Weight Live Failure - 2026-06-28
 
 Mode: emergency data-loss fix. No production Google Sheets write, Supabase write, migration, customer send, public post, payment/deposit change, reservation change, stock/lifecycle write, screenshot, external source, asset, `.env`, or `.claude` change was made.

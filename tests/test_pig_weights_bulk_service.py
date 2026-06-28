@@ -95,6 +95,39 @@ class BulkWeightServiceTests(unittest.TestCase):
         save_weight.assert_called_once()
         self.assertEqual(save_weight.call_args.args[0]["weight_date"], date(2026, 6, 1))
 
+    def test_save_bulk_audit_exception_returns_partial_json_summary(self):
+        preflight_result = {
+            "success": True,
+            "accepted_count": 1,
+            "skipped_count": 0,
+            "blocked_count": 0,
+            "accepted_rows": [{
+                "pig_id": "PIG-1",
+                "weight_date": "2026-06-01",
+                "weight_kg": 42.5,
+                "weighed_by": "WebApp",
+                "moved_to_pen_id": "",
+                "condition_notes": "",
+            }],
+        }
+
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight_result, 200)), \
+             patch.object(pig_weights_service, "_write_bulk_batch_audit", side_effect=RuntimeError("audit timeout")), \
+             patch.object(pig_weights_service, "save_weight_entry_with_optional_move", return_value={
+                 "success": True,
+                 "saved": {"pig_id": "PIG-1"},
+                 "movement_logged": False,
+             }):
+            result, status = pig_weights_service.save_bulk_weight_entries({"weight_date": "2026-06-01", "rows": [{"pig_id": "PIG-1"}]})
+
+        self.assertEqual(status, 207)
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error"], "audit_write_failed")
+        self.assertEqual(result["saved_count"], 1)
+        self.assertEqual(result["success_count"], 1)
+        self.assertIn("audit trail failed", result["message"])
+
     def test_save_bulk_uploads_accepted_rows_when_duplicates_are_blocked(self):
         preflight_result = {
             "success": False,
@@ -219,6 +252,51 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(result["movement_only_count"], 1)
         self.assertEqual(result["accepted_rows"][0]["action_type"], "movement_only")
 
+    def test_preflight_73_rows_with_21_pen_changes_has_explainable_counts(self):
+        active_pigs = [
+            {
+                "pig_id": f"PIG-{index:02d}",
+                "tag_number": str(index),
+                "current_pen_id": "PEN-1",
+                "current_pen_name": "Old Pen",
+            }
+            for index in range(73)
+        ]
+        rows = []
+        for index in range(73):
+            row = {
+                "pig_id": f"PIG-{index:02d}",
+                "tag_number": str(index),
+                "weight_kg": "",
+                "moved_to_pen_id": "",
+                "condition_notes": "",
+            }
+            if index < 9:
+                row["weight_kg"] = str(60 + index)
+            elif index < 30:
+                row["moved_to_pen_id"] = "PEN-2"
+            rows.append(row)
+
+        with patch.object(pig_weights_service, "get_active_pigs", return_value=active_pigs), \
+             patch.object(pig_weights_service, "get_pens", return_value=[{"pen_id": "PEN-1"}, {"pen_id": "PEN-2"}]), \
+             patch.object(pig_weights_service, "get_all_records", return_value=[]):
+            result, status = pig_weights_service.preflight_bulk_weight_entries({
+                "weight_date": "2026-06-28",
+                "rows": rows,
+            })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["submitted_count"], 73)
+        self.assertEqual(result["visible_count"], 73)
+        self.assertEqual(result["expected_count"], 30)
+        self.assertEqual(result["accepted_count"], 30)
+        self.assertEqual(result["weight_count"], 9)
+        self.assertEqual(result["movement_only_count"], 21)
+        self.assertEqual(result["skipped_count"], 43)
+        self.assertEqual(result["processed_count"], 0)
+        self.assertEqual(result["failed_count"], 0)
+
     def test_save_bulk_logs_duplicate_weight_pen_move_without_new_weight(self):
         preflight_result = {
             "success": True,
@@ -333,6 +411,49 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(result["row_results"][0]["status"], "blocked")
         self.assertFalse(result["writes_to_google_sheets"])
         save_weight.assert_not_called()
+
+    def test_bulk_upload_route_returns_json_on_service_exception(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        client = app.test_client()
+        payload = {
+            "weight_date": "2026-06-28",
+            "rows": [{"pig_id": "PIG-1", "weight_kg": "61"}],
+        }
+        with patch.object(pig_weights_routes, "create_bulk_weight_entries", side_effect=RuntimeError("sheet timeout")):
+            response = client.post("/api/pig-weights/weights-batch", json=payload)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.content_type, "application/json")
+        body = response.get_json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"], "bulk_upload_exception")
+        self.assertEqual(body["endpoint"], "/api/pig-weights/weights-batch")
+        self.assertEqual(body["submitted_count"], 1)
+        self.assertFalse(body["writes_to_google_sheets"])
+        self.assertFalse(body["writes_to_supabase"])
+
+    def test_bulk_preflight_route_returns_json_on_service_exception(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        client = app.test_client()
+        payload = {
+            "weight_date": "2026-06-28",
+            "rows": [{"pig_id": "PIG-1", "weight_kg": "61"}],
+        }
+        with patch.object(pig_weights_routes, "preview_bulk_weight_entries", side_effect=RuntimeError("preflight timeout")):
+            response = client.post("/api/pig-weights/weights-batch/preflight", json=payload)
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.content_type, "application/json")
+        body = response.get_json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["error"], "bulk_upload_exception")
+        self.assertEqual(body["endpoint"], "/api/pig-weights/weights-batch/preflight")
+        self.assertEqual(body["submitted_count"], 1)
+        self.assertFalse(body["writes_to_google_sheets"])
 if __name__ == "__main__":
 
     unittest.main()
