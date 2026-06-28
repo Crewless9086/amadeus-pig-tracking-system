@@ -1,44 +1,43 @@
-# Next Steps
+﻿# Next Steps
 
-This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or the future inbox, then get triaged here.
+This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or `planning/inbox/`, then get triaged here.
 
 ## P0 Operational / Live Issues
 
-- Verify owner logout works live after ACCESS-1.1 deploy from `560a345`.
-- Review logout redirect preference: owner asked whether logout from SAM can land on the dashboard instead of the sign-in page.
+- OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
+- OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
+- OP-002 Bulk Weight Reliability And Audit Trail: build-ready at 96%; mocked 71-row pressure probe proved partial-success behavior and the audit/UI fix direction.
+- OP-010 Owner Logout Redirect Preference: build-ready at 98%; change logout redirect to the main dashboard `/` only after OP-1.2 is accepted.
 - Keep Render owner access env vars correct, especially `OWNER_ACCESS_ENABLED`, token values, and session secret.
 - Do not commit `.env`, tokens, screenshots, test-results, external sources, or unrelated owner files.
-- Investigate reported SAM pilot readiness `500` on `/sales/meat-leads`.
-- Investigate owner report that one-word Chatwoot messages became meat leads too easily.
-- Investigate bulk weight partial upload/reporting concern from the owner note before doing more Pig Tracker changes.
-- Confirm whether bulk weight reliability needs a Google Sheets timeout fix, Supabase-backed write path, or better audit/log trail before weekly use continues.
 
 ## P1 Money Path
 
-- SAM Phase 3A.6: frontend consumes the read-only command-state endpoint with fallback to existing frontend computation.
+- OP-001 Meat Lead Creation And Qualification: build-ready at 96%; read-only Supabase inspection proved weak owner-labeled chats are current lead rows with unknown product and missing facts.
+- OP-003 Meat Planning Weight Window Settings: planning-ready at 96%; owner defaults are 60-80kg meat and 80kg+ abattoir/cull, including heavy culls.
+- OP-007 Sales Dashboard Meat-Ready Stock Visibility: build-ready at 96%; read-only dashboard and allocation sources were confirmed.
+- OP-008 Current Stock Value And Sale Readiness Model: build-ready at 96%; price, stock, weight/status sources and owner freshness rule are confirmed.
 - Keep no-send, no-payment, no-reservation, and no-public-post gates intact.
-- meat lead creation quality: explain current lead creation rules, then plan stricter lead qualification so short/noisy chats do not become real sales leads too easily.
-- meat planning weight windows: clarify current meat window and abattoir window settings on `/meat-planning`; owner suggested meat window 60-80kg and abattoir window 80kg+.
-- sales stock questions: confirm whether `/sales-dashboard` Available Stock shows meat-ready stock; add planning if the current table does not answer that clearly.
-- Current stock value planning: design a future value view for livestock, meat, slaughter-to-butcher, slow growers, and sales availability decisions.
 
 ## P2 Current Build
 
-- CLEANUP-4B: triage fresh owner notes from `planning/ToDoList.md` into active docs.
-- Keep cleanup conservative: no archive, move, delete, restore, or asset cleanup until separately approved.
+- OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
+- OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
+- OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.
+- Cleanup is paused except for owner-approved inventory/index work.
 - ACCESS-2 planning/implementation later for mutation routes.
 - Keep `planning/ToDoList.md` preserved; do not wipe owner notes without explicit approval.
 
 ## P3 Planned Build
 
+- OP-004 Pig Allocation Purpose Review Workflow.
+- OP-005 Beacon Full-Width Command UI Plan.
+- OP-006 Pig Detail Full-Width Web View Plan.
+- Phase 3A.6: SAM frontend consumes the read-only command-state endpoint with fallback only after OP-009 is fixed or safely degraded.
 - Agent Collaboration Ledger SQL review and migration later.
 - CHARLIE read-only owner cockpit.
 - FRED transport MVP planning/build.
 - Oom Sakkie visual/asset cleanup later.
-- Beacon media page full-width/readability redesign.
-- Pig detail page full-width dashboard layout.
-- Pig allocation review/action planning.
-- pig allocation workflow: define how owner reviews recommendations on `/pig-allocation`, drills into an animal, and assigns purpose safely.
 
 ## P4 Ideas / Backlog
 
@@ -54,13 +53,18 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## Blocked / Waiting
 
+- Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
+- Google Sheets vs Supabase decision for bulk weights remains open.
+- Migration decisions are blocked until a specific OP build proves one is required.
+- Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
-- Do not edit old untracked start-here handover docs until owner approves a cleanup phase for them.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.
 - Static agent assets need asset-register review before any commit or cleanup.
 
 ## Done Since Last Review
 
+- Archive local markdown planning docs: `fe1c71f`.
+- Owner-note triage into active docs: `afefb5f`.
 - Docs inbox/archive governance: `ed2f1c3`.
 - CLEANUP-1 start-here docs workflow: `2de81f2`.
 - Pig Tracker bulk-weight deploy: `ed3a27d`.
@@ -69,3 +73,4 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - SAM read-only command-state endpoint: `7d7dc7e`.
 - Owner access session guard: `97e63a0`.
 - Owner logout UX: `560a345`.
+
