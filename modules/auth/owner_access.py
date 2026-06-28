@@ -158,7 +158,7 @@ def owner_login_post():
 
 def owner_logout_post():
     clear_owner_session()
-    return redirect(url_for("owner_login_page"))
+    return redirect("/")
 
 
 def owner_status():
