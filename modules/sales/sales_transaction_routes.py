@@ -2,6 +2,7 @@ import ipaddress
 import os
 
 from flask import Blueprint, jsonify, request
+from modules.auth.owner_access import owner_session_is_valid, require_owner_read_access
 
 from modules.oom_sakkie.sales_campaign_store import (
     create_draft_order_from_sales_lead,
@@ -111,6 +112,8 @@ def _sam_command_state_access_allowed(remote_addr, headers):
     except ValueError:
         return False
     if address.is_loopback:
+        return True
+    if owner_session_is_valid("read"):
         return True
     expected = str(os.getenv("SAM_COMMAND_STATE_OWNER_TOKEN", "") or "").strip()
     if len(expected) < 32:
@@ -450,6 +453,9 @@ def beacon_facebook_post_executions():
 
 @sales_bp.route("/sales/meat-leads", methods=["GET"])
 def meat_sales_leads_list():
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     result, status_code = list_sales_leads(
         limit=request.args.get("limit", 50),
         status_filter=request.args.get("status", "launch_test"),
@@ -481,6 +487,9 @@ def meat_price_book_create():
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/contract", methods=["GET"])
 def meat_sales_lead_contract(lead_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     result, status_code = get_sales_lead_preorder_contract(lead_id)
     return jsonify(result), status_code
 
@@ -557,6 +566,10 @@ def meat_sales_lead_learning_events(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/pricing-estimate", methods=["GET", "POST"])
 def meat_sales_lead_pricing_estimate(lead_id):
+    if request.method == "GET":
+        guard = require_owner_read_access()
+        if guard:
+            return guard
     payload = request.get_json(silent=True) or {}
     if request.method == "GET":
         payload = {
@@ -608,6 +621,10 @@ def meat_sales_lead_final_invoice_pdf(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/meat-match", methods=["GET", "POST"])
 def meat_sales_lead_meat_match(lead_id):
+    if request.method == "GET":
+        guard = require_owner_read_access()
+        if guard:
+            return guard
     payload = request.get_json(silent=True) or {}
     if request.method == "GET":
         payload = {
@@ -621,6 +638,9 @@ def meat_sales_lead_meat_match(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/meat-ops", methods=["GET"])
 def meat_sales_lead_ops_status(lead_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     result, status_code = get_meat_ops_status(lead_id)
     return jsonify(result), status_code
 
@@ -661,12 +681,18 @@ def meat_sales_lead_instruction_drafts(lead_id):
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/fulfillment", methods=["GET"])
 def meat_sales_lead_fulfillment_timeline(lead_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     result, status_code = get_meat_fulfillment_timeline(lead_id)
     return jsonify(result), status_code
 
 
 @sales_bp.route("/sales/meat-leads/<lead_id>/reconciliation", methods=["GET"])
 def meat_sales_lead_reconciliation_status(lead_id):
+    guard = require_owner_read_access()
+    if guard:
+        return guard
     result, status_code = get_meat_reconciliation_status(lead_id)
     return jsonify(result), status_code
 

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Owner Access</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <div class="page-card">
+      <div class="page-header">
+        <div>
+          <h1>Owner Access</h1>
+          <p>Enter the owner access token to continue.</p>
+        </div>
+      </div>
+      {% if error %}
+      <div class="message-box error">{{ error }}</div>
+      {% endif %}
+      <form method="post" action="/owner/login" class="form-card">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <div class="form-group">
+          <label for="owner_token">Owner token</label>
+          <input id="owner_token" name="owner_token" type="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="button-link">Unlock</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
