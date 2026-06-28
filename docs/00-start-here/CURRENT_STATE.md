@@ -6,6 +6,10 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `36738bd` Polish remaining operational review views (#12)
+- `ab8e504` Improve operational reliability and stock readiness (#11)
+- `a134f0d` Degrade SAM readiness and redirect logout (#10)
+- `1e735fa` Record operational evidence and build gates (#9)
 - `fe1c71f` Archive local markdown planning docs (#8)
 - `afefb5f` Triage owner notes into next steps (#7)
 - `ed2f1c3` Add docs inbox and archive governance (#6)
@@ -21,13 +25,13 @@ Render deploys from `main` unless the service configuration says otherwise.
 
 ## Active Branches / PRs
 
-- PR #8 is merged into `main`.
+- PR #12 is merged into `main`.
 - Cleanup is complete enough to pause housekeeping.
-- OP-1 operational planning is active on a clean worktree.
-- OP-1.2 evidence push is active.
-- No operational build has started.
-- Owner decisions for lead qualification, logout redirect, bulk weight reliability, meat windows, stock definition, and valuation basis have been captured; read-only inspection is approved and in progress.
-- Builds require 96%+ ticket confidence and a pressure-test plan before implementation.
+- OP-BUILD-1A, OP-BUILD-2/3/4, and remaining operational review-view polish are merged.
+- P0 bulk-weight draft data-loss fix is active on branch `p0-bulk-weight-draft-recovery`.
+- Owner live test reported 71 typed bulk-weight rows were lost after upload failure and refresh.
+- No further owner manual 71-row retest should happen until this P0 fix passes pressure tests and is deployed.
+- Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
 ## Current Access Status
@@ -99,7 +103,8 @@ SAM safety remains unchanged:
 - Mutation route guards still need ACCESS-2 later.
 - Frontend command-state consumption has not been implemented yet.
 - OP-001, OP-002, OP-003, OP-007, OP-008, OP-009, and OP-010 are now at or above the 96% planning confidence gate; OP-004, OP-005, and OP-006 still need inspection.
-- Google Sheets may still allow operational risk if bulk writes cannot be made retry-safe and auditable.
+- Bulk-weight entry had a confirmed P0 data-loss failure in live owner testing; draft recovery and failure-safe upload behavior must be fixed before another manual 71-row owner test.
+- Google Sheets may still allow operational risk if bulk writes cannot be made retry-safe and auditable, but browser draft loss must be prevented regardless of backend outcome.
 
 ## Last Updated
 

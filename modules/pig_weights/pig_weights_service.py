@@ -5133,7 +5133,9 @@ def preflight_bulk_weight_entries(payload: dict):
 
     if not batch_date:
         return {
+            "ok": False,
             "success": False,
+            "error": "validation_error",
             "errors": ["Weight_Date is required and must be a valid date."],
             "accepted_rows": [],
             "blocked_rows": [],
@@ -5142,7 +5144,9 @@ def preflight_bulk_weight_entries(payload: dict):
 
     if not isinstance(source_rows, list):
         return {
+            "ok": False,
             "success": False,
+            "error": "validation_error",
             "errors": ["Rows must be a list."],
             "accepted_rows": [],
             "blocked_rows": [],
@@ -5264,8 +5268,10 @@ def preflight_bulk_weight_entries(payload: dict):
             } if duplicate_weight else {},
         })
 
+    preflight_success = len(blocked_rows) == 0
     return {
-        "success": len(blocked_rows) == 0,
+        "ok": preflight_success,
+        "success": preflight_success,
         "message": "Batch preflight passed." if len(blocked_rows) == 0 else "Batch has rows that need attention.",
         "accepted_count": len(accepted_rows),
         "weight_count": sum(1 for row in accepted_rows if row["action_type"] == "weight"),
@@ -5290,7 +5296,9 @@ def save_bulk_weight_entries(payload: dict):
     accepted_rows = preflight.get("accepted_rows", [])
     if preflight.get("accepted_count", 0) == 0:
         return {
+            "ok": False,
             "success": False,
+            "error": "no_bulk_rows_ready",
             "status": "no_bulk_rows_ready",
             "batch_id": batch_id,
             "operation_id": batch_id,
@@ -5414,7 +5422,9 @@ def save_bulk_weight_entries(payload: dict):
         "No new weight rows were uploaded. Review failed, blocked, or skipped rows."
     )
     result = {
+        "ok": success,
         "success": success,
+        "error": "" if success else status_text,
         "status": status_text,
         "batch_id": batch_id,
         "operation_id": batch_id,

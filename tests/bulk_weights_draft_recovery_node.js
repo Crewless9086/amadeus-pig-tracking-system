@@ -1,0 +1,139 @@
+const assert = require("assert");
+const fs = require("fs");
+const vm = require("vm");
+
+function element(overrides = {}) {
+  return {
+    value: "2026-06-15",
+    textContent: "71",
+    classList: { add() {}, remove() {} },
+    addEventListener() {},
+    querySelector() { return null; },
+    innerHTML: "",
+    selectedOptions: [],
+    options: [],
+    click() {},
+    remove() {},
+    dataset: {},
+    ...overrides,
+  };
+}
+
+const elements = new Map();
+const fakeRows = [
+  {
+    dataset: { bulkPigRow: "PIG-1", pigId: "PIG-1" },
+    querySelector(selector) {
+      if (selector === "[data-bulk-weight]") return element({ value: "61.2" });
+      if (selector === "[data-bulk-pen]") return element({ value: "" });
+      if (selector === "[data-bulk-notes]") return element({ value: "" });
+      return null;
+    },
+  },
+  {
+    dataset: { bulkPigRow: "PIG-2", pigId: "PIG-2" },
+    querySelector(selector) {
+      if (selector === "[data-bulk-weight]") return element({ value: "" });
+      if (selector === "[data-bulk-pen]") return element({ value: "PEN-2" });
+      if (selector === "[data-bulk-notes]") return element({ value: "moved" });
+      return null;
+    },
+  },
+];
+const documentStub = {
+  getElementById(id) {
+    if (!elements.has(id)) elements.set(id, element());
+    return elements.get(id);
+  },
+  querySelectorAll(selector) {
+    if (selector === "[data-bulk-pig-row]") return fakeRows;
+    return [];
+  },
+  createElement(tag) { return element({ tagName: tag }); },
+  body: { appendChild() {} },
+};
+
+elements.set("bulk_weight_date", { ...element(), value: "2026-06-15" });
+elements.set("bulk_visible_count", { ...element(), textContent: "71" });
+
+const storage = new Map();
+const sandbox = {
+  console,
+  Blob: function Blob(parts) { this.parts = parts; },
+  URL: { createObjectURL() { return "blob:test"; }, revokeObjectURL() {} },
+  document: documentStub,
+  window: {
+    localStorage: {
+      get length() { return storage.size; },
+      getItem(key) { return storage.get(key) || null; },
+      key(index) { return [...storage.keys()][index] || null; },
+      setItem(key, value) { storage.set(key, value); },
+      removeItem(key) { storage.delete(key); },
+    },
+    clearTimeout() {},
+    setTimeout(fn) { fn(); return 1; },
+    confirm() { return true; },
+  },
+  fetch: async () => ({ ok: true, json: async () => ({}) }),
+  setTimeout(fn) { fn(); return 1; },
+  clearTimeout() {},
+};
+sandbox.window.window = sandbox.window;
+
+const source = fs.readFileSync("static/js/bulkWeights.js", "utf8");
+vm.runInNewContext(source, sandbox);
+
+const helpers = sandbox.window.bulkWeightsDraftRecovery;
+assert(helpers, "draft recovery helpers should be exported for tests");
+
+const rows = {
+  "PIG-1": { weight_kg: "61.2", moved_to_pen_id: "", condition_notes: "" },
+  "PIG-2": { weight_kg: "", moved_to_pen_id: "PEN-2", condition_notes: "moved" },
+  "PIG-3": { weight_kg: "", moved_to_pen_id: "", condition_notes: "" },
+};
+const draft = helpers.buildDraftPayload({ rows, weight_date: "2026-06-15", now: "2026-06-28T12:00:00.000Z", draft_id: "DRAFT-TEST" });
+assert.strictEqual(draft.draft_id, "DRAFT-TEST");
+assert.strictEqual(draft.expected_row_count, 1);
+assert.strictEqual(draft.actionable_row_count, 2);
+assert.strictEqual(draft.rows["PIG-1"].weight_kg, "61.2");
+
+assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 71, success_count: 71, failed_count: 0, blocked_count: 0 }), true);
+assert.strictEqual(helpers.isCompleteUploadSuccess({ success: false, expected_count: 71, processed_count: 71, success_count: 60, failed_count: 11 }), false);
+assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 60, success_count: 60, failed_count: 0 }), false);
+
+const message = helpers.uploadFailureMessage({ message: "Batch partial", status: "partial_failure", expected_count: 71, success_count: 60, failed_count: 11, blocked_count: 0, skipped_count: 0, failed_rows: [{ error: { message: "timeout after 60" } }] });
+assert(message.includes("Expected 71"));
+assert(message.includes("failed 11"));
+assert(message.includes("Draft kept"));
+assert(message.includes("timeout after 60"));
+
+helpers.persistDraft({ statusLabel: "Saved" });
+const draftKey = [...storage.keys()].find((key) => key.startsWith("bulkWeightsDraft:v2:"));
+assert(storage.has(draftKey), "Save Draft should write durable localStorage");
+const storedDraft = JSON.parse(storage.get(draftKey));
+assert.strictEqual(storedDraft.expected_row_count, 1);
+assert.strictEqual(storedDraft.actionable_row_count, 2);
+assert.strictEqual(storedDraft.rows["PIG-1"].weight_kg, "61.2");
+
+helpers.loadDraft();
+const recovered = helpers.buildDraftPayload({ now: "2026-06-28T12:00:00.000Z" });
+assert.strictEqual(recovered.rows["PIG-1"].weight_kg, "61.2", "reload recovery should restore saved rows");
+
+helpers.clearUploadedAndDuplicateDraftRows({ success: false, expected_count: 71, processed_count: 71, success_count: 60, failed_count: 11 });
+assert(storage.has(draftKey), "partial upload failure must not clear localStorage draft");
+
+helpers.clearUploadedAndDuplicateDraftRows({ success: true, expected_count: 1, processed_count: 1, success_count: 1, failed_count: 0, blocked_count: 0 });
+assert(!storage.has(draftKey), "complete confirmed upload may clear the localStorage draft");
+
+storage.set("bulkWeightsDraft:v2:2026-06-15", JSON.stringify({
+  ...storedDraft,
+  weight_date: "2026-06-15",
+  saved_at: "2026-06-28T12:00:00.000Z",
+}));
+elements.get("bulk_weight_date").value = "2026-06-28";
+helpers.loadDraft();
+assert.strictEqual(elements.get("bulk_weight_date").value, "2026-06-15", "page load should recover the latest unsent draft date");
+const recoveredPastDate = helpers.buildDraftPayload({ now: "2026-06-28T12:05:00.000Z" });
+assert.strictEqual(recoveredPastDate.rows["PIG-1"].weight_kg, "61.2", "past-date draft rows should recover after refresh");
+
+console.log("bulk weight draft recovery helpers passed");
