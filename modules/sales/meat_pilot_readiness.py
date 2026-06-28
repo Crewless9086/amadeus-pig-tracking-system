@@ -8,13 +8,24 @@ def get_meat_pilot_readiness(limit=12, status_filter="launch_test"):
     leads_result, leads_status = list_sales_leads(limit=limit, status_filter=status_filter)
     if leads_status >= 400:
         return leads_result, leads_status
+
     leads = leads_result.get("sales_leads") if isinstance(leads_result.get("sales_leads"), list) else []
-    lead_rows = [_lead_readiness_row(item) for item in leads[:_safe_limit(limit)]]
-    templates = meat_whatsapp_template_pack()
+    lead_rows = []
+    degraded_sources = []
+    for item in leads[:_safe_limit(limit)]:
+        row = _lead_readiness_row(item)
+        lead_rows.append(row)
+        degraded_sources.extend(row.get("degraded_sources", []))
+
+    templates = _safe_template_pack()
+    if templates.get("source_degraded"):
+        degraded_sources.append(_degraded_source("template_pack", "pilot_readiness", templates.get("degraded_reason") or "template_pack_unavailable"))
+
     summary = _summary(lead_rows, templates)
+    status = "degraded" if degraded_sources else "ok"
     return {
         "success": True,
-        "status": "ok",
+        "status": status,
         "mode": "meat_sales_pilot_readiness_dashboard",
         "pilot_percent": summary["pilot_percent"],
         "summary": summary,
@@ -27,6 +38,8 @@ def get_meat_pilot_readiness(limit=12, status_filter="launch_test"):
         },
         "checklist": _checklist(summary, lead_rows, templates),
         "next_gate": summary["next_gate"],
+        "degraded_sources": degraded_sources,
+        "source_degraded": bool(degraded_sources),
         "sends_customer_message": False,
         "calls_chatwoot": False,
         "calls_meta": False,
@@ -41,9 +54,35 @@ def get_meat_pilot_readiness(limit=12, status_filter="launch_test"):
 def _lead_readiness_row(lead):
     lead = lead if isinstance(lead, dict) else {}
     lead_id = str(lead.get("lead_id") or "").strip()
-    contract, contract_status = get_sales_lead_preorder_contract(lead_id) if lead_id else ({}, 400)
-    quote, quote_status = build_meat_estimated_quote_packet(lead_id) if lead_id else ({}, 400)
-    ops, ops_status = get_meat_ops_status(lead_id) if lead_id else ({}, 400)
+    degraded_sources = []
+
+    contract, contract_status, degraded = _safe_source_read(
+        "contract",
+        lead_id,
+        lambda: get_sales_lead_preorder_contract(lead_id),
+        default_body={},
+    ) if lead_id else ({}, 400, _degraded_source("lead", "", "missing_lead_id"))
+    if degraded:
+        degraded_sources.append(degraded)
+
+    quote, quote_status, degraded = _safe_source_read(
+        "quote",
+        lead_id,
+        lambda: build_meat_estimated_quote_packet(lead_id),
+        default_body={},
+    ) if lead_id else ({}, 400, None)
+    if degraded:
+        degraded_sources.append(degraded)
+
+    ops, ops_status, degraded = _safe_source_read(
+        "ops",
+        lead_id,
+        lambda: get_meat_ops_status(lead_id),
+        default_body={},
+    ) if lead_id else ({}, 400, None)
+    if degraded:
+        degraded_sources.append(degraded)
+
     contract_body = contract.get("contract") if isinstance(contract.get("contract"), dict) else {}
     assembly = ops.get("assembly") if isinstance(ops.get("assembly"), dict) else {}
     payment_gate = ops.get("payment_gate") if isinstance(ops.get("payment_gate"), dict) else {}
@@ -70,6 +109,50 @@ def _lead_readiness_row(lead):
         "latest_event_type": latest_event.get("event_type", ""),
         "blockers": _blockers(contract_status, contract_body, quote_status, quote, ops_status, assembly, payment_gate),
         "next_action": _next_action(stage, quote, payment_gate, assembly),
+        "degraded_sources": degraded_sources,
+        "source_degraded": bool(degraded_sources),
+    }
+
+
+def _safe_template_pack():
+    try:
+        templates = meat_whatsapp_template_pack()
+    except Exception as exc:
+        return {
+            "configured_count": 0,
+            "required_count": 0,
+            "all_configured": False,
+            "missing_envs": ["template_pack_unavailable"],
+            "source_degraded": True,
+            "degraded_reason": exc.__class__.__name__,
+        }
+    if not isinstance(templates, dict):
+        return {
+            "configured_count": 0,
+            "required_count": 0,
+            "all_configured": False,
+            "missing_envs": ["template_pack_unavailable"],
+            "source_degraded": True,
+            "degraded_reason": "invalid_source_payload",
+        }
+    return templates
+
+def _safe_source_read(source, lead_id, reader, default_body=None):
+    try:
+        result, status_code = reader()
+    except Exception as exc:
+        return default_body or {}, 503, _degraded_source(source, lead_id, exc.__class__.__name__)
+    if not isinstance(result, dict):
+        return default_body or {}, 503, _degraded_source(source, lead_id, "invalid_source_payload")
+    return result, status_code, None
+
+
+def _degraded_source(source, lead_id, reason):
+    return {
+        "source": source,
+        "lead_id": lead_id,
+        "status": "degraded",
+        "reason": reason,
     }
 
 
@@ -125,6 +208,8 @@ def _blockers(contract_status, contract, quote_status, quote, ops_status, assemb
         blockers.append(str(item))
     if quote_status >= 400:
         blockers.extend(str(item) for item in quote.get("blockers", []))
+        if not quote.get("blockers"):
+            blockers.append("quote_read_failed")
     if payment_gate.get("state") == "pop_received_unverified":
         blockers.append("bank_confirmation_required")
     elif payment_gate.get("state") in {"deposit_not_received", "unknown", ""}:

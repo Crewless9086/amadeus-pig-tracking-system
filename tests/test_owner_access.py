@@ -100,6 +100,7 @@ class OwnerAccessTests(unittest.TestCase):
             logout = self.client.post("/owner/logout", environ_base={"REMOTE_ADDR": "203.0.113.10"})
             status = self.client.get("/owner/status", environ_base={"REMOTE_ADDR": "203.0.113.10"})
         self.assertEqual(logout.status_code, 302)
+        self.assertEqual(logout.headers.get("Location"), "/")
         self.assertIn(b"Logged in:</strong> no", status.data)
         self.assertIn("session=", logout.headers.get("Set-Cookie", ""))
 
@@ -126,12 +127,13 @@ class OwnerAccessTests(unittest.TestCase):
         with patch.dict(os.environ, owner_env(), clear=False):
             self._configure()
             self._login(READ_TOKEN)
-            self.client.post("/owner/logout", environ_base={"REMOTE_ADDR": "203.0.113.10"})
+            logout = self.client.post("/owner/logout", environ_base={"REMOTE_ADDR": "203.0.113.10"})
             page = self.client.get("/sales/meat-leads", environ_base={"REMOTE_ADDR": "203.0.113.10"})
             command_state = self.client.get(
                 "/api/sales/meat-leads/OSK-SALES-LEAD-1/command-state",
                 environ_base={"REMOTE_ADDR": "203.0.113.10"},
             )
+        self.assertEqual(logout.headers.get("Location"), "/")
         self.assertEqual(page.status_code, 302)
         self.assertIn("/owner/login", page.headers.get("Location", ""))
         self.assertEqual(command_state.status_code, 403)

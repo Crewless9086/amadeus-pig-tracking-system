@@ -3,7 +3,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 from app import app
-from modules.sales import sales_transaction_routes
+from modules.sales import meat_pilot_readiness, sales_transaction_routes
 
 
 class SalesTransactionRoutesTests(unittest.TestCase):
@@ -330,6 +330,57 @@ class SalesTransactionRoutesTests(unittest.TestCase):
         self.assertEqual(response.get_json()["pilot_percent"], 78)
         readiness.assert_called_once_with(limit="6", status_filter="launch_test")
 
+    def test_meat_pilot_readiness_service_degrades_contract_failure(self):
+        leads = [
+            {"lead_id": "LEAD-GOOD", "lead_label": "Good lead", "status": "new", "interest": {}},
+            {"lead_id": "LEAD-BAD", "lead_label": "Bad lead", "status": "new", "interest": {}},
+        ]
+
+        def contract(lead_id):
+            if lead_id == "LEAD-BAD":
+                raise RuntimeError("simulated contract failure")
+            return ({"contract": {"contract_status": "owner_money_path_ready"}}, 200)
+
+        with patch.object(meat_pilot_readiness, "list_sales_leads", return_value=({"sales_leads": leads}, 200)), \
+             patch.object(meat_pilot_readiness, "get_sales_lead_preorder_contract", side_effect=contract), \
+             patch.object(meat_pilot_readiness, "build_meat_estimated_quote_packet", return_value=({"quote_safe": True, "status": "ok"}, 200)), \
+             patch.object(meat_pilot_readiness, "get_meat_ops_status", return_value=({"assembly": {}, "payment_gate": {"state": "deposit_not_received"}}, 200)), \
+             patch.object(meat_pilot_readiness, "meat_whatsapp_template_pack", return_value={"configured_count": 0, "required_count": 1, "all_configured": False, "missing_envs": ["template"]}):
+            result, status = meat_pilot_readiness.get_meat_pilot_readiness(limit=2, status_filter="launch_test")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "degraded")
+        self.assertTrue(result["source_degraded"])
+        self.assertEqual(len(result["lead_stages"]), 2)
+        bad_row = next(row for row in result["lead_stages"] if row["lead_id"] == "LEAD-BAD")
+        self.assertTrue(bad_row["source_degraded"])
+        self.assertIn("contract_read_failed", bad_row["blockers"])
+        self.assertEqual(result["degraded_sources"][0]["source"], "contract")
+        self.assertNotIn("simulated contract failure", str(result))
+        self.assertFalse(result["sends_customer_message"])
+        self.assertFalse(result["creates_order"])
+        self.assertFalse(result["changes_stock"])
+        self.assertFalse(result["customer_public_output_enabled"])
+
+    def test_meat_pilot_readiness_service_degrades_quote_and_ops_failures(self):
+        leads = [{"lead_id": "LEAD-BAD", "lead_label": "Bad lead", "status": "new", "interest": {}}]
+
+        with patch.object(meat_pilot_readiness, "list_sales_leads", return_value=({"sales_leads": leads}, 200)), \
+             patch.object(meat_pilot_readiness, "get_sales_lead_preorder_contract", return_value=({"contract": {}}, 200)), \
+             patch.object(meat_pilot_readiness, "build_meat_estimated_quote_packet", side_effect=RuntimeError("simulated quote failure")), \
+             patch.object(meat_pilot_readiness, "get_meat_ops_status", side_effect=RuntimeError("simulated ops failure")), \
+             patch.object(meat_pilot_readiness, "meat_whatsapp_template_pack", return_value={"configured_count": 0, "required_count": 1, "all_configured": False, "missing_envs": ["template"]}):
+            result, status = meat_pilot_readiness.get_meat_pilot_readiness(limit=1, status_filter="launch_test")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["status"], "degraded")
+        sources = {item["source"] for item in result["degraded_sources"]}
+        self.assertEqual(sources, {"quote", "ops"})
+        row = result["lead_stages"][0]
+        self.assertIn("quote_read_failed", row["blockers"])
+        self.assertIn("ops_status_unavailable", row["blockers"])
+        self.assertNotIn("simulated quote failure", str(result))
+        self.assertNotIn("simulated ops failure", str(result))
     def test_meat_payment_gate_route_returns_gate(self):
         service_result = {
             "success": True,
