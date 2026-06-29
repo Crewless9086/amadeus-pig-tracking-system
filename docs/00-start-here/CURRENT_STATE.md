@@ -67,6 +67,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-6 is merged as PR #26.
 - GS-MIG-7 is active on `gs-mig-7-supabase-route-cutover`: move safe read-only farm routes to Supabase canonical tables/views one batch at a time.
 - GS-MIG-7A direct canonical reads are in progress for pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
+- GS-MIG-7B read-only formula shadow comparison is in progress. Live comparison showed `PIG_OVERVIEW` core counts match Supabase `pig_current_state` and litter/mating row counts match canonical tables.
 - Formula-heavy routes are not cut over yet: dashboard, sales dashboard, pig allocation readiness, sales availability, meat planning, litter overview/detail, and mutation/write routes.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.

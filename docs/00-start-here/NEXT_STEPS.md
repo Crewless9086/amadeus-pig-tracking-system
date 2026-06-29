@@ -26,6 +26,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-6 is merged as PR #26.
 - GS-MIG-7 is active on `gs-mig-7-supabase-route-cutover`: route-by-route Supabase read cutover for safe direct canonical farm routes.
 - GS-MIG-7A direct canonical reads: pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
+- GS-MIG-7B formula shadow: live read-only comparison confirms core `PIG_OVERVIEW` counts match `pig_current_state`; sales readiness/stock and attention formulas still need Supabase replacement services before route cutover.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -54,6 +55,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-5: controlled initial import executed. Do not cut over app routes until the review/backfill verification phase is complete and explicitly approved.
 - GS-MIG-6: merged as PR #26.
 - GS-MIG-7: route-by-route Supabase read cutover. Direct canonical read routes first; formula-heavy routes only after equivalence tests/reports.
+- GS-MIG-7B: formula shadow/equivalence gate for dashboard, sales availability, stock summaries, litter attention, allocation, and meat planning.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.

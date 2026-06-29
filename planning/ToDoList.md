@@ -22,6 +22,22 @@ Blocked:
 
 - Formula-heavy dashboard, sales dashboard, pig allocation readiness, sales availability, meat planning, litter overview/detail, and mutation/write routes until formula-equivalence work is done.
 
+## 2026-06-29 GS-MIG-7B Formula Shadow
+
+Status: active.
+
+Output:
+
+- `scripts/google_sheets_supabase_formula_shadow.py`
+- `docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md`
+
+Live read-only result:
+
+- `PIG_OVERVIEW` core row/status/animal-type/on-farm counts match Supabase `pig_current_state`.
+- `LITTER_OVERVIEW` row count matches Supabase `litters`.
+- `MATING_OVERVIEW` row count matches Supabase `mating_events`.
+- Sales availability, sales stock summary/totals, litter attention, allocation readiness, and meat planning still need Supabase replacement services before route cutover.
+
 ## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
 
 Status: merged as PR #26.
