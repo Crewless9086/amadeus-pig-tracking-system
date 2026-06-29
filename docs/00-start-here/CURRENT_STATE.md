@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `df2bfaf` Plan initial farm data import (#24)
 - `dd06ee2` Add Sheets backfill verifier (#23)
 - `cf0c7f5` Record Sheets import policies (#22)
 - `4d0b598` Classify Sheets migration data issues (#21)
@@ -55,9 +56,12 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-4 additive schema apply completed on 2026-06-29.
 - Supabase now has empty canonical farm tables/views: `pens`, `pigs`, `farm_products`, `app_settings`, `pig_weight_events`, `pig_location_events`, `pig_medical_events`, `litters`, `mating_events`, `pig_latest_weight_events`, `pig_latest_location_events`, and `pig_current_state`.
 - Owner approved import policy direction: skip missing-`Pig_ID` weight rows into review/quarantine output; collapse same-weight duplicates to one canonical event; hold conflicting same-pig/same-date weights for review; collapse repeated movement duplicates to one canonical movement.
-- Active migration planning branch: `gs-mig-5-initial-import-plan`.
-- After owner cleaned Google Sheets, GS-MIG-5 read-only verifier maps 1,235 original weight events to 1,190 canonical weight events and 185 original movement events to 179 canonical movement events. Missing-`Pig_ID` quarantine is now 0. It creates 35 review items: 26 auto-resolved dedupes and 9 pending conflicting-weight reviews.
-- No canonical farm data import or app cutover has happened yet.
+- GS-MIG-5 initial import plan is merged as PR #24.
+- GS-MIG-5 controlled import execution completed on 2026-06-29 using import batch `GS-MIG-5-2026-06-29`.
+- Supabase canonical farm tables now contain: 217 pigs, 20 pens, 1,190 weight events, 179 location events, 261 medical events, 17 litters, 15 mating events, 3 farm products, and 18 app settings.
+- Derived views are populated: `pig_current_state` 217 rows, `pig_latest_location_events` 113 rows, and `pig_latest_weight_events` 155 rows.
+- The 9 conflicting same-pig/same-date weight groups remain excluded from canonical import for owner/admin review.
+- No app route cutover has happened yet. The app may still read Google Sheets until a later owner-approved cutover phase.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

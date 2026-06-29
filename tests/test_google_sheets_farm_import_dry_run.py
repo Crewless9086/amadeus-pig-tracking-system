@@ -297,6 +297,48 @@ class GoogleSheetsFarmImportDryRunTests(unittest.TestCase):
         self.assertEqual(canonical_weight["dedupe_policy"], "same_pig_same_date_same_weight_keep_first_source_row")
         self.assertEqual(len(canonical_weight["duplicate_source_refs"]), 2)
 
+    def test_policy_backfill_verifier_quarantines_invalid_location_rows(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"] = []
+        rows["LOCATION_HISTORY"] = [
+            {"Move_Log_ID": "MOVE-1", "Pig_ID": "PIG-1", "Move_Date": "2026-06-22", "From_Pen_ID": "PEN-1", "To_Pen_ID": "PEN-2"},
+            {"Move_Log_ID": "MOVE-MISSING-DATE", "Pig_ID": "PIG-1", "Move_Date": "", "From_Pen_ID": "PEN-1", "To_Pen_ID": "PEN-2"},
+            {"Move_Log_ID": "MOVE-MISSING-PEN", "Pig_ID": "PIG-1", "Move_Date": "2026-06-23", "From_Pen_ID": "PEN-1", "To_Pen_ID": ""},
+        ]
+
+        verifier = dry_run.build_policy_backfill_verifier(rows)
+
+        self.assertEqual(verifier["canonical_payload_summary"]["pig_location_events"], 1)
+        self.assertEqual(verifier["review_summary"]["by_type"]["invalid_location_row"], 2)
+        self.assertTrue(verifier["verification"]["location_source_rows_accounted"])
+        self.assertEqual(verifier["verification"]["location_source_row_count"], 3)
+        self.assertEqual(verifier["verification"]["location_accounted_row_count"], 3)
+        self.assertEqual(verifier["verification"]["location_unaccounted_source_rows"], [])
+
+        invalid_reasons = [
+            tuple(item["invalid_reasons"])
+            for item in verifier["review_items"]
+            if item["review_type"] == "invalid_location_row"
+        ]
+        self.assertIn(("missing_move_date",), invalid_reasons)
+        self.assertIn(("missing_to_pen_id",), invalid_reasons)
+
+    def test_policy_backfill_verifier_accounts_for_duplicate_location_sources(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"] = []
+        rows["LOCATION_HISTORY"] = [
+            {"Move_Log_ID": "MOVE-1", "Pig_ID": "PIG-1", "Move_Date": "2026-06-22", "From_Pen_ID": "PEN-1", "To_Pen_ID": "PEN-2"},
+            {"Move_Log_ID": "MOVE-2", "Pig_ID": "PIG-1", "Move_Date": "2026-06-22", "From_Pen_ID": "PEN-1", "To_Pen_ID": "PEN-2"},
+        ]
+
+        verifier = dry_run.build_policy_backfill_verifier(rows)
+
+        self.assertEqual(verifier["canonical_payload_summary"]["pig_location_events"], 1)
+        self.assertEqual(verifier["review_summary"]["by_type"]["same_movement_duplicate"], 1)
+        self.assertTrue(verifier["verification"]["location_source_rows_accounted"])
+        self.assertEqual(verifier["verification"]["location_source_row_count"], 2)
+        self.assertEqual(verifier["verification"]["location_accounted_row_count"], 2)
+
     def test_main_backfill_verifier_prints_no_write_summary(self):
         with patch.object(dry_run, "load_sheet_rows", return_value=self.sample_rows()), \
              patch.object(dry_run, "print") as print_mock:
