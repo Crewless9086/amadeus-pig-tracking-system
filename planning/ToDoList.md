@@ -2,6 +2,17 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-12 Farm Dashboard Summary Supabase Cutover
+
+Status: in progress on `gs-mig-12-dashboard-summary-supabase`.
+
+Scope:
+
+- Move the farm dashboard summary route from direct Google Sheets summary reads to Supabase-first canonical reads.
+- Use `pig_current_state` plus `pigs` exit metadata for active herd counts and monthly exit/lifecycle counts.
+- Keep Google Sheets `PIG_OVERVIEW`, `SALES_AVAILABILITY`, and `PIG_MASTER` summary logic as fallback when Supabase is unavailable.
+- No migrations, production writes, Google Sheets writes, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
+
 ## 2026-06-29 GS-MIG-8 Complete Supabase Cutover
 
 Status: merged and migration-applied.

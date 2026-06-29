@@ -369,6 +369,29 @@ def _litter_lifecycle_outcomes(litter_id, pig_master_rows):
 
 
 def get_dashboard_summary():
+    now = datetime.now()
+    supabase_summary = _try_supabase_read(farm_supabase_read_service.get_dashboard_summary, now.date())
+    if supabase_summary is not None:
+        transaction_summary, _transaction_status_code = get_monthly_sales_transaction_summary(now.date())
+        transaction_streams = transaction_summary.get("streams", {})
+        transaction_totals = transaction_summary.get("totals", {})
+        livestock_transactions = transaction_streams.get("livestock", {})
+        slaughter_transactions = transaction_streams.get("slaughter", {})
+        meat_transactions = transaction_streams.get("meat", {})
+        supabase_summary.update({
+            "sales_transaction_summary_status": transaction_summary.get("status", "unknown"),
+            "sales_transaction_summary_configured": bool(transaction_summary.get("configured")),
+            "sales_transaction_count_this_month": transaction_totals.get("transaction_count", 0),
+            "sales_transaction_value_this_month": transaction_totals.get("net_total", 0.0),
+            "livestock_sales_this_month": livestock_transactions.get("transaction_count", 0),
+            "livestock_sales_value_this_month": livestock_transactions.get("net_total", 0.0),
+            "slaughter_sales_this_month": slaughter_transactions.get("transaction_count", 0),
+            "slaughter_sales_value_this_month": slaughter_transactions.get("net_total", 0.0),
+            "meat_sales_this_month": meat_transactions.get("transaction_count", 0),
+            "meat_sales_value_this_month": meat_transactions.get("net_total", 0.0),
+        })
+        return supabase_summary
+
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
@@ -421,7 +444,6 @@ def get_dashboard_summary():
         if available_for_sale == "Yes":
             available_for_sale_count += 1
 
-    now = datetime.now()
     sales_this_month = {
         "livestock": 0,
         "slaughter": 0,

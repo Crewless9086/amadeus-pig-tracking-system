@@ -35,8 +35,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-8 live order import is applied with batch `IMPORT-20260629-LIVE-ORDERS-V1`: 26 orders, 103 order lines, 38 intakes, 11 intake items, 6 documents, 62 status logs, and 21 pricing rows.
 - GS-MIG-8 cutover scope: order list/detail/search reads, quote line reads, document metadata reads/writes, document settings reads, daily report status-log reads, guarded order create/update/line/reservation/lifecycle writes, sales transaction slaughter-exit pig updates, order intake update/reset, mating/breeding mutation routes, and direct farm master/weight/treatment/movement writes now prefer Supabase with Sheets fallback when unavailable.
 - GS-MIG-9 cutover scope: litter lifecycle and piglet correction writes now prefer Supabase with Sheets fallback when unavailable. Additive migrations `202606290002_add_pig_exit_fields.sql` and corrected `202606290003_add_litter_lifecycle_fields.sql` are applied in Supabase.
-- Continue GS-MIG-10: close remaining route-facing Google Sheets dependencies where Supabase equivalents exist, then leave only legacy import/export/setup/reporting integrations.
-- GS-MIG-11: irrigation status should default to Supabase-first `auto` mode with Google Sheets fallback only when Supabase has no plan rows or is unavailable. Hardware control remains disabled/read-only.
+- Continue GS-MIG-10+: close remaining route-facing Google Sheets dependencies where Supabase equivalents exist, then leave only legacy import/export/setup/reporting integrations.
+- GS-MIG-11 is merged as PR #30: irrigation status defaults to Supabase-first `auto` mode with Google Sheets fallback only when Supabase has no plan rows or is unavailable. Hardware control remains disabled/read-only.
+- GS-MIG-12 in progress: farm dashboard summary should prefer Supabase `pig_current_state` plus `pigs` exit metadata and keep the existing Google Sheets summary as fallback.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -68,6 +69,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-7B: formula shadow/equivalence gate for dashboard, sales availability, stock summaries, litter attention, allocation, and meat planning.
 - GS-MIG-7E: litter overview/detail/dashboard attention read cutover. Legacy formula-specific newborn-health attention replacement still needs explicit Supabase service work.
 - GS-MIG-7F: breeding/mating read cutover. Mating mutation routes remain on the existing guarded path until separately approved durable write rails exist.
+- GS-MIG-12: farm dashboard summary Supabase-first read cutover with Google Sheets fallback.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.

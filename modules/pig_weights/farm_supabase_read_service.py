@@ -78,6 +78,34 @@ def _weight_band(weight_kg):
     return "80 kg+"
 
 
+def _sale_stream_for_exit(row):
+    status = _text(row.get("status")).lower()
+    exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
+    if exit_reason in {"meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
+        return "meat"
+    if exit_reason in {"slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir"} or status == "slaughtered":
+        return "slaughter"
+    if exit_reason in {"sold", "livestock", "livestock_sale", "live_sale"} or status == "sold":
+        return "livestock"
+    return ""
+
+
+def _lifecycle_outcome_for_exit(row):
+    status = _text(row.get("status")).lower()
+    exit_reason = _text(row.get("exit_reason")).lower().replace("-", "_").replace(" ", "_")
+    if status == "dead" or exit_reason in {"died", "culled", "lost", "stillborn", "died_after_birth", "crushed_by_sow", "weak_piglet", "unknown"}:
+        return "dead"
+    if status == "removed" or exit_reason in {"removed", "other"}:
+        return "removed"
+    if status == "slaughtered" or exit_reason in {"slaughter", "slaughtered", "abattoir", "abattoir_sale", "sold_to_abattoir"}:
+        return "slaughtered"
+    if status == "sold" or exit_reason in {"sold", "livestock", "livestock_sale", "live_sale", "meat", "meat_sale", "carcass", "carcass_sale", "pork_sale", "processed_meat_sale"}:
+        return "sold"
+    if exit_reason:
+        return "other"
+    return ""
+
+
 def _average(values):
     clean_values = [value for value in values if value is not None]
     if not clean_values:
@@ -175,6 +203,120 @@ def _current_state_rows(connect_factory=None):
         """,
         connect_factory=connect_factory,
     )
+
+
+def _dashboard_rows(connect_factory=None):
+    return _fetch_all(
+        """
+        select
+            state.pig_id,
+            state.status,
+            state.on_farm,
+            state.animal_type,
+            state.current_weight_kg,
+            pig.exit_date,
+            pig.exit_reason
+        from public.pig_current_state state
+        join public.pigs pig on pig.pig_id = state.pig_id
+        """,
+        connect_factory=connect_factory,
+    )
+
+
+def _reserved_pig_count(connect_factory=None):
+    row = _fetch_one(
+        """
+        select count(distinct pig_id) as reserved_pig_count
+        from public.order_lines
+        where reserved_status = 'Reserved'
+          and nullif(pig_id, '') is not null
+          and coalesce(line_status, '') not in ('Cancelled', 'Released')
+        """,
+        connect_factory=connect_factory,
+    )
+    return int(row.get("reserved_pig_count") or 0) if row else 0
+
+
+def get_dashboard_summary(today=None, connect_factory=None):
+    today = today or date.today()
+    rows = _dashboard_rows(connect_factory=connect_factory)
+    reserved_count = _reserved_pig_count(connect_factory=connect_factory)
+    animal_counts = {
+        "Boar": 0,
+        "Sow": 0,
+        "Gilt": 0,
+        "Piglet": 0,
+        "Weaner": 0,
+        "Grower": 0,
+        "Finisher": 0,
+    }
+    on_farm_pigs = 0
+    available_for_sale_count = 0
+    sales_this_month = {
+        "livestock": 0,
+        "slaughter": 0,
+        "meat": 0,
+    }
+    lifecycle_outcomes_this_month = {
+        "sold": 0,
+        "slaughtered": 0,
+        "dead": 0,
+        "removed": 0,
+        "other": 0,
+    }
+
+    for row in rows:
+        status = _text(row.get("status"))
+        on_farm = row.get("on_farm") is True
+        if on_farm:
+            on_farm_pigs += 1
+            animal_type = _text(row.get("animal_type"))
+            if animal_type in animal_counts:
+                animal_counts[animal_type] += 1
+            if status == "Active" and (_float_or_none(row.get("current_weight_kg")) or 0) >= 60:
+                available_for_sale_count += 1
+
+        exit_date = row.get("exit_date")
+        if not isinstance(exit_date, date) or exit_date.year != today.year or exit_date.month != today.month:
+            continue
+
+        lifecycle_outcome = _lifecycle_outcome_for_exit(row)
+        if lifecycle_outcome:
+            lifecycle_outcomes_this_month[lifecycle_outcome] += 1
+
+        sale_stream = _sale_stream_for_exit(row)
+        if sale_stream:
+            sales_this_month[sale_stream] += 1
+
+    sold_this_month = sum(sales_this_month.values())
+    return {
+        "on_farm_pigs": on_farm_pigs,
+        "boars": animal_counts["Boar"],
+        "sows": animal_counts["Sow"],
+        "gilts": animal_counts["Gilt"],
+        "piglets": animal_counts["Piglet"],
+        "weaners": animal_counts["Weaner"],
+        "growers": animal_counts["Grower"],
+        "finishers": animal_counts["Finisher"],
+        "sold_this_month": sold_this_month,
+        "livestock_sold_this_month": sales_this_month["livestock"],
+        "slaughter_sold_this_month": sales_this_month["slaughter"],
+        "meat_sold_this_month": sales_this_month["meat"],
+        "pig_exit_sold_this_month": sold_this_month,
+        "pig_exit_livestock_sold_this_month": sales_this_month["livestock"],
+        "pig_exit_slaughter_sold_this_month": sales_this_month["slaughter"],
+        "pig_exit_meat_sold_this_month": sales_this_month["meat"],
+        "lifecycle_outcomes_this_month": sum(lifecycle_outcomes_this_month.values()),
+        "lifecycle_sold_this_month": lifecycle_outcomes_this_month["sold"],
+        "lifecycle_slaughtered_this_month": lifecycle_outcomes_this_month["slaughtered"],
+        "lifecycle_dead_this_month": lifecycle_outcomes_this_month["dead"],
+        "lifecycle_removed_this_month": lifecycle_outcomes_this_month["removed"],
+        "lifecycle_other_this_month": lifecycle_outcomes_this_month["other"],
+        "available_for_sale_pigs": available_for_sale_count,
+        "reserved_pigs": reserved_count,
+        "withdrawal_hold_pigs": 0,
+        "source": "supabase_canonical",
+    }
 
 
 def get_active_pigs(connect_factory=None):

@@ -535,3 +535,18 @@ No-unsafe-action confirmation:
 - No Supabase writes.
 - No app route cutover.
 - No customer sends, public posts, payments, reservations, or lifecycle/purpose writes.
+
+## GS-MIG-12 Farm Dashboard Summary Supabase Cutover - 2026-06-29
+
+Mode: route-facing read cutover. No migrations, production writes, Google Sheets writes, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- `/api/pig-weights/dashboard` summary now prefers Supabase canonical reads when `DATABASE_URL` is available.
+- The Supabase summary reads `pig_current_state`, `pigs` exit metadata, and reserved `order_lines` to compute on-farm counts, animal-type counts, monthly pig exits, lifecycle outcomes, and reserved-pig counts.
+- Existing sales transaction totals remain sourced from the Supabase-backed sales transaction summary service.
+- The existing Google Sheets `PIG_OVERVIEW`, `SALES_AVAILABILITY`, and `PIG_MASTER` summary path remains fallback when Supabase is unavailable or the read fails.
+
+Tests:
+
+- Added focused tests proving the Supabase summary calculation and proving the public dashboard summary does not read Sheets when Supabase is available.
