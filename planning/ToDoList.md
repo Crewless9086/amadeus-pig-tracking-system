@@ -72,6 +72,22 @@ Still blocked:
 - Litter overview/detail formulas.
 - Mutation/write routes.
 
+## 2026-06-29 GS-MIG-7E Litter Reads
+
+Status: active.
+
+Result:
+
+- Litter overview now prefers Supabase canonical reads when available.
+- Litter detail now prefers Supabase canonical reads when available.
+- Dashboard litter attention now prefers Supabase canonical litter-count review when available.
+- Live read-only smoke returned 17 litters, 1 litter attention item, and 9 linked pig records for `LIT-2026-1025`.
+
+Still blocked:
+
+- Formula-specific newborn-health attention replacement rules.
+- Mutation/write routes.
+
 ## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
 
 Status: merged as PR #26.

@@ -478,6 +478,10 @@ def get_dashboard_summary():
 
 
 def get_litter_attention_summary(limit: int = 5, today=None):
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_litter_attention_summary, limit)
+    if supabase_result is not None:
+        return supabase_result
+
     today = today or datetime.now().date()
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
@@ -760,6 +764,10 @@ def _litter_birth_reconciliation_for_id(litter_id):
 
 
 def list_litter_overview():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.list_litter_overview)
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
     pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
     litters = []
@@ -4032,6 +4040,10 @@ def get_litter_detail(litter_id: str):
 
     if not litter_id:
         return None
+
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_litter_detail, litter_id)
+    if supabase_result is not None:
+        return supabase_result
 
     attention = _litter_attention_for_id(litter_id)
     reconciliation = _litter_birth_reconciliation_for_id(litter_id)

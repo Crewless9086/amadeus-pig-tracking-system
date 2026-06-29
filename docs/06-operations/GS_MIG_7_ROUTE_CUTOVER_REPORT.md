@@ -89,9 +89,34 @@ Still not cut over:
 - litter overview/detail formulas
 - mutation/write routes
 
+## Batch 7E: Litter Overview, Detail, And Dashboard Attention Reads
+
+These routes/services now prefer Supabase canonical reads:
+
+- `/api/pig-weights/litters`
+- `/api/pig-weights/litter/<litter_id>`
+- dashboard litter attention summary
+
+The Supabase path covers canonical litter count review and keeps the existing Google Sheets fallback when `DATABASE_URL` is unavailable or Supabase read fails. The legacy Sheets fallback remains the source for older formula-specific/newborn-health attention rules until those are replaced with explicit Supabase services.
+
+Live read-only smoke:
+
+- Litter overview source: `supabase_canonical`
+- Litter overview count: 17
+- Litter attention count: 1
+- Litter mismatch count: 1
+- First detail smoke: `LIT-2026-1025`, 9 linked pig records
+- Dashboard litter attention source: `supabase_canonical`
+- Dashboard litter attention count: 1
+
+Still not cut over:
+
+- mutation/write routes
+- formula-specific newborn-health attention replacement rules
+
 ## Local Environment Note
 
-The local shell does not currently expose `DATABASE_URL`, so live Supabase smoke reads could not run from this environment. Unit tests use fakes/mocks to verify Supabase read shapes and fallback behavior.
+Live read-only Supabase smoke reads ran from the local environment after loading `.env`. Unit tests use fakes/mocks to verify Supabase read shapes and fallback behavior.
 
 ## Tests Run
 
@@ -100,7 +125,8 @@ The local shell does not currently expose `DATABASE_URL`, so live Supabase smoke
 - `python -m unittest tests.test_pig_weights_dropdown_options`
 - `python -m unittest tests.test_frontend_route_contracts`
 - `python -m unittest tests.test_pig_allocation_readiness_service tests.test_pig_weights_bulk_service tests.test_pig_weights_litter_service`
+- `python -m unittest tests.test_farm_supabase_read_service tests.test_pig_weights_litter_service tests.test_frontend_route_contracts tests.test_pig_weights_dashboard_service`
 
 ## Next
 
-Build formula-equivalence services/reports before cutting over dashboard, allocation, litter overview, sales dashboard, sales availability, and meat planning routes.
+Continue replacing remaining Google Sheets formula-specific logic with explicit Supabase services, then cut over mutation/write routes only after separate owner-approved durable write rails and tests.

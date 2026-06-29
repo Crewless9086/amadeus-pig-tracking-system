@@ -414,6 +414,91 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(inputs["litter_rows"][0]["Born_Alive"], 10.0)
         self.assertEqual(inputs["pen_lookup"]["PEN-1"]["pen_name"], "Grower Pen")
 
+    def test_litter_overview_and_detail_map_supabase_rows(self):
+        litters = [{
+            "litter_id": "LIT-1",
+            "farrowing_date": date(2026, 6, 1),
+            "sow_pig_id": "SOW-1",
+            "boar_pig_id": "BOAR-1",
+            "sow_tag_number": "M1",
+            "boar_tag_number": "F1",
+            "born_alive": 2,
+            "total_born": 2,
+            "stillborn_count": 0,
+            "mummified_count": 0,
+            "litter_status": "Active",
+        }]
+        pigs_by_litter = {
+            "LIT-1": [
+                {
+                    "pig_id": "PIG-1",
+                    "tag_number": "101",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Female",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-1",
+                    "current_weight_kg": 5.0,
+                    "current_pen_id": "PEN-1",
+                },
+                {
+                    "pig_id": "PIG-2",
+                    "tag_number": "102",
+                    "status": "Active",
+                    "on_farm": True,
+                    "animal_type": "Piglet",
+                    "sex": "Male",
+                    "date_of_birth": date(2026, 6, 1),
+                    "litter_id": "LIT-1",
+                    "current_weight_kg": 6.0,
+                    "current_pen_id": "PEN-1",
+                },
+            ],
+        }
+
+        with patch.object(farm_supabase_read_service, "_litter_rows_with_pigs", return_value=(litters, pigs_by_litter)):
+            overview = farm_supabase_read_service.list_litter_overview()
+            detail = farm_supabase_read_service.get_litter_detail("LIT-1")
+
+        self.assertTrue(overview["success"])
+        self.assertEqual(overview["count"], 1)
+        self.assertEqual(overview["litters"][0]["linked_pig_records"], 2)
+        self.assertEqual(overview["litters"][0]["average_current_weight_kg"], 5.5)
+        self.assertEqual(detail["count"], 2)
+        self.assertEqual(detail["male_count"], 1)
+        self.assertEqual(detail["female_count"], 1)
+        self.assertEqual(detail["average_weight_kg"], 5.5)
+        self.assertEqual(detail["source"], "supabase_canonical")
+
+    def test_litter_attention_summary_maps_supabase_count_review(self):
+        overview = {
+            "success": True,
+            "count": 1,
+            "litters": [{
+                "litter_id": "LIT-1",
+                "sow_tag_number": "M1",
+                "farrowing_date": "2026-06-01",
+                "wean_date": "",
+                "litter_status": "Active",
+                "needs_attention": "Yes",
+                "attention_reason": "Review litter counts.",
+                "active_pig_records": 2,
+                "reconciliation": {
+                    "recommended_action": "Review litter counts.",
+                },
+            }],
+        }
+
+        with patch.object(farm_supabase_read_service, "list_litter_overview", return_value=overview):
+            summary = farm_supabase_read_service.get_litter_attention_summary()
+
+        self.assertEqual(summary["source"], "supabase_canonical")
+        self.assertEqual(summary["count"], 1)
+        self.assertEqual(summary["items"][0]["litter_id"], "LIT-1")
+        self.assertEqual(summary["items"][0]["action_type"], "review_litter_counts")
+        self.assertEqual(summary["items"][0]["reason"], "Review litter counts.")
+
     def test_pig_weights_service_prefers_supabase_when_available(self):
         with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
              patch.object(farm_supabase_read_service, "get_pens", return_value=[{"pen_id": "PEN-1"}]):

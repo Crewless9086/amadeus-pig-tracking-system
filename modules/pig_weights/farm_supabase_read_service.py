@@ -439,6 +439,215 @@ def get_allocation_input_rows(connect_factory=None):
     }
 
 
+def _litter_rows_with_pigs(connect_factory=None):
+    litters = _fetch_all(
+        """
+        select *
+        from public.litters
+        order by farrowing_date desc nulls last, litter_id
+        """,
+        connect_factory=connect_factory,
+    )
+    pigs = _current_state_rows(connect_factory=connect_factory)
+    pigs_by_litter = {}
+    for pig in pigs:
+        litter_id = _text(pig.get("litter_id"))
+        if litter_id:
+            pigs_by_litter.setdefault(litter_id, []).append(pig)
+    return litters, pigs_by_litter
+
+
+def _litter_reconciliation(litter, pigs):
+    born_alive = _float_or_none(litter.get("born_alive"))
+    total_born = _float_or_none(litter.get("total_born"))
+    active = len([
+        pig for pig in pigs
+        if _text(pig.get("status")) == "Active" and pig.get("on_farm") is True
+    ])
+    exited = len(pigs) - active
+    linked = len(pigs)
+    suggested_born_alive = linked
+    mismatch = bool(born_alive is not None and int(born_alive) != linked)
+    return {
+        "born_alive": born_alive,
+        "total_born": total_born,
+        "stillborn_count": _float_or_none(litter.get("stillborn_count")) or 0,
+        "mummified_count": _float_or_none(litter.get("mummified_count")) or 0,
+        "linked_pig_records": linked,
+        "active_pig_records": active,
+        "exited_pig_records": exited,
+        "suggested_born_alive": suggested_born_alive,
+        "mismatch": mismatch,
+        "formula_conflict": False,
+        "source_counts_consistent": not mismatch,
+        "can_reconcile_birth_count": False,
+        "delta": (suggested_born_alive - born_alive) if born_alive is not None else 0,
+        "rule": "Supabase canonical litter count comparison.",
+        "recommended_action": "Review litter counts." if mismatch else "No birth-count correction needed.",
+    }
+
+
+def list_litter_overview(connect_factory=None):
+    litters, pigs_by_litter = _litter_rows_with_pigs(connect_factory=connect_factory)
+    result_rows = []
+    for litter in litters:
+        litter_id = _text(litter.get("litter_id"))
+        pigs = pigs_by_litter.get(litter_id, [])
+        reconciliation = _litter_reconciliation(litter, pigs)
+        weights = [
+            _float_or_none(pig.get("current_weight_kg"))
+            for pig in pigs
+            if _float_or_none(pig.get("current_weight_kg")) is not None
+        ]
+        tagged_count = len([pig for pig in pigs if _text(pig.get("tag_number"))])
+        male_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Male"])
+        female_count = len([pig for pig in pigs if _text(pig.get("sex")) == "Female"])
+        active_count = reconciliation["active_pig_records"]
+        needs_attention = "Yes" if reconciliation["mismatch"] else ""
+        result_rows.append({
+            "litter_id": litter_id,
+            "sow_pig_id": _text(litter.get("sow_pig_id")),
+            "sow_tag_number": _text(litter.get("sow_tag_number")),
+            "boar_pig_id": _text(litter.get("boar_pig_id")),
+            "boar_tag_number": _text(litter.get("boar_tag_number")),
+            "current_pen_id": "",
+            "farrowing_date": _date_text(litter.get("farrowing_date")),
+            "wean_date": "",
+            "litter_status": _text(litter.get("litter_status")),
+            "needs_attention": needs_attention,
+            "sheet_needs_attention": "",
+            "attention_reason": reconciliation["recommended_action"] if needs_attention == "Yes" else "",
+            "born_alive": reconciliation["born_alive"],
+            "total_born": reconciliation["total_born"],
+            "linked_pig_records": reconciliation["linked_pig_records"],
+            "active_pig_records": active_count,
+            "exited_pig_records": reconciliation["exited_pig_records"],
+            "tagged_pig_count": tagged_count,
+            "untagged_pig_count": max(0, len(pigs) - tagged_count),
+            "male_count": male_count,
+            "female_count": female_count,
+            "average_current_weight_kg": _average(weights),
+            "reconciliation": reconciliation,
+        })
+
+    result_rows.sort(key=lambda item: (
+        item["needs_attention"] != "Yes",
+        item["farrowing_date"] or "9999-12-31",
+        item["litter_id"],
+    ))
+    return {
+        "success": True,
+        "count": len(result_rows),
+        "attention_count": sum(1 for item in result_rows if item["needs_attention"] == "Yes"),
+        "mismatch_count": sum(1 for item in result_rows if item["reconciliation"]["mismatch"]),
+        "formula_conflict_count": 0,
+        "litters": result_rows,
+        "source": {
+            "reads_from": "supabase_canonical",
+            "writes_to_sheets": False,
+            "writes_to_supabase": False,
+        },
+    }
+
+
+def get_litter_detail(litter_id, connect_factory=None):
+    litters, pigs_by_litter = _litter_rows_with_pigs(connect_factory=connect_factory)
+    litter = next((row for row in litters if _text(row.get("litter_id")) == _text(litter_id)), None)
+    if not litter:
+        return None
+    pigs = pigs_by_litter.get(_text(litter_id), [])
+    reconciliation = _litter_reconciliation(litter, pigs)
+    piglets = []
+    weights = []
+    male_count = 0
+    female_count = 0
+    active_count = 0
+    for pig in pigs:
+        sex = _text(pig.get("sex"))
+        if sex == "Male":
+            male_count += 1
+        elif sex == "Female":
+            female_count += 1
+        if _text(pig.get("status")) == "Active":
+            active_count += 1
+        weight = _float_or_none(pig.get("current_weight_kg"))
+        if weight is not None:
+            weights.append(weight)
+        piglets.append({
+            "pig_id": _text(pig.get("pig_id")),
+            "tag_number": _text(pig.get("tag_number")),
+            "sex": sex,
+            "status": _text(pig.get("status")),
+            "on_farm": _yes_no(pig.get("on_farm")),
+            "date_of_birth": _date_text(pig.get("date_of_birth")),
+            "age_days": _age_days(pig.get("date_of_birth")),
+            "current_weight_kg": weight,
+            "calculated_stage": _calculated_stage(pig),
+            "current_pen_id": _text(pig.get("current_pen_id")),
+        })
+    piglets.sort(key=lambda item: (item["tag_number"] or item["pig_id"]).lower())
+    return {
+        "litter_id": _text(litter_id),
+        "mother_pig_id": _text(litter.get("sow_pig_id")),
+        "mother_tag_number": _text(litter.get("sow_tag_number")),
+        "father_pig_id": _text(litter.get("boar_pig_id")),
+        "father_tag_number": _text(litter.get("boar_tag_number")),
+        "count": len(piglets),
+        "male_count": male_count,
+        "female_count": female_count,
+        "active_count": active_count,
+        "average_weight_kg": _average(weights),
+        "piglets": piglets,
+        "attention": None,
+        "reconciliation": reconciliation,
+        "lifecycle_outcomes": {
+            "total": len(piglets),
+            "active": active_count,
+            "sold": 0,
+            "slaughtered": 0,
+            "dead": 0,
+            "removed": 0,
+            "other": max(0, len(piglets) - active_count),
+        },
+        "wean_status": "",
+        "wean_date": "",
+        "source": "supabase_canonical",
+    }
+
+
+def get_litter_attention_summary(limit=5, connect_factory=None):
+    overview = list_litter_overview(connect_factory=connect_factory)
+    items = []
+    for litter in overview.get("litters", []):
+        if litter.get("needs_attention") != "Yes":
+            continue
+        items.append({
+            "litter_id": litter.get("litter_id", ""),
+            "sow_tag_number": litter.get("sow_tag_number", ""),
+            "farrowing_date": litter.get("farrowing_date", ""),
+            "wean_date": litter.get("wean_date", ""),
+            "litter_status": litter.get("litter_status", ""),
+            "needs_attention": litter.get("needs_attention", ""),
+            "reason": litter.get("attention_reason") or "Review litter counts.",
+            "action_type": "review_litter_counts",
+            "recommended_action": litter.get("reconciliation", {}).get("recommended_action") or "Review litter counts.",
+            "active_pig_count": litter.get("active_pig_records", 0),
+            "weaned_count": None,
+            "youngest_age_days": "",
+            "oldest_age_days": "",
+            "estimated_wean_date": "",
+            "wean_tag_attention_start_date": "",
+            "wean_planning_monday": "",
+            "days_until_estimated_wean": None,
+        })
+
+    return {
+        "count": len(items),
+        "items": items[:limit],
+        "source": "supabase_canonical",
+    }
+
+
 def _tag_for_pig(pig_id, connect_factory=None):
     row = _fetch_one("select tag_number from public.pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
     return _text(row.get("tag_number")) if row else ""

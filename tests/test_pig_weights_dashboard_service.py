@@ -6,6 +6,17 @@ from modules.pig_weights import pig_weights_service
 
 
 class LitterAttentionSummaryTests(unittest.TestCase):
+    def setUp(self):
+        self.supabase_availability_patch = patch.object(
+            pig_weights_service.farm_supabase_read_service,
+            "farm_supabase_reads_available",
+            return_value=False,
+        )
+        self.supabase_availability_patch.start()
+
+    def tearDown(self):
+        self.supabase_availability_patch.stop()
+
     def test_litter_attention_includes_sheet_attention_and_due_purpose_review(self):
         overview_rows = [
             {
