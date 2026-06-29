@@ -185,6 +185,7 @@ class DashboardSummaryServiceTests(unittest.TestCase):
 
     def test_dashboard_summary_splits_monthly_sales_by_stream(self):
         with patch.object(pig_weights_service, "get_all_records", side_effect=dashboard_records), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
              patch.object(pig_weights_service, "datetime", FixedDateTime), \
              patch.object(pig_weights_service, "get_monthly_sales_transaction_summary", return_value=({
                  "configured": False,

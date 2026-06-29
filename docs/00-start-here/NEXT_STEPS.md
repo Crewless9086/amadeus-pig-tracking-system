@@ -35,7 +35,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-8 live order import is applied with batch `IMPORT-20260629-LIVE-ORDERS-V1`: 26 orders, 103 order lines, 38 intakes, 11 intake items, 6 documents, 62 status logs, and 21 pricing rows.
 - GS-MIG-8 cutover scope: order list/detail/search reads, quote line reads, document metadata reads/writes, document settings reads, daily report status-log reads, guarded order create/update/line/reservation/lifecycle writes, sales transaction slaughter-exit pig updates, order intake update/reset, mating/breeding mutation routes, and direct farm master/weight/treatment/movement writes now prefer Supabase with Sheets fallback when unavailable.
 - GS-MIG-9 cutover scope: litter lifecycle and piglet correction writes now prefer Supabase with Sheets fallback when unavailable. Additive migrations `202606290002_add_pig_exit_fields.sql` and corrected `202606290003_add_litter_lifecycle_fields.sql` are applied in Supabase.
-- Continue GS-MIG-10+: close remaining route-facing Google Sheets dependencies where Supabase equivalents exist, then leave only legacy import/export/setup/reporting integrations.
+- Continue GS-MIG-FINAL: close remaining route-facing Google Sheets dependencies where Supabase equivalents exist, then leave only legacy import/export/setup/reporting integrations.
 - GS-MIG-11 is merged as PR #30: irrigation status defaults to Supabase-first `auto` mode with Google Sheets fallback only when Supabase has no plan rows or is unavailable. Hardware control remains disabled/read-only.
 - GS-MIG-12 is merged as PR #31: farm dashboard summary prefers Supabase `pig_current_state` plus `pigs` exit metadata and keeps the existing Google Sheets summary as fallback.
 - GS-MIG-13 is merged as PR #32: purpose-review apply validation prefers Supabase pig lookup before falling back to `PIG_MASTER`.
@@ -44,7 +44,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-16 is merged as PR #35: shared pig-weight pen lookup helpers use the existing Supabase-first pen service instead of direct `PEN_REGISTER` reads.
 - GS-MIG-17 is merged as PR #36: mating/breeding pen validation helpers use Supabase-first pen reads before existing fallbacks.
 - GS-MIG-18 is merged as PR #37: order status-log writes stay Supabase-first and fall back to Sheets only if the Supabase insert fails.
-- GS-MIG-19 in progress: order-line sync should stay Supabase-first and fall back safely if Supabase read/write helpers fail.
+- GS-MIG-19 is merged as PR #38: order-line sync stays Supabase-first and falls back safely if Supabase read/write helpers fail.
+- GS-MIG-FINAL is active on `gs-mig-final-audit-and-closeout`: classify every remaining Google Sheets caller, close any remaining active-route gaps, run the broad regression suite, and then call the operational route migration complete only if tests pass.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -83,7 +84,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-16: merged as PR #35.
 - GS-MIG-17: merged as PR #36.
 - GS-MIG-18: merged as PR #37.
-- GS-MIG-19: order-line sync read/write fallback resilience on the Supabase-first order rail.
+- GS-MIG-19: merged as PR #38.
+- GS-MIG-FINAL: final caller audit and closeout. Current target: zero active-route Google Sheets dependencies; remaining callers may be safe fallback only, import/export/admin scripts, legacy/reference wrappers, or tests.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.
@@ -118,8 +120,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
-- Full Google Sheets to Supabase app cutover remains incomplete. GS-MIG-7 may cut over safe direct canonical read routes with fallback.
-- Formula-specific newborn-health attention replacement and any remaining legacy setup/import/export scripts remain outside the current safe cutover until explicit Supabase services and tests exist.
+- Full Google Sheets to Supabase app cutover is in final audit/closeout. Do not call it complete until GS-MIG-FINAL tests and PR checks pass.
+- Legacy setup/import/export scripts remain by design and are not active app route dependencies.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.

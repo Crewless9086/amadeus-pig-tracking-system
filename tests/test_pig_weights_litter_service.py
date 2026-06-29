@@ -965,6 +965,17 @@ class LitterAttentionActionTests(unittest.TestCase):
 
 
 class PigLifecycleOutcomeTests(unittest.TestCase):
+    def setUp(self):
+        self.supabase_availability_patch = patch.object(
+            pig_weights_service.farm_supabase_read_service,
+            "farm_supabase_reads_available",
+            return_value=False,
+        )
+        self.supabase_availability_patch.start()
+
+    def tearDown(self):
+        self.supabase_availability_patch.stop()
+
     def test_assign_litter_piglet_tag_numbers_dry_run_maps_tags_without_writing(self):
         pig_rows = [
             {"Pig_ID": "PIG-1", "Tag_Number": "", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Sex": "Female"},
@@ -1329,6 +1340,130 @@ class LifecycleDetailReadTests(unittest.TestCase):
 
 
 class LitterNewbornHealthTests(unittest.TestCase):
+    def setUp(self):
+        self.supabase_availability_patch = patch.object(
+            pig_weights_service.farm_supabase_read_service,
+            "farm_supabase_reads_available",
+            return_value=False,
+        )
+        self.supabase_availability_patch.start()
+
+    def tearDown(self):
+        self.supabase_availability_patch.stop()
+
+    def test_record_litter_newborn_health_prefers_supabase_pig_and_product_reads(self):
+        product_rows = [{
+            "product_id": "PRD-ANTIPARASITIC",
+            "product_name": "Piglet Antiparasitic",
+            "product_category": "Antiparasitic",
+            "default_dose": 1.5,
+            "dose_unit": "ml",
+            "default_withdrawal_days": 7,
+        }]
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Earmarked": "",
+                "Earmark_Date": "",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Earmarked": "",
+                "Earmark_Date": "",
+            },
+        ]
+
+        with patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "get_products", return_value=product_rows) as get_products, \
+             patch.object(pig_weights_service.farm_supabase_read_service, "get_pig_master_rows", return_value=pig_rows) as get_pigs, \
+             patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")):
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                litter_id="LIT-1",
+                action_date_value="2026-06-02",
+                changed_by="Tester",
+                antiparasitic_product_id="PRD-ANTIPARASITIC",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["piglet_count"], 2)
+        self.assertEqual(result["treatment_rows_planned"], 2)
+        get_products.assert_called_once()
+        get_pigs.assert_called_once()
+
+    def test_mark_litter_weaned_prefers_supabase_pig_reads_and_writes(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-1",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Current_Weight_Kg": 6.5,
+                "Last_Weight_Date": "2026-06-01",
+            },
+            {
+                "Pig_ID": "PIG-2",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Current_Weight_Kg": 7.1,
+                "Last_Weight_Date": "2026-06-01",
+            },
+        ]
+
+        with patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "get_pig_master_rows", return_value=pig_rows) as get_pigs, \
+             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_litter_by_id", return_value=1) as update_litter, \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=2) as update_pigs, \
+             patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")), \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_update:
+            result, status_code = pig_weights_service.mark_litter_weaned(
+                "LIT-1",
+                "2026-06-05",
+                use_latest_weights_as_wean_weights=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        self.assertEqual(result["wean_weights_captured"], 2)
+        get_pigs.assert_called_once()
+        update_litter.assert_called_once()
+        update_pigs.assert_called_once()
+        sheet_update.assert_not_called()
+
+    def test_mark_pig_death_or_removal_prefers_supabase_pig_reads(self):
+        pig_rows = [{
+            "Pig_ID": "PIG-1",
+            "Status": "Active",
+            "On_Farm": "Yes",
+            "General_Notes": "",
+        }]
+
+        with patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "get_pig_master_rows", return_value=pig_rows) as get_pigs, \
+             patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")):
+            result, status_code = pig_weights_service.mark_pig_death_or_removal(
+                "PIG-1",
+                "2026-06-02",
+                "Died",
+                dry_run=True,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["planned_updates"]["Status"], "Dead")
+        get_pigs.assert_called_once()
+
     def test_record_litter_newborn_health_dry_run_plans_earmarks_and_treatments_without_writing(self):
         sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
         product_rows = [
