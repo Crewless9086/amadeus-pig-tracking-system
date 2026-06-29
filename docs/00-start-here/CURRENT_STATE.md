@@ -78,6 +78,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-9 litter lifecycle mutation update: litter birth-count correction, stillborn reclassification, purpose review decisions, litter weaning, pig death/removal, litter piglet death, piglet sex/tag updates, and newborn health actions now prefer Supabase canonical update rails when `DATABASE_URL` is available, with Sheets fallback when unavailable.
 - GS-MIG-8/9 additive migrations are applied in Supabase: `202606290002_add_pig_exit_fields` and corrected `202606290003_add_litter_lifecycle_fields`.
 - Remaining Google Sheets dependencies are now narrower: legacy setup/import/export scripts, Google Drive/document storage integration, and formula-specific farm/litter attention replacement work.
+- GS-MIG-11 in progress: irrigation status is being moved to Supabase-first `auto` reads with Google Sheets fallback; irrigation remains read-only with hardware control disabled.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
