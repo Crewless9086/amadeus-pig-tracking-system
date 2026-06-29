@@ -103,10 +103,10 @@ async function main() {
   assert.strictEqual(helpers.isCompleteUploadSuccess({ success: true, expected_count: 71, processed_count: 60, success_count: 60, failed_count: 0 }), false);
 
   const message = helpers.uploadFailureMessage({ message: "Batch partial", status: "partial_failure", expected_count: 71, success_count: 60, failed_count: 11, blocked_count: 0, skipped_count: 0, failed_rows: [{ error: { message: "timeout after 60" } }] });
-  assert(message.includes("Actionable 71"));
-  assert(message.includes("failed 11"));
-  assert(message.includes("Draft kept"));
-  assert(message.includes("timeout after 60"));
+  assert(message.includes("Upload paused"));
+  assert(message.includes("draft is saved"));
+  assert(message.includes("Upload Weights"));
+  assert(!message.includes("partial_failure"));
 
   helpers.persistDraft({ statusLabel: "Saved" });
   const draftKey = [...storage.keys()].find((key) => key.startsWith("bulkWeightsDraft:v"));
@@ -211,6 +211,7 @@ async function main() {
   };
   await helpers.fetchActiveBatchStatus();
   assert(elements.get("bulk_weights_message").textContent.includes("Upload paused"));
+  assert(elements.get("bulk_weights_message").textContent.includes("Upload Weights"));
   assert(!elements.get("bulk_weights_message").textContent.includes("No actionable"));
 
   const uploadCalls = [];
@@ -255,6 +256,57 @@ async function main() {
   assert(uploadCalls.some((call) => call.url.includes("/bulk-batches/BATCH-EXISTING/process")), "existing staged batch should process existing batch id");
   assert(!uploadCalls.some((call) => call.url.endsWith("/api/pig-weights/bulk-batches") && call.method === "POST"), "existing staged batch must not create a new batch");
   assert(elements.get("bulk_weights_message").textContent.includes("Upload complete"));
+
+  helpers.importDraftPayload({
+    draft_id: "DRAFT-STAGED-FAIL",
+    batch_id: "BATCH-FAIL",
+    weight_date: "2026-06-22",
+    rows,
+  });
+  const failedCalls = [];
+  sandbox.fetch = async (url, options = {}) => {
+    failedCalls.push({ url: String(url), method: options.method || "GET" });
+    if (String(url).includes("/process")) {
+      return {
+        ok: false,
+        status: 500,
+        headers: { get(name) { return name === "content-type" ? "text/html; charset=utf-8" : ""; } },
+        text: async () => "<html>server error</html>",
+        json: async () => ({}),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get(name) { return name === "content-type" ? "application/json" : ""; } },
+      text: async () => JSON.stringify({
+        ok: true,
+        success: true,
+        batch_id: "BATCH-FAIL",
+        status: "processing",
+        counts: {
+          visible_row_count: 116,
+          actionable_row_count: 42,
+          weight_row_count: 73,
+          movement_row_count: 28,
+          skipped_row_count: 43,
+          duplicate_count: 31,
+          remaining_count: 42,
+          success_count: 0,
+          failed_count: 0,
+          blocked_count: 0,
+        },
+        rows: [],
+      }),
+      json: async () => ({}),
+    };
+  };
+  await helpers.uploadBatch();
+  assert.strictEqual(failedCalls.filter((call) => call.url.includes("/process")).length, 3, "process should retry transient non-JSON failures twice before pausing");
+  assert(elements.get("bulk_weights_message").textContent.includes("Upload paused"));
+  assert(elements.get("bulk_weights_message").textContent.includes("Upload Weights"));
+  assert(!elements.get("bulk_weights_message").textContent.includes("non_json_response"));
+  assert(!failedCalls.some((call) => call.url.endsWith("/api/pig-weights/bulk-batches") && call.method === "POST"), "failed existing batch must not restage");
 
   console.log("bulk weight draft recovery helpers passed");
 }

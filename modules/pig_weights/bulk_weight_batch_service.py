@@ -14,7 +14,7 @@ from modules.pig_weights.pig_weights_service import (
     to_clean_string,
 )
 
-DEFAULT_CHUNK_SIZE = 10
+DEFAULT_CHUNK_SIZE = 3
 BATCH_STATUSES = {"staged", "processing", "partial", "complete", "failed", "cancelled"}
 ROW_STATUSES = {"staged", "skipped", "processing", "success", "failed", "duplicate", "blocked"}
 _MEMORY_BATCHES = {}
@@ -347,11 +347,11 @@ def process_bulk_weight_batch(batch_id: str, chunk_size: int = DEFAULT_CHUNK_SIZ
     if not batch:
         return {"ok": False, "success": False, "error": "batch_not_found", "message": "Bulk batch was not found."}, 404
     try:
-        chunk_size = max(1, min(int(chunk_size or DEFAULT_CHUNK_SIZE), 25))
+        chunk_size = max(1, min(int(chunk_size or DEFAULT_CHUNK_SIZE), 10))
     except Exception:
         chunk_size = DEFAULT_CHUNK_SIZE
 
-    eligible_statuses = {"failed"} if retry_failed else {"staged"}
+    eligible_statuses = {"failed"} if retry_failed else {"staged", "processing"}
     candidates = [row for row in rows if row.get("status") in eligible_statuses]
     chunk = candidates[:chunk_size]
     if not chunk:
@@ -368,6 +368,11 @@ def process_bulk_weight_batch(batch_id: str, chunk_size: int = DEFAULT_CHUNK_SIZ
 
     for row in chunk:
         _process_one_row(row)
+        progress_counts = _counts_from_records(rows)
+        batch["status"] = "processing" if progress_counts["remaining_count"] else _batch_status_from_counts(progress_counts)
+        batch["error_summary"] = "" if progress_counts["failed_count"] == 0 else f"{progress_counts['failed_count']} row(s) need retry or review."
+        batch["payload_summary_json"] = {**(batch.get("payload_summary_json") or {}), "last_processed_at": _now_iso(), "last_chunk_size": len(chunk)}
+        _save_store(batch, rows)
     counts = _counts_from_records(rows)
     batch["status"] = "processing" if counts["staged_count"] else _batch_status_from_counts(counts)
     batch["error_summary"] = "" if counts["failed_count"] == 0 else f"{counts['failed_count']} row(s) need retry or review."

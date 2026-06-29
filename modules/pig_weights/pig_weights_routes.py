@@ -339,7 +339,7 @@ def bulk_batch_status(batch_id):
 def bulk_batch_process(batch_id):
     payload = request.get_json(silent=True) or {}
     try:
-        result, status_code = process_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 10))
+        result, status_code = process_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 3))
         return jsonify(result), status_code
     except Exception as exc:
         return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint=f"/api/pig-weights/bulk-batches/{batch_id}/process")
@@ -349,7 +349,7 @@ def bulk_batch_process(batch_id):
 def bulk_batch_retry_failed(batch_id):
     payload = request.get_json(silent=True) or {}
     try:
-        result, status_code = retry_failed_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 10))
+        result, status_code = retry_failed_bulk_weight_batch(batch_id, chunk_size=payload.get("chunk_size", 3))
         return jsonify(result), status_code
     except Exception as exc:
         return _bulk_json_failure(exc, status_code=500, payload=payload, endpoint=f"/api/pig-weights/bulk-batches/{batch_id}/retry-failed")

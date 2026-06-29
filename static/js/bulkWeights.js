@@ -17,6 +17,9 @@ const downloadDraftButton = document.getElementById("bulk_download_draft_button"
 const importDraftButton = document.getElementById("bulk_import_draft_button");
 const importDraftInput = document.getElementById("bulk_import_draft_input");
 const continueButton = document.getElementById("bulk_continue_button");
+const uploadOverlay = document.getElementById("bulk_upload_overlay");
+const uploadOverlayTitle = document.getElementById("bulk_upload_overlay_title");
+const uploadOverlayText = document.getElementById("bulk_upload_overlay_text");
 
 const DRAFT_VERSION = 3;
 let allPigs = [];
@@ -26,6 +29,7 @@ let activeDraftId = "";
 let activeBatchId = "";
 let autosaveTimer = null;
 let recoveredDraftPayload = null;
+let lastKnownBatchData = null;
 
 function todayIso() {
   const today = new Date();
@@ -80,6 +84,49 @@ function clearMessage() {
   messageBox.classList.add("hidden");
   messageBox.textContent = "";
   messageBox.classList.remove("message-success", "message-error");
+}
+
+function setUploadOverlay(title, text) {
+  if (!uploadOverlay) return;
+  if (!title && !text) {
+    uploadOverlay.classList.add("hidden");
+    return;
+  }
+  if (uploadOverlayTitle) uploadOverlayTitle.textContent = title || "Uploading weights";
+  if (uploadOverlayText) uploadOverlayText.textContent = text || "Please keep this page open.";
+  uploadOverlay.classList.remove("hidden");
+}
+
+function setUploadLocked(isLocked) {
+  [
+    bulkDateInput,
+    penFilterSelect,
+    clearPensButton,
+    saveDraftButton,
+    downloadDraftButton,
+    importDraftButton,
+    uploadButton,
+  ].forEach((element) => {
+    if (element) element.disabled = Boolean(isLocked);
+  });
+  document.querySelectorAll("[data-bulk-weight], [data-bulk-pen], [data-bulk-notes]").forEach((input) => {
+    input.disabled = Boolean(isLocked);
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function ownerSafeFailureMessage(data) {
+  const status = String((data && data.status) || (data && data.error) || "").toLowerCase();
+  if (status === "non_json_response" || status === "invalid_json_response") {
+    return "Upload paused because the server returned an unexpected page instead of upload results. Your draft is saved. Press Upload Weights to resume.";
+  }
+  if (data && data.ok === false) {
+    return "Upload paused because the server could not finish this step. Your draft is saved. Press Upload Weights to resume.";
+  }
+  return "Upload paused. Your draft is saved. Press Upload Weights to resume.";
 }
 
 function draftKey() {
@@ -233,22 +280,7 @@ function isCompleteUploadSuccess(data) {
 
 function uploadFailureMessage(data, fallback = "Upload failed before completion.") {
   if (!data || typeof data !== "object") return fallback;
-  const parts = [];
-  if (data.message) parts.push(data.message);
-  if (data.status) parts.push(`Status: ${data.status}.`);
-  const counts = data.counts || data;
-  const expected = countValue(counts, "expected_count", "accepted_count", "actionable_row_count", "actionable_count");
-  const successCount = Number(counts.success_count || counts.saved_count || 0);
-  const failed = Number(counts.failed_count || 0);
-  const blocked = Number(counts.blocked_count || 0);
-  const skipped = Number(counts.skipped_count || 0);
-  if (expected || successCount || failed || blocked || skipped) {
-    parts.push(`Actionable ${expected}, completed ${successCount}, already recorded ${Number(counts.duplicate_count || counts.duplicate_weight_count || 0)}, failed ${failed}, needs review ${blocked}, skipped ${skipped}. Draft kept for recovery/retry.`);
-  }
-  const firstFailed = Array.isArray(data.failed_rows) ? data.failed_rows[0] : null;
-  const firstError = firstFailed && firstFailed.error ? (firstFailed.error.message || firstFailed.error.status) : "";
-  if (firstError) parts.push(`First failed row: ${firstError}.`);
-  return parts.join(" ") || fallback;
+  return ownerSafeFailureMessage(data);
 }
 
 function draftCountsForFailure() {
@@ -503,7 +535,7 @@ function importDraftPayload(payload) {
   writeDraftPayload(buildDraftPayload({ draft_id: activeDraftId, validation_status: "imported" }));
   renderTable();
   showRecoveryBanner(buildDraftPayload({ draft_id: activeDraftId, validation_status: "imported" }));
-  setMessage(`Imported draft restored with ${actionableDraftRows().length} actionable row${actionableDraftRows().length === 1 ? "" : "s"}. Review before staging.`, "success");
+  setMessage(`Imported draft restored with ${actionableDraftRows().length} row${actionableDraftRows().length === 1 ? "" : "s"} ready to check. Press Upload Weights when ready.`, "success");
 }
 
 function clearUploadedAndDuplicateDraftRows(uploadData) {
@@ -551,8 +583,14 @@ function renderReview(data) {
   const blockedCount = Number(counts.blocked_count || 0);
   const failedCount = Number(counts.failed_count || 0);
   const remainingCount = countValue(counts, "remaining_count");
-  const batchLine = data.status
-    ? `<div class="bulk-review-notes"><div>Upload status: ${escapeHtml(data.status)}. ${remainingCount ? `${remainingCount} row${remainingCount === 1 ? "" : "s"} still need upload.` : "No rows waiting to upload."}${data.batch_id ? ` <small>Batch ${escapeHtml(data.batch_id)}</small>` : ""}</div></div>`
+  const isUncertainStatus = ["non_json_response", "invalid_json_response"].includes(String(data.status || data.error || "").toLowerCase()) || data.ok === false;
+  const uploadLine = isUncertainStatus
+    ? "Upload status unknown. Draft is saved. Press Upload Weights to check and resume."
+    : remainingCount
+      ? `${remainingCount} row${remainingCount === 1 ? "" : "s"} still need upload.`
+      : "No rows waiting to upload.";
+  const batchLine = data.status || data.batch_id
+    ? `<details class="bulk-review-notes"><summary>Technical details</summary><div>${escapeHtml(uploadLine)}${data.batch_id ? ` Batch ${escapeHtml(data.batch_id)}.` : ""}${data.status ? ` Status ${escapeHtml(data.status)}.` : ""}</div></details>`
     : "";
   const issueRows = [
     ...blockedRows.map((row) => ({ ...row, status: "blocked" })),
@@ -579,7 +617,7 @@ function renderReview(data) {
     </div>
     <div class="bulk-review-header">
       <strong>Upload Progress</strong>
-      <span>${processedCount} processed, ${successCount} uploaded, ${duplicateCount} already recorded, ${remainingCount} remaining, ${blockedCount} needs review, ${failedCount} failed</span>
+      <span>${successCount} uploaded, ${duplicateCount} already recorded, ${draftSkippedCount} skipped blank/no-change, ${remainingCount} remaining to upload, ${blockedCount} needs review, ${failedCount} failed</span>
     </div>
     ${batchLine}
     ${movementHtml}
@@ -623,21 +661,30 @@ async function stageBulkBatch() {
   return { response, data };
 }
 
-async function fetchActiveBatchStatus() {
+async function fetchActiveBatchStatus(options = {}) {
   if (!activeBatchId) return null;
   const endpoint = `/api/pig-weights/bulk-batches/${encodeURIComponent(activeBatchId)}`;
   const response = await fetch(endpoint, { method: "GET" });
   const data = await parseBulkJsonResponse(response, endpoint);
   data.batch_id = data.batch_id || activeBatchId;
+  if (response.ok && data.ok) lastKnownBatchData = data;
   renderReview(data);
   const remaining = countValue(data.counts || data, "remaining_count");
   const status = String(data.status || "").toLowerCase();
   if (response.ok && data.ok && remaining > 0 && ["staged", "processing", "partial"].includes(status)) {
-    if (continueButton) continueButton.classList.remove("hidden");
-    setMessage(`Upload paused. ${remaining} row${remaining === 1 ? "" : "s"} still need upload.`, "error");
+    if (continueButton) continueButton.classList.add("hidden");
+    if (!options.silent) {
+      setMessage(`Upload paused. ${remaining} row${remaining === 1 ? "" : "s"} still need upload. Press Upload Weights to resume.`, "error");
+    }
   } else if (response.ok && data.ok && status === "complete") {
     if (continueButton) continueButton.classList.add("hidden");
-    setMessage("Previous upload is complete. Import or restore a draft only if you need to review it again.", "success");
+    if (!options.silent) {
+      setMessage("Previous upload is complete. Import or restore a draft only if you need to review it again.", "success");
+    }
+  } else if (!response.ok || !data.ok) {
+    if (!options.silent) {
+      setMessage("Upload status unknown. Draft is saved. Press Upload Weights to check and resume.", "error");
+    }
   }
   return data;
 }
@@ -648,28 +695,54 @@ async function processActiveBatch(options = {}) {
     return null;
   }
   const maxLoops = Number(options.maxLoops || 50);
+  const maxRetries = Number(options.maxRetries || 2);
   let lastData = null;
   for (let loop = 0; loop < maxLoops; loop += 1) {
     const endpoint = `/api/pig-weights/bulk-batches/${encodeURIComponent(activeBatchId)}/process`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chunk_size: 10 }),
-    });
-    const data = await parseBulkJsonResponse(response, endpoint);
+    let response = null;
+    let data = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      setUploadOverlay("Uploading weights", attempt ? `Retrying upload step ${attempt} of ${maxRetries}. Please keep this page open.` : "Processing rows. Please keep this page open.");
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chunk_size: 3 }),
+        });
+        data = await parseBulkJsonResponse(response, endpoint);
+      } catch (error) {
+        data = {
+          ok: false,
+          success: false,
+          status: "network_interruption",
+          error: "network_interruption",
+          message: error.message || "Network interruption",
+          batch_id: activeBatchId,
+          counts: lastKnownBatchData ? lastKnownBatchData.counts : {},
+        };
+        response = { ok: false };
+      }
+      if (response.ok && data.ok) break;
+      if (attempt < maxRetries) await sleep(500 * (attempt + 1));
+    }
     data.batch_id = data.batch_id || activeBatchId;
     lastData = data;
-    renderReview(data);
 
     if (!response.ok || !data.ok) {
       persistDraft({ statusLabel: "Chunk failed - draft kept", validation_status: "chunk_failed" });
-      if (continueButton) continueButton.classList.remove("hidden");
-      setMessage(uploadFailureMessage(data, "Batch processing stopped. Draft and staged batch are still saved."), "error");
+      const statusData = await fetchActiveBatchStatus({ silent: true }).catch(() => null);
+      renderReview(statusData && statusData.ok ? statusData : data);
+      if (continueButton) continueButton.classList.add("hidden");
+      setMessage(uploadFailureMessage(data, "Upload paused. Your draft is saved. Press Upload Weights to resume."), "error");
+      setUploadOverlay("", "");
       return data;
     }
 
+    lastKnownBatchData = data;
+    renderReview(data);
     const status = String(data.status || "").toLowerCase();
     const remaining = Number((data.counts || data).remaining_count || 0);
+    setUploadOverlay("Uploading weights", remaining ? `Processing rows. ${remaining} row${remaining === 1 ? "" : "s"} still need upload.` : "Finishing upload summary.");
     if (status === "complete" || status === "partial" || status === "failed" || remaining <= 0) {
       if (isCompleteUploadSuccess(data)) {
         clearUploadedAndDuplicateDraftRows(data);
@@ -683,38 +756,45 @@ async function processActiveBatch(options = {}) {
         setMessage(`Upload complete: ${Number(counts.success_count || 0)} row action${Number(counts.success_count || 0) === 1 ? "" : "s"} uploaded, ${duplicateCount} already recorded, ${skippedCount} blank/no-change skipped.`, "success");
       } else {
         persistDraft({ statusLabel: "Batch incomplete - draft kept", validation_status: "batch_incomplete" });
-        if (continueButton) continueButton.classList.remove("hidden");
-        setMessage(uploadFailureMessage(data, "Batch is not complete. Draft and staged batch are still saved for retry."), "error");
+        if (continueButton) continueButton.classList.add("hidden");
+        setMessage("Upload completed with issues. Your draft is saved. Press Upload Weights to retry unresolved rows.", "error");
       }
+      setUploadOverlay("", "");
       return data;
     }
   }
   if (lastData) {
     persistDraft({ statusLabel: "Processing paused - draft kept", validation_status: "processing_paused" });
-    if (continueButton) continueButton.classList.remove("hidden");
-    setMessage("Upload paused safely. Continue Upload will resume the saved batch.", "success");
+    if (continueButton) continueButton.classList.add("hidden");
+    setMessage("Upload paused safely. Press Upload Weights to resume the saved batch.", "success");
   }
+  setUploadOverlay("", "");
   return lastData;
 }
 
 async function uploadBatch() {
   clearMessage();
-  uploadButton.disabled = true;
-  uploadButton.textContent = activeBatchId ? "Continuing upload..." : "Preparing batch...";
+  setUploadLocked(true);
+  uploadButton.textContent = "Uploading...";
+  setUploadOverlay("Uploading weights", "Please keep this page open.");
   if (continueButton) continueButton.classList.add("hidden");
 
   try {
     persistDraft({ statusLabel: "Autosaved before upload", validation_status: "upload_pending" });
     if (activeBatchId) {
+      await fetchActiveBatchStatus({ silent: true }).catch(() => null);
       await processActiveBatch();
       return;
     }
+    setUploadOverlay("Uploading weights", "Preparing batch. Please keep this page open.");
     const { response, data } = await stageBulkBatch();
     if (!response.ok || !data.ok) {
       persistDraft({ statusLabel: "Staging failed - draft kept", validation_status: "stage_failed" });
-      setMessage(uploadFailureMessage(data, "Batch could not be staged. Draft kept."), "error");
+      setMessage(uploadFailureMessage(data, "Upload paused. Your draft is saved. Press Upload Weights to resume."), "error");
+      setUploadOverlay("", "");
       return;
     }
+    lastKnownBatchData = data;
 
     const counts = data.counts || {};
     const remainingAfterStage = countValue(counts, "remaining_count");
@@ -722,6 +802,7 @@ async function uploadBatch() {
     if (actionableAfterStage === 0 && remainingAfterStage === 0) {
       persistDraft({ statusLabel: "Nothing new to upload - draft kept", validation_status: "nothing_to_process" });
       setMessage("Nothing new to upload. Blank rows were skipped and existing weights are already recorded.", "success");
+      setUploadOverlay("", "");
       return;
     }
 
@@ -733,10 +814,11 @@ async function uploadBatch() {
   } catch (error) {
     console.error("bulk upload error:", error);
     persistDraft({ statusLabel: "Upload error - draft kept", validation_status: "upload_exception" });
-    if (continueButton && activeBatchId) continueButton.classList.remove("hidden");
-    setMessage(`Upload failed before completion: ${error.message || "network/server error"}. Draft kept on this device; use Download Draft before retrying if needed.`, "error");
+    if (continueButton) continueButton.classList.add("hidden");
+    setMessage("Upload paused because the server could not finish this step. Your draft is saved. Press Upload Weights to resume.", "error");
+    setUploadOverlay("", "");
   } finally {
-    uploadButton.disabled = false;
+    setUploadLocked(false);
     uploadButton.textContent = "Upload Weights";
   }
 }
@@ -826,7 +908,7 @@ if (restoreDraftButton) {
     activeDraftId = recoveredDraftPayload.draft_id || activeDraftId || createDraftId();
     writeDraftPayload(buildDraftPayload({ draft_id: activeDraftId, validation_status: recoveredDraftPayload.validation_status || "restored" }));
     renderTable();
-    setMessage("Recovered draft restored on screen. Review rows before uploading.", "success");
+    setMessage("Recovered draft restored on screen. Press Upload Weights when ready.", "success");
     hideRecoveryBanner();
   });
 }

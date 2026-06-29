@@ -2,6 +2,35 @@
 
 # Processed Notes
 
+## 2026-06-29 One-Button Bulk Owner Flow
+
+Status: active P0 live fix.
+
+Branch: `p0-bulk-one-button-owner-flow`
+
+Staged batch id: `2241aeab-4f40-4797-882d-1588a17abbd0`
+
+Owner live result:
+
+- The screen still exposed Continue Upload, batch id, `non_json_response`, and technical upload mechanics.
+- Owner needs one primary action: Upload Weights.
+- Upload Weights must stage, resume, process, retry, and pause safely in the background.
+
+Read-only inspection:
+
+- Batch status is `processing`.
+- 10 rows are stuck in `processing`.
+- 32 rows remain `staged`.
+- 31 rows are already recorded duplicate weights.
+- 43 rows are blank/no-change skipped.
+- No production processing was run during inspection.
+
+Decision:
+
+- Hide separate Continue Upload from the normal owner flow.
+- Keep Save Draft, Upload Weights, Download Draft, and Import Draft.
+- Pressing Upload Weights must resume an existing `batch_id`, recover interrupted `processing` rows, and avoid exposing JSON/status/batch mechanics as the main owner message.
+
 ## 2026-06-29 Staged Batch Auto-Process
 
 Status: active P0 live fix.

@@ -642,6 +642,26 @@ class DurableBulkWeightBatchServiceTests(unittest.TestCase):
         self.assertEqual(len([row for row in retry["rows"] if row["status"] == "success"]), 2)
 
     @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_process_recovers_interrupted_processing_rows(self):
+        rows = self._rows_73_with_21_moves()[:5]
+        preflight = self._preflight_for_rows(rows)
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)), \
+             patch.object(bulk_weight_batch_service, "save_weight_entry_with_optional_move", return_value={"success": True, "movement_logged": False}), \
+             patch.object(bulk_weight_batch_service, "save_movement_entry", return_value={"success": True}):
+            staged, _ = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-INTERRUPTED", "weight_date": "2026-06-22", "rows": rows})
+            batch_id = staged["batch_id"]
+            batch, stored_rows = bulk_weight_batch_service._memory_get(batch_id)
+            stored_rows[0]["status"] = "processing"
+            stored_rows[1]["status"] = "processing"
+            bulk_weight_batch_service._memory_save(batch, stored_rows)
+            result, status = bulk_weight_batch_service.process_bulk_weight_batch(batch_id, chunk_size=2)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(result["counts"]["success_count"], 2)
+        self.assertEqual(result["counts"]["remaining_count"], 3)
+        self.assertTrue(all(row["status"] != "processing" for row in result["rows"][:2]))
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
     def test_durable_stage_route_returns_json_on_store_exception(self):
         from app import app
         from modules.pig_weights import pig_weights_routes
@@ -657,6 +677,22 @@ class DurableBulkWeightBatchServiceTests(unittest.TestCase):
         self.assertEqual(body["endpoint"], "/api/pig-weights/bulk-batches")
         self.assertFalse(body["writes_to_google_sheets"])
         self.assertFalse(body["writes_to_supabase"])
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_process_route_returns_json_on_service_exception(self):
+        from app import app
+        from modules.pig_weights import pig_weights_routes
+
+        client = app.test_client()
+        with patch.object(pig_weights_routes, "process_bulk_weight_batch", side_effect=RuntimeError("process crashed")):
+            response = client.post("/api/pig-weights/bulk-batches/BATCH-1/process", json={"chunk_size": 3})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.content_type, "application/json")
+        body = response.get_json()
+        self.assertFalse(body["ok"])
+        self.assertEqual(body["endpoint"], "/api/pig-weights/bulk-batches/BATCH-1/process")
+        self.assertFalse(body["writes_to_google_sheets"])
 
     @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
     def test_durable_duplicate_weight_without_move_is_already_recorded_not_blocking(self):

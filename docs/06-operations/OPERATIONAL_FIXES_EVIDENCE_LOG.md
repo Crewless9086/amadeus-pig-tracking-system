@@ -313,3 +313,31 @@ SAM pilot implication:
 ## No-Write Confirmation
 
 No INSERT, UPDATE, DELETE, UPSERT, TRUNCATE, schema change, migration, customer send, public post, payment/deposit change, stock/reservation change, or lifecycle/purpose write was performed.
+
+## P0 One-Button Bulk Owner Flow - 2026-06-29
+
+Owner live finding after staged-batch auto-process deploy:
+
+- The page still showed too much backend workflow: Continue Upload, batch id, `non_json_response`, and technical counts.
+- Process call returned HTTP 500/non-JSON from `/api/pig-weights/bulk-batches/2241aeab-4f40-4797-882d-1588a17abbd0/process`.
+- Main owner message said the draft was saved, but upload progress also said no rows were waiting. This was contradictory and not acceptable.
+
+Read-only Supabase inspection of batch `2241aeab-4f40-4797-882d-1588a17abbd0`:
+
+- Batch status: `processing`.
+- Row statuses: 31 `duplicate`, 43 `skipped`, 10 `processing`, 32 `staged`.
+- Action/status counts: 31 duplicate weights, 43 skipped blank/no-change, 1 duplicate-weight movement stuck in `processing`, 9 weight rows stuck in `processing`, and 32 weight rows still `staged`.
+- No production batch processing was run during inspection.
+
+Root cause:
+
+- Owner-facing frontend still exposed backend mechanics and technical error/status strings.
+- Interrupted process requests could leave rows in `processing`; the next process call only selected `staged` rows, so those rows could remain stuck.
+- The process route is wrapped for JSON app-level errors, but platform/server interruptions can still return HTML; the frontend must treat this as a resumable interruption, not as a final owner-facing technical error.
+
+Fix direction:
+
+- Keep one owner action: `Upload Weights`.
+- Hide separate Continue Upload from the primary workflow.
+- `Upload Weights` stages if needed, resumes existing batch ids, processes chunks automatically, retries transient failures, and pauses safely with the draft/batch preserved.
+- Backend processing treats interrupted `processing` rows as resumable and persists progress after each row.

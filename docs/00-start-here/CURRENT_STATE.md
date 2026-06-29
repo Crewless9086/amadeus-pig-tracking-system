@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `357c161` Continue staged bulk weight uploads (#17)
 - `86c1836` Simplify durable bulk weight upload
 - `206d483` Add durable bulk weight batch rail
 - `981f1a5` Return JSON for bulk upload failures
@@ -33,11 +34,11 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Cleanup is complete enough to pause housekeeping.
 - OP-BUILD-1A, OP-BUILD-2/3/4, and remaining operational review-view polish are merged.
 - P0 draft recovery and JSON-safe upload hotfixes are merged, but owner retest still received app/server HTML from the old synchronous Google Sheets path.
-- P0 simple upload is merged, but owner live test found an existing staged batch was not auto-processing and the UI still showed contradictory counts.
-- Active P0 branch: `p0-staged-batch-auto-process`.
-- Live staged batch under inspection: `2241aeab-4f40-4797-882d-1588a17abbd0`. Read-only inspection showed 42 staged/processable rows, 31 already-recorded duplicate rows, and 43 blank/no-change skipped rows.
-- Current P0 direction: existing saved `batch_id` must be recovered on page load, show Continue Upload, and process that same batch without restaging or saying no actionable rows.
-- No further owner manual 71/73-row retest should happen until existing staged-batch recovery, Continue Upload, and auto-process tests pass and the fix is deployed.
+- P0 staged-batch auto-process is merged, but owner live test still exposed backend mechanics: Continue Upload, batch id, `non_json_response`, and contradictory counts.
+- Active P0 branch: `p0-bulk-one-button-owner-flow`.
+- Live staged batch under inspection: `2241aeab-4f40-4797-882d-1588a17abbd0`. Read-only inspection showed status `processing`, 10 rows stuck in `processing`, 32 rows still `staged`, 31 already-recorded duplicate rows, and 43 blank/no-change skipped rows.
+- Current P0 direction: owner-facing flow must be one button only. `Upload Weights` must stage/resume/process/retry automatically, hide technical staging/chunking, and preserve draft/batch on interruption.
+- No further owner manual 71/73-row retest should happen until one-button Upload Weights, existing-batch resume, processing-row recovery, non-JSON pause/retry, and count-display tests pass and the fix is deployed.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
@@ -115,5 +116,5 @@ SAM safety remains unchanged:
 
 ## Last Updated
 
-2026-06-28
+2026-06-29
 
