@@ -41,10 +41,16 @@
           <button type="button" id="bulk_download_draft_button" class="button-link button-link-secondary">Download Draft</button>
           <button type="button" id="bulk_import_draft_button" class="button-link button-link-secondary">Import Draft</button>
           <input type="file" id="bulk_import_draft_input" class="hidden" accept="application/json,.json" />
-          <button type="button" id="bulk_continue_button" class="button-link button-link-secondary hidden">Continue Upload</button>
           <button type="button" id="bulk_upload_button">Upload Weights</button>
         </div>
       </form>
+
+      <div id="bulk_upload_overlay" class="bulk-review-panel hidden" role="status" aria-live="polite">
+        <div class="bulk-review-header">
+          <strong id="bulk_upload_overlay_title">Uploading weights</strong>
+          <span id="bulk_upload_overlay_text">Please keep this page open.</span>
+        </div>
+      </div>
 
       <div class="bulk-weight-summary">
         <div>
