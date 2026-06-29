@@ -24,13 +24,17 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Owner decision: missing-`Pig_ID` weight rows are left out of canonical import and listed in review/quarantine output; same-weight duplicates import as one canonical event; conflicting weights stay on a visible review list and do not import automatically; repeated movements import as one canonical movement.
 - Import result: 217 pigs, 20 pens, 1,190 weight events, 179 location events, 261 medical events, 17 litters, 15 mating events, 3 products, and 18 settings were imported. The 9 conflicting-weight groups remain excluded for review.
 - GS-MIG-6 is merged as PR #26.
-- GS-MIG-7 is active on `gs-mig-7-supabase-route-cutover`: route-by-route Supabase read cutover for safe direct canonical farm routes.
+- GS-MIG-7 is merged as PR #27: route-by-route Supabase read cutover for safe direct canonical farm routes.
 - GS-MIG-7A direct canonical reads: pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
 - GS-MIG-7B formula shadow: live read-only comparison confirms core `PIG_OVERVIEW` counts match `pig_current_state`; sales readiness/stock and attention formulas still need Supabase replacement services before route cutover.
 - GS-MIG-7C allocation/meat-planning reads: pig allocation readiness now prefers Supabase canonical inputs; meat planning follows that allocation source and live read-only smoke returned 2 current meat-planning rows.
 - GS-MIG-7D sales reads: sales availability and sales dashboard stock/readiness data now derive from Supabase-backed allocation readiness when available; live read-only smoke returned 39 available rows under the new allocation-derived model.
 - GS-MIG-7E litter reads: litter overview, litter detail, and dashboard litter attention now prefer Supabase canonical reads; live read-only smoke returned 17 litters and 1 litter attention item.
 - GS-MIG-7F breeding/mating reads: breeding options, mating overview, breeding analytics, and breeding animal detail now prefer Supabase canonical reads; live read-only smoke returned 18 sows, 3 boars, 15 mating records, and 17 litter records.
+- GS-MIG-8 is active on `gs-mig-8-complete-supabase-cutover`: finish order/sales workflow cutover from Sheets to Supabase after PR #27.
+- GS-MIG-8 live order import is applied with batch `IMPORT-20260629-LIVE-ORDERS-V1`: 26 orders, 103 order lines, 38 intakes, 11 intake items, 6 documents, 62 status logs, and 21 pricing rows.
+- GS-MIG-8 current cutover scope: order list/detail/search reads, document metadata reads, daily report status-log reads, guarded order create/update/line/reservation/lifecycle writes, and order intake update/reset now prefer Supabase with Sheets fallback when unavailable.
+- Continue GS-MIG-8 testing and route smoke before PR: no customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -97,7 +101,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
 - Full Google Sheets to Supabase app cutover remains incomplete. GS-MIG-7 may cut over safe direct canonical read routes with fallback.
-- Formula-specific newborn-health attention replacement, order/sales workflow modules, and mutation/write route cutover remain blocked until explicit Supabase services and owner-approved write rails exist.
+- Formula-specific newborn-health attention replacement, document settings/generation/send write rails, mating/breeding mutation routes, and any remaining legacy setup/import scripts remain outside the current safe cutover until explicit Supabase services and tests exist.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.

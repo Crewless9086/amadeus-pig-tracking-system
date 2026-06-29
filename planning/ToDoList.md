@@ -2,6 +2,25 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-8 Complete Supabase Cutover
+
+Status: active.
+
+Branch: `gs-mig-8-complete-supabase-cutover`
+
+Result so far:
+
+- Live order/sales import batch `IMPORT-20260629-LIVE-ORDERS-V1` applied to Supabase.
+- Order list/detail/search now prefer Supabase canonical reads.
+- Order document metadata and daily order status summaries now prefer Supabase reads.
+- Order create/update/line/reservation/lifecycle and order intake update/reset now have guarded Supabase write rails with Sheets fallback.
+
+Still to verify before PR:
+
+- Full route/service regression.
+- No customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
+- Document settings/generation/send and mating/breeding mutation routes remain separate follow-up rails.
+
 ## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 
 Status: active.

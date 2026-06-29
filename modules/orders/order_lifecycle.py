@@ -14,6 +14,7 @@ from modules.pig_weights.pig_weights_utils import to_clean_string
 from modules.orders.order_status_log import write_order_status_log
 from modules.orders.order_reservation import reserve_order_lines
 from modules.orders.order_line_sync import _cancel_order_lines
+from modules.orders import order_supabase_write
 
 
 ORDER_MASTER_SHEET = "ORDER_MASTER"
@@ -50,6 +51,17 @@ def _header_index(headers):
 
 
 def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
+    if order_supabase_write.supabase_order_writes_available():
+        if sheet_name == ORDER_MASTER_SHEET:
+            changed = order_supabase_write.update_order_fields(row_id, updates)
+        elif sheet_name == ORDER_LINES_SHEET:
+            changed = order_supabase_write.update_order_line_fields(row_id, updates)
+        else:
+            changed = 0
+        if changed == 0:
+            raise ValueError(f"Row with ID '{row_id}' not found in '{sheet_name}'.")
+        return
+
     headers, rows = _sheet_headers_and_rows(sheet_name)
 
     if not headers:
@@ -79,6 +91,9 @@ def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
 
 
 def _get_order_master_row(order_id: str):
+    if order_supabase_write.supabase_order_writes_available():
+        return order_supabase_write.get_order_master_row(order_id)
+
     rows = get_all_records(ORDER_MASTER_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_ID", "")) == str(order_id).strip():
@@ -242,7 +257,11 @@ def send_order_for_approval(order_id: str, changed_by: str = "App"):
             "Collection location is required before sending for approval."
         )
 
-    all_lines = get_all_records(ORDER_LINES_SHEET)
+    all_lines = (
+        order_supabase_write.list_order_lines()
+        if order_supabase_write.supabase_order_writes_available()
+        else get_all_records(ORDER_LINES_SHEET)
+    )
     active_lines = [
         line for line in all_lines
         if to_clean_string(line.get("Order_ID", "")) == order_id
@@ -409,7 +428,11 @@ def reject_order(order_id: str, changed_by: str = "App"):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
-    order_line_rows = get_all_records(ORDER_LINES_SHEET)
+    order_line_rows = (
+        order_supabase_write.list_order_lines()
+        if order_supabase_write.supabase_order_writes_available()
+        else get_all_records(ORDER_LINES_SHEET)
+    )
     line_ids_to_cancel = []
 
     for line in order_line_rows:
@@ -497,7 +520,11 @@ def cancel_order(order_id: str, changed_by: str = "App", reason: str = ""):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
-    order_line_rows = get_all_records(ORDER_LINES_SHEET)
+    order_line_rows = (
+        order_supabase_write.list_order_lines()
+        if order_supabase_write.supabase_order_writes_available()
+        else get_all_records(ORDER_LINES_SHEET)
+    )
     line_ids_to_cancel = []
 
     for line in order_line_rows:
@@ -565,9 +592,16 @@ def complete_order(order_id: str, changed_by: str = "App"):
     if old_status != "Approved":
         raise ValueError(f"Only Approved orders can be completed. Current status: {old_status}.")
 
-    headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
-    if not headers:
-        raise ValueError("ORDER_LINES is empty.")
+    if order_supabase_write.supabase_order_writes_available():
+        headers = ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Reserved_Status", "Updated_At"]
+        rows = [
+            [row.get(field, "") for field in headers]
+            for row in order_supabase_write.list_order_lines()
+        ]
+    else:
+        headers, rows = _sheet_headers_and_rows(ORDER_LINES_SHEET)
+        if not headers:
+            raise ValueError("ORDER_LINES is empty.")
 
     idx = _header_index(headers)
     for field in ["Order_Line_ID", "Order_ID", "Pig_ID", "Line_Status", "Updated_At"]:
@@ -606,7 +640,11 @@ def complete_order(order_id: str, changed_by: str = "App"):
         }
         for line in active_lines
     }
-    batch_update_rows_by_id(ORDER_LINES_SHEET, order_lines_updates)
+    if order_supabase_write.supabase_order_writes_available():
+        for line_id, updates in order_lines_updates.items():
+            order_supabase_write.update_order_line_fields(line_id, updates)
+    else:
+        batch_update_rows_by_id(ORDER_LINES_SHEET, order_lines_updates)
 
     pig_updates = {
         line["pig_id"]: {
@@ -619,7 +657,10 @@ def complete_order(order_id: str, changed_by: str = "App"):
         }
         for line in active_lines
     }
-    batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
+    if order_supabase_write.supabase_order_writes_available():
+        order_supabase_write.mark_pigs_sold([line["pig_id"] for line in active_lines])
+    else:
+        batch_update_rows_by_id(PIG_MASTER_SHEET, pig_updates)
 
     _update_sheet_row_by_id(ORDER_MASTER_SHEET, order_id, {
         "Order_Status": "Completed",

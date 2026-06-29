@@ -7,6 +7,7 @@ from services.google_sheets_service import (
     batch_update_rows_by_id,
 )
 from modules.pig_weights.pig_weights_utils import to_clean_string, to_float
+from modules.orders import order_intake_supabase_store
 
 
 ORDER_INTAKE_STATE_SHEET = "ORDER_INTAKE_STATE"
@@ -154,11 +155,11 @@ def update_intake_state(cleaned_data: dict):
 
     current_items = _get_items_for_intake(intake_id)
     if state_updates:
-        batch_update_rows_by_id(ORDER_INTAKE_STATE_SHEET, {intake_id: state_updates})
+        _batch_update_rows_by_id(ORDER_INTAKE_STATE_SHEET, {intake_id: state_updates})
         intake = {**intake, **state_updates}
 
     if items.get("updates"):
-        batch_update_rows_by_id(ORDER_INTAKE_ITEMS_SHEET, items["updates"])
+        _batch_update_rows_by_id(ORDER_INTAKE_ITEMS_SHEET, items["updates"])
 
     all_items = _get_items_for_intake(intake_id)
     if not all_items and current_items:
@@ -173,7 +174,7 @@ def update_intake_state(cleaned_data: dict):
         "Intake_Status": computed["intake_status"],
         "Updated_At": now_str,
     }
-    batch_update_rows_by_id(ORDER_INTAKE_STATE_SHEET, {intake_id: computed_updates})
+    _batch_update_rows_by_id(ORDER_INTAKE_STATE_SHEET, {intake_id: computed_updates})
     intake = {**intake, **computed_updates}
 
     return _build_context_response(
@@ -211,7 +212,7 @@ def reset_intake(conversation_id: str, closed_reason: str = "admin_reset", updat
         "Last_Updated_By": to_clean_string(updated_by) or "App",
         "Updated_At": now_str,
     }
-    batch_update_rows_by_id(ORDER_INTAKE_STATE_SHEET, {intake_id: updates})
+    _batch_update_rows_by_id(ORDER_INTAKE_STATE_SHEET, {intake_id: updates})
 
     return {
         "success": True,
@@ -400,7 +401,10 @@ def _create_intake_row(conversation_id: str, cleaned_data: dict, now_str: str, u
         "Notes": "",
     }
 
-    append_row(ORDER_INTAKE_STATE_SHEET, [row.get(header, "") for header in INTAKE_STATE_HEADERS])
+    if order_intake_supabase_store.available():
+        order_intake_supabase_store.insert_intake(row)
+    else:
+        append_row(ORDER_INTAKE_STATE_SHEET, [row.get(header, "") for header in INTAKE_STATE_HEADERS])
     return row
 
 
@@ -505,7 +509,10 @@ def _append_intake_item(intake_id: str, conversation_id: str, item: dict, now_st
         "Updated_At": now_str,
         "Removed_At": now_str if status in ("removed", "replaced") else "",
     }
-    append_row(ORDER_INTAKE_ITEMS_SHEET, [row.get(header, "") for header in INTAKE_ITEM_HEADERS])
+    if order_intake_supabase_store.available():
+        order_intake_supabase_store.insert_item(row)
+    else:
+        append_row(ORDER_INTAKE_ITEMS_SHEET, [row.get(header, "") for header in INTAKE_ITEM_HEADERS])
 
 
 def _build_item_updates(existing: dict, item: dict, now_str: str):
@@ -690,6 +697,12 @@ def _serialize_item(item: dict):
 
 
 def _find_active_intake_by_conversation(conversation_id: str):
+    if order_intake_supabase_store.available():
+        return order_intake_supabase_store.find_active_intake_by_conversation(
+            conversation_id,
+            OPEN_INTAKE_STATUSES,
+        )
+
     rows = get_all_records(ORDER_INTAKE_STATE_SHEET)
     matches = [
         row for row in rows
@@ -702,6 +715,9 @@ def _find_active_intake_by_conversation(conversation_id: str):
 
 
 def _get_items_for_intake(intake_id: str):
+    if order_intake_supabase_store.available():
+        return order_intake_supabase_store.get_items_for_intake(intake_id)
+
     rows = get_all_records(ORDER_INTAKE_ITEMS_SHEET)
     return [
         row for row in rows
@@ -726,3 +742,12 @@ def _bool_to_sheet(value):
 
 def _sheet_bool(value):
     return _to_bool(value)
+
+
+def _batch_update_rows_by_id(sheet_name, updates):
+    if order_intake_supabase_store.available():
+        if sheet_name == ORDER_INTAKE_STATE_SHEET:
+            return order_intake_supabase_store.update_intakes(updates)
+        if sheet_name == ORDER_INTAKE_ITEMS_SHEET:
+            return order_intake_supabase_store.update_items(updates)
+    return batch_update_rows_by_id(sheet_name, updates)

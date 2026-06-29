@@ -1,4 +1,5 @@
 from services.google_sheets_service import get_all_records
+from modules.orders import order_supabase_read
 from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
     to_float,
@@ -52,7 +53,20 @@ WEIGHT_BAND_ORDER = [
 ]
 
 
+def _try_supabase_read(read_fn, *args):
+    if not order_supabase_read.supabase_order_reads_available():
+        return None
+    try:
+        return read_fn(*args)
+    except Exception:
+        return None
+
+
 def _get_order_master_row(order_id: str):
+    supabase_result = _try_supabase_read(order_supabase_read.get_order_master_row, order_id)
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records(ORDER_MASTER_SHEET)
     for row in rows:
         if to_clean_string(row.get("Order_ID", "")) == str(order_id).strip():
@@ -61,6 +75,10 @@ def _get_order_master_row(order_id: str):
 
 
 def list_orders():
+    supabase_result = _try_supabase_read(order_supabase_read.list_orders)
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records(ORDER_OVERVIEW_SHEET)
     line_rollups = _build_order_line_rollups()
     master_rows = {
@@ -125,6 +143,9 @@ def list_orders():
 
 def get_order_detail(order_id: str):
     order_id = str(order_id).strip()
+    supabase_result = _try_supabase_read(order_supabase_read.get_order_detail, order_id)
+    if supabase_result is not None:
+        return supabase_result
 
     overview_rows = get_all_records(ORDER_OVERVIEW_SHEET)
     order_record = None

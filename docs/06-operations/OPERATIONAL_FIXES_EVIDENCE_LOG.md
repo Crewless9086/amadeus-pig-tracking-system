@@ -401,6 +401,46 @@ Next:
 
 - GS-MIG-6 should create the owner/admin review output for the 9 conflicting-weight groups and verify imported Supabase rows before any route reads are switched from Google Sheets.
 
+## GS-MIG-8 Order/Sales Supabase Cutover - 2026-06-29
+
+Mode: Supabase cutover after PR #27. Google Sheets remains fallback only where the new Supabase boundary is unavailable or not yet safe.
+
+Live order import:
+
+- Import batch: `IMPORT-20260629-LIVE-ORDERS-V1`
+- Imported/upserted to Supabase: 26 `orders`, 103 `order_lines`, 38 `order_intakes`, 11 `order_intake_items`, 6 `order_documents`, 62 `order_status_logs`, and 21 `sales_pricing` rows.
+- Google Sheets was read only during import.
+
+App cutover in progress:
+
+- `modules.orders.order_read` now prefers Supabase canonical `orders` and `order_lines`.
+- `modules.documents.document_service` now prefers Supabase `order_documents` for document metadata reads.
+- `modules.reports.report_service` now prefers Supabase `order_status_logs` for daily transition summaries.
+- `modules.orders.order_write`, `order_line_sync`, `order_reservation`, `order_lifecycle`, and `order_status_log` now use guarded Supabase write helpers when available, with Sheets fallback.
+- `modules.orders.order_intake_service` now uses a Supabase intake store for context/update/reset when available, with Sheets fallback.
+
+Live read-only smoke:
+
+- `order_read.list_orders()` returned 26 orders.
+- First order detail returned source `supabase_canonical`.
+- Supabase table counts matched the live order import payload.
+- Daily order summary generated successfully from the Supabase-backed read path.
+
+No-unsafe-action confirmation:
+
+- No destructive SQL.
+- No customer sends.
+- No public posts.
+- No payments/deposits.
+- No manual production reservation/lifecycle action was executed by scripts.
+- No Google Sheets writes were run from tests.
+
+Remaining risks:
+
+- Document settings/generation/send writes still use existing document rails.
+- Mating/breeding mutation routes still need separate durable write rails.
+- Completing an order can mark pigs sold/off-farm in Supabase, but the current canonical `pigs` table does not yet store full legacy exit metadata such as exit date/order/reason.
+
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
 Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cutover.

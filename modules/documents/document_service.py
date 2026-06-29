@@ -10,6 +10,7 @@ from services.google_sheets_service import (
     get_all_records,
     update_row_by_first_column_match,
 )
+from modules.documents import document_supabase_read
 
 SYSTEM_SETTINGS_SHEET = "SYSTEM_SETTINGS"
 ORDER_DOCUMENTS_SHEET = "ORDER_DOCUMENTS"
@@ -123,6 +124,14 @@ def build_document_file_name(
 
 def get_order_documents(order_id, document_type=None):
     order_id = str(order_id or "").strip()
+    supabase_documents = _try_supabase_read(
+        document_supabase_read.get_order_documents,
+        order_id,
+        document_type,
+    )
+    if supabase_documents is not None:
+        return supabase_documents
+
     rows = get_all_records(ORDER_DOCUMENTS_SHEET)
     documents = []
 
@@ -138,6 +147,13 @@ def get_order_documents(order_id, document_type=None):
 
 def get_order_document(document_id):
     document_id = str(document_id or "").strip()
+    supabase_document = _try_supabase_read(
+        document_supabase_read.get_order_document,
+        document_id,
+    )
+    if supabase_document is not None:
+        return supabase_document
+
     rows = get_all_records(ORDER_DOCUMENTS_SHEET)
 
     for row in rows:
@@ -145,6 +161,15 @@ def get_order_document(document_id):
             return row
 
     return None
+
+
+def _try_supabase_read(read_fn, *args):
+    if not document_supabase_read.supabase_document_reads_available():
+        return None
+    try:
+        return read_fn(*args)
+    except Exception:
+        return None
 
 
 def get_next_document_version(order_id, document_type):
