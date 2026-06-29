@@ -593,3 +593,17 @@ Scope:
 Tests:
 
 - Added focused test proving preflight duplicate detection reads Supabase weight events and does not read Sheets when Supabase reads are available.
+
+## GS-MIG-16 Pen Lookup Supabase Cutover - 2026-06-29
+
+Mode: route-facing read cutover for shared pen lookup helpers. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Shared pen lookup now uses the existing Supabase-first `get_pens()` service wrapper instead of reading `PEN_REGISTER` directly.
+- Existing Google Sheets `PEN_REGISTER` fallback remains available through `get_pens()` when Supabase is unavailable or the read fails.
+- This removes a direct `PEN_REGISTER` read from fallback-heavy route helpers without changing owner-facing behavior.
+
+Tests:
+
+- Added focused test proving shared pen lookup uses Supabase-backed pen rows and does not read Sheets when Supabase reads are available.

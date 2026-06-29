@@ -577,6 +577,19 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
              patch.object(farm_supabase_read_service, "get_pens", return_value=[{"pen_id": "PEN-1"}]):
             self.assertEqual(pig_weights_service.get_pens(), [{"pen_id": "PEN-1"}])
 
+    def test_pen_lookup_uses_supabase_first_pens(self):
+        with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(farm_supabase_read_service, "get_pens", return_value=[{
+                 "pen_id": "PEN-1",
+                 "pen_name": "Grower Pen",
+                 "pen_type": "Grower",
+             }]) as read_pens, \
+             patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")):
+            result = pig_weights_service._build_pen_lookup()
+
+        self.assertEqual(result["PEN-1"]["pen_name"], "Grower Pen")
+        read_pens.assert_called_once()
+
     def test_pig_weights_service_prefers_supabase_parent_options_when_available(self):
         expected = {"mothers": [{"pig_id": "SOW-1"}], "fathers": [{"pig_id": "BOAR-1"}]}
         with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
