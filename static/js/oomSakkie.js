@@ -24,6 +24,8 @@
   const ownerGateDetail = document.getElementById("oom_owner_gate_detail");
   const agentCrewSequence = document.getElementById("oom_agent_crew_sequence");
   const agentDock = document.getElementById("oom_agent_dock");
+  const commandDeck = document.querySelector(".oom-command-deck");
+  const quickDrawer = document.querySelector(".oom-quick-drawer");
   const agentDockButtons = Array.from(document.querySelectorAll("[data-open-agent]"));
   const specialistDashboard = document.getElementById("oom_specialist_dashboard");
   const specialistAvatar = document.getElementById("oom_specialist_avatar");
@@ -819,8 +821,18 @@
     return cards;
   }
 
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs || 4500);
+    try {
+      return await fetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
   async function fetchSpecialistJson(url) {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, null, 4500);
     const data = await response.json();
     if (!response.ok || data.success === false) {
       throw new Error(data.message || data.status || `Request failed: ${url}`);
@@ -1025,6 +1037,17 @@
     if (activeAgentDetail) activeAgentDetail.textContent = profile.watch;
     if (activeAgentGuard) activeAgentGuard.textContent = profile.authority;
     renderSpecialistDashboard();
+  }
+
+  function revealStartupShell() {
+    if (commandDeck) {
+      commandDeck.hidden = false;
+      commandDeck.setAttribute("aria-hidden", "false");
+    }
+    if (quickDrawer) {
+      quickDrawer.hidden = false;
+      quickDrawer.setAttribute("aria-hidden", "false");
+    }
   }
 
   function specialistFromText(text) {
@@ -4516,13 +4539,13 @@
     if (!salesCampaignsPanel && !salesOutreachDraftsPanel && !salesSendDesignsPanel && !salesLeadsPanel) return;
     try {
       const [campaignResponse, draftResponse, designResponse, leadResponse, readinessResponse, templateResponse, beaconImageResponse] = await Promise.all([
-        fetch("/api/oom-sakkie/sales-campaigns?limit=12"),
-        fetch("/api/oom-sakkie/sales-outreach-drafts?limit=12"),
-        fetch("/api/oom-sakkie/sales-send-design-requests?limit=12"),
-        fetch(`/api/oom-sakkie/sales-leads?limit=12&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`),
-        fetch(`/api/sales/meat-pilot-readiness?limit=8&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`),
-        fetch("/api/sales/meat-whatsapp-templates"),
-        fetch("/api/beacon/facebook-image-launch-packet"),
+        fetchWithTimeout("/api/oom-sakkie/sales-campaigns?limit=12", null, 4500),
+        fetchWithTimeout("/api/oom-sakkie/sales-outreach-drafts?limit=12", null, 4500),
+        fetchWithTimeout("/api/oom-sakkie/sales-send-design-requests?limit=12", null, 4500),
+        fetchWithTimeout(`/api/oom-sakkie/sales-leads?limit=12&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`, null, 4500),
+        fetchWithTimeout(`/api/sales/meat-pilot-readiness?limit=8&status=${encodeURIComponent((salesLeadFilterInput && salesLeadFilterInput.value) || "launch_test")}`, null, 4500),
+        fetchWithTimeout("/api/sales/meat-whatsapp-templates", null, 4500),
+        fetchWithTimeout("/api/beacon/facebook-image-launch-packet", null, 4500),
       ]);
       latestSalesCampaignsData = await campaignResponse.json();
       latestSalesOutreachDraftsData = await draftResponse.json();
@@ -5667,6 +5690,7 @@
   });
 
   setActiveReviewFilter("all");
+  revealStartupShell();
   renderVoiceReadiness();
   renderVoiceEvents();
   loadAgentAssetRegistry();
