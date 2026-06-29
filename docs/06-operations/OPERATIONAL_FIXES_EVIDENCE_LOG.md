@@ -483,6 +483,15 @@ Litter lifecycle write checkpoint:
 - Existing Google Sheets paths remain fallback when the Supabase write rail is unavailable.
 - Focused Supabase write cutover and full litter-service tests passed.
 
+Migration apply checkpoint:
+
+- PR #28 merged as `9733173` on `main`.
+- Applied `202606290002_add_pig_exit_fields.sql` successfully on 2026-06-29.
+- Initial apply of `202606290003_add_litter_lifecycle_fields.sql` failed before commit because the `pig_current_state` view replacement changed the existing column order.
+- Corrected `202606290003_add_litter_lifecycle_fields.sql` so existing view columns stay in place and new lifecycle columns append at the end.
+- Re-applied `202606290003_add_litter_lifecycle_fields.sql` successfully on 2026-06-29.
+- Read-only verification confirmed both migration log entries exist, the new pig lifecycle/exit columns exist, and `pig_current_state` exposes lifecycle fields after the original current-state columns.
+
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
 Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cutover.
