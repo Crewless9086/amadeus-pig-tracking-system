@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `4263cc8` Add Google Sheets reconciliation gate (#20)
 - `b58f7c1` Add farm migration dry-run schema (#19)
 - `6c12976` Simplify bulk weight upload flow (#18)
 - `357c161` Continue staged bulk weight uploads (#17)
@@ -44,9 +45,10 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Active migration planning branch: `gs-to-supabase-deep-dive-plan`. This is GS-MIG-0 report-only work. No code, migration, production data, Google Sheets, or app behavior change is approved from this plan alone.
 - Current migration direction: Supabase should become canonical operational truth; Google Sheets should become legacy reference/export/reporting, not the critical app write/read path.
 - GS-MIG-1 is merged as PR #19: schema proposal plus dry-run import/reconciliation tooling. No migration has been applied and no production data has been written.
-- Active migration reconciliation branch: `gs-mig-2-reconciliation`.
-- GS-MIG-2 live read-only reconciliation mapped 217 pigs, 1,235 weight events, 185 location events, 261 medical events, 20 pens, 17 litters, 15 mating events, 3 products, and 18 settings. Six `WEIGHT_LOG` rows are excluded for missing `Pig_ID`.
-- GS-MIG-2 also found duplicate-review candidates: 34 same-pig/same-date weight keys and one repeated location movement key (`PIG-2026-9613|2026-06-22|PEN-012` appears 7 times). These must be classified before import.
+- GS-MIG-2 is merged as PR #20. No migration has been applied and no production data has been written.
+- Active migration issue-review branch: `gs-mig-3a-data-issue-review`.
+- GS-MIG-3A read-only diagnostic classified the import blockers: 6 missing-`Pig_ID` weight rows, 25 likely same-weight duplicate groups, 9 conflicting same-pig/same-date weight groups, and one likely duplicate movement group (`PIG-2026-9613|2026-06-22|PEN-012` appears 7 times).
+- Recommended import policy is still awaiting owner approval. No canonical import, app cutover, or migration apply is approved yet.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

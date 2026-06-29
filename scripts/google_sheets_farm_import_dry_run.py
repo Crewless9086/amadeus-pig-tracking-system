@@ -78,6 +78,31 @@ FORMULA_COUNT_COMPARISONS = {
     "MATING_OVERVIEW": "mating_events",
 }
 
+ISSUE_REPORT_FIELDS = {
+    WEIGHT_LOG_SHEET: (
+        "Weight_Log_ID",
+        "Pig_ID",
+        "Pig_Name",
+        "Weight_Date",
+        "Weight_Kg",
+        "Pen_ID",
+        "To_Pen_ID",
+        "Recorded_At",
+        "Notes",
+    ),
+    LOCATION_HISTORY_SHEET: (
+        "Move_Log_ID",
+        "Pig_ID",
+        "Pig_Name",
+        "Move_Date",
+        "From_Pen_ID",
+        "To_Pen_ID",
+        "Reason_For_Move",
+        "Group_Batch_ID",
+        "Move_Notes",
+    ),
+}
+
 
 def clean(value):
     return str(value or "").strip()
@@ -521,6 +546,142 @@ def build_reconciliation(rows, payloads, decisions_by_sheet):
     }
 
 
+def group_raw_weight_rows(rows):
+    groups = defaultdict(list)
+    for source_sheet_row, row in enumerate(rows.get(WEIGHT_LOG_SHEET, []), start=2):
+        pig_id = clean(row.get("Pig_ID"))
+        weight_date = as_date(row.get("Weight_Date"))
+        if pig_id and weight_date:
+            groups[(pig_id, weight_date)].append((source_sheet_row, row))
+    return groups
+
+
+def group_raw_location_rows(rows):
+    groups = defaultdict(list)
+    for source_sheet_row, row in enumerate(rows.get(LOCATION_HISTORY_SHEET, []), start=2):
+        pig_id = clean(row.get("Pig_ID"))
+        move_date = as_date(row.get("Move_Date"))
+        to_pen_id = clean(row.get("To_Pen_ID"))
+        if pig_id and move_date and to_pen_id:
+            groups[(pig_id, move_date, to_pen_id)].append((source_sheet_row, row))
+    return groups
+
+
+def sample_raw_rows(group_rows, fields, limit=10):
+    return [
+        {
+            "source_sheet_row": source_sheet_row,
+            "sample": safe_row_sample(row, fields),
+        }
+        for source_sheet_row, row in group_rows[:limit]
+    ]
+
+
+def classify_weight_duplicate_group(group_rows):
+    weights = {clean(row.get("Weight_Kg")) for _, row in group_rows if clean(row.get("Weight_Kg"))}
+    log_ids = {clean(row.get("Weight_Log_ID")) for _, row in group_rows if clean(row.get("Weight_Log_ID"))}
+    if len(weights) <= 1 and len(group_rows) > 1:
+        recommendation = "likely_duplicate_same_weight"
+    else:
+        recommendation = "needs_owner_review_conflicting_weights"
+    return {
+        "row_count": len(group_rows),
+        "distinct_weight_values": sorted(weights),
+        "distinct_weight_log_ids": len(log_ids),
+        "recommendation": recommendation,
+    }
+
+
+def classify_location_duplicate_group(group_rows):
+    from_pens = {clean(row.get("From_Pen_ID")) for _, row in group_rows if clean(row.get("From_Pen_ID"))}
+    move_notes = {clean(row.get("Move_Notes")) for _, row in group_rows if clean(row.get("Move_Notes"))}
+    if len(from_pens) <= 1 and len(group_rows) > 1:
+        recommendation = "likely_duplicate_same_movement"
+    else:
+        recommendation = "needs_owner_review_conflicting_movement_context"
+    return {
+        "row_count": len(group_rows),
+        "distinct_from_pen_ids": sorted(from_pens),
+        "distinct_move_notes": sorted(move_notes)[:5],
+        "recommendation": recommendation,
+    }
+
+
+def build_issue_report(rows, reconciliation):
+    missing_weight_rows = []
+    for source_sheet_row, row in enumerate(rows.get(WEIGHT_LOG_SHEET, []), start=2):
+        if not clean(row.get("Pig_ID")):
+            missing_weight_rows.append({
+                "source_sheet_row": source_sheet_row,
+                "sample": safe_row_sample(row, ISSUE_REPORT_FIELDS[WEIGHT_LOG_SHEET]),
+                "recommendation": "owner_or_admin_must_identify_pig_or_exclude_from_import",
+            })
+
+    duplicate_weight_groups = []
+    for key, group_rows in sorted(group_raw_weight_rows(rows).items()):
+        if len(group_rows) <= 1:
+            continue
+        pig_id, weight_date = key
+        classification = classify_weight_duplicate_group(group_rows)
+        duplicate_weight_groups.append({
+            "pig_id": pig_id,
+            "weight_date": weight_date,
+            **classification,
+            "rows": sample_raw_rows(group_rows, ISSUE_REPORT_FIELDS[WEIGHT_LOG_SHEET]),
+        })
+
+    duplicate_location_groups = []
+    for key, group_rows in sorted(group_raw_location_rows(rows).items()):
+        if len(group_rows) <= 1:
+            continue
+        pig_id, move_date, to_pen_id = key
+        classification = classify_location_duplicate_group(group_rows)
+        duplicate_location_groups.append({
+            "pig_id": pig_id,
+            "move_date": move_date,
+            "to_pen_id": to_pen_id,
+            **classification,
+            "rows": sample_raw_rows(group_rows, ISSUE_REPORT_FIELDS[LOCATION_HISTORY_SHEET]),
+        })
+
+    likely_weight_duplicates = sum(
+        1 for group in duplicate_weight_groups
+        if group["recommendation"] == "likely_duplicate_same_weight"
+    )
+    conflicting_weight_groups = len(duplicate_weight_groups) - likely_weight_duplicates
+    likely_location_duplicates = sum(
+        1 for group in duplicate_location_groups
+        if group["recommendation"] == "likely_duplicate_same_movement"
+    )
+    conflicting_location_groups = len(duplicate_location_groups) - likely_location_duplicates
+
+    return {
+        "success": True,
+        "mode": "dry_run_issue_review_only",
+        "writes_to_supabase": False,
+        "writes_to_sheets": False,
+        "missing_weight_pig_id_rows": missing_weight_rows,
+        "duplicate_weight_groups": duplicate_weight_groups,
+        "duplicate_location_groups": duplicate_location_groups,
+        "summary": {
+            "missing_weight_pig_id_rows": len(missing_weight_rows),
+            "duplicate_weight_groups": len(duplicate_weight_groups),
+            "likely_weight_duplicate_groups": likely_weight_duplicates,
+            "conflicting_weight_groups": conflicting_weight_groups,
+            "duplicate_location_groups": len(duplicate_location_groups),
+            "likely_location_duplicate_groups": likely_location_duplicates,
+            "conflicting_location_groups": conflicting_location_groups,
+            "import_ready": False,
+        },
+        "reconciliation_duplicate_issues": reconciliation.get("duplicate_issues", {}),
+        "owner_decisions_needed": [
+            "identify_or_exclude_missing_pig_id_weight_rows",
+            "approve_duplicate_weight_import_policy",
+            "approve_duplicate_location_import_policy",
+        ],
+    }
+
+
 def formula_sheet_summary(rows):
     return {
         sheet: {
@@ -580,6 +741,11 @@ def main(argv=None):
         default=0,
         help="Include this many mapped payload samples per target table.",
     )
+    parser.add_argument(
+        "--issue-report",
+        action="store_true",
+        help="Print targeted missing-id and duplicate-group diagnostics without full payload rows.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -599,6 +765,11 @@ def main(argv=None):
 
     report = build_farm_import_dry_run(sheet_rows)
     payloads = report["payloads"]
+    if args.issue_report:
+        report = build_issue_report(sheet_rows, report["reconciliation"])
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+
     if args.summary_only:
         report = {
             key: report[key]
