@@ -51,6 +51,7 @@ class BulkWeightServiceTests(unittest.TestCase):
 
         with patch.object(pig_weights_service, "get_active_pigs", return_value=active_pigs), \
              patch.object(pig_weights_service, "get_pens", return_value=[]), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
              patch.object(pig_weights_service, "get_all_records", return_value=weight_rows):
             result, status = pig_weights_service.preflight_bulk_weight_entries({
                 "weight_date": "2026-06-01",
@@ -62,6 +63,32 @@ class BulkWeightServiceTests(unittest.TestCase):
         self.assertEqual(result["blocked_count"], 1)
         self.assertIn("Already recorded for this date", result["blocked_rows"][0]["reason"])
         self.assertEqual(result["blocked_rows"][0]["existing"]["weight_log_id"], "WGT-1")
+
+    def test_preflight_prefers_supabase_weight_events_for_duplicate_check(self):
+        active_pigs = [{"pig_id": "PIG-1", "tag_number": "1", "current_pen_id": "PEN-1"}]
+        weight_rows = [{
+            "Weight_Log_ID": "WGT-SUPA",
+            "Pig_ID": "PIG-1",
+            "Weight_Date": "2026-06-01",
+            "Weight_Kg": 41,
+            "source": "supabase_canonical",
+        }]
+
+        with patch.object(pig_weights_service, "get_active_pigs", return_value=active_pigs), \
+             patch.object(pig_weights_service, "get_pens", return_value=[]), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "get_weight_events_for_date", return_value=weight_rows) as read_weights, \
+             patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")):
+            result, status = pig_weights_service.preflight_bulk_weight_entries({
+                "weight_date": "2026-06-01",
+                "rows": [{"pig_id": "PIG-1", "tag_number": "1", "weight_kg": "42"}],
+            })
+
+        self.assertEqual(status, 200)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["blocked_count"], 1)
+        self.assertEqual(result["blocked_rows"][0]["existing"]["weight_log_id"], "WGT-SUPA")
+        read_weights.assert_called_once_with(date(2026, 6, 1))
 
     def test_save_bulk_uses_optional_move_service_for_accepted_rows(self):
         preflight_result = {
@@ -206,6 +233,7 @@ class BulkWeightServiceTests(unittest.TestCase):
 
         with patch.object(pig_weights_service, "get_active_pigs", return_value=active_pigs), \
              patch.object(pig_weights_service, "get_pens", return_value=[{"pen_id": "PEN-1"}, {"pen_id": "PEN-2"}]), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
              patch.object(pig_weights_service, "get_all_records", return_value=weight_rows):
             result, status = pig_weights_service.preflight_bulk_weight_entries({
                 "weight_date": "2026-06-01",

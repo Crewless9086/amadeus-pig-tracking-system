@@ -579,3 +579,17 @@ Scope:
 Tests:
 
 - Added focused test proving new litter creation does not read or write Sheets when the Supabase transaction rail is available.
+
+## GS-MIG-15 Bulk Preflight Supabase Duplicate Checks - 2026-06-29
+
+Mode: route-facing read cutover for bulk-weight validation. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Bulk-weight preflight now checks existing same-pig/same-date weights from Supabase `pig_weight_events` when Supabase reads are available.
+- Existing Google Sheets `WEIGHT_LOG` duplicate scan remains fallback when Supabase is unavailable or the read fails.
+- This keeps duplicate/already-recorded handling aligned with the canonical Supabase weight rail and avoids a Sheets read during normal Supabase-backed bulk uploads.
+
+Tests:
+
+- Added focused test proving preflight duplicate detection reads Supabase weight events and does not read Sheets when Supabase reads are available.
