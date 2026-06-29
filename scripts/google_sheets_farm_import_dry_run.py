@@ -48,6 +48,36 @@ SOURCE_SHEETS = [
 SHEETS = SOURCE_SHEETS + FORMULA_SHEETS
 IMPORT_BATCH_ID = "DRY_RUN_ONLY"
 
+RECONCILIATION_SAMPLE_FIELDS = {
+    PIG_MASTER_SHEET: ("Pig_ID", "Tag_Number", "Pig_Name", "Current_Pen_ID", "Status"),
+    PEN_REGISTER_SHEET: ("Pen_ID", "Pen_Name", "Pen_Type", "Is_Active"),
+    WEIGHT_LOG_SHEET: ("Weight_Log_ID", "Pig_ID", "Weight_Date", "Weight_Kg", "Pen_ID", "To_Pen_ID"),
+    LOCATION_HISTORY_SHEET: ("Move_Log_ID", "Pig_ID", "Move_Date", "From_Pen_ID", "To_Pen_ID"),
+    MEDICAL_LOG_SHEET: ("Medical_Log_ID", "Pig_ID", "Treatment_Date", "Product_ID", "Product_Name"),
+    PRODUCT_REGISTER_SHEET: ("Product_ID", "Product_Name", "Product_Category", "Is_Active"),
+    LITTERS_SHEET: ("Litter_ID", "Farrowing_Date", "Sow_Pig_ID", "Boar_Pig_ID", "Litter_Status"),
+    MATING_LOG_SHEET: ("Mating_ID", "Sow_Pig_ID", "Boar_Pig_ID", "Mating_Date", "Related_Litter_ID"),
+    SYSTEM_SETTINGS_SHEET: ("Setting_Key", "Setting_Value", "Description"),
+}
+
+UNIQUE_KEYS = {
+    "pigs": "pig_id",
+    "pens": "pen_id",
+    "farm_products": "product_id",
+    "app_settings": "setting_key",
+    "pig_weight_events": "weight_event_id",
+    "pig_location_events": "location_event_id",
+    "pig_medical_events": "medical_event_id",
+    "litters": "litter_id",
+    "mating_events": "mating_id",
+}
+
+FORMULA_COUNT_COMPARISONS = {
+    "PIG_OVERVIEW": "pigs",
+    "LITTER_OVERVIEW": "litters",
+    "MATING_OVERVIEW": "mating_events",
+}
+
 
 def clean(value):
     return str(value or "").strip()
@@ -121,6 +151,14 @@ def summarize_decisions(sheet_name, decisions):
         "excluded_rows": excluded,
         "review_rows": review,
         "reason_counts": dict(sorted(reason_counts.items())),
+    }
+
+
+def safe_row_sample(row, fields):
+    return {
+        field: clean(row.get(field))
+        for field in fields
+        if clean(row.get(field))
     }
 
 
@@ -358,6 +396,131 @@ def collect_link_issues(payloads):
     return {table: dict(sorted(counter.items())) for table, counter in sorted(issues.items())}
 
 
+def duplicate_values(rows, field):
+    counts = Counter(clean(row.get(field)) for row in rows if clean(row.get(field)))
+    return {value: count for value, count in sorted(counts.items()) if count > 1}
+
+
+def collect_duplicate_issues(payloads):
+    issues = {}
+    for table, field in UNIQUE_KEYS.items():
+        duplicates = duplicate_values(payloads.get(table, []), field)
+        if duplicates:
+            issues[table] = {field: duplicates}
+
+    weight_date_keys = Counter(
+        (clean(row.get("pig_id")), clean(row.get("weight_date")))
+        for row in payloads.get("pig_weight_events", [])
+        if clean(row.get("pig_id")) and clean(row.get("weight_date"))
+    )
+    same_pig_date_weight = {
+        "|".join(key): count
+        for key, count in sorted(weight_date_keys.items())
+        if count > 1
+    }
+    if same_pig_date_weight:
+        issues.setdefault("pig_weight_events", {})["same_pig_same_weight_date"] = same_pig_date_weight
+
+    movement_keys = Counter(
+        (clean(row.get("pig_id")), clean(row.get("move_date")), clean(row.get("to_pen_id")))
+        for row in payloads.get("pig_location_events", [])
+        if clean(row.get("pig_id")) and clean(row.get("move_date")) and clean(row.get("to_pen_id"))
+    )
+    same_move = {
+        "|".join(key): count
+        for key, count in sorted(movement_keys.items())
+        if count > 1
+    }
+    if same_move:
+        issues.setdefault("pig_location_events", {})["same_pig_same_date_same_to_pen"] = same_move
+
+    return issues
+
+
+def collect_field_quality(payloads):
+    checks = {
+        "pigs": ("pig_id",),
+        "pens": ("pen_id",),
+        "pig_weight_events": ("pig_id", "weight_date", "weight_kg"),
+        "pig_location_events": ("pig_id", "move_date", "to_pen_id"),
+        "pig_medical_events": ("pig_id", "treatment_date"),
+        "litters": ("litter_id", "farrowing_date"),
+        "mating_events": ("mating_id", "mating_date"),
+        "farm_products": ("product_id",),
+        "app_settings": ("setting_key",),
+    }
+    quality = {}
+    for table, fields in checks.items():
+        table_quality = {}
+        for field in fields:
+            missing = sum(1 for row in payloads.get(table, []) if row.get(field) in (None, ""))
+            if missing:
+                table_quality[f"missing_{field}"] = missing
+        if table_quality:
+            quality[table] = table_quality
+    return quality
+
+
+def collect_exclusion_samples(rows, decisions_by_sheet, limit=25):
+    samples = {}
+    for sheet, decisions in decisions_by_sheet.items():
+        sheet_samples = []
+        sheet_rows = rows.get(sheet, [])
+        fields = RECONCILIATION_SAMPLE_FIELDS.get(sheet, ())
+        for index, decision in enumerate(decisions):
+            if decision["decision"] == "include":
+                continue
+            raw_row = sheet_rows[index] if index < len(sheet_rows) else {}
+            sheet_samples.append({
+                "source_sheet_row": index + 2,
+                "decision": decision["decision"],
+                "reason": decision["reason"],
+                "row_id": decision["row_id"],
+                "sample": safe_row_sample(raw_row, fields),
+            })
+            if len(sheet_samples) >= limit:
+                break
+        if sheet_samples:
+            samples[sheet] = sheet_samples
+    return samples
+
+
+def formula_count_reconciliation(rows, payloads):
+    comparisons = {}
+    for formula_sheet, target_table in FORMULA_COUNT_COMPARISONS.items():
+        formula_rows = len(rows.get(formula_sheet, []))
+        target_rows = len(payloads.get(target_table, []))
+        comparisons[formula_sheet] = {
+            "formula_rows": formula_rows,
+            "target_rows": target_rows,
+            "delta": formula_rows - target_rows,
+            "status": "count_match" if formula_rows == target_rows else "needs_review",
+        }
+    for formula_sheet in FORMULA_SHEETS:
+        comparisons.setdefault(formula_sheet, {
+            "formula_rows": len(rows.get(formula_sheet, [])),
+            "target_rows": None,
+            "delta": None,
+            "status": "compare_only_no_direct_table_yet",
+        })
+    return comparisons
+
+
+def build_reconciliation(rows, payloads, decisions_by_sheet):
+    return {
+        "source_sheet_row_counts": {sheet: len(rows.get(sheet, [])) for sheet in SHEETS},
+        "payload_counts": payload_summary(payloads),
+        "excluded_row_samples": collect_exclusion_samples(rows, decisions_by_sheet),
+        "duplicate_issues": collect_duplicate_issues(payloads),
+        "field_quality_issues": collect_field_quality(payloads),
+        "formula_count_reconciliation": formula_count_reconciliation(rows, payloads),
+        "import_readiness": {
+            "ready_for_import": False,
+            "reason": "reconciliation_only_owner_review_required_before_import",
+        },
+    }
+
+
 def formula_sheet_summary(rows):
     return {
         sheet: {
@@ -384,6 +547,7 @@ def build_farm_import_dry_run(rows):
         "summaries": summaries,
         "formula_sheets": formula_sheet_summary(rows),
         "link_issues": collect_link_issues(payloads),
+        "reconciliation": build_reconciliation(rows, payloads, decisions_by_sheet),
         "payload_summary": payload_summary(payloads),
         "payloads": payloads,
         "decisions": decisions_by_sheet,
@@ -448,6 +612,7 @@ def main(argv=None):
                 "summaries",
                 "formula_sheets",
                 "link_issues",
+                "reconciliation",
                 "payload_summary",
             )
         }
