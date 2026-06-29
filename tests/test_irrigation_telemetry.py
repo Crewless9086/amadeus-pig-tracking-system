@@ -160,6 +160,39 @@ class IrrigationTelemetryTests(unittest.TestCase):
         self.assertFalse(result["safety"]["hardware_commands_enabled"])
         self.assertFalse(result["source"]["writes_to_sheets"])
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_default_irrigation_status_prefers_supabase_when_plan_rows_exist(self):
+        supabase_result = {
+            "success": True,
+            "configured": True,
+            "status": "ok",
+            "mode": "read_only",
+            "source": {
+                "source": "supabase",
+                "writes_to_sheets": False,
+                "writes_to_supabase": False,
+            },
+            "today": {
+                "total_plan_rows": 1,
+            },
+            "operator_summary": {
+                "notes": [],
+            },
+        }
+
+        with patch(
+            "modules.telemetry.irrigation_service._get_irrigation_status_from_supabase",
+            return_value=(supabase_result, 200),
+        ) as supabase_read, patch(
+            "modules.telemetry.irrigation_service.get_all_records_from_spreadsheet",
+            side_effect=AssertionError("sheet fallback should not be used"),
+        ):
+            result, status_code = get_irrigation_status(today="2026-05-23")
+
+        self.assertEqual(status_code, 200)
+        self.assertEqual(result["source"]["source"], "supabase")
+        supabase_read.assert_called_once_with("2026-05-23")
+
     @patch.dict("os.environ", {"IRRIGATION_STATUS_SOURCE": "supabase", "DATABASE_URL": "postgresql://example"}, clear=True)
     def test_irrigation_status_can_read_today_plan_from_supabase(self):
         cursor = Mock()

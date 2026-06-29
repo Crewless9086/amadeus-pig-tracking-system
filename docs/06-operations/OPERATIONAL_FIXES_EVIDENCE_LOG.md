@@ -492,6 +492,14 @@ Migration apply checkpoint:
 - Re-applied `202606290003_add_litter_lifecycle_fields.sql` successfully on 2026-06-29.
 - Read-only verification confirmed both migration log entries exist, the new pig lifecycle/exit columns exist, and `pig_current_state` exposes lifecycle fields after the original current-state columns.
 
+Irrigation status cutover checkpoint:
+
+- `get_irrigation_status()` now defaults to Supabase-first `auto` mode instead of defaulting straight to Google Sheets.
+- If Supabase has plan rows for the requested day, the route returns Supabase read-only status and does not read Sheets.
+- If Supabase has no plan rows or is unavailable, the existing Google Sheets fallback remains.
+- Hardware control remains disabled: read-only status only, no pump/valve/control writes.
+- Tests passed: `tests.test_irrigation_telemetry`, `tests.test_workflow_contracts`, and `tests.test_frontend_route_contracts` (68 tests).
+
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
 Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cutover.
