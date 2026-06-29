@@ -42,7 +42,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-14 is merged as PR #33: new litter creation prefers a Supabase transaction for the litter plus generated piglet records, with Google Sheets fallback.
 - GS-MIG-15 is merged as PR #34: bulk-weight preflight duplicate checks prefer Supabase `pig_weight_events` before falling back to `WEIGHT_LOG`.
 - GS-MIG-16 is merged as PR #35: shared pig-weight pen lookup helpers use the existing Supabase-first pen service instead of direct `PEN_REGISTER` reads.
-- GS-MIG-17 in progress: mating/breeding pen validation helpers should use Supabase-first pen reads before existing fallbacks.
+- GS-MIG-17 is merged as PR #36: mating/breeding pen validation helpers use Supabase-first pen reads before existing fallbacks.
+- GS-MIG-18 in progress: order status-log writes should stay Supabase-first and fall back to Sheets only if the Supabase insert fails.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -79,7 +80,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-14: new litter creation Supabase-first transaction with Google Sheets fallback.
 - GS-MIG-15: merged as PR #34.
 - GS-MIG-16: merged as PR #35.
-- GS-MIG-17: mating/breeding pen lookup Supabase-first read with existing fallbacks.
+- GS-MIG-17: merged as PR #36.
+- GS-MIG-18: order status-log write resilience on the Supabase-first order rail.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.

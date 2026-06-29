@@ -24,16 +24,19 @@ def write_order_status_log(
     status_log_id = generate_order_status_log_id()
 
     if order_supabase_write.supabase_order_writes_available():
-        order_supabase_write.insert_status_log(
-            status_log_id=status_log_id,
-            order_id=order_id,
-            old_status=old_status,
-            new_status=new_status,
-            changed_by=changed_by,
-            change_source=change_source,
-            notes=notes,
-        )
-        return
+        try:
+            order_supabase_write.insert_status_log(
+                status_log_id=status_log_id,
+                order_id=order_id,
+                old_status=old_status,
+                new_status=new_status,
+                changed_by=changed_by,
+                change_source=change_source,
+                notes=notes,
+            )
+            return
+        except Exception:
+            pass
 
     row_values = [
         status_log_id,

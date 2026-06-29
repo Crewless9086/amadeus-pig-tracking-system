@@ -621,3 +621,17 @@ Scope:
 Tests:
 
 - Added focused test proving mating pen lookup uses Supabase-backed pen rows and does not read Sheets when Supabase reads are available.
+
+## GS-MIG-18 Order Status Log Supabase Fallback - 2026-06-29
+
+Mode: route-facing write resilience on the existing order status-log rail. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Order status-log writes continue to prefer Supabase `order_status_logs`.
+- If the Supabase status-log insert fails, the helper now falls back to the existing `ORDER_STATUS_LOG` append path instead of bubbling the exception.
+- This keeps the order workflow aligned with the broader Supabase-first with legacy fallback cutover pattern.
+
+Tests:
+
+- Added focused tests proving Supabase status-log writes do not append to Sheets, and proving Sheets fallback is used if the Supabase insert raises.
