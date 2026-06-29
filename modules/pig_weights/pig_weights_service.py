@@ -5294,7 +5294,92 @@ def _create_pig_rows_for_litter(
 
     return created_count
 
+
+def _litter_generated_piglet_count(total_born, born_alive=None, stillborn_count=None):
+    if total_born in (None, "", 0):
+        return 0
+    try:
+        total_born_int = int(total_born)
+    except (TypeError, ValueError):
+        return 0
+    if total_born_int <= 0:
+        return 0
+
+    def _positive_int_or_none(value):
+        if value in (None, ""):
+            return None
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max(parsed_value, 0)
+
+    born_alive_int = _positive_int_or_none(born_alive)
+    stillborn_int = _positive_int_or_none(stillborn_count) or 0
+    if born_alive_int is None:
+        born_alive_int = max(total_born_int - stillborn_int, 0)
+    if born_alive_int > total_born_int:
+        born_alive_int = total_born_int
+    if born_alive_int + stillborn_int > total_born_int:
+        stillborn_int = max(total_born_int - born_alive_int, 0)
+    return born_alive_int + stillborn_int
+
+
 def save_new_litter(cleaned_data: dict):
+    parent_ids = [
+        cleaned_data["mother_pig_id"],
+        cleaned_data["father_pig_id"],
+    ]
+    supabase_parent_rows = _try_supabase_read(
+        farm_supabase_read_service.get_pig_master_rows_by_ids,
+        parent_ids,
+    )
+    if (
+        supabase_parent_rows is not None
+        and farm_supabase_write_service.farm_supabase_writes_available()
+    ):
+        columns = PIG_WEIGHTS_CONFIG["columns"]
+        pig_lookup = _build_pig_lookup(supabase_parent_rows, columns)
+        mother_row = pig_lookup.get(cleaned_data["mother_pig_id"])
+        father_row = pig_lookup.get(cleaned_data["father_pig_id"]) if cleaned_data["father_pig_id"] else None
+        mother_tag = to_clean_string(mother_row.get(columns["tag_number"], "")) if mother_row else ""
+        father_tag = to_clean_string(father_row.get(columns["tag_number"], "")) if father_row else ""
+        litter_id = generate_litter_id()
+        piglet_count = _litter_generated_piglet_count(
+            cleaned_data["total_born"],
+            cleaned_data["born_alive"],
+            cleaned_data["stillborn_count"],
+        )
+        try:
+            result = farm_supabase_write_service.create_litter_with_generated_piglets(
+                litter_id,
+                cleaned_data,
+                mother_tag=mother_tag,
+                father_tag=father_tag,
+                pig_ids=[generate_pig_id() for _ in range(piglet_count)],
+            )
+
+            mating_id = str(cleaned_data.get("mating_id", "")).strip()
+            if mating_id:
+                link_litter_to_mating(
+                    mating_id=mating_id,
+                    litter_id=litter_id,
+                    actual_farrowing_date=cleaned_data["farrowing_date"]
+                )
+
+            return {
+                "success": True,
+                "message": "Litter created successfully.",
+                "litter_id": litter_id,
+                "pig_rows_created": result.get("pig_rows_created", 0),
+                "source": {
+                    "writes_to_supabase": True,
+                    "writes_to_sheets": False,
+                },
+            }
+        except Exception:
+            pass
+
     pig_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
     columns = PIG_WEIGHTS_CONFIG["columns"]
     pig_lookup = _build_pig_lookup(pig_rows, columns)
@@ -5359,6 +5444,10 @@ def save_new_litter(cleaned_data: dict):
         "message": "Litter created successfully.",
         "litter_id": litter_id,
         "pig_rows_created": pig_rows_created,
+        "source": {
+            "writes_to_supabase": False,
+            "writes_to_sheets": True,
+        },
     }
 
 

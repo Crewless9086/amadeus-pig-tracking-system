@@ -38,7 +38,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Continue GS-MIG-10+: close remaining route-facing Google Sheets dependencies where Supabase equivalents exist, then leave only legacy import/export/setup/reporting integrations.
 - GS-MIG-11 is merged as PR #30: irrigation status defaults to Supabase-first `auto` mode with Google Sheets fallback only when Supabase has no plan rows or is unavailable. Hardware control remains disabled/read-only.
 - GS-MIG-12 is merged as PR #31: farm dashboard summary prefers Supabase `pig_current_state` plus `pigs` exit metadata and keeps the existing Google Sheets summary as fallback.
-- GS-MIG-13 in progress: purpose-review apply validation should prefer Supabase pig lookup before falling back to `PIG_MASTER`.
+- GS-MIG-13 is merged as PR #32: purpose-review apply validation prefers Supabase pig lookup before falling back to `PIG_MASTER`.
+- GS-MIG-14 in progress: new litter creation should prefer a Supabase transaction for the litter plus generated piglet records, with Google Sheets fallback.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -72,6 +73,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-7F: breeding/mating read cutover. Mating mutation routes remain on the existing guarded path until separately approved durable write rails exist.
 - GS-MIG-12: farm dashboard summary Supabase-first read cutover with Google Sheets fallback.
 - GS-MIG-13: purpose-review apply validation Supabase-first lookup with Google Sheets fallback.
+- GS-MIG-14: new litter creation Supabase-first transaction with Google Sheets fallback.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.

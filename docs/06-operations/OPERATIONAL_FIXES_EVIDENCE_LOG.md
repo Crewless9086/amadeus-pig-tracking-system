@@ -564,3 +564,18 @@ Scope:
 Tests:
 
 - Added focused test proving purpose-review apply does not read Sheets and writes through the Supabase update helper when Supabase read/write rails are available.
+
+## GS-MIG-14 Litter Create Supabase Transaction - 2026-06-29
+
+Mode: route-facing write cutover. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, unrelated lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- New litter creation now attempts a Supabase transaction first when Supabase read/write rails are available.
+- The transaction inserts the litter and generated piglet rows together, preserving live piglets and stillborn history rows.
+- Existing Google Sheets `LITTER_REGISTER`/`PIG_MASTER` creation remains fallback when Supabase is unavailable or the transaction fails.
+- Existing mating/litter link behavior is preserved after successful creation.
+
+Tests:
+
+- Added focused test proving new litter creation does not read or write Sheets when the Supabase transaction rail is available.
