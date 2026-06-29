@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `474d378` Add farm import conflict reconciliation (#26)
 - `2bcf347` Record controlled farm data import (#25)
 - `df2bfaf` Plan initial farm data import (#24)
 - `dd06ee2` Add Sheets backfill verifier (#23)
@@ -63,7 +64,10 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Derived views are populated: `pig_current_state` 217 rows, `pig_latest_location_events` 113 rows, and `pig_latest_weight_events` 155 rows.
 - The 9 conflicting same-pig/same-date weight groups remain excluded from canonical import for owner/admin review.
 - No app route cutover has happened yet. The app may still read Google Sheets until a later owner-approved cutover phase.
-- GS-MIG-6 is active on `gs-mig-6-conflict-review-reconciliation`: create the conflicting-weight review output and verify imported Supabase rows before any app route cutover.
+- GS-MIG-6 is merged as PR #26.
+- GS-MIG-7 is active on `gs-mig-7-supabase-route-cutover`: move safe read-only farm routes to Supabase canonical tables/views one batch at a time.
+- GS-MIG-7A direct canonical reads are in progress for pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
+- Formula-heavy routes are not cut over yet: dashboard, sales dashboard, pig allocation readiness, sales availability, meat planning, litter overview/detail, and mutation/write routes.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

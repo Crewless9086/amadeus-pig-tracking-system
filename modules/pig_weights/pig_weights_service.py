@@ -25,6 +25,7 @@ from modules.pig_weights.pig_weights_utils import (
     generate_litter_id,
 )
 from modules.pig_weights.mating_service import link_litter_to_mating
+from modules.pig_weights import farm_supabase_read_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
@@ -143,6 +144,15 @@ SUGGESTED_PURPOSE_TO_STORED_PURPOSE = {
 
 def _allocation_settings():
     return dict(DEFAULT_ALLOCATION_SETTINGS)
+
+
+def _try_supabase_read(reader, *args):
+    if not farm_supabase_read_service.farm_supabase_reads_available():
+        return None
+    try:
+        return reader(*args)
+    except Exception:
+        return None
 
 
 def _build_pig_lookup(rows, columns):
@@ -2537,7 +2547,7 @@ def record_litter_newborn_health(
 
     products = {
         product["product_id"]: product
-        for product in get_products()
+        for product in _get_products_from_sheets()
     }
     if antiparasitic_product_id and antiparasitic_product_id not in products:
         errors.append(f"Antiparasitic product '{antiparasitic_product_id}' was not found or is inactive.")
@@ -2783,6 +2793,10 @@ def get_sales_stock_totals():
 
 
 def get_parent_options():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_parent_options)
+    if supabase_result is not None:
+        return supabase_result
+
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
     rows = get_all_records(sheet_name)
@@ -2839,6 +2853,10 @@ def get_parent_options():
 
 
 def get_active_pigs():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_active_pigs)
+    if supabase_result is not None:
+        return supabase_result
+
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -3766,6 +3784,9 @@ def get_meat_planning_summary(today=None):
 
 def get_family_tree(pig_id: str):
     pig_id = str(pig_id).strip()
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_family_tree, pig_id)
+    if supabase_result is not None:
+        return supabase_result
 
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -3940,6 +3961,9 @@ def get_litter_detail(litter_id: str):
 
 def get_pig_detail(pig_id: str):
     pig_id = str(pig_id).strip()
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_pig_detail, pig_id)
+    if supabase_result is not None:
+        return supabase_result
 
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
@@ -4010,7 +4034,7 @@ def get_pig_detail(pig_id: str):
     }
 
 
-def get_products():
+def _get_products_from_sheets():
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["product_register"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -4034,6 +4058,14 @@ def get_products():
     return sorted(products, key=lambda x: x["product_name"].lower())
 
 
+def get_products():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_products)
+    if supabase_result is not None:
+        return supabase_result
+
+    return _get_products_from_sheets()
+
+
 def get_product_by_id(product_id: str):
     product_id = str(product_id).strip()
     products = get_products()
@@ -4046,6 +4078,10 @@ def get_product_by_id(product_id: str):
 
 
 def get_pens():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_pens)
+    if supabase_result is not None:
+        return supabase_result
+
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -4080,6 +4116,9 @@ def get_pen_by_id(pen_id: str):
 
 def get_treatment_history_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_treatment_history_for_pig, pig_id)
+    if supabase_result is not None:
+        return supabase_result
 
     medical_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
     overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
@@ -4143,6 +4182,9 @@ def get_treatment_history_for_pig(pig_id: str):
 
 def get_movement_history_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_movement_history_for_pig, pig_id)
+    if supabase_result is not None:
+        return supabase_result
 
     location_history_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["location_history"]
     overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
@@ -4209,6 +4251,9 @@ def get_movement_history_for_pig(pig_id: str):
 
 def get_weight_history_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_weight_history_for_pig, pig_id)
+    if supabase_result is not None:
+        return supabase_result
 
     weight_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
     overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
@@ -4290,6 +4335,9 @@ def get_weight_entries_by_date(weight_date: str):
             "count": 0,
             "history": [],
         }
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_weight_entries_by_date, parsed_target_date.isoformat())
+    if supabase_result is not None:
+        return supabase_result
 
     weight_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]
     overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
@@ -4397,6 +4445,15 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
         raise ValueError("date_from must be on or before date_to.")
 
     selected_pen_id = to_clean_string(pen_id)
+    supabase_result = _try_supabase_read(
+        farm_supabase_read_service.get_weight_report,
+        parsed_from,
+        parsed_to,
+        selected_pen_id,
+    )
+    if supabase_result is not None:
+        return supabase_result
+
     columns = PIG_WEIGHTS_CONFIG["columns"]
     weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
     overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
@@ -4564,6 +4621,9 @@ def get_weight_report(date_from: str = "", date_to: str = "", pen_id: str = ""):
 
 def get_latest_weight_for_pig(pig_id: str):
     pig_id = str(pig_id).strip()
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_latest_weight_for_pig, pig_id)
+    if supabase_result is not None:
+        return supabase_result
 
     overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
     weight_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"]

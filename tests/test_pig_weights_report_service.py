@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights import pig_weights_service
 
 
@@ -95,7 +96,8 @@ def records_for_sheet(sheet_name):
 
 class WeightReportServiceTests(unittest.TestCase):
     def test_weight_report_keeps_historical_rows_and_flags_currently_inactive_pigs(self):
-        with patch.object(pig_weights_service, "get_all_records", side_effect=records_for_sheet):
+        with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
+             patch.object(pig_weights_service, "get_all_records", side_effect=records_for_sheet):
             report = pig_weights_service.get_weight_report("2026-05-20", "2026-05-20")
 
         self.assertTrue(report["success"])
@@ -123,7 +125,8 @@ class WeightReportServiceTests(unittest.TestCase):
         self.assertEqual(report["loss_flags"][0]["pig_id"], "PIG-2")
 
     def test_weight_report_can_filter_by_pen(self):
-        with patch.object(pig_weights_service, "get_all_records", side_effect=records_for_sheet):
+        with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
+             patch.object(pig_weights_service, "get_all_records", side_effect=records_for_sheet):
             report = pig_weights_service.get_weight_report("2026-05-20", "2026-05-20", pen_id="PEN-2")
 
         self.assertEqual(report["summary"]["total_entries"], 1)
@@ -177,7 +180,8 @@ class WeightReportServiceTests(unittest.TestCase):
             }
             return data[sheet_name]
 
-        with patch.object(pig_weights_service, "get_all_records", side_effect=sheet_records):
+        with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=False), \
+             patch.object(pig_weights_service, "get_all_records", side_effect=sheet_records):
             report = pig_weights_service.get_weight_report("2026-05-20", "2026-05-20")
 
         self.assertEqual([entry["pig_id"] for entry in report["entries"]], ["PIG-2", "PIG-10"])

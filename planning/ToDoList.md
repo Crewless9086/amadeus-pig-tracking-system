@@ -2,9 +2,29 @@
 
 # Processed Notes
 
-## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
+## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 
 Status: active.
+
+Branch: `gs-mig-7-supabase-route-cutover`
+
+Scope:
+
+- Move safe read-only farm routes to Supabase canonical tables/views one batch at a time.
+- Keep fallback to Google Sheets when `DATABASE_URL` is unavailable or a Supabase read fails.
+- No migrations, Google Sheets writes, Supabase writes, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE, FRED, or ledger work.
+
+Batch 7A:
+
+- Direct canonical reads for pigs, pens, products, parent options, pig detail, family tree, weight/treatment/movement histories, latest weight, weights-by-date, and weight report.
+
+Blocked:
+
+- Formula-heavy dashboard, sales dashboard, pig allocation readiness, sales availability, meat planning, litter overview/detail, and mutation/write routes until formula-equivalence work is done.
+
+## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
+
+Status: merged as PR #26.
 
 Branch: `gs-mig-6-conflict-review-reconciliation`
 
