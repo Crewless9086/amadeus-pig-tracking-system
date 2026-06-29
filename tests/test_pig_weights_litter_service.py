@@ -133,6 +133,51 @@ class LitterPigletCreationTests(unittest.TestCase):
         self.assertEqual(created_count, 0)
         append_row.assert_not_called()
 
+    def test_save_new_litter_prefers_supabase_transaction(self):
+        cleaned_data = {
+            "mating_id": "",
+            "mother_pig_id": "PIG-MOTHER",
+            "father_pig_id": "PIG-FATHER",
+            "current_pen_id": "PEN-001",
+            "farrowing_date": date(2026, 5, 19),
+            "total_born": 3,
+            "born_alive": 2,
+            "stillborn_count": 1,
+            "mummified_count": 0,
+            "male_count": 1,
+            "female_count": 1,
+            "fostered_in_count": None,
+            "fostered_out_count": None,
+            "weaned_count": None,
+            "wean_date": None,
+            "average_wean_weight_kg": None,
+            "notes": "Strong litter.",
+        }
+        parent_rows = [
+            {"Pig_ID": "PIG-MOTHER", "Tag_Number": "M1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-FATHER", "Tag_Number": "B1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+
+        with patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_read_service, "get_pig_master_rows_by_ids", return_value=parent_rows) as read_parents, \
+             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "create_litter_with_generated_piglets", return_value={"pig_rows_created": 3}) as create_litter, \
+             patch.object(pig_weights_service, "generate_litter_id", return_value="LIT-NEW"), \
+             patch.object(pig_weights_service, "generate_pig_id", side_effect=["PIG-1", "PIG-2", "PIG-3"]), \
+             patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")), \
+             patch.object(pig_weights_service, "append_row") as append_row:
+            result = pig_weights_service.save_new_litter(cleaned_data)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["litter_id"], "LIT-NEW")
+        self.assertEqual(result["pig_rows_created"], 3)
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        read_parents.assert_called_once_with(["PIG-MOTHER", "PIG-FATHER"])
+        create_litter.assert_called_once()
+        self.assertEqual(create_litter.call_args.kwargs["pig_ids"], ["PIG-1", "PIG-2", "PIG-3"])
+        append_row.assert_not_called()
+
 
 class LitterAttentionActionTests(unittest.TestCase):
     def setUp(self):

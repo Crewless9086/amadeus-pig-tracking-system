@@ -2,9 +2,19 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-14 Litter Create Supabase Transaction
+
+Status: in progress on `gs-mig-14-litter-create-supabase`.
+
+Scope:
+
+- Move new litter creation to a Supabase-first transaction for the litter row plus generated piglet rows.
+- Keep existing Google Sheets fallback when Supabase is unavailable or the transaction fails.
+- No migrations, production writes during tests, customer sends, public posts, payments, reservations, unrelated lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
+
 ## 2026-06-29 GS-MIG-13 Purpose Review Supabase Validation
 
-Status: in progress on `gs-mig-13-purpose-review-supabase-validation`.
+Status: merged as PR #32.
 
 Scope:
 

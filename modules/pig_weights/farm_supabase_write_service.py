@@ -267,6 +267,139 @@ def insert_pen(pen_id, cleaned_data, connect_factory=None):
             )
 
 
+def _litter_int(value):
+    return _int_or_none(value) if value not in (None, "") else None
+
+
+def create_litter_with_generated_piglets(litter_id, cleaned_data, mother_tag="", father_tag="", pig_ids=None, connect_factory=None):
+    pig_ids = list(pig_ids or [])
+    litter_id = to_clean_string(litter_id)
+    if not litter_id:
+        return {"litter_created": False, "pig_rows_created": 0}
+
+    total_born = _litter_int(cleaned_data.get("total_born"))
+    born_alive = _litter_int(cleaned_data.get("born_alive"))
+    stillborn_count = _litter_int(cleaned_data.get("stillborn_count")) or 0
+    if total_born is None:
+        total_born = 0
+    if born_alive is None:
+        born_alive = max(total_born - stillborn_count, 0)
+    if born_alive > total_born:
+        born_alive = total_born
+    if born_alive + stillborn_count > total_born:
+        stillborn_count = max(total_born - born_alive, 0)
+
+    expected_piglet_count = max(born_alive, 0) + max(stillborn_count, 0)
+    if len(pig_ids) < expected_piglet_count:
+        raise ValueError("Not enough generated pig IDs were provided for litter creation.")
+
+    now = datetime.now()
+    farrowing_date = _date_or_none(cleaned_data.get("farrowing_date"))
+    birth_month = farrowing_date.strftime("%m") if farrowing_date else ""
+    birth_year = int(farrowing_date.strftime("%Y")) if farrowing_date else None
+
+    litter_params = {
+        "litter_id": litter_id,
+        "farrowing_date": farrowing_date,
+        "sow_pig_id": to_clean_string(cleaned_data.get("mother_pig_id")) or None,
+        "boar_pig_id": to_clean_string(cleaned_data.get("father_pig_id")) or None,
+        "sow_tag_number": to_clean_string(mother_tag),
+        "boar_tag_number": to_clean_string(father_tag),
+        "total_born": total_born,
+        "born_alive": born_alive,
+        "stillborn_count": stillborn_count,
+        "mummified_count": _litter_int(cleaned_data.get("mummified_count")),
+        "male_count": _litter_int(cleaned_data.get("male_count")),
+        "female_count": _litter_int(cleaned_data.get("female_count")),
+        "unknown_sex_count": None,
+        "weaned_count": _litter_int(cleaned_data.get("weaned_count")),
+        "wean_date": _date_or_none(cleaned_data.get("wean_date")),
+        "litter_status": "Active",
+        "litter_notes": to_clean_string(cleaned_data.get("notes")),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                insert into public.litters (
+                    litter_id, farrowing_date, sow_pig_id, boar_pig_id,
+                    sow_tag_number, boar_tag_number, total_born, born_alive,
+                    stillborn_count, mummified_count, male_count, female_count,
+                    unknown_sex_count, weaned_count, wean_date, litter_status,
+                    litter_notes, created_at, updated_at
+                )
+                values (
+                    %(litter_id)s, %(farrowing_date)s, %(sow_pig_id)s, %(boar_pig_id)s,
+                    %(sow_tag_number)s, %(boar_tag_number)s, %(total_born)s, %(born_alive)s,
+                    %(stillborn_count)s, %(mummified_count)s, %(male_count)s, %(female_count)s,
+                    %(unknown_sex_count)s, %(weaned_count)s, %(wean_date)s, %(litter_status)s,
+                    %(litter_notes)s, %(created_at)s, %(updated_at)s
+                )
+                """,
+                litter_params,
+            )
+
+            created = 0
+
+            def _insert_piglet(pig_id, status, on_farm, exit_date=None, exit_reason="", notes=""):
+                nonlocal created
+                cursor.execute(
+                    """
+                    insert into public.pigs (
+                        pig_id, status, on_farm, animal_type, sex, date_of_birth,
+                        birth_month, birth_year, litter_id, litter_size_born,
+                        mother_pig_id, father_pig_id, initial_pen_id, purpose,
+                        notes, exit_date, exit_reason, source_sheet_row,
+                        created_at, updated_at
+                    )
+                    values (
+                        %(pig_id)s, %(status)s, %(on_farm)s, 'Piglet', '',
+                        %(date_of_birth)s, %(birth_month)s, %(birth_year)s,
+                        %(litter_id)s, %(litter_size_born)s, %(mother_pig_id)s,
+                        %(father_pig_id)s, %(initial_pen_id)s, 'Unknown',
+                        %(notes)s, %(exit_date)s, %(exit_reason)s, null,
+                        %(created_at)s, %(updated_at)s
+                    )
+                    """,
+                    {
+                        "pig_id": to_clean_string(pig_id),
+                        "status": status,
+                        "on_farm": on_farm,
+                        "date_of_birth": farrowing_date,
+                        "birth_month": birth_month,
+                        "birth_year": birth_year,
+                        "litter_id": litter_id,
+                        "litter_size_born": total_born,
+                        "mother_pig_id": to_clean_string(cleaned_data.get("mother_pig_id")) or None,
+                        "father_pig_id": to_clean_string(cleaned_data.get("father_pig_id")) or None,
+                        "initial_pen_id": to_clean_string(cleaned_data.get("current_pen_id")) or None,
+                        "notes": notes,
+                        "exit_date": exit_date,
+                        "exit_reason": exit_reason or None,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+                created += cursor.rowcount
+
+            for index in range(born_alive):
+                _insert_piglet(pig_ids[index], "Active", True)
+            for index in range(stillborn_count):
+                _insert_piglet(
+                    pig_ids[born_alive + index],
+                    "Dead",
+                    False,
+                    exit_date=farrowing_date,
+                    exit_reason="Stillborn",
+                    notes="Stillborn recorded at litter creation.",
+                )
+
+    return {"litter_created": True, "pig_rows_created": created}
+
+
 def get_weight_event(pig_id, weight_date, connect_factory=None):
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:
