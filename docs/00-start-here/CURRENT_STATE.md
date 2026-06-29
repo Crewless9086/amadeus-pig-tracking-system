@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `4d0b598` Classify Sheets migration data issues (#21)
 - `4263cc8` Add Google Sheets reconciliation gate (#20)
 - `b58f7c1` Add farm migration dry-run schema (#19)
 - `6c12976` Simplify bulk weight upload flow (#18)
@@ -46,9 +47,10 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Current migration direction: Supabase should become canonical operational truth; Google Sheets should become legacy reference/export/reporting, not the critical app write/read path.
 - GS-MIG-1 is merged as PR #19: schema proposal plus dry-run import/reconciliation tooling. No migration has been applied and no production data has been written.
 - GS-MIG-2 is merged as PR #20. No migration has been applied and no production data has been written.
-- Active migration issue-review branch: `gs-mig-3a-data-issue-review`.
-- GS-MIG-3A read-only diagnostic classified the import blockers: 6 missing-`Pig_ID` weight rows, 25 likely same-weight duplicate groups, 9 conflicting same-pig/same-date weight groups, and one likely duplicate movement group (`PIG-2026-9613|2026-06-22|PEN-012` appears 7 times).
-- Recommended import policy is still awaiting owner approval. No canonical import, app cutover, or migration apply is approved yet.
+- GS-MIG-3A is merged as PR #21.
+- Active migration policy branch: `gs-mig-3b-import-policy`.
+- Owner approved import policy direction: skip missing-`Pig_ID` weight rows into review/quarantine output; collapse same-weight duplicates to one canonical event; hold conflicting same-pig/same-date weights for review; collapse repeated movement duplicates to one canonical movement.
+- No canonical import, app cutover, or migration apply is approved yet.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
