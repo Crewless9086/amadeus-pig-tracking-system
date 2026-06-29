@@ -2,9 +2,113 @@
 
 # Processed Notes
 
-## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
+## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 
 Status: active.
+
+Branch: `gs-mig-7-supabase-route-cutover`
+
+Scope:
+
+- Move safe read-only farm routes to Supabase canonical tables/views one batch at a time.
+- Keep fallback to Google Sheets when `DATABASE_URL` is unavailable or a Supabase read fails.
+- No migrations, Google Sheets writes, Supabase writes, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE, FRED, or ledger work.
+
+Batch 7A:
+
+- Direct canonical reads for pigs, pens, products, parent options, pig detail, family tree, weight/treatment/movement histories, latest weight, weights-by-date, and weight report.
+
+Blocked:
+
+- Formula-heavy dashboard, sales dashboard, pig allocation readiness, sales availability, meat planning, litter overview/detail, and mutation/write routes until formula-equivalence work is done.
+
+## 2026-06-29 GS-MIG-7B Formula Shadow
+
+Status: active.
+
+Output:
+
+- `scripts/google_sheets_supabase_formula_shadow.py`
+- `docs/06-operations/GS_MIG_7B_FORMULA_SHADOW_REPORT.md`
+
+Live read-only result:
+
+- `PIG_OVERVIEW` core row/status/animal-type/on-farm counts match Supabase `pig_current_state`.
+- `LITTER_OVERVIEW` row count matches Supabase `litters`.
+- `MATING_OVERVIEW` row count matches Supabase `mating_events`.
+- Sales availability, sales stock summary/totals, litter attention, allocation readiness, and meat planning still need Supabase replacement services before route cutover.
+
+## 2026-06-29 GS-MIG-7C Allocation And Meat Planning Reads
+
+Status: active.
+
+Result:
+
+- Pig allocation readiness now prefers Supabase canonical input rows and reuses existing business rules.
+- Meat planning follows the Supabase-backed allocation source.
+- Live read-only allocation smoke returned 217 total pigs with source `supabase_canonical`.
+- Live read-only meat-planning smoke returned 2 current meat-planning rows.
+
+Still blocked:
+
+- Dashboard litter attention.
+- Litter overview/detail formulas.
+- Mutation/write routes.
+
+## 2026-06-29 GS-MIG-7D Sales Availability And Stock Reads
+
+Status: active.
+
+Result:
+
+- Sales availability now derives from Supabase-backed allocation readiness when available.
+- Sales dashboard stock totals and summary now derive from Supabase-backed allocation readiness.
+- Sales dashboard API now includes `meat_ready_stock`, matching the frontend rendering code.
+- Live read-only smoke returned 7 stock summary rows, 4 stock total rows, 217 sales availability rows, and 39 available-for-sale rows under the new model.
+
+Still blocked:
+
+- Dashboard litter attention.
+- Litter overview/detail formulas.
+- Mutation/write routes.
+
+## 2026-06-29 GS-MIG-7E Litter Reads
+
+Status: active.
+
+Result:
+
+- Litter overview now prefers Supabase canonical reads when available.
+- Litter detail now prefers Supabase canonical reads when available.
+- Dashboard litter attention now prefers Supabase canonical litter-count review when available.
+- Live read-only smoke returned 17 litters, 1 litter attention item, and 9 linked pig records for `LIT-2026-1025`.
+
+Still blocked:
+
+- Formula-specific newborn-health attention replacement rules.
+- Mutation/write routes.
+
+## 2026-06-29 GS-MIG-7F Breeding And Mating Reads
+
+Status: active.
+
+Result:
+
+- Breeding options now prefer Supabase canonical reads when available.
+- Mating overview now prefers Supabase canonical reads when available.
+- Breeding analytics now prefers Supabase canonical reads when available.
+- Breeding animal detail uses the Supabase-backed read path when available.
+- Live read-only smoke returned 18 sows, 3 boars, 15 mating records, and 17 litter records.
+
+Still blocked:
+
+- Mating mutation routes.
+- Linked movement writes from mating actions.
+- Formula-specific newborn-health attention replacement rules.
+
+## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
+
+Status: merged as PR #26.
 
 Branch: `gs-mig-6-conflict-review-reconciliation`
 

@@ -135,6 +135,17 @@ class LitterPigletCreationTests(unittest.TestCase):
 
 
 class LitterAttentionActionTests(unittest.TestCase):
+    def setUp(self):
+        self.supabase_availability_patch = patch.object(
+            pig_weights_service.farm_supabase_read_service,
+            "farm_supabase_reads_available",
+            return_value=False,
+        )
+        self.supabase_availability_patch.start()
+
+    def tearDown(self):
+        self.supabase_availability_patch.stop()
+
     def test_list_litter_overview_flags_birth_count_mismatch(self):
         sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
         overview_rows = [

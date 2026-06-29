@@ -5,6 +5,17 @@ from modules.pig_weights import mating_service
 
 
 class BreedingAnalyticsServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.supabase_availability_patch = patch.object(
+            mating_service.farm_supabase_read_service,
+            "farm_supabase_reads_available",
+            return_value=False,
+        )
+        self.supabase_availability_patch.start()
+
+    def tearDown(self):
+        self.supabase_availability_patch.stop()
+
     def test_breeding_analytics_groups_mating_and_litter_metrics(self):
         mating_rows = [
             {
