@@ -499,6 +499,79 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(summary["items"][0]["action_type"], "review_litter_counts")
         self.assertEqual(summary["items"][0]["reason"], "Review litter counts.")
 
+    def test_breeding_reads_map_supabase_mating_and_litter_data(self):
+        current_rows = [
+            {
+                "pig_id": "SOW-1",
+                "tag_number": "M1",
+                "status": "Active",
+                "on_farm": True,
+                "purpose": "Breeding",
+                "sex": "Female",
+                "current_pen_id": "PEN-SOW",
+                "current_pen_name": "Sow Pen",
+            },
+            {
+                "pig_id": "BOAR-1",
+                "tag_number": "B1",
+                "status": "Active",
+                "on_farm": True,
+                "purpose": "Breeding",
+                "sex": "Male",
+                "current_pen_id": "PEN-BOAR",
+                "current_pen_name": "Boar Pen",
+            },
+        ]
+        mating_rows = [{
+            "mating_id": "MAT-1",
+            "sow_pig_id": "SOW-1",
+            "sow_tag_number": "M1",
+            "boar_pig_id": "BOAR-1",
+            "boar_tag_number": "B1",
+            "mating_date": date(2026, 5, 1),
+            "mating_method": "Natural",
+            "exposure_group": "G1",
+            "expected_pregnancy_check_date": date(2026, 5, 22),
+            "pregnancy_check_date": date(2026, 5, 22),
+            "pregnancy_check_result": "Pregnant",
+            "expected_farrowing_date": date(2026, 8, 23),
+            "farrowing_date": date(2026, 8, 22),
+            "outcome": "Farrowed",
+            "related_litter_id": "LIT-1",
+            "mating_notes": "OK",
+            "created_at": date(2026, 5, 1),
+            "updated_at": date(2026, 5, 2),
+        }]
+        litter_overview = {
+            "success": True,
+            "count": 1,
+            "litters": [{
+                "litter_id": "LIT-1",
+                "sow_pig_id": "SOW-1",
+                "sow_tag_number": "M1",
+                "boar_pig_id": "BOAR-1",
+                "boar_tag_number": "B1",
+                "born_alive": 10,
+                "weaned_count": 9,
+            }],
+        }
+
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=current_rows), \
+             patch.object(farm_supabase_read_service, "_fetch_all", return_value=mating_rows), \
+             patch.object(farm_supabase_read_service, "list_litter_overview", return_value=litter_overview):
+            options = farm_supabase_read_service.get_breeding_options()
+            matings = farm_supabase_read_service.get_mating_overview()
+            analytics = farm_supabase_read_service.get_breeding_analytics()
+
+        self.assertEqual(options["sows"][0]["pig_id"], "SOW-1")
+        self.assertEqual(options["boars"][0]["current_pen_name"], "Boar Pen")
+        self.assertEqual(matings[0]["mating_id"], "MAT-1")
+        self.assertEqual(matings[0]["mating_status"], "Farrowed")
+        self.assertEqual(matings[0]["sow_current_pen_name"], "Sow Pen")
+        self.assertEqual(analytics["source"]["mating_source"], "supabase_canonical")
+        self.assertEqual(analytics["summary"]["mating_count"], 1)
+        self.assertEqual(analytics["sows"][0]["average_born_alive"], 10.0)
+
     def test_pig_weights_service_prefers_supabase_when_available(self):
         with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
              patch.object(farm_supabase_read_service, "get_pens", return_value=[{"pen_id": "PEN-1"}]):

@@ -88,6 +88,24 @@ Still blocked:
 - Formula-specific newborn-health attention replacement rules.
 - Mutation/write routes.
 
+## 2026-06-29 GS-MIG-7F Breeding And Mating Reads
+
+Status: active.
+
+Result:
+
+- Breeding options now prefer Supabase canonical reads when available.
+- Mating overview now prefers Supabase canonical reads when available.
+- Breeding analytics now prefers Supabase canonical reads when available.
+- Breeding animal detail uses the Supabase-backed read path when available.
+- Live read-only smoke returned 18 sows, 3 boars, 15 mating records, and 17 litter records.
+
+Still blocked:
+
+- Mating mutation routes.
+- Linked movement writes from mating actions.
+- Formula-specific newborn-health attention replacement rules.
+
 ## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
 
 Status: merged as PR #26.

@@ -114,6 +114,33 @@ Still not cut over:
 - mutation/write routes
 - formula-specific newborn-health attention replacement rules
 
+## Batch 7F: Breeding And Mating Read Routes
+
+These read routes now prefer Supabase canonical reads:
+
+- `/api/pig-weights/breeding-options`
+- `/api/pig-weights/matings`
+- `/api/pig-weights/breeding-analytics`
+- `/api/pig-weights/breeding-analytics/<pig_id>`
+
+POST/write routes for creating matings, assuming pregnancy, marking not pregnant, and linked movement updates remain on the existing guarded path and were not cut over.
+
+Live read-only smoke:
+
+- Breeding options source: `supabase_canonical`
+- Sows: 18
+- Boars: 3
+- Mating overview count: 15
+- Breeding analytics source: `supabase_canonical`
+- Breeding analytics summary: 19 sow records, 3 boar records, 15 mating records, 17 litter records
+- Breeding animal detail smoke returned HTTP 200 with read-only detail.
+
+Still not cut over:
+
+- mutation/write routes
+- formula-specific newborn-health attention replacement rules
+- order/sales workflow read/write modules outside farm canonical data
+
 ## Local Environment Note
 
 Live read-only Supabase smoke reads ran from the local environment after loading `.env`. Unit tests use fakes/mocks to verify Supabase read shapes and fallback behavior.
@@ -126,6 +153,7 @@ Live read-only Supabase smoke reads ran from the local environment after loading
 - `python -m unittest tests.test_frontend_route_contracts`
 - `python -m unittest tests.test_pig_allocation_readiness_service tests.test_pig_weights_bulk_service tests.test_pig_weights_litter_service`
 - `python -m unittest tests.test_farm_supabase_read_service tests.test_pig_weights_litter_service tests.test_frontend_route_contracts tests.test_pig_weights_dashboard_service`
+- `python -m unittest tests.test_farm_supabase_read_service tests.test_breeding_analytics_service tests.test_mating_service tests.test_mating_routes`
 
 ## Next
 

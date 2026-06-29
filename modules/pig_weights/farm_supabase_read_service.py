@@ -519,6 +519,7 @@ def list_litter_overview(connect_factory=None):
             "attention_reason": reconciliation["recommended_action"] if needs_attention == "Yes" else "",
             "born_alive": reconciliation["born_alive"],
             "total_born": reconciliation["total_born"],
+            "weaned_count": _float_or_none(litter.get("weaned_count")),
             "linked_pig_records": reconciliation["linked_pig_records"],
             "active_pig_records": active_count,
             "exited_pig_records": reconciliation["exited_pig_records"],
@@ -645,6 +646,206 @@ def get_litter_attention_summary(limit=5, connect_factory=None):
         "count": len(items),
         "items": items[:limit],
         "source": "supabase_canonical",
+    }
+
+
+def get_breeding_options(connect_factory=None):
+    rows = _current_state_rows(connect_factory=connect_factory)
+    sows = []
+    boars = []
+    for row in rows:
+        if _text(row.get("status")) != "Active" or row.get("on_farm") is not True:
+            continue
+        if _text(row.get("purpose")) != "Breeding":
+            continue
+        item = {
+            "pig_id": _text(row.get("pig_id")),
+            "tag_number": _text(row.get("tag_number")) or _text(row.get("pig_id")),
+            "current_pen_id": _text(row.get("current_pen_id")),
+            "current_pen_name": _text(row.get("current_pen_name")),
+        }
+        sex = _text(row.get("sex"))
+        if sex == "Female":
+            sows.append(item)
+        if sex in ("Male", "Castrated_Male"):
+            boars.append(item)
+    sows.sort(key=lambda item: item["tag_number"].lower())
+    boars.sort(key=lambda item: item["tag_number"].lower())
+    return {"sows": sows, "boars": boars, "source": "supabase_canonical"}
+
+
+def _mating_status(row):
+    pregnancy_result = _text(row.get("pregnancy_check_result")).lower().replace(" ", "_")
+    outcome = _text(row.get("outcome")).lower().replace(" ", "_")
+    if _text(row.get("related_litter_id")) or row.get("farrowing_date") or outcome == "farrowed":
+        return "Farrowed"
+    if pregnancy_result == "pregnant" or outcome == "pregnant":
+        return "Confirmed_Pregnant"
+    if pregnancy_result == "not_pregnant" or outcome in {"not_pregnant", "repeat_required"}:
+        return "Repeat_Service"
+    return "Open"
+
+
+def _mating_is_open(row):
+    return "Yes" if _mating_status(row) in {"Open", "Confirmed_Pregnant"} else "No"
+
+
+def _days_since(value):
+    if not isinstance(value, date):
+        return ""
+    return str((date.today() - value).days)
+
+
+def get_mating_overview(connect_factory=None):
+    rows = _fetch_all(
+        """
+        select *
+        from public.mating_events
+        order by mating_date desc nulls last, mating_id desc
+        """,
+        connect_factory=connect_factory,
+    )
+    state_rows = {row["pig_id"]: row for row in _current_state_rows(connect_factory=connect_factory)}
+    records = []
+    today = date.today()
+    for row in rows:
+        sow = state_rows.get(_text(row.get("sow_pig_id")), {})
+        boar = state_rows.get(_text(row.get("boar_pig_id")), {})
+        status = _mating_status(row)
+        is_open = _mating_is_open(row)
+        expected_check = row.get("expected_pregnancy_check_date")
+        expected_farrowing = row.get("expected_farrowing_date")
+        records.append({
+            "mating_id": _text(row.get("mating_id")),
+            "sow_pig_id": _text(row.get("sow_pig_id")),
+            "sow_tag_number": _text(row.get("sow_tag_number")),
+            "sow_current_pen_id": _text(sow.get("current_pen_id")),
+            "sow_current_pen_name": _text(sow.get("current_pen_name")),
+            "boar_pig_id": _text(row.get("boar_pig_id")),
+            "boar_tag_number": _text(row.get("boar_tag_number")),
+            "boar_current_pen_id": _text(boar.get("current_pen_id")),
+            "boar_current_pen_name": _text(boar.get("current_pen_name")),
+            "mating_date": _date_text(row.get("mating_date")),
+            "mating_method": _text(row.get("mating_method")),
+            "exposure_group": _text(row.get("exposure_group")),
+            "expected_pregnancy_check_date": _date_text(expected_check),
+            "pregnancy_check_date": _date_text(row.get("pregnancy_check_date")),
+            "pregnancy_check_result": _text(row.get("pregnancy_check_result")),
+            "expected_farrowing_date": _date_text(expected_farrowing),
+            "actual_farrowing_date": _date_text(row.get("farrowing_date")),
+            "mating_status": status,
+            "outcome": _text(row.get("outcome")),
+            "linked_litter_id": _text(row.get("related_litter_id")),
+            "days_since_mating": _days_since(row.get("mating_date")),
+            "is_open": is_open,
+            "is_overdue_check": "Yes" if is_open == "Yes" and isinstance(expected_check, date) and expected_check < today and not row.get("pregnancy_check_result") else "No",
+            "is_overdue_farrowing": "Yes" if is_open == "Yes" and isinstance(expected_farrowing, date) and expected_farrowing < today and not row.get("farrowing_date") else "No",
+            "service_notes": _text(row.get("mating_notes")),
+            "created_at": _date_text(row.get("created_at")),
+            "updated_at": _date_text(row.get("updated_at")),
+        })
+    return records
+
+
+def _blank_breeding_metric(pig_id, tag_number):
+    return {
+        "pig_id": pig_id,
+        "tag_number": tag_number,
+        "mating_count": 0,
+        "confirmed_pregnant_count": 0,
+        "repeat_service_count": 0,
+        "farrowed_count": 0,
+        "open_count": 0,
+        "litter_count": 0,
+        "born_alive_total": 0,
+        "weaned_total": 0,
+        "average_born_alive": None,
+        "average_weaned": None,
+        "survival_pct": None,
+    }
+
+
+def _metric_for(metrics, pig_id, tag_number):
+    if not pig_id:
+        return None
+    if pig_id not in metrics:
+        metrics[pig_id] = _blank_breeding_metric(pig_id, tag_number)
+    if tag_number and not metrics[pig_id]["tag_number"]:
+        metrics[pig_id]["tag_number"] = tag_number
+    return metrics[pig_id]
+
+
+def _finish_breeding_metrics(metrics):
+    rows = []
+    for metric in metrics.values():
+        litter_count = metric["litter_count"]
+        born_alive_total = metric["born_alive_total"]
+        weaned_total = metric["weaned_total"]
+        if litter_count:
+            metric["average_born_alive"] = round(born_alive_total / litter_count, 2)
+            metric["average_weaned"] = round(weaned_total / litter_count, 2)
+        if born_alive_total:
+            metric["survival_pct"] = round((weaned_total / born_alive_total) * 100, 1)
+        rows.append(metric)
+    return sorted(rows, key=lambda item: (-item["litter_count"], -item["farrowed_count"], str(item["tag_number"] or item["pig_id"]).lower()))
+
+
+def get_breeding_analytics(connect_factory=None):
+    mating_rows = get_mating_overview(connect_factory=connect_factory)
+    litter_overview = list_litter_overview(connect_factory=connect_factory)
+    sow_metrics = {}
+    boar_metrics = {}
+
+    for row in mating_rows:
+        targets = [
+            _metric_for(sow_metrics, row.get("sow_pig_id", ""), row.get("sow_tag_number", "")),
+            _metric_for(boar_metrics, row.get("boar_pig_id", ""), row.get("boar_tag_number", "")),
+        ]
+        pregnancy_result = _text(row.get("pregnancy_check_result")).lower()
+        mating_status = _text(row.get("mating_status")).lower()
+        outcome = _text(row.get("outcome")).lower()
+        confirmed = pregnancy_result == "pregnant" or mating_status in {"confirmed_pregnant", "farrowed"} or outcome in {"pregnant", "farrowed"}
+        repeat_service = pregnancy_result == "not_pregnant" or mating_status == "repeat_service" or outcome == "repeat_required"
+        farrowed = bool(row.get("linked_litter_id")) or mating_status == "farrowed" or outcome == "farrowed"
+        is_open = row.get("is_open") == "Yes"
+        for metric in [metric for metric in targets if metric]:
+            metric["mating_count"] += 1
+            metric["confirmed_pregnant_count"] += 1 if confirmed else 0
+            metric["repeat_service_count"] += 1 if repeat_service else 0
+            metric["farrowed_count"] += 1 if farrowed else 0
+            metric["open_count"] += 1 if is_open else 0
+
+    for row in litter_overview.get("litters", []):
+        targets = [
+            _metric_for(sow_metrics, row.get("sow_pig_id", ""), row.get("sow_tag_number", "")),
+            _metric_for(boar_metrics, row.get("boar_pig_id", ""), row.get("boar_tag_number", "")),
+        ]
+        born_alive = _float_or_none(row.get("born_alive")) or 0
+        weaned_count = _float_or_none(row.get("weaned_count")) or 0
+        for metric in [metric for metric in targets if metric]:
+            metric["litter_count"] += 1
+            metric["born_alive_total"] += born_alive
+            metric["weaned_total"] += weaned_count
+
+    sows = _finish_breeding_metrics(sow_metrics)
+    boars = _finish_breeding_metrics(boar_metrics)
+    return {
+        "success": True,
+        "mode": "read_only",
+        "summary": {
+            "sow_count": len(sows),
+            "boar_count": len(boars),
+            "mating_count": len(mating_rows),
+            "litter_count": litter_overview.get("count", 0),
+        },
+        "sows": sows,
+        "boars": boars,
+        "source": {
+            "mating_source": "supabase_canonical",
+            "litter_source": "supabase_canonical",
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": False,
+        },
     }
 
 

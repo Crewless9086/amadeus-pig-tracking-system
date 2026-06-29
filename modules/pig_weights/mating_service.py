@@ -7,6 +7,7 @@ from services.google_sheets_service import (
     get_all_values,
     update_row_by_first_column_match,
 )
+from modules.pig_weights import farm_supabase_read_service
 from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
     to_float,
@@ -22,6 +23,15 @@ MATING_OVERVIEW_SHEET = "MATING_OVERVIEW"
 LITTER_OVERVIEW_SHEET = "LITTER_OVERVIEW"
 PEN_REGISTER_SHEET = "PEN_REGISTER"
 LOCATION_HISTORY_SHEET = "LOCATION_HISTORY"
+
+
+def _try_supabase_read(read_fn, *args):
+    if not farm_supabase_read_service.farm_supabase_reads_available():
+        return None
+    try:
+        return read_fn(*args)
+    except Exception:
+        return None
 
 
 def generate_mating_id():
@@ -93,6 +103,10 @@ def _write_movement_if_needed(pig_id: str, current_pen_id: str, target_pen_id: s
 
 
 def get_breeding_options():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_breeding_options)
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records(PIG_OVERVIEW_SHEET)
     pen_lookup = _get_pen_lookup()
 
@@ -139,6 +153,10 @@ def get_breeding_options():
 
 
 def get_mating_overview():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_mating_overview)
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records(MATING_OVERVIEW_SHEET)
     pig_lookup = _get_pig_lookup()
     pen_lookup = _get_pen_lookup()
@@ -248,9 +266,43 @@ def _finish_breeding_metrics(metrics):
     )
 
 
+def _supabase_litters_as_sheet_rows():
+    result = _try_supabase_read(farm_supabase_read_service.list_litter_overview)
+    if result is None:
+        return None
+    rows = []
+    for row in result.get("litters", []):
+        rows.append({
+            "Litter_ID": row.get("litter_id", ""),
+            "Farrowing_Date": row.get("farrowing_date", ""),
+            "Sow_Pig_ID": row.get("sow_pig_id", ""),
+            "Sow_Tag_Number": row.get("sow_tag_number", ""),
+            "Boar_Pig_ID": row.get("boar_pig_id", ""),
+            "Boar_Tag_Number": row.get("boar_tag_number", ""),
+            "Born_Alive": row.get("born_alive", ""),
+            "Weaned_Count": row.get("weaned_count", ""),
+            "Active_Pig_Count": row.get("active_pig_records", ""),
+            "Exited_Pig_Count": row.get("exited_pig_records", ""),
+            "Average_Current_Weight_Kg": row.get("average_current_weight_kg", ""),
+            "Litter_Status": row.get("litter_status", ""),
+            "Needs_Attention": row.get("needs_attention", ""),
+            "Attention_Reason": row.get("attention_reason", ""),
+            "Pig_Master_Row_Count": row.get("linked_pig_records", ""),
+        })
+    return rows
+
+
+def _get_litter_overview_rows():
+    return _supabase_litters_as_sheet_rows() or get_all_records(LITTER_OVERVIEW_SHEET)
+
+
 def get_breeding_analytics():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_breeding_analytics)
+    if supabase_result is not None:
+        return supabase_result
+
     mating_rows = get_mating_overview()
-    litter_rows = get_all_records(LITTER_OVERVIEW_SHEET)
+    litter_rows = _get_litter_overview_rows()
 
     sow_metrics = {}
     boar_metrics = {}
@@ -441,7 +493,7 @@ def get_breeding_animal_detail(pig_id: str):
         })
 
     litter_rows = []
-    for row in get_all_records(LITTER_OVERVIEW_SHEET):
+    for row in _get_litter_overview_rows():
         role = _animal_role_for_litter(row, pig_id)
         if not role:
             continue

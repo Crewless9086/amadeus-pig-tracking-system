@@ -30,6 +30,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-7C allocation/meat-planning reads: pig allocation readiness now prefers Supabase canonical inputs; meat planning follows that allocation source and live read-only smoke returned 2 current meat-planning rows.
 - GS-MIG-7D sales reads: sales availability and sales dashboard stock/readiness data now derive from Supabase-backed allocation readiness when available; live read-only smoke returned 39 available rows under the new allocation-derived model.
 - GS-MIG-7E litter reads: litter overview, litter detail, and dashboard litter attention now prefer Supabase canonical reads; live read-only smoke returned 17 litters and 1 litter attention item.
+- GS-MIG-7F breeding/mating reads: breeding options, mating overview, breeding analytics, and breeding animal detail now prefer Supabase canonical reads; live read-only smoke returned 18 sows, 3 boars, 15 mating records, and 17 litter records.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -60,6 +61,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-7: route-by-route Supabase read cutover. Direct canonical read routes first; formula-heavy routes only after equivalence tests/reports.
 - GS-MIG-7B: formula shadow/equivalence gate for dashboard, sales availability, stock summaries, litter attention, allocation, and meat planning.
 - GS-MIG-7E: litter overview/detail/dashboard attention read cutover. Legacy formula-specific newborn-health attention replacement still needs explicit Supabase service work.
+- GS-MIG-7F: breeding/mating read cutover. Mating mutation routes remain on the existing guarded path until separately approved durable write rails exist.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.
@@ -95,7 +97,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
 - Full Google Sheets to Supabase app cutover remains incomplete. GS-MIG-7 may cut over safe direct canonical read routes with fallback.
-- Formula-specific newborn-health attention replacement and mutation/write route cutover remain blocked until explicit Supabase services and owner-approved write rails exist.
+- Formula-specific newborn-health attention replacement, order/sales workflow modules, and mutation/write route cutover remain blocked until explicit Supabase services and owner-approved write rails exist.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.

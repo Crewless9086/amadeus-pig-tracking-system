@@ -71,7 +71,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-7C allocation/meat-planning reads are in progress: pig allocation readiness now prefers Supabase canonical inputs, and meat planning follows that allocation source.
 - GS-MIG-7D sales reads are in progress: sales availability and sales dashboard stock/readiness data now derive from Supabase-backed allocation readiness when available.
 - GS-MIG-7E litter reads are in progress: litter overview, litter detail, and dashboard litter attention now prefer Supabase canonical reads when available.
-- Formula-heavy newborn-health attention replacement rules and mutation/write routes are still not cut over.
+- GS-MIG-7F breeding/mating reads are in progress: breeding options, mating overview, breeding analytics, and breeding animal detail now prefer Supabase canonical reads when available.
+- Formula-heavy newborn-health attention replacement rules, order/sales workflow modules, and mutation/write routes are still not cut over.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
