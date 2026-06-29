@@ -2,6 +2,30 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
+
+Status: active.
+
+Branch: `gs-mig-6-conflict-review-reconciliation`
+
+Output:
+
+- `docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md`
+
+Result:
+
+- Generated owner/admin review output for the 9 conflicting same-pig/same-date weight groups.
+- Verified all imported Supabase table counts match the GS-MIG-5 policy payload.
+- Verified all 9 conflicting-weight keys have 0 imported canonical rows.
+- No Google Sheets writes.
+- No Supabase writes.
+- No app route cutover.
+
+Next:
+
+- Owner/admin must decide each conflicting group later: choose canonical weight, exclude group, or correct the source and reimport through a controlled path.
+- After review output is accepted, continue to route-by-route shadow verification before any Supabase read cutover.
+
 ## 2026-06-29 GS-MIG-5 Controlled Import Execution
 
 Status: complete.

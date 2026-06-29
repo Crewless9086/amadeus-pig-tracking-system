@@ -400,3 +400,39 @@ No-unsafe-action confirmation:
 Next:
 
 - GS-MIG-6 should create the owner/admin review output for the 9 conflicting-weight groups and verify imported Supabase rows before any route reads are switched from Google Sheets.
+
+## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
+
+Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cutover.
+
+Generated report:
+
+- `docs/06-operations/GS_MIG_6_CONFLICTING_WEIGHT_REVIEW.md`
+
+Reconciliation result:
+
+- All imported table counts match the GS-MIG-5 policy payload.
+- `pig_current_state`: 217 rows
+- `pig_latest_location_events`: 113 rows
+- `pig_latest_weight_events`: 155 rows
+- All 9 conflicting-weight keys have 0 imported canonical rows.
+- Route cutover remains blocked until owner/admin review and route-by-route shadow verification.
+
+Conflicting-weight review IDs:
+
+- `CW-001` `PIG-2026-0874` on `2026-02-02`
+- `CW-002` `PIG-2026-12D8` on `2026-03-23`
+- `CW-003` `PIG-2026-3E84` on `2026-03-02`
+- `CW-004` `PIG-2026-42B7` on `2026-05-04`
+- `CW-005` `PIG-2026-6D24` on `2026-05-11`
+- `CW-006` `PIG-2026-8FFC` on `2026-02-09`
+- `CW-007` `PIG-2026-A5EA` on `2026-03-17`
+- `CW-008` `PIG-2026-E926` on `2026-05-11`
+- `CW-009` `PIG-2026-EFB3` on `2026-05-25`
+
+No-unsafe-action confirmation:
+
+- No Google Sheets writes.
+- No Supabase writes.
+- No app route cutover.
+- No customer sends, public posts, payments, reservations, or lifecycle/purpose writes.
