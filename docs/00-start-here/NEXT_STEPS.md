@@ -40,7 +40,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-12 is merged as PR #31: farm dashboard summary prefers Supabase `pig_current_state` plus `pigs` exit metadata and keeps the existing Google Sheets summary as fallback.
 - GS-MIG-13 is merged as PR #32: purpose-review apply validation prefers Supabase pig lookup before falling back to `PIG_MASTER`.
 - GS-MIG-14 is merged as PR #33: new litter creation prefers a Supabase transaction for the litter plus generated piglet records, with Google Sheets fallback.
-- GS-MIG-15 in progress: bulk-weight preflight duplicate checks should prefer Supabase `pig_weight_events` before falling back to `WEIGHT_LOG`.
+- GS-MIG-15 is merged as PR #34: bulk-weight preflight duplicate checks prefer Supabase `pig_weight_events` before falling back to `WEIGHT_LOG`.
+- GS-MIG-16 in progress: shared pen lookup helpers should use the existing Supabase-first pen service instead of direct `PEN_REGISTER` reads.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -75,7 +76,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-12: farm dashboard summary Supabase-first read cutover with Google Sheets fallback.
 - GS-MIG-13: purpose-review apply validation Supabase-first lookup with Google Sheets fallback.
 - GS-MIG-14: new litter creation Supabase-first transaction with Google Sheets fallback.
-- GS-MIG-15: bulk-weight preflight duplicate detection Supabase-first read with Google Sheets fallback.
+- GS-MIG-15: merged as PR #34.
+- GS-MIG-16: shared pen lookup helper Supabase-first read with Google Sheets fallback.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.

@@ -200,17 +200,16 @@ def _pig_summary_card(row, columns):
 
 
 def _build_pen_lookup():
-    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"])
     lookup = {}
 
-    for row in rows:
-        pen_id = to_clean_string(row.get("Pen_ID", ""))
+    for row in get_pens():
+        pen_id = to_clean_string(row.get("pen_id", row.get("Pen_ID", "")))
         if not pen_id:
             continue
         lookup[pen_id] = {
             "pen_id": pen_id,
-            "pen_name": to_clean_string(row.get("Pen_Name", "")),
-            "pen_type": to_clean_string(row.get("Pen_Type", "")),
+            "pen_name": to_clean_string(row.get("pen_name", row.get("Pen_Name", ""))),
+            "pen_type": to_clean_string(row.get("pen_type", row.get("Pen_Type", ""))),
         }
 
     return lookup

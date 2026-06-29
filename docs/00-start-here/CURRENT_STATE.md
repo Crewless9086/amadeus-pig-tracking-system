@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `b9a21c8` Read bulk duplicate weights from Supabase (#34)
 - `b0aa71a` Create litters through Supabase (#33)
 - `1c146bd` Validate purpose review from Supabase (#32)
 - `e36c84f` Cut over dashboard summary to Supabase (#31)
@@ -87,7 +88,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-12 is merged as PR #31: farm dashboard summary now prefers Supabase `pig_current_state`/`pigs` reads with Google Sheets fallback.
 - GS-MIG-13 is merged as PR #32: purpose-review apply validation now prefers Supabase pig lookup with Google Sheets fallback.
 - GS-MIG-14 is merged as PR #33: new litter creation now prefers a Supabase-first transaction for the litter plus generated piglet records, with Sheets fallback.
-- GS-MIG-15 in progress on `gs-mig-15-bulk-preflight-supabase-duplicates`: bulk-weight preflight duplicate checks are being moved from `WEIGHT_LOG` to Supabase `pig_weight_events`, with Sheets fallback.
+- GS-MIG-15 is merged as PR #34: bulk-weight preflight duplicate checks now prefer Supabase `pig_weight_events` with Sheets fallback.
+- GS-MIG-16 in progress on `gs-mig-16-pen-lookup-supabase`: shared pen lookup helpers are being moved to the existing Supabase-first pen service, with Sheets fallback.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
