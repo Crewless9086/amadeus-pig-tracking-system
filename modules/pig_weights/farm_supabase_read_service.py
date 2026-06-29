@@ -462,6 +462,39 @@ def get_parent_options(connect_factory=None):
     return {"mothers": mother_options, "fathers": father_options}
 
 
+def get_pig_master_rows_by_ids(pig_ids, connect_factory=None):
+    clean_ids = [_text(pig_id) for pig_id in (pig_ids or []) if _text(pig_id)]
+    if not clean_ids:
+        return []
+    rows = _fetch_all(
+        """
+        select
+            state.pig_id,
+            state.tag_number,
+            state.status,
+            state.on_farm,
+            state.litter_id,
+            state.purpose,
+            pig.notes
+        from public.pig_current_state state
+        join public.pigs pig on pig.pig_id = state.pig_id
+        where state.pig_id = any(%s)
+        """,
+        (clean_ids,),
+        connect_factory=connect_factory,
+    )
+    return [{
+        "Pig_ID": _text(row.get("pig_id")),
+        "Tag_Number": _text(row.get("tag_number")),
+        "Litter_ID": _text(row.get("litter_id")),
+        "Status": _text(row.get("status")),
+        "On_Farm": _yes_no(row.get("on_farm")),
+        "Purpose": _text(row.get("purpose")),
+        "General_Notes": _text(row.get("notes")),
+        "source": "supabase_canonical",
+    } for row in rows]
+
+
 def get_family_tree(pig_id, connect_factory=None):
     rows = _current_state_rows(connect_factory=connect_factory)
     lookup = {_text(row.get("pig_id")): row for row in rows if _text(row.get("pig_id"))}
