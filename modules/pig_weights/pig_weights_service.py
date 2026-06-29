@@ -174,6 +174,45 @@ def _try_supabase_pig_updates(updates):
         return None
 
 
+def _get_pig_master_rows():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_pig_master_rows)
+    if supabase_result is not None:
+        return supabase_result
+    return get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+
+
+def _get_litter_register_rows():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.get_litter_register_rows)
+    if supabase_result is not None:
+        return supabase_result
+    return get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"])
+
+
+def _get_litter_overview_rows():
+    supabase_result = _try_supabase_read(farm_supabase_read_service.list_litter_overview)
+    if supabase_result is not None:
+        return [{
+            "Litter_ID": item.get("litter_id", ""),
+            "Sow_Pig_ID": item.get("sow_pig_id", ""),
+            "Sow_Tag_Number": item.get("sow_tag_number", ""),
+            "Boar_Pig_ID": item.get("boar_pig_id", ""),
+            "Boar_Tag_Number": item.get("boar_tag_number", ""),
+            "Current_Pen_ID": item.get("current_pen_id", ""),
+            "Farrowing_Date": item.get("farrowing_date", ""),
+            "Wean_Date": item.get("wean_date", ""),
+            "Litter_Status": item.get("litter_status", ""),
+            "Needs_Attention": item.get("needs_attention", ""),
+            "Born_Alive": item.get("born_alive", ""),
+            "Total_Born": item.get("total_born", ""),
+            "Weaned_Count": item.get("weaned_count", ""),
+            "Tagged_Pig_Count": item.get("tagged_pig_count", ""),
+            "Untagged_Pig_Count": item.get("untagged_pig_count", ""),
+            "Average_Current_Weight_Kg": item.get("average_current_weight_kg", ""),
+            "source": "supabase_canonical",
+        } for item in supabase_result.get("litters", [])]
+    return get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+
+
 def _build_pig_lookup(rows, columns):
     pig_lookup = {}
     for row in rows:
@@ -780,7 +819,7 @@ def _augment_litter_birth_reconciliation_with_history(litter_id, reconciliation,
 
 
 def _litter_birth_reconciliation_for_id(litter_id):
-    rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    rows = _get_litter_overview_rows()
     for row in rows:
         if to_clean_string(row.get("Litter_ID", "")) == litter_id:
             return _litter_birth_reconciliation(row)
@@ -873,6 +912,37 @@ def list_litter_overview():
 
 
 def _litter_register_row(litter_id):
+    supabase_rows = _try_supabase_read(farm_supabase_read_service.get_litter_register_rows)
+    if supabase_rows is not None:
+        headers = [
+            "Litter_ID",
+            "Farrowing_Date",
+            "Sow_Pig_ID",
+            "Boar_Pig_ID",
+            "Total_Born",
+            "Born_Alive",
+            "Stillborn_Count",
+            "Mummified_Count",
+            "Male_Count",
+            "Female_Count",
+            "Unknown_Sex_Count",
+            "Weaned_Count",
+            "Litter_Size_Weaned",
+            "Wean_Date",
+            "Litter_Status",
+            "Litter_Notes",
+            "Updated_At",
+        ]
+        for row in supabase_rows:
+            if to_clean_string(row.get("Litter_ID", "")) == litter_id:
+                padded_row = [row.get(header, "") for header in headers]
+                return headers, row, padded_row
+        return headers, None, None
+
+    return _litter_register_row_from_sheets(litter_id)
+
+
+def _litter_register_row_from_sheets(litter_id):
     all_values = get_all_values(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"])
     if not all_values or len(all_values) < 2:
         return None, None, None
@@ -925,7 +995,7 @@ def reclassify_litter_dead_piglets_as_stillborn(
     if not litter_id:
         return {"success": False, "errors": ["Litter ID is required."]}, 400
 
-    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    overview_rows = _get_litter_overview_rows()
     overview_row = next(
         (row for row in overview_rows if to_clean_string(row.get("Litter_ID", "")) == litter_id),
         None,
@@ -941,7 +1011,7 @@ def reclassify_litter_dead_piglets_as_stillborn(
         }, 409
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
-    pig_master_rows = get_all_records(pig_master_sheet)
+    pig_master_rows = _get_pig_master_rows()
     reconciliation = _augment_litter_birth_reconciliation_with_history(
         litter_id,
         _litter_birth_reconciliation(overview_row),
@@ -1071,7 +1141,7 @@ def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, change
     if not litter_id:
         return {"success": False, "errors": ["Litter ID is required."]}, 400
 
-    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+    overview_rows = _get_litter_overview_rows()
     overview_row = None
     for row in overview_rows:
         if to_clean_string(row.get("Litter_ID", "")) == litter_id:
@@ -1154,10 +1224,18 @@ def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, change
             row_updated = supabase_row_updated
             writes_to_supabase = True
         else:
+            sheet_headers, _sheet_register_row, sheet_padded_row = _litter_register_row_from_sheets(litter_id)
+            if not _sheet_register_row:
+                return {"success": False, "errors": [f"Litter '{litter_id}' was not found in LITTERS."]}, 404
+            sheet_header_map = {header: index for index, header in enumerate(sheet_headers)}
+            for field_name, field_value in planned_updates.items():
+                if field_name not in sheet_header_map:
+                    raise ValueError(f"Missing required column '{field_name}' in LITTERS.")
+                sheet_padded_row[sheet_header_map[field_name]] = field_value
             row_updated = update_row_by_first_column_match(
                 PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
                 litter_id,
-                updated_row,
+                sheet_padded_row,
             )
 
     return {
@@ -1351,7 +1429,7 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
     ]
     pig_rows = _try_supabase_read(farm_supabase_read_service.get_pig_master_rows_by_ids, requested_pig_ids)
     if pig_rows is None:
-        pig_rows = get_all_records(pig_master_sheet)
+        pig_rows = _get_pig_master_rows()
     pig_lookup = _build_pig_lookup(pig_rows, columns)
     today = datetime.now().date()
     today_sheet = format_date_for_sheet(today)
@@ -1864,7 +1942,7 @@ def mark_litter_weaned(
 
     columns = PIG_WEIGHTS_CONFIG["columns"]
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
-    pig_rows = get_all_records(pig_master_sheet)
+    pig_rows = _get_pig_master_rows()
 
     active_piglets = []
     active_piglet_rows = []
@@ -1893,8 +1971,17 @@ def mark_litter_weaned(
     missing_wean_weight_pig_ids = []
     should_capture_wean_weights = use_latest_weights_as_wean_weights or bool(wean_weights)
     if should_capture_wean_weights:
-        weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
-        latest_weights = _latest_weights_by_pig(weight_rows, columns)
+        latest_weights = {
+            to_clean_string(row.get(columns["pig_id"], "")): {
+                "weight_kg": to_float(row.get(columns["current_weight"], "")),
+                "weight_date": parse_sheet_date(row.get(columns["last_weight_date"], "")),
+            }
+            for row in active_piglet_rows
+            if to_clean_string(row.get(columns["pig_id"], ""))
+        }
+        if any(not latest.get("weight_kg") for latest in latest_weights.values()):
+            weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+            latest_weights = _latest_weights_by_pig(weight_rows, columns)
         wean_weight_updates, wean_weight_rows, missing_wean_weight_pig_ids = _wean_weight_updates_for_piglets(
             active_piglet_rows,
             latest_weights,
@@ -2008,7 +2095,7 @@ def mark_pig_death_or_removal(
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = get_all_records(pig_master_sheet)
+    pig_rows = _get_pig_master_rows()
     pig_lookup = _build_pig_lookup(pig_rows, columns)
     pig = pig_lookup.get(pig_id)
 
@@ -2189,7 +2276,7 @@ def mark_litter_piglets_dead(
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = get_all_records(pig_master_sheet)
+    pig_rows = _get_pig_master_rows()
     active_piglets = [
         row for row in pig_rows
         if to_clean_string(row.get("Litter_ID", "")) == litter_id
@@ -2333,7 +2420,7 @@ def record_litter_piglet_sex_counts(
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = get_all_records(pig_master_sheet)
+    pig_rows = _get_pig_master_rows()
     active_piglets = [
         row for row in pig_rows
         if to_clean_string(row.get("Litter_ID", "")) == litter_id
@@ -2473,7 +2560,7 @@ def assign_litter_piglet_tag_numbers(
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = get_all_records(pig_master_sheet)
+    pig_rows = _get_pig_master_rows()
     active_litter_piglets = [
         row for row in pig_rows
         if to_clean_string(row.get("Litter_ID", "")) == litter_id
@@ -2666,7 +2753,7 @@ def record_litter_newborn_health(
 
     products = {
         product["product_id"]: product
-        for product in _get_products_from_sheets()
+        for product in get_products()
     }
     if antiparasitic_product_id and antiparasitic_product_id not in products:
         errors.append(f"Antiparasitic product '{antiparasitic_product_id}' was not found or is inactive.")
@@ -2680,7 +2767,7 @@ def record_litter_newborn_health(
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     medical_log_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["medical_log"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = get_all_records(pig_master_sheet)
+    pig_rows = _get_pig_master_rows()
     active_piglets = [
         row for row in pig_rows
         if to_clean_string(row.get("Litter_ID", "")) == litter_id
@@ -4416,7 +4503,8 @@ def get_pens():
 
     pens = []
     for row in rows:
-        if str(row.get(columns["is_active"], "")).strip() != "Yes":
+        active_value = str(row.get(columns["is_active"], "")).strip()
+        if active_value and active_value != "Yes":
             continue
 
         pens.append({

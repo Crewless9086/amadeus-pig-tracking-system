@@ -649,3 +649,23 @@ Scope:
 Tests:
 
 - Added focused tests proving order master lookup, order-line append, sales availability, and order-line listing can fall back safely when Supabase helpers raise.
+
+## GS-MIG-FINAL Caller Audit And Litter Validation Closeout - 2026-06-29
+
+Mode: final route cutover audit plus a narrow route-facing read closeout. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Audit output:
+
+- Added `docs/06-operations/GS_MIG_FINAL_AUDIT.md`.
+- Classified remaining Google Sheets callers as safe fallback only, import/export/admin script, legacy/reference only, or tests.
+- No remaining caller is classified as an active route that must still be migrated after this branch.
+
+Code closeout:
+
+- Added Supabase read helpers for sheet-shaped pig master and litter register rows.
+- Litter lifecycle action validation now prefers Supabase pig/litter/product rows before Google Sheets fallback.
+- Covered newborn health, litter weaning, and pig death/removal Supabase-first validation paths with tests that fail if Sheets are read.
+
+Tests:
+
+- Focused litter service and farm Supabase read service tests passed before the broad regression pass.

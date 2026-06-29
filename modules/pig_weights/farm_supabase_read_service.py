@@ -517,6 +517,112 @@ def get_pig_master_rows_by_ids(pig_ids, connect_factory=None):
     } for row in rows]
 
 
+def get_pig_master_rows(connect_factory=None):
+    rows = _fetch_all(
+        """
+        select
+            state.pig_id,
+            state.tag_number,
+            state.status,
+            state.on_farm,
+            state.litter_id,
+            state.sex,
+            state.current_weight_kg,
+            state.last_weight_date,
+            state.current_pen_id,
+            pig.pig_name,
+            pig.animal_type,
+            pig.date_of_birth,
+            pig.purpose,
+            pig.notes,
+            pig.exit_date,
+            pig.exit_reason,
+            pig.exit_order_id,
+            pig.litter_size_born,
+            pig.litter_size_weaned,
+            pig.wean_date,
+            pig.wean_weight_kg,
+            pig.earmarked,
+            pig.earmark_date
+        from public.pig_current_state state
+        join public.pigs pig on pig.pig_id = state.pig_id
+        order by coalesce(nullif(state.tag_number, ''), state.pig_id)
+        """,
+        connect_factory=connect_factory,
+    )
+    return [{
+        "Pig_ID": _text(row.get("pig_id")),
+        "Tag_Number": _text(row.get("tag_number")),
+        "Pig_Name": _text(row.get("pig_name")),
+        "Litter_ID": _text(row.get("litter_id")),
+        "Status": _text(row.get("status")),
+        "On_Farm": _yes_no(row.get("on_farm")),
+        "Animal_Type": _text(row.get("animal_type")),
+        "Sex": _text(row.get("sex")),
+        "Date_Of_Birth": _date_text(row.get("date_of_birth")),
+        "Current_Weight_Kg": _float_or_none(row.get("current_weight_kg")),
+        "Last_Weight_Date": _date_text(row.get("last_weight_date")),
+        "Current_Pen_ID": _text(row.get("current_pen_id")),
+        "Purpose": _text(row.get("purpose")),
+        "General_Notes": _text(row.get("notes")),
+        "Exit_Date": _date_text(row.get("exit_date")),
+        "Exit_Reason": _text(row.get("exit_reason")),
+        "Exit_Order_ID": _text(row.get("exit_order_id")),
+        "Litter_Size_Born": _float_or_none(row.get("litter_size_born")),
+        "Litter_Size_Weaned": _float_or_none(row.get("litter_size_weaned")),
+        "Wean_Date": _date_text(row.get("wean_date")),
+        "Wean_Weight_Kg": _float_or_none(row.get("wean_weight_kg")),
+        "Earmarked": _yes_no(row.get("earmarked")),
+        "Earmark_Date": _date_text(row.get("earmark_date")),
+        "source": "supabase_canonical",
+    } for row in rows]
+
+
+def get_litter_register_rows(connect_factory=None):
+    rows = _fetch_all(
+        """
+        select
+            litter_id,
+            farrowing_date,
+            sow_pig_id,
+            boar_pig_id,
+            total_born,
+            born_alive,
+            stillborn_count,
+            mummified_count,
+            male_count,
+            female_count,
+            unknown_sex_count,
+            weaned_count,
+            wean_date,
+            litter_status,
+            litter_notes
+        from public.litters
+        order by farrowing_date desc nulls last, litter_id
+        """,
+        connect_factory=connect_factory,
+    )
+    return [{
+        "Litter_ID": _text(row.get("litter_id")),
+        "Farrowing_Date": _date_text(row.get("farrowing_date")),
+        "Sow_Pig_ID": _text(row.get("sow_pig_id")),
+        "Boar_Pig_ID": _text(row.get("boar_pig_id")),
+        "Total_Born": _float_or_none(row.get("total_born")),
+        "Born_Alive": _float_or_none(row.get("born_alive")),
+        "Stillborn_Count": _float_or_none(row.get("stillborn_count")),
+        "Mummified_Count": _float_or_none(row.get("mummified_count")),
+        "Male_Count": _float_or_none(row.get("male_count")),
+        "Female_Count": _float_or_none(row.get("female_count")),
+        "Unknown_Sex_Count": _float_or_none(row.get("unknown_sex_count")),
+        "Weaned_Count": _float_or_none(row.get("weaned_count")),
+        "Litter_Size_Weaned": _float_or_none(row.get("weaned_count")),
+        "Wean_Date": _date_text(row.get("wean_date")),
+        "Litter_Status": _text(row.get("litter_status")),
+        "Litter_Notes": _text(row.get("litter_notes")),
+        "source": "supabase_canonical",
+    } for row in rows]
+
+
 def get_family_tree(pig_id, connect_factory=None):
     rows = _current_state_rows(connect_factory=connect_factory)
     lookup = {_text(row.get("pig_id")): row for row in rows if _text(row.get("pig_id"))}

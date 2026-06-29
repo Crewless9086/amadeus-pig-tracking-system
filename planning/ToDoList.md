@@ -2,6 +2,18 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-FINAL Google Sheets Caller Audit And Closeout
+
+Status: active on `gs-mig-final-audit-and-closeout`.
+
+Scope:
+
+- Classify every remaining Google Sheets caller as active route, safe fallback, import/export/admin script, or legacy/reference.
+- Close remaining active route dependencies before calling the migration complete.
+- Final audit result: after the litter lifecycle validation read closeout, no remaining caller is classified as an active route that must still be migrated.
+- Remaining Google Sheets callers are retained as safe fallback only, import/export/admin tooling, legacy/reference wrappers, or tests.
+- No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, `.claude`, or `planning/Prompts.md` changes.
+
 ## 2026-06-29 GS-MIG-15 Bulk Preflight Supabase Duplicate Checks
 
 Status: merged as PR #34.

@@ -19,7 +19,8 @@ def get_irrigation_status(today=None, spreadsheet_name=None):
         else os.getenv(IRRIGATION_SHEET_NAME_ENV, DEFAULT_IRRIGATION_SHEET_NAME)
     ).strip()
     today = str(today or _today_za()).strip()
-    source_preference = os.getenv(IRRIGATION_STATUS_SOURCE_ENV, "auto").strip().lower()
+    default_source = "google_sheets" if spreadsheet_name is not None else "auto"
+    source_preference = os.getenv(IRRIGATION_STATUS_SOURCE_ENV, default_source).strip().lower()
 
     if source_preference in {"supabase", "auto"}:
         result, status_code = _get_irrigation_status_from_supabase(today)
