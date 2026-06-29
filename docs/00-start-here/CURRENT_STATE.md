@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `dd06ee2` Add Sheets backfill verifier (#23)
 - `cf0c7f5` Record Sheets import policies (#22)
 - `4d0b598` Classify Sheets migration data issues (#21)
 - `4263cc8` Add Google Sheets reconciliation gate (#20)
@@ -46,14 +47,16 @@ Render deploys from `main` unless the service configuration says otherwise.
 - No further owner manual 71/73-row retest should happen until one-button Upload Weights, existing-batch resume, processing-row recovery, non-JSON pause/retry, and count-display tests pass and the fix is deployed.
 - Active migration planning branch: `gs-to-supabase-deep-dive-plan`. This is GS-MIG-0 report-only work. No code, migration, production data, Google Sheets, or app behavior change is approved from this plan alone.
 - Current migration direction: Supabase should become canonical operational truth; Google Sheets should become legacy reference/export/reporting, not the critical app write/read path.
-- GS-MIG-1 is merged as PR #19: schema proposal plus dry-run import/reconciliation tooling. No migration has been applied and no production data has been written.
+- GS-MIG-1 is merged as PR #19: schema proposal plus dry-run import/reconciliation tooling.
 - GS-MIG-2 is merged as PR #20. No migration has been applied and no production data has been written.
 - GS-MIG-3A is merged as PR #21.
 - GS-MIG-3B is merged as PR #22.
-- Active migration verifier branch: `gs-mig-3-review-backfill-verifier`.
+- GS-MIG-3 is merged as PR #23.
+- GS-MIG-4 additive schema apply completed on 2026-06-29.
+- Supabase now has empty canonical farm tables/views: `pens`, `pigs`, `farm_products`, `app_settings`, `pig_weight_events`, `pig_location_events`, `pig_medical_events`, `litters`, `mating_events`, `pig_latest_weight_events`, `pig_latest_location_events`, and `pig_current_state`.
 - Owner approved import policy direction: skip missing-`Pig_ID` weight rows into review/quarantine output; collapse same-weight duplicates to one canonical event; hold conflicting same-pig/same-date weights for review; collapse repeated movement duplicates to one canonical movement.
 - GS-MIG-3 dry-run verifier maps 1,235 original weight events to 1,190 canonical weight events and 185 original movement events to 179 canonical movement events. It creates 41 review items: 26 auto-resolved dedupes, 9 pending conflicting-weight reviews, and 6 quarantined missing-`Pig_ID` rows.
-- No canonical import, app cutover, or migration apply is approved yet.
+- No canonical farm data import or app cutover has happened yet.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

@@ -2,9 +2,41 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-4 Additive Schema Apply
+
+Status: complete.
+
+Applied migration:
+
+- `supabase/migrations/202606290001_create_farm_canonical_tables.sql`
+
+Result:
+
+- Created empty canonical farm tables/views in Supabase.
+- Verified all new tables exist and contain 0 rows.
+- Verified migration log entry exists.
+- No farm data imported.
+- No Google Sheets data changed.
+- No app route cutover.
+
+Verified tables/views:
+
+- `pens`
+- `pigs`
+- `farm_products`
+- `app_settings`
+- `pig_weight_events`
+- `pig_location_events`
+- `pig_medical_events`
+- `litters`
+- `mating_events`
+- `pig_latest_weight_events`
+- `pig_latest_location_events`
+- `pig_current_state`
+
 ## 2026-06-29 GS-MIG-3 Backfill Verifier
 
-Status: active dry-run verifier.
+Status: merged as PR #23.
 
 Branch: `gs-mig-3-review-backfill-verifier`
 
