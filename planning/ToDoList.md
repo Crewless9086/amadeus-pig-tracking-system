@@ -2,9 +2,19 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-15 Bulk Preflight Supabase Duplicate Checks
+
+Status: in progress on `gs-mig-15-bulk-preflight-supabase-duplicates`.
+
+Scope:
+
+- Move bulk-weight preflight duplicate checks from direct `WEIGHT_LOG` reads to Supabase `pig_weight_events` first.
+- Keep existing Google Sheets fallback when Supabase is unavailable.
+- No migrations, production writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
+
 ## 2026-06-29 GS-MIG-14 Litter Create Supabase Transaction
 
-Status: in progress on `gs-mig-14-litter-create-supabase`.
+Status: merged as PR #33.
 
 Scope:
 

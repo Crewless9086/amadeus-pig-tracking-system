@@ -415,6 +415,28 @@ def get_products(connect_factory=None):
     } for row in rows]
 
 
+def get_weight_events_for_date(weight_date, connect_factory=None):
+    rows = _fetch_all(
+        """
+        select weight_event_id, pig_id, weight_date, weight_kg, weighed_by, condition_notes
+        from public.pig_weight_events
+        where weight_date = %s
+        order by pig_id, created_at, weight_event_id
+        """,
+        (weight_date,),
+        connect_factory=connect_factory,
+    )
+    return [{
+        "Weight_Log_ID": _text(row.get("weight_event_id")),
+        "Pig_ID": _text(row.get("pig_id")),
+        "Weight_Date": _date_text(row.get("weight_date")),
+        "Weight_Kg": _float_or_none(row.get("weight_kg")),
+        "Weighed_By": _text(row.get("weighed_by")),
+        "Condition_Notes": _text(row.get("condition_notes")),
+        "source": "supabase_canonical",
+    } for row in rows]
+
+
 def get_parent_options(connect_factory=None):
     rows = _fetch_all(
         """

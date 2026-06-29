@@ -5750,7 +5750,9 @@ def preflight_bulk_weight_entries(payload: dict):
 
     active_pigs = {pig["pig_id"]: pig for pig in get_active_pigs()}
     active_pen_ids = {pen["pen_id"] for pen in get_pens()}
-    weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+    weight_rows = _try_supabase_read(farm_supabase_read_service.get_weight_events_for_date, batch_date)
+    if weight_rows is None:
+        weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
     existing_weights = {_bulk_weight_existing_key(row, columns): row for row in weight_rows}
 
     accepted_rows = []
