@@ -2,6 +2,32 @@
 
 # Processed Notes
 
+## 2026-06-29 Staged Batch Auto-Process
+
+Status: active P0 live fix.
+
+Branch: `p0-staged-batch-auto-process`
+
+Staged batch id: `2241aeab-4f40-4797-882d-1588a17abbd0`
+
+Owner live result:
+
+- UI said no actionable rows while Upload Progress showed 42 remaining.
+- Existing staged batch did not visibly continue processing.
+
+Read-only inspection:
+
+- 42 rows are staged/processable.
+- 31 rows are already recorded duplicate weights.
+- 43 rows are blank/no-change skipped.
+- No production processing was run during inspection.
+
+Decision:
+
+- Recover saved `batch_id` on page load.
+- Show Continue Upload when rows remain.
+- Upload Weights must process an existing batch id instead of creating a new batch or saying no actionable rows.
+
 ## 2026-06-29 Simple Bulk Upload UX
 
 Status: active P0 UX fix.

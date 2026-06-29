@@ -74,7 +74,7 @@ const sandbox = {
     setTimeout(fn) { fn(); return 1; },
     confirm() { return true; },
   },
-  fetch: async () => ({ ok: true, json: async () => ({}) }),
+  fetch: async () => ({ ok: true, json: async () => ({}), text: async () => "{}", headers: { get() { return "application/json"; } }, status: 200 }),
   setTimeout(fn) { fn(); return 1; },
   clearTimeout() {},
 };
@@ -172,6 +172,89 @@ async function main() {
 
   assert.strictEqual(helpers.isCompleteUploadSuccess({ ok: true, status: "complete", counts: { actionable_count: 2, processed_count: 2, success_count: 2, failed_count: 0, blocked_count: 0, remaining_count: 0 } }), true);
   assert.strictEqual(helpers.isCompleteUploadSuccess({ ok: true, status: "partial", counts: { actionable_count: 2, processed_count: 1, success_count: 1, failed_count: 1, remaining_count: 0 } }), false);
+
+
+  helpers.importDraftPayload({
+    draft_id: "DRAFT-STAGED",
+    batch_id: "BATCH-EXISTING",
+    weight_date: "2026-06-22",
+    rows,
+  });
+  const statusCalls = [];
+  sandbox.fetch = async (url, options = {}) => {
+    statusCalls.push({ url: String(url), method: options.method || "GET" });
+    return {
+      ok: true,
+      status: 200,
+      headers: { get(name) { return name === "content-type" ? "application/json" : ""; } },
+      text: async () => JSON.stringify({
+        ok: true,
+        success: true,
+        batch_id: "BATCH-EXISTING",
+        status: "staged",
+        counts: {
+          visible_row_count: 116,
+          actionable_row_count: 42,
+          weight_row_count: 73,
+          movement_row_count: 28,
+          skipped_row_count: 43,
+          duplicate_count: 31,
+          remaining_count: 42,
+          success_count: 0,
+          failed_count: 0,
+          blocked_count: 0,
+        },
+        rows: [],
+      }),
+      json: async () => ({}),
+    };
+  };
+  await helpers.fetchActiveBatchStatus();
+  assert(elements.get("bulk_weights_message").textContent.includes("Upload paused"));
+  assert(!elements.get("bulk_weights_message").textContent.includes("No actionable"));
+
+  const uploadCalls = [];
+  sandbox.fetch = async (url, options = {}) => {
+    uploadCalls.push({ url: String(url), method: options.method || "GET" });
+    if (String(url).includes("/process")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get(name) { return name === "content-type" ? "application/json" : ""; } },
+        text: async () => JSON.stringify({
+          ok: true,
+          success: true,
+          batch_id: "BATCH-EXISTING",
+          status: "complete",
+          counts: {
+            visible_row_count: 116,
+            actionable_row_count: 42,
+            weight_row_count: 73,
+            movement_row_count: 28,
+            skipped_row_count: 43,
+            duplicate_count: 31,
+            remaining_count: 0,
+            success_count: 42,
+            failed_count: 0,
+            blocked_count: 0,
+          },
+          rows: [],
+        }),
+        json: async () => ({}),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get(name) { return name === "content-type" ? "application/json" : ""; } },
+      text: async () => "{}",
+      json: async () => String(url).includes("/pigs") ? { pigs: [] } : { pens: [] },
+    };
+  };
+  await helpers.uploadBatch();
+  assert(uploadCalls.some((call) => call.url.includes("/bulk-batches/BATCH-EXISTING/process")), "existing staged batch should process existing batch id");
+  assert(!uploadCalls.some((call) => call.url.endsWith("/api/pig-weights/bulk-batches") && call.method === "POST"), "existing staged batch must not create a new batch");
+  assert(elements.get("bulk_weights_message").textContent.includes("Upload complete"));
 
   console.log("bulk weight draft recovery helpers passed");
 }

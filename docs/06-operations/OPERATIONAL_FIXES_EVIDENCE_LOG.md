@@ -96,6 +96,37 @@ Pressure-test coverage added:
 Owner retest gate:
 
 - The owner should not manually retype the 71-row scenario until this P0 branch is reviewed, merged, deployed, and the local pressure tests pass.
+## P0 Staged Batch Auto-Process - 2026-06-29
+
+Mode: P0 live usability/reliability fix. Read-only inspection was performed on staged batch `2241aeab-4f40-4797-882d-1588a17abbd0`. No production batch processing, data writes, migration, customer send, public post, payment/deposit change, reservation change, unrelated lifecycle/purpose write, Phase 3A.6, CHARLIE/FRED/ledger work, screenshot, external source, asset, `.env`, or `.claude` change was made during inspection.
+
+Owner live finding:
+
+- Page showed 116 visible rows and 73 entered weights.
+- UI said `No actionable rows - draft kept` while also showing Upload Progress with 42 remaining rows.
+- Existing staged batch id: `2241aeab-4f40-4797-882d-1588a17abbd0`.
+
+Read-only batch inspection:
+
+- Batch status: `staged`.
+- Batch counts: 116 visible, 42 actionable/processable, 73 weight rows, 28 movement rows, 43 skipped, 31 duplicates, 0 success, 0 failed.
+- Row statuses: 42 `staged`, 31 `duplicate`, 43 `skipped`.
+- Staged action types: 41 weight rows and 1 duplicate-weight-with-movement row.
+
+Root cause:
+
+- The browser checked `counts.actionable_count`, but the durable endpoint returns `counts.actionable_row_count`.
+- That made the upload path think no rows were actionable after staging, even though `remaining_count` was 42.
+- Existing saved `batch_id` was restored but not status-checked on page load, so the owner was not guided to Continue Upload.
+
+Fix direction:
+
+- Read both legacy and durable count keys.
+- Fetch saved batch status on page load when a draft has `batch_id`.
+- If remaining rows exist, show Upload paused and Continue Upload.
+- Upload Weights with an existing batch id processes that existing batch and does not create a new batch.
+- Draft Review uses local owner-input counts; Upload Progress uses backend batch progress counts.
+
 ## P0 Simple Bulk Upload UX - 2026-06-29
 
 Mode: P0 usability/reliability polish on the durable bulk rail. No migration, production data rewrite, customer send, public post, payment/deposit change, reservation change, unrelated lifecycle/purpose write, Phase 3A.6, CHARLIE/FRED/ledger work, screenshot, external source, asset, `.env`, or `.claude` change is approved.

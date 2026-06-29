@@ -536,6 +536,22 @@ class DurableBulkWeightBatchServiceTests(unittest.TestCase):
         self.assertFalse(result["writes_to_google_sheets"])
         self.assertTrue(result["writes_to_supabase"])
 
+
+    @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
+    def test_durable_status_reports_remaining_staged_rows(self):
+        rows = self._rows_73_with_21_moves()
+        preflight = self._preflight_for_rows(rows)
+        with patch.object(pig_weights_service, "preflight_bulk_weight_entries", return_value=(preflight, 200)):
+            staged, status = bulk_weight_batch_service.stage_bulk_weight_batch({"draft_id": "DRAFT-STATUS", "weight_date": "2026-06-22", "rows": rows})
+            status_result, status_code = bulk_weight_batch_service.get_bulk_weight_batch_status(staged["batch_id"])
+
+        self.assertEqual(status, 201)
+        self.assertEqual(status_code, 200)
+        self.assertEqual(status_result["status"], "staged")
+        self.assertEqual(status_result["counts"]["remaining_count"], 73)
+        self.assertEqual(status_result["counts"]["visible_row_count"], 73)
+        self.assertEqual(status_result["counts"]["movement_row_count"], 21)
+
     @patch.dict("os.environ", {"BULK_WEIGHT_BATCH_STORE": "memory"})
     def test_durable_processes_only_one_chunk_at_a_time(self):
         rows = self._rows_73_with_21_moves()
