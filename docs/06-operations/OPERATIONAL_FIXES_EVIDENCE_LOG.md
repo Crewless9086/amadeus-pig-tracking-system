@@ -449,6 +449,7 @@ Document rail checkpoint:
 - `get_document_settings()` reads `app_settings` first, with `SYSTEM_SETTINGS` fallback.
 - `append_order_document()` inserts/upserts generated quote/invoice metadata into `order_documents` first, with `ORDER_DOCUMENTS` fallback.
 - `mark_document_sent()` updates `order_documents` first, with `ORDER_DOCUMENTS` fallback.
+- Quote generation now reads order lines from Supabase order detail first, with `ORDER_LINES` fallback.
 - Focused and broader order/document tests passed.
 
 Sales transaction lifecycle checkpoint:

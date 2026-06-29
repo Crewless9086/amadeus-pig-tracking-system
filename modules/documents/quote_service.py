@@ -36,6 +36,7 @@ from modules.orders.order_service import (
     _get_order_master_row,
     get_order_detail,
 )
+from modules.orders import order_supabase_read
 from services.google_sheets_service import get_all_records
 from services.google_drive_service import upload_file_to_drive
 
@@ -440,6 +441,14 @@ def _order_from_master_row(row):
 
 
 def _get_order_lines_from_sheet(order_id):
+    if order_supabase_read.supabase_order_reads_available():
+        try:
+            detail = order_supabase_read.get_order_detail(order_id)
+            if detail:
+                return list(detail.get("lines", []))
+        except Exception:
+            pass
+
     lines = []
     for row in get_all_records(ORDER_LINES_SHEET):
         if _clean(row.get("Order_ID", "")) != order_id:

@@ -12,7 +12,7 @@ Result so far:
 
 - Live order/sales import batch `IMPORT-20260629-LIVE-ORDERS-V1` applied to Supabase.
 - Order list/detail/search now prefer Supabase canonical reads.
-- Order document metadata reads/writes, document settings reads, and daily order status summaries now prefer Supabase.
+- Order document metadata reads/writes, document settings reads, quote line reads, and daily order status summaries now prefer Supabase.
 - Order create/update/line/reservation/lifecycle and order intake update/reset now have guarded Supabase write rails with Sheets fallback.
 - Sales transaction slaughter-exit pig updates now prefer Supabase `pigs` with additive exit metadata fields.
 - Mating creation, pregnancy status changes, litter-link updates, and mating-related movement logs now prefer Supabase.
