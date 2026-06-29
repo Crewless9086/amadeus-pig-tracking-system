@@ -39,12 +39,32 @@ These routes remain on Google Sheets/formula logic until formula-equivalence or 
 
 - `/api/pig-weights/dashboard`
 - `/api/pig-weights/sales-dashboard`
-- `/api/pig-weights/pig-allocation-readiness`
-- `/api/pig-weights/meat-planning`
 - `/api/pig-weights/sales-availability`
 - `/api/pig-weights/litters`
 - `/api/pig-weights/litter/<litter_id>`
 - Mutation/write routes.
+
+## Batch 7C: Allocation And Meat Planning Reads
+
+`/api/pig-weights/pig-allocation-readiness` now prefers Supabase canonical inputs while reusing the existing allocation business rules.
+
+`/api/pig-weights/meat-planning` builds from allocation readiness, so it now follows the Supabase allocation path when `DATABASE_URL` is available.
+
+Live read-only smoke:
+
+- Allocation source: `supabase_canonical`
+- Allocation total: 217 pigs
+- Allocation buckets: Needs Data 39, Needs Classification 22, Growing 13, Livestock Candidate 19, Slaughter Candidate 0, Meat Candidate 2, Retain / Breeding Candidate 21, Allocated 0, Exited 101
+- Meat-planning rows: 2
+- Meat-planning summary: ready now 2, next 14 days 0, next 30 days 0, future 0, fallback abattoir 0
+
+Still not cut over:
+
+- dashboard litter attention
+- sales dashboard
+- sales availability and stock formulas
+- litter overview/detail formulas
+- mutation/write routes
 
 ## Local Environment Note
 

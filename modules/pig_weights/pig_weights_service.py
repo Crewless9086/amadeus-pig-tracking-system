@@ -3392,12 +3392,23 @@ def get_pig_allocation_readiness(today=None):
     today = today or datetime.now().date()
     settings = _allocation_settings()
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
-    pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
-    weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
-    sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
-    litter_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
-    pen_lookup = _build_pen_lookup()
+    supabase_inputs = _try_supabase_read(farm_supabase_read_service.get_allocation_input_rows)
+    if supabase_inputs is not None:
+        overview_rows = supabase_inputs.get("overview_rows", [])
+        pig_master_rows = supabase_inputs.get("pig_master_rows", [])
+        weight_rows = supabase_inputs.get("weight_rows", [])
+        sales_rows = supabase_inputs.get("sales_rows", [])
+        litter_rows = supabase_inputs.get("litter_rows", [])
+        pen_lookup = supabase_inputs.get("pen_lookup", {})
+        source = supabase_inputs.get("source", "supabase_canonical")
+    else:
+        overview_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"])
+        pig_master_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"])
+        weight_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["weight_log"])
+        sales_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"])
+        litter_rows = get_all_records(PIG_WEIGHTS_CONFIG["sheet_names"]["litter_overview"])
+        pen_lookup = _build_pen_lookup()
+        source = "google_sheets"
     master_lookup = _build_pig_lookup(pig_master_rows, columns)
     latest_weights = _latest_weights_by_pig(weight_rows, columns)
     sales_lookup = _sales_availability_by_pig(sales_rows, columns)
@@ -3507,6 +3518,7 @@ def get_pig_allocation_readiness(today=None):
     return {
         "success": True,
         "generated_date": today.isoformat(),
+        "source": source,
         "thresholds": settings,
         "business_rules": {
             "source": settings["source"],

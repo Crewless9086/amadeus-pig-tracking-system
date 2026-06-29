@@ -366,6 +366,54 @@ class FarmSupabaseReadServiceTests(unittest.TestCase):
         self.assertEqual(tree["siblings"][0]["pig_id"], "PIG-2")
         self.assertEqual(tree["source"], "supabase_canonical")
 
+    def test_allocation_input_rows_maps_supabase_to_sheet_like_rows(self):
+        current_rows = [{
+            "pig_id": "PIG-1",
+            "tag_number": "101",
+            "status": "Active",
+            "on_farm": True,
+            "animal_type": "Grower",
+            "sex": "Female",
+            "date_of_birth": date(2026, 1, 1),
+            "litter_id": "LIT-1",
+            "purpose": "Grow_Out",
+            "current_weight_kg": 61.5,
+            "last_weight_date": date(2026, 6, 22),
+            "current_pen_id": "PEN-1",
+            "current_pen_name": "Grower Pen",
+            "mother_pig_id": "SOW-1",
+            "father_pig_id": "BOAR-1",
+        }]
+
+        def fake_fetch_all(sql, params=(), connect_factory=None):
+            if "from public.pig_weight_events" in sql:
+                return [{"pig_id": "PIG-1", "weight_date": date(2026, 6, 22), "weight_kg": 61.5}]
+            if "from public.litters" in sql:
+                return [{
+                    "litter_id": "LIT-1",
+                    "sow_pig_id": "SOW-1",
+                    "boar_pig_id": "BOAR-1",
+                    "sow_tag_number": "M1",
+                    "boar_tag_number": "F1",
+                    "born_alive": 10,
+                    "weaned_count": 9,
+                    "litter_status": "Active",
+                }]
+            if "from public.pens" in sql:
+                return [{"pen_id": "PEN-1", "pen_name": "Grower Pen", "pen_type": "Grower"}]
+            return []
+
+        with patch.object(farm_supabase_read_service, "_current_state_rows", return_value=current_rows), \
+             patch.object(farm_supabase_read_service, "_fetch_all", side_effect=fake_fetch_all):
+            inputs = farm_supabase_read_service.get_allocation_input_rows()
+
+        self.assertEqual(inputs["source"], "supabase_canonical")
+        self.assertEqual(inputs["overview_rows"][0]["Pig_ID"], "PIG-1")
+        self.assertEqual(inputs["overview_rows"][0]["On_Farm"], "Yes")
+        self.assertEqual(inputs["weight_rows"][0]["Weight_Kg"], 61.5)
+        self.assertEqual(inputs["litter_rows"][0]["Born_Alive"], 10.0)
+        self.assertEqual(inputs["pen_lookup"]["PEN-1"]["pen_name"], "Grower Pen")
+
     def test_pig_weights_service_prefers_supabase_when_available(self):
         with patch.object(farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
              patch.object(farm_supabase_read_service, "get_pens", return_value=[{"pen_id": "PEN-1"}]):

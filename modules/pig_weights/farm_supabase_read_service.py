@@ -352,6 +352,93 @@ def get_family_tree(pig_id, connect_factory=None):
     }
 
 
+def _allocation_overview_row(row):
+    return {
+        "Pig_ID": _text(row.get("pig_id")),
+        "Tag_Number": _text(row.get("tag_number")),
+        "Animal_Type": _text(row.get("animal_type")),
+        "Sex": _text(row.get("sex")),
+        "Status": _text(row.get("status")),
+        "On_Farm": _yes_no(row.get("on_farm")),
+        "Purpose": _text(row.get("purpose")),
+        "Current_Pen_ID": _text(row.get("current_pen_id")),
+        "Current_Pen_Name": _text(row.get("current_pen_name")),
+        "Current_Weight_Kg": _float_or_none(row.get("current_weight_kg")),
+        "Last_Weight_Date": _date_text(row.get("last_weight_date")),
+        "Date_Of_Birth": _date_text(row.get("date_of_birth")),
+        "Age_Days": _age_days(row.get("date_of_birth")),
+        "Calculated_Stage": _calculated_stage(row),
+        "Weight_Band": _weight_band(row.get("current_weight_kg")),
+        "Litter_ID": _text(row.get("litter_id")),
+        "Mother_Pig_ID": _text(row.get("mother_pig_id")),
+        "Father_Pig_ID": _text(row.get("father_pig_id")),
+    }
+
+
+def get_allocation_input_rows(connect_factory=None):
+    current_rows = _current_state_rows(connect_factory=connect_factory)
+    weight_rows = _fetch_all(
+        """
+        select pig_id, weight_date, weight_kg
+        from public.pig_weight_events
+        order by pig_id, weight_date, created_at, weight_event_id
+        """,
+        connect_factory=connect_factory,
+    )
+    litter_rows = _fetch_all(
+        """
+        select litter_id, sow_pig_id, boar_pig_id, sow_tag_number, boar_tag_number,
+               born_alive, weaned_count, litter_status
+        from public.litters
+        order by litter_id
+        """,
+        connect_factory=connect_factory,
+    )
+    pen_rows = _fetch_all(
+        """
+        select pen_id, pen_name, pen_type
+        from public.pens
+        where is_active is true
+        """,
+        connect_factory=connect_factory,
+    )
+    overview_rows = [_allocation_overview_row(row) for row in current_rows]
+    pig_master_rows = [dict(row) for row in overview_rows]
+    formatted_weight_rows = [{
+        "Pig_ID": _text(row.get("pig_id")),
+        "Weight_Date": _date_text(row.get("weight_date")),
+        "Weight_Kg": _float_or_none(row.get("weight_kg")),
+    } for row in weight_rows]
+    formatted_litter_rows = [{
+        "Litter_ID": _text(row.get("litter_id")),
+        "Sow_Pig_ID": _text(row.get("sow_pig_id")),
+        "Sow_Tag_Number": _text(row.get("sow_tag_number")),
+        "Boar_Pig_ID": _text(row.get("boar_pig_id")),
+        "Boar_Tag_Number": _text(row.get("boar_tag_number")),
+        "Born_Alive": _float_or_none(row.get("born_alive")),
+        "Weaned_Count": _float_or_none(row.get("weaned_count")),
+        "Litter_Status": _text(row.get("litter_status")),
+    } for row in litter_rows]
+    pen_lookup = {
+        _text(row.get("pen_id")): {
+            "pen_id": _text(row.get("pen_id")),
+            "pen_name": _text(row.get("pen_name")),
+            "pen_type": _text(row.get("pen_type")),
+        }
+        for row in pen_rows
+        if _text(row.get("pen_id"))
+    }
+    return {
+        "overview_rows": overview_rows,
+        "pig_master_rows": pig_master_rows,
+        "weight_rows": formatted_weight_rows,
+        "sales_rows": [],
+        "litter_rows": formatted_litter_rows,
+        "pen_lookup": pen_lookup,
+        "source": "supabase_canonical",
+    }
+
+
 def _tag_for_pig(pig_id, connect_factory=None):
     row = _fetch_one("select tag_number from public.pigs where pig_id = %s", (pig_id,), connect_factory=connect_factory)
     return _text(row.get("tag_number")) if row else ""

@@ -38,6 +38,25 @@ Live read-only result:
 - `MATING_OVERVIEW` row count matches Supabase `mating_events`.
 - Sales availability, sales stock summary/totals, litter attention, allocation readiness, and meat planning still need Supabase replacement services before route cutover.
 
+## 2026-06-29 GS-MIG-7C Allocation And Meat Planning Reads
+
+Status: active.
+
+Result:
+
+- Pig allocation readiness now prefers Supabase canonical input rows and reuses existing business rules.
+- Meat planning follows the Supabase-backed allocation source.
+- Live read-only allocation smoke returned 217 total pigs with source `supabase_canonical`.
+- Live read-only meat-planning smoke returned 2 current meat-planning rows.
+
+Still blocked:
+
+- Dashboard litter attention.
+- Sales dashboard.
+- Sales availability/stock summary/totals.
+- Litter overview/detail formulas.
+- Mutation/write routes.
+
 ## 2026-06-29 GS-MIG-6 Conflicting Weight Review And Reconciliation
 
 Status: merged as PR #26.
