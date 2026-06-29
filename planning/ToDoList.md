@@ -16,12 +16,13 @@ Result so far:
 - Order create/update/line/reservation/lifecycle and order intake update/reset now have guarded Supabase write rails with Sheets fallback.
 - Sales transaction slaughter-exit pig updates now prefer Supabase `pigs` with additive exit metadata fields.
 - Mating creation, pregnancy status changes, litter-link updates, and mating-related movement logs now prefer Supabase.
+- Direct farm writes for pigs, products, pens, single weights, treatments, and movements now prefer Supabase.
 
 Still to verify before PR:
 
 - Full route/service regression.
 - No customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
-- Formula-specific newborn-health attention replacement remains a separate follow-up rail.
+- Litter lifecycle/piglet correction workflows and formula-specific newborn-health attention replacement remain separate follow-up rails.
 
 ## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 

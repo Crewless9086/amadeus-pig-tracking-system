@@ -26,6 +26,7 @@ from modules.pig_weights.pig_weights_utils import (
 )
 from modules.pig_weights.mating_service import link_litter_to_mating
 from modules.pig_weights import farm_supabase_read_service
+from modules.pig_weights import farm_supabase_write_service
 from modules.sales.sales_transaction_read import get_monthly_sales_transaction_summary
 
 TERMINAL_PIG_STATUSES = {"Sold", "Slaughtered", "Dead", "Removed"}
@@ -4903,8 +4904,9 @@ def save_new_pig(cleaned_data: dict):
 
     today_str = datetime.now().strftime("%d %b %Y")
 
+    pig_id = generate_pig_id()
     row_values = [
-        generate_pig_id(),
+        pig_id,
         cleaned_data["tag_number"],
         cleaned_data["pig_name"],
         cleaned_data["status"],
@@ -4942,19 +4944,41 @@ def save_new_pig(cleaned_data: dict):
         today_str,
     ]
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_pig(
+                pig_id,
+                cleaned_data,
+                mother_tag_number=mother_tag_number,
+                father_tag_number=father_tag_number,
+            )
+            return {
+                "success": True,
+                "message": "Pig created successfully.",
+                "pig_id": pig_id,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
+
     append_row(sheet_name, row_values)
 
     return {
         "success": True,
-        "message": "Pig created successfully."
+        "message": "Pig created successfully.",
+        "pig_id": pig_id,
     }
 
 
 def save_new_product(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["product_register"]
+    product_id = generate_product_id()
 
     row_values = [
-        generate_product_id(),
+        product_id,
         cleaned_data["product_name"],
         cleaned_data["product_category"],
         cleaned_data["default_dose"] if cleaned_data["default_dose"] is not None else "",
@@ -4966,19 +4990,36 @@ def save_new_product(cleaned_data: dict):
         cleaned_data["product_notes"],
     ]
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_product(product_id, cleaned_data)
+            return {
+                "success": True,
+                "message": "Product created successfully.",
+                "product_id": product_id,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
+
     append_row(sheet_name, row_values)
 
     return {
         "success": True,
-        "message": "Product created successfully."
+        "message": "Product created successfully.",
+        "product_id": product_id,
     }
 
 
 def save_new_pen(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["pen_register"]
+    pen_id = generate_pen_id()
 
     row_values = [
-        generate_pen_id(),
+        pen_id,
         cleaned_data["pen_name"],
         cleaned_data["pen_type"],
         cleaned_data["capacity"] if cleaned_data["capacity"] is not None else "",
@@ -4986,11 +5027,27 @@ def save_new_pen(cleaned_data: dict):
         cleaned_data["pen_notes"],
     ]
 
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_pen(pen_id, cleaned_data)
+            return {
+                "success": True,
+                "message": "Pen created successfully.",
+                "pen_id": pen_id,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
+
     append_row(sheet_name, row_values)
 
     return {
         "success": True,
-        "message": "Pen created successfully."
+        "message": "Pen created successfully.",
+        "pen_id": pen_id,
     }
 
 def _create_pig_rows_for_litter(
@@ -5189,28 +5246,55 @@ def save_weight_entry(cleaned_data: dict):
     target_date = cleaned_data["weight_date"]
 
     if not cleaned_data.get("allow_duplicate", False):
-        weight_rows = get_all_records(sheet_name)
-        for row in weight_rows:
-            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
-            row_date = parse_sheet_date(row.get(columns["weight_date"], ""))
+        supabase_duplicate_checked = False
+        if farm_supabase_write_service.farm_supabase_writes_available():
+            try:
+                existing = farm_supabase_write_service.get_weight_event(
+                    cleaned_data["pig_id"],
+                    target_date,
+                )
+                supabase_duplicate_checked = True
+                if existing:
+                    return {
+                        "success": False,
+                        "duplicate_weight": True,
+                        "message": "Already recorded for this date.",
+                        "existing": {
+                            "weight_log_id": to_clean_string(existing.get("weight_event_id", "")),
+                            "pig_id": to_clean_string(existing.get("pig_id", "")),
+                            "weight_date": format_date_for_json(existing.get("weight_date", "")),
+                            "weight_kg": to_float(existing.get("weight_kg", "")),
+                            "weighed_by": to_clean_string(existing.get("weighed_by", "")),
+                            "condition_notes": to_clean_string(existing.get("condition_notes", "")),
+                        },
+                    }
+            except Exception:
+                pass
 
-            if row_pig_id == cleaned_data["pig_id"] and row_date == target_date:
-                return {
-                    "success": False,
-                    "duplicate_weight": True,
-                    "message": "Already recorded for this date.",
-                    "existing": {
-                        "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
-                        "pig_id": row_pig_id,
-                        "weight_date": format_date_for_json(row.get(columns["weight_date"], "")),
-                        "weight_kg": to_float(row.get(columns["weight_kg"], "")),
-                        "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
-                        "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
-                    },
-                }
+        if not supabase_duplicate_checked:
+            weight_rows = get_all_records(sheet_name)
+            for row in weight_rows:
+                row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+                row_date = parse_sheet_date(row.get(columns["weight_date"], ""))
 
+                if row_pig_id == cleaned_data["pig_id"] and row_date == target_date:
+                    return {
+                        "success": False,
+                        "duplicate_weight": True,
+                        "message": "Already recorded for this date.",
+                        "existing": {
+                            "weight_log_id": to_clean_string(row.get(columns["weight_log_id"], "")),
+                            "pig_id": row_pig_id,
+                            "weight_date": format_date_for_json(row.get(columns["weight_date"], "")),
+                            "weight_kg": to_float(row.get(columns["weight_kg"], "")),
+                            "weighed_by": to_clean_string(row.get(columns["weighed_by"], "")),
+                            "condition_notes": to_clean_string(row.get(columns["condition_notes"], "")),
+                        },
+                    }
+
+    weight_log_id = generate_weight_log_id()
     row_values = [
-        generate_weight_log_id(),
+        weight_log_id,
         cleaned_data["pig_id"],
         format_date_for_sheet(cleaned_data["weight_date"]),
         cleaned_data["weight_kg"],
@@ -5220,6 +5304,29 @@ def save_weight_entry(cleaned_data: dict):
         "",
         format_date_for_sheet(cleaned_data["weight_date"]),
     ]
+
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_weight_event(weight_log_id, cleaned_data)
+            latest_info = get_latest_weight_for_pig(cleaned_data["pig_id"])
+            return {
+                "success": True,
+                "message": "Weight entry saved successfully.",
+                "saved": {
+                    "pig_id": cleaned_data["pig_id"],
+                    "weight_date": format_date_for_json(cleaned_data["weight_date"]),
+                    "weight_kg": cleaned_data["weight_kg"],
+                    "condition_notes": cleaned_data["condition_notes"],
+                    "weighed_by": cleaned_data["weighed_by"],
+                },
+                "latest": latest_info,
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
 
     append_row(sheet_name, row_values)
 
@@ -5256,16 +5363,22 @@ def save_weight_entry_with_optional_move(cleaned_data: dict):
     movement_result = None
 
     if moved_to_pen_id:
-        overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
-        columns = PIG_WEIGHTS_CONFIG["columns"]
-        overview_rows = get_all_records(overview_sheet)
-
         current_pen_id = ""
-        for row in overview_rows:
-            row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
-            if row_pig_id == cleaned_data["pig_id"]:
-                current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
-                break
+        if farm_supabase_write_service.farm_supabase_writes_available():
+            try:
+                current_pen_id = farm_supabase_write_service.get_current_pen_id(cleaned_data["pig_id"])
+            except Exception:
+                current_pen_id = ""
+        if not current_pen_id:
+            overview_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_overview"]
+            columns = PIG_WEIGHTS_CONFIG["columns"]
+            overview_rows = get_all_records(overview_sheet)
+
+            for row in overview_rows:
+                row_pig_id = to_clean_string(row.get(columns["pig_id"], ""))
+                if row_pig_id == cleaned_data["pig_id"]:
+                    current_pen_id = to_clean_string(row.get(columns["current_pen_id"], ""))
+                    break
 
         if moved_to_pen_id != current_pen_id:
             movement_result = save_movement_entry({
@@ -5790,8 +5903,9 @@ def save_treatment_entry(cleaned_data: dict):
             cleaned_data["treatment_date"].toordinal() + withdrawal_days_int
         )
 
+    medical_log_id = generate_medical_log_id()
     row_values = [
-        generate_medical_log_id(),
+        medical_log_id,
         cleaned_data["pig_id"],
         format_date_for_sheet(cleaned_data["treatment_date"]),
         cleaned_data["treatment_type"],
@@ -5810,6 +5924,43 @@ def save_treatment_entry(cleaned_data: dict):
         cleaned_data["medical_notes"],
         format_date_for_sheet(cleaned_data["treatment_date"]),
     ]
+
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_medical_event(
+                medical_log_id,
+                cleaned_data,
+                product=product,
+                withdrawal_days=withdrawal_days_int,
+                withdrawal_end_date=withdrawal_end_date,
+            )
+            return {
+                "success": True,
+                "message": "Treatment entry saved successfully.",
+                "saved": {
+                    "pig_id": cleaned_data["pig_id"],
+                    "treatment_date": format_date_for_json(cleaned_data["treatment_date"]),
+                    "treatment_type": cleaned_data["treatment_type"],
+                    "product_id": cleaned_data["product_id"],
+                    "product_name": product_name,
+                    "dose": cleaned_data["dose"],
+                    "dose_unit": dose_unit,
+                    "route": cleaned_data["route"],
+                    "reason_for_treatment": cleaned_data["reason_for_treatment"],
+                    "withdrawal_days": withdrawal_days_int,
+                    "withdrawal_end_date": format_date_for_json(withdrawal_end_date),
+                    "given_by": cleaned_data["given_by"],
+                    "follow_up_required": cleaned_data["follow_up_required"],
+                    "follow_up_date": format_date_for_json(cleaned_data["follow_up_date"]),
+                    "medical_notes": cleaned_data["medical_notes"],
+                },
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
 
     append_row(sheet_name, row_values)
 
@@ -5838,9 +5989,10 @@ def save_treatment_entry(cleaned_data: dict):
 
 def save_movement_entry(cleaned_data: dict):
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["location_history"]
+    movement_log_id = generate_move_log_id()
 
     row_values = [
-        generate_move_log_id(),
+        movement_log_id,
         cleaned_data["pig_id"],
         format_date_for_sheet(cleaned_data["move_date"]),
         cleaned_data["from_pen_id"],
@@ -5851,6 +6003,33 @@ def save_movement_entry(cleaned_data: dict):
         cleaned_data["move_notes"],
         format_date_for_sheet(cleaned_data["move_date"]),
     ]
+
+    if farm_supabase_write_service.farm_supabase_writes_available():
+        try:
+            farm_supabase_write_service.insert_location_event(movement_log_id, cleaned_data)
+            from_pen = get_pen_by_id(cleaned_data["from_pen_id"])
+            to_pen = get_pen_by_id(cleaned_data["to_pen_id"])
+            return {
+                "success": True,
+                "message": "Movement entry saved successfully.",
+                "saved": {
+                    "pig_id": cleaned_data["pig_id"],
+                    "move_date": format_date_for_json(cleaned_data["move_date"]),
+                    "from_pen_id": cleaned_data["from_pen_id"],
+                    "from_pen_name": from_pen["pen_name"] if from_pen else cleaned_data["from_pen_id"],
+                    "to_pen_id": cleaned_data["to_pen_id"],
+                    "to_pen_name": to_pen["pen_name"] if to_pen else cleaned_data["to_pen_id"],
+                    "reason_for_move": cleaned_data["reason_for_move"],
+                    "moved_by": cleaned_data["moved_by"],
+                    "move_notes": cleaned_data["move_notes"],
+                },
+                "source": {
+                    "writes_to_google_sheets": False,
+                    "writes_to_supabase": True,
+                },
+            }
+        except Exception:
+            pass
 
     append_row(sheet_name, row_values)
 

@@ -421,6 +421,7 @@ App cutover in progress:
 - `modules.orders.order_intake_service` now uses a Supabase intake store for context/update/reset when available, with Sheets fallback.
 - `modules.sales.sales_transaction_lifecycle` now prefers Supabase `pigs` for slaughter exit confirmation/reconciliation, with Sheets fallback.
 - `modules.pig_weights.mating_service` now prefers Supabase `mating_events` and `pig_location_events` for mating creation, pregnancy status updates, litter-link updates, and mating-related movements, with Sheets fallback.
+- `modules.pig_weights.pig_weights_service` direct farm write routes now prefer Supabase canonical farm tables for pig/product/pen creation, single weights, treatments, and movements, with Sheets fallback.
 
 Live read-only smoke:
 
@@ -440,7 +441,7 @@ No-unsafe-action confirmation:
 
 Remaining risks:
 
-- Formula-specific newborn-health attention replacement still needs separate Supabase service work.
+- Litter lifecycle/piglet correction workflows and formula-specific newborn-health attention replacement still need separate Supabase service work.
 
 Document rail checkpoint:
 
@@ -464,6 +465,14 @@ Breeding mutation checkpoint:
 - `assume_pregnant()`, `mark_not_pregnant()`, and `link_litter_to_mating()` update `mating_events` first.
 - Existing `MATING_LOG` and `LOCATION_HISTORY` paths remain fallback if the Supabase rail is unavailable.
 - Focused mating service, mating route, breeding analytics, farm Supabase read, and frontend route-contract tests passed.
+
+Direct farm write checkpoint:
+
+- Added a guarded Supabase farm write adapter for `pigs`, `pens`, `farm_products`, `pig_weight_events`, `pig_medical_events`, and `pig_location_events`.
+- `save_new_pig()`, `save_new_product()`, `save_new_pen()`, `save_weight_entry()`, `save_weight_entry_with_optional_move()`, `save_treatment_entry()`, and `save_movement_entry()` now prefer Supabase.
+- Healthy Supabase duplicate-weight checks avoid the legacy `WEIGHT_LOG` duplicate scan.
+- Existing Google Sheets paths remain fallback when the Supabase write rail is unavailable.
+- Focused farm write cutover, duplicate-weight, bulk-weight, litter-service, and frontend route-contract tests passed.
 
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
