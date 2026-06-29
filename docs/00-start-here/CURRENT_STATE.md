@@ -55,7 +55,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-4 additive schema apply completed on 2026-06-29.
 - Supabase now has empty canonical farm tables/views: `pens`, `pigs`, `farm_products`, `app_settings`, `pig_weight_events`, `pig_location_events`, `pig_medical_events`, `litters`, `mating_events`, `pig_latest_weight_events`, `pig_latest_location_events`, and `pig_current_state`.
 - Owner approved import policy direction: skip missing-`Pig_ID` weight rows into review/quarantine output; collapse same-weight duplicates to one canonical event; hold conflicting same-pig/same-date weights for review; collapse repeated movement duplicates to one canonical movement.
-- GS-MIG-3 dry-run verifier maps 1,235 original weight events to 1,190 canonical weight events and 185 original movement events to 179 canonical movement events. It creates 41 review items: 26 auto-resolved dedupes, 9 pending conflicting-weight reviews, and 6 quarantined missing-`Pig_ID` rows.
+- Active migration planning branch: `gs-mig-5-initial-import-plan`.
+- After owner cleaned Google Sheets, GS-MIG-5 read-only verifier maps 1,235 original weight events to 1,190 canonical weight events and 185 original movement events to 179 canonical movement events. Missing-`Pig_ID` quarantine is now 0. It creates 35 review items: 26 auto-resolved dedupes and 9 pending conflicting-weight reviews.
 - No canonical farm data import or app cutover has happened yet.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.

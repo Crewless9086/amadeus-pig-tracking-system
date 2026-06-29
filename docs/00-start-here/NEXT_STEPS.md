@@ -19,8 +19,9 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-3B is merged as PR #22.
 - GS-MIG-3 is merged as PR #23.
 - GS-MIG-4 additive schema apply is complete: empty canonical farm tables/views now exist in Supabase. No farm data has been imported and no app routes have been cut over.
+- GS-MIG-5 is active on `gs-mig-5-initial-import-plan`: plan controlled initial import of clean canonical data while leaving conflicting weights out for review.
 - Owner decision: missing-`Pig_ID` weight rows are left out of canonical import and listed in review/quarantine output; same-weight duplicates import as one canonical event; conflicting weights stay on a visible review list and do not import automatically; repeated movements import as one canonical movement.
-- GS-MIG-3 verifier result: 1,235 original weight events become 1,190 canonical weight events; 185 original movement events become 179 canonical movement events; 41 review items are generated, with 15 pending/quarantined items blocking import readiness.
+- After owner cleaned Google Sheets, GS-MIG-5 verifier result: 1,235 original weight events become 1,190 canonical weight events; 185 original movement events become 179 canonical movement events; missing-`Pig_ID` quarantine is now 0; 35 review items remain, with 9 conflicting-weight groups blocking full import readiness.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -45,7 +46,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-3A: merged as PR #21.
 - GS-MIG-3B: merged as PR #22.
 - GS-MIG-3: merged as PR #23.
-- GS-MIG-4: additive schema applied. Next candidate is GS-MIG-5 controlled dry-run/staged import design or owner-approved initial import plan; do not import/cut over app routes until explicitly approved.
+- GS-MIG-4: additive schema applied.
+- GS-MIG-5: controlled initial import plan. Do not import/cut over app routes until explicitly approved.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.
@@ -81,7 +83,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
 - Full Google Sheets to Supabase migration import/cutover is blocked until the owner approves GS-MIG-5.
-- GS-MIG-3 has produced visible review/quarantine dry-run output, and GS-MIG-4 has applied the empty schema. Production data import/cutover remains blocked until the owner approves import and decides whether the 15 pending/quarantined items can remain excluded for initial import.
+- GS-MIG-3 has produced visible review/quarantine dry-run output, GS-MIG-4 has applied the empty schema, and GS-MIG-5 is planning initial import. Production data import/cutover remains blocked until the owner approves import and decides whether the 9 conflicting-weight groups can remain excluded for initial import.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.
