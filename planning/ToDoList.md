@@ -2,9 +2,32 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-3 Backfill Verifier
+
+Status: active dry-run verifier.
+
+Branch: `gs-mig-3-review-backfill-verifier`
+
+Scope:
+
+- Produce review/quarantine output under the owner-approved import policies.
+- Produce controlled canonical payload counts before any migration apply/import.
+- Do not apply migrations or write production Supabase/Google Sheets data.
+- Do not cut over app routes.
+
+Dry-run verifier result:
+
+- 1,235 original mapped weight events become 1,190 canonical weight events.
+- 185 original mapped movement events become 179 canonical movement events.
+- 41 review items are generated.
+- 26 review items are auto-resolved dedupes.
+- 9 review items are pending conflicting-weight owner/admin review.
+- 6 review items are quarantined missing-`Pig_ID` weight rows.
+- Import readiness remains false until the 15 pending/quarantined items are accepted as excluded or resolved.
+
 ## 2026-06-29 GS-MIG-3B Import Policy Decisions
 
-Status: active owner decision capture.
+Status: merged as PR #22.
 
 Branch: `gs-mig-3b-import-policy`
 

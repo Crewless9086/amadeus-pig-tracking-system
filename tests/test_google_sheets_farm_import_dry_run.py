@@ -250,6 +250,64 @@ class GoogleSheetsFarmImportDryRunTests(unittest.TestCase):
         self.assertIn('"owner_decisions_needed"', printed)
         self.assertIn('"writes_to_supabase": false', printed)
 
+    def test_policy_backfill_verifier_collapses_duplicates_and_quarantines_missing_ids(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"] = [
+            {"Weight_Log_ID": "WGT-1", "Pig_ID": "PIG-1", "Weight_Date": "2026-06-22", "Weight_Kg": "61.5"},
+            {"Weight_Log_ID": "WGT-2", "Pig_ID": "PIG-1", "Weight_Date": "2026-06-22", "Weight_Kg": "61.5"},
+            {"Weight_Log_ID": "WGT-MISSING", "Pig_ID": "", "Weight_Date": "2026-06-23", "Weight_Kg": "62"},
+            {"Weight_Log_ID": "WGT-3", "Pig_ID": "PIG-1", "Weight_Date": "2026-06-24", "Weight_Kg": "62"},
+            {"Weight_Log_ID": "WGT-4", "Pig_ID": "PIG-1", "Weight_Date": "2026-06-24", "Weight_Kg": "70"},
+        ]
+        rows["LOCATION_HISTORY"] = [
+            {"Move_Log_ID": "MOVE-1", "Pig_ID": "PIG-1", "Move_Date": "2026-06-22", "From_Pen_ID": "PEN-1", "To_Pen_ID": "PEN-2"},
+            {"Move_Log_ID": "MOVE-2", "Pig_ID": "PIG-1", "Move_Date": "2026-06-22", "From_Pen_ID": "PEN-1", "To_Pen_ID": "PEN-2"},
+        ]
+
+        verifier = dry_run.build_policy_backfill_verifier(rows)
+
+        self.assertTrue(verifier["success"])
+        self.assertFalse(verifier["writes_to_supabase"])
+        self.assertFalse(verifier["writes_to_sheets"])
+        self.assertEqual(verifier["original_payload_summary"]["pig_weight_events"], 4)
+        self.assertEqual(verifier["canonical_payload_summary"]["pig_weight_events"], 1)
+        self.assertEqual(verifier["canonical_payload_summary"]["pig_location_events"], 1)
+        self.assertEqual(verifier["review_summary"]["by_type"]["missing_pig_id_weight"], 1)
+        self.assertEqual(verifier["review_summary"]["by_type"]["same_weight_duplicate"], 1)
+        self.assertEqual(verifier["review_summary"]["by_type"]["conflicting_weight"], 1)
+        self.assertEqual(verifier["review_summary"]["by_type"]["same_movement_duplicate"], 1)
+        self.assertEqual(verifier["verification"]["pending_review_count"], 2)
+        self.assertFalse(verifier["verification"]["import_ready"])
+
+        review_statuses = {item["review_type"]: item["status"] for item in verifier["review_items"]}
+        self.assertEqual(review_statuses["missing_pig_id_weight"], "quarantined")
+        self.assertEqual(review_statuses["conflicting_weight"], "pending_owner_review")
+
+    def test_policy_backfill_verifier_keeps_source_refs_for_auto_dedupe(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"] = [
+            {"Weight_Log_ID": "WGT-1", "Pig_ID": "PIG-1", "Weight_Date": "2026-06-22", "Weight_Kg": "61.5"},
+            {"Weight_Log_ID": "WGT-2", "Pig_ID": "PIG-1", "Weight_Date": "2026-06-22", "Weight_Kg": "61.5"},
+        ]
+        rows["LOCATION_HISTORY"] = []
+
+        verifier = dry_run.build_policy_backfill_verifier(rows)
+        canonical_weight = verifier["canonical_payloads"]["pig_weight_events"][0]
+
+        self.assertEqual(canonical_weight["dedupe_policy"], "same_pig_same_date_same_weight_keep_first_source_row")
+        self.assertEqual(len(canonical_weight["duplicate_source_refs"]), 2)
+
+    def test_main_backfill_verifier_prints_no_write_summary(self):
+        with patch.object(dry_run, "load_sheet_rows", return_value=self.sample_rows()), \
+             patch.object(dry_run, "print") as print_mock:
+            status = dry_run.main(["--backfill-verifier", "--review-samples", "1"])
+
+        self.assertEqual(status, 0)
+        printed = print_mock.call_args.args[0]
+        self.assertIn('"mode": "dry_run_policy_backfill_verifier"', printed)
+        self.assertIn('"writes_to_supabase": false', printed)
+        self.assertIn('"canonical_payload_summary"', printed)
+
 
 if __name__ == "__main__":
     unittest.main()

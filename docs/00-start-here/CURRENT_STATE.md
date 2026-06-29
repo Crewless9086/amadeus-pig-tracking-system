@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `cf0c7f5` Record Sheets import policies (#22)
 - `4d0b598` Classify Sheets migration data issues (#21)
 - `4263cc8` Add Google Sheets reconciliation gate (#20)
 - `b58f7c1` Add farm migration dry-run schema (#19)
@@ -48,8 +49,10 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-1 is merged as PR #19: schema proposal plus dry-run import/reconciliation tooling. No migration has been applied and no production data has been written.
 - GS-MIG-2 is merged as PR #20. No migration has been applied and no production data has been written.
 - GS-MIG-3A is merged as PR #21.
-- Active migration policy branch: `gs-mig-3b-import-policy`.
+- GS-MIG-3B is merged as PR #22.
+- Active migration verifier branch: `gs-mig-3-review-backfill-verifier`.
 - Owner approved import policy direction: skip missing-`Pig_ID` weight rows into review/quarantine output; collapse same-weight duplicates to one canonical event; hold conflicting same-pig/same-date weights for review; collapse repeated movement duplicates to one canonical movement.
+- GS-MIG-3 dry-run verifier maps 1,235 original weight events to 1,190 canonical weight events and 185 original movement events to 179 canonical movement events. It creates 41 review items: 26 auto-resolved dedupes, 9 pending conflicting-weight reviews, and 6 quarantined missing-`Pig_ID` rows.
 - No canonical import, app cutover, or migration apply is approved yet.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
