@@ -4,9 +4,10 @@
 
 ## 2026-06-29 GS-MIG-8 Complete Supabase Cutover
 
-Status: active.
+Status: merged and migration-applied.
 
 Branch: `gs-mig-8-complete-supabase-cutover`
+PR: #28 merged as `9733173`.
 
 Result so far:
 
@@ -18,12 +19,12 @@ Result so far:
 - Mating creation, pregnancy status changes, litter-link updates, and mating-related movement logs now prefer Supabase.
 - Direct farm writes for pigs, products, pens, single weights, treatments, and movements now prefer Supabase.
 - Litter lifecycle/piglet correction writes now prefer Supabase with Sheets fallback.
-- Additive migration `202606290003_add_litter_lifecycle_fields.sql` supports wean, litter-size, and earmark metadata.
+- Additive migration `202606290002_add_pig_exit_fields.sql` is applied.
+- Corrected additive migration `202606290003_add_litter_lifecycle_fields.sql` is applied; the view replacement now preserves existing `pig_current_state` column order and appends lifecycle fields.
 
-Still to verify before PR:
+Next follow-up:
 
-- Full route/service regression.
-- No customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
+- GS-MIG-10 should close remaining route-facing Google Sheets dependencies where Supabase equivalents exist.
 - Formula-specific newborn-health attention replacement and legacy setup/import/export scripts remain separate follow-up rails.
 
 ## 2026-06-29 GS-MIG-7 Supabase Route Cutover

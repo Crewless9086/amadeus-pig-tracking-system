@@ -30,14 +30,14 @@ select
     pig.date_of_birth,
     pig.litter_id,
     pig.purpose,
-    pig.wean_date,
-    pig.wean_weight_kg,
-    pig.litter_size_born,
-    pig.litter_size_weaned,
     latest_weight.weight_kg as current_weight_kg,
     latest_weight.weight_date as last_weight_date,
     coalesce(latest_location.to_pen_id, pig.initial_pen_id) as current_pen_id,
-    pen.pen_name as current_pen_name
+    pen.pen_name as current_pen_name,
+    pig.wean_date,
+    pig.wean_weight_kg,
+    pig.litter_size_born,
+    pig.litter_size_weaned
 from public.pigs pig
 left join public.pig_latest_weight_events latest_weight on latest_weight.pig_id = pig.pig_id
 left join public.pig_latest_location_events latest_location on latest_location.pig_id = pig.pig_id

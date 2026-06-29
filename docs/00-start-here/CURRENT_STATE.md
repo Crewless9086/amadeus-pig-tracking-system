@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `9733173` Continue Supabase operational cutover (#28)
 - `61eeec3` Cut over farm reads to Supabase (#27)
 - `474d378` Add farm import conflict reconciliation (#26)
 - `2bcf347` Record controlled farm data import (#25)
@@ -66,15 +67,16 @@ Render deploys from `main` unless the service configuration says otherwise.
 - The 9 conflicting same-pig/same-date weight groups remain excluded from canonical import for owner/admin review.
 - GS-MIG-6 is merged as PR #26.
 - GS-MIG-7 is merged as PR #27. Safe read-only farm routes now prefer Supabase canonical reads with Google Sheets fallback.
-- GS-MIG-8/9 is active on `gs-mig-8-complete-supabase-cutover`: complete remaining order/sales/farm workflow cutover after PR #27.
+- GS-MIG-8/9 is merged as PR #28.
 - GS-MIG-8 live order import applied import batch `IMPORT-20260629-LIVE-ORDERS-V1`: 26 orders, 103 order lines, 38 order intakes, 11 intake items, 6 documents, 62 status logs, and 21 pricing rows.
-- GS-MIG-8 in-progress app cutover: order list/detail/search read from Supabase; order document reads prefer Supabase; daily order reports read Supabase status logs; order create/update/line/reservation/lifecycle and intake update/reset use guarded Supabase write rails when `DATABASE_URL` is available, with Sheets fallback when unavailable.
+- GS-MIG-8 app cutover: order list/detail/search read from Supabase; order document reads prefer Supabase; daily order reports read Supabase status logs; order create/update/line/reservation/lifecycle and intake update/reset use guarded Supabase write rails when `DATABASE_URL` is available, with Sheets fallback when unavailable.
 - GS-MIG-8 document rail update: document settings now prefer Supabase `app_settings`; generated document metadata inserts and sent-status updates prefer Supabase `order_documents`, with Sheets fallback when unavailable.
 - GS-MIG-8 quote rail update: quote generation now reads order lines from Supabase order detail first, with `ORDER_LINES` fallback when unavailable.
 - GS-MIG-8 sales transaction lifecycle update: slaughter exit confirmation/reconciliation now prefers Supabase `pigs` with additive exit metadata fields, with Sheets fallback when unavailable.
 - GS-MIG-8 breeding mutation update: mating creation, pregnancy status updates, litter-link updates, and mating-related movement logs now prefer Supabase `mating_events` and `pig_location_events`, with Sheets fallback when unavailable.
 - GS-MIG-8 direct farm write update: create pig/product/pen, single weight entries, optional movement, medical treatment, and movement entries now prefer Supabase canonical farm tables, with Sheets fallback when unavailable.
 - GS-MIG-9 litter lifecycle mutation update: litter birth-count correction, stillborn reclassification, purpose review decisions, litter weaning, pig death/removal, litter piglet death, piglet sex/tag updates, and newborn health actions now prefer Supabase canonical update rails when `DATABASE_URL` is available, with Sheets fallback when unavailable.
+- GS-MIG-8/9 additive migrations are applied in Supabase: `202606290002_add_pig_exit_fields` and corrected `202606290003_add_litter_lifecycle_fields`.
 - Remaining Google Sheets dependencies are now narrower: legacy setup/import/export scripts, Google Drive/document storage integration, and formula-specific farm/litter attention replacement work.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
