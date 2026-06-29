@@ -682,6 +682,180 @@ def build_issue_report(rows, reconciliation):
     }
 
 
+def source_reference(source_sheet, source_sheet_row, row, fields):
+    return {
+        "source_sheet": source_sheet,
+        "source_sheet_row": source_sheet_row,
+        "source_id": first_value(row, "Weight_Log_ID", "Move_Log_ID", "Pig_ID", "Pen_ID", "Litter_ID", "Mating_ID"),
+        "sample": safe_row_sample(row, fields),
+    }
+
+
+def review_item(review_type, status, recommendation, source_refs, **extra):
+    item = {
+        "review_type": review_type,
+        "status": status,
+        "recommendation": recommendation,
+        "source_refs": source_refs,
+    }
+    item.update(extra)
+    return item
+
+
+def build_policy_weight_payloads(rows):
+    canonical_weights = []
+    review_items = []
+
+    missing_rows = []
+    for source_sheet_row, row in enumerate(rows.get(WEIGHT_LOG_SHEET, []), start=2):
+        if not clean(row.get("Pig_ID")):
+            missing_rows.append((source_sheet_row, row))
+
+    for source_sheet_row, row in missing_rows:
+        review_items.append(review_item(
+            "missing_pig_id_weight",
+            "quarantined",
+            "left_out_of_canonical_import_owner_decision",
+            [source_reference(WEIGHT_LOG_SHEET, source_sheet_row, row, ISSUE_REPORT_FIELDS[WEIGHT_LOG_SHEET])],
+            selected_canonical_value=None,
+        ))
+
+    for key, group_rows in sorted(group_raw_weight_rows(rows).items()):
+        pig_id, weight_date = key
+        if len(group_rows) == 1:
+            source_sheet_row, row = group_rows[0]
+            canonical_weights.append(map_weight(row, source_sheet_row))
+            continue
+
+        classification = classify_weight_duplicate_group(group_rows)
+        source_refs = [
+            source_reference(WEIGHT_LOG_SHEET, source_sheet_row, row, ISSUE_REPORT_FIELDS[WEIGHT_LOG_SHEET])
+            for source_sheet_row, row in group_rows
+        ]
+        if classification["recommendation"] == "likely_duplicate_same_weight":
+            source_sheet_row, row = group_rows[0]
+            payload = map_weight(row, source_sheet_row)
+            payload["dedupe_policy"] = "same_pig_same_date_same_weight_keep_first_source_row"
+            payload["duplicate_source_refs"] = source_refs
+            canonical_weights.append(payload)
+            review_items.append(review_item(
+                "same_weight_duplicate",
+                "auto_resolved_dedupe",
+                "import_one_canonical_event_preserve_source_refs",
+                source_refs,
+                pig_id=pig_id,
+                weight_date=weight_date,
+                selected_canonical_value=clean(row.get("Weight_Kg")),
+            ))
+        else:
+            review_items.append(review_item(
+                "conflicting_weight",
+                "pending_owner_review",
+                "do_not_import_until_owner_or_admin_selects_value_or_excludes_group",
+                source_refs,
+                pig_id=pig_id,
+                weight_date=weight_date,
+                candidate_weight_values=classification["distinct_weight_values"],
+                selected_canonical_value=None,
+            ))
+
+    return canonical_weights, review_items
+
+
+def build_policy_location_payloads(rows):
+    canonical_locations = []
+    review_items = []
+
+    for key, group_rows in sorted(group_raw_location_rows(rows).items()):
+        pig_id, move_date, to_pen_id = key
+        if len(group_rows) == 1:
+            source_sheet_row, row = group_rows[0]
+            canonical_locations.append(map_location(row, source_sheet_row))
+            continue
+
+        classification = classify_location_duplicate_group(group_rows)
+        source_refs = [
+            source_reference(LOCATION_HISTORY_SHEET, source_sheet_row, row, ISSUE_REPORT_FIELDS[LOCATION_HISTORY_SHEET])
+            for source_sheet_row, row in group_rows
+        ]
+        if classification["recommendation"] == "likely_duplicate_same_movement":
+            source_sheet_row, row = group_rows[0]
+            payload = map_location(row, source_sheet_row)
+            payload["dedupe_policy"] = "same_pig_same_date_same_to_pen_keep_first_source_row"
+            payload["duplicate_source_refs"] = source_refs
+            canonical_locations.append(payload)
+            review_items.append(review_item(
+                "same_movement_duplicate",
+                "auto_resolved_dedupe",
+                "import_one_canonical_movement_preserve_source_refs",
+                source_refs,
+                pig_id=pig_id,
+                move_date=move_date,
+                to_pen_id=to_pen_id,
+            ))
+        else:
+            review_items.append(review_item(
+                "conflicting_movement",
+                "pending_owner_review",
+                "do_not_import_until_owner_or_admin_selects_canonical_movement_or_excludes_group",
+                source_refs,
+                pig_id=pig_id,
+                move_date=move_date,
+                to_pen_id=to_pen_id,
+            ))
+
+    return canonical_locations, review_items
+
+
+def summarize_review_items(review_items):
+    by_type = Counter(item["review_type"] for item in review_items)
+    by_status = Counter(item["status"] for item in review_items)
+    return {
+        "by_type": dict(sorted(by_type.items())),
+        "by_status": dict(sorted(by_status.items())),
+        "total": len(review_items),
+    }
+
+
+def build_policy_backfill_verifier(rows):
+    report = build_farm_import_dry_run(rows)
+    payloads = report["payloads"]
+
+    canonical_payloads = {
+        table: list(payloads.get(table, []))
+        for table in payloads
+        if table not in {"pig_weight_events", "pig_location_events"}
+    }
+    canonical_weights, weight_review_items = build_policy_weight_payloads(rows)
+    canonical_locations, location_review_items = build_policy_location_payloads(rows)
+    canonical_payloads["pig_weight_events"] = canonical_weights
+    canonical_payloads["pig_location_events"] = canonical_locations
+    review_items = weight_review_items + location_review_items
+    pending_review_count = sum(1 for item in review_items if item["status"] in {"pending_owner_review", "quarantined"})
+
+    return {
+        "success": True,
+        "mode": "dry_run_policy_backfill_verifier",
+        "writes_to_supabase": False,
+        "writes_to_sheets": False,
+        "policy_version": "GS-MIG-3B-owner-approved",
+        "canonical_payload_summary": payload_summary(canonical_payloads),
+        "original_payload_summary": report["payload_summary"],
+        "review_summary": summarize_review_items(review_items),
+        "review_items": review_items,
+        "verification": {
+            "missing_pig_id_rows_quarantined": True,
+            "same_weight_duplicates_collapsed": True,
+            "conflicting_weights_excluded_until_review": True,
+            "duplicate_movements_collapsed": True,
+            "no_write_performed": True,
+            "import_ready": pending_review_count == 0,
+            "pending_review_count": pending_review_count,
+        },
+        "canonical_payloads": canonical_payloads,
+    }
+
+
 def formula_sheet_summary(rows):
     return {
         sheet: {
@@ -746,6 +920,17 @@ def main(argv=None):
         action="store_true",
         help="Print targeted missing-id and duplicate-group diagnostics without full payload rows.",
     )
+    parser.add_argument(
+        "--backfill-verifier",
+        action="store_true",
+        help="Print owner-policy dry-run backfill verification with review/quarantine output.",
+    )
+    parser.add_argument(
+        "--review-samples",
+        type=int,
+        default=0,
+        help="Limit review items in printed verifier output to this many samples.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -767,6 +952,15 @@ def main(argv=None):
     payloads = report["payloads"]
     if args.issue_report:
         report = build_issue_report(sheet_rows, report["reconciliation"])
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return 0
+
+    if args.backfill_verifier:
+        report = build_policy_backfill_verifier(sheet_rows)
+        if not args.payload_samples:
+            report.pop("canonical_payloads", None)
+        if args.review_samples:
+            report["review_items"] = report["review_items"][:args.review_samples]
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0
 
