@@ -2,9 +2,19 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-13 Purpose Review Supabase Validation
+
+Status: in progress on `gs-mig-13-purpose-review-supabase-validation`.
+
+Scope:
+
+- Purpose-review apply validation should use Supabase canonical pig state first instead of reading `PIG_MASTER` before every apply.
+- Keep existing Google Sheets fallback when Supabase is unavailable.
+- No migrations, production writes during tests, customer sends, public posts, payments, reservations, unrelated lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
+
 ## 2026-06-29 GS-MIG-12 Farm Dashboard Summary Supabase Cutover
 
-Status: in progress on `gs-mig-12-dashboard-summary-supabase`.
+Status: merged as PR #31.
 
 Scope:
 

@@ -586,6 +586,40 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertIn("Unknown to Grow_Out", updates["General_Notes"])
         self.assertEqual(set(updates), {"Purpose", "Updated_At", "General_Notes"})
 
+    def test_apply_purpose_review_decisions_prefers_supabase_validation_and_write(self):
+        pig_rows = [
+            {
+                "Pig_ID": "PIG-UNKNOWN",
+                "Tag_Number": "11",
+                "Litter_ID": "LIT-1",
+                "Status": "Active",
+                "On_Farm": "Yes",
+                "Purpose": "Unknown",
+                "General_Notes": "Existing note",
+                "source": "supabase_canonical",
+            }
+        ]
+
+        with patch.object(pig_weights_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+                patch.object(pig_weights_service.farm_supabase_read_service, "get_pig_master_rows_by_ids", return_value=pig_rows) as read_pigs, \
+                patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+                patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=1) as update_pigs, \
+                patch.object(pig_weights_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")), \
+                patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_update:
+            result, status_code = pig_weights_service.apply_purpose_review_decisions(
+                [{"pig_id": "PIG-UNKNOWN", "purpose": "Grow_Out", "reason": "Herdmaster suggested grow out."}],
+                changed_by="Owner",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["success"])
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        read_pigs.assert_called_once_with(["PIG-UNKNOWN"])
+        update_pigs.assert_called_once()
+        sheet_update.assert_not_called()
+
     def test_apply_purpose_review_decisions_blocks_reclassify_by_default(self):
         pig_rows = [{
             "Pig_ID": "PIG-DONE",

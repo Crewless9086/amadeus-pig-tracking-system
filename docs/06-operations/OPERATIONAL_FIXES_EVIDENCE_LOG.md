@@ -550,3 +550,17 @@ Scope:
 Tests:
 
 - Added focused tests proving the Supabase summary calculation and proving the public dashboard summary does not read Sheets when Supabase is available.
+
+## GS-MIG-13 Purpose Review Supabase Validation - 2026-06-29
+
+Mode: route-facing validation cutover. No migrations, production writes during tests, Google Sheets writes, customer sends, public posts, payments, reservations, unrelated lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Purpose-review apply now validates requested pigs from Supabase `pig_current_state` joined to `pigs` when Supabase reads are available.
+- The existing `PIG_MASTER` validation path remains fallback when Supabase is unavailable or the read fails.
+- Existing guarded Supabase purpose update rail remains the preferred write path when writes are available; Sheets remains fallback only when the Supabase write rail is unavailable.
+
+Tests:
+
+- Added focused test proving purpose-review apply does not read Sheets and writes through the Supabase update helper when Supabase read/write rails are available.

@@ -1345,7 +1345,14 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
 
     pig_master_sheet = PIG_WEIGHTS_CONFIG["sheet_names"]["pig_master"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
-    pig_rows = get_all_records(pig_master_sheet)
+    requested_pig_ids = [
+        to_clean_string(decision.get("pig_id", ""))
+        for decision in decisions
+        if isinstance(decision, dict) and to_clean_string(decision.get("pig_id", ""))
+    ]
+    pig_rows = _try_supabase_read(farm_supabase_read_service.get_pig_master_rows_by_ids, requested_pig_ids)
+    if pig_rows is None:
+        pig_rows = get_all_records(pig_master_sheet)
     pig_lookup = _build_pig_lookup(pig_rows, columns)
     today = datetime.now().date()
     today_sheet = format_date_for_sheet(today)

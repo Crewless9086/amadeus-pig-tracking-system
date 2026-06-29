@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `e36c84f` Cut over dashboard summary to Supabase (#31)
 - `4f480cd` Default irrigation status to Supabase auto reads (#30)
 - `6eab2da` Fix litter lifecycle migration view order (#29)
 - `9733173` Continue Supabase operational cutover (#28)
@@ -81,7 +82,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-8/9 additive migrations are applied in Supabase: `202606290002_add_pig_exit_fields` and corrected `202606290003_add_litter_lifecycle_fields`.
 - Remaining Google Sheets dependencies are now narrower: legacy setup/import/export scripts, Google Drive/document storage integration, and formula-specific farm/litter attention replacement work.
 - GS-MIG-11 is merged as PR #30: irrigation status now defaults to Supabase-first `auto` reads with Google Sheets fallback; irrigation remains read-only with hardware control disabled.
-- GS-MIG-12 in progress on `gs-mig-12-dashboard-summary-supabase`: farm dashboard summary is being moved to Supabase-first `pig_current_state`/`pigs` reads with Google Sheets fallback.
+- GS-MIG-12 is merged as PR #31: farm dashboard summary now prefers Supabase `pig_current_state`/`pigs` reads with Google Sheets fallback.
+- GS-MIG-13 in progress on `gs-mig-13-purpose-review-supabase-validation`: purpose-review apply validation is being moved to Supabase-first pig lookup with Google Sheets fallback.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
