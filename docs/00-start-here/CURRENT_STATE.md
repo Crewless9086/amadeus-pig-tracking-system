@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `6c12976` Simplify bulk weight upload flow (#18)
 - `357c161` Continue staged bulk weight uploads (#17)
 - `86c1836` Simplify durable bulk weight upload
 - `206d483` Add durable bulk weight batch rail
@@ -39,6 +40,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Live staged batch under inspection: `2241aeab-4f40-4797-882d-1588a17abbd0`. Read-only inspection showed status `processing`, 10 rows stuck in `processing`, 32 rows still `staged`, 31 already-recorded duplicate rows, and 43 blank/no-change skipped rows.
 - Current P0 direction: owner-facing flow must be one button only. `Upload Weights` must stage/resume/process/retry automatically, hide technical staging/chunking, and preserve draft/batch on interruption.
 - No further owner manual 71/73-row retest should happen until one-button Upload Weights, existing-batch resume, processing-row recovery, non-JSON pause/retry, and count-display tests pass and the fix is deployed.
+- Active migration planning branch: `gs-to-supabase-deep-dive-plan`. This is GS-MIG-0 report-only work. No code, migration, production data, Google Sheets, or app behavior change is approved from this plan alone.
+- Current migration direction: Supabase should become canonical operational truth; Google Sheets should become legacy reference/export/reporting, not the critical app write/read path.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

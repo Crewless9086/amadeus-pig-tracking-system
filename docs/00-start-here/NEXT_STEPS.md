@@ -12,6 +12,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Bulk-weight draft recovery requirement: typed rows must autosave to durable browser storage, survive refresh, survive upload failure, import from downloaded draft JSON, preserve `batch_id`, and remain exportable until a complete confirmed upload clears them.
 - Do not ask the owner to manually re-enter/test 71 or 73 rows again until automated existing-batch resume, one-button Upload Weights, interrupted `processing` row recovery, import/download, failure/retry, duplicate/already-recorded, and blank/no-change wording tests pass and the fix is deployed.
 - Decision made: Google Sheets/Render synchronous upload is not reliable enough for large weekly batches; use Supabase batch/audit rail before downstream Sheets sync, but hide that complexity from the owner.
+- GS-MIG-0 Google Sheets to Supabase migration deep dive is active as report-only planning on `gs-to-supabase-deep-dive-plan`. Do not implement schema/code/cutover until owner approves a specific migration phase.
+- Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
 - OP-002 Bulk Weight Reliability And Audit Trail: build-ready at 96%; mocked 71-row pressure probe proved partial-success behavior and the audit/UI fix direction.
@@ -29,6 +31,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 ## P2 Current Build
 
+- GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.
@@ -63,7 +66,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
-- Migration decisions are blocked until a specific OP build proves one is required.
+- Full Google Sheets to Supabase migration decisions are blocked until the owner reviews the GS-MIG-0 deep-dive plan and approves a specific phase.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.

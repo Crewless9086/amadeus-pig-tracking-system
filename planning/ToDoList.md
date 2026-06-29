@@ -2,6 +2,23 @@
 
 # Processed Notes
 
+## 2026-06-29 Google Sheets To Supabase Migration Deep Dive
+
+Status: plan-only.
+
+Branch: `gs-to-supabase-deep-dive-plan`
+
+Decision direction:
+
+- Supabase may need to become the canonical operational database.
+- Google Sheets should become legacy reference, backup/export, and optional reporting.
+- No implementation, migrations, production writes, Google Sheets edits, formula changes, or destructive cleanup are approved in this phase.
+- Bulk weights exposed the larger dependency problem: formulas, Sheets reads/writes, timeouts, partial writes, and hidden operational state.
+
+Plan file:
+
+- `docs/06-operations/GOOGLE_SHEETS_TO_SUPABASE_MIGRATION_PLAN.md`
+
 ## 2026-06-29 One-Button Bulk Owner Flow
 
 Status: active P0 live fix.
