@@ -33,7 +33,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-7F breeding/mating reads: breeding options, mating overview, breeding analytics, and breeding animal detail now prefer Supabase canonical reads; live read-only smoke returned 18 sows, 3 boars, 15 mating records, and 17 litter records.
 - GS-MIG-8 is active on `gs-mig-8-complete-supabase-cutover`: finish order/sales workflow cutover from Sheets to Supabase after PR #27.
 - GS-MIG-8 live order import is applied with batch `IMPORT-20260629-LIVE-ORDERS-V1`: 26 orders, 103 order lines, 38 intakes, 11 intake items, 6 documents, 62 status logs, and 21 pricing rows.
-- GS-MIG-8 current cutover scope: order list/detail/search reads, document metadata reads/writes, document settings reads, daily report status-log reads, guarded order create/update/line/reservation/lifecycle writes, sales transaction slaughter-exit pig updates, and order intake update/reset now prefer Supabase with Sheets fallback when unavailable.
+- GS-MIG-8 current cutover scope: order list/detail/search reads, document metadata reads/writes, document settings reads, daily report status-log reads, guarded order create/update/line/reservation/lifecycle writes, sales transaction slaughter-exit pig updates, order intake update/reset, and mating/breeding mutation routes now prefer Supabase with Sheets fallback when unavailable.
 - Continue GS-MIG-8 testing and route smoke before PR: no customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
@@ -101,7 +101,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
 - Full Google Sheets to Supabase app cutover remains incomplete. GS-MIG-7 may cut over safe direct canonical read routes with fallback.
-- Formula-specific newborn-health attention replacement, mating/breeding mutation routes, and any remaining legacy setup/import scripts remain outside the current safe cutover until explicit Supabase services and tests exist.
+- Formula-specific newborn-health attention replacement and any remaining legacy setup/import scripts remain outside the current safe cutover until explicit Supabase services and tests exist.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.

@@ -420,6 +420,7 @@ App cutover in progress:
 - `modules.orders.order_write`, `order_line_sync`, `order_reservation`, `order_lifecycle`, and `order_status_log` now use guarded Supabase write helpers when available, with Sheets fallback.
 - `modules.orders.order_intake_service` now uses a Supabase intake store for context/update/reset when available, with Sheets fallback.
 - `modules.sales.sales_transaction_lifecycle` now prefers Supabase `pigs` for slaughter exit confirmation/reconciliation, with Sheets fallback.
+- `modules.pig_weights.mating_service` now prefers Supabase `mating_events` and `pig_location_events` for mating creation, pregnancy status updates, litter-link updates, and mating-related movements, with Sheets fallback.
 
 Live read-only smoke:
 
@@ -439,7 +440,7 @@ No-unsafe-action confirmation:
 
 Remaining risks:
 
-- Mating/breeding mutation routes still need separate durable write rails.
+- Formula-specific newborn-health attention replacement still needs separate Supabase service work.
 
 Document rail checkpoint:
 
@@ -455,6 +456,14 @@ Sales transaction lifecycle checkpoint:
 - Slaughter sale pig-exit confirmation and closed-sale reconciliation now read/update Supabase `pigs` first, including status, on-farm flag, exit date/reason/order id, carcass weight, and notes.
 - Existing Google Sheets `PIG_MASTER` path remains fallback if the Supabase rail or exit-field migration is unavailable.
 - Focused sales lifecycle and sales transaction route/service tests passed with local owner access disabled for protected test routes.
+
+Breeding mutation checkpoint:
+
+- Added a guarded Supabase mating write adapter.
+- `save_new_mating()` inserts into `mating_events` first and logs optional sow/boar movements into `pig_location_events`.
+- `assume_pregnant()`, `mark_not_pregnant()`, and `link_litter_to_mating()` update `mating_events` first.
+- Existing `MATING_LOG` and `LOCATION_HISTORY` paths remain fallback if the Supabase rail is unavailable.
+- Focused mating service, mating route, breeding analytics, farm Supabase read, and frontend route-contract tests passed.
 
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 

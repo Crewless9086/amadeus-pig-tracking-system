@@ -8,6 +8,7 @@ from services.google_sheets_service import (
     update_row_by_first_column_match,
 )
 from modules.pig_weights import farm_supabase_read_service
+from modules.pig_weights import mating_supabase_write
 from modules.pig_weights.pig_weights_utils import (
     to_clean_string,
     to_float,
@@ -39,6 +40,12 @@ def generate_mating_id():
 
 
 def _get_pig_lookup():
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            return mating_supabase_write.get_pig_lookup()
+        except Exception:
+            pass
+
     rows = get_all_records(PIG_OVERVIEW_SHEET)
     lookup = {}
 
@@ -51,6 +58,12 @@ def _get_pig_lookup():
 
 
 def _get_pen_lookup():
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            return mating_supabase_write.get_pen_lookup()
+        except Exception:
+            pass
+
     rows = get_all_records(PEN_REGISTER_SHEET)
     lookup = {}
 
@@ -86,8 +99,23 @@ def _write_movement_if_needed(pig_id: str, current_pen_id: str, target_pen_id: s
     if not target_pen_id or target_pen_id == current_pen_id:
         return False
 
+    move_id = generate_move_log_id()
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            return mating_supabase_write.insert_location_event(
+                move_id,
+                pig_id,
+                move_date,
+                current_pen_id,
+                target_pen_id,
+                reason,
+                moved_by,
+            )
+        except Exception:
+            pass
+
     row_values = [
-        generate_move_log_id(),
+        move_id,
         pig_id,
         format_date_for_sheet(move_date),
         current_pen_id,
@@ -560,9 +588,10 @@ def save_new_mating(cleaned_data: dict):
 
     today_str = datetime.now().strftime("%d %b %Y")
     mating_date = cleaned_data["mating_date"]
+    mating_id = generate_mating_id()
 
     row_values = [
-        generate_mating_id(),                                 # Mating_ID
+        mating_id,                                            # Mating_ID
         cleaned_data["sow_pig_id"],                          # Sow_Pig_ID
         sow_tag_number,                                      # Sow_Tag_Number
         cleaned_data["boar_pig_id"],                         # Boar_Pig_ID
@@ -584,7 +613,18 @@ def save_new_mating(cleaned_data: dict):
         today_str,                                           # Updated_At
     ]
 
-    append_row(MATING_LOG_SHEET, row_values)
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            mating_supabase_write.insert_mating(
+                mating_id,
+                cleaned_data,
+                sow_tag_number=sow_tag_number,
+                boar_tag_number=boar_tag_number,
+            )
+        except Exception:
+            append_row(MATING_LOG_SHEET, row_values)
+    else:
+        append_row(MATING_LOG_SHEET, row_values)
 
     sow_moved = False
     boar_moved = False
@@ -622,6 +662,7 @@ def save_new_mating(cleaned_data: dict):
     return {
         "success": True,
         "message": message,
+        "mating_id": mating_id,
         "sow_moved": sow_moved,
         "boar_moved": boar_moved,
     }
@@ -633,6 +674,21 @@ def link_litter_to_mating(mating_id: str, litter_id: str, actual_farrowing_date)
 
     if not mating_id or not litter_id:
         return
+
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            rows_updated = mating_supabase_write.update_mating_fields(
+                mating_id,
+                {
+                    "Linked_Litter_ID": litter_id,
+                    "Actual_Farrowing_Date": actual_farrowing_date,
+                    "Outcome": "Farrowed",
+                },
+            )
+            if rows_updated:
+                return
+        except Exception:
+            pass
 
     all_values = get_all_values(MATING_LOG_SHEET)
     if not all_values or len(all_values) < 2:
@@ -684,6 +740,14 @@ def assume_pregnant(mating_id: str, target_pen_id: str, moved_by: str):
     mating_id = str(mating_id).strip()
     target_pen_id = to_clean_string(target_pen_id)
     moved_by = to_clean_string(moved_by) or "WebApp"
+
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            return _assume_pregnant_supabase(mating_id, target_pen_id, moved_by)
+        except ValueError:
+            raise
+        except Exception:
+            pass
 
     all_values = get_all_values(MATING_LOG_SHEET)
     if not all_values or len(all_values) < 2:
@@ -767,6 +831,14 @@ def mark_not_pregnant(mating_id: str, target_pen_id: str, moved_by: str, dry_run
     mating_id = str(mating_id).strip()
     target_pen_id = to_clean_string(target_pen_id)
     moved_by = to_clean_string(moved_by) or "WebApp"
+
+    if mating_supabase_write.supabase_mating_writes_available():
+        try:
+            return _mark_not_pregnant_supabase(mating_id, target_pen_id, moved_by, dry_run=dry_run)
+        except ValueError:
+            raise
+        except Exception:
+            pass
 
     all_values = get_all_values(MATING_LOG_SHEET)
     if not all_values or len(all_values) < 2:
@@ -876,3 +948,144 @@ def mark_not_pregnant(mating_id: str, target_pen_id: str, moved_by: str, dry_run
         }
 
     raise ValueError(f"Mating_ID '{mating_id}' not found in MATING_LOG.")
+
+
+def _assume_pregnant_supabase(mating_id: str, target_pen_id: str, moved_by: str):
+    row = mating_supabase_write.get_mating_sheet_row(mating_id)
+    if not row:
+        raise ValueError(f"Mating_ID '{mating_id}' not found in Supabase.")
+
+    current_status = to_clean_string(row.get("Mating_Status", ""))
+    if current_status in _ASSUME_PREGNANT_BLOCKED:
+        raise ValueError(f"Cannot update mating: status is already {current_status}.")
+
+    if target_pen_id:
+        pen_lookup = _get_pen_lookup()
+        target_pen = pen_lookup.get(target_pen_id)
+        if not target_pen:
+            raise ValueError(f"Pen '{target_pen_id}' not found.")
+        if target_pen.get("pen_type") != "Farrowing":
+            raise ValueError("Target pen must be a Farrowing pen.")
+
+    today = datetime.now().date()
+    mating_supabase_write.update_mating_fields(
+        mating_id,
+        {
+            "Pregnancy_Check_Date": today,
+            "Pregnancy_Check_Result": "Pregnant",
+            "Outcome": "Pregnant",
+        },
+    )
+
+    movement_logged = False
+    if target_pen_id:
+        sow_pig_id = to_clean_string(row.get("Sow_Pig_ID", ""))
+        if sow_pig_id:
+            pig_lookup = _get_pig_lookup()
+            sow_row = pig_lookup.get(sow_pig_id, {})
+            current_pen_id = to_clean_string(sow_row.get("Current_Pen_ID", ""))
+            movement_logged = _write_movement_if_needed(
+                pig_id=sow_pig_id,
+                current_pen_id=current_pen_id,
+                target_pen_id=target_pen_id,
+                move_date=today,
+                reason="Moved to farrowing pen",
+                moved_by=moved_by,
+            )
+
+    message = "Mating updated to Confirmed_Pregnant."
+    if movement_logged:
+        message += " Sow movement logged."
+    return {
+        "success": True,
+        "message": message,
+        "mating_id": mating_id,
+        "movement_logged": movement_logged,
+        "source": {
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": True,
+        },
+    }
+
+
+def _mark_not_pregnant_supabase(mating_id: str, target_pen_id: str, moved_by: str, dry_run: bool = False):
+    row = mating_supabase_write.get_mating_sheet_row(mating_id)
+    if not row:
+        raise ValueError(f"Mating_ID '{mating_id}' not found in Supabase.")
+
+    current_status = to_clean_string(row.get("Mating_Status", ""))
+    linked_litter_id = to_clean_string(row.get("Linked_Litter_ID", ""))
+    actual_farrowing_date = to_clean_string(row.get("Actual_Farrowing_Date", ""))
+    if current_status != "Confirmed_Pregnant":
+        raise ValueError("Only Confirmed_Pregnant matings can be marked not pregnant.")
+    if linked_litter_id:
+        raise ValueError("Cannot mark not pregnant because a litter is already linked.")
+    if actual_farrowing_date:
+        raise ValueError("Cannot mark not pregnant because actual farrowing is already recorded.")
+
+    if target_pen_id:
+        pen_lookup = _get_pen_lookup()
+        target_pen = pen_lookup.get(target_pen_id)
+        if not target_pen:
+            raise ValueError(f"Pen '{target_pen_id}' not found.")
+        if target_pen.get("pen_type") == "Farrowing":
+            raise ValueError("Target pen must not be a Farrowing pen.")
+
+    today = datetime.now().date()
+    planned_updates = {
+        "Pregnancy_Check_Date": format_date_for_sheet(today),
+        "Pregnancy_Check_Result": "Not_Pregnant",
+        "Outcome": "Repeat_Required",
+    }
+    sow_pig_id = to_clean_string(row.get("Sow_Pig_ID", ""))
+    movement_planned = False
+    current_pen_id = ""
+    if target_pen_id and sow_pig_id:
+        pig_lookup = _get_pig_lookup()
+        sow_row = pig_lookup.get(sow_pig_id, {})
+        current_pen_id = to_clean_string(sow_row.get("Current_Pen_ID", ""))
+        movement_planned = current_pen_id != target_pen_id
+
+    if dry_run:
+        return {
+            "success": True,
+            "dry_run": True,
+            "message": "Dry run passed. No mating or movement rows were changed.",
+            "mating_id": mating_id,
+            "planned_updates": planned_updates,
+            "movement_planned": movement_planned,
+            "movement_logged": False,
+            "sow_pig_id": sow_pig_id,
+            "current_pen_id": current_pen_id,
+            "target_pen_id": target_pen_id,
+            "source": {
+                "writes_to_google_sheets": False,
+                "writes_to_supabase": False,
+            },
+        }
+
+    mating_supabase_write.update_mating_fields(mating_id, planned_updates)
+    movement_logged = False
+    if target_pen_id and sow_pig_id:
+        movement_logged = _write_movement_if_needed(
+            pig_id=sow_pig_id,
+            current_pen_id=current_pen_id,
+            target_pen_id=target_pen_id,
+            move_date=today,
+            reason="Moved for repeat service",
+            moved_by=moved_by,
+        )
+
+    message = "Mating updated to Repeat_Service."
+    if movement_logged:
+        message += " Sow movement logged."
+    return {
+        "success": True,
+        "message": message,
+        "mating_id": mating_id,
+        "movement_logged": movement_logged,
+        "source": {
+            "writes_to_google_sheets": False,
+            "writes_to_supabase": True,
+        },
+    }
