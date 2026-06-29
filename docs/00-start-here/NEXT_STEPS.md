@@ -13,6 +13,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Do not ask the owner to manually re-enter/test 71 or 73 rows again until automated existing-batch resume, one-button Upload Weights, interrupted `processing` row recovery, import/download, failure/retry, duplicate/already-recorded, and blank/no-change wording tests pass and the fix is deployed.
 - Decision made: Google Sheets/Render synchronous upload is not reliable enough for large weekly batches; use Supabase batch/audit rail before downstream Sheets sync, but hide that complexity from the owner.
 - GS-MIG-0 Google Sheets to Supabase migration deep dive is active as report-only planning on `gs-to-supabase-deep-dive-plan`. Do not implement schema/code/cutover until owner approves a specific migration phase.
+- GS-MIG-1 is active on `gs-mig-1-canonical-schema-dry-run`: additive canonical farm schema proposal plus dry-run Google Sheets import/reconciliation tooling. Do not apply the migration or write production data in this phase.
+- GS-MIG-1 dry-run found 6 `WEIGHT_LOG` rows with missing `Pig_ID`; these need review before any canonical import.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -32,6 +34,8 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 ## P2 Current Build
 
 - GS-MIG-0: create Google Sheets to Supabase migration plan. Report-only; no code, migrations, production writes, Google Sheets edits, or behavior changes.
+- GS-MIG-1: build canonical Supabase schema proposal and read-only dry-run import/reconciliation tooling. No app cutover, no migration application, and no production writes.
+- GS-MIG-2 candidate: backfill/reconciliation phase after owner reviews GS-MIG-1 migration file and missing-`Pig_ID` rows.
 - OP-1 Operational Master Plan: created tickets OP-001 through OP-010 from 2026-06-28 owner notes.
 - OP-1.2 is active: read-only Supabase/Sheets inspection, existing tests, and non-mutating probes are recorded in the evidence log.
 - OP-BUILD-1A is ready for owner approval: OP-010 logout redirect and OP-009 pilot readiness degraded handling.

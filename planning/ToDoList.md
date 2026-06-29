@@ -2,6 +2,33 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-1 Canonical Schema And Dry-Run Import
+
+Status: active build.
+
+Branch: `gs-mig-1-canonical-schema-dry-run`
+
+Scope:
+
+- Add canonical farm schema migration proposal.
+- Add dry-run Google Sheets import/reconciliation tooling.
+- Add tests proving dry-run behavior and link issue reporting.
+- Do not apply migrations or write production Supabase/Google Sheets data.
+- Do not cut over app routes yet.
+
+Dry-run result:
+
+- 217 pigs
+- 1,235 weight events
+- 185 location events
+- 261 medical events
+- 20 pens
+- 17 litters
+- 15 mating events
+- 3 products
+- 18 settings
+- 6 `WEIGHT_LOG` rows excluded because `Pig_ID` is missing
+
 ## 2026-06-29 Google Sheets To Supabase Migration Deep Dive
 
 Status: plan-only.

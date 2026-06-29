@@ -348,11 +348,11 @@ Codex writes plan here.
 ### Execution Log
 
 ```text
-Branch:
-Files changed:
-Tests run:
-Results:
-Blockers:
+Branch: gs-mig-1-canonical-schema-dry-run
+Files changed: canonical schema migration proposal, dry-run importer, dry-run tests, active docs, GS-MIG-1 report
+Tests run: tests.test_google_sheets_farm_import_dry_run, tests.test_pig_weights_bulk_service, py_compile, live read-only dry-run
+Results: dry-run mapped 217 pigs, 1,235 weight events, 185 location events, 261 medical events, 20 pens, 17 litters, 15 mating events, 3 products, 18 settings
+Blockers: 6 WEIGHT_LOG rows missing Pig_ID need review before canonical import; migration not applied
 ```
 
 ### Debrief
