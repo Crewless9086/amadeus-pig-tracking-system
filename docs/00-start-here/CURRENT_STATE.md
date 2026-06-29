@@ -42,6 +42,9 @@ Render deploys from `main` unless the service configuration says otherwise.
 - No further owner manual 71/73-row retest should happen until one-button Upload Weights, existing-batch resume, processing-row recovery, non-JSON pause/retry, and count-display tests pass and the fix is deployed.
 - Active migration planning branch: `gs-to-supabase-deep-dive-plan`. This is GS-MIG-0 report-only work. No code, migration, production data, Google Sheets, or app behavior change is approved from this plan alone.
 - Current migration direction: Supabase should become canonical operational truth; Google Sheets should become legacy reference/export/reporting, not the critical app write/read path.
+- Active migration build branch: `gs-mig-1-canonical-schema-dry-run`.
+- GS-MIG-1 scope is schema proposal plus dry-run import/reconciliation tooling only. No migration is applied and no production data is written by this branch.
+- GS-MIG-1 live read-only dry-run mapped 217 pigs, 1,235 weight events, 185 location events, 261 medical events, 20 pens, 17 litters, 15 mating events, 3 products, and 18 settings. Six `WEIGHT_LOG` rows are excluded for missing `Pig_ID`.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

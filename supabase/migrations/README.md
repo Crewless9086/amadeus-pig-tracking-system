@@ -28,6 +28,10 @@ Current state:
 - It imports no telemetry readings, changes no Render logger, and does not change live n8n workflows.
 - `202605270001_enable_rls_on_public_tables.sql` enables RLS on all current public tables to resolve the Supabase `rls_disabled_in_public` security advisor warning.
 - It intentionally creates no anon/auth policies because the browser must not access Supabase tables directly; the Flask backend remains the database access layer.
+- `202606290001_create_farm_canonical_tables.sql` is the GS-MIG-1 canonical farm schema proposal.
+- It creates empty canonical farm tables and views for pig, pen, weight, location, medical, litter, mating, product, and app-setting data.
+- It imports no data, changes no existing production rows, and does not cut over any app route from Google Sheets.
+- Do not run this migration until the owner approves GS-MIG-1 release and the dry-run import/reconciliation report is accepted.
 
 Manual run process for Phase 10.1B:
 
