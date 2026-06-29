@@ -156,6 +156,24 @@ def _try_supabase_read(reader, *args):
         return None
 
 
+def _try_supabase_litter_update(litter_id, updates):
+    if not farm_supabase_write_service.farm_supabase_writes_available():
+        return None
+    try:
+        return farm_supabase_write_service.update_litter_by_id(litter_id, updates)
+    except Exception:
+        return None
+
+
+def _try_supabase_pig_updates(updates):
+    if not farm_supabase_write_service.farm_supabase_writes_available():
+        return None
+    try:
+        return farm_supabase_write_service.update_pigs_by_id(updates)
+    except Exception:
+        return None
+
+
 def _build_pig_lookup(rows, columns):
     pig_lookup = {}
     for row in rows:
@@ -990,8 +1008,14 @@ def reclassify_litter_dead_piglets_as_stillborn(
         selected_piglets.append(_piglet_correction_summary(row))
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, planned_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(planned_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, planned_updates)
 
     return {
         "success": True,
@@ -1007,8 +1031,8 @@ def reclassify_litter_dead_piglets_as_stillborn(
         "reconciliation": reconciliation,
         "source": {
             "reads_from": ["LITTER_OVERVIEW", "PIG_MASTER"],
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Stillborn correction previewed for {target_count} piglet row(s)."
@@ -1102,12 +1126,18 @@ def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, change
         updated_row[header_map[field_name]] = field_value
 
     row_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        row_updated = update_row_by_first_column_match(
-            PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
-            litter_id,
-            updated_row,
-        )
+        supabase_row_updated = _try_supabase_litter_update(litter_id, planned_updates)
+        if supabase_row_updated is not None:
+            row_updated = supabase_row_updated
+            writes_to_supabase = True
+        else:
+            row_updated = update_row_by_first_column_match(
+                PIG_WEIGHTS_CONFIG["sheet_names"]["litter_register"],
+                litter_id,
+                updated_row,
+            )
 
     return {
         "success": True,
@@ -1125,8 +1155,8 @@ def reconcile_litter_birth_counts(litter_id: str, target_born_alive=None, change
         "row_updated": row_updated,
         "source": {
             "reads_from": ["LITTER_OVERVIEW", "LITTERS"],
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} birth-count correction previewed."
@@ -1365,8 +1395,14 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
         }, 409
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, updates)
+        supabase_rows_updated = _try_supabase_pig_updates(updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, updates)
 
     return {
         "success": True,
@@ -1378,8 +1414,8 @@ def apply_purpose_review_decisions(decisions, changed_by: str = "web_app", dry_r
         "rows_updated": rows_updated,
         "planned_updates": updates,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
             "writes_orders": False,
             "writes_sales": False,
             "writes_slaughter": False,
@@ -1850,11 +1886,16 @@ def mark_litter_weaned(
                 },
             }, 409
 
-    weaned_count = len(active_piglets)
-    litter_row_updated = _update_litter_weaning_fields(litter_id, wean_date, weaned_count)
     sheet_wean_date = format_date_for_sheet(wean_date)
     today = format_date_for_sheet(datetime.now().date())
     updated_by = to_clean_string(changed_by) or "web_app"
+    weaned_count = len(active_piglets)
+    litter_updates = {
+        "Weaned_Count": weaned_count,
+        "Litter_Size_Weaned": weaned_count,
+        "Wean_Date": sheet_wean_date,
+        "Updated_At": today,
+    }
 
     pig_updates = {
         pig_id: {
@@ -1867,7 +1908,16 @@ def mark_litter_weaned(
     for pig_id, weight_kg in wean_weight_updates.items():
         pig_updates[pig_id]["Wean_Weight_Kg"] = weight_kg
 
-    pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+    writes_to_supabase = False
+    litter_row_updated = _try_supabase_litter_update(litter_id, litter_updates)
+    if litter_row_updated is not None:
+        pig_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if pig_rows_updated is None:
+            pig_rows_updated = 0
+        writes_to_supabase = True
+    else:
+        litter_row_updated = _update_litter_weaning_fields(litter_id, wean_date, weaned_count)
+        pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -1880,6 +1930,10 @@ def mark_litter_weaned(
         "litter_row_updated": litter_row_updated,
         "pig_rows_updated": pig_rows_updated,
         "changed_by": updated_by,
+        "source": {
+            "writes_to_sheets": not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
+        },
         "message": (
             f"Litter {litter_id} was marked as weaned with {weaned_count} active piglet(s) "
             f"and {len(wean_weight_updates)} wean weight(s)."
@@ -1967,13 +2021,19 @@ def mark_pig_death_or_removal(
         "Updated_At": today,
     }
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(
-            pig_master_sheet,
-            {
-                pig_id: updates
-            },
-        )
+        supabase_rows_updated = _try_supabase_pig_updates({pig_id: updates})
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(
+                pig_master_sheet,
+                {
+                    pig_id: updates
+                },
+            )
 
     return {
         "success": True,
@@ -1991,6 +2051,10 @@ def mark_pig_death_or_removal(
             "on_farm": current_on_farm,
         },
         "changed_by": changed_by,
+        "source": {
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
+        },
         "message": (
             f"Pig {pig_id} would be marked as {new_status}."
             if dry_run
@@ -2159,8 +2223,14 @@ def mark_litter_piglets_dead(
         })
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -2176,8 +2246,8 @@ def mark_litter_piglets_dead(
         "planned_updates": pig_updates,
         "changed_by": changed_by,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} piglet death action previewed for {len(selected_piglets)} piglet(s)."
@@ -2296,8 +2366,14 @@ def record_litter_piglet_sex_counts(
         })
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -2314,8 +2390,8 @@ def record_litter_piglet_sex_counts(
         "planned_updates": pig_updates,
         "changed_by": changed_by,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} sex-count action previewed for {total_count} piglet(s)."
@@ -2488,8 +2564,14 @@ def assign_litter_piglet_tag_numbers(
         })
 
     rows_updated = 0
+    writes_to_supabase = False
     if not dry_run:
-        rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
+        supabase_rows_updated = _try_supabase_pig_updates(pig_updates)
+        if supabase_rows_updated is not None:
+            rows_updated = supabase_rows_updated
+            writes_to_supabase = True
+        else:
+            rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates)
 
     return {
         "success": True,
@@ -2505,8 +2587,8 @@ def assign_litter_piglet_tag_numbers(
         "planned_updates": pig_updates,
         "changed_by": changed_by,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} tag assignment previewed for {len(selected_piglets)} piglet(s)."
@@ -2661,11 +2743,22 @@ def record_litter_newborn_health(
 
     pig_rows_updated = 0
     treatment_rows_created = 0
+    writes_to_supabase = False
     if not dry_run:
-        pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
-        for row_values in treatment_rows:
-            append_row(medical_log_sheet, row_values)
-            treatment_rows_created += 1
+        supabase_available = farm_supabase_write_service.farm_supabase_writes_available()
+        if supabase_available:
+            pig_rows_updated = _try_supabase_pig_updates(pig_updates) if pig_updates else 0
+            if pig_rows_updated is None:
+                pig_rows_updated = 0
+            for row_values in treatment_rows:
+                farm_supabase_write_service.insert_medical_event_from_sheet_row(row_values)
+                treatment_rows_created += 1
+            writes_to_supabase = True
+        else:
+            pig_rows_updated = batch_update_rows_by_id(pig_master_sheet, pig_updates) if pig_updates else 0
+            for row_values in treatment_rows:
+                append_row(medical_log_sheet, row_values)
+                treatment_rows_created += 1
 
     return {
         "success": True,
@@ -2681,8 +2774,8 @@ def record_litter_newborn_health(
         "planned_pig_updates": pig_updates,
         "planned_treatment_rows": treatment_rows,
         "source": {
-            "writes_to_sheets": not dry_run,
-            "writes_to_supabase": False,
+            "writes_to_sheets": (not dry_run) and not writes_to_supabase,
+            "writes_to_supabase": writes_to_supabase,
         },
         "message": (
             f"Litter {litter_id} newborn health action previewed for {len(active_piglets)} piglet(s)."

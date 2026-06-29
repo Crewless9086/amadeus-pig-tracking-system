@@ -17,12 +17,14 @@ Result so far:
 - Sales transaction slaughter-exit pig updates now prefer Supabase `pigs` with additive exit metadata fields.
 - Mating creation, pregnancy status changes, litter-link updates, and mating-related movement logs now prefer Supabase.
 - Direct farm writes for pigs, products, pens, single weights, treatments, and movements now prefer Supabase.
+- Litter lifecycle/piglet correction writes now prefer Supabase with Sheets fallback.
+- Additive migration `202606290003_add_litter_lifecycle_fields.sql` supports wean, litter-size, and earmark metadata.
 
 Still to verify before PR:
 
 - Full route/service regression.
 - No customer sends, public posts, payments/deposits, destructive SQL, or Google Sheets writes.
-- Litter lifecycle/piglet correction workflows and formula-specific newborn-health attention replacement remain separate follow-up rails.
+- Formula-specific newborn-health attention replacement and legacy setup/import/export scripts remain separate follow-up rails.
 
 ## 2026-06-29 GS-MIG-7 Supabase Route Cutover
 

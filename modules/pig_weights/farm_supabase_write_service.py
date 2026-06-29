@@ -35,6 +35,142 @@ def _bool_from_sheet(value):
     return to_clean_string(value).lower() in {"yes", "true", "1"}
 
 
+def _bool_or_none_from_sheet(value):
+    clean = to_clean_string(value).lower()
+    if clean in {"yes", "true", "1"}:
+        return True
+    if clean in {"no", "false", "0"}:
+        return False
+    return None
+
+
+def _int_or_none(value):
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _append_note(existing_notes, new_note):
+    existing = to_clean_string(existing_notes)
+    note = to_clean_string(new_note)
+    if not note:
+        return existing
+    return f"{existing}\n{note}" if existing else note
+
+
+_PIG_UPDATE_FIELD_MAP = {
+    "Status": "status",
+    "On_Farm": "on_farm",
+    "Sex": "sex",
+    "Tag_Number": "tag_number",
+    "Purpose": "purpose",
+    "Litter_Size_Born": "litter_size_born",
+    "Litter_Size_Weaned": "litter_size_weaned",
+    "Wean_Date": "wean_date",
+    "Wean_Weight_Kg": "wean_weight_kg",
+    "Exit_Date": "exit_date",
+    "Exit_Reason": "exit_reason",
+    "Exit_Order_ID": "exit_order_id",
+    "Carcass_Weight_Kg": "carcass_weight_kg",
+    "General_Notes": "notes",
+    "Earmarked": "earmarked",
+    "Earmark_Date": "earmark_date",
+}
+
+
+_PIG_UPDATE_CASTS = {
+    "on_farm": _bool_or_none_from_sheet,
+    "litter_size_born": _int_or_none,
+    "litter_size_weaned": _int_or_none,
+    "wean_date": _date_or_none,
+    "wean_weight_kg": to_float,
+    "exit_date": _date_or_none,
+    "carcass_weight_kg": to_float,
+    "earmarked": _bool_or_none_from_sheet,
+    "earmark_date": _date_or_none,
+}
+
+
+_LITTER_UPDATE_FIELD_MAP = {
+    "Born_Alive": "born_alive",
+    "Stillborn_Count": "stillborn_count",
+    "Mummified_Count": "mummified_count",
+    "Male_Count": "male_count",
+    "Female_Count": "female_count",
+    "Unknown_Sex_Count": "unknown_sex_count",
+    "Weaned_Count": "weaned_count",
+    "Litter_Size_Weaned": "weaned_count",
+    "Wean_Date": "wean_date",
+    "Litter_Status": "litter_status",
+    "Litter_Notes": "litter_notes",
+}
+
+
+_LITTER_UPDATE_CASTS = {
+    "born_alive": _int_or_none,
+    "stillborn_count": _int_or_none,
+    "mummified_count": _int_or_none,
+    "male_count": _int_or_none,
+    "female_count": _int_or_none,
+    "unknown_sex_count": _int_or_none,
+    "weaned_count": _int_or_none,
+    "wean_date": _date_or_none,
+}
+
+
+def _mapped_updates(updates, field_map, casts):
+    mapped = {}
+    for source_field, value in (updates or {}).items():
+        target_field = field_map.get(source_field)
+        if not target_field:
+            continue
+        caster = casts.get(target_field, to_clean_string)
+        mapped[target_field] = caster(value)
+    mapped["updated_at"] = datetime.now()
+    return mapped
+
+
+def update_pigs_by_id(updates_by_pig_id, connect_factory=None):
+    updates_by_pig_id = updates_by_pig_id or {}
+    updated = 0
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            for pig_id, updates in updates_by_pig_id.items():
+                pig_id = to_clean_string(pig_id)
+                mapped = _mapped_updates(updates, _PIG_UPDATE_FIELD_MAP, _PIG_UPDATE_CASTS)
+                if not pig_id or not mapped:
+                    continue
+                assignments = ", ".join(f"{field} = %({field})s" for field in mapped)
+                params = dict(mapped)
+                params["pig_id"] = pig_id
+                cursor.execute(
+                    f"update public.pigs set {assignments} where pig_id = %(pig_id)s",
+                    params,
+                )
+                updated += cursor.rowcount
+    return updated
+
+
+def update_litter_by_id(litter_id, updates, connect_factory=None):
+    litter_id = to_clean_string(litter_id)
+    mapped = _mapped_updates(updates, _LITTER_UPDATE_FIELD_MAP, _LITTER_UPDATE_CASTS)
+    if not litter_id or not mapped:
+        return 0
+    assignments = ", ".join(f"{field} = %({field})s" for field in mapped)
+    params = dict(mapped)
+    params["litter_id"] = litter_id
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"update public.litters set {assignments} where litter_id = %(litter_id)s",
+                params,
+            )
+            return cursor.rowcount
+
+
 def insert_pig(pig_id, cleaned_data, mother_tag_number="", father_tag_number="", connect_factory=None):
     params = {
         "pig_id": to_clean_string(pig_id),
@@ -206,6 +342,50 @@ def insert_medical_event(medical_event_id, cleaned_data, product=None, withdrawa
         "follow_up_required": _bool_from_sheet(cleaned_data.get("follow_up_required")),
         "follow_up_date": _date_or_none(cleaned_data.get("follow_up_date")),
         "medical_notes": to_clean_string(cleaned_data.get("medical_notes")),
+    }
+    with _connect(connect_factory=connect_factory) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                insert into public.pig_medical_events (
+                    medical_event_id, pig_id, treatment_date, treatment_type,
+                    product_id, product_name, dose, dose_unit, route,
+                    reason_for_treatment, batch_lot_number, withdrawal_days,
+                    withdrawal_end_date, given_by, follow_up_required,
+                    follow_up_date, medical_notes
+                )
+                values (
+                    %(medical_event_id)s, %(pig_id)s, %(treatment_date)s, %(treatment_type)s,
+                    %(product_id)s, %(product_name)s, %(dose)s, %(dose_unit)s, %(route)s,
+                    %(reason_for_treatment)s, %(batch_lot_number)s, %(withdrawal_days)s,
+                    %(withdrawal_end_date)s, %(given_by)s, %(follow_up_required)s,
+                    %(follow_up_date)s, %(medical_notes)s
+                )
+                """,
+                params,
+            )
+
+
+def insert_medical_event_from_sheet_row(row_values, connect_factory=None):
+    row_values = list(row_values or []) + [""] * 18
+    params = {
+        "medical_event_id": to_clean_string(row_values[0]),
+        "pig_id": to_clean_string(row_values[1]),
+        "treatment_date": _date_or_none(row_values[2]),
+        "treatment_type": to_clean_string(row_values[3]),
+        "product_id": to_clean_string(row_values[4]) or None,
+        "product_name": to_clean_string(row_values[5]),
+        "dose": "" if row_values[6] is None else str(row_values[6]),
+        "dose_unit": to_clean_string(row_values[7]),
+        "route": to_clean_string(row_values[8]),
+        "reason_for_treatment": to_clean_string(row_values[9]),
+        "batch_lot_number": to_clean_string(row_values[10]),
+        "withdrawal_days": _int_or_none(row_values[11]),
+        "withdrawal_end_date": _date_or_none(row_values[12]),
+        "given_by": to_clean_string(row_values[13]),
+        "follow_up_required": _bool_or_none_from_sheet(row_values[14]) is True,
+        "follow_up_date": _date_or_none(row_values[15]),
+        "medical_notes": to_clean_string(row_values[16]),
     }
     with _connect(connect_factory=connect_factory) as connection:
         with connection.cursor() as cursor:

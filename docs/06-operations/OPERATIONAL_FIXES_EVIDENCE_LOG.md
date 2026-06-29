@@ -474,6 +474,14 @@ Direct farm write checkpoint:
 - Existing Google Sheets paths remain fallback when the Supabase write rail is unavailable.
 - Focused farm write cutover, duplicate-weight, bulk-weight, litter-service, and frontend route-contract tests passed.
 
+Litter lifecycle write checkpoint:
+
+- Added additive migration `202606290003_add_litter_lifecycle_fields.sql` for nullable litter/wean/earmark fields on canonical farm tables.
+- Added guarded Supabase update helpers for pig and litter field updates plus litter newborn health medical-event inserts.
+- Litter birth-count correction, stillborn reclassification, purpose review decisions, litter weaning, pig death/removal, litter piglet death, piglet sex count updates, piglet tag assignment, and newborn health actions now prefer Supabase writes when available.
+- Existing Google Sheets paths remain fallback when the Supabase write rail is unavailable.
+- Focused Supabase write cutover and full litter-service tests passed.
+
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 
 Mode: read-only Supabase/Google Sheets reconciliation. No writes or app route cutover.

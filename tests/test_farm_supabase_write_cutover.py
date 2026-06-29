@@ -150,6 +150,113 @@ class FarmSupabaseWriteCutoverTests(unittest.TestCase):
         insert_location.assert_called_once_with("MOV-1", cleaned)
         append_row.assert_not_called()
 
+    def test_reconcile_litter_birth_counts_prefers_supabase_litter_update(self):
+        sheet_names = pig_weights_service.PIG_WEIGHTS_CONFIG["sheet_names"]
+        overview_rows = [{"Litter_ID": "LIT-1", "Born_Alive": "7", "Pig_Master_Row_Count": "9"}]
+        litter_values = [
+            ["Litter_ID", "Born_Alive", "Litter_Notes", "Updated_At"],
+            ["LIT-1", "7", "", ""],
+        ]
+
+        def fake_get_all_records(sheet_name):
+            if sheet_name == sheet_names["litter_overview"]:
+                return overview_rows
+            return []
+
+        with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records), \
+             patch.object(pig_weights_service, "get_all_values", return_value=litter_values), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_litter_by_id", return_value=1) as update_litter, \
+             patch.object(pig_weights_service, "update_row_by_first_column_match") as sheet_update:
+            result, status_code = pig_weights_service.reconcile_litter_birth_counts(
+                "LIT-1",
+                target_born_alive=9,
+                changed_by="Tester",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        update_litter.assert_called_once()
+        sheet_update.assert_not_called()
+
+    def test_mark_litter_weaned_prefers_supabase_litter_and_pig_updates(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+            {"Pig_ID": "PIG-2", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes"},
+        ]
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_litter_by_id", return_value=1) as update_litter, \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=2) as update_pigs, \
+             patch.object(pig_weights_service, "update_row_by_first_column_match") as sheet_litter_update, \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_pig_update:
+            result, status_code = pig_weights_service.mark_litter_weaned("LIT-1", "2026-05-26")
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        update_litter.assert_called_once()
+        update_pigs.assert_called_once()
+        sheet_litter_update.assert_not_called()
+        sheet_pig_update.assert_not_called()
+
+    def test_mark_pig_death_or_removal_prefers_supabase_pig_update(self):
+        pig_rows = [{"Pig_ID": "PIG-1", "Status": "Active", "On_Farm": "Yes", "General_Notes": ""}]
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=1) as update_pigs, \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_update:
+            result, status_code = pig_weights_service.mark_pig_death_or_removal(
+                "PIG-1",
+                "2026-06-29",
+                "Died",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        update_pigs.assert_called_once()
+        sheet_update.assert_not_called()
+
+    def test_record_litter_newborn_health_prefers_supabase_pig_and_medical_writes(self):
+        pig_rows = [
+            {"Pig_ID": "PIG-1", "Litter_ID": "LIT-1", "Status": "Active", "On_Farm": "Yes", "Earmarked": "", "Earmark_Date": ""},
+        ]
+        product = {
+            "product_id": "PRD-1",
+            "product_name": "Iron",
+            "product_category": "Treatment",
+            "default_dose": 1,
+            "dose_unit": "ml",
+            "default_withdrawal_days": 0,
+        }
+        with patch.object(pig_weights_service, "get_all_records", return_value=pig_rows), \
+             patch.object(pig_weights_service, "_get_products_from_sheets", return_value=[product]), \
+             patch.object(pig_weights_service, "generate_medical_log_id", return_value="MED-1"), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "farm_supabase_writes_available", return_value=True), \
+             patch.object(pig_weights_service.farm_supabase_write_service, "update_pigs_by_id", return_value=1) as update_pigs, \
+             patch.object(pig_weights_service.farm_supabase_write_service, "insert_medical_event_from_sheet_row") as insert_medical, \
+             patch.object(pig_weights_service, "batch_update_rows_by_id") as sheet_pig_update, \
+             patch.object(pig_weights_service, "append_row") as append_row:
+            result, status_code = pig_weights_service.record_litter_newborn_health(
+                "LIT-1",
+                "2026-06-29",
+                earmarked=True,
+                antiparasitic_product_id="PRD-1",
+                dry_run=False,
+            )
+
+        self.assertEqual(status_code, 200)
+        self.assertTrue(result["source"]["writes_to_supabase"])
+        self.assertFalse(result["source"]["writes_to_sheets"])
+        update_pigs.assert_called_once()
+        insert_medical.assert_called_once()
+        sheet_pig_update.assert_not_called()
+        append_row.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
