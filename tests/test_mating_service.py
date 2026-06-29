@@ -41,6 +41,20 @@ def mating_row(**overrides):
 
 
 class MatingServiceTests(unittest.TestCase):
+    def test_pen_lookup_prefers_supabase_read_service(self):
+        with patch.object(mating_service.farm_supabase_read_service, "farm_supabase_reads_available", return_value=True), \
+             patch.object(mating_service.farm_supabase_read_service, "get_pens", return_value=[{
+                 "pen_id": "PEN-FARROW",
+                 "pen_name": "Farrowing Pen",
+                 "pen_type": "Farrowing",
+             }]) as read_pens, \
+             patch.object(mating_service, "get_all_records", side_effect=AssertionError("Sheets should not be read")):
+            result = mating_service._get_pen_lookup()
+
+        self.assertEqual(result["PEN-FARROW"]["pen_name"], "Farrowing Pen")
+        self.assertEqual(result["PEN-FARROW"]["pen_type"], "Farrowing")
+        read_pens.assert_called_once()
+
     def test_mark_not_pregnant_updates_confirmed_mating(self):
         with patch.object(mating_service, "get_all_values", return_value=[HEADERS, mating_row()]), \
              patch.object(mating_service, "update_row_by_first_column_match") as update_row:
