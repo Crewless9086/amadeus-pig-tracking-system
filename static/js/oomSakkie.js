@@ -24,8 +24,8 @@
   const ownerGateDetail = document.getElementById("oom_owner_gate_detail");
   const agentCrewSequence = document.getElementById("oom_agent_crew_sequence");
   const agentDock = document.getElementById("oom_agent_dock");
-  const commandDeck = document.querySelector(".oom-command-deck");
-  const quickDrawer = document.querySelector(".oom-quick-drawer");
+  const commandDeck = document.querySelector ? document.querySelector(".oom-command-deck") : null;
+  const quickDrawer = document.querySelector ? document.querySelector(".oom-quick-drawer") : null;
   const agentDockButtons = Array.from(document.querySelectorAll("[data-open-agent]"));
   const specialistDashboard = document.getElementById("oom_specialist_dashboard");
   const specialistAvatar = document.getElementById("oom_specialist_avatar");
@@ -822,6 +822,9 @@
   }
 
   async function fetchWithTimeout(url, options, timeoutMs) {
+    if (typeof AbortController === "undefined") {
+      return fetch(url, options || {});
+    }
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs || 4500);
     try {
