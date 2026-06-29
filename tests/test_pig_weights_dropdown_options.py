@@ -40,6 +40,17 @@ def fake_get_all_records(sheet_name):
 
 
 class PigDropdownOptionTests(unittest.TestCase):
+    def setUp(self):
+        self.supabase_availability_patch = patch.object(
+            pig_weights_service.farm_supabase_read_service,
+            "farm_supabase_reads_available",
+            return_value=False,
+        )
+        self.supabase_availability_patch.start()
+
+    def tearDown(self):
+        self.supabase_availability_patch.stop()
+
     def test_parent_options_include_current_pen_name(self):
         with patch.object(pig_weights_service, "get_all_records", side_effect=fake_get_all_records):
             options = pig_weights_service.get_parent_options()
