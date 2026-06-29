@@ -156,6 +156,64 @@ class GoogleSheetsFarmImportDryRunTests(unittest.TestCase):
             1,
         )
 
+    def test_issue_report_classifies_missing_ids_and_duplicate_groups(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"].append({
+            "Weight_Log_ID": "WGT-2",
+            "Pig_ID": "PIG-1",
+            "Weight_Date": "2026-06-22",
+            "Weight_Kg": "61.5",
+        })
+        rows["WEIGHT_LOG"].append({
+            "Weight_Log_ID": "WGT-MISSING",
+            "Pig_ID": "",
+            "Weight_Date": "2026-06-23",
+            "Weight_Kg": "62",
+        })
+        rows["LOCATION_HISTORY"].append({
+            "Move_Log_ID": "MOVE-2",
+            "Pig_ID": "PIG-1",
+            "Move_Date": "2026-06-22",
+            "From_Pen_ID": "PEN-1",
+            "To_Pen_ID": "PEN-2",
+        })
+
+        report = dry_run.build_farm_import_dry_run(rows)
+        issue_report = dry_run.build_issue_report(rows, report["reconciliation"])
+
+        self.assertTrue(issue_report["success"])
+        self.assertFalse(issue_report["writes_to_supabase"])
+        self.assertFalse(issue_report["writes_to_sheets"])
+        self.assertEqual(issue_report["summary"]["missing_weight_pig_id_rows"], 1)
+        self.assertEqual(issue_report["summary"]["duplicate_weight_groups"], 1)
+        self.assertEqual(issue_report["summary"]["likely_weight_duplicate_groups"], 1)
+        self.assertEqual(issue_report["summary"]["duplicate_location_groups"], 1)
+        self.assertEqual(issue_report["summary"]["likely_location_duplicate_groups"], 1)
+        self.assertEqual(
+            issue_report["duplicate_weight_groups"][0]["recommendation"],
+            "likely_duplicate_same_weight",
+        )
+        self.assertIn("approve_duplicate_weight_import_policy", issue_report["owner_decisions_needed"])
+
+    def test_issue_report_marks_conflicting_weight_duplicates_for_review(self):
+        rows = self.sample_rows()
+        rows["WEIGHT_LOG"].append({
+            "Weight_Log_ID": "WGT-2",
+            "Pig_ID": "PIG-1",
+            "Weight_Date": "2026-06-22",
+            "Weight_Kg": "70",
+        })
+
+        report = dry_run.build_farm_import_dry_run(rows)
+        issue_report = dry_run.build_issue_report(rows, report["reconciliation"])
+
+        self.assertEqual(issue_report["summary"]["duplicate_weight_groups"], 1)
+        self.assertEqual(issue_report["summary"]["conflicting_weight_groups"], 1)
+        self.assertEqual(
+            issue_report["duplicate_weight_groups"][0]["recommendation"],
+            "needs_owner_review_conflicting_weights",
+        )
+
     def test_load_sheet_rows_reads_only_configured_sheets(self):
         calls = []
 
@@ -180,6 +238,17 @@ class GoogleSheetsFarmImportDryRunTests(unittest.TestCase):
         self.assertIn('"status": "sheet_read_failed"', printed)
         self.assertIn('"writes_to_supabase": false', printed)
         self.assertIn('"writes_to_sheets": false', printed)
+
+    def test_main_issue_report_prints_targeted_diagnostics(self):
+        with patch.object(dry_run, "load_sheet_rows", return_value=self.sample_rows()), \
+             patch.object(dry_run, "print") as print_mock:
+            status = dry_run.main(["--issue-report"])
+
+        self.assertEqual(status, 0)
+        printed = print_mock.call_args.args[0]
+        self.assertIn('"mode": "dry_run_issue_review_only"', printed)
+        self.assertIn('"owner_decisions_needed"', printed)
+        self.assertIn('"writes_to_supabase": false', printed)
 
 
 if __name__ == "__main__":

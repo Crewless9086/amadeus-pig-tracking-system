@@ -2,9 +2,36 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-3A Data Issue Review
+
+Status: active read-only issue review.
+
+Branch: `gs-mig-3a-data-issue-review`
+
+Scope:
+
+- Classify data-quality blockers before migration apply/import.
+- Do not apply migrations or write production Supabase/Google Sheets data.
+- Do not cut over app routes.
+
+Read-only issue report result:
+
+- 6 `WEIGHT_LOG` rows have `Weight_Log_ID` but no `Pig_ID`.
+- 34 same-pig/same-date weight duplicate groups exist.
+- 25 weight duplicate groups have the same weight value and are likely duplicate artifacts.
+- 9 weight duplicate groups have conflicting values and need owner/admin review.
+- 1 repeated movement group exists: `PIG-2026-9613|2026-06-22|PEN-012`, 7 rows, likely duplicate same movement.
+
+Recommended policy for review:
+
+- Missing `Pig_ID`: identify pig or exclude/quarantine.
+- Same-weight duplicates: import one canonical event and preserve source references.
+- Conflicting weights: do not auto-import until owner/admin policy is approved.
+- Repeated movement: import one canonical movement and preserve source references.
+
 ## 2026-06-29 GS-MIG-2 Reconciliation
 
-Status: active reconciliation.
+Status: merged as PR #20.
 
 Branch: `gs-mig-2-reconciliation`
 
