@@ -177,6 +177,62 @@ class OrderSyncServiceTests(unittest.TestCase):
         self.assertEqual(calls["append_row"].call_count, 0)
         cancel_order.assert_called_once()
 
+    def test_order_master_lookup_falls_back_when_supabase_read_fails(self):
+        with patch.object(order_line_sync.order_supabase_write, "supabase_order_writes_available", return_value=True), \
+             patch.object(order_line_sync.order_supabase_write, "get_order_master_row", side_effect=RuntimeError("offline")), \
+             patch.object(order_line_sync, "get_all_records", return_value=[draft_order()]):
+            result = order_line_sync._get_order_master_row("ORD-1")
+
+        self.assertEqual(result["Order_ID"], "ORD-1")
+
+    def test_append_order_line_falls_back_when_supabase_insert_fails(self):
+        with patch.object(order_line_sync.order_supabase_write, "supabase_order_writes_available", return_value=True), \
+             patch.object(order_line_sync.order_supabase_write, "insert_order_line", side_effect=RuntimeError("offline")), \
+             patch.object(order_line_sync, "generate_order_line_id", return_value="OL-1"), \
+             patch.object(order_line_sync, "append_row") as append_row:
+            result = order_line_sync._append_order_line_from_match(
+                "ORD-1",
+                "primary_1",
+                {
+                    "pig_id": "PIG-1",
+                    "tag_number": "001",
+                    "sex": "Male",
+                    "current_weight_kg": 42,
+                    "weight_band": "40_to_44_Kg",
+                    "sale_category": "Grower Pigs",
+                },
+                "Fallback note",
+                {("Grower Pigs", "40_to_44_Kg"): 1500},
+            )
+
+        append_row.assert_called_once()
+        self.assertEqual(append_row.call_args.args[0], order_line_sync.ORDER_LINES_SHEET)
+        self.assertEqual(result["order_line_id"], "OL-1")
+
+    def test_sync_falls_back_to_sheet_rows_when_supabase_line_listing_fails(self):
+        def records_for(sheet_name):
+            if sheet_name == order_line_sync.SALES_AVAILABILITY_SHEET:
+                return [pig("PIG-1", "001", "Male")]
+            if sheet_name == order_line_sync.ORDER_LINES_SHEET:
+                return []
+            raise AssertionError(f"Unexpected get_all_records call for {sheet_name}")
+
+        with patch.object(order_line_sync.order_supabase_write, "supabase_order_writes_available", return_value=True), \
+             patch.object(order_line_sync, "_get_order_master_row", return_value=draft_order()), \
+             patch.object(order_line_sync, "_build_sales_pricing_lookup", return_value={("Grower Pigs", "40_to_44_Kg"): 1500}), \
+             patch.object(order_line_sync, "_sales_availability_rows_for_sync", side_effect=RuntimeError("availability offline")), \
+             patch.object(order_line_sync.order_supabase_write, "list_order_lines", side_effect=RuntimeError("lines offline")), \
+             patch.object(order_line_sync, "get_all_records", side_effect=records_for), \
+             patch.object(order_line_sync.order_supabase_write, "insert_order_line") as insert_line:
+            result = order_line_sync.sync_order_lines_from_request(
+                "ORD-1",
+                {"requested_items": [requested_item("primary_1")], "changed_by": "Tester"},
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["matched_total"], 1)
+        insert_line.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

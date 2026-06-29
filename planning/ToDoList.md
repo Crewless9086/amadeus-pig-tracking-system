@@ -34,12 +34,22 @@ Scope:
 
 ## 2026-06-29 GS-MIG-18 Order Status Log Supabase Fallback
 
-Status: in progress on `gs-mig-18-order-status-log-fallback`.
+Status: merged as PR #37.
 
 Scope:
 
 - Keep order status-log writes Supabase-first through `order_status_logs`.
 - Add legacy `ORDER_STATUS_LOG` fallback if the Supabase insert fails, matching the wider order cutover fallback pattern.
+- No migrations, production writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
+
+## 2026-06-29 GS-MIG-19 Order Line Sync Supabase Fallback
+
+Status: in progress on `gs-mig-19-order-line-sync-fallback`.
+
+Scope:
+
+- Keep order-line sync Supabase-first for order reads, order-line reads, pricing, and line inserts/updates.
+- Add legacy Sheets fallback if Supabase helper calls fail, matching the wider order cutover fallback pattern.
 - No migrations, production writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, or asset/external-source changes.
 
 ## 2026-06-29 GS-MIG-14 Litter Create Supabase Transaction
