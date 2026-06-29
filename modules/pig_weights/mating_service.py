@@ -58,6 +58,18 @@ def _get_pig_lookup():
 
 
 def _get_pen_lookup():
+    supabase_pens = _try_supabase_read(farm_supabase_read_service.get_pens)
+    if supabase_pens is not None:
+        return {
+            to_clean_string(row.get("pen_id", row.get("Pen_ID", ""))): {
+                "pen_id": to_clean_string(row.get("pen_id", row.get("Pen_ID", ""))),
+                "pen_name": to_clean_string(row.get("pen_name", row.get("Pen_Name", ""))),
+                "pen_type": to_clean_string(row.get("pen_type", row.get("Pen_Type", ""))),
+            }
+            for row in supabase_pens
+            if to_clean_string(row.get("pen_id", row.get("Pen_ID", "")))
+        }
+
     if mating_supabase_write.supabase_mating_writes_available():
         try:
             return mating_supabase_write.get_pen_lookup()

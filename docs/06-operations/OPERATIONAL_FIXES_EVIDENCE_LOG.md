@@ -607,3 +607,17 @@ Scope:
 Tests:
 
 - Added focused test proving shared pen lookup uses Supabase-backed pen rows and does not read Sheets when Supabase reads are available.
+
+## GS-MIG-17 Mating Pen Lookup Supabase Cutover - 2026-06-29
+
+Mode: route-facing read cutover for mating/breeding pen validation helpers. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Mating/breeding pen lookup now prefers the Supabase canonical pen read service before existing write-helper and Google Sheets fallbacks.
+- Existing Google Sheets `PEN_REGISTER` fallback remains available when Supabase reads and mating write helpers are unavailable.
+- This removes a direct `PEN_REGISTER` read from mating/breeding pen validation paths in normal Supabase-backed operation.
+
+Tests:
+
+- Added focused test proving mating pen lookup uses Supabase-backed pen rows and does not read Sheets when Supabase reads are available.
