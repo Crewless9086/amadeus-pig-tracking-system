@@ -6,6 +6,7 @@ This is the short live-state dashboard for the project. Keep it current after ac
 
 `origin/main` currently includes:
 
+- `2bcf347` Record controlled farm data import (#25)
 - `df2bfaf` Plan initial farm data import (#24)
 - `dd06ee2` Add Sheets backfill verifier (#23)
 - `cf0c7f5` Record Sheets import policies (#22)
@@ -54,7 +55,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-3B is merged as PR #22.
 - GS-MIG-3 is merged as PR #23.
 - GS-MIG-4 additive schema apply completed on 2026-06-29.
-- Supabase now has empty canonical farm tables/views: `pens`, `pigs`, `farm_products`, `app_settings`, `pig_weight_events`, `pig_location_events`, `pig_medical_events`, `litters`, `mating_events`, `pig_latest_weight_events`, `pig_latest_location_events`, and `pig_current_state`.
+- Supabase has canonical farm tables/views: `pens`, `pigs`, `farm_products`, `app_settings`, `pig_weight_events`, `pig_location_events`, `pig_medical_events`, `litters`, `mating_events`, `pig_latest_weight_events`, `pig_latest_location_events`, and `pig_current_state`.
 - Owner approved import policy direction: skip missing-`Pig_ID` weight rows into review/quarantine output; collapse same-weight duplicates to one canonical event; hold conflicting same-pig/same-date weights for review; collapse repeated movement duplicates to one canonical movement.
 - GS-MIG-5 initial import plan is merged as PR #24.
 - GS-MIG-5 controlled import execution completed on 2026-06-29 using import batch `GS-MIG-5-2026-06-29`.
@@ -62,6 +63,7 @@ Render deploys from `main` unless the service configuration says otherwise.
 - Derived views are populated: `pig_current_state` 217 rows, `pig_latest_location_events` 113 rows, and `pig_latest_weight_events` 155 rows.
 - The 9 conflicting same-pig/same-date weight groups remain excluded from canonical import for owner/admin review.
 - No app route cutover has happened yet. The app may still read Google Sheets until a later owner-approved cutover phase.
+- GS-MIG-6 is active on `gs-mig-6-conflict-review-reconciliation`: create the conflicting-weight review output and verify imported Supabase rows before any app route cutover.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 
