@@ -2,9 +2,28 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-3B Import Policy Decisions
+
+Status: active owner decision capture.
+
+Branch: `gs-mig-3b-import-policy`
+
+Owner decisions:
+
+- Missing `Pig_ID` weight rows: leave out of canonical import and list in review/quarantine output.
+- Same-weight duplicates: import one canonical event only; preserve source references.
+- Conflicting same-pig/same-date weights: do not auto-import; put them on a visible review list.
+- Repeated movements: import one canonical movement only; preserve source references.
+
+Conflicting-weight review rule:
+
+- Conflicts must show pig id, date, candidate weights, source sheet rows, and `Weight_Log_ID` values.
+- Until reviewed, they must not affect current weight, meat readiness, allocation, or stock valuation.
+- Later owner/admin choices should be: choose canonical value, exclude group, or approve a correction rule.
+
 ## 2026-06-29 GS-MIG-3A Data Issue Review
 
-Status: active read-only issue review.
+Status: merged as PR #21.
 
 Branch: `gs-mig-3a-data-issue-review`
 
