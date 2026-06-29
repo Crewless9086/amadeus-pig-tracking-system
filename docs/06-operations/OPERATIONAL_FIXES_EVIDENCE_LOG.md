@@ -415,6 +415,7 @@ App cutover in progress:
 
 - `modules.orders.order_read` now prefers Supabase canonical `orders` and `order_lines`.
 - `modules.documents.document_service` now prefers Supabase `order_documents` for document metadata reads.
+- `modules.documents.document_service` now prefers Supabase `app_settings` for document settings and Supabase `order_documents` for generated document metadata writes and sent-status updates.
 - `modules.reports.report_service` now prefers Supabase `order_status_logs` for daily transition summaries.
 - `modules.orders.order_write`, `order_line_sync`, `order_reservation`, `order_lifecycle`, and `order_status_log` now use guarded Supabase write helpers when available, with Sheets fallback.
 - `modules.orders.order_intake_service` now uses a Supabase intake store for context/update/reset when available, with Sheets fallback.
@@ -437,9 +438,16 @@ No-unsafe-action confirmation:
 
 Remaining risks:
 
-- Document settings/generation/send writes still use existing document rails.
 - Mating/breeding mutation routes still need separate durable write rails.
 - Completing an order can mark pigs sold/off-farm in Supabase, but the current canonical `pigs` table does not yet store full legacy exit metadata such as exit date/order/reason.
+
+Document rail checkpoint:
+
+- Added a guarded Supabase document write/settings adapter.
+- `get_document_settings()` reads `app_settings` first, with `SYSTEM_SETTINGS` fallback.
+- `append_order_document()` inserts/upserts generated quote/invoice metadata into `order_documents` first, with `ORDER_DOCUMENTS` fallback.
+- `mark_document_sent()` updates `order_documents` first, with `ORDER_DOCUMENTS` fallback.
+- Focused and broader order/document tests passed.
 
 ## GS-MIG-6 Conflicting Weight Review And Reconciliation - 2026-06-29
 

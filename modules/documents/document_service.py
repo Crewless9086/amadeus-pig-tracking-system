@@ -11,6 +11,7 @@ from services.google_sheets_service import (
     update_row_by_first_column_match,
 )
 from modules.documents import document_supabase_read
+from modules.documents import document_supabase_write
 
 SYSTEM_SETTINGS_SHEET = "SYSTEM_SETTINGS"
 ORDER_DOCUMENTS_SHEET = "ORDER_DOCUMENTS"
@@ -54,14 +55,16 @@ def generate_document_id():
 
 
 def get_document_settings(required_keys=None):
-    rows = get_all_records(SYSTEM_SETTINGS_SHEET)
-    settings = {}
+    settings = _try_supabase_settings()
+    if settings is None:
+        rows = get_all_records(SYSTEM_SETTINGS_SHEET)
+        settings = {}
 
-    for row in rows:
-        key = str(row.get("Setting_Key", "")).strip()
-        if not key:
-            continue
-        settings[key] = str(row.get("Setting_Value", "")).strip()
+        for row in rows:
+            key = str(row.get("Setting_Key", "")).strip()
+            if not key:
+                continue
+            settings[key] = str(row.get("Setting_Value", "")).strip()
 
     missing = [
         key for key in (required_keys or [])
@@ -172,6 +175,15 @@ def _try_supabase_read(read_fn, *args):
         return None
 
 
+def _try_supabase_settings():
+    if not document_supabase_read.supabase_document_reads_available():
+        return None
+    try:
+        return document_supabase_write.get_document_settings()
+    except Exception:
+        return None
+
+
 def get_next_document_version(order_id, document_type):
     documents = get_order_documents(order_id, document_type=document_type)
     versions = []
@@ -205,6 +217,13 @@ def get_latest_non_voided_quote(order_id):
 
 
 def append_order_document(document_record):
+    if document_supabase_write.supabase_document_writes_available():
+        try:
+            document_supabase_write.insert_order_document(document_record)
+            return
+        except Exception:
+            pass
+
     row_values = [
         document_record.get(column, "")
         for column in ORDER_DOCUMENT_COLUMNS
@@ -213,6 +232,17 @@ def append_order_document(document_record):
 
 
 def mark_document_sent(document_id, sent_by="n8n", sent_at=None):
+    if document_supabase_write.supabase_document_writes_available():
+        try:
+            document_supabase_write.mark_document_sent(
+                document_id,
+                sent_by=sent_by,
+                sent_at=sent_at,
+            )
+            return
+        except Exception:
+            pass
+
     rows = get_all_records(ORDER_DOCUMENTS_SHEET)
     document_id = str(document_id or "").strip()
     sent_at = sent_at or datetime.now().strftime("%d %b %Y %H:%M")
