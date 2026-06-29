@@ -635,3 +635,17 @@ Scope:
 Tests:
 
 - Added focused tests proving Supabase status-log writes do not append to Sheets, and proving Sheets fallback is used if the Supabase insert raises.
+
+## GS-MIG-19 Order Line Sync Supabase Fallback - 2026-06-29
+
+Mode: route-facing order-line sync resilience on the existing Supabase-first order rail. No migrations, production writes during tests, Google Sheets writes during tests, customer sends, public posts, payments, reservations, lifecycle/purpose writes, Phase 3A.6, CHARLIE/FRED/ledger work, screenshots, external sources, assets, `.env`, or `.claude` changes.
+
+Scope:
+
+- Order-line sync continues to prefer Supabase order/order-line/pricing helpers when the Supabase write rail is available.
+- If Supabase helper reads or writes fail, the service now falls back to the existing Google Sheets paths instead of bubbling the exception.
+- This keeps owner order-line sync operational during partial Supabase outages while preserving Supabase as the preferred route.
+
+Tests:
+
+- Added focused tests proving order master lookup, order-line append, sales availability, and order-line listing can fall back safely when Supabase helpers raise.

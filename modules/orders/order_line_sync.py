@@ -77,15 +77,18 @@ def _header_index(headers):
 
 def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
     if order_supabase_write.supabase_order_writes_available():
-        if sheet_name == ORDER_MASTER_SHEET:
-            changed = order_supabase_write.update_order_fields(row_id, updates)
-        elif sheet_name == ORDER_LINES_SHEET:
-            changed = order_supabase_write.update_order_line_fields(row_id, updates)
-        else:
-            changed = 0
-        if changed == 0:
-            raise ValueError(f"Row with ID '{row_id}' not found in '{sheet_name}'.")
-        return
+        try:
+            if sheet_name == ORDER_MASTER_SHEET:
+                changed = order_supabase_write.update_order_fields(row_id, updates)
+            elif sheet_name == ORDER_LINES_SHEET:
+                changed = order_supabase_write.update_order_line_fields(row_id, updates)
+            else:
+                changed = 0
+            if changed == 0:
+                raise ValueError(f"Row with ID '{row_id}' not found in '{sheet_name}'.")
+            return
+        except Exception:
+            pass
 
     headers, rows = _sheet_headers_and_rows(sheet_name)
 
@@ -117,7 +120,10 @@ def _update_sheet_row_by_id(sheet_name: str, row_id: str, updates: dict):
 
 def _get_order_master_row(order_id: str):
     if order_supabase_write.supabase_order_writes_available():
-        return order_supabase_write.get_order_master_row(order_id)
+        try:
+            return order_supabase_write.get_order_master_row(order_id)
+        except Exception:
+            pass
 
     rows = get_all_records(ORDER_MASTER_SHEET)
     for row in rows:
@@ -128,7 +134,10 @@ def _get_order_master_row(order_id: str):
 
 def _get_order_line_row(order_line_id: str):
     if order_supabase_write.supabase_order_writes_available():
-        return order_supabase_write.get_order_line_row(order_line_id)
+        try:
+            return order_supabase_write.get_order_line_row(order_line_id)
+        except Exception:
+            pass
 
     rows = get_all_records(ORDER_LINES_SHEET)
     for row in rows:
@@ -228,7 +237,10 @@ def _cancel_order_lines(order_line_ids, order_lines_cache=None):
 
 def _build_sales_pricing_lookup():
     if order_supabase_write.supabase_order_writes_available():
-        return order_supabase_write.sales_pricing_lookup()
+        try:
+            return order_supabase_write.sales_pricing_lookup()
+        except Exception:
+            pass
 
     rows = get_all_records(SALES_PRICING_SHEET)
     pricing_lookup = {}
@@ -372,37 +384,46 @@ def _append_order_line_from_match(order_id: str, request_item_key: str, pig: dic
     wkg = pig["current_weight_kg"] if pig["current_weight_kg"] is not None else ""
 
     if order_supabase_write.supabase_order_writes_available():
-        order_supabase_write.insert_order_line(
-            order_line_id,
-            {
-                "order_id": order_id,
-                "unit_price": unit_price,
-                "notes": notes,
-                "request_item_key": request_item_key,
-            },
-            pig,
-        )
-    else:
-        row_values = [
-            order_line_id,
-            order_id,
-            pig["pig_id"],
-            pig["tag_number"],
-            pig["sale_category"],
-            pig["weight_band"],
-            pig["sex"],
-            wkg,
-            unit_price,
-            "Draft",
-            "Not_Reserved",
-            notes,
-            today_str,
-            today_str,
-            request_item_key,
-        ]
+        try:
+            order_supabase_write.insert_order_line(
+                order_line_id,
+                {
+                    "order_id": order_id,
+                    "unit_price": unit_price,
+                    "notes": notes,
+                    "request_item_key": request_item_key,
+                },
+                pig,
+            )
+        except Exception:
+            pass
+        else:
+            return _order_line_append_result(order_line_id, order_id, request_item_key, pig, notes, unit_price, wkg, today_str)
 
-        append_row(ORDER_LINES_SHEET, row_values)
+    row_values = [
+        order_line_id,
+        order_id,
+        pig["pig_id"],
+        pig["tag_number"],
+        pig["sale_category"],
+        pig["weight_band"],
+        pig["sex"],
+        wkg,
+        unit_price,
+        "Draft",
+        "Not_Reserved",
+        notes,
+        today_str,
+        today_str,
+        request_item_key,
+    ]
 
+    append_row(ORDER_LINES_SHEET, row_values)
+
+    return _order_line_append_result(order_line_id, order_id, request_item_key, pig, notes, unit_price, wkg, today_str)
+
+
+def _order_line_append_result(order_line_id, order_id, request_item_key, pig, notes, unit_price, wkg, today_str):
     cache_row = {
         "Order_Line_ID": order_line_id,
         "Order_ID": str(order_id).strip(),
@@ -459,16 +480,18 @@ def sync_order_lines_from_request(order_id: str, cleaned_data: dict):
         except (TypeError, ValueError):
             return 0
 
-    sales_rows = (
-        _sales_availability_rows_for_sync()
-        if order_supabase_write.supabase_order_writes_available()
-        else get_all_records(SALES_AVAILABILITY_SHEET)
-    )
-    order_lines_rows = (
-        list(order_supabase_write.list_order_lines())
-        if order_supabase_write.supabase_order_writes_available()
-        else list(get_all_records(ORDER_LINES_SHEET))
-    )
+    if order_supabase_write.supabase_order_writes_available():
+        try:
+            sales_rows = _sales_availability_rows_for_sync()
+        except Exception:
+            sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
+        try:
+            order_lines_rows = list(order_supabase_write.list_order_lines())
+        except Exception:
+            order_lines_rows = list(get_all_records(ORDER_LINES_SHEET))
+    else:
+        sales_rows = get_all_records(SALES_AVAILABILITY_SHEET)
+        order_lines_rows = list(get_all_records(ORDER_LINES_SHEET))
 
     for item in requested_items:
         request_item_key = to_clean_string(item.get("request_item_key", ""))
