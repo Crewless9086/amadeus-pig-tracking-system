@@ -341,3 +341,62 @@ Fix direction:
 - Hide separate Continue Upload from the primary workflow.
 - `Upload Weights` stages if needed, resumes existing batch ids, processes chunks automatically, retries transient failures, and pauses safely with the draft/batch preserved.
 - Backend processing treats interrupted `processing` rows as resumable and persists progress after each row.
+
+## GS-MIG-5 Controlled Initial Farm Import - 2026-06-29
+
+Mode: controlled Supabase canonical import after owner approval. Google Sheets was read only. No app routes were cut over.
+
+Import batch:
+
+- `GS-MIG-5-2026-06-29`
+
+Pre-import safety:
+
+- Canonical farm tables were verified empty before execution.
+- The import runner refuses to import into non-empty canonical target tables.
+- `LOCATION_HISTORY` accounting was tightened so movement rows cannot be silently dropped before the review gate.
+- Dry-run confirmed 179 of 179 movement source rows accounted.
+
+Import result:
+
+- `pens`: 20
+- `pigs`: 217
+- `farm_products`: 3
+- `app_settings`: 18
+- `litters`: 17
+- `mating_events`: 15
+- `pig_weight_events`: 1,190
+- `pig_location_events`: 179
+- `pig_medical_events`: 261
+
+Post-import verification:
+
+- `pig_current_state`: 217 rows
+- `pig_latest_location_events`: 113 rows
+- `pig_latest_weight_events`: 155 rows
+- `pig_weight_events` import batch `GS-MIG-5-2026-06-29`: 1,190 rows
+
+Held out for review:
+
+- 9 conflicting same-pig/same-date weight groups remain excluded.
+- 25 same-weight duplicates were auto-resolved by importing one canonical event.
+- Missing-`Pig_ID` weight quarantine is 0 after owner cleanup.
+
+Tests and commands:
+
+- `tests.test_google_sheets_farm_import_dry_run`: 16 passed
+- `tests.test_google_sheets_farm_import_execute`: 3 passed
+- Python compile check for import scripts: passed
+- Controlled import dry-run: passed
+- Controlled import execute: passed
+
+No-unsafe-action confirmation:
+
+- No Google Sheets writes.
+- No customer sends, public posts, payments, deposits, reservations, or lifecycle/purpose writes.
+- No app route cutover.
+- No destructive SQL.
+
+Next:
+
+- GS-MIG-6 should create the owner/admin review output for the 9 conflicting-weight groups and verify imported Supabase rows before any route reads are switched from Google Sheets.

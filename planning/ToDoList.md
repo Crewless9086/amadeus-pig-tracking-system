@@ -2,9 +2,32 @@
 
 # Processed Notes
 
+## 2026-06-29 GS-MIG-5 Controlled Import Execution
+
+Status: complete.
+
+Import batch: `GS-MIG-5-2026-06-29`
+
+Result:
+
+- Imported clean canonical farm data into Supabase.
+- Imported 217 pigs, 20 pens, 1,190 weight events, 179 location events, 261 medical events, 17 litters, 15 mating events, 3 products, and 18 settings.
+- Populated `pig_current_state`, `pig_latest_location_events`, and `pig_latest_weight_events`.
+- No Google Sheets writes.
+- No app route cutover.
+- 9 conflicting same-pig/same-date weight groups remain excluded for review.
+
+Report:
+
+- `docs/06-operations/GS_MIG_5_IMPORT_EXECUTION_REPORT.md`
+
+Next:
+
+- GS-MIG-6 should produce owner/admin review output for conflicting weights and verify imported Supabase rows before any route cutover.
+
 ## 2026-06-29 GS-MIG-5 Initial Import Plan
 
-Status: active plan; no import executed.
+Status: merged as PR #24; import execution completed separately.
 
 Branch: `gs-mig-5-initial-import-plan`
 

@@ -567,6 +567,28 @@ def group_raw_location_rows(rows):
     return groups
 
 
+def invalid_raw_location_rows(rows):
+    invalid_rows = []
+    grouped_rows = {
+        source_sheet_row
+        for group_rows in group_raw_location_rows(rows).values()
+        for source_sheet_row, _ in group_rows
+    }
+    for source_sheet_row, row in enumerate(rows.get(LOCATION_HISTORY_SHEET, []), start=2):
+        if source_sheet_row in grouped_rows:
+            continue
+        reasons = []
+        if not clean(row.get("Pig_ID")):
+            reasons.append("missing_pig_id")
+        if not as_date(row.get("Move_Date")):
+            reasons.append("missing_move_date")
+        if not clean(row.get("To_Pen_ID")):
+            reasons.append("missing_to_pen_id")
+        if reasons:
+            invalid_rows.append((source_sheet_row, row, reasons))
+    return invalid_rows
+
+
 def sample_raw_rows(group_rows, fields, limit=10):
     return [
         {
@@ -766,6 +788,16 @@ def build_policy_location_payloads(rows):
     canonical_locations = []
     review_items = []
 
+    for source_sheet_row, row, reasons in invalid_raw_location_rows(rows):
+        review_items.append(review_item(
+            "invalid_location_row",
+            "quarantined",
+            "left_out_of_canonical_import_until_required_location_fields_are_resolved",
+            [source_reference(LOCATION_HISTORY_SHEET, source_sheet_row, row, ISSUE_REPORT_FIELDS[LOCATION_HISTORY_SHEET])],
+            invalid_reasons=reasons,
+            selected_canonical_value=None,
+        ))
+
     for key, group_rows in sorted(group_raw_location_rows(rows).items()):
         pig_id, move_date, to_pen_id = key
         if len(group_rows) == 1:
@@ -817,6 +849,19 @@ def summarize_review_items(review_items):
     }
 
 
+def covered_location_source_rows(canonical_locations, location_review_items):
+    covered = set()
+    for payload in canonical_locations:
+        duplicate_refs = payload.get("duplicate_source_refs") or []
+        if duplicate_refs:
+            covered.update(ref["source_sheet_row"] for ref in duplicate_refs)
+        elif payload.get("source_sheet_row"):
+            covered.add(payload["source_sheet_row"])
+    for item in location_review_items:
+        covered.update(ref["source_sheet_row"] for ref in item.get("source_refs", []))
+    return covered
+
+
 def build_policy_backfill_verifier(rows):
     report = build_farm_import_dry_run(rows)
     payloads = report["payloads"]
@@ -832,6 +877,11 @@ def build_policy_backfill_verifier(rows):
     canonical_payloads["pig_location_events"] = canonical_locations
     review_items = weight_review_items + location_review_items
     pending_review_count = sum(1 for item in review_items if item["status"] in {"pending_owner_review", "quarantined"})
+    source_location_rows = {
+        source_sheet_row
+        for source_sheet_row, _ in enumerate(rows.get(LOCATION_HISTORY_SHEET, []), start=2)
+    }
+    accounted_location_rows = covered_location_source_rows(canonical_locations, location_review_items)
 
     return {
         "success": True,
@@ -848,6 +898,10 @@ def build_policy_backfill_verifier(rows):
             "same_weight_duplicates_collapsed": True,
             "conflicting_weights_excluded_until_review": True,
             "duplicate_movements_collapsed": True,
+            "location_source_rows_accounted": source_location_rows == accounted_location_rows,
+            "location_source_row_count": len(source_location_rows),
+            "location_accounted_row_count": len(accounted_location_rows),
+            "location_unaccounted_source_rows": sorted(source_location_rows - accounted_location_rows),
             "no_write_performed": True,
             "import_ready": pending_review_count == 0,
             "pending_review_count": pending_review_count,
