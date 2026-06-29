@@ -75,6 +75,7 @@ def get_sales_dashboard_data():
         "success": True,
         "totals": get_sales_stock_totals(),
         "summary": get_sales_stock_summary(),
+        "meat_ready_stock": get_meat_ready_stock_summary(),
     }
 
 

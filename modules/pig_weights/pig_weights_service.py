@@ -2740,6 +2740,10 @@ def _litter_health_treatment_type_for_product(product, default_type):
 
 
 def get_sales_stock_summary():
+    supabase_result = _sales_stock_summary_from_supabase_allocation()
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records("SALES_STOCK_SUMMARY")
     records = []
 
@@ -2767,6 +2771,10 @@ def get_sales_stock_summary():
 
 
 def get_sales_stock_totals():
+    supabase_result = _sales_stock_totals_from_supabase_allocation()
+    if supabase_result is not None:
+        return supabase_result
+
     rows = get_all_records("SALES_STOCK_TOTALS")
     records = []
 
@@ -2789,6 +2797,133 @@ def get_sales_stock_totals():
             "status": to_clean_string(row.get("Status", "")),
         })
 
+    return records
+
+
+def _sex_counts_for_pigs(pigs):
+    counts = {"male": 0, "female": 0, "castrated_male": 0}
+    for pig in pigs:
+        sex = to_clean_string(pig.get("sex", ""))
+        if sex == "Male":
+            counts["male"] += 1
+        elif sex == "Female":
+            counts["female"] += 1
+        elif sex == "Castrated_Male":
+            counts["castrated_male"] += 1
+    return counts
+
+
+def _sales_category_for_meat_ready(classification):
+    category_key = classification.get("category_key", "")
+    if category_key == "meat_window_candidate":
+        return "Meat Window Candidate", "meat_window_candidate", "Ready for meat planning"
+    if category_key == "abattoir_cull_candidate":
+        return "Ready for Slaughter", "abattoir_cull_candidate", "Ready for abattoir/cull planning"
+    if category_key == "live_sale_candidate":
+        return "Live Sale Candidate", "live_sale_candidate", "Review for live sale"
+    if category_key == "slow_grower_review":
+        return "Slow Grower Review", "slow_grower_review", "Review before continued feeding"
+    if category_key == "hold_grow_longer":
+        return "Hold / Grow Longer", "hold_grow_longer", "Not ready yet"
+    return "Excluded / No Reliable Value Yet", "excluded", "Excluded from sales availability"
+
+
+def _allocation_is_supabase(allocation):
+    return isinstance(allocation, dict) and allocation.get("source") == "supabase_canonical"
+
+
+def _sales_stock_summary_from_supabase_allocation():
+    allocation = get_pig_allocation_readiness()
+    if not _allocation_is_supabase(allocation):
+        return None
+
+    grouped = {}
+    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        classification = _meat_ready_classification(pig)
+        sale_category, category_code, status = _sales_category_for_meat_ready(classification)
+        if category_code == "excluded":
+            continue
+        key = (sale_category, pig.get("weight_band") or "Unknown")
+        group = grouped.setdefault(key, {
+            "sale_category": sale_category,
+            "category_code": category_code,
+            "age_range": "",
+            "weight_band": pig.get("weight_band") or "Unknown",
+            "pigs": [],
+            "price_range": "pricing not configured",
+            "status": status,
+        })
+        group["pigs"].append(pig)
+
+    records = []
+    for group in grouped.values():
+        sex_counts = _sex_counts_for_pigs(group["pigs"])
+        records.append({
+            "sale_category": group["sale_category"],
+            "category_code": group["category_code"],
+            "age_range": group["age_range"],
+            "weight_band": group["weight_band"],
+            "qty_available": len(group["pigs"]),
+            "male_qty": sex_counts["male"],
+            "female_qty": sex_counts["female"],
+            "castrated_male_qty": sex_counts["castrated_male"],
+            "price_range": group["price_range"],
+            "status": group["status"],
+            "source": "supabase_allocation_readiness",
+        })
+
+    records.sort(key=lambda item: (item["sale_category"], item["weight_band"]))
+    return records
+
+
+def _sales_stock_totals_from_supabase_allocation():
+    allocation = get_pig_allocation_readiness()
+    if not _allocation_is_supabase(allocation):
+        return None
+
+    grouped = {}
+    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        classification = _meat_ready_classification(pig)
+        sale_category, category_code, status = _sales_category_for_meat_ready(classification)
+        if category_code == "excluded":
+            continue
+        group = grouped.setdefault(sale_category, {
+            "sale_category": sale_category,
+            "category_code": category_code,
+            "age_range": "",
+            "weight_range": "",
+            "pigs": [],
+            "price_range": "pricing not configured",
+            "status": status,
+        })
+        group["pigs"].append(pig)
+
+    records = []
+    for group in grouped.values():
+        weights = [
+            pig.get("latest_weight_kg")
+            for pig in group["pigs"]
+            if pig.get("latest_weight_kg") is not None
+        ]
+        sex_counts = _sex_counts_for_pigs(group["pigs"])
+        weight_range = ""
+        if weights:
+            weight_range = f"{min(weights):g}-{max(weights):g} kg" if min(weights) != max(weights) else f"{weights[0]:g} kg"
+        records.append({
+            "sale_category": group["sale_category"],
+            "category_code": group["category_code"],
+            "age_range": group["age_range"],
+            "weight_range": weight_range,
+            "qty_available": len(group["pigs"]),
+            "male_qty": sex_counts["male"],
+            "female_qty": sex_counts["female"],
+            "castrated_male_qty": sex_counts["castrated_male"],
+            "price_range": group["price_range"],
+            "status": group["status"],
+            "source": "supabase_allocation_readiness",
+        })
+
+    records.sort(key=lambda item: item["sale_category"])
     return records
 
 
@@ -2887,6 +3022,10 @@ def get_active_pigs():
 
 
 def get_sales_availability():
+    supabase_result = _sales_availability_from_supabase_allocation()
+    if supabase_result is not None:
+        return supabase_result
+
     sheet_name = PIG_WEIGHTS_CONFIG["sheet_names"]["sales_availability"]
     columns = PIG_WEIGHTS_CONFIG["columns"]
 
@@ -2915,6 +3054,48 @@ def get_sales_availability():
             "sale_category": to_clean_string(row.get(columns["sale_category"], "")),
             "suggested_price_category": to_clean_string(row.get(columns["suggested_price_category"], "")),
             "sales_notes": to_clean_string(row.get(columns["sales_notes"], "")),
+        })
+
+    return sales_rows
+
+
+def _sales_availability_from_supabase_allocation():
+    allocation = get_pig_allocation_readiness()
+    if not _allocation_is_supabase(allocation):
+        return None
+
+    sales_rows = []
+    for pig in allocation.get("pigs", []) if isinstance(allocation.get("pigs"), list) else []:
+        classification = _meat_ready_classification(pig)
+        sale_category, category_code, status = _sales_category_for_meat_ready(classification)
+        available = "Yes" if category_code in {
+            "meat_window_candidate",
+            "abattoir_cull_candidate",
+            "live_sale_candidate",
+            "slow_grower_review",
+        } else "No"
+        sales_rows.append({
+            "pig_id": pig.get("pig_id", ""),
+            "tag_number": pig.get("tag_number", ""),
+            "sex": pig.get("sex", ""),
+            "date_of_birth": pig.get("birth_date", ""),
+            "age_days": pig.get("age_days"),
+            "current_weight_kg": pig.get("latest_weight_kg"),
+            "last_weight_date": pig.get("latest_weight_date", ""),
+            "average_daily_gain_kg": pig.get("average_daily_gain_kg"),
+            "calculated_stage": pig.get("calculated_stage", ""),
+            "weight_band": pig.get("weight_band", ""),
+            "current_pen_id": pig.get("current_pen_id", ""),
+            "status": pig.get("status", ""),
+            "on_farm": pig.get("on_farm", ""),
+            "withdrawal_clear": "",
+            "reserved_status": pig.get("reserved_status", ""),
+            "reserved_for_order_id": pig.get("reserved_for_order_id", ""),
+            "available_for_sale": available,
+            "sale_category": sale_category,
+            "suggested_price_category": category_code,
+            "sales_notes": status,
+            "source": "supabase_allocation_readiness",
         })
 
     return sales_rows

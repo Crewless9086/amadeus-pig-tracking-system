@@ -69,7 +69,8 @@ Render deploys from `main` unless the service configuration says otherwise.
 - GS-MIG-7A direct canonical reads are in progress for pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
 - GS-MIG-7B read-only formula shadow comparison is in progress. Live comparison showed `PIG_OVERVIEW` core counts match Supabase `pig_current_state` and litter/mating row counts match canonical tables.
 - GS-MIG-7C allocation/meat-planning reads are in progress: pig allocation readiness now prefers Supabase canonical inputs, and meat planning follows that allocation source.
-- Formula-heavy routes still not cut over: dashboard, sales dashboard, sales availability, litter overview/detail, and mutation/write routes.
+- GS-MIG-7D sales reads are in progress: sales availability and sales dashboard stock/readiness data now derive from Supabase-backed allocation readiness when available.
+- Formula-heavy routes still not cut over: dashboard litter attention, litter overview/detail, and mutation/write routes.
 - Builds still require 96%+ ticket confidence and a pressure-test plan before merge.
 - Cleanup work and operational builds must use clean worktrees from `origin/main`.
 

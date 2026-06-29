@@ -61,8 +61,31 @@ Live read-only smoke:
 Still not cut over:
 
 - dashboard litter attention
-- sales dashboard
-- sales availability and stock formulas
+- litter overview/detail formulas
+- mutation/write routes
+
+## Batch 7D: Sales Availability And Stock Reads
+
+`/api/pig-weights/sales-availability` now derives from Supabase-backed allocation readiness when available.
+
+`/api/pig-weights/sales-dashboard` now returns:
+
+- Supabase-derived `totals`
+- Supabase-derived `summary`
+- `meat_ready_stock` from the existing meat-ready stock model
+
+Live read-only smoke:
+
+- Sales stock summary rows: 7
+- Sales stock total rows: 4
+- Sales availability rows: 217
+- Available-for-sale rows under the new allocation-derived model: 39
+- Sales dashboard response keys: `success`, `totals`, `summary`, `meat_ready_stock`
+- Meat-ready stock groups: 6
+
+Still not cut over:
+
+- dashboard litter attention
 - litter overview/detail formulas
 - mutation/write routes
 

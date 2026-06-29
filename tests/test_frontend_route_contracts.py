@@ -462,6 +462,8 @@ class FrontendRouteContractTests(unittest.TestCase):
         self.assertIn("Public use remains locked until a later campaign gate.", template)
         self.assertIn('href="/sales/beacon-media"', Path("templates/sales-dashboard.html").read_text(encoding="utf-8"))
         self.assertIn('href="/sales/beacon-media"', Path("templates/meat-sales-leads.html").read_text(encoding="utf-8"))
+        controller = Path("modules/pig_weights/pig_weights_controller.py").read_text(encoding="utf-8")
+        self.assertIn('"meat_ready_stock": get_meat_ready_stock_summary()', controller)
 
         self.assertIn('fetchJson("/api/beacon/media-policy")', js)
         self.assertIn('fetchJson(`/api/beacon/media-assets?', js)

@@ -227,6 +227,64 @@ class PigAllocationReadinessServiceTests(unittest.TestCase):
         self.assertFalse(result["writes_to_sheets"])
         self.assertFalse(result["writes_to_supabase"])
 
+    def test_sales_stock_outputs_can_use_supabase_allocation(self):
+        allocation = {
+            "source": "supabase_canonical",
+            "pigs": [
+                {
+                    "pig_id": "PIG-MEAT",
+                    "tag_number": "1",
+                    "sex": "Female",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "readiness_bucket": "Meat Candidate",
+                    "meat_window_status": "In meat window",
+                    "abattoir_window_status": "Before abattoir window",
+                    "latest_weight_kg": 62,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "60-<80 kg",
+                },
+                {
+                    "pig_id": "PIG-CULL",
+                    "tag_number": "2",
+                    "sex": "Male",
+                    "status": "Active",
+                    "on_farm": "Yes",
+                    "readiness_bucket": "Slaughter Candidate",
+                    "meat_window_status": "Past meat window",
+                    "abattoir_window_status": "In abattoir window",
+                    "latest_weight_kg": 120,
+                    "latest_weight_date": "2026-06-22",
+                    "days_since_weight": 2,
+                    "weight_band": "80 kg+",
+                },
+                {
+                    "pig_id": "PIG-SOLD",
+                    "tag_number": "3",
+                    "sex": "Female",
+                    "status": "Sold",
+                    "on_farm": "No",
+                    "readiness_bucket": "Exited",
+                    "latest_weight_kg": 80,
+                    "weight_band": "80 kg+",
+                },
+            ],
+        }
+
+        with patch.object(pig_weights_service, "get_pig_allocation_readiness", return_value=allocation):
+            summary = pig_weights_service.get_sales_stock_summary()
+            totals = pig_weights_service.get_sales_stock_totals()
+            availability = pig_weights_service.get_sales_availability()
+
+        self.assertEqual(len(summary), 2)
+        self.assertEqual({row["sale_category"] for row in summary}, {"Meat Window Candidate", "Ready for Slaughter"})
+        self.assertEqual(sum(row["qty_available"] for row in totals), 2)
+        by_id = {row["pig_id"]: row for row in availability}
+        self.assertEqual(by_id["PIG-MEAT"]["available_for_sale"], "Yes")
+        self.assertEqual(by_id["PIG-CULL"]["sale_category"], "Ready for Slaughter")
+        self.assertEqual(by_id["PIG-SOLD"]["available_for_sale"], "No")
+
     def test_exceptional_grower_from_good_litter_is_flagged_for_breeding_review(self):
         overview_rows = [{
             "Pig_ID": "PIG-FAST",

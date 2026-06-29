@@ -28,6 +28,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - GS-MIG-7A direct canonical reads: pigs, pens, products, parent options, pig detail, family tree, weight history, movement history, treatment history, latest weight, weights-by-date, and weight report.
 - GS-MIG-7B formula shadow: live read-only comparison confirms core `PIG_OVERVIEW` counts match `pig_current_state`; sales readiness/stock and attention formulas still need Supabase replacement services before route cutover.
 - GS-MIG-7C allocation/meat-planning reads: pig allocation readiness now prefers Supabase canonical inputs; meat planning follows that allocation source and live read-only smoke returned 2 current meat-planning rows.
+- GS-MIG-7D sales reads: sales availability and sales dashboard stock/readiness data now derive from Supabase-backed allocation readiness when available; live read-only smoke returned 39 available rows under the new allocation-derived model.
 - Do not patch bulk weights again until the migration scope is understood, except for an explicitly approved P0 owner-flow hotfix.
 - OP-1.2 Evidence Push: read-only data inspection and non-mutating pressure probes have raised several tickets to the 96% build gate.
 - OP-009 SAM Pilot Readiness 500 Fix: build-ready at 96%; targeted non-mutating probe proved per-lead source exceptions can bubble into a 500.
@@ -92,7 +93,7 @@ This is the active priority queue. Raw notes belong in `planning/ToDoList.md` or
 - Tickets below 96% confidence are not build-ready: OP-004, OP-005, and OP-006.
 - Google Sheets vs Supabase decision for bulk weights is resolved for the current P0: build Supabase-first durable staging/audit with Google Sheets as downstream sync.
 - Full Google Sheets to Supabase app cutover remains incomplete. GS-MIG-7 may cut over safe direct canonical read routes with fallback.
-- Formula-heavy route cutover remains blocked until equivalence tests/reports exist for dashboard, sales dashboard, sales availability, and litter overview/detail.
+- Formula-heavy route cutover remains blocked until equivalence tests/reports exist for dashboard litter attention and litter overview/detail.
 - Do not implement Phase 3A.6 until OP-009 is fixed and verified as degraded-safe.
 - Do not archive, delete, or move screenshots/external sources until owner review.
 - Do not implement CHARLIE/FRED/Ledger SQL until their phases are explicitly approved.

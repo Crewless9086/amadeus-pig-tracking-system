@@ -52,8 +52,23 @@ Result:
 Still blocked:
 
 - Dashboard litter attention.
-- Sales dashboard.
-- Sales availability/stock summary/totals.
+- Litter overview/detail formulas.
+- Mutation/write routes.
+
+## 2026-06-29 GS-MIG-7D Sales Availability And Stock Reads
+
+Status: active.
+
+Result:
+
+- Sales availability now derives from Supabase-backed allocation readiness when available.
+- Sales dashboard stock totals and summary now derive from Supabase-backed allocation readiness.
+- Sales dashboard API now includes `meat_ready_stock`, matching the frontend rendering code.
+- Live read-only smoke returned 7 stock summary rows, 4 stock total rows, 217 sales availability rows, and 39 available-for-sale rows under the new model.
+
+Still blocked:
+
+- Dashboard litter attention.
 - Litter overview/detail formulas.
 - Mutation/write routes.
 
